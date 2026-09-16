@@ -31,23 +31,25 @@ this client will not send". And `HMCTransportError` means the route did not
 answer and another might: its three catchers all act on that reading, one
 retrying the session on port 12443 and two falling back from REST to the SSH CLI
 in `src/hmc_mcp/ssh/selectors.py`. A URL httpx will not build does not become
-buildable on another port or over SSH. Neither catcher is reachable by this class
-today — the logon path is a literal, both resolvers are UUID-guarded — so this is
-contract fit, not a live defect.
+buildable on another route. Neither catcher is reachable by this class today —
+the logon path is a literal, both resolvers UUID-guarded — so this is contract
+fit, not a live defect.
 
 Never the path, because the value reaching this handler is the one httpx rejected
-as non-printable; interpolating it would carry a caller's CR or LF into a message
-and from there into logs. httpx's reason is safe to quote: every value it
-interpolates goes through `!r`, so `'\r'` renders escaped.
+as non-printable, and interpolating it would carry a caller's CR or LF into a
+message and from there into logs. httpx's reason is safe to quote: its
+non-printable branch renders the offending character through `!r`, and its other
+branches interpolate only httpx-internal component names.
 
 ## Consequences
 
 - A malformed-URL failure now satisfies the same `except HMCError` a caller
-  already writes for every other refusal this client makes. Nothing else changes:
-  it escaped `_request` before and escapes it now, with a new type and message.
-- This is a backstop, not a replacement. ADR 0145's `group` encoder and ADR
+  writes for this waist's other refusal, `_reject_dot_segments`; per-argument
+  validators still raise `ValueError`. Nothing about the call changes: it escaped
+  `_request` before and escapes it now, typed and worded anew.
+- This is a backstop, not a replacement: ADR 0145's `group` encoder and ADR
   0146's `property_name` encoder still run first, so a value they encode never
-  reaches this handler.
+  reaches this handler at all.
 - The two `except HMCError` sites in `core.py` that degrade a discovery read to
   `names = None` build their path from a `_reject_unknown_uom_type`-restricted
   type, so neither is reachable by this class.
@@ -62,11 +64,9 @@ interpolates goes through `!r`, so `'\r'` renders escaped.
   series of per-argument guards compensating for one shared function.
 - **Translate to `HMCTransportError`, whether as its own branch or by widening
   the existing handler to `except (httpx.TransportError, httpx.InvalidURL)`.**
-  verified: its three catchers — the legacy-port logon fallback in `core.py` and
-  the two REST-to-SSH resolvers in `src/hmc_mcp/ssh/selectors.py` — each respond
-  by retrying somewhere else, and the widened form would also inherit that
-  handler's interpolation of the raw `path`. judgment: the type would tell a
-  caller to retry a request buildable on no route.
+  verified: the widened form additionally inherits that handler's interpolation
+  of the raw `path`. judgment: the retry reading above, and a message that would
+  describe neither case.
 - **Add a new public exception type for local request refusals.** verified:
   `hmc_mcp.api.__all__` is the six names ADR 0118 pins, asserted as an exact set
   by `tests/unit/test_public_api.py`. judgment: a seventh stable name for a
@@ -77,5 +77,4 @@ interpolates goes through `!r`, so `'\r'` renders escaped.
   judgment: `_request` cannot attribute a path it did not build to an argument.
 - **Catch `Exception` at the waist.** verified: that `try` also calls
   `_read_bounded_response`, which raises `HMCError` for an over-size body and
-  would be re-wrapped. judgment: it converts programming errors into an HMC error
-  type and hides them from the tests that would fail loudly.
+  would be re-wrapped. judgment: it would hide programming errors as HMC errors.
