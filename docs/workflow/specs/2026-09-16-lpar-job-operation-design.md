@@ -35,12 +35,11 @@ methods, which pass literals.
   walker cannot reach this file and widening it is excluded. Bounded — the failure is a refusal
   rather than a sent request, and any tested call site reddens `tests/lpar/test_lpm.py`.
 - A real HMC job operation outside the five is refused locally. Accepted: this client submits no
-  other, and the remedy is one line beside the call site that needs it.
+  other; the remedy is one line beside the call site that needs it.
 
 **Covered elsewhere** — `lpar_uuid` on the same line and the six other ungoverned segment
 arguments: ADR 0147's open follow-up, unowned. Dot segments in an assembled path:
-`_reject_dot_segments` at the waist (ADR 0143). A URL httpx will not build: `_request`'s
-translation to `HMCError` (ADR 0148).
+`_reject_dot_segments` at the waist (ADR 0143). A URL httpx will not build: ADR 0148.
 
 ## Threat model
 
@@ -49,9 +48,9 @@ translation to `HMCError` (ADR 0148).
 - **Actor model** — no untrusted party reaches `operation` today; every caller is in-module and
   passes a literal. The design trusts that, and refuses rather than relying on it.
 - **Control** — membership in `_LPAR_JOB_OPERATIONS`, raising `ValueError` before the f-string is
-  built. On failure it discloses the permitted set and the argument name, never the value.
-- **Out of scope** — `lpar_uuid` on the same line (unowned, ADR 0147); the job XML body, built by
-  `hmc_mcp.jobs` and covered by `tests/unit/test_xml_escaping.py`.
+  built; on failure it discloses the permitted set and the argument name, never the value.
+- **Out of scope** — `lpar_uuid` on the same line (unowned, ADR 0147); the job XML body, covered
+  by `tests/unit/test_xml_escaping.py`.
 
 ## Success
 
@@ -62,8 +61,5 @@ translation to `HMCError` (ADR 0148).
 
 ## Validation
 
-The plan's Task 1 Verification inventory carries the contracts, tests, and commands. In summary:
-(1) and (2) are new parametrized and equality cases in `tests/unit/test_request_path_safety.py`,
-each driving `_lpar_job` with `_http.build_request` patched to fail the test if reached; (3) is
-the existing `tests/lpar/test_lpm.py:101-152`, five `respx` routes reading `route.calls.last`,
-staying green unedited; (4) is the two guardrail commands, run bare.
+The plan's Task 1 Verification inventory carries the contracts, tests, commands, and expected red
+observations for all four criteria.

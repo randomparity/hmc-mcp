@@ -8,21 +8,19 @@ membership check at the top of `LpmMixin._lpar_job`, which runs before `self.sub
 so before `core.HMCClient._request` builds anything. `tests/unit/test_request_path_safety.py`
 gains the refusal's tests. No other file changes. Stack: Python 3.11+, `httpx`, `pytest`, `respx`,
 `uv`, `just`. Spec: `docs/workflow/specs/2026-09-16-lpar-job-operation-design.md`. Record:
-`docs/adr/0151-lpar-job-operation-is-a-closed-set.md`.
-
-Expected implementation size: 45–70 changed lines (S) — from the two files above: ~10 lines of
-source and ~45 of test.
+`docs/adr/0151-lpar-job-operation-is-a-closed-set.md`. Expected implementation size: 45–70
+changed lines (S) — from the two files above: ~11 lines of source and ~59 of test.
 
 ## Global Constraints
 
 - Bootstrap with `just setup` only; bare `uv sync` / `uv run` / `uv add` prune the `app` extra
   (`typer`, `cyclopts`) and break `just typecheck`.
 - Guardrails: `just verify` **and** `uv run --no-sync prek run --all-files`, both exit 0, run bare
-  — no `| tail`, no `>/dev/null`, no `|| true`.
-- A focused `pytest -k` run exits 1 on the 90.5% `fail-under` coverage gate even when every
-  selected test passes, so focused commands pass `--no-cov`.
+  — no `| tail`, no `>/dev/null`, no `|| true`. A focused `pytest -k` run exits 1 on the 90.5%
+  `fail-under` coverage gate even when every selected test passes, so focused commands pass
+  `--no-cov`.
 - A refusal message names the argument and the permitted set, never the value (ADR 0143/0150).
-- Outside the frozen surface, do not edit: `client_contracts.py`, `core.py`,
+  Outside the frozen surface, do not edit: `client_contracts.py`, `core.py`,
   `tests/lpar/test_lpm.py`, `_uom_path_sites()`.
 
 ## Task 1 — refuse an unlisted operation
@@ -34,19 +32,21 @@ dict[str, Any] | None` (`client_contracts.py:350-352`), unchanged. Defines modul
 `LpmClient` protocol needs no edit. Later tasks: none.
 
 **Verification.** `FOCUSED` is
-`uv run --no-sync pytest tests/unit/test_request_path_safety.py -k lpm_operation --no-cov -q`;
-both new tests are red at step 2 with `Failed: DID NOT RAISE <class 'ValueError'>`.
+`uv run --no-sync pytest tests/unit/test_request_path_safety.py -k lpm_operation --no-cov -q`.
+Red at step 2 is not `DID NOT RAISE`: unfixed, the call reaches `_request`, so eight of the nine
+cases fail as `AssertionError: a refused LPM operation reached the transport` and
+`../../web/HmcUser/root` fails as an uncaught `HMCError` from the waist guard — `HMCError`
+subclasses `Exception`, not `ValueError` (`src/hmc_mcp/errors.py:17`).
 
 - Contract: `_lpar_job` refuses an `operation` outside `_LPAR_JOB_OPERATIONS` before any request
-  is built. Mode: `focused-test`. Observable: `ValueError` raised, `_http.build_request` never
-  called. Test: `test_an_unlisted_lpm_operation_is_refused_before_any_request`. Green: `FOCUSED`.
+  is built. Mode: `focused-test`. Observable: `ValueError`, `_http.build_request` never called.
+  Test: `test_an_unlisted_lpm_operation_is_refused_before_any_request`. Green: `FOCUSED`.
 - Contract: the message names the permitted set, not the value. Mode: `focused-test`. Observable:
-  the message equals the step-1 string and excludes the rejected string. Test:
+  the message equals the step-1 string and excludes the rejected one. Test:
   `test_the_lpm_operation_refusal_names_the_permitted_set_not_the_value`. Green: `FOCUSED`.
 - Contract: the five existing paths are unchanged on the wire. Mode: `focused-test`. Observable:
-  the `respx` routes at `tests/lpar/test_lpm.py:101-152` still record a call on each exact path.
-  Test: those five cases, unedited. Green: `uv run --no-sync pytest tests/lpar/test_lpm.py
-  --no-cov -q`.
+  the `respx` routes at `tests/lpar/test_lpm.py:102-154` still record a call on each exact path.
+  Test: those five cases, unedited. Green: `uv run --no-sync pytest tests/lpar/test_lpm.py --no-cov -q`.
 
 **Steps**
 
@@ -63,9 +63,8 @@ both new tests are red at step 2 with `Failed: DID NOT RAISE <class 'ValueError'
     "operation",
     [
         # The `?`/`#` retargeting pair issue #809 carries, a second segment, a
-        # traversal, then the case a character grammar would have accepted --
-        # `PowerOff` is a real HMC operation this client does not submit
-        # (ADR 0151) -- then casing, empty, and a header injection.
+        # traversal, the case a character grammar would have accepted (`PowerOff`
+        # is real and not submitted here), casing, empty, and a header injection.
         "Migrate?group=None",
         "Migrate#/rest/api/web/HmcUser/root",
         "Migrate/extra",
@@ -89,28 +88,34 @@ def test_an_unlisted_lpm_operation_is_refused_before_any_request(operation):
 
     client._http.build_request = _forbidden  # type: ignore[method-assign]
 
-    with pytest.raises(ValueError, match="^operation must be one of: "):
+    with pytest.raises(ValueError, match="^LPM job operation must be one of: "):
         asyncio.run(client._lpar_job(UUID_A, operation, "<JobRequest/>"))
     assert sent == []
 
 
 def test_the_lpm_operation_refusal_names_the_permitted_set_not_the_value():
-    """Equality rather than a substring: dropping an operation from the set
-    without dropping its call site cannot pass here. The value is absent, the
-    leak rule `_reject_unknown_uom_type` follows."""
+    """Equality, not a substring: dropping an operation from the set without
+    dropping its call site cannot pass here. The transport is patched because
+    unfixed this call would otherwise attempt a real request (ADR 0151)."""
+    client = _client()
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("a refused LPM operation reached the transport")
+
+    client._http.build_request = _forbidden  # type: ignore[method-assign]
+
     with pytest.raises(ValueError) as error:
-        asyncio.run(_client()._lpar_job(UUID_A, "secret-partition-name", "<x/>"))
+        asyncio.run(client._lpar_job(UUID_A, "secret-partition-name", "<x/>"))
 
     message = str(error.value)
     assert message == (
-        "operation must be one of: Migrate, MigrateAbort, MigrateRecover, "
-        "MigrateValidate, RemoteRestart"
+        "LPM job operation must be one of: Migrate, MigrateAbort, "
+        "MigrateRecover, MigrateValidate, RemoteRestart"
     )
     assert "secret-partition-name" not in message
 ```
 
-2. Confirm the expected red: `FOCUSED` → 9 failures, each
-   `Failed: DID NOT RAISE <class 'ValueError'>`.
+2. Confirm the expected red: `FOCUSED` → 9 failures, as described above.
 
 3. In `src/hmc_mcp/client/client_lpm.py`, insert above `class LpmMixin:`:
 
@@ -132,7 +137,8 @@ _LPAR_JOB_OPERATIONS = frozenset(
     ) -> dict[str, Any] | None:
         if operation not in _LPAR_JOB_OPERATIONS:
             raise ValueError(
-                f"operation must be one of: {', '.join(sorted(_LPAR_JOB_OPERATIONS))}"
+                "LPM job operation must be one of: "
+                + ", ".join(sorted(_LPAR_JOB_OPERATIONS))
             )
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
@@ -144,7 +150,5 @@ _LPAR_JOB_OPERATIONS = frozenset(
 
 6. Run both guardrails bare, then commit source and test as one `fix(client):` commit.
 
-**Acceptance criteria.** `_LPAR_JOB_OPERATIONS` holds exactly the five literals the five call
-sites pass; every unlisted `operation` raises `ValueError` and reaches no transport call; the
-message equals the step-1 string and holds no caller value; `tests/lpar/test_lpm.py` is unedited
-and green; both guardrails exit 0. Rollback is a revert of that one commit.
+**Acceptance criteria.** `_LPAR_JOB_OPERATIONS` holds exactly the five literals the call sites
+pass; the three Verification contracts above hold; both guardrails exit 0. Rollback: revert.
