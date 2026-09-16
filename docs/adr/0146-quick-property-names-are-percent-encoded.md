@@ -107,12 +107,19 @@ escape through the other branch. A non-empty leading segment closes both, and
 Each of those names *was* refused at the waist before this change, so both were
 regressions rather than theoretical gaps.
 
-Verified by sweep rather than by cases: 8,017 names built from combinations of
-`..`, `.`, `%2e%2e`, `%2f`, `/`, `//`, `://`, `?`, `#`, `%252e` and literals were
-run through the base behaviour and this one. The `f"/quick/{...}"` form loses no
-refusal the unmodified code made and adds none it did not — the lone `/` form
-loses four. The alternative, a segment mode on the shared predicate, is recorded
-below.
+Verified by sweep rather than by cases: thousands of names built from
+combinations of `..`, `.`, `%2e%2e`, `%2f`, `/`, `//`, `://`, `?`, `#`, `%252e`
+and literals were run through the base behaviour and this one. The
+`f"/quick/{...}"` form loses no refusal the unmodified code made, where the lone
+`/` form loses four.
+
+It does *add* refusals, and they come from the encoding rather than from the
+guard form: a name such as `"#..://.."` previously had its tail parsed into a
+fragment and discarded before either arm scanned it, and percent-encoding the
+`#` keeps the whole value in the path where the waist guard then sees the `..`.
+That is the change tightening, not the guard misfiring, and it reaches only names
+already outside any quick-property name this repository passes. The alternative,
+a segment mode on the shared predicate, is recorded below.
 
 Reusing `search_uom`'s `encoded_property` name is deliberate: the classification
 set in `tests/unit/test_request_path_safety.py` loses `property_name` and gains
@@ -159,6 +166,15 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
   `HMCError`/`HMCTransportError`/`ValueError` contract rather than an overlooked
   one, on the same terms ADR 0145 accepted for `group`. A `str` raises at most
   `UnicodeEncodeError`, which subclasses `ValueError` and stays inside it.
+- **A caller that pre-encoded its own name now double-encodes it.**
+  `get_quick_property("LogicalPartition", uuid, "Partition%20State")` previously
+  sent `Partition%20State` and read the property named `Partition State`; it now
+  sends `Partition%2520State` and reads one named `Partition%20State`. The
+  argument's contract is the raw name — `search_uom` has taken the same position
+  on this same argument since #407 — and no caller in this repository passes an
+  encoded one, all five passing the literal `"PartitionState"`. Accepted rather
+  than overlooked: the alternative is guessing whether a caller meant to encode,
+  which is the ambiguity encoding-at-the-boundary exists to remove.
 - **Reachability is unchanged.** No CLI command or MCP tool exposes
   `property_name`, and `get_quick_property` sits outside the
   `_SUPPORTED_CLIENT_LIFECYCLE` set `tests/unit/test_public_api.py` pins — so it
