@@ -47,6 +47,24 @@ def _client() -> HMCClient:
     )
 
 
+def _recording_client() -> tuple[HMCClient, list[str]]:
+    """A client whose transport records paths instead of sending them."""
+    client = _client()
+    requested: list[str] = []
+
+    def _record(method, path, **kwargs):
+        requested.append(path)
+        return httpx.Request(method, f"https://hmc.test:12443{path}")
+
+    client._http.build_request = _record  # type: ignore[method-assign]
+
+    async def _send(request, **kwargs):
+        return httpx.Response(204, request=request)
+
+    client._http.send = _send  # type: ignore[method-assign]
+    return client, requested
+
+
 # ---------------------------------------------------------------------------
 # The property that makes the guard necessary
 # ---------------------------------------------------------------------------
@@ -699,19 +717,7 @@ def test_a_caller_percent_encoded_group_now_reaches_the_transport_as_data():
     retargeted: the value sits after the `?`, where no path resolution applies
     (ADR 0145, "one narrow residual opens").
     """
-    client = _client()
-    requested: list[str] = []
-
-    def _record(method, path, **kwargs):
-        requested.append(path)
-        return httpx.Request(method, f"https://hmc.test:12443{path}")
-
-    client._http.build_request = _record  # type: ignore[method-assign]
-
-    async def _send(request, **kwargs):
-        return httpx.Response(204, request=request)
-
-    client._http.send = _send  # type: ignore[method-assign]
+    client, requested = _recording_client()
 
     asyncio.run(client.list_uom("LogicalPartition", group="x%2F..%2Fy"))
 
@@ -1035,24 +1041,13 @@ _QUICK_PROPERTY_NAMES = (
 _QUICK_PREFIX = f"/rest/api/uom/LogicalPartition/{UUID_A}/quick/"
 
 
-def _quick_property_path(client: HMCClient, property_name: str) -> str:
+def _quick_property_path(property_name: str) -> str:
     """The path `get_quick_property` hands the transport for *property_name*.
 
     Records at `build_request` rather than after `send`, because a value that
     re-points the request does so while the URL is being built.
     """
-    requested: list[str] = []
-
-    def _record(method, path, **kwargs):
-        requested.append(path)
-        return httpx.Request(method, f"https://hmc.test:12443{path}")
-
-    client._http.build_request = _record  # type: ignore[method-assign]
-
-    async def _send(request, **kwargs):
-        return httpx.Response(204, request=request)
-
-    client._http.send = _send  # type: ignore[method-assign]
+    client, requested = _recording_client()
 
     assert (
         asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
@@ -1088,7 +1083,7 @@ def test_a_quick_property_name_cannot_re_point_the_request(property_name):
     the segment still decodes to exactly what the caller passed — so neither a
     truncation nor an addition can pass.
     """
-    path = _quick_property_path(_client(), property_name)
+    path = _quick_property_path(property_name)
 
     assert path.startswith(_QUICK_PREFIX)
     segment = path[len(_QUICK_PREFIX) :]
@@ -1115,7 +1110,7 @@ def test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes(
     identity on all six names; `test_a_quick_property_name_cannot_re_point_the_request`
     is what fails when the binding goes.
     """
-    assert _quick_property_path(_client(), property_name) == _QUICK_PREFIX + property_name
+    assert _quick_property_path(property_name) == _QUICK_PREFIX + property_name
 
 
 @pytest.mark.parametrize("property_name", ["..", ".", "../../x"])
@@ -1236,23 +1231,6 @@ def test_a_url_httpx_refuses_to_build_is_refused_as_an_hmc_error(call, path):
 # The encoded path-value length bound (ADR 0150)
 # ---------------------------------------------------------------------------
 
-
-def _recording_client() -> tuple[HMCClient, list[str]]:
-    """A client whose transport records paths instead of sending them."""
-    client = _client()
-    requested: list[str] = []
-
-    def _record(method, path, **kwargs):
-        requested.append(path)
-        return httpx.Request(method, f"https://hmc.test:12443{path}")
-
-    client._http.build_request = _record  # type: ignore[method-assign]
-
-    async def _send(request, **kwargs):
-        return httpx.Response(204, request=request)
-
-    client._http.send = _send  # type: ignore[method-assign]
-    return client, requested
 
 
 def test_a_search_value_at_the_length_bound_is_accepted():
