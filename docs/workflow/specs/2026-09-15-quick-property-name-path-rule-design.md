@@ -96,13 +96,16 @@ client's own legitimate paths).
 1. `get_quick_property` sends the whole of `property_name` inside the last path
    segment, percent-encoded, for each of `?`, `#`, `/`, space, a non-ASCII
    character, and CRLF — no query string, no truncation, no `httpx.InvalidURL`.
-2. `quote(n, safe="")` is the identity on each of the six quick-property names
-   this repository passes, so no pinned path changes.
+2. The URL built for each of the six quick-property names this repository passes
+   still ends `/quick/<name>` byte-for-byte, so no pinned path changes.
 3. `property_name` is absent from `_KNOWN_UOM_SEGMENT_ARGUMENTS`, and every
    encoded-class segment interpolated into a `/rest/api/uom/` f-string in
    `core.py` is `quote(..., safe="")`-bound in its own function.
-4. Removing the `quote` binding turns items 1 and 3 red.
-5. `just verify` and `uv run --no-sync prek run --all-files` exit 0.
+4. A caller-pre-encoded dot segment (`..%2f..%2f…`, `%2e%2e`) reaches the
+   transport double-encoded as one inert segment instead of being refused, while
+   `..`, `.` and `../../x` are still refused with `HMCError`.
+5. Removing the `quote` binding turns items 1, 3 and 4 red.
+6. `just verify` and `uv run --no-sync prek run --all-files` exit 0.
 
 ## Validation
 
@@ -113,10 +116,17 @@ client's own legitimate paths).
   `uv run --no-sync pytest tests/unit/test_request_path_safety.py -k quick_property -q`.
 - **Contract: no wire-format change.** Mode: `focused-test`.
   `…::test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes` —
-  red if any observed name were altered by `quote`. Same green command.
+  parametrized over all six names and asserting the built URL each time, so the
+  assertion runs client code and goes red if the binding is dropped. Same green
+  command.
 - **Contract: the dot-segment refusal identity.** Mode: `focused-test`.
   `…::test_a_dot_segment_quick_property_name_is_still_refused` — asserts
   `HMCError` for `..`, `.` and `../../x` after encoding. Same green command.
+- **Contract: the one refusal that moves.** Mode: `focused-test`.
+  `…::test_a_caller_percent_encoded_quick_property_name_reaches_the_transport_as_data`
+  — asserts that `..%2f..%2fweb%2fHmcUser%2froot` and `%2e%2e` now reach
+  `build_request` double-encoded rather than raising `HMCError`. Red against the
+  unfixed code, where both are refused. Same green command.
 - **Contract: the segment classification.** Mode: `focused-test`.
   `…::test_every_encoded_uom_segment_is_quote_bound` plus the existing
   `test_every_uom_path_interpolation_is_a_known_argument` — the first is red

@@ -79,17 +79,31 @@ makes the test suite able to see that it is present.
   `test_encoding_is_a_no_op_on_the_quick_property_names_this_client_passes`,
   asserting the built URL for `"PartitionState"` ends exactly
   `/rest/api/uom/LogicalPartition/<UUID_A>/quick/PartitionState`, and that
-  `quote(n, safe="") == n` for each of the six names the repository passes —
-  `PartitionState`, `PartitionID`, `SystemType`, `NoSuchProperty`, `all`, `All`.
-  Expected red only if the encoding altered a legitimate name. Same green command.
+  the built URL for each of the six names the repository passes —
+  `PartitionState`, `PartitionID`, `SystemType`, `NoSuchProperty`, `all`, `All` —
+  ends exactly `/rest/api/uom/LogicalPartition/<UUID_A>/quick/<name>`. Assert the
+  URL, never `quote(n, safe="") == n`: that is a stdlib tautology that imports no
+  client code and cannot go red for any edit to `core.py`, the binding's removal
+  included. Expected red only if the encoding altered a legitimate name. Same
+  green command.
 - Contract: *the dot-segment refusal identity*. Mode: `focused-test`. Test
   `test_a_dot_segment_quick_property_name_is_still_refused`, asserting `HMCError`
   for `".."`, `"."` and `"../../x"` and that no request is built. Expected red if
   encoding had moved that refusal. Same green command.
+- Contract: *the one refusal that does move*. Mode: `focused-test`. Test
+  `test_a_caller_percent_encoded_quick_property_name_reaches_the_transport_as_data`,
+  asserting that `"..%2f..%2fweb%2fHmcUser%2froot"` and `"%2e%2e"` reach
+  `build_request` as `"..%252f..%252fweb%252fHmcUser%252froot"` and `"%252e%252e"`
+  in the last path segment. Expected red against the unfixed code, where
+  `_reject_dot_segments`' decode arm refuses both with `HMCError`. Same green
+  command. Mirror `test_a_caller_percent_encoded_group_now_reaches_the_transport_as_data`
+  (`tests/unit/test_request_path_safety.py:685`), which pins ADR 0145's identical
+  residual: record the path in `build_request` and return a real `httpx.Request`,
+  then stub `client._http.send` to answer 204.
 
 **Steps.**
 
-1. Write the three tests above in `tests/unit/test_request_path_safety.py`, in a
+1. Write the four tests above in `tests/unit/test_request_path_safety.py`, in a
    new section after the existing `# The type-segment length bound (ADR 0147)`
    section. Build the client with the module's existing `_client()` helper and
    capture the URL by replacing `client._http.build_request` with a function that
@@ -120,7 +134,7 @@ makes the test suite able to see that it is present.
    path.
 7. Commit: `fix(client): percent-encode the quick-property name path segment`.
 
-**Acceptance.** `get_quick_property` interpolates `encoded_property`; the three
+**Acceptance.** `get_quick_property` interpolates `encoded_property`; the four
 tests pass; no other production file changed.
 
 ---

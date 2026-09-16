@@ -111,7 +111,9 @@ called. The walk also reaches `search_uom`'s existing `encoded_property` and
   segment, so it is sent rather than refused. It goes as one inert segment: a
   single decode now yields `..%2f..%2f…` rather than dot segments, so the
   decoding that would have reached the retargeting no longer does. What moves is
-  where the caller learns. No test pinned this case.
+  where the caller learns, and a test pins it rather than leaving it to this
+  record — the shape ADR 0145's implementation used for the identical residual it
+  opened for `group`.
 - **`property_name` stays unvalidated against a name namespace by default.** That
   is ADR 0141's decision, not a gap this record opens: `validate=True` checks the
   name against the HMC's own list, and this change leaves it untouched. An
