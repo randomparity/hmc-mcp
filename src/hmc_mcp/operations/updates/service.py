@@ -6,6 +6,7 @@ import re
 from typing import Any
 from urllib.parse import quote
 
+from hmc_mcp.client.client_contracts import _reject_over_long_path_value
 from hmc_mcp.client.core import HMCClient
 
 from ...errors import HMCError
@@ -102,6 +103,7 @@ async def update_console_software(
 ) -> dict[str, Any] | None:
     """Submit a supported management-console software update."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+    _reject_over_long_path_value("console_uuid", console_uuid)
     console_path_id = quote(console_uuid, safe="")
     job = await hmc.submit_job(
         f"/rest/api/uom/ManagementConsole/{console_path_id}/do/UpdateManagementConsole",
@@ -120,6 +122,7 @@ async def submit_available_hmc_ptfs_query(
 ) -> dict[str, Any] | None:
     """Submit the management-console job that lists available PTFs."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+    _reject_over_long_path_value("console_uuid", console_uuid)
     console_path_id = quote(console_uuid, safe="")
     job = await hmc.submit_job(
         f"/rest/api/uom/ManagementConsole/{console_path_id}"
