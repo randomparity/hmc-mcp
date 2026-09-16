@@ -12,6 +12,7 @@ from .client_contracts import (
     VALID_AUTHENTICATION_FILTERS,
     AuthenticationFilter,
     UsersClient,
+    _reject_over_long_path_value,
     _reject_unknown_uom_type,
 )
 from .client_parse import _parse_feed
@@ -41,6 +42,7 @@ class UsersMixin:
         call-site census, with the date and evidence that make it checkable.
         """
         _reject_unknown_uom_type("child_type", child_type)
+        _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         return f"/rest/api/uom/ManagementConsole/{console_path_id}/{child_type}"
 

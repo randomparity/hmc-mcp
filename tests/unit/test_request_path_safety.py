@@ -22,8 +22,10 @@ import httpx
 import pytest
 
 from hmc_mcp.client.client_contracts import (
+    _MAX_UOM_PATH_VALUE_LENGTH,
     _MAX_UOM_TYPE_LENGTH,
     ADAPTER_TYPES,
+    _reject_over_long_path_value,
     _reject_unknown_uom_type,
 )
 from hmc_mcp.client.core import (
@@ -1226,3 +1228,144 @@ def test_a_url_httpx_refuses_to_build_is_refused_as_an_hmc_error(call, path):
     assert str(error.value.__cause__) in message
     assert path not in message
     assert not set(message) & set("\r\n\t")
+
+
+# ---------------------------------------------------------------------------
+# The encoded path-value length bound (ADR 0150)
+# ---------------------------------------------------------------------------
+
+
+def _recording_client() -> tuple[HMCClient, list[str]]:
+    """A client whose transport records paths instead of sending them."""
+    client = _client()
+    requested: list[str] = []
+
+    def _record(method, path, **kwargs):
+        requested.append(path)
+        return httpx.Request(method, f"https://hmc.test:12443{path}")
+
+    client._http.build_request = _record  # type: ignore[method-assign]
+
+    async def _send(request, **kwargs):
+        return httpx.Response(204, request=request)
+
+    client._http.send = _send  # type: ignore[method-assign]
+    return client, requested
+
+
+def test_a_search_value_at_the_length_bound_is_accepted():
+    """The bound is inclusive: exactly `_MAX_UOM_PATH_VALUE_LENGTH` is still sent."""
+    client, requested = _recording_client()
+    value = "A" * _MAX_UOM_PATH_VALUE_LENGTH
+
+    asyncio.run(client.search_uom("ManagedSystem", "SystemName", value))
+
+    assert requested == [f"/rest/api/uom/ManagedSystem/search/(SystemName=={value})"]
+
+
+def test_a_console_uuid_at_the_length_bound_is_accepted():
+    """The same inclusive edge on the other argument."""
+    client, requested = _recording_client()
+    value = "A" * _MAX_UOM_PATH_VALUE_LENGTH
+
+    asyncio.run(client.list_hmc_users(value))
+
+    assert requested == [f"/rest/api/uom/ManagementConsole/{value}/UserProfile"]
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        _MAX_UOM_PATH_VALUE_LENGTH + 1,
+        # The reproduction issue #827 carries, and the length verified at
+        # `101f2117` to build and send a 65,065-character URL.
+        65_000,
+    ],
+)
+def test_an_over_long_search_value_is_refused_before_any_request(length):
+    client, requested = _recording_client()
+
+    with pytest.raises(ValueError) as error:
+        asyncio.run(client.search_uom("ManagedSystem", "SystemName", "A" * length))
+
+    assert requested == []
+    assert str(error.value).startswith("property_value is ")
+
+
+@pytest.mark.parametrize(
+    "length", [_MAX_UOM_PATH_VALUE_LENGTH + 1, 65_000]
+)
+def test_an_over_long_console_uuid_is_refused_before_any_request(length):
+    client, requested = _recording_client()
+
+    with pytest.raises(ValueError) as error:
+        asyncio.run(client.list_hmc_users("A" * length))
+
+    assert requested == []
+    assert str(error.value).startswith("console_uuid is ")
+
+
+def test_an_over_long_search_value_is_refused_before_the_validation_request():
+    """The check sits at the top of `search_uom`, ahead of the `validate=True`
+    discovery read, so an over-long value never pays a network round trip
+    (ADR 0150). With the check at the encoding site instead, this request is
+    sent before the refusal.
+    """
+    client, requested = _recording_client()
+
+    with pytest.raises(ValueError):
+        asyncio.run(
+            client.search_uom(
+                "ManagedSystem",
+                "SystemName",
+                "A" * (_MAX_UOM_PATH_VALUE_LENGTH + 1),
+                validate=True,
+            )
+        )
+
+    assert requested == []
+
+
+def test_the_refusal_names_the_argument_and_both_lengths_but_not_the_value():
+    """The same leak rule `_reject_unknown_uom_type` follows: these values carry
+    an operator's own resource names on the CLI and API paths.
+    """
+    value = "secret-system-name" * 40
+    assert len(value) > _MAX_UOM_PATH_VALUE_LENGTH
+
+    with pytest.raises(ValueError) as error:
+        _reject_over_long_path_value("property_value", value)
+
+    message = str(error.value)
+    assert message == (
+        f"property_value is {len(value)} characters; "
+        f"maximum is {_MAX_UOM_PATH_VALUE_LENGTH}"
+    )
+    assert value not in message
+
+
+def test_the_bound_caps_the_encoded_contribution_whatever_was_passed():
+    """The property the number is chosen for: `quote` emits three characters per
+    UTF-8 byte and a character can be four bytes, so an accepted value
+    contributes at most twelve characters per character to the URL. Without the
+    bound that ceiling is httpx's 65536 and the accepted *input* length varies
+    twelvefold with the caller's characters (ADR 0150).
+    """
+    worst_case = "\U0001f600" * _MAX_UOM_PATH_VALUE_LENGTH
+    assert _reject_over_long_path_value("property_value", worst_case) is None
+    assert len(quote(worst_case, safe="")) == 12 * _MAX_UOM_PATH_VALUE_LENGTH
+
+    over = "\U0001f600" * (_MAX_UOM_PATH_VALUE_LENGTH + 1)
+    with pytest.raises(ValueError):
+        _reject_over_long_path_value("property_value", over)
+
+
+def test_the_bound_is_its_wire_budget_divided_by_the_worst_case_expansion():
+    """The number itself, pinned against ADR 0150's derivation rather than
+    restated beside it: a 3 KiB share of the request line, divided by the twelve
+    characters one input character can become. Every other test here floats with
+    the constant, so without this one the bound could be changed to any value
+    and the suite would still pass -- and the derivation is the decision.
+    """
+    assert _MAX_UOM_PATH_VALUE_LENGTH * 12 == 3 * 1024
+    assert _MAX_UOM_PATH_VALUE_LENGTH == 256

@@ -88,6 +88,38 @@ def _reject_unknown_uom_type(argument: str, value: str) -> None:
     )
 
 
+# A caller-supplied value percent-encoded into a uom path segment. Encoding
+# makes a value safe without making it small: `quote` emits three characters per
+# UTF-8 byte and a character can be four bytes, so one accepted character
+# becomes up to twelve on the wire. Derived from a wire budget rather than from
+# the values observed here -- 3 KiB, under half of nginx's documented 8k
+# request-line buffer, divided by that twelvefold worst case (ADR 0150).
+#
+# Deliberately not `_MAX_UOM_TYPE_LENGTH`: that bound is four times the longest
+# name in a closed vendored namespace and is partly justified by the `Accept`
+# header, which neither of these values reaches.
+_MAX_UOM_PATH_VALUE_LENGTH = 256
+
+
+def _reject_over_long_path_value(argument: str, value: str) -> None:
+    """Refuse a caller-supplied uom path value longer than the bound.
+
+    ``ValueError`` because it reports a malformed caller argument, the family
+    ``_reject_unknown_uom_type`` and ``validate_adapter_type`` belong to
+    (ADR 0143). ADR 0148 draws the line: a per-argument validator called where
+    the segment is built raises ``ValueError``, while the guard running *at* the
+    request waist raises ``HMCError`` because it holds a path it did not build.
+
+    The message names the argument and both lengths, never the value, which on
+    the CLI and API paths carries an operator's own resource names.
+    """
+    if len(value) > _MAX_UOM_PATH_VALUE_LENGTH:
+        raise ValueError(
+            f"{argument} is {len(value)} characters; "
+            f"maximum is {_MAX_UOM_PATH_VALUE_LENGTH}"
+        )
+
+
 def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:
     if adapter_type not in ADAPTER_TYPES:
         raise ValueError(
