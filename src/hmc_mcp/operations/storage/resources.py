@@ -552,7 +552,7 @@ ACCEPTED_ISO_SCHEMES = ("http", "https")
 
 
 def _require_http_url(iso_source: str) -> str:
-    """Return ``iso_source`` if it is an http(s) URL, else raise ``ValueError``.
+    """Return an http(s) source; reject controls as ``HMCError``, scheme as ``ValueError``.
 
     This is the first half of ``upload_iso``'s input validation — the host check
     in ``_require_allowlisted_iso_url`` is the other — and it runs before the
@@ -567,6 +567,10 @@ def _require_http_url(iso_source: str) -> str:
     and is derived only from the caller's own input, so a refusal discloses
     nothing about the server's filesystem.
     """
+    if any(char.isascii() and not char.isprintable() for char in iso_source):
+        raise HMCError(
+            "ISO download refused: the URL contains a non-printable ASCII character."
+        )
     if urlparse(iso_source).scheme not in ACCEPTED_ISO_SCHEMES:
         accepted = " or ".join(f"{scheme}://" for scheme in ACCEPTED_ISO_SCHEMES)
         raise ValueError(
@@ -630,6 +634,12 @@ def _require_allowlisted_iso_url(
     )
     for allowed_host, allowed_port in allowlist:
         if host == allowed_host and allowed_port in (None, effective_port):
+            try:
+                httpx.URL(iso_url)
+            except httpx.InvalidURL as exc:
+                raise HMCError(
+                    "ISO download refused: the request URL could not be built."
+                ) from exc
             return iso_url
     permitted = ", ".join(
         host_ if port_ is None else f"{host_}:{port_}" for host_, port_ in allowlist
@@ -831,7 +841,8 @@ async def upload_iso(
           post-import inventory does not include it.
 
     Raises:
-        HMCError: For HMC API errors during broker operations or import.
+        HMCError: For malformed ISO URLs or HMC API errors during broker operations
+                  or import.
         ValueError: If ``iso_source`` is not an http(s) URL, if its host is not
                    on the operator's allowlist (including the unset allowlist,
                    which permits nothing), if the server answers with a
@@ -864,7 +875,12 @@ async def upload_iso(
                 "Use a different name or delete the existing media first."
             )
 
-    iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
+    try:
+        iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
+    except httpx.InvalidURL as exc:
+        raise HMCError(
+            "ISO download refused: the request URL could not be built."
+        ) from exc
 
     try:
         uploaded_media_entry = await _upload_iso_via_broker(
