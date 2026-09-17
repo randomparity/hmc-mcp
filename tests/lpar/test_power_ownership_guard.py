@@ -142,6 +142,29 @@ async def test_disabled_guard_needs_no_managed_system_selector() -> None:
     hmc.submit_job.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("power_on", "operation", "permitted"),
+    [(True, "PowerOn", "PowerOff"), (False, "PowerOff", "PowerOn")],
+)
+async def test_power_operation_must_belong_to_its_closed_set(
+    monkeypatch, power_on, operation, permitted
+) -> None:
+    hmc = _hmc(authorize=False)
+    monkeypatch.setattr(
+        lpar_core,
+        "_LPAR_POWER_OPERATIONS",
+        lpar_core._LPAR_POWER_OPERATIONS - {operation},
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        await power_lpar(hmc, None, LPAR_UUID, power_on=power_on, force=True)
+
+    assert permitted in str(exc_info.value)
+    assert operation not in str(exc_info.value)
+    hmc.submit_job.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Setting on: the guard runs before the job is submitted
 # ---------------------------------------------------------------------------
