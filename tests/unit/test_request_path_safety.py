@@ -16,6 +16,8 @@ from __future__ import annotations
 import ast
 import asyncio
 import inspect
+from pathlib import Path
+from typing import cast
 from urllib.parse import quote, unquote
 
 import httpx
@@ -835,6 +837,71 @@ _KNOWN_UOM_SEGMENT_ARGUMENTS = (
 )
 
 
+# Concrete residual sites owned by #850. A row records inventory, not safety:
+# several storage/update sites already have UUID metadata, and console IDs are
+# already encoded and bounded. New functions cannot inherit these exceptions.
+_RESIDUAL_UOM_REQUEST_SITES = {
+    "client_cluster.ClusterMixin.create_logical_unit": "cluster_uuid",
+    "client_cluster.ClusterMixin.delete_logical_unit": "cluster_uuid",
+    "client_lpars.LparsMixin.create_logical_partition": "system_uuid",
+    "client_lpars.LparsMixin.delete_logical_partition": "lpar_uuid",
+    "client_lpars.LparsMixin.list_logical_partitions": "system_uuid",
+    "client_lpars.LparsMixin.modify_logical_partition": "lpar_uuid",
+    "client_lpm.LpmMixin._lpar_job": "lpar_uuid",
+    "client_network.NetworkMixin.create_virtual_network": "system_uuid",
+    "client_network.NetworkMixin.delete_virtual_network": "system_uuid network_uuid",
+    "client_network.NetworkMixin.list_network_bridges": "system_uuid",
+    "client_network.NetworkMixin.list_virtual_networks": "system_uuid",
+    "client_network.NetworkMixin.list_virtual_switches": "system_uuid",
+    "client_storage.StorageMixin._broker_file_create": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin._broker_iso_import": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin._get_vg_raw_xml": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin._post_vg_xml": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin.create_optical_mapping": "vios_uuid",
+    "client_storage.StorageMixin.create_virtual_disk": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin.create_volume_group": "vios_uuid",
+    "client_storage.StorageMixin.delete_storage_mapping": "system_uuid vios_uuid",
+    "client_storage.StorageMixin.delete_virtual_disk": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin.get_media_repository": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin.get_volume_group": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin.list_optical_mappings": "vios_uuid",
+    "client_storage.StorageMixin.list_optical_media": "vios_uuid vg_uuid",
+    "client_storage.StorageMixin.list_storage_mappings": "vios_uuid",
+    "client_storage.StorageMixin.list_volume_groups": "vios_uuid",
+    "client_storage.StorageMixin.map_storage_to_lpar": "vios_uuid",
+    "client_systems.SystemsMixin.get_vios_storage_detail": "vios_uuid",
+    "client_systems.SystemsMixin.list_vios": "system_uuid",
+    "client_systems.SystemsMixin.modify_managed_system": "system_uuid",
+    "client_systems.SystemsMixin.power_off_system": "system_uuid",
+    "client_systems.SystemsMixin.power_off_vios": "vios_uuid",
+    "client_systems.SystemsMixin.power_on_system": "system_uuid",
+    "client_systems.SystemsMixin.power_on_vios": "vios_uuid",
+    "client_updates.UpdatesMixin.submit_platform_update": "system_uuid",
+    "client_users.UsersMixin._child_path": "console_path_id",
+    "client_users.UsersMixin.configure_remote_access": "console_path_id",
+    "client_users.UsersMixin.get_remote_access": "console_path_id",
+}
+_CLASSIFIED_UOM_SITES = {
+    (*owner.split(".", 1), name, "request")
+    for owner, names in _RESIDUAL_UOM_REQUEST_SITES.items()
+    for name in names.split()
+} | {
+    # Document/comparison identities are also inventoried for #850, including
+    # switch_uuid newly exposed by the absolute network link (no policy here).
+    ("client_network", "NetworkMixin.create_virtual_network", "system_uuid", "document-link"),
+    ("client_network", "NetworkMixin.create_virtual_network", "switch_uuid", "document-link"),
+    ("client_storage", "StorageMixin.get_lpar_link", "lpar_uuid", "document-link"),
+    ("client_storage", "StorageMixin.list_storage_mappings", "lpar_uuid", "comparison"),
+    ("client_storage", "_filter_optical_mappings", "lpar_uuid", "comparison"),
+    # Existing enforcement remains separately asserted: ADRs 0143, 0151, 0157.
+    ("client_lpm", "LpmMixin._lpar_job", "operation", "request"),
+    ("client_users", "UsersMixin._child_path", "child_type", "request"),
+    ("client_users", "UsersMixin.get_hmc_user", "profile_path_id", "request"),
+    ("client_users", "UsersMixin.modify_hmc_user", "profile_path_id", "request"),
+    ("client_users", "UsersMixin.delete_hmc_user", "profile_path_id", "request"),
+}
+
+
 def _is_boundary_check(node: ast.AST) -> bool:
     """A literal `_reject_unknown_uom_type("x", x)` call — the declaration form."""
     return (
@@ -848,76 +915,128 @@ def _is_boundary_check(node: ast.AST) -> bool:
     )
 
 
-def _uom_path_sites() -> tuple[
-    list[tuple[str, str]], dict[str, set[str]], dict[str, set[str]]
-]:
-    """Every `/rest/api/uom/` f-string interpolation in `core.py`, paired with
-    the type arguments each enclosing function hands the boundary predicate and
-    the names each binds through a literal `quote(..., safe="")`.
+def _uom_function_scopes(
+    root: ast.AST, prefix: str = ""
+) -> list[tuple[str, list[ast.AST]]]:
+    """Keep checks in their lexical function, never in a nested function's caller."""
+    scopes: list[tuple[str, list[ast.AST]]] = []
+    for child in ast.iter_child_nodes(root):
+        if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            qualified = f"{prefix}.{child.name}" if prefix else child.name
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                nodes: list[ast.AST] = []
+                pending: list[ast.AST] = list(child.body)
+                while pending:
+                    node = pending.pop()
+                    if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                        continue
+                    nodes.append(node)
+                    pending.extend(ast.iter_child_nodes(node))
+                scopes.append((qualified, nodes))
+            scopes.extend(_uom_function_scopes(child, qualified))
+        else:
+            scopes.extend(_uom_function_scopes(child, prefix))
+    return scopes
 
-    One parse and one walk for all three, because the guard tests need them
-    paired: deriving the others per interpolation reparsed the whole module once
-    per site.
+
+def _uom_segment_expressions(node: ast.JoinedStr) -> list[ast.expr]:
+    """Recognize literal, absolute-base and console-child prefixes used here."""
+    start = None
+    for index, part in enumerate(node.values):
+        if (
+            isinstance(part, ast.Constant)
+            and isinstance(part.value, str)
+            and part.value.startswith("/rest/api/uom/")
+        ):
+            if index == 0 or (
+                index == 1
+                and isinstance(node.values[0], ast.FormattedValue)
+                and ast.unparse(node.values[0].value) == "self._rest_base_url"
+            ):
+                start = index + 1
+            break
+    if start is None and node.values:
+        first = node.values[0]
+        if (
+            isinstance(first, ast.FormattedValue)
+            and isinstance(first.value, ast.Call)
+            and isinstance(first.value.func, ast.Attribute)
+            and ast.unparse(first.value.func) == "self._child_path"
+        ):
+            start = 1
+    if start is None:
+        return []
+    return [
+        part.value for part in node.values[start:] if isinstance(part, ast.FormattedValue)
+    ]
+
+
+def _uom_path_sites() -> tuple[
+    list[tuple[str, str, str, str]],
+    dict[tuple[str, str], set[str]],
+    dict[tuple[str, str], set[str]],
+    set[int],
+]:
+    """Inventory current f-string forms without importing discovered modules.
+
+    Usage labels describe construction sites, not whole-program dataflow.
+    Aliases, arbitrary helper returns, percent/format strings and guard dominance
+    remain outside this bounded inventory (ADR 0159).
     """
     from hmc_mcp.client import core as client_module
 
-    tree = ast.parse(inspect.getsource(client_module))
-    interpolations: list[tuple[str, str]] = []
-    guarded: dict[str, set[str]] = {}
-    quote_bound: dict[str, set[str]] = {}
-    for owner in ast.walk(tree):
-        if not isinstance(owner, ast.AsyncFunctionDef | ast.FunctionDef):
-            continue
-        for node in ast.walk(owner):
-            if _is_boundary_check(node):
-                guarded.setdefault(owner.name, set()).add(node.args[1].id)
-                continue
-            if (bound := _is_quote_binding(node)) is not None:
-                quote_bound.setdefault(owner.name, set()).add(bound)
-                continue
-            if not isinstance(node, ast.JoinedStr) or not node.values:
-                continue
-            head = node.values[0]
-            if not isinstance(head, ast.Constant) or not str(head.value).startswith(
-                "/rest/api/uom/"
-            ):
-                continue
-            interpolations.extend(
-                (owner.name, part.value.id)
-                for part in node.values
-                if isinstance(part, ast.FormattedValue)
-                and isinstance(part.value, ast.Name)
-            )
-    return interpolations, guarded, quote_bound
+    package = Path(client_module.__file__).parent
+    interpolations: list[tuple[str, str, str, str]] = []
+    guarded: dict[tuple[str, str], set[str]] = {}
+    quote_bound: dict[tuple[str, str], set[str]] = {}
+    # Inline quote evidence belongs to the one interpolation it wraps. A raw
+    # occurrence of the same name stays unbound even in the same function.
+    inline_encoded: set[int] = set()
+    for source in sorted(package.rglob("*.py")):
+        module = source.relative_to(package).with_suffix("").as_posix()
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        for function, nodes in _uom_function_scopes(tree):
+            owner = (module, function)
+            usages = {}
+            for node in nodes:
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.JoinedStr):
+                    targets = {ast.unparse(target) for target in node.targets}
+                    if module == "client_storage" and "expected_link" in targets:
+                        usages[id(node.value)] = "comparison"
+                    elif module == "client_network" and "switch_link" in targets:
+                        usages[id(node.value)] = "document-link"
+                if _is_boundary_check(node):
+                    guarded.setdefault(owner, set()).add(ast.unparse(cast(ast.Call, node).args[1]))
+                if (bound := _is_quote_binding(node)) is not None:
+                    quote_bound.setdefault(owner, set()).add(bound)
+            for node in nodes:
+                if not isinstance(node, ast.JoinedStr):
+                    continue
+                usage = usages.get(id(node), "request")
+                if owner == ("client_storage", "StorageMixin.get_lpar_link"):
+                    usage = "document-link"
+                for expression in _uom_segment_expressions(node):
+                    # Inline encoding is per-expression evidence; it never
+                    # certifies a separate raw interpolation of the same name.
+                    binding = ast.Assign(targets=[ast.Name(id="inline")], value=expression)
+                    if isinstance(expression, ast.Call) and _is_quote_binding(binding) is not None:
+                        inline_encoded.add(len(interpolations))
+                        name = ast.unparse(expression.args[0])
+                    else:
+                        name = ast.unparse(expression)
+                    interpolations.append((module, function, name, usage))
+    return interpolations, guarded, quote_bound, inline_encoded
 
 
 def test_every_uom_type_interpolation_is_guarded():
-    """An f-string literally prefixed `/rest/api/uom/` cannot interpolate a type
-    without its own boundary check.
-
-    Site-directed for a reason: an inventory that only checks *which names* are
-    interpolated says nothing about whether the site validates them, so a new
-    method building `f"/rest/api/uom/{resource_type}/count"` with no predicate
-    call would pass such a check. Here it fails until it carries the call
-    (ADR 0143).
-
-    **What this does not cover, stated rather than implied.** The walk matches
-    an `ast.JoinedStr` whose first part is a constant beginning
-    `/rest/api/uom/`. Concatenation, `%`, `.format`, a prefix held in a
-    variable, and a path assembled in two steps all build the same request and
-    are invisible here. Closing that would mean an AST guard against every way
-    of building a string -- more machinery than the risk removes, on a module
-    where every existing site is an f-string. This test raises the cost of
-    adding an unguarded site in the idiom the module actually uses; it is not a
-    proof that none can exist.
-    """
-    interpolations, guarded, _ = _uom_path_sites()
+    """A type segment must carry its check in the same module and lexical scope."""
+    interpolations, guarded, _, _ = _uom_path_sites()
     unguarded = sorted(
         {
-            (function, name)
-            for function, name in interpolations
+            (module, function, name)
+            for module, function, name, _ in interpolations
             if name in _TYPE_SEGMENT_ARGUMENTS
-            and name not in guarded.get(function, set())
+            and name not in guarded.get((module, function), set())
         }
     )
     assert not unguarded, f"uom type segments interpolated without a check: {unguarded}"
@@ -930,41 +1049,146 @@ def test_every_uom_path_interpolation_is_a_known_argument():
     catches a segment nobody has classified, that one catches a classified
     segment nobody guarded.
     """
-    interpolations, _, _ = _uom_path_sites()
-    unknown = sorted({name for _, name in interpolations} - _KNOWN_UOM_SEGMENT_ARGUMENTS)
+    interpolations, _, _, _ = _uom_path_sites()
+    unknown = sorted(
+        (module, function, name, usage)
+        for module, function, name, usage in interpolations
+        if not (
+            module == "core" and name in _KNOWN_UOM_SEGMENT_ARGUMENTS
+            or (module, function, name, usage) in _CLASSIFIED_UOM_SITES
+        )
+    )
     assert not unknown, f"unclassified uom path segment arguments: {unknown}"
 
 
+def test_uom_path_inventory_detects_an_unclassified_module(tmp_path, monkeypatch):
+    from hmc_mcp.client import core as client_module
+
+    core_path = tmp_path / "core.py"
+    core_path.write_text("# Synthetic package root.\n", encoding="utf-8")
+    (tmp_path / "client_extra.py").write_text(
+        'async def example(new_segment):\n'
+        '    return f"/rest/api/uom/Example/{new_segment}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(client_module, "__file__", str(core_path))
+    with pytest.raises(AssertionError, match="client_extra.*example.*new_segment"):
+        test_every_uom_path_interpolation_is_a_known_argument()
+
+
+def test_uom_inventory_keeps_prefixed_composed_and_inline_segments(tmp_path, monkeypatch):
+    from hmc_mcp.client import core as client_module
+
+    core_path = tmp_path / "core.py"
+    core_path.write_text("", encoding="utf-8")
+    (tmp_path / "client_network.py").write_text(
+        'class NetworkMixin:\n'
+        '    def create_virtual_network(self, system_uuid, switch_uuid):\n'
+        '        switch_link = (f"{self._rest_base_url}/rest/api/uom/ManagedSystem/"\n'
+        '                       f"{system_uuid}/VirtualSwitch/{switch_uuid}")\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "client_users.py").write_text(
+        'class UsersMixin:\n'
+        '    def get_hmc_user(self, console_uuid, user_profile_uuid):\n'
+        '        profile_path_id = quote(user_profile_uuid, safe="")\n'
+        '        return f"{self._child_path(console_uuid, \'UserProfile\')}/{profile_path_id}"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "client_storage.py").write_text(
+        'def _filter_optical_mappings(lpar_uuid):\n'
+        '    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"\n',
+        encoding="utf-8",
+    )
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "inline.py").write_text(
+        'def example(system_uuid, data):\n'
+        '    return f"/rest/api/uom/ManagedSystem/{quote(system_uuid, safe=\'\')}/{data.id}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(client_module, "__file__", str(core_path))
+    sites, _, _, encoded = _uom_path_sites()
+    assert set(sites) == {
+        ("client_network", "NetworkMixin.create_virtual_network", "system_uuid", "document-link"),
+        ("client_network", "NetworkMixin.create_virtual_network", "switch_uuid", "document-link"),
+        ("client_users", "UsersMixin.get_hmc_user", "profile_path_id", "request"),
+        ("client_storage", "_filter_optical_mappings", "lpar_uuid", "comparison"),
+        ("nested/inline", "example", "system_uuid", "request"),
+        ("nested/inline", "example", "data.id", "request"),
+    }
+    assert {sites[index] for index in encoded} == {
+        ("nested/inline", "example", "system_uuid", "request")
+    }
+    test_every_encoded_uom_segment_is_quote_bound()
+
+
+def test_uom_inventory_cannot_borrow_another_functions_guards(tmp_path, monkeypatch):
+    from hmc_mcp.client import core as client_module
+
+    core_path = tmp_path / "core.py"
+    core_path.write_text(
+        'def same(resource_type):\n'
+        '    _reject_unknown_uom_type("resource_type", resource_type)\n'
+        '    return f"/rest/api/uom/{resource_type}"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "client_extra.py").write_text(
+        'class Guarded:\n'
+        '    def same(resource_type, value):\n'
+        '        _reject_unknown_uom_type("resource_type", resource_type)\n'
+        '        encoded_value = quote(value, safe="")\n'
+        '        return f"/rest/api/uom/{resource_type}/{encoded_value}"\n'
+        'class Unguarded:\n'
+        '    def same(resource_type, encoded_value):\n'
+        '        def nested():\n'
+        '            _reject_unknown_uom_type("resource_type", resource_type)\n'
+        '            encoded_value = quote(resource_type, safe="")\n'
+        '        return f"/rest/api/uom/{resource_type}/{encoded_value}"\n'
+        'def same(resource_type):\n'
+        '    return f"/rest/api/uom/{resource_type}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(client_module, "__file__", str(core_path))
+    with pytest.raises(AssertionError, match="client_extra.*Unguarded.same.*resource_type"):
+        test_every_uom_type_interpolation_is_guarded()
+    with pytest.raises(AssertionError, match="client_extra.*Unguarded.same.*encoded_value"):
+        test_every_encoded_uom_segment_is_quote_bound()
+
+
+def test_inline_encoding_cannot_certify_a_raw_sibling(tmp_path, monkeypatch):
+    from hmc_mcp.client import core as client_module
+
+    source = tmp_path / "core.py"
+    inline = (
+        'def example(encoded_value):\n'
+        '    first = f"/rest/api/uom/Example/{quote(encoded_value, safe=\'\')}"\n'
+    )
+    source.write_text(inline, encoding="utf-8")
+    monkeypatch.setattr(client_module, "__file__", str(source))
+    test_every_encoded_uom_segment_is_quote_bound()
+    source.write_text(
+        inline + '    second = f"/rest/api/uom/Example/{encoded_value}"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="core.*example.*encoded_value"):
+        test_every_encoded_uom_segment_is_quote_bound()
+
+
 def test_every_encoded_uom_segment_is_quote_bound():
-    """A segment classed as encoded must be encoded at its own site.
+    """Encoded segments retain literal quote binding in their own lexical scope.
 
-    The third companion, and the one that stops the classification above from
-    certifying itself. `_KNOWN_UOM_SEGMENT_ARGUMENTS` says a name has a rule;
-    this says the rule is present in the function that interpolates it, so
-    `_ENCODED_SEGMENT_ARGUMENTS` cannot be satisfied by naming a local
-    `encoded_anything`. Issue #818 is what that costs: `property_name` sat in
-    the inventory with no rule behind it, and the unclassified-segment assertion
-    passed for exactly the case its docstring describes catching (ADR 0146).
-
-    **What this does not cover, stated rather than implied.** It matches a
-    literal `<local> = quote(<some name>, safe="")` assignment in the same
-    function — the argument is not tied to the enclosing function's parameter, so
-    `encoded = quote(unrelated, safe="")` would satisfy it — and only where the
-    `/rest/api/uom/` f-string interpolates a bare name.
-    Concatenation, `.format`, an interpolated attribute or subscript, a
-    differently-spelled encoder, a qualified `module.quote(...)` call, and a name
-    rebound between the assignment and the f-string are all invisible here — the
-    same stated limits the type-segment and `?group=` walks carry. This raises
-    the cost of adding an unencoded site in the idiom the module uses; it is not
-    a proof that none can exist.
+    This checks the existing binding idiom, not dominance or later rebinding.
+    Inline calls are recognized by the same quote predicate as assignments.
     """
-    interpolations, _, quote_bound = _uom_path_sites()
+    interpolations, _, quote_bound, inline_encoded = _uom_path_sites()
     unbound = sorted(
         {
-            (function, name)
-            for function, name in interpolations
-            if name in _ENCODED_SEGMENT_ARGUMENTS
-            and name not in quote_bound.get(function, set())
+            (module, function, name)
+            for index, (module, function, name, _) in enumerate(interpolations)
+            if name in _ENCODED_SEGMENT_ARGUMENTS | {"console_path_id", "profile_path_id"}
+            and name not in quote_bound.get((module, function), set())
+            and index not in inline_encoded
         }
     )
     assert not unbound, f"encoded uom segments interpolated unbound: {unbound}"
