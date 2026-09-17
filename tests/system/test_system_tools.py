@@ -357,8 +357,8 @@ def test_list_resources(monkeypatch, mock_hmc):
 # hmc_capacity_report + hmc_find_placement
 # ---------------------------------------------------------------------- #
 
-SYS_UUID_A = "sys-cap-0001"
-SYS_UUID_B = "sys-cap-0002"
+SYS_UUID_A = "00000000-0000-0000-0000-00000000000a"
+SYS_UUID_B = "00000000-0000-0000-0000-00000000000b"
 
 
 def _sys_feed(*entries: str) -> str:

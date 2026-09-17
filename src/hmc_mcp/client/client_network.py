@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..documents import build_virtual_network_document
-from .client_contracts import NetworkClient
+from .client_contracts import NetworkClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
 
@@ -19,6 +19,7 @@ class NetworkMixin:
         self: NetworkClient, system_uuid: str
     ) -> list[dict[str, Any]]:
         """List VirtualSwitches on a managed system (names, IDs, mode)."""
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualSwitch"
         xml = await self._get(path, "VirtualSwitch")
         return _parse_feed(xml, path) if xml else []
@@ -27,6 +28,7 @@ class NetworkMixin:
         self: NetworkClient, system_uuid: str
     ) -> list[dict[str, Any]]:
         """List Virtual Networks (VLANs) on a managed system."""
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork"
         xml = await self._get(path, "VirtualNetwork")
         return _parse_feed(xml, path) if xml else []
@@ -35,6 +37,7 @@ class NetworkMixin:
         self: NetworkClient, system_uuid: str
     ) -> list[dict[str, Any]]:
         """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/NetworkBridge"
         xml = await self._get(path, "NetworkBridge")
         return _parse_feed(xml, path) if xml else []
@@ -54,6 +57,7 @@ class NetworkMixin:
         switch_uuid optionally provides the AssociatedSwitch link.
         """
 
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         switch_link = None
         if switch_uuid:
             switch_link = (
@@ -74,6 +78,8 @@ class NetworkMixin:
         self: NetworkClient, system_uuid: str, network_uuid: str
     ) -> None:
         """Delete a Virtual Network from a managed system."""
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
+        _reject_non_uuid_path_argument("network_uuid", network_uuid)
         await self._delete(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork/{network_uuid}"
         )

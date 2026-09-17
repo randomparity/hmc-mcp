@@ -67,6 +67,104 @@ def _recording_client() -> tuple[HMCClient, list[str]]:
     return client, requested
 
 
+# Each newly guarded request builder, including both delete-network identities.
+# Arguments marked UUID_B are varied independently; payload names stay ordinary.
+_NEW_UUID_PATH_CALLS = (
+    ("create_logical_unit", (UUID_B, "disk", 1), "cluster_uuid", 0, f"Cluster/{UUID_B}/do/CreateLogicalUnit"),
+    ("delete_logical_unit", (UUID_B, "disk"), "cluster_uuid", 0, f"Cluster/{UUID_B}/do/DeleteLogicalUnit"),
+    ("list_logical_partitions", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/LogicalPartition"),
+    ("create_logical_partition", (UUID_B, "<LogicalPartition/>"), "system_uuid", 0, f"ManagedSystem/{UUID_B}/LogicalPartition"),
+    ("modify_logical_partition", (UUID_B, "<LogicalPartition/>"), "lpar_uuid", 0, f"LogicalPartition/{UUID_B}"),
+    ("delete_logical_partition", (UUID_B,), "lpar_uuid", 0, f"LogicalPartition/{UUID_B}"),
+    ("_lpar_job", (UUID_B, "Migrate", "<JobRequest/>"), "lpar_uuid", 0, f"LogicalPartition/{UUID_B}/do/Migrate"),
+    ("list_virtual_switches", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualSwitch"),
+    ("list_virtual_networks", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualNetwork"),
+    ("list_network_bridges", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/NetworkBridge"),
+    ("create_virtual_network", (UUID_B, "network", 2, 0, "switch"), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualNetwork"),
+    ("delete_virtual_network", (UUID_B, UUID_A), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualNetwork/{UUID_A}"),
+    ("delete_virtual_network", (UUID_A, UUID_B), "network_uuid", 1, f"ManagedSystem/{UUID_A}/VirtualNetwork/{UUID_B}"),
+    ("modify_managed_system", (UUID_B, "<ManagedSystem/>"), "system_uuid", 0, f"ManagedSystem/{UUID_B}"),
+    ("power_on_system", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/do/PowerOn"),
+    ("power_off_system", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/do/PowerOff"),
+    ("power_on_vios", (UUID_B,), "vios_uuid", 0, f"VirtualIOServer/{UUID_B}/do/PowerOn"),
+    ("power_off_vios", (UUID_B,), "vios_uuid", 0, f"VirtualIOServer/{UUID_B}/do/PowerOff"),
+    ("list_vios", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualIOServer"),
+    ("get_vios_storage_detail", (UUID_B,), "vios_uuid", 0, f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping&group=ViosFCMapping"),
+)
+
+
+@pytest.mark.parametrize("method,args,argument,position,suffix", _NEW_UUID_PATH_CALLS)
+def test_new_uuid_builders_refuse_ordinary_names_before_io(method, args, argument, position, suffix):
+    client, requested = _recording_client()
+    invalid = "ordinary-resource-name"
+    arguments = list(args)
+    arguments[position] = invalid
+    with pytest.raises(ValueError) as error:
+        asyncio.run(getattr(client, method)(*arguments))
+    assert argument in str(error.value)
+    assert invalid not in str(error.value)
+    assert requested == []
+
+
+@pytest.mark.parametrize("method,args,argument,position,suffix", _NEW_UUID_PATH_CALLS)
+def test_new_uuid_builders_preserve_mixed_case_paths(method, args, argument, position, suffix, monkeypatch):
+    client = _client()
+    requested = []
+    mixed = "aBcDeFaB-cDeF-CdEf-cDEF-AbCdEfABCdef"
+    arguments = list(args)
+    arguments[position] = mixed
+
+    async def record(path, *args, **kwargs):
+        requested.append(path)
+        return ""
+
+    for helper in ("_get", "_put", "_post", "_delete", "submit_job"):
+        monkeypatch.setattr(client, helper, record)
+    asyncio.run(getattr(client, method)(*arguments))
+    assert requested == ["/rest/api/uom/" + suffix.replace(UUID_B, mixed)]
+
+
+def test_lpar_document_link_refuses_an_ordinary_name_without_io():
+    client, requested = _recording_client()
+    with pytest.raises(ValueError) as error:
+        client.get_lpar_link("ordinary-partition-name")
+    assert "lpar_uuid" in str(error.value)
+    assert "ordinary-partition-name" not in str(error.value)
+    assert requested == []
+
+
+def test_lpar_document_link_preserves_mixed_case():
+    client = _client()
+    mixed = "aBcDeFaB-cDeF-CdEf-cDEF-AbCdEfABCdef"
+    assert client.get_lpar_link(mixed) == (
+        f"{client._rest_base_url}/rest/api/uom/LogicalPartition/{mixed}"
+    )
+
+
+@pytest.mark.parametrize("method,resource_type", [
+    ("list_logical_partitions", "LogicalPartition"), ("list_vios", "VirtualIOServer"),
+])
+@pytest.mark.parametrize("scope", [None, ""])
+def test_optional_uuid_scopes_still_allow_unscoped_lists(method, resource_type, scope, monkeypatch):
+    client = _client()
+    requested = []
+
+    async def record(path, *args, **kwargs):
+        requested.append(path)
+        return ""
+
+    monkeypatch.setattr(client, "_get", record)
+    asyncio.run(getattr(client, method)(scope))
+    assert requested == [f"/rest/api/uom/{resource_type}"]
+
+
+def test_lpm_operation_refusal_precedes_uuid_refusal():
+    client, requested = _recording_client()
+    with pytest.raises(ValueError, match="^LPM job operation must be one of: "):
+        asyncio.run(client._lpar_job("ordinary-partition-name", "Unlisted", "<JobRequest/>"))
+    assert requested == []
+
+
 # ---------------------------------------------------------------------------
 # The property that makes the guard necessary
 # ---------------------------------------------------------------------------
@@ -837,10 +935,18 @@ _KNOWN_UOM_SEGMENT_ARGUMENTS = (
 )
 
 
-# Concrete residual sites owned by #850. A row records inventory, not safety:
-# several storage/update sites already have UUID metadata, and console IDs are
-# already encoded and bounded. New functions cannot inherit these exceptions.
-_RESIDUAL_UOM_REQUEST_SITES = {
+# ADR 0160: the seven formerly residual classes have explicit rules. Site
+# membership below is inventory only; evidence is checked at each construction.
+_UOM_SEGMENT_POLICIES = {
+    "cluster_uuid": "uuid",
+    "lpar_uuid": "uuid",
+    "network_uuid": "uuid",
+    "system_uuid": "uuid",
+    "vg_uuid": "uuid",
+    "vios_uuid": "uuid",
+    "console_path_id": "bounded-quoted-console",
+}
+_UUID_UOM_REQUEST_SITES = {
     "client_cluster.ClusterMixin.create_logical_unit": "cluster_uuid",
     "client_cluster.ClusterMixin.delete_logical_unit": "cluster_uuid",
     "client_lpars.LparsMixin.create_logical_partition": "system_uuid",
@@ -877,20 +983,26 @@ _RESIDUAL_UOM_REQUEST_SITES = {
     "client_systems.SystemsMixin.power_on_system": "system_uuid",
     "client_systems.SystemsMixin.power_on_vios": "vios_uuid",
     "client_updates.UpdatesMixin.submit_platform_update": "system_uuid",
+}
+_CONSOLE_UOM_REQUEST_SITES = {
     "client_users.UsersMixin._child_path": "console_path_id",
     "client_users.UsersMixin.configure_remote_access": "console_path_id",
     "client_users.UsersMixin.get_remote_access": "console_path_id",
 }
-_CLASSIFIED_UOM_SITES = {
+_UUID_UOM_SITES = {
     (*owner.split(".", 1), name, "request")
-    for owner, names in _RESIDUAL_UOM_REQUEST_SITES.items()
+    for owner, names in _UUID_UOM_REQUEST_SITES.items()
     for name in names.split()
 } | {
-    # Document/comparison identities are also inventoried for #850, including
-    # switch_uuid newly exposed by the absolute network link (no policy here).
     ("client_network", "NetworkMixin.create_virtual_network", "system_uuid", "document-link"),
-    ("client_network", "NetworkMixin.create_virtual_network", "switch_uuid", "document-link"),
     ("client_storage", "StorageMixin.get_lpar_link", "lpar_uuid", "document-link"),
+}
+_CLASSIFIED_UOM_SITES = _UUID_UOM_SITES | {
+    (*owner.split(".", 1), name, "request")
+    for owner, name in _CONSOLE_UOM_REQUEST_SITES.items()
+} | {
+    # These document/comparison identities are classified, not UUID-governed.
+    ("client_network", "NetworkMixin.create_virtual_network", "switch_uuid", "document-link"),
     ("client_storage", "StorageMixin.list_storage_mappings", "lpar_uuid", "comparison"),
     ("client_storage", "_filter_optical_mappings", "lpar_uuid", "comparison"),
     # Existing enforcement remains separately asserted: ADRs 0143, 0151, 0157.
@@ -1026,6 +1138,246 @@ def _uom_path_sites() -> tuple[
                         name = ast.unparse(expression)
                     interpolations.append((module, function, name, usage))
     return interpolations, guarded, quote_bound, inline_encoded
+
+
+def _matching_argument_check(node: ast.AST, predicate: str, argument: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == predicate
+        and len(node.args) == 2
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == argument
+        and isinstance(node.args[1], ast.Name)
+        and node.args[1].id == argument
+    )
+
+
+def _mapped_path_arguments(node: ast.AST, path: ast.JoinedStr, bindings: set[str]) -> set[str]:
+    """Only literal metadata on an existing request helper receiving this path."""
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return set()
+    helpers = {"_get": 0, "_put": 0, "_post": 0, "_delete": 0,
+               "_request_with_uuid_path_arguments": 1}
+    position = helpers.get(node.func.attr)
+    if ast.unparse(node.func.value) != "self" or position is None or len(node.args) <= position:
+        return set()
+    destination = node.args[position]
+    if destination is not path and not (
+        isinstance(destination, ast.Name) and destination.id in bindings
+    ):
+        return set()
+    return {
+        key.value
+        for keyword in node.keywords
+        if keyword.arg == "uuid_path_arguments" and isinstance(keyword.value, ast.Dict)
+        for key, value in zip(keyword.value.keys, keyword.value.values)
+        if isinstance(key, ast.Constant) and isinstance(value, ast.Name)
+        and key.value == value.id
+    }
+
+
+def test_every_governed_uom_segment_has_policy_evidence():
+    """Classification never certifies a missing UUID check or console bound.
+
+    Recognizes current direct declarations, literal request metadata and the two
+    concrete storage closures; not aliases, dataflow or guard dominance.
+    """
+    from hmc_mcp.client import core as client_module
+
+    sites, _, _, _ = _uom_path_sites()
+    required = {
+        (module, function, name)
+        for module, function, name, usage in sites
+        if name in _UOM_SEGMENT_POLICIES and usage != "comparison"
+    }
+    # These dispatch closures capture one parent-built path. Never lend their
+    # direct checks, or another nested function's metadata, to the parent.
+    storage_dispatch_paths = {
+        "StorageMixin.delete_storage_mapping": "post_path",
+        "StorageMixin._post_vg_xml": "path",
+    }
+    missing = []
+    package = Path(client_module.__file__).parent
+    for source in sorted(package.rglob("*.py")):
+        module = source.relative_to(package).with_suffix("").as_posix()
+        scopes = dict(_uom_function_scopes(ast.parse(source.read_text(encoding="utf-8"))))
+        for function, nodes in scopes.items():
+            for path in nodes:
+                if not isinstance(path, ast.JoinedStr):
+                    continue
+                bindings = {
+                    target.id for node in nodes
+                    if isinstance(node, ast.Assign) and node.value is path
+                    for target in node.targets if isinstance(target, ast.Name)
+                }
+                mapped = set().union(*(
+                    _mapped_path_arguments(node, path, bindings) for node in nodes
+                ))
+                capture = storage_dispatch_paths.get(function) if module == "client_storage" else None
+                if capture in bindings:
+                    mapped.update(set().union(*(
+                        _mapped_path_arguments(node, path, {capture})
+                        for node in scopes.get(f"{function}.dispatch", [])
+                    )))
+                for expression in _uom_segment_expressions(path):
+                    # A canonical identity is never encoded data: an
+                    # inline-quoted UUID segment is unclassifiable, and the
+                    # failure must name its plain argument, not the call.
+                    binding = ast.Assign(targets=[ast.Name(id="inline")], value=expression)
+                    if isinstance(expression, ast.Call) and _is_quote_binding(binding) is not None:
+                        name = ast.unparse(expression.args[0])
+                    else:
+                        name = ast.unparse(expression)
+                    site = (module, function, name)
+                    if site not in required:
+                        continue
+                    if _UOM_SEGMENT_POLICIES[name] == "uuid":
+                        enforced = name in mapped or any(
+                            _matching_argument_check(node, "_reject_non_uuid_path_argument", name)
+                            for node in nodes
+                        )
+                    else:
+                        enforced = any(
+                            _is_quote_binding(node) == name
+                            and ast.unparse(cast(ast.Call, cast(ast.Assign, node).value).args[0]) == "console_uuid"
+                            for node in nodes
+                        ) and any(
+                            _matching_argument_check(node, "_reject_over_long_path_value", "console_uuid")
+                            for node in nodes
+                        )
+                    if not enforced:
+                        missing.append(site)
+    assert not missing, f"uom segments missing policy evidence: {sorted(set(missing))}"
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        '_reject_non_uuid_path_argument("system_uuid", system_uuid)',
+        'self._get(path, "ManagedSystem", uuid_path_arguments={"system_uuid": system_uuid})',
+    ],
+    ids=["direct", "mapped"],
+)
+def test_uuid_inventory_detects_missing_site_evidence(tmp_path, monkeypatch, evidence):
+    from hmc_mcp.client import core as client_module
+
+    core_path = tmp_path / "core.py"
+    core_path.write_text("", encoding="utf-8")
+    source = tmp_path / "client_extra.py"
+    prefix = (
+        'def example(self, system_uuid):\n'
+        '    path = f"/rest/api/uom/ManagedSystem/{system_uuid}"\n'
+    )
+    source.write_text(prefix + f"    {evidence}\n", encoding="utf-8")
+    monkeypatch.setattr(client_module, "__file__", str(core_path))
+    test_every_governed_uom_segment_has_policy_evidence()
+    # The same name in another function or a nested function cannot certify it.
+    source.write_text(
+        prefix + '    def nested():\n' + f"        {evidence}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="client_extra.*example.*system_uuid"):
+        test_every_governed_uom_segment_has_policy_evidence()
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        '_reject_non_uuid_path_argument("other_uuid", system_uuid)',
+        '_reject_non_uuid_path_argument("system_uuid", other_uuid)',
+        'self._get(path, "ManagedSystem", uuid_path_arguments={"system_uuid": other_uuid})',
+        'self._get(path, "ManagedSystem", uuid_path_arguments=metadata)',
+        'self._get(other_path, "ManagedSystem", uuid_path_arguments={"system_uuid": system_uuid})',
+    ],
+)
+def test_uuid_inventory_requires_matching_argument_and_destination(tmp_path, monkeypatch, evidence):
+    from hmc_mcp.client import core as client_module
+
+    source = tmp_path / "core.py"
+    source.write_text(
+        'def example(self, system_uuid, other_uuid, other_path, metadata):\n'
+        '    path = f"/rest/api/uom/ManagedSystem/{system_uuid}"\n'
+        f'    {evidence}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(client_module, "__file__", str(source))
+    with pytest.raises(AssertionError, match="core.*example.*system_uuid"):
+        test_every_governed_uom_segment_has_policy_evidence()
+
+
+@pytest.mark.parametrize("missing", ["bound", "quote"])
+def test_console_inventory_requires_its_own_bound_and_quote(tmp_path, monkeypatch, missing):
+    from hmc_mcp.client import core as client_module
+
+    source = tmp_path / "core.py"
+    evidence = {
+        "bound": '    _reject_over_long_path_value("console_uuid", console_uuid)\n',
+        "quote": '    console_path_id = quote(console_uuid, safe="")\n',
+    }
+    prefix = 'def example(console_uuid, console_path_id):\n'
+    path = '    return f"/rest/api/uom/ManagementConsole/{console_path_id}"\n'
+    source.write_text(prefix + "".join(evidence.values()) + path, encoding="utf-8")
+    monkeypatch.setattr(client_module, "__file__", str(source))
+    test_every_governed_uom_segment_has_policy_evidence()
+    source.write_text(
+        prefix + "".join(value for key, value in evidence.items() if key != missing)
+        + '    def nested():\n    ' + evidence[missing] + path,
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="core.*example.*console_path_id"):
+        test_every_governed_uom_segment_has_policy_evidence()
+
+
+@pytest.mark.parametrize("function, binding", [
+    ("delete_storage_mapping", "post_path"), ("_post_vg_xml", "path"),
+])
+def test_storage_dispatch_metadata_certifies_only_its_captured_path(
+    tmp_path, monkeypatch, function, binding
+):
+    from hmc_mcp.client import core as client_module
+
+    core_path = tmp_path / "core.py"
+    core_path.write_text("", encoding="utf-8")
+    source = tmp_path / "client_storage.py"
+    prefix = (
+        'class StorageMixin:\n'
+        f'    def {function}(self, vios_uuid):\n'
+        f'        {binding} = f"/rest/api/uom/VirtualIOServer/{{vios_uuid}}"\n'
+        '        async def dispatch():\n'
+    )
+    metadata = (
+        f'            await self._request_with_uuid_path_arguments("POST", {binding}, '
+        'uuid_path_arguments={"vios_uuid": vios_uuid})\n'
+    )
+    source.write_text(prefix + metadata, encoding="utf-8")
+    monkeypatch.setattr(client_module, "__file__", str(core_path))
+    test_every_governed_uom_segment_has_policy_evidence()
+    source.write_text(prefix + '            pass\n', encoding="utf-8")
+    with pytest.raises(AssertionError, match=f"client_storage.*{function}.*vios_uuid"):
+        test_every_governed_uom_segment_has_policy_evidence()
+
+
+def test_an_inline_quoted_uuid_identity_still_requires_its_check(
+    tmp_path, monkeypatch
+):
+    """Encoding a canonical identity does not satisfy its UUID policy.
+
+    The inventory normalizes inline quote forms to their argument, so this
+    synthetic site is classified as `system_uuid` and must still carry the
+    canonical check — encoding is not a supported identity rule (ADR 0160).
+    """
+    from hmc_mcp.client import core as client_module
+
+    source = tmp_path / "core.py"
+    source.write_text(
+        'def example(self, system_uuid):\n'
+        '    path = f"/rest/api/uom/ManagedSystem/{quote(system_uuid, safe=\'\')}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(client_module, "__file__", str(source))
+    with pytest.raises(AssertionError, match="core.*example.*system_uuid"):
+        test_every_governed_uom_segment_has_policy_evidence()
 
 
 def test_every_uom_type_interpolation_is_guarded():

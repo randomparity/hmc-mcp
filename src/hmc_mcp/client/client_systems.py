@@ -15,7 +15,7 @@ from ..jobs import (
     power_on_system_job,
     power_on_vios_job,
 )
-from .client_contracts import SystemsClient
+from .client_contracts import SystemsClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
@@ -195,6 +195,7 @@ class SystemsMixin:
         policy, pending memory region size, huge pages, and mirroring mode.
         See documents.build_managed_system_document for the document builder.
         """
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}"
         xml = await self._post(path, system_xml, resource_type="ManagedSystem")
         entries = _parse_feed(xml, path) if xml else []
@@ -206,6 +207,7 @@ class SystemsMixin:
     ) -> dict[str, Any] | None:
         """Power on a managed system (PowerOn job)."""
 
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         return await self.submit_job(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOn",
             power_on_system_job(),
@@ -216,6 +218,7 @@ class SystemsMixin:
     ) -> dict[str, Any] | None:
         """Power off a managed system (PowerOff job; immediate skips graceful shutdown)."""
 
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         return await self.submit_job(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOff",
             power_off_system_job(immediate),
@@ -266,6 +269,7 @@ class SystemsMixin:
     ) -> dict[str, Any] | None:
         """Power on a VIOS (PowerOn job)."""
 
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         return await self.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOn", power_on_vios_job()
         )
@@ -275,6 +279,7 @@ class SystemsMixin:
     ) -> dict[str, Any] | None:
         """Power off a VIOS (PowerOff job; immediate skips graceful shutdown)."""
 
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         return await self.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOff",
             power_off_vios_job(immediate),
@@ -284,6 +289,7 @@ class SystemsMixin:
         self: SystemsClient, system_uuid: str | None = None
     ) -> list[dict[str, Any]]:
         if system_uuid:
+            _reject_non_uuid_path_argument("system_uuid", system_uuid)
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
             xml = await self._get(path, "VirtualIOServer")
             return _parse_feed(xml, path) if xml else []
@@ -297,6 +303,7 @@ class SystemsMixin:
         Requests the documented ViosSCSIMapping and ViosFCMapping groups and
         returns the parsed entry with both mapping collections populated.
         """
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = (
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
             "?group=ViosSCSIMapping&group=ViosFCMapping"

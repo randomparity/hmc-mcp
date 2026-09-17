@@ -28,7 +28,7 @@ from ..documents import (
     build_vscsi_mapping_document,
 )
 from ..errors import HMCError
-from .client_contracts import StorageClient
+from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
 # HMC UOM namespace — used in read-modify-write VolumeGroup operations.
@@ -228,6 +228,7 @@ class StorageMixin:
     # Virtual storage (children of VirtualIOServer)
     def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         return f"{self._rest_base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
 
     async def _reconcile_storage_mutation(

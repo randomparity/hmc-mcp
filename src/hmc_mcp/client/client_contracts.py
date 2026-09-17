@@ -13,6 +13,7 @@ from xml.etree.ElementTree import Element  # nosec B405
 import httpx
 
 from ..config import HMCConfig
+from ..resource_identity import is_uuid
 
 AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
 AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
@@ -25,6 +26,12 @@ AdapterType = Literal[
     "VirtualNICDedicated",
 ]
 ADAPTER_TYPES = frozenset(get_args(AdapterType))
+
+
+def _reject_non_uuid_path_argument(argument: str, value: str) -> None:
+    """Refuse a path identity outside the canonical UUID shape."""
+    if not is_uuid(value):
+        raise ValueError(f"{argument} must be a UUID")
 
 
 # The HMC's own type-name grammar. Every `/rest/api/uom/` type segment in the

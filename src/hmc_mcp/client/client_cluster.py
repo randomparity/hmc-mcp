@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..jobs import DeviceType, LuType, create_logical_unit_job, delete_logical_unit_job
-from .client_contracts import ClusterClient
+from .client_contracts import ClusterClient, _reject_non_uuid_path_argument
 
 
 class ClusterMixin:
@@ -46,6 +46,7 @@ class ClusterMixin:
         contains the new LU's UDID in LUCreated).
         """
 
+        _reject_non_uuid_path_argument("cluster_uuid", cluster_uuid)
         job_xml = create_logical_unit_job(
             lu_name, lu_size_gib, lu_type, device_type, cloned_from
         )
@@ -58,6 +59,7 @@ class ClusterMixin:
     ) -> dict[str, Any] | None:
         """Submit a DeleteLogicalUnit job against a Cluster/SSP."""
 
+        _reject_non_uuid_path_argument("cluster_uuid", cluster_uuid)
         job_xml = delete_logical_unit_job(lu_udid)
         return await self.submit_job(
             f"/rest/api/uom/Cluster/{cluster_uuid}/do/DeleteLogicalUnit", job_xml

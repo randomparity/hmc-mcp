@@ -26,10 +26,13 @@ from ..documents import (
 )
 from ..errors import HMCError, HMCTransportError
 from ..jobs import TERMINAL_JOB_STATUSES
-from ..resource_identity import is_uuid
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
-from .client_contracts import _reject_over_long_path_value, _reject_unknown_uom_type
+from .client_contracts import (
+    _reject_non_uuid_path_argument,
+    _reject_over_long_path_value,
+    _reject_unknown_uom_type,
+)
 from .client_lpars import LparsMixin
 from .client_lpm import LpmMixin
 from .client_network import NetworkMixin
@@ -593,8 +596,7 @@ class HMCClient(
     ) -> httpx.Response:
         """Validate UUID-only path arguments before entering the transport."""
         for argument, value in uuid_path_arguments.items():
-            if not is_uuid(value):
-                raise ValueError(f"{argument} must be a UUID")
+            _reject_non_uuid_path_argument(argument, value)
         return await self._request(method, path, **kwargs)
 
     def _uom_headers(

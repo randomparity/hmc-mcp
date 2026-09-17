@@ -797,11 +797,11 @@ async def test_list_logical_partitions(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_lpars_for_system(mock_hmc):
-    mock_hmc.get("/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition").mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=LPAR_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        lpars = await hmc.list_logical_partitions("sys-uuid")
+        lpars = await hmc.list_logical_partitions(_PARENT_UUID)
     assert len(lpars) == 2
 
 
@@ -1154,7 +1154,7 @@ CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 @pytest.mark.asyncio
 async def test_create_logical_partition(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition").mock(
+    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=CREATED_LPAR)
     )
     from hmc_mcp.documents import LparResources, build_lpar_document
@@ -1170,7 +1170,7 @@ async def test_create_logical_partition(mock_hmc):
         ),
     )
     async with HMCClient(make_config()) as hmc:
-        created = await hmc.create_logical_partition("sys-uuid", xml)
+        created = await hmc.create_logical_partition(_PARENT_UUID, xml)
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "newlpar" in body and "4096" in body
@@ -1375,12 +1375,12 @@ async def test_map_storage_to_lpar(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         await hmc.map_storage_to_lpar(
-            "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", "lpar-uuid"
+            "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", _PARENT_UUID
         )
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body
-    assert "LogicalPartition/lpar-uuid" in body
+    assert f"LogicalPartition/{_PARENT_UUID}" in body
 
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1425,10 +1425,10 @@ async def test_list_clusters(mock_hmc):
 @pytest.mark.asyncio
 async def test_create_logical_unit(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/Cluster/cluster-uuid/do/CreateLogicalUnit"
+        f"/rest/api/uom/Cluster/{_PARENT_UUID}/do/CreateLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        job = await hmc.create_logical_unit("cluster-uuid", "newLU", 18)
+        job = await hmc.create_logical_unit(_PARENT_UUID, "newLU", 18)
     body = route.calls.last.request.content.decode()
     assert "CreateLogicalUnit" in body and "newLU" in body and ">18<" in body
     assert job is not None and job["Resource"]["JobID"] == "12345"
@@ -1437,10 +1437,10 @@ async def test_create_logical_unit(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_logical_unit(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/Cluster/cluster-uuid/do/DeleteLogicalUnit"
+        f"/rest/api/uom/Cluster/{_PARENT_UUID}/do/DeleteLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_logical_unit("cluster-uuid", "udid-9")
+        await hmc.delete_logical_unit(_PARENT_UUID, "udid-9")
     body = route.calls.last.request.content.decode()
     assert "DeleteLogicalUnit" in body and "udid-9" in body
 
