@@ -16,7 +16,7 @@ from ..jobs import (
     migrate_validate_lpar_job,
     remote_restart_lpar_job,
 )
-from .client_contracts import LpmClient
+from .client_contracts import LpmClient, _reject_non_uuid_path_argument
 
 # The LPM job operations this client submits, and the whole of the namespace
 # `_lpar_job` accepts. Membership rather than a character grammar, because unlike
@@ -35,6 +35,7 @@ class LpmMixin:
         if operation not in _LPAR_JOB_OPERATIONS:
             allowed = ", ".join(sorted(_LPAR_JOB_OPERATIONS))
             raise ValueError(f"LPM job operation must be one of: {allowed}")
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
         )

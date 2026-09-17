@@ -7,13 +7,14 @@ from conftest import make_config
 from hmc_mcp.client.core import HMCClient
 
 BASE = "https://hmc.test"
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 
 # Minimal VIOS mapping entry with a vSCSI server mapping and an NPIV port mapping.
 VIOS_STORAGE_DETAIL_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vios-uuid-1</id>
+  <id>urn:uuid:{VIOS_UUID}</id>
   <title>VirtualIOServer:vios1</title>
-  <link rel="SELF" href="{BASE}/rest/api/uom/VirtualIOServer/vios-uuid-1"/>
+  <link rel="SELF" href="{BASE}/rest/api/uom/VirtualIOServer/{VIOS_UUID}"/>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>vios1</PartitionName>
@@ -49,16 +50,16 @@ VIOS_STORAGE_DETAIL_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone=
 async def test_get_vios_storage_detail(mock_hmc):
     """get_vios_storage_detail requests both documented mapping groups."""
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/vios-uuid-1",
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}",
         params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
     ).mock(return_value=httpx.Response(200, text=VIOS_STORAGE_DETAIL_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_vios_storage_detail("vios-uuid-1")
+        result = await hmc.get_vios_storage_detail(VIOS_UUID)
 
     assert route.called
     assert result is not None
-    assert result["UUID"] == "vios-uuid-1"
+    assert result["UUID"] == VIOS_UUID
     resource = result["Resource"]
     assert resource["PartitionName"] == "vios1"
     # vSCSI mapping present
@@ -75,11 +76,11 @@ async def test_get_vios_storage_detail(mock_hmc):
 async def test_get_vios_storage_detail_not_found(mock_hmc):
     """get_vios_storage_detail returns None on 204 (empty)."""
     mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/missing-uuid",
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}",
         params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_vios_storage_detail("missing-uuid")
+        result = await hmc.get_vios_storage_detail(VIOS_UUID)
 
     assert result is None
