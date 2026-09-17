@@ -992,6 +992,52 @@ async def test_list_managed_systems_resolves_serializable_systems(
 
 
 @pytest.mark.asyncio
+async def test_list_managed_systems_fallback_warns_on_skipped_names(mock_hmc, caplog):
+    firmware_error = HMCError(
+        "GET failed: Nested path contains null property", status_code=500
+    )
+    found = {"UUID": "sys-uuid-1", "Resource": {"SystemName": "sys1"}}
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"UUID": "sys-uuid-2", "SystemName": "duplicate"},
+                {"UUID": "sys-uuid-4", "SystemName": "unavailable"},
+                {"UUID": "sys-uuid-5", "SystemName": "missing"},
+                {"UUID": "sys-uuid-1", "SystemName": "sys1"},
+            ],
+        )
+    )
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_uom = AsyncMock(side_effect=firmware_error)
+        hmc.search_uom = AsyncMock(
+            side_effect=[
+                [
+                    {"UUID": "sys-uuid-2", "Resource": {"SystemName": "duplicate"}},
+                    {"UUID": "sys-uuid-3", "Resource": {"SystemName": "duplicate"}},
+                ],
+                HMCError("resolution unavailable", status_code=503),
+                [],
+                [found],
+            ]
+        )
+        with caplog.at_level(logging.WARNING, logger="hmc_mcp.client.client_systems"):
+            systems = await hmc.list_managed_systems()
+
+    assert systems == [found]
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "hmc_mcp.client.client_systems"
+        and record.levelno == logging.WARNING
+    ]
+    assert len(messages) == 3
+    assert "duplicate" in messages[0] and "Ambiguous" in messages[0]
+    assert "unavailable" in messages[1] and "resolution unavailable" in messages[1]
+    assert "missing" in messages[2] and "not found" in messages[2]
+
+
+@pytest.mark.asyncio
 async def test_list_managed_systems_fallback_quick_all_fails_raises_actionable_error(
     mock_hmc,
 ):
