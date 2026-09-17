@@ -50,6 +50,8 @@ from ...ssh.transport import HMCCLIError
 
 _logger = logging.getLogger(__name__)
 
+_LPAR_POWER_OPERATIONS = frozenset({"PowerOn", "PowerOff"})
+
 ProcessorCompatibilityMode = Literal[
     "default",
     "POWER5",
@@ -493,6 +495,9 @@ async def power_lpar(
                 },
             )
     operation = "PowerOn" if power_on else "PowerOff"
+    if operation not in _LPAR_POWER_OPERATIONS:
+        allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))
+        raise ValueError(f"LPAR power job operation must be one of: {allowed}")
     document = (
         power_on_lpar_job() if power_on else power_off_lpar_job(immediate=immediate)
     )
