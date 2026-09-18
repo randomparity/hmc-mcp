@@ -737,37 +737,109 @@ def test_base64_round_trip_preserves_raw_bytes():
     assert base64.b64decode(encoded) == raw
 
 
-@pytest.mark.parametrize(
-    ("system_selector", "lpar_selector", "system_name", "lpar_name"),
-    [
-        ("system-a", "aix-db", "system-a", "aix-db"),
-        (
-            "11111111-1111-1111-1111-111111111111",
-            "22222222-2222-2222-2222-222222222222",
-            "resolved-system",
-            "resolved-lpar",
-        ),
-    ],
-)
-def test_capture_tool_resolves_identity_and_forwards_bounds(
-    system_selector: str,
-    lpar_selector: str,
-    system_name: str,
-    lpar_name: str,
-):
+@pytest.mark.asyncio
+async def test_capture_lpar_console_by_selector_resolves_names():
+    from hmc_mcp.operations.lpar import console as lpar_console
+
+    client = MagicMock()
+    resolve_system_uuid = AsyncMock(return_value="system-uuid")
+    resolve_lpar_uuid = AsyncMock(return_value="lpar-uuid")
+    resolve_system_name = AsyncMock()
+    resolve_lpar_name = AsyncMock()
+    capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
+
+    with (
+        patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
+        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
+        patch.object(lpar_console, "resolve_system_name", resolve_system_name),
+        patch.object(lpar_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch.object(lpar_console, "capture_lpar_console", capture),
+    ):
+        result = await lpar_console.capture_lpar_console_by_selector(
+            client,
+            "aix-db",
+            "system-a",
+            duration_seconds=12.5,
+            max_bytes=4096,
+            idle_timeout_seconds=3.5,
+        )
+
+    resolve_system_uuid.assert_awaited_once_with(client, "system-a")
+    resolve_lpar_uuid.assert_awaited_once_with(
+        client, "aix-db", system_name_or_uuid="system-uuid"
+    )
+    resolve_system_name.assert_not_awaited()
+    resolve_lpar_name.assert_not_awaited()
+    capture.assert_awaited_once_with(
+        client,
+        "system-a",
+        "aix-db",
+        duration_seconds=12.5,
+        max_bytes=4096,
+        idle_timeout_seconds=3.5,
+    )
+    assert result is capture.return_value
+
+
+@pytest.mark.asyncio
+async def test_capture_lpar_console_by_selector_resolves_uuids():
+    from hmc_mcp.operations.lpar import console as lpar_console
+
+    system_uuid = "11111111-1111-1111-1111-111111111111"
+    lpar_uuid = "22222222-2222-2222-2222-222222222222"
+    client = MagicMock()
+    client.config = MagicMock()
+    resolve_system_uuid = AsyncMock(return_value=system_uuid)
+    resolve_lpar_uuid = AsyncMock(return_value=lpar_uuid)
+    resolve_system_name = AsyncMock(return_value="resolved-system")
+    resolve_lpar_name = AsyncMock(return_value="resolved-lpar")
+    capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
+
+    with (
+        patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
+        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
+        patch.object(lpar_console, "resolve_system_name", resolve_system_name),
+        patch.object(lpar_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch.object(lpar_console, "capture_lpar_console", capture),
+    ):
+        result = await lpar_console.capture_lpar_console_by_selector(
+            client,
+            lpar_uuid,
+            system_uuid,
+            duration_seconds=12.5,
+            max_bytes=4096,
+            idle_timeout_seconds=3.5,
+        )
+
+    resolve_system_uuid.assert_awaited_once_with(client, system_uuid)
+    resolve_lpar_uuid.assert_awaited_once_with(
+        client, lpar_uuid, system_name_or_uuid=system_uuid
+    )
+    resolve_system_name.assert_awaited_once_with(client, system_uuid)
+    resolve_lpar_name.assert_awaited_once_with(
+        client.config, lpar_uuid, "resolved-system"
+    )
+    capture.assert_awaited_once_with(
+        client,
+        "resolved-system",
+        "resolved-lpar",
+        duration_seconds=12.5,
+        max_bytes=4096,
+        idle_timeout_seconds=3.5,
+    )
+    assert result is capture.return_value
+
+
+def test_capture_tool_preserves_payload_and_profile():
     client = MagicMock()
     client.config = MagicMock()
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=client)
     context.__aexit__ = AsyncMock(return_value=False)
-    resolve_system_uuid = AsyncMock(return_value="system-uuid")
-    resolve_lpar_uuid = AsyncMock(return_value="lpar-uuid")
-    resolve_system_name = AsyncMock(return_value="resolved-system")
-    resolve_lpar_name = AsyncMock(return_value="resolved-lpar")
     capture = AsyncMock(
         return_value=ConsoleCapture(
-            system=system_name,
-            lpar=lpar_name,
+            system="resolved-system",
+            lpar="resolved-lpar",
             data=b"\x00console\xff",
             stop_reason="idle",
             released=True,
@@ -776,15 +848,11 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
 
     with (
         patch("hmc_mcp._app.client_from_env", return_value=context) as factory,
-        patch.object(server_console, "resolve_system_uuid", resolve_system_uuid),
-        patch.object(server_console, "resolve_lpar_uuid", resolve_lpar_uuid),
-        patch.object(server_console, "resolve_system_name", resolve_system_name),
-        patch.object(server_console, "resolve_lpar_cli_name", resolve_lpar_name),
-        patch.object(server_console, "capture_lpar_console", capture),
+        patch.object(server_console, "capture_lpar_console_by_selector", capture),
     ):
         result = server_console.hmc_capture_lpar_console(
-            lpar_selector,
-            system_selector,
+            "lpar-selector",
+            "system-selector",
             duration_seconds=12.5,
             max_bytes=4096,
             idle_timeout_seconds=3.5,
@@ -792,24 +860,18 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
         )
 
     factory.assert_called_once_with("lab")
-    resolve_system_uuid.assert_awaited_once_with(client, system_selector)
-    resolve_lpar_uuid.assert_awaited_once_with(
-        client, lpar_selector, system_name_or_uuid="system-uuid"
-    )
     capture.assert_awaited_once_with(
         client,
-        system_name,
-        lpar_name,
+        "lpar-selector",
+        "system-selector",
         duration_seconds=12.5,
         max_bytes=4096,
         idle_timeout_seconds=3.5,
     )
     context.__aexit__.assert_awaited_once()
-    assert resolve_system_name.await_count == int(system_selector != system_name)
-    assert resolve_lpar_name.await_count == int(lpar_selector != lpar_name)
     assert result == {
-        "system": system_name,
-        "partition": lpar_name,
+        "system": "resolved-system",
+        "partition": "resolved-lpar",
         "stop_reason": "idle",
         "released": True,
         "error": None,

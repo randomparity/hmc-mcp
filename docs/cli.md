@@ -81,6 +81,8 @@ never part of the replayable profile configuration.
 
 ### End-to-end: give an LPAR a bootable disk
 
+For the complete ISO provisioning and optical-boot lifecycle, see the [LPAR ISO installation recipe](recipes/lpar-iso-install.md).
+
 ```bash
 # 1. create the partition
 hmc-mcp lpars create web01 --system <sys-uuid> --mem 8192 --vcpus 2
