@@ -31,8 +31,11 @@ and the CLI.
 - `src/hmc_mcp/server_tools/lpar/lifecycle.py` — `hmc_power_on_lpar` (`:314`) gains
   the same three, typed with the `Literal` aliases so the tool schema carries an
   enum. Each gains an `Args:` entry, which is the source of the rendered MCP schema
-  description. Its **first** docstring line gains the partition-profile distinction,
-  because that line is the only thing `docs/tools/` publishes.
+  description, and the docstring body gains a short paragraph naming the two things
+  called a profile. Its **first** docstring line gains the partition-profile
+  distinction, because that line is the only thing `docs/tools/` publishes, and it
+  says UUID rather than name: the parameter takes only a UUID, and the reference
+  keeps `LogicalPartitionProfileName` as a separate parameter this change excludes.
 - `src/hmc_mcp/cli_commands/lpar/lifecycle.py` — `lpars_power_on` (`:13`) gains
   `--boot-mode`, `--partition-profile`, `--operation-type`, threaded through
   `_power_lpar` (`:87`). `lpars_power_off` is untouched.

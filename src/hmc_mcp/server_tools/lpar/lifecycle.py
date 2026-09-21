@@ -326,7 +326,7 @@ def hmc_power_on_lpar(
     partition_profile_uuid: str | None = None,
     operation_type: PowerOnOperationType | None = None,
 ) -> LparPowerOnOutcome:
-    """Submit a PowerOn job for a logical partition, optionally against a named partition profile.
+    """Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars). Returns ``already_running``, nullable ``job``,
