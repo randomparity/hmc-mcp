@@ -44,6 +44,7 @@ cleanup (does not attempt additional mutations on an unknown state).
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import uuid
 from collections.abc import Mapping
@@ -885,7 +886,10 @@ async def _read_dedicated_state(
                 isinstance(item, dict)
                 and item.get("drc_index") == fixture.drc_index
             ):
-                slot_owner = item.get("owner_lpar") or None
+                raw_owner = item.get("owner_lpar") or ""
+                slot_owner = raw_owner.strip() or None
+                if slot_owner == "null":
+                    slot_owner = None
                 break
 
     profile_io_slots = await _read_profile_io_slots(client, state, fixture)
@@ -1002,7 +1006,10 @@ async def capture_dedicated_baseline(
     # failing read is already covered above.
 
     rows = [item for item in data.get("items") or [] if isinstance(item, dict)]
-    unassigned = [row for row in rows if not (row.get("owner_lpar") or "").strip()]
+    unassigned = [
+        row for row in rows
+        if not (owner := (row.get("owner_lpar") or "").strip()) or owner == "null"
+    ]
     if config.drc_index is not None:
         selected = next(
             (row for row in unassigned if row.get("drc_index") == config.drc_index),
@@ -1143,22 +1150,66 @@ async def create_dedicated_fixture(
             "PASS" if stamped is True else "FAIL",
             f"ownership_stamped={stamped!r} warnings={data.get('warnings')!r}",
         )
+    elif isinstance(data, str):
+        # The live runner parses the response as text when json.loads fails.
+        # The LparPcieWorkflowResult repr carries ownership_stamped= and UUID=.
+        # Extract both rather than refusing on None alone.
+        uuid_match = re.search(r"'UUID':\s*'([0-9A-Fa-f-]{36})'", data)
+        if uuid_match and not fixture.lpar_uuid:
+            fixture.lpar_uuid = uuid_match.group(1)
+        if "ownership_stamped=True" in data:
+            stamped = True
+        elif "ownership_stamped=False" in data:
+            stamped = False
+        if stamped is not None:
+            state.record(
+                30,
+                "fixture ownership stamp",
+                "PASS" if stamped is True else "FAIL",
+                f"ownership_stamped={stamped!r} (parsed from response text)",
+            )
 
     if stamped is not True:
-        # The caller token is the half of the identity Guard A checks first
-        # and refuses on unconditionally. Without it, assigning a slot here
-        # does not risk a stranded slot on a partition cleanup may not touch
-        # — it guarantees one. `False` means the stamp and the caller segment
-        # were both lost; `None` means the stamp was skipped.
-        state.skip(
-            30,
-            "fixture identity (ownership stamp)",
-            f"fixture {fixture.lpar_name!r} was created but its ADR 0064 "
-            f"ownership stamp did not land (ownership_stamped={stamped!r}), "
-            "so cleanup could never prove this run owns it; no hardware will "
-            "be mutated — proceeding directly to cleanup",
-        )
-        return False
+        # When stamped is None the live runner did not parse the response as a
+        # dict (firmware returned a non-JSON body). Fall back to reading the
+        # description to confirm the caller token actually landed before
+        # blocking — a None return is an unknown, not a confirmed failure.
+        if stamped is None:
+            st_desc, data_desc = await state.call(
+                client,
+                "hmc_get_lpar_description",
+                system_name_or_uuid=config.system_name,
+                lpar_name_or_uuid=fixture.lpar_name,
+            )
+            confirmed_token = (
+                parse_lpar_ownership_caller_token(data_desc)
+                if st_desc == "PASS" and isinstance(data_desc, str)
+                else None
+            )
+            if confirmed_token == fixture.run_marker:
+                stamped = True
+                state.record(
+                    30,
+                    "fixture ownership stamp (confirmed via description)",
+                    "PASS",
+                    f"caller_token={confirmed_token!r} confirmed in description; "
+                    "response did not carry ownership_stamped in parseable form",
+                )
+        if stamped is not True:
+            # The caller token is the half of the identity Guard A checks first
+            # and refuses on unconditionally. Without it, assigning a slot here
+            # does not risk a stranded slot on a partition cleanup may not touch
+            # — it guarantees one. `False` means the stamp and the caller segment
+            # were both lost; `None` means the stamp was skipped.
+            state.skip(
+                30,
+                "fixture identity (ownership stamp)",
+                f"fixture {fixture.lpar_name!r} was created but its ADR 0064 "
+                f"ownership stamp did not land (ownership_stamped={stamped!r}), "
+                "so cleanup could never prove this run owns it; no hardware will "
+                "be mutated — proceeding directly to cleanup",
+            )
+            return False
 
     if not fixture.lpar_uuid:
         st_get, data_get = await state.call(
