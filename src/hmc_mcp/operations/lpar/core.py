@@ -445,8 +445,13 @@ async def delete_lpar(
 
 async def _require_contained_partition_profile(
     hmc: HMCClient, lpar_uuid: str, partition_profile_uuid: str
-) -> None:
-    """Refuse a partition profile the target partition does not contain.
+) -> str:
+    """Return the target partition's own spelling of a profile it contains.
+
+    Returning the matched feed value rather than the caller's string is what
+    keeps the value authorized and the value emitted the same one: the match is
+    casefolded, so echoing the caller's spelling would put a string on the wire
+    that the containment check never compared.
 
     ADR 0039: ``hmc_power_on_lpar`` declares ``exhaustive_targets``, which means
     every resource it acts on is the value of a declared selector or is derived
@@ -473,13 +478,15 @@ async def _require_contained_partition_profile(
             "verified; read /rest/api/uom/LogicalPartition/<uuid>/"
             "LogicalPartitionProfile on the HMC to confirm the feed"
         )
-    if not any(
-        str(profile.get("UUID") or "").casefold() == wanted for profile in profiles
-    ):
-        raise ValueError(
-            "partition profile is not a profile of the target partition; "
-            "list the partition's profiles and supply one of their UUIDs"
-        )
+    for profile in profiles:
+        contained = str(profile.get("UUID") or "")
+        if contained.casefold() == wanted:
+            return contained
+    raise ValueError(
+        "partition profile is not a profile of the target partition; "
+        "read /rest/api/uom/LogicalPartition/<uuid>/LogicalPartitionProfile on "
+        "the HMC to see the profiles it does contain"
+    )
 
 
 def _unapplied_activation_clause(
@@ -597,7 +604,7 @@ async def power_lpar(
                 },
             )
     if power_on and partition_profile_uuid:
-        await _require_contained_partition_profile(
+        partition_profile_uuid = await _require_contained_partition_profile(
             hmc, lpar_uuid, partition_profile_uuid
         )
     operation = "PowerOn" if power_on else "PowerOff"

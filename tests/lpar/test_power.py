@@ -441,9 +441,12 @@ async def test_power_lpar_matches_a_profile_uuid_case_insensitively():
             partition_profile_uuid=PROFILE_UUID.upper(),
         )
 
+    # The partition's own spelling reaches the wire, not the caller's: the match
+    # is casefolded, so emitting the caller's string would send a value the
+    # containment check never compared.
     _, document = hmc.submit_job.await_args.args
     assert _parameter_values(document, "LogicalPartitionProfile") == [
-        PROFILE_UUID.upper()
+        PROFILE_UUID.lower()
     ]
 
 
