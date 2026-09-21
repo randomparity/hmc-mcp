@@ -110,7 +110,9 @@ The change builds an XML document from non-literal values, so the trigger fires 
 though no authn, authz, tenancy, secret, permission grant, dependency, or security
 default is touched.
 
-**Boundaries.** Added: none. Widened: three — the `hmc_power_on_lpar` tool call, the
+**Boundaries.** Added: one — `power_lpar` reads the target partition's own
+`LogicalPartitionProfile` feed before carrying a caller-supplied profile, which is
+the ADR 0039 containment check described below. Widened: three — the `hmc_power_on_lpar` tool call, the
 `lpars power-on` command line, and the `power_lpar`/`power_on_lpar` Python calls each
 accept three more caller-controlled values that reach the PowerOn job document. The
 document's existing encoding boundary (`build_job_request`) and the HTTPS boundary to
@@ -120,6 +122,16 @@ the HMC are unchanged.
 originate in a conversation this package does not control. The local operator and the
 Python caller are trusted to the extent they already are — they can submit a PowerOn
 job today. The HMC itself is trusted and authenticated by the existing session.
+
+**Control per boundary.** `partition_profile_uuid` names a second HMC-side
+resource, and `hmc_power_on_lpar` declares `exhaustive_targets=True`, so ADR 0039
+requires it to be a declared selector's value or derived by the server through the
+HMC's own containment. It is in no target table, so `targets_permitted` never
+compares it against the policy grant. `power_lpar` therefore reads the target
+partition's own profile feed and refuses a UUID that is not among its children,
+which is what makes it a derived, contained resource; ADR 0044 declined to rest
+this kind of classification on the premise that the HMC would refuse the value.
+The refusal is a `ValueError` before submission and does not echo the value.
 
 **Control per boundary.** `boot_mode` and `operation_type` are refused by
 `frozenset` membership in `power_on_lpar_job` before any XML is built, so a
@@ -132,8 +144,9 @@ carried on the existing escaped path: `@escapes_string_arguments` on
 builder parameter. A malformed UUID therefore reaches the HMC as inert escaped text
 and is refused there, by the job.
 
-**Out of scope.** Pre-flight existence or authorization checks on the supplied
-profile UUID — accepted above, owned by the epic's excluded name-resolution work.
+**Out of scope.** Resolving a partition-profile *name* to a UUID, and any validation
+of a profile's contents or suitability — owned by the epic's excluded
+name-resolution work. Containment is **not** out of scope: see the control below.
 Rate limiting or auditing of PowerOn submissions — unchanged by this work and held
 by the existing ADR 0011 ownership path and ADR 0092 §4 opt-in.
 

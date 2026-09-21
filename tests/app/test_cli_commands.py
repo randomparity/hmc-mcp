@@ -259,6 +259,12 @@ class FakeHMC:
         self._record("submit_job", job_path, job_request_xml)
         return self.job
 
+    async def list_child(self, parent_type, parent_uuid, child_type):
+        # ADR 0039 containment: power-on reads the partition's own profile feed
+        # before carrying a caller-supplied LogicalPartitionProfile.
+        self._record("list_child", parent_type, parent_uuid, child_type)
+        return [{"UUID": PARTITION_PROFILE_UUID}]
+
     async def create_logical_partition(self, system_uuid, xml):
         self._record("create_logical_partition", system_uuid, xml)
         return self.lpar
@@ -957,7 +963,13 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     )
 
     assert result.exit_code == 0
-    _, job_xml = fake_hmc.calls[0][1]
+    # Select by name: the ADR 0039 containment read precedes the submission.
+    assert ("list_child", ("LogicalPartition", LPAR_UUID, "LogicalPartitionProfile")) in [
+        (name, args) for name, args, _ in fake_hmc.calls
+    ]
+    submitted = [args for name, args, _ in fake_hmc.calls if name == "submit_job"]
+    assert len(submitted) == 1
+    _, job_xml = submitted[0]
     assert '<ParameterValue kb="CUR" kxe="false">sms</ParameterValue>' in job_xml
     assert ">LogicalPartitionProfile</ParameterName>" in job_xml
     assert PARTITION_PROFILE_UUID in job_xml

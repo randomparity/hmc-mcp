@@ -442,6 +442,33 @@ async def delete_lpar(
     return lpar_uuid
 
 
+async def _require_contained_partition_profile(
+    hmc: HMCClient, lpar_uuid: str, partition_profile_uuid: str
+) -> None:
+    """Refuse a partition profile the target partition does not contain.
+
+    ADR 0039: ``hmc_power_on_lpar`` declares ``exhaustive_targets``, which means
+    every resource it acts on is the value of a declared selector or is derived
+    by the server through the HMC's own containment from one. A caller-supplied
+    profile UUID is neither on its own — it is in no target table, so
+    ``targets_permitted`` never compares it against the policy grant, and a
+    narrow ``targets = {lpar = [...]}`` grant would otherwise bound nothing here.
+
+    Reading the partition's own ``LogicalPartitionProfile`` feed is what makes
+    the profile a derived, contained resource. ADR 0044 declined to rest this
+    kind of classification on the premise that the HMC would reject the value,
+    so the check is made here rather than assumed of the remote end.
+    """
+    profiles = await hmc.list_child(
+        "LogicalPartition", lpar_uuid, "LogicalPartitionProfile"
+    )
+    if not any(profile.get("UUID") == partition_profile_uuid for profile in profiles):
+        raise ValueError(
+            "partition profile is not a profile of the target partition; "
+            "list the partition's profiles and supply one of their UUIDs"
+        )
+
+
 def _unapplied_activation_clause(
     boot_mode: BootMode,
     partition_profile_uuid: str | None,
@@ -550,6 +577,10 @@ async def power_lpar(
                     ),
                 },
             )
+    if power_on and partition_profile_uuid:
+        await _require_contained_partition_profile(
+            hmc, lpar_uuid, partition_profile_uuid
+        )
     operation = "PowerOn" if power_on else "PowerOff"
     if operation not in _LPAR_POWER_OPERATIONS:
         allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))

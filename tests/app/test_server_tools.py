@@ -51,6 +51,21 @@ from hmc_mcp.server_tools.updates import (
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 PARTITION_PROFILE_UUID = "00000000-0000-0000-0000-0000000000aa"
+
+# One-profile Atom feed for the partition's LogicalPartitionProfile children.
+PARTITION_PROFILE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <title>LogicalPartitionProfile:default</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartitionProfile xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <ProfileName>default</ProfileName>
+      </LogicalPartitionProfile>
+    </content>
+  </entry>
+</feed>
+"""
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 MC_UUID = "mc-uuid-0001"
 CONSOLE_SOURCE = {
@@ -274,6 +289,15 @@ def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
     ).mock(return_value=httpx.Response(200, text="not activated"))
+    # ADR 0039 containment: the tool reads the partition's own profile feed
+    # before it will carry a caller-supplied LogicalPartitionProfile.
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/LogicalPartitionProfile"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=PARTITION_PROFILE_FEED.format(uuid=PARTITION_PROFILE_UUID)
+        )
+    )
     route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )

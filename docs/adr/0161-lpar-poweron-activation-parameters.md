@@ -28,6 +28,17 @@ set, matching ADR 0158's style at `operations/lpar/core.py:554-556`.
 `partition_profile_uuid` above the builder and `--partition-profile` on the CLI.**
 Never `profile`, which is the connection profile on both surfaces.
 
+**`power_lpar` verifies the profile is contained by the target partition before
+submitting**, reading that partition's own `LogicalPartitionProfile` feed through
+the existing `list_child`. `hmc_power_on_lpar` carries the decorator's default
+`exhaustive_targets=True`, which ADR 0039 defines as meaning every resource acted
+on is a declared selector's value or is derived by the server through the HMC's own
+containment from one. A caller-supplied profile UUID is in neither
+`REQUIRED_TARGET_ARGUMENTS` nor `UNBOUNDED_ARGUMENTS`, so `targets_permitted` never
+compares it against the grant; without this read a narrow `targets = {lpar = [...]}`
+grant would bound nothing here. The read is what makes the profile a derived,
+contained resource, and it happens only when a profile is supplied.
+
 **`OperationType` ships on all four surfaces with `activate` as its only member.**
 `power_on_lpar_job`, `power_lpar`, `power_on_lpar`, `hmc_power_on_lpar` and
 `hmc-mcp lpars power-on` all accept it; #868 widens the `Literal` rather than
@@ -85,6 +96,18 @@ partition activates without a profile, and whether `bootmode=sms` reaches
 - **Hold `OperationType` back until #868.** judgment: the operator chose all four
   surfaces; `activate` is a real explicit-intent value, and widening a `Literal`
   later is cheaper than threading a parameter through five call sites later.
+- **Declare `partition_profile_uuid` unbounded and set `exhaustive_targets=False`.**
+  verified: 13 tools already declare it, so the idiom exists, and
+  `tool_registry.py:538` is where the `True` default comes from. judgment: it is the
+  strictly correct classification, but it removes `hmc_power_on_lpar` from every
+  narrow `targets` grant, costing existing operators an access they have today to
+  close a gap the containment read closes without that cost.
+- **A UUID-shape guard plus a written residual.** verified: the corpus addresses a
+  profile as a child of a partition
+  (`docs/refs/hmc-rest-api-p11/managed-system/170-logical-partition-profile.md:27`),
+  so the *kind* is contained. judgment: the *instance* is not — a well-formed UUID
+  from another partition still passes — and resting on the HMC to refuse it is the
+  reasoning ADR 0044 explicitly declined for `backup_name`.
 - **Do nothing.** verified: `bootmode` was fixed at `norm` at
   `jobs/requests.py:65` before this change, so `sms` and `of` are unreachable and the `open
   firmware` state at `operations/partition_state.py:5-17` is readable but never

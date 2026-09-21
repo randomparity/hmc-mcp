@@ -193,6 +193,9 @@ def _power_client() -> AsyncMock:
     )
     hmc.get_quick_property.return_value = "not activated"
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
+    # ADR 0039 containment: the target partition contains PROFILE_UUID, so a
+    # call naming it passes the check rather than tripping it.
+    hmc.list_child.return_value = [{"UUID": PROFILE_UUID}]
     return hmc
 
 
@@ -339,3 +342,78 @@ def test_unapplied_activation_clause_names_only_what_was_supplied(kwargs, expect
         )
         == expected
     )
+
+
+# --------------------------------------------------------------------------- #
+# ADR 0039 containment: a supplied profile must belong to the target partition
+# --------------------------------------------------------------------------- #
+
+OTHER_PROFILE_UUID = "00000000-0000-0000-0000-0000000000bb"
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_accepts_a_profile_contained_by_the_target_partition():
+    """A profile in the partition's own feed reaches the job document."""
+    hmc = _power_client()
+    hmc.list_child.return_value = [{"UUID": PROFILE_UUID}, {"UUID": OTHER_PROFILE_UUID}]
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=True,
+            partition_profile_uuid=PROFILE_UUID,
+        )
+
+    hmc.list_child.assert_awaited_once_with(
+        "LogicalPartition", LPAR_UUID, "LogicalPartitionProfile"
+    )
+    _, document = hmc.submit_job.await_args.args
+    assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_refuses_a_profile_the_target_partition_does_not_contain():
+    """ADR 0039: the tool declares exhaustive targets, so a foreign profile is refused.
+
+    Without this the declared `lpar` selector bounds nothing here: a narrow
+    ``targets = {lpar = ["A"]}`` grant would still activate A against another
+    partition's profile, because no target selector is minted for this argument.
+    """
+    hmc = _power_client()
+    hmc.list_child.return_value = [{"UUID": OTHER_PROFILE_UUID}]
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ), pytest.raises(ValueError) as refused:
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=True,
+            partition_profile_uuid=PROFILE_UUID,
+        )
+
+    hmc.submit_job.assert_not_awaited()
+    # The rejected value is not echoed, matching the module's other refusals.
+    assert PROFILE_UUID not in str(refused.value)
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_reads_no_profile_feed_when_no_profile_is_supplied():
+    """The containment read costs nothing on the ordinary PowerOn path."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=True, boot_mode="sms")
+
+    hmc.list_child.assert_not_awaited()
+    hmc.submit_job.assert_awaited_once()
