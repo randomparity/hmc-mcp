@@ -62,6 +62,25 @@ def build_job_request(
     )
 
 
+def validate_power_on_activation(
+    bootmode: BootMode, operation_type: PowerOnOperationType | None
+) -> None:
+    """Validate the PowerOn activation vocabularies for direct callers.
+
+    Exposed the way ``validate_logical_unit_types`` is, because the builder is
+    not the only place that must refuse: ``power_lpar`` returns early when the
+    partition is already running, reaching an activation-consuming exit without
+    ever building a document. Both sites call this, so the permitted sets and
+    the wording live in one place.
+    """
+    if bootmode not in BOOT_MODES:
+        allowed = ", ".join(sorted(BOOT_MODES))
+        raise ValueError(f"PowerOn boot mode must be one of: {allowed}")
+    if operation_type is not None and operation_type not in POWER_ON_OPERATION_TYPES:
+        allowed = ", ".join(sorted(POWER_ON_OPERATION_TYPES))
+        raise ValueError(f"PowerOn operation type must be one of: {allowed}")
+
+
 def power_on_lpar_job(
     profile_uuid: str | None = None,
     bootmode: BootMode = "norm",
@@ -76,12 +95,7 @@ def power_on_lpar_job(
     A call passing none of the three emits the document this builder has always
     emitted.
     """
-    if bootmode not in BOOT_MODES:
-        allowed = ", ".join(sorted(BOOT_MODES))
-        raise ValueError(f"PowerOn boot mode must be one of: {allowed}")
-    if operation_type is not None and operation_type not in POWER_ON_OPERATION_TYPES:
-        allowed = ", ".join(sorted(POWER_ON_OPERATION_TYPES))
-        raise ValueError(f"PowerOn operation type must be one of: {allowed}")
+    validate_power_on_activation(bootmode, operation_type)
     parameters = {"force": "false", "novsi": "true", "bootmode": bootmode}
     if profile_uuid:
         parameters["LogicalPartitionProfile"] = profile_uuid

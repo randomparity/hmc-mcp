@@ -417,3 +417,78 @@ async def test_power_lpar_reads_no_profile_feed_when_no_profile_is_supplied():
 
     hmc.list_child.assert_not_awaited()
     hmc.submit_job.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_matches_a_profile_uuid_case_insensitively():
+    """The HMC renders UUIDs lower-case; ``is_uuid`` admits upper-case hex.
+
+    Mirrors ``_hosts_partition`` in operations/lpar/ownership.py, the other
+    place a user-supplied UUID is compared against HMC output.
+    """
+    hmc = _power_client()
+    hmc.list_child.return_value = [{"UUID": PROFILE_UUID.lower()}]
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=True,
+            partition_profile_uuid=PROFILE_UUID.upper(),
+        )
+
+    _, document = hmc.submit_job.await_args.args
+    assert _parameter_values(document, "LogicalPartitionProfile") == [
+        PROFILE_UUID.upper()
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "feed", [[], [{"ResourceType": "LogicalPartitionProfile"}], [{"UUID": None}]]
+)
+async def test_power_lpar_distinguishes_a_degraded_profile_feed_from_a_refusal(feed):
+    """An empty or unparsed feed is not evidence the profile is foreign."""
+    hmc = _power_client()
+    hmc.list_child.return_value = feed
+
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        pytest.raises(ValueError) as refused,
+    ):
+        await power_lpar(
+            hmc, None, LPAR_UUID, power_on=True, partition_profile_uuid=PROFILE_UUID
+        )
+
+    hmc.submit_job.assert_not_awaited()
+    assert "came back empty" in str(refused.value)
+    assert "is not a profile of the target partition" not in str(refused.value)
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_refuses_an_invalid_boot_mode_on_the_already_running_path():
+    """Criterion 2's refusal must not be swallowed by the early return.
+
+    The already-running branch returns without building a document, so the
+    builder's own check never runs on that path.
+    """
+    hmc = _power_client()
+    hmc.get_quick_property.return_value = "running"
+
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        pytest.raises(ValueError, match="PowerOn boot mode must be one of"),
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=True, boot_mode="warp")
+
+    hmc.submit_job.assert_not_awaited()

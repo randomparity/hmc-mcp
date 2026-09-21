@@ -86,10 +86,11 @@ names; it passes no new argument, so it keeps today's document.
 
 **Accepted failure classes.**
 
-- A caller passing a profile UUID that does not exist, or a profile the partition
-  cannot use, gets the HMC's own job error. This package does no pre-flight
-  existence check — no profile feed read exists (ADR 0161), and inventing one is
-  excluded.
+- A profile the target partition *does* contain but cannot actually use, or that the
+  HMC rejects for any other reason, gets the HMC's own job error. Containment is
+  verified before submission (see the Threat model's control below); nothing beyond
+  containment is checked, because no profile-contents read exists and the epic owns
+  profile name resolution.
 - `bootmode=sms` and `of` are unverified against hardware; the document shape is
   what this change proves. Held by the issue's `verification:live-hmc` label.
 - Whether a freshly created partition needs `LogicalPartitionProfile` to activate is

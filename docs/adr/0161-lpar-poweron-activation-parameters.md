@@ -1,4 +1,4 @@
-# ADR 0161: LPAR PowerOn activation parameters are closed vocabularies validated at the builder
+# ADR 0161: LPAR PowerOn activation parameters are closed vocabularies refused before the wire
 
 ## Status
 
@@ -78,18 +78,23 @@ partition activates without a profile, and whether `bootmode=sms` reaches
   so both placements have precedent. judgment: these values are job-document
   parameters, and the builder that emits them is the only thing that can refuse
   one before the wire.
-- **Validate in `power_lpar` instead of the builder.** verified: `power_lpar`
-  (`operations/lpar/core.py:558`) is today the only caller of the builder, so
-  either site would refuse every production call. judgment: the builder is what
-  emits the value, `power_lpar` is reached by three callers that would each
-  inherit a policy they do not own (`provision.py:285`,
-  `server_tools/lpar/lifecycle.py:433`, `cli_commands/lpar/lifecycle.py:126`),
-  and `jobs.power_on_lpar_job` is re-exported for direct use.
-- **Accept a profile name and resolve it.** verified: `rg
-  LogicalPartitionProfile src/hmc_mcp` returns one docstring hit
-  (`server_tools/systems/core.py:244`); no profile feed read exists. The
-  reference defines the parameter as "the uuid of the profile"
+- **Validate in `power_lpar` *instead of* the builder.** verified: the two sites are
+  not equivalent in coverage, though an earlier draft of this record assumed they
+  were. `power_lpar`'s already-running early return consumes the activation
+  parameters and returns without building a document, so a builder-only check never
+  runs there; a branch review reproduced an invalid boot mode being accepted on that
+  path. judgment: the answer is both rather than either — `validate_power_on_activation`
+  holds the sets and the wording, the builder calls it as the wire-level guarantee,
+  and `power_lpar` calls it before the state read. Validating *only* in `power_lpar`
+  is still rejected: `jobs.power_on_lpar_job` is re-exported for direct use, so the
+  builder cannot trust its arguments.
+- **Accept a profile name and resolve it.** verified: before this change `rg
+  LogicalPartitionProfile src/hmc_mcp` returned one docstring hit
+  (`server_tools/systems/core.py:244`) and no profile feed read existed anywhere.
+  The reference defines the parameter as "the uuid of the profile"
   (`docs/refs/hmc-rest-api-p11/jobs/logicalpartition-jobs/039-poweron_logicalpartition-job.md:52`).
+  judgment: the containment read this record adds lists a partition's profiles but
+  does not resolve a name to a UUID, and the epic owns that.
 - **Use the table's second spelling — `BootMode`, `LogicalPartitionProfileUUID`.**
   verified: only the first spelling appears in the document's own JSON and XML
   samples (`:99-120`, `:155-190`); the second appears at `:62-72` in no sample.

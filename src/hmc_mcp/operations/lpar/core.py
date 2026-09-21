@@ -39,6 +39,7 @@ from ...jobs import (
     job_outcome,
     power_off_lpar_job,
     power_on_lpar_job,
+    validate_power_on_activation,
     validate_wait_timing,
     wait_for_submitted_job,
 )
@@ -462,7 +463,19 @@ async def _require_contained_partition_profile(
     profiles = await hmc.list_child(
         "LogicalPartition", lpar_uuid, "LogicalPartitionProfile"
     )
-    if not any(profile.get("UUID") == partition_profile_uuid for profile in profiles):
+    wanted = partition_profile_uuid.casefold()
+    if not profiles or not any(
+        str(profile.get("UUID") or "") for profile in profiles
+    ):
+        raise ValueError(
+            "the target partition's profile feed came back empty or carried no "
+            "profile UUID, so the supplied partition profile could not be "
+            "verified; read /rest/api/uom/LogicalPartition/<uuid>/"
+            "LogicalPartitionProfile on the HMC to confirm the feed"
+        )
+    if not any(
+        str(profile.get("UUID") or "").casefold() == wanted for profile in profiles
+    ):
         raise ValueError(
             "partition profile is not a profile of the target partition; "
             "list the partition's profiles and supply one of their UUIDs"
@@ -559,6 +572,10 @@ async def power_lpar(
         lpar_uuid = await resolve_lpar_uuid(
             hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
         )
+    if power_on:
+        # Before the already-running read: that branch returns without ever
+        # building a document, so the builder's refusal would not run there.
+        validate_power_on_activation(boot_mode, operation_type)
     if power_on and not force:
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"

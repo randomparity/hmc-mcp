@@ -47,4 +47,5 @@ from .requests import (
     power_on_vios_job,
     remote_restart_lpar_job,
     validate_logical_unit_types,
+    validate_power_on_activation,
 )
