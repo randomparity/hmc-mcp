@@ -15,6 +15,16 @@ Expected implementation size: 180–280 changed lines (M) — derived from the f
 below: three source functions and two small vocabulary blocks, three test modules, one
 recorded signature line, and one regenerated document.
 
+**Estimate corrected after the build: 374 changed lines** (360 insertions, 14 deletions,
+across exactly the ten mapped files). The original range was wrong, and the work is
+required by the frozen scope and the reviewed design — no component, file, or contract
+appeared that the design did not enumerate. The whole overage is test-body volume:
+`tests/lpar/test_power.py` alone accounts for 185 of the insertions, of which the
+byte-identity document that completion criterion 1 requires is a 31-line verbatim
+literal, and the remaining seven cases are the ones this plan's own Verification blocks
+name. No implementation line was added or removed to fit either number; the complexity
+band stays `M` and the design denominator stays 250.
+
 Spec: `docs/workflow/specs/2026-09-21-lpar-poweron-activation-parameters-design.md`.
 Decision: `docs/adr/0161-lpar-poweron-activation-parameters.md`.
 
