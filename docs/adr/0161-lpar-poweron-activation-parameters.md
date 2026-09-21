@@ -42,12 +42,22 @@ document byte for byte.
 `operations/partition_state.py` becomes reachable. A caller holding only a
 profile name cannot use `--partition-profile` until name-to-UUID resolution
 exists; the epic owns that. Adding a boot mode or an operation type means
-editing one `Literal` and the tests that enumerate it. `tests/unit/test_xml_escaping.py`
-grows its generated cases automatically for `bootmode` and `profile_uuid`, but
-not for `operation_type`: `_is_closed_vocabulary` tests `get_origin(...) is
-Literal`, which an optional `Literal | None` fails, so that refusal needs its own
-test. Two behaviours stay unproven until hardware: whether a fresh partition
-activates without a profile, and whether `bootmode=sms` reaches `open firmware`.
+editing one `Literal` and the tests that enumerate it.
+`tests/unit/test_xml_escaping.py` grows its generated cases automatically for all
+three parameters: `_unwrap` (`:96-106`) strips the optional before
+`_is_closed_vocabulary` (`:146`) tests it, so `operation_type` is covered too.
+
+Changing the tool's parameters restates its signature, which two committed
+artifacts record. `docs/capabilities/operations.json` stores
+`str(inspect.signature(handler))` and `scripts/check_capability_inventory.py`
+compares it by string equality inside `just verify` and the `capability-inventory`
+hook, so that record is updated in the same change. The `Args:` block is the
+source of the rendered MCP schema descriptions, and
+`tests/app/test_lifecycle_schema_descriptions.py` requires a non-empty
+description for every `hmc_power_on_lpar` parameter, so each new parameter earns
+an `Args:` entry. Two behaviours stay unproven until hardware: whether a fresh
+partition activates without a profile, and whether `bootmode=sms` reaches
+`open firmware`.
 
 ## Considered & rejected
 
@@ -57,9 +67,13 @@ activates without a profile, and whether `bootmode=sms` reaches `open firmware`.
   so both placements have precedent. judgment: these values are job-document
   parameters, and the builder that emits them is the only thing that can refuse
   one before the wire.
-- **Validate in `power_lpar` instead of the builder.** judgment: `power_lpar`
-  is not the only caller of the builder, and a document builder that trusts its
-  arguments is the gap #867 opens.
+- **Validate in `power_lpar` instead of the builder.** verified: `power_lpar`
+  (`operations/lpar/core.py:502`) is today the only caller of the builder, so
+  either site would refuse every production call. judgment: the builder is what
+  emits the value, `power_lpar` is reached by three callers that would each
+  inherit a policy they do not own (`provision.py:285`,
+  `server_tools/lpar/lifecycle.py:411`, `cli_commands/lpar/lifecycle.py:109`),
+  and `jobs.power_on_lpar_job` is re-exported for direct use.
 - **Accept a profile name and resolve it.** verified: `rg
   LogicalPartitionProfile src/hmc_mcp` returns one docstring hit
   (`server_tools/systems/core.py:244`); no profile feed read exists. The
