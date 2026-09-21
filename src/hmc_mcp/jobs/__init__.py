@@ -21,11 +21,15 @@ from .core import (
     wait_for_submitted_job,
 )
 from .requests import (
+    BOOT_MODES,
     DEVICE_TYPES,
     LU_TYPES,
+    POWER_ON_OPERATION_TYPES,
     REMOTE_RESTART_OPERATIONS,
+    BootMode,
     DeviceType,
     LuType,
+    PowerOnOperationType,
     RemoteRestartOperation,
     build_job_request,
     create_logical_unit_job,

@@ -13,9 +13,13 @@ from ..xmlutil import WEB_NS, escapes_string_arguments
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
+BootMode = Literal["norm", "dd", "ds", "of", "sms"]
+PowerOnOperationType = Literal["activate"]
 REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
+BOOT_MODES = frozenset(get_args(BootMode))
+POWER_ON_OPERATION_TYPES = frozenset(get_args(PowerOnOperationType))
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
@@ -58,12 +62,32 @@ def build_job_request(
     )
 
 
-def power_on_lpar_job() -> str:
-    return build_job_request(
-        "PowerOn",
-        "LogicalPartition",
-        {"force": "false", "novsi": "true", "bootmode": "norm"},
-    )
+def power_on_lpar_job(
+    profile_uuid: str | None = None,
+    bootmode: BootMode = "norm",
+    operation_type: PowerOnOperationType | None = None,
+) -> str:
+    """Build a PowerOn request for one logical partition.
+
+    ``bootmode`` and ``operation_type`` are the job's own closed vocabularies and
+    are refused here, before any XML is built. ``profile_uuid`` is the UUID of the
+    partition profile to activate against, not a connection profile; it has no
+    vocabulary to check against, so an empty value is omitted rather than refused.
+    A call passing none of the three emits the document this builder has always
+    emitted.
+    """
+    if bootmode not in BOOT_MODES:
+        allowed = ", ".join(sorted(BOOT_MODES))
+        raise ValueError(f"PowerOn boot mode must be one of: {allowed}")
+    if operation_type is not None and operation_type not in POWER_ON_OPERATION_TYPES:
+        allowed = ", ".join(sorted(POWER_ON_OPERATION_TYPES))
+        raise ValueError(f"PowerOn operation type must be one of: {allowed}")
+    parameters = {"force": "false", "novsi": "true", "bootmode": bootmode}
+    if profile_uuid:
+        parameters["LogicalPartitionProfile"] = profile_uuid
+    if operation_type:
+        parameters["OperationType"] = operation_type
+    return build_job_request("PowerOn", "LogicalPartition", parameters)
 
 
 def power_off_lpar_job(immediate: bool = False) -> str:
