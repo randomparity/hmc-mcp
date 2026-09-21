@@ -21,8 +21,8 @@ refuses a bad value; what identifies the partition profile; and how much of
 **`jobs/requests.py` owns `BootMode` and `PowerOnOperationType` as `Literal`
 aliases with matching `frozenset`s, and `power_on_lpar_job` validates membership
 before building XML** — the shape `RemoteRestartOperation` already uses at
-`jobs/requests.py:15-18`. Refusal is `ValueError` naming the sorted permitted
-set, matching ADR 0158's style at `operations/lpar/core.py:498-500`.
+`jobs/requests.py:15-16`. Refusal is `ValueError` naming the sorted permitted
+set, matching ADR 0158's style at `operations/lpar/core.py:554-556`.
 
 **The partition profile is a UUID the caller supplies, named
 `partition_profile_uuid` above the builder and `--partition-profile` on the CLI.**
@@ -68,11 +68,11 @@ partition activates without a profile, and whether `bootmode=sms` reaches
   parameters, and the builder that emits them is the only thing that can refuse
   one before the wire.
 - **Validate in `power_lpar` instead of the builder.** verified: `power_lpar`
-  (`operations/lpar/core.py:502`) is today the only caller of the builder, so
+  (`operations/lpar/core.py:558`) is today the only caller of the builder, so
   either site would refuse every production call. judgment: the builder is what
   emits the value, `power_lpar` is reached by three callers that would each
   inherit a policy they do not own (`provision.py:285`,
-  `server_tools/lpar/lifecycle.py:411`, `cli_commands/lpar/lifecycle.py:109`),
+  `server_tools/lpar/lifecycle.py:433`, `cli_commands/lpar/lifecycle.py:126`),
   and `jobs.power_on_lpar_job` is re-exported for direct use.
 - **Accept a profile name and resolve it.** verified: `rg
   LogicalPartitionProfile src/hmc_mcp` returns one docstring hit
@@ -85,7 +85,7 @@ partition activates without a profile, and whether `bootmode=sms` reaches
 - **Hold `OperationType` back until #868.** judgment: the operator chose all four
   surfaces; `activate` is a real explicit-intent value, and widening a `Literal`
   later is cheaper than threading a parameter through five call sites later.
-- **Do nothing.** verified: `bootmode` is fixed at `norm` at
-  `jobs/requests.py:65`, so `sms` and `of` are unreachable and the `open
+- **Do nothing.** verified: `bootmode` was fixed at `norm` at
+  `jobs/requests.py:65` before this change, so `sms` and `of` are unreachable and the `open
   firmware` state at `operations/partition_state.py:5-17` is readable but never
   produced.

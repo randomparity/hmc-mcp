@@ -17,18 +17,20 @@ and the CLI.
 
 - `src/hmc_mcp/jobs/requests.py` — `BootMode = Literal["norm","dd","ds","of","sms"]`
   and `PowerOnOperationType = Literal["activate"]` with matching `frozenset`s, beside
-  the `RemoteRestartOperation` pattern at `:15-18`;
+  the `RemoteRestartOperation` pattern at `:15-16`;
   `power_on_lpar_job(profile_uuid=None, bootmode="norm", operation_type=None)`
   validates membership, then emits `force`, `novsi`, `bootmode` in today's order and
   appends `LogicalPartitionProfile` and `OperationType` only when supplied.
 - `src/hmc_mcp/jobs/__init__.py` — re-export the four new names into the existing
   aggregation. The module defines no `__all__` and must not gain one
   (`tests/unit/test_public_api.py:65`).
-- `src/hmc_mcp/operations/lpar/core.py` — `power_lpar` (`:433`) and `power_on_lpar`
-  (`:227`) gain keyword-only `boot_mode`, `partition_profile_uuid`, `operation_type`
+- `src/hmc_mcp/operations/lpar/core.py` — `power_lpar` (`:477`) and `power_on_lpar`
+  (`:229`) gain keyword-only `boot_mode`, `partition_profile_uuid`, `operation_type`
   and pass them to the builder on the PowerOn arm only. The PowerOff arm and ADR
-  0158's `_LPAR_POWER_OPERATIONS` guard (`:497-500`) are untouched.
-- `src/hmc_mcp/server_tools/lpar/lifecycle.py` — `hmc_power_on_lpar` (`:314`) gains
+  0158's `_LPAR_POWER_OPERATIONS` guard (`:554-556`) are untouched. The
+  already-running early return gains a message-only extension naming the activation
+  parameters it discards; it submits no job either way.
+- `src/hmc_mcp/server_tools/lpar/lifecycle.py` — `hmc_power_on_lpar` (`:315`) gains
   the same three, typed with the `Literal` aliases so the tool schema carries an
   enum. Each gains an `Args:` entry, which is the source of the rendered MCP schema
   description, and the docstring body gains a short paragraph naming the two things
@@ -38,7 +40,7 @@ and the CLI.
   keeps `LogicalPartitionProfileName` as a separate parameter this change excludes.
 - `src/hmc_mcp/cli_commands/lpar/lifecycle.py` — `lpars_power_on` (`:13`) gains
   `--boot-mode`, `--partition-profile`, `--operation-type`, threaded through
-  `_power_lpar` (`:87`). `lpars_power_off` is untouched.
+  `_power_lpar` (`:103`). `lpars_power_off` is untouched.
 - `docs/capabilities/operations.json` — the `signature` field of the
   `hmc_power_on_lpar` record, and nothing else. It stores
   `str(inspect.signature(handler))`, which `scripts/check_capability_inventory.py`
@@ -50,9 +52,9 @@ and the CLI.
 owns the wire vocabulary and its refusal, the operations layer owns power policy,
 the tool and CLI own presentation. No transition is needed and no caller migrates:
 every new parameter is optional, so `power_lpar`'s three existing callers
-(`operations/lpar/provision.py:285`, `server_tools/lpar/lifecycle.py:411`,
-`cli_commands/lpar/lifecycle.py:109`) and `power_on_lpar`'s one
-(`server_tools/lpar/lifecycle.py:358`) keep today's behaviour untouched.
+(`operations/lpar/provision.py:285`, `server_tools/lpar/lifecycle.py:433`,
+`cli_commands/lpar/lifecycle.py:126`) and `power_on_lpar`'s one
+(`server_tools/lpar/lifecycle.py:377`) keep today's behaviour untouched.
 
 **Not in scope** (owners in the issue's `WORK:SCOPE` annotation): `OperationType=netboot`
 and its parameter family (#868); `keylock` and `changeKeylock`; profile
@@ -77,8 +79,10 @@ names; it passes no new argument, so it keeps today's document.
   the wire.
 - `partition_profile_uuid` is caller-supplied text that lands inside XML, so it is an
   injection surface.
-- PowerOn changes the state of a real partition; the ADR 0011 ownership path and the
-  already-running check are unchanged by this work.
+- PowerOn changes the state of a real partition. The ADR 0011 ownership path is
+  unchanged by this work; the already-running check keeps its decision and its
+  no-job outcome unchanged and gains only a message naming the activation
+  parameters it discarded.
 
 **Accepted failure classes.**
 
