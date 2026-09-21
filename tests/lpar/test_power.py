@@ -17,7 +17,12 @@ from hmc_mcp.jobs import (
     power_on_system_job,
     power_on_vios_job,
 )
-from hmc_mcp.operations.lpar.core import LparPowerResult, power_lpar, power_on_lpar
+from hmc_mcp.operations.lpar.core import (
+    LparPowerResult,
+    _unapplied_activation_clause,
+    power_lpar,
+    power_on_lpar,
+)
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -283,6 +288,54 @@ async def test_power_lpar_already_running_names_the_dropped_activation_parameter
 
     hmc.submit_job.assert_not_awaited()
     assert requested.job["already_running"] is True
-    assert "were not applied" in requested.job["message"]
+    # Only the parameter actually supplied is named, and the force=True advice
+    # is not repeated as a way to apply it.
+    assert "The requested boot mode was not applied" in requested.job["message"]
+    for unsupplied in ("partition profile", "operation type"):
+        assert unsupplied not in requested.job["message"]
+    assert requested.job["message"].count("force=True") == 1
     # An ordinary already-running call says exactly what it always said.
-    assert "were not applied" not in plain.job["message"]
+    assert "not applied" not in plain.job["message"]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({}, ""),
+        (
+            {"boot_mode": "sms"},
+            (
+                " The requested boot mode was not applied;"
+                " power the partition off first."
+            ),
+        ),
+        (
+            {"partition_profile_uuid": PROFILE_UUID, "operation_type": "activate"},
+            (
+                " The requested partition profile and operation type were not"
+                " applied; power the partition off first."
+            ),
+        ),
+        (
+            {
+                "boot_mode": "of",
+                "partition_profile_uuid": PROFILE_UUID,
+                "operation_type": "activate",
+            },
+            (
+                " The requested boot mode, partition profile and operation type"
+                " were not applied; power the partition off first."
+            ),
+        ),
+    ],
+)
+def test_unapplied_activation_clause_names_only_what_was_supplied(kwargs, expected):
+    """The clause enumerates supplied parameters only, with matching grammar."""
+    assert (
+        _unapplied_activation_clause(
+            kwargs.get("boot_mode", "norm"),
+            kwargs.get("partition_profile_uuid"),
+            kwargs.get("operation_type"),
+        )
+        == expected
+    )

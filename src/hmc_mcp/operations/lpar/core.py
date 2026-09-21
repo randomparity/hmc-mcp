@@ -442,6 +442,38 @@ async def delete_lpar(
     return lpar_uuid
 
 
+def _unapplied_activation_clause(
+    boot_mode: BootMode,
+    partition_profile_uuid: str | None,
+    operation_type: PowerOnOperationType | None,
+) -> str:
+    """Name the activation parameters an already-running partition discarded.
+
+    "Boot this partition into SMS" is usually asked about a running partition,
+    and a bare already-running message reads as success to a caller whose
+    request was never attempted. Only the parameters actually supplied are
+    named, and the remedy is leaving the running state: resubmitting PowerOn
+    with ``force`` does not apply a boot mode to a partition already running.
+    """
+    requested = [
+        name
+        for name, supplied in (
+            ("boot mode", boot_mode != "norm"),
+            ("partition profile", bool(partition_profile_uuid)),
+            ("operation type", bool(operation_type)),
+        )
+        if supplied
+    ]
+    if not requested:
+        return ""
+    if len(requested) == 1:
+        named, verb = requested[0], "was"
+    else:
+        named = f"{', '.join(requested[:-1])} and {requested[-1]}"
+        verb = "were"
+    return f" The requested {named} {verb} not applied; power the partition off first."
+
+
 async def power_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
@@ -505,17 +537,8 @@ async def power_lpar(
             "LogicalPartition", lpar_uuid, "PartitionState"
         )
         if state == "running":
-            # Naming the dropped activation parameters matters more than it
-            # looks: "boot this partition into SMS" is usually asked about a
-            # running partition, and a bare already-running message reads as
-            # success to a caller whose actual request was never attempted.
-            dropped = boot_mode != "norm" or partition_profile_uuid or operation_type
-            unapplied = (
-                " The requested boot mode, partition profile and operation type "
-                "were not applied; power the partition off first, or pass "
-                "force=True to submit PowerOn anyway."
-                if dropped
-                else ""
+            unapplied = _unapplied_activation_clause(
+                boot_mode, partition_profile_uuid, operation_type
             )
             return LparPowerResult(
                 lpar_uuid,
