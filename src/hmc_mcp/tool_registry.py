@@ -290,7 +290,7 @@ def authorized(
 def annotations_for(effect: Effect) -> ToolAnnotations:
     """Return the MCP annotations for an effect class, as a fresh object."""
     read_only, destructive = _ANNOTATIONS[effect]
-    return ToolAnnotations(readOnlyHint=read_only, destructiveHint=destructive)
+    return ToolAnnotations(read_only_hint=read_only, destructive_hint=destructive)
 
 
 def build_targets(

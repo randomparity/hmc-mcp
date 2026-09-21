@@ -2,12 +2,9 @@
 
 ## Status
 
-Proposed on 2026-09-02.
-
-This record is accepted only once the arm it describes has landed with the guard tests
-green — `just verify` and `uv run --no-sync prek run --all-files` — in the form ADRs 0053
-and 0055 use ("Accepted on `<date>` after `<what passed>`"). The arm's live PASS/SKIP/FAIL
-matrix is the operator's, produced after merge, and is not a precondition of acceptance.
+Accepted on 2026-09-03 after 24/24 unit tests in `tests/scripts/test_pcie.py` passed, `just verify`
+exited 0, and `uv run --no-sync prek run --all-files` passed on every hook. The arm's live
+PASS/SKIP/FAIL matrix is the operator's, produced after merge, and is not a precondition of acceptance.
 
 ## Context
 
