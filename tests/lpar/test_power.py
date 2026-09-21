@@ -225,7 +225,15 @@ async def test_power_lpar_power_off_document_is_unchanged():
         "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
-        await power_lpar(hmc, None, LPAR_UUID, power_on=False)
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=False,
+            boot_mode="sms",
+            partition_profile_uuid=PROFILE_UUID,
+            operation_type="activate",
+        )
 
     path, document = hmc.submit_job.await_args.args
     assert path.endswith("/do/PowerOff")
@@ -251,3 +259,30 @@ async def test_power_on_lpar_passes_activation_parameters():
     assert forwarded.await_args.kwargs["boot_mode"] == "of"
     assert forwarded.await_args.kwargs["partition_profile_uuid"] == PROFILE_UUID
     assert forwarded.await_args.kwargs["operation_type"] == "activate"
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_already_running_names_the_dropped_activation_parameters():
+    """A running partition drops the activation request, so the message says so.
+
+    "Boot this partition into SMS" is usually asked about a running partition,
+    and a bare already-running message reads as success to a caller whose
+    request was never attempted.
+    """
+    hmc = _power_client()
+    hmc.get_quick_property.return_value = "running"
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        requested = await power_lpar(
+            hmc, None, LPAR_UUID, power_on=True, boot_mode="sms"
+        )
+        plain = await power_lpar(hmc, None, LPAR_UUID, power_on=True)
+
+    hmc.submit_job.assert_not_awaited()
+    assert requested.job["already_running"] is True
+    assert "were not applied" in requested.job["message"]
+    # An ordinary already-running call says exactly what it always said.
+    assert "were not applied" not in plain.job["message"]

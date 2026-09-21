@@ -505,13 +505,25 @@ async def power_lpar(
             "LogicalPartition", lpar_uuid, "PartitionState"
         )
         if state == "running":
+            # Naming the dropped activation parameters matters more than it
+            # looks: "boot this partition into SMS" is usually asked about a
+            # running partition, and a bare already-running message reads as
+            # success to a caller whose actual request was never attempted.
+            dropped = boot_mode != "norm" or partition_profile_uuid or operation_type
+            unapplied = (
+                " The requested boot mode, partition profile and operation type "
+                "were not applied; power the partition off first, or pass "
+                "force=True to submit PowerOn anyway."
+                if dropped
+                else ""
+            )
             return LparPowerResult(
                 lpar_uuid,
                 {
                     "already_running": True,
                     "message": (
                         f"LPAR {lpar_uuid} is already running. "
-                        "Use force=True to submit PowerOn anyway."
+                        f"Use force=True to submit PowerOn anyway.{unapplied}"
                     ),
                 },
             )
