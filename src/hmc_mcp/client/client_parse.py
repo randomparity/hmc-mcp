@@ -7,9 +7,10 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from defusedxml import ElementTree as DET
+from defusedxml.common import DefusedXmlException
 
 from ..errors import HMCError
-from ..xmlutil import find_text, parse_feed
+from ..xmlutil import find_all_text, find_text, parse_feed
 from .pcm_payloads import metric_links, pcm_preferences_to_dict
 
 _T = TypeVar("_T")
@@ -28,9 +29,16 @@ def _tag_parse_errors(fn: Callable[..., _T]) -> Callable[..., _T]:
     def wrapper(xml_text: str, context: str, *args: Any) -> _T:
         try:
             return fn(xml_text, *args)
-        except DET.ParseError as exc:
+        except (DET.ParseError, DefusedXmlException) as exc:
             raise HMCError(
                 f"Failed to parse {context} response: {str(exc)[:500]}"
+            ) from exc
+        except RecursionError as exc:
+            # element_to_dict recurses per nesting level of the parsed
+            # document, so a deeply nested response exhausts the stack;
+            # RecursionError carries no message, hence the fixed clause.
+            raise HMCError(
+                f"Failed to parse {context} response: document nesting is too deep"
             ) from exc
 
     return wrapper
@@ -38,5 +46,6 @@ def _tag_parse_errors(fn: Callable[..., _T]) -> Callable[..., _T]:
 
 _parse_feed = _tag_parse_errors(parse_feed)
 _find_text = _tag_parse_errors(find_text)
+_find_all_text = _tag_parse_errors(find_all_text)
 _metric_links = _tag_parse_errors(metric_links)
 _pcm_preferences = _tag_parse_errors(pcm_preferences_to_dict)

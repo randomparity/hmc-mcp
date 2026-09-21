@@ -1,0 +1,106 @@
+# ADR 0139: Discovery reads return the parsed feed with the response schema version
+
+## Status
+Accepted
+
+## Context
+Issue #787 adds the first of the HMC's self-describing discovery reads,
+`GET /rest/api/uom/{R}/operations`, which answers what job operations a firmware level
+actually defines. That answer is only meaningful for the schema version the HMC answered
+under, so one call has to yield both the parsed entries and the response's
+`X-HMC-Schema-Version`. The module's typed read helper `_get` returns body text only, and
+its 27 call sites across `src/hmc_mcp/` never need a header. Epic #785 queues three more
+anchor reads behind this one (#788 `/quick`, #789 `/search`, #791 job feeds), so the shape
+chosen here is the shape they inherit.
+
+## Decision
+`HMCClient.list_operations(resource_type, *, parent_type=None, parent_uuid=None)` returns
+`tuple[list[dict[str, Any]], str | None]`: the existing `_parse_feed` output paired with
+the response's `X-HMC-Schema-Version`, `None` when the HMC sends no such header.
+
+The request goes through `_request_with_uuid_path_arguments`, which keeps UUID validation and
+dot-segment rejection on the one path that already owns them and leaves the live
+`httpx.Headers` reachable. It sends `Accept: */*` and no `X-HMC-Schema-Version` request
+header: `/operations` is an endpoint this repository has never spoken, no reference here
+documents its media type, and `*/*` is the choice that cannot fail negotiation.
+
+Live firmware has since confirmed that choice was not merely safe but required: the content
+element arrives in the `web/mc` namespace as
+`application/vnd.ibm.powervm.web+xml; type=OperationSet`, so a typed uom `Accept` would have
+been the wrong media type rather than a stricter one.
+
+## Consequences
+Callers destructure a 2-tuple; a call site that forgets is a `ty` error rather than a
+silent list-of-one-element bug. The return is built from `list`, `dict`, `str` and `None`,
+so no new public type joins ADR 0118's six-name facade even though `HMCClient` is exported
+there. `_get` keeps its single-value contract and its 27 callers are untouched.
+
+Both open assumptions were checked against live firmware on PR #797, at one HMC reporting
+V1_17_0 on its ordinary uom feeds. `Accept: */*` was not refused, and both anchors parsed.
+Three findings came back with it, none of which changes this decision:
+
+- **The response carries one `OperationSet`, not one entry per operation.** `SetName` names
+  the type and `DefinedOperations` holds the operations. Repeated elements at every level
+  parse to a list or to a bare dict depending on how many siblings the HMC sent, so callers
+  must normalise before iterating. The method's docstring is the reference for that shape;
+  the fixtures in `tests/unit/test_client.py` are captured from this response.
+- **`X-HMC-Schema-Version` is not guaranteed to hold a schema version.** That level echoes the
+  request's `X-Audit-Memento` value into it, so it reads `hmc-mcp`. The pairing this record
+  exists to establish therefore delivers an opaque provenance tag on at least one firmware
+  level, not the version the header's name promises. The tuple stays — a caller cannot obtain
+  even that much afterwards without a race — but it is returned verbatim and callers must not
+  parse it as a level.
+- **An unknown type is a 400, not a 404.** All three unknown-type shapes — root type, child type
+  under a known parent, and unknown parent type — answered 400 `INVALID_URL` naming the type the
+  firmware did not recognise. #787's "`HMCError` on unknown type" criterion is met, by the
+  generic non-200/204 branch rather than by anything type-specific.
+- **The endpoint is not available at every level.** Three HMCs at V1_20_0 answered 500 with
+  `java.lang.ClassNotFoundException` naming a firmware-internal operations class, against the
+  one working V1_17_0 sample. No level between the two was reachable, so the boundary is
+  unknown. It surfaces as `HMCError` carrying 500. No issue owns tracking it.
+
+A firmware level that insists on a typed `Accept` would answer 406, which surfaces as
+`HMCError` carrying 406 — a wrong-header report, not a parse failure.
+
+The request-and-parse body is four statements. Repeating it once per discovery read is
+accepted here; #788, #789 and #791 land the second through fourth instances, and extracting
+a shared helper is theirs to justify once three exist.
+
+## Considered & rejected
+- **Return only the parsed entries and publish the schema version separately.** judgment: a
+  second call to learn which schema version produced the first answer is a race the caller
+  cannot close, and the pairing is the whole point of capturing the header.
+- **Widen `_get` to return `(text, headers)`.** verified: `rg -n "self\._get\(" src/hmc_mcp/`
+  reports 27 call sites at 975b0121, every one of which would have to destructure a tuple it
+  does not use, to serve one new caller.
+- **Use the public `raw_get` escape hatch, which already returns `(body, headers)`.**
+  verified: it returns `dict(resp.headers)`, and httpx lowercases header names on iteration —
+  `dict(httpx.Response(200, headers={"X-HMC-Schema-Version": "V1_0"}).headers)` has the single
+  key `x-hmc-schema-version`, so a lookup under the documented capitalization reads `None`
+  (httpx 0.28.1, the version `uv.lock` resolves for this checkout). A caller that has to know
+  the casing rule to read the header
+  correctly is the trap this decision exists to remove. Keeping the live `httpx.Headers`, which
+  is case-insensitive, also keeps `_request_with_uuid_path_arguments` on the path, so the child
+  anchor needs no second UUID check beside the one that helper owns (`raw_get` calls `_request`
+  directly, `src/hmc_mcp/client/core.py:894-907` at 975b0121). The cost is that this method
+  repeats `raw_get`'s five-line status block.
+- **Send the configured `X-HMC-Schema-Version` request header.** verified: `Accept: */*` alone
+  negotiates successfully against live V1_17_0 firmware (PR #797), and nothing establishes
+  that the endpoint honours the header, so adding one that can provoke 406 buys nothing on the
+  fail-open side of an endpoint this repo has never spoken. The cost is an asymmetry with the
+  reads that go through `_get`: because this method passes its own headers to the transport it
+  never reaches `_uom_headers`, so a configured `HMC_SCHEMA_VERSION` is silently not applied
+  here. That is recorded in the method's docstring so a caller pinning a version is not
+  surprised by it.
+- **Route the 400 through the existing `_check_web_rest000e` helper.** verified: live V1_17_0
+  returns 400 with `REST000E` in the body for an unknown uom type, which is the pattern that
+  helper matches — but it is scoped to `/rest/api/web/` (its three callers are `_web_get`,
+  `_web_post` and `_web_delete`) and it replaces the body with "This endpoint is not available on
+  this HMC. The HMC may require a specific configuration, license, or PTF level" (#113). On a
+  uom anchor that message is wrong: the cause is a resource type the caller misspelled, not a
+  missing endpoint, and the HMC's own text already names the offending type. Reusing the helper
+  would trade a precise error for a misleading one.
+- **Do nothing; keep building `do/{Operation}` paths from names hardcoded in Python.**
+  verified: `rg -n "/operations" src/` returns no match at 975b0121, and issue #787 names 14
+  call sites that construct those paths with nothing able to ask the HMC whether it defines
+  them.

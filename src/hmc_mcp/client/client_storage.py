@@ -11,6 +11,7 @@ import re as _re
 # ElementTree is retained for element construction, traversal, typing, and
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -18,6 +19,8 @@ from defusedxml import ElementTree as DET
 
 from ..documents import (
     StorageKind,
+    build_brokered_file_document,
+    build_linked_optical_media_document,
     build_virtual_disk_delete_document,
     build_virtual_disk_document,
     build_virtual_optical_mapping_document,
@@ -25,12 +28,14 @@ from ..documents import (
     build_vscsi_mapping_document,
 )
 from ..errors import HMCError
-from .client_contracts import StorageClient
+from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
 # HMC UOM namespace — used in read-modify-write VolumeGroup operations.
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
+_MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+_UUID_PATTERN = _re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
 
 
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
@@ -80,11 +85,176 @@ def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
     return match.group(1)
 
 
+def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return media entries from documented and legacy repository shapes."""
+    optical_media: list[dict[str, Any]] = []
+    for entry in entries:
+        resource = entry.get("Resource")
+        if not isinstance(resource, dict):
+            continue
+        repositories = resource.get("MediaRepositories") or resource
+        if not isinstance(repositories, dict):
+            continue
+        repository = repositories.get("VirtualMediaRepository")
+        if not isinstance(repository, dict):
+            continue
+        media_container = repository.get("OpticalMedia") or repository
+        if not isinstance(media_container, dict):
+            continue
+        media = media_container.get("VirtualOpticalMedia", [])
+        if isinstance(media, list):
+            optical_media.extend(item for item in media if isinstance(item, dict))
+        elif isinstance(media, dict):
+            optical_media.append(media)
+    return optical_media
+
+
+def _filter_optical_mappings(
+    mappings: list[dict[str, Any]], lpar_uuid: str | None
+) -> list[dict[str, Any]]:
+    """Keep optical-backed mappings, optionally scoped to one client LPAR."""
+    optical = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping.get("Storage"), dict)
+        and "VirtualOpticalMedia" in mapping["Storage"]
+    ]
+    if lpar_uuid is None:
+        return optical
+    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
+    return [
+        mapping
+        for mapping in optical
+        if _mapping_targets_lpar(mapping, expected_link)
+    ]
+
+
+def _mapping_targets_lpar(mapping: dict[str, Any], expected_link: str) -> bool:
+    partition = mapping.get("AssociatedLogicalPartition")
+    href = partition.get("href") if isinstance(partition, dict) else None
+    return isinstance(href, str) and urlparse(href).path == expected_link
+
+
 class StorageMixin:
+    async def _broker_file_create(
+        self: StorageClient, vios_uuid: str, vg_uuid: str, filename: str
+    ) -> str:
+        """Create the storage broker handle used to import an ISO."""
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        response = await self._request_with_uuid_path_arguments(
+            "POST",
+            path,
+            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            content=build_brokered_file_document(filename=filename),
+            headers={"Content-Type": _MEDIA_UOM, "Accept": _MEDIA_UOM},
+        )
+        if response.status_code not in (200, 201):
+            raise HMCError(
+                f"Brokered file create failed for {filename}",
+                response.status_code,
+                response.text,
+            )
+        location = response.headers.get("Location")
+        if not location:
+            raise HMCError(
+                "Brokered file create missing Location header",
+                response.status_code,
+                response.text,
+            )
+        return location
+
+    async def _broker_file_upload(
+        self: StorageClient,
+        broker_uri: str,
+        content: AsyncIterator[bytes],
+        content_length: int,
+    ) -> str:
+        """Stream bounded ISO content into a storage broker handle."""
+        response = await self._request(
+            "PUT",
+            broker_uri,
+            content=content,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(content_length),
+                "Accept": _MEDIA_UOM,
+            },
+        )
+        if response.status_code not in (200, 201, 202):
+            raise HMCError(
+                f"Brokered file upload failed to {broker_uri}",
+                response.status_code,
+                response.text,
+            )
+        return response.text or ""
+
+    async def _broker_iso_import(
+        self: StorageClient,
+        vios_uuid: str,
+        vg_uuid: str,
+        media_name: str,
+        broker_uri: str,
+    ) -> str:
+        """Import a brokered ISO into a VIOS media repository."""
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        document = build_linked_optical_media_document(
+            media_name=media_name, broker_uri=broker_uri
+        )
+        response = await self._reconcile_storage_mutation(
+            "broker_iso_import",
+            lambda: self.get_volume_group(vios_uuid, vg_uuid),
+            lambda: self._post(
+                path,
+                document,
+                resource_type="VolumeGroup",
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
+        )
+        return response or ""
+
+    async def _broker_file_cleanup(self: StorageClient, broker_uri: str) -> None:
+        """Release a storage broker handle after an ISO upload."""
+        response = await self._request(
+            "DELETE", broker_uri, headers={"Accept": _MEDIA_UOM}
+        )
+        if response.status_code not in (200, 202, 204, 404):
+            raise HMCError(
+                f"Brokered file cleanup failed for {broker_uri}",
+                response.status_code,
+                response.text,
+            )
+
     # Virtual storage (children of VirtualIOServer)
     def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         return f"{self._rest_base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
+
+    async def _reconcile_storage_mutation(
+        self: StorageClient,
+        operation: str,
+        snapshot: Callable[[], Awaitable[Any]],
+        dispatch: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Read state around a failed storage mutation without retrying it."""
+        try:
+            return await dispatch()
+        except HMCError as exc:
+            if exc.status_code is None or not 500 <= exc.status_code <= 599:
+                raise
+            try:
+                await snapshot()
+            except HMCError as readback_error:
+                observation = f"readback failed: {readback_error}"
+            else:
+                observation = "readback completed"
+            raise HMCError(
+                f"{operation} may have a possible side effect. Do not retry until state "
+                f"is verified; {observation}",
+                exc.status_code,
+                exc.body,
+            ) from exc
 
     async def list_volume_groups(
         self: StorageClient, vios_uuid: str
@@ -128,12 +298,17 @@ class StorageMixin:
 
         xml = build_volume_group_document(name, physical_volumes)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
-        resp = await self._put(
-            path,
-            xml,
-            resource_type="VolumeGroup",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "create_volume_group",
+            lambda: self.list_volume_groups(vios_uuid),
+            lambda: self._put(
+                path,
+                xml,
+                resource_type="VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -152,14 +327,22 @@ class StorageMixin:
         the schema-version header here.
         """
 
+        for argument, value in (("vios_uuid", vios_uuid), ("vg_uuid", vg_uuid)):
+            if not _UUID_PATTERN.fullmatch(value):
+                raise ValueError(f"{argument} must be a UUID")
         xml = build_virtual_disk_document(disk_name, capacity_mib)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._post(
-            path,
-            xml,
-            resource_type="VolumeGroup",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "create_virtual_disk",
+            lambda: self.get_volume_group(vios_uuid, vg_uuid),
+            lambda: self._post(
+                path,
+                xml,
+                resource_type="VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -176,12 +359,17 @@ class StorageMixin:
 
         xml = build_virtual_disk_delete_document(disk_name)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._post(
-            path,
-            xml,
-            resource_type="VolumeGroup",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "delete_virtual_disk",
+            lambda: self.get_volume_group(vios_uuid, vg_uuid),
+            lambda: self._post(
+                path,
+                xml,
+                resource_type="VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -209,12 +397,17 @@ class StorageMixin:
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        resp = await self._post(
-            path,
-            xml,
-            resource_type="VirtualIOServer",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
+        resp = await self._reconcile_storage_mutation(
+            "map_storage_to_lpar",
+            lambda: self.list_storage_mappings(vios_uuid),
+            lambda: self._post(
+                path,
+                xml,
+                resource_type="VirtualIOServer",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -244,10 +437,7 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = (
-            detail.get("Resource", {})
-            .get("VirtualSCSIMappings", {})
-        )
+        mappings = detail.get("Resource", {}).get("VirtualSCSIMappings", {})
         if not isinstance(mappings, dict):
             return []
         mappings = mappings.get("VirtualSCSIMapping", [])
@@ -257,8 +447,10 @@ class StorageMixin:
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             mappings = [
-                m for m in mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
+                m
+                for m in mappings
+                if isinstance(m, dict)
+                and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
             ]
 
         return mappings if isinstance(mappings, list) else [mappings]
@@ -268,7 +460,7 @@ class StorageMixin:
     ) -> None:
         """Detach one mapping through its parent VirtualIOServer document."""
         if not mapping_uuid:
-            raise HMCError("Storage mapping UUID must not be empty")
+            raise ValueError("Storage mapping UUID must not be empty")
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
@@ -317,23 +509,35 @@ class StorageMixin:
         post_path = (
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
         )
-        response = await self._request_with_uuid_path_arguments(
-            "POST",
-            post_path,
-            uuid_path_arguments={
-                "system_uuid": system_uuid,
-                "vios_uuid": vios_uuid,
-            },
-            content=ET.tostring(vios_elem, encoding="unicode"),
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
-            },
-        )
-        if response.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"POST {post_path} failed", response.status_code, response.text
+        async def dispatch() -> None:
+            response = await self._request_with_uuid_path_arguments(
+                "POST",
+                post_path,
+                uuid_path_arguments={
+                    "system_uuid": system_uuid,
+                    "vios_uuid": vios_uuid,
+                },
+                content=ET.tostring(vios_elem, encoding="unicode"),
+                headers={
+                    "Accept": "*/*",
+                    "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+                },
             )
+            if response.status_code not in (200, 201, 202):
+                raise HMCError(
+                    f"POST {post_path} failed", response.status_code, response.text
+                )
+
+        await self._reconcile_storage_mutation(
+            "delete_storage_mapping",
+            lambda: self._get(
+                get_path,
+                "VirtualIOServer",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+            ),
+            dispatch,
+        )
 
     # Virtual media repository (VolumeGroup read-modify-write operations)
 
@@ -400,15 +604,28 @@ class StorageMixin:
             "Content-Type": f"{MEDIA_UOM}; type=VolumeGroup",
         }
         body = ET.tostring(vg_elem, encoding="unicode", xml_declaration=False)
-        resp = await self._request_with_uuid_path_arguments(
-            "POST",
-            path,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-            content=body,
-            headers=headers,
+        async def dispatch() -> Any:
+            resp = await self._request_with_uuid_path_arguments(
+                "POST",
+                path,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+                content=body,
+                headers=headers,
+            )
+            if resp.status_code not in (200, 201, 202):
+                raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
+            return resp
+
+        resp = await self._reconcile_storage_mutation(
+            "update_virtual_media_repository",
+            lambda: self._get(
+                path,
+                "VolumeGroup",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            ),
+            dispatch,
         )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         entries = _parse_feed(resp.text, path) if resp.text else []
         return entries[0] if entries else None
 
@@ -424,9 +641,9 @@ class StorageMixin:
 
     def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None:
         """Return the VirtualMediaRepository (VMLibrary) element, or None."""
-        return vg_elem.find(
-            f".//{{{_UOM_NS}}}VirtualMediaRepository"
-        ) or vg_elem.find(".//VirtualMediaRepository")
+        return vg_elem.find(f".//{{{_UOM_NS}}}VirtualMediaRepository") or vg_elem.find(
+            ".//VirtualMediaRepository"
+        )
 
     def _build_mr_element(self, size_mib: int) -> ET.Element:
         """Build a MediaRepositories element with a VMLibrary inside.
@@ -510,12 +727,12 @@ class StorageMixin:
 
         existing = self._find_vmlib(vg_elem)
         if existing is not None:
-            name = existing.findtext(f"{{{_UOM_NS}}}RepositoryName") or existing.findtext(
-                "RepositoryName"
-            )
-            size = existing.findtext(f"{{{_UOM_NS}}}RepositorySize") or existing.findtext(
-                "RepositorySize"
-            )
+            name = existing.findtext(
+                f"{{{_UOM_NS}}}RepositoryName"
+            ) or existing.findtext("RepositoryName")
+            size = existing.findtext(
+                f"{{{_UOM_NS}}}RepositorySize"
+            ) or existing.findtext("RepositorySize")
             if size == str(size_mib):
                 return {
                     "Resource": {
@@ -578,9 +795,7 @@ class StorageMixin:
                 ),
                 None,
             )
-            opt_media = ET.Element(
-                opt_media_tag, attrib={"schemaVersion": "V1_0"}
-            )
+            opt_media = ET.Element(opt_media_tag, attrib={"schemaVersion": "V1_0"})
             if repo_name_idx is not None:
                 vmlib.insert(repo_name_idx, opt_media)
             else:
@@ -680,7 +895,12 @@ class StorageMixin:
             return None
         entry = entries[0]
         resource = entry.get("Resource")
-        if not isinstance(resource, dict) or "VirtualMediaRepository" not in resource:
+        if not isinstance(resource, dict):
+            return None
+        repositories = resource.get("MediaRepositories") or resource
+        if not isinstance(repositories, dict):
+            return None
+        if "VirtualMediaRepository" not in repositories:
             return None
         return entry
 
@@ -712,26 +932,8 @@ class StorageMixin:
         if not entries:
             return []
 
-        # The HMC V10R3 structure is:
-        #   Resource.MediaRepositories.VirtualMediaRepository.OpticalMedia.VirtualOpticalMedia
-        # Older firmware may use a bare path without the wrappers.
-        optical_media: list[dict[str, Any]] = []
-        for entry in entries:
-            resource = entry.get("Resource", {})
-            mr_container = resource.get("MediaRepositories") or resource
-            repo = mr_container.get("VirtualMediaRepository", {})
-            if not isinstance(repo, dict):
-                repo = {}
-            opt_media_container = repo.get("OpticalMedia", repo)
-            if not isinstance(opt_media_container, dict):
-                opt_media_container = repo
-            media_list = opt_media_container.get("VirtualOpticalMedia", [])
-            if isinstance(media_list, list):
-                optical_media.extend(media_list)
-            elif isinstance(media_list, dict):
-                optical_media.append(media_list)
+        return _extract_optical_media(entries)
 
-        return optical_media
     # Virtual Optical Mapping (VirtualSCSIMapping for VirtualOpticalMedia)
     async def list_optical_mappings(
         self: StorageClient, vios_uuid: str, lpar_uuid: str | None = None
@@ -755,40 +957,23 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = (
-            detail.get("Resource", {})
-            .get("VirtualSCSIMappings", {})
-        )
+        mappings = detail.get("Resource", {}).get("VirtualSCSIMappings", {})
         if not isinstance(mappings, dict):
             return []
         mappings = mappings.get("VirtualSCSIMapping", [])
         if not isinstance(mappings, list):
             mappings = [mappings] if mappings else []
 
-        optical_mappings = []
-        for m in mappings:
-            if not isinstance(m, dict):
-                continue
-
-            storage = m.get("Storage", {})
-            if "VirtualOpticalMedia" in storage:
-                optical_mappings.append(m)
-
-        if lpar_uuid:
-            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-            filtered_mappings = []
-            for mapping in optical_mappings:
-                partition = mapping.get("AssociatedLogicalPartition")
-                href = partition.get("href") if isinstance(partition, dict) else None
-                if isinstance(href, str) and urlparse(href).path == expected_link:
-                    filtered_mappings.append(mapping)
-            optical_mappings = filtered_mappings
-
-        return optical_mappings
+        return _filter_optical_mappings(
+            [mapping for mapping in mappings if isinstance(mapping, dict)], lpar_uuid
+        )
 
     async def create_optical_mapping(
-        self: StorageClient, vios_uuid: str, media_name: str, lpar_uuid: str,
-        target_device: str | None = None
+        self: StorageClient,
+        vios_uuid: str,
+        media_name: str,
+        lpar_uuid: str,
+        target_device: str | None = None,
     ) -> dict[str, Any] | None:
         """Create an optical-media mapping and return its response entry, if any."""
         lpar_link = self.get_lpar_link(lpar_uuid)
@@ -798,12 +983,17 @@ class StorageMixin:
             target_device=target_device,
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        response = await self._post(
-            path,
-            document,
-            resource_type="VirtualIOServer",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
+        response = await self._reconcile_storage_mutation(
+            "create_optical_mapping",
+            lambda: self.list_storage_mappings(vios_uuid),
+            lambda: self._post(
+                path,
+                document,
+                resource_type="VirtualIOServer",
+                include_schema_version=False,
+                uuid_path_arguments={"vios_uuid": vios_uuid},
+                fallback_to_generic_uom_on_406=True,
+            ),
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

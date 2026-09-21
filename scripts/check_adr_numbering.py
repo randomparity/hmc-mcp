@@ -39,7 +39,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent
 _DEFAULT_ADR_DIR = _REPO_ROOT / "docs" / "adr"
 
-_RECORD_NAME = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
+_RECORD_NAME = re.compile(r"^(\d{4})-([a-z0-9-]+)\.md$")
 
 # The heading spellings the committed records use: "# ADR 0099: <title>",
 # "# 0034: <title>", and "# ADR-0025: <title>". All three are accepted; this
@@ -62,19 +62,26 @@ def _heading_number(path: Path) -> str | None:
     return None
 
 
+def _record_number(name: str) -> str | None:
+    """Return an ADR number only for a lowercase, non-empty kebab slug."""
+    match = _RECORD_NAME.match(name)
+    if match is None or any(not segment for segment in match[2].split("-")):
+        return None
+    return match[1]
+
+
 def _validate(adr_dir: Path, records: list[str]) -> list[str]:
     """Return failure messages; empty when every record passes every check."""
     errors: list[str] = []
     by_number: dict[str, list[str]] = defaultdict(list)
 
     for name in records:
-        match = _RECORD_NAME.match(name)
-        if match is None:
+        number = _record_number(name)
+        if number is None:
             errors.append(
                 f"{name}: not a record filename (expected NNNN-lowercase-slug.md)"
             )
             continue
-        number = match[1]
         by_number[number].append(name)
 
         heading = _heading_number(adr_dir / name)

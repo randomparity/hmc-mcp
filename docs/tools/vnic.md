@@ -4,8 +4,8 @@
 
 3 tools in the `vnic` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_add_vnic` | `mutate` | `vnic.add` | `lpar` | Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI. |
-| `hmc_list_vnics` | `read` | `vnic.list` | `lpar` | List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI. |
-| `hmc_remove_vnic` | `destructive` | `vnic.remove` | `lpar` | Remove a vNIC from an LPAR via the HMC CLI. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_add_vnic` | `mutate` | `vnic.add` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI. |
+| `hmc_list_vnics` | `read` | `vnic.list` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI. |
+| `hmc_remove_vnic` | `destructive` | `vnic.remove` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove a vNIC from an LPAR via the HMC CLI. |

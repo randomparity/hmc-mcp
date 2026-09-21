@@ -310,9 +310,9 @@ the tool count.
    `all-targets` covers `target_scope.ABSENT` and no `targets` table does.
 2. `test_the_generated_policy_authorizes_a_vios_partition_id_call` (R13) — the surface's only
    `int` selector, carried by three live tools, all non-exhaustive.
-3. **L1** — spawn the **console script**, not `python -m hmc_mcp`: there is no
-   `src/hmc_mcp/__main__.py`, so the module form exits 1 with "No module named
-   `hmc_mcp.__main__`" and would satisfy a non-zero-exit intuition while proving nothing.
+3. **L1** — spawn the **console script**, not `python -m hmc_mcp`: since ADR 0128 added
+   `src/hmc_mcp/__main__.py` both forms reach the same `main`, but the console script is what an
+   operator actually runs, and the exit code an operator meets is the whole of what this proves.
    Resolve it as `tests/app/test_authorization_audit_live.py` already does —
    `shutil.which("hmc-mcp")` plus its same-checkout assertion, so the proof cannot silently run
    against another build — then assert exit 2 and that stderr names the generator. Portable: no

@@ -2,9 +2,10 @@
 
 ADR 0040's contract is a *sink*, so a unit test against a mock logger proves the
 payload and almost nothing about delivery. This drives the real console script
-over raw newline-delimited JSON-RPC — deliberately not a client library, so that
-anything the server prints outside the protocol shows up as an unparseable line
-on stdout and is observable.
+(L1-L4) and the module entry point (L5, for the reason below) over raw
+newline-delimited JSON-RPC — deliberately not a client library, so that anything
+the server prints outside the protocol shows up as an unparseable line on stdout
+and is observable.
 
 Covers docs/workflow/specs/2026-08-19-authorization-audit-events-design.md.
 
@@ -20,6 +21,16 @@ POSIX shell redirection; Run A's fixture steers ``config_dir()`` through ``HOME`
 which on win32 resolves from ``APPDATA`` while ``Path.home()`` reads
 ``USERPROFILE`` — so on Windows the fixture would write its sentinel-bearing
 ``config.toml`` over the developer's real one.
+
+L5 additionally needs an interpreter it can exec directly, so it alone launches
+``[sys.executable, "-P", "-m", "hmc_mcp"]`` instead of the console script. Past
+``uv``'s shebang threshold that script is a ``/bin/sh`` trampoline. The shell opens
+it to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
+``exec`` — landing the script file on fd 2, which ``2>&-`` had just freed — so the
+interpreter inherits an unwritable stderr rather than none and exits 120 before
+answering, which reads as the server refusing to start. Where ``/bin/sh`` is dash
+it does not, so CI never sees this. Exec'ing the interpreter by path leaves no
+descriptor on fd 2 under either shell. See ADR 0128; L1-L4 keep the console script.
 """
 
 from __future__ import annotations
@@ -51,8 +62,9 @@ targets = { lpar = ["db-01"], managed_system = ["sys-a"] }
 """
 
 #: Every frame read waits at most this long. Without it a child that never answers
-#: hangs `just verify` and every CI leg with no diagnostic — and this is the
-#: suite's only long-lived `hmc-mcp serve` child.
+#: waits until `scripts/run_tests.py` caps pytest at 1020s with exit 124, or CI caps
+#: the job at 20 minutes — and this is the suite's only long-lived `hmc-mcp serve`
+#: child.
 DEADLINE = 30.0
 
 
@@ -97,8 +109,8 @@ def child_env(fixture_home):
     """``os.environ`` copied with the four steering variables removed.
 
     A copy, not a from-scratch mapping: an explicitly built environment carries no
-    ``PATH``, and the child is the ``hmc-mcp`` console script, so it would not be
-    found at all.
+    ``PATH``, and L1-L4 launch the child through the ``hmc-mcp`` console script, so
+    it would not be found at all. L5 instead uses ``server_module_command``.
 
     ``HMC_HOST`` matters as much as the config path and is easier to miss:
     ``selected_connection`` gates its whole TOML branch on it and returns the
@@ -144,6 +156,58 @@ def server_binary():
         "the live proof would run against a different build of hmc-mcp"
     )
     return path
+
+
+@pytest.fixture
+def server_module_command():
+    """L5's launch — this interpreter running the package, not the console script.
+
+    ``server_binary`` cannot serve L5: at a long install path the console script
+    is a ``/bin/sh`` trampoline, which fails under ``2>&-`` for the reason the
+    module docstring records. Exec'ing the interpreter by path opens no script.
+
+    ``-P`` keeps the child's working directory off ``sys.path``, which ``-m``
+    would otherwise prepend. That is what lets the check below bind the child:
+    with no cwd entry it resolves ``hmc_mcp`` exactly as this subprocess does.
+
+    The check is ``server_binary``'s guarantee in the form this route admits.
+    ``shutil.which`` cannot go wrong here — there is no PATH lookup — but a
+    ``pytest`` run from outside this checkout still could, so the interpreter is
+    asked where the package it would import actually lives.
+    """
+    # The probe and the launch share this prefix on purpose: the guard binds the
+    # child only while both resolve `hmc_mcp` the same way.
+    interpreter = [sys.executable, "-P"]
+    probe = subprocess.run(
+        [*interpreter, "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
+        capture_output=True,
+        text=True,
+        check=False,
+        # Bounded like every other wait here. Nothing at `hmc_mcp` import time
+        # blocks today, so this is a bound against a future import that does:
+        # TimeoutExpired names the interpreter and the command. Unbounded, the
+        # probe is not stuck forever — `scripts/run_tests.py` caps the pytest
+        # child at 1020s and CI's `ci` job at 20 minutes — but each reports its
+        # own cap, and CI's cancellation takes the buffered replay with it.
+        timeout=DEADLINE,
+    )
+    # Not check=True: CalledProcessError stringifies to the exit status alone and
+    # leaves the child's traceback in an attribute nobody prints, so a venv without
+    # the project installed would abort here with no cause named.
+    assert probe.returncode == 0, (
+        f"{sys.executable} cannot import hmc_mcp, so the live proof has no server "
+        f"to launch:\n{probe.stderr}"
+    )
+    origin = probe.stdout.strip()
+    # The source tree, not the checkout root: `.venv` lives inside the checkout, so
+    # a copied (non-editable) install there would satisfy a root-relative check
+    # while being a build that has silently drifted from the working tree.
+    source = Path(__file__).resolve().parents[2] / "src"
+    assert Path(origin).resolve().is_relative_to(source), (
+        f"{origin} is not this branch's source tree ({source}); the live proof "
+        "would run against a different or stale build of hmc_mcp"
+    )
+    return [*interpreter, "-m", "hmc_mcp"]
 
 
 class _Server:
@@ -438,7 +502,100 @@ def test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials(
     assert reasons == ["connection-not-granted"]
 
 
-def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp_path):
+def _assert_interpreter_launch(command: list[str]) -> None:
+    """Fail unless *command* execs an interpreter directly and opens no script.
+
+    ADR 0128's invariant is *no intermediate process may leave a descriptor open
+    on fd 2 across the exec of the interpreter*. Past ``uv``'s shebang threshold
+    the ``hmc-mcp`` console script is a ``/bin/sh`` trampoline: the shell opens it
+    to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
+    ``exec`` and lands on the fd 2 ``2>&-`` had just freed, so the interpreter
+    inherits an unwritable stderr and exits 120 before answering.
+
+    This asserts the launch's **shape** rather than the child's runtime view of
+    fd 2, and the choice is the point. All eight verify legs run Ubuntu 24.04
+    (``ubuntu-24.04`` and ``ubuntu-24.04-arm``), whose ``/bin/sh`` is dash, and
+    under dash fd 2 comes out free whichever command runs — so a behavioural
+    assertion would pass on every leg and bite only on the bash host it exists to
+    protect, which is the trap itself. A wrong shape is wrong on every leg.
+
+    ``-P`` is asserted with the rest rather than treated as decoration: ADR 0128
+    makes ``PYTHONSAFEPATH`` the remedy for the cwd-shadowing hazard ``-m`` opens
+    in a child holding profile passwords and a granted access policy, and A13
+    names it in the command it requires.
+    """
+    assert command[0] == sys.executable, (
+        f"L5 must exec this interpreter by path; the command starts with "
+        f"{command[0]!r}, not {sys.executable!r}. See ADR 0128."
+    )
+    # Ahead of `-m`, so it is an interpreter option: `-P` after the module name is
+    # an argument the application receives, which leaves sys.path unchanged.
+    options = command[1 : command.index("-m")] if "-m" in command else command[1:]
+    assert "-P" in options, (
+        f"L5's launch must pass -P to the interpreter, which keeps the child's "
+        f"working directory off sys.path; {command!r} does not. See ADR 0128."
+    )
+    for element in command:
+        candidate = Path(element)
+        if not candidate.is_absolute():
+            # Against the checkout, not pytest's cwd: a relatively named script
+            # would otherwise be skipped rather than inspected, and `continue` on
+            # an unresolvable element looks exactly like `continue` on a flag.
+            candidate = Path(__file__).resolve().parents[2] / element
+        if not candidate.is_file():
+            continue
+        with candidate.open("rb") as handle:
+            magic = handle.read(2)
+        assert magic != b"#!", (
+            f"{candidate} is a #!-bearing script, so the shell running L5's "
+            "blinded child opens it and can leave that descriptor on fd 2 across "
+            "the exec. Launch the interpreter directly instead; see ADR 0128."
+        )
+
+
+def test_l5_execs_an_interpreter_and_opens_no_script(server_module_command):
+    """ADR 0128's fd-2 invariant, at the fixture that supplies L5's launch.
+
+    L5 asserts the same thing on the list it actually spawns, which is what binds
+    the invariant to the launch. This one keeps the check reachable, and named
+    after the invariant, when L5 itself does not run — so a failure here reads as
+    the launch shape regressing rather than as the live proof breaking.
+    """
+    _assert_interpreter_launch(server_module_command)
+
+
+def test_the_l5_import_probe_waits_no_longer_than_the_deadline(request, monkeypatch):
+    """The fixture's import probe is bounded, like every other wait in this module.
+
+    Asserted on the call's shape rather than on a hang, for the reason
+    ``_assert_interpreter_launch`` gives about behavioural assertions here: nothing
+    at ``hmc_mcp`` import time blocks, so there is no hang to construct and a
+    behavioural check would pass by doing nothing. What an unbounded probe costs is
+    not an endless hang but an uninformative one: the enclosing caps — 1020s in
+    ``scripts/run_tests.py``, 20 minutes on CI's ``ci`` job — report themselves and
+    never the probe, so the bound is asserted where it is written.
+    """
+    calls = []
+    unpatched_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return unpatched_run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", recording_run)
+    request.getfixturevalue("server_module_command")
+
+    timeouts = [call.get("timeout") for call in calls]
+    assert timeouts == [DEADLINE], (
+        f"the fixture's import probe must pass timeout={DEADLINE} so a hung "
+        f"interpreter fails setup naming the interpreter; it ran {len(timeouts)} "
+        f"subprocess call(s) with timeouts {timeouts!r}"
+    )
+
+
+def test_a_failed_sink_leaves_the_denial_unchanged(
+    child_env, server_module_command, tmp_path
+):
     """L5 — Run B, a separate subprocess with fd 2 closed at interpreter start.
 
     The observation channel and the failure injection cannot coexist: every
@@ -448,13 +605,16 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
     processes and their key ordering is FastMCP's to change, while the denial
     *message* is what ADR 0038 and ADR 0039 fixed as the client contract.
     """
+    # One list, both runs: a second launch mechanism would confound the
+    # comparison, which is meant to isolate the sink and nothing else.
+    command = [*server_module_command, "serve", "--access-policy", "lab-scoped"]
+    # Asserted on the list this test actually launches, not on the fixture alone:
+    # switching back to `server_binary` here is the revert ADR 0128 forbids, and
+    # it is invisible to every dash CI leg. See _assert_interpreter_launch.
+    _assert_interpreter_launch(command)
     log = tmp_path / "reference.log"
     with log.open("w") as sink:
-        reference = _Server(
-            _spawn([server_binary, "serve", "--access-policy", "lab-scoped"],
-                   child_env, sink),
-            log,
-        )
+        reference = _Server(_spawn(command, child_env, sink), log)
         try:
             reference.initialize()
             expected = reference.call(
@@ -466,7 +626,12 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
     # shlex.quote, not " ".join: this repository's own path contains spaces, and
     # an unquoted one makes `sh -c` split it into words and fail to exec at all —
     # which looks exactly like the server refusing to start.
-    quoted = shlex.join([server_binary, "serve", "--access-policy", "lab-scoped"])
+    quoted = shlex.join(command)
+    # Again, on what the shell will actually exec rather than on `command`: the
+    # invariant is about this argv, and anything inserted into `quoted` between
+    # here and there — a wrapper script, another interpreter — would not appear
+    # in the list checked above.
+    _assert_interpreter_launch(shlex.split(quoted))
     blinded = _Server(
         _spawn(["/bin/sh", "-c", f"exec {quoted} 2>&-"], child_env, subprocess.DEVNULL)
     )

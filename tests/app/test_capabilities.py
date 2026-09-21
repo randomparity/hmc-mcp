@@ -22,7 +22,7 @@ from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.affinity import ProvisionAffinityAssessment
+from hmc_mcp.operations.affinity.rest import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
@@ -31,7 +31,7 @@ from hmc_mcp.server_tools.lpar.lifecycle import (
     hmc_decommission_lpar,
     hmc_delete_lpar,
 )
-from hmc_mcp.server_tools.vios import hmc_delete_vios
+from hmc_mcp.server_tools.vios.core import hmc_delete_vios
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the
@@ -180,14 +180,14 @@ def test_attach_disk_is_state_changing_not_destructive():
     assert TOOL_SECURITY["hmc_attach_disk_to_lpar"].effect == "mutate"
     annotations = _tools_by_name()["hmc_attach_disk_to_lpar"].annotations
     assert annotations is None or (
-        annotations.readOnlyHint is not True and annotations.destructiveHint is not True
+        annotations.read_only_hint is not True and annotations.destructive_hint is not True
     )
 
 
 def test_fleet_health_is_read_only():
     assert TOOL_SECURITY["hmc_fleet_health"].effect == "read"
     annotations = _tools_by_name()["hmc_fleet_health"].annotations
-    assert annotations is not None and annotations.readOnlyHint is True
+    assert annotations is not None and annotations.read_only_hint is True
 
 
 def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
@@ -234,7 +234,7 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
         ]
         assert len(tools) == 1
         assert tools[0].annotations is not None
-        assert tools[0].annotations.readOnlyHint is False
+        assert tools[0].annotations.read_only_hint is False
         asyncio.run(
             server_command.configure_arbitrary_command_tool(
                 False,
@@ -271,8 +271,10 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
-    from hmc_mcp.client.client_adapters import ADAPTER_TYPES
-    from hmc_mcp.client.client_users import _VALID_AUTHENTICATION_FILTERS
+    from hmc_mcp.client.client_contracts import (
+        ADAPTER_TYPES,
+        VALID_AUTHENTICATION_FILTERS,
+    )
     from hmc_mcp.documents import (
         AUTHENTICATION_TYPES,
         PARTITION_TYPES,
@@ -280,8 +282,9 @@ def test_closed_vocab_enum_matches_runtime_constant():
         STORAGE_KINDS,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
-    from hmc_mcp.operations.vios import _VALID_BACKUP_TYPES
-    from hmc_mcp.ssh.network import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
+    from hmc_mcp.operations.vios.core import _VALID_BACKUP_TYPES
+    from hmc_mcp.ssh.io_inventory import _VALID_PCI_CLASSES
+    from hmc_mcp.ssh.sriov import _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 
@@ -310,7 +313,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
         ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
         ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
         ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
-        ("hmc_list_users", "authentication_type"): _VALID_AUTHENTICATION_FILTERS,
+        ("hmc_list_users", "authentication_type"): VALID_AUTHENTICATION_FILTERS,
         ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
         ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
     }
@@ -359,13 +362,13 @@ def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
 
 def test_parameter_normalization_contract_is_schema_pinned():
     from hmc_mcp.operations.lpar.core import PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.operations.metrics.pcm import PCM_CATEGORIES
     from hmc_mcp.operations.partition_state import PARTITION_STATES
-    from hmc_mcp.operations.pcm import PCM_CATEGORIES
 
     by_name = _tools_by_name()
     replacements = {
         "hmc_install_vios": {"install_source", "system_name_or_uuid"},
-        "hmc_install_lpar_os": {"install_source", "system_name_or_uuid"},
+        "hmc_install_vios_by_lpar_selector": {"install_source", "system_name_or_uuid"},
         "hmc_attach_disk_to_lpar": {"capacity_mib"},
         "hmc_create_virtual_disk": {"capacity_mib"},
         "hmc_create_media_repository": {"size_mib"},
@@ -403,7 +406,7 @@ def test_parameter_normalization_contract_is_schema_pinned():
         by_name["hmc_remove_vnic"].parameters["properties"],
     ):
         assert properties["ownership_override"]["default"] is False
-    for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
+    for install_tool in ("hmc_install_vios", "hmc_install_vios_by_lpar_selector"):
         properties = by_name[install_tool].parameters["properties"]
         # ADR 0070: the REST job-polling surface is gone with the dead
         # InstallLPAR/InstallVIOS endpoints; the CLI bridge exposes no wait.
@@ -467,8 +470,8 @@ def test_decommission_lpar_is_public_destructive_and_schema_stable():
 
     tool = _tools_by_name()["hmc_decommission_lpar"]
     assert TOOL_SECURITY["hmc_decommission_lpar"].effect == "destructive"
-    assert tool.annotations is not None and tool.annotations.destructiveHint is True
-    assert tool.annotations.readOnlyHint is not True
+    assert tool.annotations is not None and tool.annotations.destructive_hint is True
+    assert tool.annotations.read_only_hint is not True
 
     properties = tool.parameters["properties"]
     assert set(properties) == {
@@ -533,7 +536,7 @@ def test_update_source_enums_match_runtime_constants():
 
     Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.operations.update_models import (
+    from hmc_mcp.operations.updates.models import (
         _CONSOLE_UPDATE_MEDIA_TYPES,
         _VIOS_UPDATE_RESOURCE_TYPES,
         _VIOS_UPGRADE_RESOURCE_TYPES,
@@ -601,7 +604,7 @@ def test_metrics_tools_have_stable_output_schemas():
         "hmc_aggregated_metric_links",
     ):
         tool = by_name[tool_name]
-        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, (
+        assert tool.annotations is not None and tool.annotations.read_only_hint is True, (
             tool_name
         )
         assert "mode" not in tool.parameters.get("properties", {})
@@ -752,7 +755,7 @@ def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
 
     result = hmc_delete_vios(LPAR_UUID)
 
-    assert result == f"Deleted VIOS {LPAR_UUID}"
+    assert result == LPAR_UUID
 
 
 # ------------------------------------------------------------------ #
@@ -975,7 +978,7 @@ NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar raises ValueError when a partition with the same name exists."""
-    from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
@@ -995,7 +998,7 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar creates the partition when no LPAR with the same name exists."""
     from unittest.mock import AsyncMock, patch
 
-    from hmc_mcp.server_tools.lpar.lifecycle import hmc_create_lpar
+    from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
     _hmc_env(monkeypatch)
     mock_hmc.get(
@@ -1007,11 +1010,11 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     with (
         patch(
-            "hmc_mcp.operations.ownership.stamp_lpar_ownership",
+            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations.ownership._resolve_system_name",
+            "hmc_mcp.operations.lpar.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):

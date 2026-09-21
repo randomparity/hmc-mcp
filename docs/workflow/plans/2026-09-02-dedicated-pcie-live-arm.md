@@ -1,7 +1,7 @@
 # Dedicated PCIe live-assignment arm — implementation plan
 
 Spec: [2026-09-02-dedicated-pcie-live-arm-design.md](../specs/2026-09-02-dedicated-pcie-live-arm-design.md) ·
-Decision: [ADR 0115](../../adr/0115-dedicated-pcie-live-evidence-arm.md) ·
+Decision: [ADR 0161](../../adr/0161-dedicated-pcie-live-evidence-arm.md) ·
 Issue: [#217](https://github.com/randomparity/hmc-mcp/issues/217)
 
 **Goal.** Add the dedicated PCIe slot arm to the live-HMC test harness, with cleanup guards
@@ -14,7 +14,7 @@ group `dedicated`, recording rows under step labels ST29–ST34. It follows the 
 existing shape in the same file: frozen config, mutable fixture record, a state snapshot with
 a summary formatter, one function per step, and an orchestrator that always reaches cleanup.
 Assignment is issued through the ADR 0053-documented profile grammar over `hmc_run_command`,
-because the admitted operations fail closed (ADR 0055, ADR 0115).
+because the admitted operations fail closed (ADR 0055, ADR 0161).
 
 **Tech stack.** Python 3.11+, `dataclasses`, `pytest` with `pytest-asyncio`, `fastmcp` client
 types for annotation only.
@@ -605,7 +605,7 @@ async def create_dedicated_fixture(client, state, fixture) -> bool: ...
                f"the create-time probe created partition "
                f"{fixture.probe_lpar_name!r} on {config.system_name!r} with "
                f"dedicated slot {fixture.drc_index!r} assigned. ADR 0055's gate "
-               "no longer refuses, so this arm's probe and ADR 0115 both need "
+               "no longer refuses, so this arm's probe and ADR 0161 both need "
                "revisiting alongside the ADR 0053 capability update.",
            )
 
@@ -945,7 +945,7 @@ async def exercise_dedicated_pcie_assignment(client, state) -> None: ...
        # the arm that provably holds the dedicated slot at cleanup time — the
        # probe succeeded only because it was allowed to apply the assignment —
        # so deleting it without removing the slot is precisely the stranding
-       # ADR 0115 forbids. The probe carries its own profile, so it gets its
+       # ADR 0161 forbids. The probe carries its own profile, so it gets its
        # own removal command and its own confirming read.
        probe = replace(
            fixture, lpar_name=fixture.probe_lpar_name, lpar_uuid=fixture.probe_lpar_uuid
@@ -1800,7 +1800,7 @@ whose neutralization reddens nothing is not covered, whatever its tests appear t
 2. `uv run --no-sync prek run --all-files` — bare. Expect every hook `Passed`.
 3. `git --no-pager diff "$(git merge-base HEAD origin/main)" --stat` and read the diff back
    for naming and complexity before committing.
-4. Only once 1 and 2 are green, flip ADR 0115's `## Status` from `Proposed on 2026-09-02.`
+4. Only once 1 and 2 are green, flip ADR 0161's `## Status` from `Proposed on 2026-09-02.`
    to the `Accepted on <date> after <what passed>` form ADRs 0053 and 0055 use, naming the
    guard tests and the two gates. The record is deliberately not Accepted before that: an
    Accepted ADR is settled ground in this repository's review workflow, and leaving it
@@ -1808,7 +1808,7 @@ whose neutralization reddens nothing is not covered, whatever its tests appear t
    guards it describes. Re-run `just adr-numbering` after the edit.
 
 **Acceptance:** both gates exit 0 with no `| tail`, `>/dev/null`, or `|| true` anywhere in
-the invocation, and ADR 0115's status names the evidence it was accepted on.
+the invocation, and ADR 0161's status names the evidence it was accepted on.
 
 ## Deferrals
 
@@ -1840,7 +1840,7 @@ first from pass 1:
 - **The test seam takes per-call statuses**, two previously inexpressible tests are
   restated, five new tests are added, and the controlled-fault check covers all three
   guards plus the environment gate rather than Guard A alone.
-- **ADR 0115 is `Proposed` until the guardrails are green** (Task 6 step 4), and its
+- **ADR 0161 is `Proposed` until the guardrails are green** (Task 6 step 4), and its
   "before issuing any command" claim is narrowed to "before any mutating command".
 
 Then from pass 2, which reviewed those fixes and found four of them under-specified in the
@@ -1872,7 +1872,7 @@ place that matters most — the tests that must make the guards refuse:
   actually exercised.
 - **The fault-injection table names the seam each fault drives**, since a status callable
   cannot change what a response returns.
-- **ADR 0115 and the spec record the `io_slots` byte-stability question** as an expected
+- **ADR 0161 and the spec record the `io_slots` byte-stability question** as an expected
   Guard B refusal on the first live run rather than a defect, and refuse to loosen the
   comparison to avoid it.
 
@@ -1886,7 +1886,7 @@ pass to measure rather than reason about the tests:
 - **Test 6 never gave the probe a foreign token**, because the description fixture ignored
   which partition it was asked about. It is now keyed on the name, and test 6b covers the
   probe's ownership refusal.
-- **The probe delete obeyed neither invariant ADR 0115 declares load-bearing.** It removed no
+- **The probe delete obeyed neither invariant ADR 0161 declares load-bearing.** It removed no
   hardware first — from the one partition that provably holds the slot on that path — and it
   deleted by name. It now removes the slot from the probe's own profile, confirms the
   removal, and deletes on the UUID the probe's create returned.

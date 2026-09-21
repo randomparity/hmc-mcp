@@ -1,5 +1,6 @@
 """Tests for the compact pytest output adapter."""
 
+import contextlib
 import importlib.util
 import inspect
 import io
@@ -9,7 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, cast
 
 import pytest
 
@@ -53,18 +54,91 @@ class BinaryStderr:
         self.buffer = RecordingBuffer()
 
 
+class InterruptingProcess:
+    """A child whose first `interrupts` waits raise `KeyboardInterrupt`.
+
+    One stub covers the whole escalation ladder: one interrupt is the ordinary
+    Ctrl-C, two reach `terminate()`, three reach `kill()`. `payload` stands in
+    for whatever pytest managed to write before the first interrupt.
+    """
+
+    returncode = 2
+
+    def __init__(self, interrupts: int, capture: BinaryIO, payload: bytes) -> None:
+        self.interrupts = interrupts
+        self.capture = capture
+        self.payload = payload
+        self.wait_count = 0
+        self.terminated = False
+        self.killed = False
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_count += 1
+        if self.wait_count == 1:
+            self.capture.write(self.payload)
+        if self.wait_count <= self.interrupts:
+            raise KeyboardInterrupt
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+# A hang ceiling, not a latency budget: the poll loop below returns the moment
+# the marker appears, so only a child that never becomes ready ever pays this.
+_READINESS_TIMEOUT_SECONDS = 60.0
+
+# Covers what `run_tests._settle_interrupted` does not bound -- the post-kill
+# reap, the captured-output replay, and the parent's own teardown.
+_INTERRUPT_COLLECTION_SLACK_SECONDS = 10.0
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    """Kill the child and everything it started.
+
+    `start_new_session=True` makes the child a group leader, so a bare
+    `process.kill()` strands the grandchild pytest. Mirrors `_kill_group` in
+    `scripts/check_generated_docs.py`, fallback included: the direct child is
+    covered by the group kill except when signalling the group was refused.
+    """
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
+
+
 def _wait_for_process_marker(
-    marker: Path, process: subprocess.Popen[bytes], timeout_seconds: float = 10
-) -> None:
-    """Wait until the child declares readiness or exits unexpectedly."""
-    deadline = time.monotonic() + timeout_seconds
+    marker: Path,
+    process: subprocess.Popen[bytes],
+    timeout_seconds: float = _READINESS_TIMEOUT_SECONDS,
+) -> float:
+    """Wait for the child to declare readiness, returning how long that took.
+
+    That figure is what the caller reports. Both it and the post-interrupt
+    settle interval move with host load -- ADR 0130 measured them tracking each
+    other once `run_tests`'s old 3-second clamp stopped hiding the relation --
+    so readiness is reported beside the settle interval, never instead of it.
+    """
+    started = time.monotonic()
+    deadline = started + timeout_seconds
     while not marker.exists():
         if process.poll() is not None:
+            # The direct child is gone, but the grandchild pytest it started
+            # keeps the group alive -- which is both why the kill reaches it and
+            # why the pgid is not yet free to be recycled. Not the timeout arm's
+            # case below: poll() has already reaped the child here, so this
+            # signal rests on that surviving member rather than on the leader.
+            # See `_kill_process_group`.
+            _kill_process_group(process)
             pytest.fail(f"child exited with {process.returncode} before becoming ready")
         if time.monotonic() >= deadline:
-            process.kill()
+            _kill_process_group(process)
             pytest.fail(f"child did not create readiness marker {marker}")
         time.sleep(0.01)
+    return time.monotonic() - started
 
 
 def _stub_pytest(
@@ -198,28 +272,274 @@ def test_interruption_replays_captured_output_without_traceback(
     output = b"partial pytest diagnostic before SIGINT \xff\n"
     stderr = BinaryStderr()
     temporary_file = TrackingTemporaryFile()
-
-    class InterruptedProcess:
-        returncode = 2
-        wait_count = 0
-
-        def wait(self, timeout: int | None = None) -> int:
-            self.wait_count += 1
-            if self.wait_count == 1:
-                temporary_file.write(output)
-                raise KeyboardInterrupt
-            return self.returncode
+    process = InterruptingProcess(1, temporary_file, output)
 
     monkeypatch.setattr(run_tests.sys, "stderr", stderr)
     monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
     monkeypatch.setattr(
-        run_tests.subprocess, "Popen", lambda _command, **_kwargs: InterruptedProcess()
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
     )
 
     assert run_tests.main() == 130
 
     assert stderr.buffer.getvalue() == output
     assert temporary_file.closed
+
+
+def test_interrupt_during_replay_returns_interrupted_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_chunk = b"a" * run_tests.CHUNK_SIZE
+    temporary_file = TrackingTemporaryFile()
+    process = InterruptingProcess(1, temporary_file, first_chunk + b"remaining\n")
+
+    class ReplayInterruptingBuffer(RecordingBuffer):
+        def write(self, data: Any) -> int:
+            if self.chunks:
+                raise KeyboardInterrupt
+            return super().write(data)
+
+    stderr = BinaryStderr()
+    stderr.buffer = ReplayInterruptingBuffer()
+    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
+
+    try:
+        status = run_tests.main()
+    except KeyboardInterrupt:
+        pytest.fail("an interrupt during replay escaped main()")
+
+    assert status == 130
+    assert stderr.buffer.getvalue() == first_chunk
+    assert temporary_file.closed
+
+
+def test_the_reap_is_the_smaller_of_the_two_bounds() -> None:
+    """The ladder's invariant: the reap follows the diagnostic window.
+
+    Only the ordering is asserted. The window's size answers to the suite
+    `just test` wraps, which ADR 0130 measures and no test here can; and it is
+    deliberately not floored against `_READINESS_TIMEOUT_SECONDS`, because
+    pinning a production constant to a test-file one would make raising this
+    module's readiness ceiling raise the shipped window with it.
+    """
+    assert run_tests.TERMINATE_GRACE_SECONDS < run_tests.INTERRUPT_GRACE_SECONDS
+
+
+def test_timeout_is_below_the_ci_leg_budget() -> None:
+    """The script's timeout must fire before the CI leg budget expires.
+
+    `.github/workflows/ci.yml` sets `timeout-minutes: 20` (1200 s) for the
+    ``ci`` job. When the two are equal the runner cancels the job before the
+    script's timeout arm can fire, so the diagnostic output and exit code 124
+    are lost. This guard keeps a margin for the replay to complete.
+    """
+    _CI_LEG_BUDGET_SECONDS = 20 * 60  # timeout-minutes: 20 in ci.yml
+    assert run_tests.TEST_TIMEOUT_SECONDS < _CI_LEG_BUDGET_SECONDS
+
+
+@pytest.mark.parametrize(("interrupts", "killed"), [(2, False), (3, True), (4, True)])
+def test_further_interrupts_escalate_without_escaping_main(
+    monkeypatch: pytest.MonkeyPatch, interrupts: int, killed: bool
+) -> None:
+    """A further Ctrl-C escalates; it must not escape `main` and strand the child."""
+    payload = b"pytest report before the next interrupt \xff\n"
+    stderr = BinaryStderr()
+    temporary_file = TrackingTemporaryFile()
+    process = InterruptingProcess(interrupts, temporary_file, payload)
+
+    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
+
+    assert run_tests.main() == 130
+
+    assert process.terminated
+    assert process.killed is killed
+    assert stderr.buffer.getvalue() == payload
+    assert temporary_file.closed
+
+
+def test_a_wedged_child_is_terminated_then_killed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child that never exits is escalated through both rungs, not waited on.
+
+    This is the only test driving the window's and the reap's timeout branches
+    rather than their interrupt branches, so it is what proves an interrupted
+    run still fails on a bounded budget instead of stalling.
+    """
+    temporary_file = TrackingTemporaryFile()
+
+    class WedgedProcess:
+        returncode = -9
+
+        def __init__(self) -> None:
+            self.timeouts: list[float | None] = []
+            self.terminated = False
+            self.killed = False
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.timeouts.append(timeout)
+            if len(self.timeouts) == 1:
+                raise KeyboardInterrupt
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(["pytest"], timeout)
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+    process = WedgedProcess()
+    monkeypatch.setattr(run_tests.sys, "stderr", BinaryStderr())
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
+
+    assert run_tests.main() == 130
+
+    assert process.terminated
+    assert process.killed
+    # Pins the routing, both constants, and both escalation rungs at once.
+    assert process.timeouts == [
+        run_tests.TEST_TIMEOUT_SECONDS,
+        run_tests.INTERRUPT_GRACE_SECONDS,
+        run_tests.TERMINATE_GRACE_SECONDS,
+        None,
+    ]
+
+
+def test_timeout_terminates_pytest_and_returns_timeout_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    temporary_file = TrackingTemporaryFile()
+
+    class TimedOutProcess:
+        returncode = 143
+
+        def __init__(self) -> None:
+            self.wait_count = 0
+            self.timeouts: list[float | None] = []
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_count += 1
+            self.timeouts.append(timeout)
+            if self.wait_count == 1:
+                temporary_file.write(b"pytest stalled\n")
+                raise subprocess.TimeoutExpired(["pytest"], timeout)
+            return self.returncode
+
+        def terminate(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            return None
+
+    process = TimedOutProcess()
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(run_tests.subprocess, "Popen", lambda _command, **_kwargs: process)
+
+    assert run_tests.main() == 124
+
+    error_output = capsys.readouterr().err
+    assert "pytest stalled" in error_output
+    assert "timed out" in error_output
+    assert process.wait_count == 2
+    # The timeout arm escalates straight away: nothing has asked this child to
+    # stop, so a diagnostic window would only delay the report (ADR 0130).
+    assert process.timeouts == [
+        run_tests.TEST_TIMEOUT_SECONDS,
+        run_tests.TERMINATE_GRACE_SECONDS,
+    ]
+    assert temporary_file.closed
+
+
+def test_a_refused_group_kill_still_kills_the_direct_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`killpg` can be refused, and then nothing has killed the direct child."""
+    killed: list[int] = []
+
+    class RefusedProcess:
+        pid = 4321
+
+        def kill(self) -> None:
+            killed.append(self.pid)
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", refused)
+
+    _kill_process_group(cast(subprocess.Popen[bytes], RefusedProcess()))
+
+    assert killed == [4321]
+
+
+def test_killing_a_group_that_has_already_gone_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both signals raise when nothing is left, and neither may escape."""
+
+    def gone(*_args: object, **_kwargs: object) -> None:
+        raise ProcessLookupError("no such process")
+
+    class GoneProcess:
+        pid = 4322
+
+        def kill(self) -> None:
+            raise ProcessLookupError("no such process")
+
+    monkeypatch.setattr(os, "killpg", gone)
+
+    _kill_process_group(cast(subprocess.Popen[bytes], GoneProcess()))
+
+
+def test_a_child_that_exits_early_has_its_group_killed_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The early-exit arm must tear the group down, as the timeout arm does.
+
+    A child that dies before writing the marker can still have started the
+    grandchild pytest, and that grandchild outlives the direct child --
+    `_kill_process_group`'s own docstring is why. Failing without the group kill
+    strands it for the rest of the run.
+    """
+    killed: list[int] = []
+
+    def recording_killpg(pid: int, _signal: int) -> None:
+        killed.append(pid)
+
+    class ExitedProcess:
+        pid = 4323
+        returncode = 3
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            pass
+
+    monkeypatch.setattr(os, "killpg", recording_killpg)
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        _wait_for_process_marker(
+            tmp_path / "never-written",
+            cast(subprocess.Popen[bytes], ExitedProcess()),
+        )
+
+    assert "exited with 3" in str(failure.value)
+    assert killed == [4323]
 
 
 def test_main_accepts_no_arguments() -> None:
@@ -243,10 +563,43 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    _wait_for_process_marker(ready, process)
-    os.killpg(process.pid, signal.SIGINT)
-    stdout, stderr = process.communicate(timeout=10)
+    ready_in = _wait_for_process_marker(ready, process)
+    # A group that has already gone means the child exited on its own; the
+    # returncode assertion below reports that far better than an errno would.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGINT)
+    signalled_at = time.monotonic()
+    window = run_tests.INTERRUPT_GRACE_SECONDS
+    reap = run_tests.TERMINATE_GRACE_SECONDS
+    budget = window + reap + _INTERRUPT_COLLECTION_SLACK_SECONDS
+    try:
+        stdout, stderr = process.communicate(timeout=budget)
+    except subprocess.TimeoutExpired as expired:
+        _kill_process_group(process)
+        # Whatever the timed-out call had already read, so a drain that cannot
+        # finish still reports something. The drain is bounded rather than bare:
+        # an unbounded wait here would replace the budget it just enforced.
+        stderr = expired.stderr or b""
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            _stdout, stderr = process.communicate(timeout=5)
+        pytest.fail(
+            f"child did not exit within {budget}s of SIGINT "
+            f"(window {window}s, reap {reap}s) "
+            f"after becoming ready in {ready_in:.1f}s; "
+            f"stderr tail: {stderr[-2000:]!r}"
+        )
+    settled_in = time.monotonic() - signalled_at
 
     assert process.returncode == 130
     assert stdout == b""
-    assert b"KeyboardInterrupt" in stderr
+    # Report, do not attribute. Both figures now move with load: ADR 0130
+    # measured the settle interval tracking readiness at 0.95x once the old
+    # 3-second clamp stopped hiding it. That is why neither is evidence on its
+    # own -- a regression that lowered INTERRUPT_GRACE_SECONDS would satisfy any
+    # `settled_in >= window` guard trivially and be reported as host slowness.
+    assert b"KeyboardInterrupt" in stderr, (
+        f"no KeyboardInterrupt: the child became ready in {ready_in:.1f}s and "
+        f"settled in {settled_in:.1f}s against a window of {window}s "
+        f"and a reap of {reap}s; "
+        f"stderr tail: {stderr[-2000:]!r}"
+    )

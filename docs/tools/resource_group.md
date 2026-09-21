@@ -4,7 +4,7 @@
 
 2 tools in the `resource_group` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_list_resource_group_memopt_scores` | `read` | `resource_group.list_memopt_scores` | `managed_system` | Return current resource-group affinity scores when supported. |
-| `hmc_plan_resource_group_memopt_scores` | `read` | `resource_group.plan_memopt_scores` | `managed_system` | Return potential resource-group affinity scores without running DPO. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_list_resource_group_memopt_scores` | `read` | `resource_group.list_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return current resource-group affinity scores when supported. |
+| `hmc_plan_resource_group_memopt_scores` | `read` | `resource_group.plan_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return potential resource-group affinity scores without running DPO. |

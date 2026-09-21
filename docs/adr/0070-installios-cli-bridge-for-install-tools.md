@@ -1,4 +1,4 @@
-# ADR 0070: Bridge hmc_install_lpar_os / hmc_install_vios to the HMC CLI installios Command
+# ADR 0070: Bridge hmc_install_vios_by_lpar_selector / hmc_install_vios to the HMC CLI installios Command
 
 ## Status
 
@@ -62,7 +62,7 @@ Relevant documented facts:
 Tool names, operation ids (`vios.install`, `lpar.install_os`), effects, and
 target selectors are unchanged.
 
-For `hmc_install_lpar_os` the honest scope is stated in its docstring: the
+For `hmc_install_vios_by_lpar_selector` the honest scope is stated in its docstring: the
 engine installs VIOS images (the man page restricts `-p` to Virtual I/O Server
 partitions). General AIX/Linux NIM installs remain a NIM-master workflow that
 the HMC alone cannot drive (ADR 0069).
@@ -142,9 +142,9 @@ live-HMC window:
 4. Whether `installios -p` accepts a partition UUID (we assume not and always
    send names).
 5. Whether any HMC release has widened `installios` beyond VIOS-type targets;
-   if so, `hmc_install_lpar_os`'s scope note can be revisited. **This one now
+   if so, `hmc_install_vios_by_lpar_selector`'s scope note can be revisited. **This one now
    carries an authorization consequence:** ADR 0092 §3.4a exempts
-   `install_lpar_os` and `install_vios` from the ADR 0011 ownership guard
+   `install_vios_by_lpar_selector` and `install_vios` from the ADR 0011 ownership guard
    *because* a non-VIOS `-p` is refused. Confirming the widening reopens that
    classification, not only the scope note — revisit ADR 0092 §3's disposition
    of #366 in the same window.

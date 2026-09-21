@@ -1,8 +1,8 @@
 """Live validation scenarios for reversible PCIe assignment — issue #217.
 
 SR-IOV arm (ST23–ST28, subtask 23): Exercises reversible SR-IOV logical-port
-assignment on ltczz386 / ltczz386-lp3.  The LPAR must be Not Activated before
-this module runs.
+assignment on the configured system and LPAR.  The LPAR must be Not Activated
+before this module runs.
 
 Dedicated-slot arm (ST29–ST34, subtask 24): Exercises reversible dedicated PCIe
 slot assignment via a run-unique owner-stamped LPAR.  It SKIPs outside the
@@ -11,12 +11,12 @@ the io_slots profile grammar this arm issues has only been probed on a Power8
 documentation row and must not be executed on an unidentified environment.
 Configuration is required — no fallback to an arbitrary system.
 
-Admitted environment (ADR 0053 / operations/pcie.py):
+Admitted environment (ADR 0053 / operations/virtualization/pcie.py):
   HMC V10R3 M1060 · managed-system model 8375-42A
 
 SR-IOV test structure (ST23–ST28):
   ST23 — Baseline: read adapter/physport/logport inventory; confirm lp3 profile is clean
-  ST24 — Assign logical port 27004003 (phys_port 0, 2% capacity) to lp3
+  ST24 — Assign the configured logical port to the configured LPAR
   ST25 — Verify effective + profile readback after assign
   ST26 — Unassign; verify logical port is unconfigured and profile is restored
   ST27 — Reassign on existing LPAR (same port, same capacity)
@@ -30,11 +30,13 @@ Dedicated-slot test structure (ST29–ST34, subtask 24):
   ST33 — Unassign (io_slots-), verify exact baseline restored, reassign (io_slots+)
   ST34 — Cleanup: slot removal then LPAR delete, each only on an exact match
 
-Configuration variables for the dedicated arm:
-  HMC_LIVE_PCIE_SYSTEM  — managed-system name (required)
-  HMC_LIVE_PCIE_LPAR_PREFIX — LPAR name prefix for the run-unique fixture (required)
-  HMC_LIVE_PCIE_PROFILE — profile name (default: default_profile)
-  HMC_LIVE_PCIE_DRC_INDEX — specific DRC index to test; auto-selects first unassigned if absent
+Configuration for the dedicated arm, read from the ADR 0115 `.env` (never from
+the ambient environment — this arm creates and deletes partitions on the system
+it is pointed at, so an exported value must not be able to redirect it):
+  LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME — managed-system name; the arm SKIPs if unset
+  LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX — name prefix for the run-unique fixture; SKIPs if unset
+  LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME — profile name (default: default_profile)
+  LIVE_TEST_DEDICATED_PCIE_DRC_INDEX — specific DRC index; auto-selects first unassigned if absent
 
 Missing hardware or a wrong LPAR state produces SKIP per arm, not FAIL.
 Any cleanup mutation failure records manual-recovery evidence and halts further
@@ -43,43 +45,30 @@ cleanup (does not attempt additional mutations on an unknown state).
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
+import sys
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-from hmc_mcp.operations.ownership import parse_lpar_ownership_caller_token
+from hmc_mcp.operations.lpar.ownership import parse_lpar_ownership_caller_token
 
 # These two are imported rather than restated so the arm's SKIP envelope cannot
 # drift from the one require_admitted_environment enforces for the SR-IOV path;
 # a copied literal would go stale silently the first time the admitted release moves.
-from hmc_mcp.operations.pcie import (
+from hmc_mcp.operations.virtualization.pcie import (
     _ADMITTED_HMC_RELEASE,
     _ADMITTED_SYSTEM_MODEL,
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
 )
 from hmc_mcp.ssh.commands import build_attribute_record, build_filter
+from live_test.observation import ExpectedOutcome
 
 if TYPE_CHECKING:
-    from live_test_runner import RunState
-
-
-# ---------------------------------------------------------------------------
-# Constants — selected from the pre-test inventory of ltczz386
-# ---------------------------------------------------------------------------
-
-_ADAPTER_ID = "1"               # adapter_id=1, config_state=sriov, functional_state=1
-_PHYS_PORT_ID = "0"             # port 0, phys_port_loc U78D2.001.RCH0268-P1-C4-T1
-#                                 lp2 reduced to 95% (from 100%) to free 5% for this test;
-#                                 will be restored to 100% after the test completes.
-_LOGICAL_PORT_ID = "27004003"   # unconfigured, location U78D2.001.RCH0268-P1-C4-T1-S3
-_CAPACITY_PERCENT = 5.0         # 5% — the freed capacity on port 0
-_PROFILE_NAME = "default_profile"
+    from live_test_runner import LiveTestConfig, RunState
 
 
 # ---------------------------------------------------------------------------
@@ -99,15 +88,15 @@ class _SriovState:
 
 async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
     """Read current SR-IOV state for the test logical port and lp3 profile."""
-    context = state.context
+    config = state.config
 
     # Read configured logical ports
     st, data = await state.call(
         client,
         "hmc_list_sriov_logical_ports",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
+        system_name_or_uuid=config.system_name,
+        adapter_id=str(config.sriov_adapter_id),
+        logical_port_id=str(config.sriov_logical_port_id),
     )
     configured = False
     owner_lpar = None
@@ -117,7 +106,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         for item in items:
             if (
                 isinstance(item, dict)
-                and item.get("logical_port_id") == _LOGICAL_PORT_ID
+                and item.get("logical_port_id") == str(config.sriov_logical_port_id)
                 and item.get("availability") not in ("unconfigured", None, "")
                 and item.get("owner_lpar")
             ):
@@ -132,8 +121,8 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         client,
         "hmc_run_command",
         cmd=(
-            f"lssyscfg -r prof -m ltczz386 "
-            f"--filter 'lpar_names={context.lp3_name},profile_names={_PROFILE_NAME}' "
+            f"lssyscfg -r prof -m {config.system_name} "
+            f"--filter 'lpar_names={config.lp3_name},profile_names={config.sriov_profile_name}' "
             f"-F sriov_eth_logical_ports"
         ),
     )
@@ -156,17 +145,114 @@ def _sriov_state_summary(s: _SriovState) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
-    """Record the pre-test SR-IOV inventory.  Returns False if prerequisites fail."""
-    context = state.context
-    print("\n=== ST23: SR-IOV Baseline (issue #217) ===")
+def _adapter_is_healthy(data: object, adapter_id: str) -> bool:
+    """Return whether the selected adapter is in healthy SR-IOV mode.
 
-    # 1. Adapter inventory
+    `adapter_id` is compared against `hmc_list_sriov_adapters` rows, which project
+    it as `str` (`SriovAdapter.adapter_id`), so the caller converts before calling.
+    Comparing the numeric config value directly makes every row unequal and reports
+    a healthy adapter as absent.
+    """
+    items = data.get("items") or [] if isinstance(data, dict) else []
+    return any(
+        isinstance(item, dict)
+        and item.get("adapter_id") == adapter_id
+        and item.get("mode") == "sriov"
+        and item.get("availability") == "1"
+        for item in items
+    )
+
+
+def _available_capacity(data: object) -> float:
+    """Calculate remaining physical-port capacity from logical-port inventory."""
+    used = 0.0
+    items = data.get("items") or [] if isinstance(data, dict) else []
+    for index, item in enumerate(items):
+        if (
+            isinstance(item, dict)
+            and item.get("availability") not in ("unconfigured", None, "")
+            and item.get("capacity_percent") is not None
+        ):
+            try:
+                used += float(item["capacity_percent"])
+            except (ValueError, TypeError) as error:
+                raise ValueError(
+                    f"logical-port row {index} has invalid capacity_percent"
+                ) from error
+    return 100.0 - used
+
+
+def _logical_port_is_configured(data: object, logical_port_id: str) -> bool:
+    """Return whether the selected logical port has an effective assignment.
+
+    `logical_port_id` is compared against `hmc_list_sriov_logical_ports` rows,
+    which project it as `str` (`SriovLogicalPort.logical_port_id`). Comparing the
+    numeric config value directly is never equal, so a port that is still
+    configured after cleanup reports as unconfigured - a wrong answer in a cleanup
+    assertion rather than a loud failure.
+    """
+    items = data.get("items") or [] if isinstance(data, dict) else []
+    return any(
+        isinstance(item, dict)
+        and item.get("logical_port_id") == logical_port_id
+        and item.get("availability") not in ("unconfigured", None, "")
+        for item in items
+    )
+
+
+async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
+    """Record final logical-port and profile checks after cleanup."""
+    config = state.config
+    st, data = await state.call(
+        client,
+        "hmc_list_sriov_logical_ports",
+        system_name_or_uuid=config.system_name,
+        adapter_id=str(config.sriov_adapter_id),
+        logical_port_id=str(config.sriov_logical_port_id),
+    )
+    state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
+    if st == "PASS":
+        still_configured = _logical_port_is_configured(
+            data, str(config.sriov_logical_port_id)
+        )
+        state.record(
+            28,
+            "sriov final inventory check",
+            "FAIL" if still_configured else "PASS",
+            (
+                f"MANUAL RECOVERY REQUIRED: logical port {config.sriov_logical_port_id} "
+                "is still configured after cleanup"
+                if still_configured
+                else f"logical port {config.sriov_logical_port_id} is unconfigured — baseline restored"
+            ),
+        )
+
+    final_state = await _read_sriov_state(client, state)
+    profile_clean = final_state.profile_ports in (None, "none", "")
+    state.record(
+        28,
+        "lp3 profile final check",
+        "PASS" if profile_clean else "FAIL",
+        (
+            f"MANUAL RECOVERY REQUIRED: profile sriov_eth_logical_ports="
+            f"{final_state.profile_ports!r} after cleanup — "
+            f"run: chsyscfg -r prof -m {config.system_name} "
+            f'-i "name={config.sriov_profile_name},lpar_name={config.lp3_name},'
+            f'sriov_eth_logical_ports=none" to recover'
+            if not profile_clean
+            else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
+        ),
+    )
+
+
+async def _check_sriov_adapter_health(client: Client, state: RunState) -> bool:
+    """Require an available, healthy SR-IOV adapter before any mutation arm."""
+    config = state.config
     st, data = await state.call(
         client,
         "hmc_list_sriov_adapters",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
+        system_name_or_uuid=config.system_name,
+        adapter_id=str(config.sriov_adapter_id),
     )
     state.record(23, "hmc_list_sriov_adapters (baseline)", st, data)
     if st != "PASS":
@@ -189,35 +275,31 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         return False
 
     # Confirm adapter is in SR-IOV mode and healthy
-    items = data.get("items") or [] if isinstance(data, dict) else []
-    adapter_ok = any(
-        isinstance(i, dict)
-        and i.get("adapter_id") == _ADAPTER_ID
-        and i.get("mode") == "sriov"
-        and i.get("availability") == "1"
-        for i in items
-    )
-    if not adapter_ok:
+    if not _adapter_is_healthy(data, str(config.sriov_adapter_id)):
         state.skip(
             23,
             "hmc_list_sriov_adapters (health check)",
-            f"adapter {_ADAPTER_ID!r} is not in healthy sriov mode; SKIP SR-IOV arm",
+            f"adapter {config.sriov_adapter_id!r} is not in healthy sriov mode; SKIP SR-IOV arm",
         )
         return False
     state.record(
         23,
         "hmc_list_sriov_adapters (health check)",
         "PASS",
-        f"adapter {_ADAPTER_ID} in healthy sriov mode",
+        f"adapter {config.sriov_adapter_id} in healthy sriov mode",
     )
+    return True
 
-    # 2. Physical port inventory — also check that the port has remaining capacity
+
+async def _check_sriov_physical_port_capacity(client: Client, state: RunState) -> bool:
+    """Require the selected physical port and sufficient available capacity."""
+    config = state.config
     st, data = await state.call(
         client,
         "hmc_list_sriov_physical_ports",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
+        system_name_or_uuid=config.system_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
     )
     state.record(23, "hmc_list_sriov_physical_ports (baseline)", st, data)
     if st != "PASS":
@@ -229,40 +311,27 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         return False
 
     # Capacity check: hmc_list_sriov_logical_ports returns configured+unconfigured ports.
-    # We need at least _CAPACITY_PERCENT of remaining room on the physical port.
-    # Use the raw configured logport list to compute used capacity on _PHYS_PORT_ID.
+    # The configured capacity must be available on the configured physical port.
     st_lp, data_lp = await state.call(
         client,
         "hmc_list_sriov_logical_ports",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
+        system_name_or_uuid=config.system_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
     )
-    used_capacity = 0.0
-    if st_lp == "PASS" and isinstance(data_lp, dict):
-        for item in data_lp.get("items") or []:
-            if (
-                isinstance(item, dict)
-                and item.get("availability") not in ("unconfigured", None, "")
-                and item.get("capacity_percent") is not None
-            ):
-                try:
-                    used_capacity += float(item["capacity_percent"])
-                except (ValueError, TypeError):
-                    pass
-    available = 100.0 - used_capacity
+    available = _available_capacity(data_lp) if st_lp == "PASS" else 0.0
     state.record(
         23,
         "sriov capacity check (pre-test)",
-        "PASS" if available >= _CAPACITY_PERCENT else "SKIP",
-        f"phys_port {_PHYS_PORT_ID}: used={used_capacity}% available={available}% needed={_CAPACITY_PERCENT}%",
+        "PASS" if available >= config.sriov_capacity_percent else "SKIP",
+        f"phys_port {config.sriov_physical_port_id}: available={available}% needed={config.sriov_capacity_percent}%",
     )
-    if available < _CAPACITY_PERCENT:
+    if available < config.sriov_capacity_percent:
         state.skip(
             23,
             "sriov assign arm",
-            f"phys_port {_PHYS_PORT_ID} has only {available}% capacity remaining "
-            f"(need {_CAPACITY_PERCENT}%); all unconfigured logical ports are T1-addressed "
+            f"phys_port {config.sriov_physical_port_id} has only {available}% capacity remaining "
+            f"(need {config.sriov_capacity_percent}%); all unconfigured logical ports are T1-addressed "
             "and hmc-mcp's location-code check blocks cross-port assignment — SKIP assign arm. "
             "NOTE: chhwres assigns T1 logical ports to phys_port 1 (T2) successfully "
             "at the firmware layer; the location-code check is an hmc-mcp admission gate, "
@@ -270,13 +339,18 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         )
         return False
 
-    # 3. Logical port inventory (confirm test port is unconfigured)
+    return True
+
+
+async def _check_sriov_logical_port_clean(client: Client, state: RunState) -> bool:
+    """Require the selected logical port to be unconfigured before mutation."""
+    config = state.config
     st, data = await state.call(
         client,
         "hmc_list_sriov_logical_ports",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
+        system_name_or_uuid=config.system_name,
+        adapter_id=str(config.sriov_adapter_id),
+        logical_port_id=str(config.sriov_logical_port_id),
     )
     state.record(23, "hmc_list_sriov_logical_ports (baseline)", st, data)
     if st != "PASS":
@@ -286,18 +360,11 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
             "logical port inventory failed: SKIP SR-IOV arm",
         )
         return False
-    items = data.get("items") or [] if isinstance(data, dict) else []
-    already_configured = any(
-        isinstance(i, dict)
-        and i.get("logical_port_id") == _LOGICAL_PORT_ID
-        and i.get("availability") not in ("unconfigured", None, "")
-        for i in items
-    )
-    if already_configured:
+    if _logical_port_is_configured(data, str(config.sriov_logical_port_id)):
         state.skip(
             23,
             "sriov logical port precondition",
-            f"logical port {_LOGICAL_PORT_ID} is already configured (not a clean baseline); "
+            f"logical port {config.sriov_logical_port_id} is already configured (not a clean baseline); "
             "SKIP SR-IOV arm to avoid mutating a port this run does not own",
         )
         return False
@@ -305,10 +372,14 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         23,
         "sriov logical port precondition",
         "PASS",
-        f"logical port {_LOGICAL_PORT_ID} is unconfigured — clean baseline confirmed",
+        f"logical port {config.sriov_logical_port_id} is unconfigured — clean baseline confirmed",
     )
+    return True
 
-    # 4. lp3 profile SR-IOV field
+
+async def _check_sriov_profile_clean(client: Client, state: RunState) -> bool:
+    """Require the profile to be empty or already scoped to this test port."""
+    config = state.config
     sriov_state = await _read_sriov_state(client, state)
     state.record(
         23,
@@ -321,17 +392,18 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
     #   (b) profile already contains exactly our test port (e.g. written manually
     #       ahead of this run so the unassign path can be exercised) — the assign
     #       operation will detect idempotence and the unassign will clear it.
-    profile_has_our_port = (
-        sriov_state.profile_ports not in (None, "none", "")
-        and f":{_LOGICAL_PORT_ID}:" in str(sriov_state.profile_ports)
-    )
+    profile_has_our_port = sriov_state.profile_ports not in (
+        None,
+        "none",
+        "",
+    ) and f":{config.sriov_logical_port_id}:" in str(sriov_state.profile_ports)
     profile_clean = sriov_state.profile_ports in (None, "none", "")
     if not profile_clean and not profile_has_our_port:
         state.skip(
             23,
             "lp3 profile precondition",
-            f"lp3 default_profile already has sriov_eth_logical_ports={sriov_state.profile_ports!r} "
-            f"(not our test port {_LOGICAL_PORT_ID}); "
+            f"lp3 {config.sriov_profile_name} already has sriov_eth_logical_ports={sriov_state.profile_ports!r} "
+            f"(not our test port {config.sriov_logical_port_id}); "
             "SKIP SR-IOV arm to avoid overwriting an existing assignment",
         )
         return False
@@ -340,12 +412,26 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
         "lp3 profile precondition",
         "PASS",
         (
-            f"sriov_eth_logical_ports contains our test port {_LOGICAL_PORT_ID} — "
+            f"sriov_eth_logical_ports contains our test port {config.sriov_logical_port_id} — "
             "profile ready for assign (idempotent) + unassign round-trip"
             if profile_has_our_port
             else "sriov_eth_logical_ports=none — lp3 profile is clean"
         ),
     )
+    return True
+
+
+async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
+    """Record ordered SR-IOV prerequisites and stop at the first failed stage."""
+    print("\n=== ST23: SR-IOV Baseline (issue #217) ===")
+    for check in (
+        _check_sriov_adapter_health,
+        _check_sriov_physical_port_capacity,
+        _check_sriov_logical_port_clean,
+        _check_sriov_profile_clean,
+    ):
+        if not await check(client, state):
+            return False
     return True
 
 
@@ -356,18 +442,18 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
 
 async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
     """Assign test logical port to lp3.  Returns False if the call failed."""
-    context = state.context
+    config = state.config
     print("\n=== ST24: SR-IOV Assign (issue #217) ===")
     st, data = await state.call(
         client,
         "hmc_assign_sriov_logical_port",
-        system_name_or_uuid=context.system_name,
-        lpar_name_or_uuid=context.lp3_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-        capacity_percent=_CAPACITY_PERCENT,
-        profile_name=_PROFILE_NAME,
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
+        capacity_percent=config.sriov_capacity_percent,
+        profile_name=config.sriov_profile_name,
         ownership_override=True,
     )
     state.record(24, "hmc_assign_sriov_logical_port", st, data)
@@ -381,7 +467,7 @@ async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 
 async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
     """Verify the logical port is configured on lp3 after assign."""
-    context = state.context
+    config = state.config
     print("\n=== ST25: SR-IOV Post-Assign Verify (issue #217) ===")
     sriov_state = await _read_sriov_state(client, state)
     state.record(
@@ -392,21 +478,24 @@ async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
     )
 
     # Verify owner
-    owner_ok = sriov_state.owner_lpar == context.lp3_name
+    owner_ok = sriov_state.owner_lpar == config.lp3_name
     state.record(
         25,
         "sriov owner check",
         "PASS" if owner_ok else "FAIL",
-        f"expected owner={context.lp3_name!r}, got {sriov_state.owner_lpar!r}",
+        f"expected owner={config.lp3_name!r}, got {sriov_state.owner_lpar!r}",
     )
 
     # Verify capacity
-    cap_ok = abs((sriov_state.capacity_percent or 0.0) - _CAPACITY_PERCENT) < 0.01
+    cap_ok = (
+        abs((sriov_state.capacity_percent or 0.0) - config.sriov_capacity_percent)
+        < 0.01
+    )
     state.record(
         25,
         "sriov capacity check",
         "PASS" if cap_ok else "FAIL",
-        f"expected {_CAPACITY_PERCENT}%, got {sriov_state.capacity_percent}%",
+        f"expected {config.sriov_capacity_percent}%, got {sriov_state.capacity_percent}%",
     )
 
     # Profile readback — informational for the dynamic path on a Not Activated LPAR.
@@ -430,17 +519,17 @@ async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
 
 async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
     """Unassign the test logical port from lp3.  Returns False if the call failed."""
-    context = state.context
+    config = state.config
     print("\n=== ST26: SR-IOV Unassign (issue #217) ===")
     st, data = await state.call(
         client,
         "hmc_unassign_sriov_logical_port",
-        system_name_or_uuid=context.system_name,
-        lpar_name_or_uuid=context.lp3_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-        profile_name=_PROFILE_NAME,
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
+        profile_name=config.sriov_profile_name,
         ownership_override=True,
     )
     state.record(26, "hmc_unassign_sriov_logical_port", st, data)
@@ -477,18 +566,18 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
 
 async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
     """Re-assign the same port to prove the round-trip path."""
-    context = state.context
+    config = state.config
     print("\n=== ST27: SR-IOV Reassign (issue #217) ===")
     st, data = await state.call(
         client,
         "hmc_assign_sriov_logical_port",
-        system_name_or_uuid=context.system_name,
-        lpar_name_or_uuid=context.lp3_name,
-        adapter_id=_ADAPTER_ID,
-        physical_port_id=_PHYS_PORT_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-        capacity_percent=_CAPACITY_PERCENT,
-        profile_name=_PROFILE_NAME,
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
+        capacity_percent=config.sriov_capacity_percent,
+        profile_name=config.sriov_profile_name,
         ownership_override=True,
     )
     state.record(27, "hmc_assign_sriov_logical_port (reassign)", st, data)
@@ -497,7 +586,7 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 
     # Verify ownership
     sriov_state = await _read_sriov_state(client, state)
-    ok = sriov_state.configured and sriov_state.owner_lpar == context.lp3_name
+    ok = sriov_state.configured and sriov_state.owner_lpar == config.lp3_name
     state.record(
         27,
         "sriov post-reassign verify",
@@ -514,7 +603,7 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 
 async def cleanup_sriov(client: Client, state: RunState) -> None:
     """Unassign the test port (cleanup) and confirm the baseline is restored."""
-    context = state.context
+    config = state.config
     print("\n=== ST28: SR-IOV Cleanup (issue #217) ===")
 
     # Re-read before mutating — guard before any cleanup action
@@ -534,13 +623,13 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             "PASS",
             "no cleanup action required",
         )
-    elif sriov_state.owner_lpar != context.lp3_name:
+    elif sriov_state.owner_lpar != config.lp3_name:
         state.record(
             28,
             "sriov cleanup: owner mismatch",
             "FAIL",
-            f"MANUAL RECOVERY REQUIRED: logical port {_LOGICAL_PORT_ID} is assigned "
-            f"to {sriov_state.owner_lpar!r} — expected {context.lp3_name!r}. "
+            f"MANUAL RECOVERY REQUIRED: logical port {config.sriov_logical_port_id} is assigned "
+            f"to {sriov_state.owner_lpar!r} — expected {config.lp3_name!r}. "
             "Do not unassign — another LPAR owns this port.",
         )
         return
@@ -549,12 +638,12 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
         st, data = await state.call(
             client,
             "hmc_unassign_sriov_logical_port",
-            system_name_or_uuid=context.system_name,
-            lpar_name_or_uuid=context.lp3_name,
-            adapter_id=_ADAPTER_ID,
-            physical_port_id=_PHYS_PORT_ID,
-            logical_port_id=_LOGICAL_PORT_ID,
-            profile_name=_PROFILE_NAME,
+            system_name_or_uuid=config.system_name,
+            lpar_name_or_uuid=config.lp3_name,
+            adapter_id=str(config.sriov_adapter_id),
+            physical_port_id=str(config.sriov_physical_port_id),
+            logical_port_id=str(config.sriov_logical_port_id),
+            profile_name=config.sriov_profile_name,
             ownership_override=True,
         )
         state.record(28, "hmc_unassign_sriov_logical_port (cleanup)", st, data)
@@ -564,10 +653,10 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
                 "sriov cleanup: unassign failed",
                 "FAIL",
                 f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
-                f"logical port {_LOGICAL_PORT_ID} may still be in profile and effective layer. "
-                f"Run: chhwres -r sriov --rsubtype logport -m ltczz386 "
-                f"-o r -p {context.lp3_name} "
-                f"-a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\" "
+                f"logical port {config.sriov_logical_port_id} may still be in profile and effective layer. "
+                f"Run: chhwres -r sriov --rsubtype logport -m {config.system_name} "
+                f"-o r -p {config.lp3_name} "
+                f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
                 f"to recover. Error: {str(data)[:400]}",
             )
             return
@@ -580,9 +669,9 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             "hmc_run_command",
             cmd=(
                 f"chhwres -r sriov --rsubtype logport"
-                f" -m {context.system_name}"
-                f" -o r -p {context.lp3_name}"
-                f" -a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\""
+                f" -m {config.system_name}"
+                f" -o r -p {config.lp3_name}"
+                f' -a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}"'
             ),
         )
         state.record(28, "chhwres -o r (effective cleanup)", st2, data2)
@@ -592,60 +681,15 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
                 "sriov cleanup: effective removal failed",
                 "FAIL",
                 f"MANUAL RECOVERY REQUIRED: effective removal failed — "
-                f"logical port {_LOGICAL_PORT_ID} still assigned to {context.lp3_name!r}. "
-                f"Run manually: chhwres -r sriov --rsubtype logport -m {context.system_name} "
-                f"-o r -p {context.lp3_name} "
-                f"-a \"adapter_id={_ADAPTER_ID},logical_port_id={_LOGICAL_PORT_ID}\" "
+                f"logical port {config.sriov_logical_port_id} still assigned to {config.lp3_name!r}. "
+                f"Run manually: chhwres -r sriov --rsubtype logport -m {config.system_name} "
+                f"-o r -p {config.lp3_name} "
+                f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
                 f"Error: {str(data2)[:400]}",
             )
             return
 
-    # Final logical-port inventory confirm
-    st, data = await state.call(
-        client,
-        "hmc_list_sriov_logical_ports",
-        system_name_or_uuid=context.system_name,
-        adapter_id=_ADAPTER_ID,
-        logical_port_id=_LOGICAL_PORT_ID,
-    )
-    state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        items = data.get("items") or []
-        still_configured = any(
-            isinstance(i, dict)
-            and i.get("logical_port_id") == _LOGICAL_PORT_ID
-            and i.get("availability") not in ("unconfigured", None, "")
-            for i in items
-        )
-        state.record(
-            28,
-            "sriov final inventory check",
-            "FAIL" if still_configured else "PASS",
-            (
-                f"MANUAL RECOVERY REQUIRED: logical port {_LOGICAL_PORT_ID} "
-                "is still configured after cleanup"
-                if still_configured
-                else f"logical port {_LOGICAL_PORT_ID} is unconfigured — baseline restored"
-            ),
-        )
-
-    # Final profile check
-    final_state = await _read_sriov_state(client, state)
-    profile_clean = final_state.profile_ports in (None, "none", "")
-    state.record(
-        28,
-        "lp3 profile final check",
-        "PASS" if profile_clean else "FAIL",
-        (
-            f"MANUAL RECOVERY REQUIRED: profile sriov_eth_logical_ports="
-            f"{final_state.profile_ports!r} after cleanup — "
-            f"run: chsyscfg -r prof -m ltczz386 "
-            f"-i \"name={_PROFILE_NAME},lpar_name={context.lp3_name},"
-            f"sriov_eth_logical_ports=none\" to recover"
-            if not profile_clean
-            else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
-        ),
-    )
+    await _verify_cleanup_inventory(client, state)
 
 
 # ---------------------------------------------------------------------------
@@ -663,48 +707,81 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
     baseline_ok = await capture_sriov_baseline(client, state)
     if not baseline_ok:
         print("  SR-IOV baseline check failed or SKIP — halting SR-IOV arm")
+        await cleanup_sriov(client, state)
         return
 
-    # Phase 2: Assign
-    assign_ok = await assign_sriov_to_lp3(client, state)
+    try:
+        # Phase 2: Assign
+        assign_ok = await assign_sriov_to_lp3(client, state)
 
-    # Phase 3: Verify assign (always run, even if assign failed — documents state)
-    verify_ok = await verify_sriov_assigned(client, state)
+        # Phase 3: Verify assign (always run, even if assign failed — documents state)
+        verify_ok = await verify_sriov_assigned(client, state)
 
-    # Phase 4: Unassign (only if assign succeeded and verification passed)
-    if assign_ok and verify_ok:
-        unassign_ok = await unassign_sriov_from_lp3(client, state)
-    else:
-        state.skip(
-            26,
-            "hmc_unassign_sriov_logical_port",
-            f"skipping unassign: assign_ok={assign_ok} verify_ok={verify_ok}",
-        )
-        unassign_ok = False
+        # Phase 4: Unassign (only if assign succeeded and verification passed)
+        if assign_ok and verify_ok:
+            unassign_ok = await unassign_sriov_from_lp3(client, state)
+        else:
+            state.skip(
+                26,
+                "hmc_unassign_sriov_logical_port",
+                f"skipping unassign: assign_ok={assign_ok} verify_ok={verify_ok}",
+            )
+            unassign_ok = False
 
-    # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
-    if unassign_ok:
-        await reassign_sriov_to_lp3(client, state)
-    else:
-        state.skip(
-            27,
-            "hmc_assign_sriov_logical_port (reassign)",
-            f"skipping reassign: unassign_ok={unassign_ok}",
-        )
-
-    # Phase 6: Cleanup — always runs regardless of test outcome
-    await cleanup_sriov(client, state)
+        # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
+        if unassign_ok:
+            await reassign_sriov_to_lp3(client, state)
+        else:
+            state.skip(
+                27,
+                "hmc_assign_sriov_logical_port (reassign)",
+                f"skipping reassign: unassign_ok={unassign_ok}",
+            )
+    finally:
+        active_error = sys.exception()
+        try:
+            # Phase 6: Cleanup — always runs after a successful baseline.
+            await cleanup_sriov(client, state)
+        except BaseException as cleanup_error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"SR-IOV cleanup failed: {cleanup_error}")
 
 
 # ---------------------------------------------------------------------------
 # Dedicated PCIe arm — ST29–ST34 (subtask 24)
 # ---------------------------------------------------------------------------
 
-_DEDICATED_ENV_SYSTEM = "HMC_LIVE_PCIE_SYSTEM"
-_DEDICATED_ENV_PREFIX = "HMC_LIVE_PCIE_LPAR_PREFIX"
-_DEDICATED_ENV_PROFILE = "HMC_LIVE_PCIE_PROFILE"
-_DEDICATED_ENV_DRC = "HMC_LIVE_PCIE_DRC_INDEX"
 _DEFAULT_DEDICATED_PROFILE = "default_profile"
+
+# ADR 0055 fails the admitted operations closed until ADR 0053 admits an exact
+# dedicated-slot readback. Both refusals are declared so the run records them as
+# SKIP rather than FAIL; the arm then gathers that readback via the documented
+# io_slots grammar, which is the precondition for lifting the gate.
+_DEDICATED_CREATE_TIME_UNAVAILABLE = ExpectedOutcome(
+    operation="lpar.create",
+    variant="dedicated-create-time-assignment",
+    reason=(
+        "create-time dedicated assignment is capability-unavailable "
+        "(ADR 0055 fails closed before any mutating command, pending "
+        "exact io_slots readback under ADR 0053) — SKIP this path; the "
+        "refusal happens in prevalidation, ahead of partition creation"
+    ),
+    error_codes=frozenset(
+        {"PcieAssignmentUnavailableError", PCIE_ASSIGNMENT_UNAVAILABLE_REASON}
+    ),
+)
+_DEDICATED_ASSIGN_UNAVAILABLE = ExpectedOutcome(
+    operation="pcie.assign_dedicated_slot",
+    variant="dedicated-slot-assignment",
+    reason=(
+        "the admitted dedicated assignment operation is "
+        "capability-unavailable (ADR 0055); this run gathers the exact "
+        "io_slots evidence ADR 0053 names as the precondition for lifting "
+        "it, through the documented profile grammar below"
+    ),
+    error_codes=_DEDICATED_CREATE_TIME_UNAVAILABLE.error_codes,
+)
 
 
 @dataclass(frozen=True)
@@ -738,13 +815,17 @@ class _DedicatedState:
     caller_token: str | None
 
 
-#: Characters the HMC's own ``-i`` / ``--filter`` record parser treats as
-#: structure. `build_attribute_record` and `build_filter` refuse them — by
-#: raising, at command-construction time, in the caller's frame rather than
-#: inside `RunState.call`. The first such construction happens *after* the
-#: fixture partition exists, so an unvalidated value would abandon a created
-#: partition with no cleanup and no results file (see the orchestrator's
-#: try/finally in Task 4). Refusing here turns that into the ST29
+#: Characters this arm refuses in a configured value. Deliberately *stricter*
+#: than `ssh/commands.py:_RECORD_DELIMITERS`, which is the set
+#: `build_attribute_record` and `build_filter` raise on: those two refuse only
+#: ``,``, ``=`` and ``"``, and pass ``[``, ``]`` and ``\`` straight through.
+#: The three they pass through would break parsing of ADR 0064's ``[caller …]``
+#: ownership stamp, which this arm reads back to decide whether a partition is
+#: its own — so do not delete this check as redundant with the builders.
+#: Refusing here also moves the rejection earlier: the builders raise at
+#: command-construction time, which first happens *after* the fixture
+#: partition exists, so an unvalidated value would abandon a created partition
+#: with no cleanup and no results file. This turns that into the ST29
 #: configuration SKIP, before anything is created.
 _RECORD_DELIMITERS = ',="[]\\'
 
@@ -754,21 +835,23 @@ def _config_value_safe(value: str) -> bool:
     return not any(character in _RECORD_DELIMITERS or character < " " for character in value)
 
 
-def _dedicated_config(environ: Mapping[str, str]) -> _DedicatedConfig | None:
+def _dedicated_config(live: LiveTestConfig) -> _DedicatedConfig | None:
     """Resolve the arm's explicit configuration, or None when it is absent.
 
-    Never falls back to ``LiveTestContext.system_name``: issue #217 requires an
+    Reads the validated ADR 0115 configuration rather than ``os.environ``: the
+    managed system this arm creates and deletes partitions on must come from
+    the reviewed ``.env``, which an ambient export cannot override.
+
+    Never falls back to ``LiveTestConfig.system_name``: issue #217 requires an
     explicitly configured managed system and forbids running against an
     arbitrary one.
     """
-    system_name = (environ.get(_DEDICATED_ENV_SYSTEM) or "").strip()
-    lpar_prefix = (environ.get(_DEDICATED_ENV_PREFIX) or "").strip()
+    system_name = live.dedicated_pcie_system_name.strip()
+    lpar_prefix = live.dedicated_pcie_lpar_prefix.strip()
     if not system_name or not lpar_prefix:
         return None
-    profile_name = (
-        environ.get(_DEDICATED_ENV_PROFILE) or ""
-    ).strip() or _DEFAULT_DEDICATED_PROFILE
-    drc_index = (environ.get(_DEDICATED_ENV_DRC) or "").strip() or None
+    profile_name = live.dedicated_pcie_profile_name.strip() or _DEFAULT_DEDICATED_PROFILE
+    drc_index = live.dedicated_pcie_drc_index.strip() or None
     if not all(
         _config_value_safe(value)
         for value in (lpar_prefix, profile_name, drc_index or "")
@@ -792,7 +875,7 @@ def _dedicated_state_summary(s: _DedicatedState) -> str:
 def _environment_admitted(version: str, model: str) -> bool:
     """Whether this HMC release and system model are the ADR 0053-admitted pair.
 
-    The same normalized comparison ``operations/pcie.py`` applies in
+    The same normalized comparison ``operations/virtualization/pcie.py`` applies in
     ``require_admitted_environment``: the arm mutates through raw profile
     grammar rather than through that operation, so nothing else enforces the
     envelope on this path.
@@ -816,32 +899,48 @@ def _profile_io_slots_command(fixture: _DedicatedFixture) -> str:
     reported success. `shlex.quote` protects the remote shell, not the HMC's
     own record parser, and does not substitute for it.
     """
-    config = fixture.config
+    arm = fixture.config
     filters = build_filter(
         [
             ("lpar_names", fixture.lpar_name),
-            ("profile_names", config.profile_name),
+            ("profile_names", arm.profile_name),
         ]
     )
     return (
-        f"lssyscfg -r prof -m {shlex.quote(config.system_name)} "
+        f"lssyscfg -r prof -m {shlex.quote(arm.system_name)} "
         f"--filter {shlex.quote(filters)} -F io_slots"
     )
 
 
 def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str:
     """Return the documented profile mutation, without --force (ADR 0055)."""
-    config = fixture.config
+    arm = fixture.config
     record = build_attribute_record(
         [
-            ("name", config.profile_name),
+            ("name", arm.profile_name),
             ("io_slots+" if add else "io_slots-", f"{fixture.drc_index}//0"),
             ("lpar_name", fixture.lpar_name),
         ]
     )
     return (
-        f"chsyscfg -r prof -m {shlex.quote(config.system_name)} "
+        f"chsyscfg -r prof -m {shlex.quote(arm.system_name)} "
         f"-i {shlex.quote(record)}"
+    )
+
+
+def _io_slots_contains(io_slots: str, drc_index: str) -> bool:
+    """Whether `io_slots` lists *drc_index* as a slot, by entry not by substring.
+
+    `io_slots` renders as comma-separated `<drc>/<bus>/<slot>` entries, or the
+    literal `none` when the profile holds no slot. A plain `drc in io_slots`
+    also matches a DRC index that is merely a substring of a longer one, or a
+    run of characters spanning the `/` and `,` separators — so on a system
+    carrying DRC indices of unequal length a failed `io_slots+` could still be
+    recorded as a PASS against an unchanged profile, corrupting the ADR 0053
+    evidence this arm exists to produce.
+    """
+    return any(
+        entry.strip().split("/")[0] == drc_index for entry in io_slots.split(",")
     )
 
 
@@ -873,12 +972,12 @@ async def _read_dedicated_state(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> _DedicatedState:
     """Read live slot ownership, profile io_slots, LPAR UUID, and caller token."""
-    config = fixture.config
+    arm = fixture.config
     slot_owner = None
     st, data = await state.call(
         client,
         "hmc_list_dedicated_pcie_slots",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
     )
     if st == "PASS" and isinstance(data, dict):
         for item in data.get("items") or []:
@@ -899,7 +998,7 @@ async def _read_dedicated_state(
         client,
         "hmc_get_lpar",
         lpar_name_or_uuid=fixture.lpar_name,
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
     )
     if st_lpar == "PASS" and isinstance(data_lpar, dict):
         lpar_uuid = data_lpar.get("UUID") or data_lpar.get("uuid")
@@ -908,7 +1007,7 @@ async def _read_dedicated_state(
     st_desc, data_desc = await state.call(
         client,
         "hmc_get_lpar_description",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
         lpar_name_or_uuid=fixture.lpar_name,
     )
     if st_desc == "PASS" and isinstance(data_desc, str):
@@ -969,12 +1068,13 @@ async def capture_dedicated_baseline(
     Returns the fixture to create, or None when the arm must be skipped.
     """
     print("\n=== ST29: Dedicated PCIe Baseline (issue #217) ===")
-    config = _dedicated_config(os.environ)
-    if config is None:
+    arm = _dedicated_config(state.config)
+    if arm is None:
         state.skip(
             29,
             "dedicated pcie configuration",
-            f"{_DEDICATED_ENV_SYSTEM} and {_DEDICATED_ENV_PREFIX} are not both "
+            "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME and "
+            "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX are not both "
             "set, or a configured LPAR prefix, profile name, or DRC index "
             f"carries one of the HMC record delimiters {_RECORD_DELIMITERS!r}. "
             "The dedicated arm requires an explicitly configured managed "
@@ -984,13 +1084,13 @@ async def capture_dedicated_baseline(
         )
         return None
 
-    if not await _admit_dedicated_environment(client, state, config):
+    if not await _admit_dedicated_environment(client, state, arm):
         return None
 
     st, data = await state.call(
         client,
         "hmc_list_dedicated_pcie_slots",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
     )
     state.record(29, "hmc_list_dedicated_pcie_slots (baseline)", st, data)
     if st != "PASS" or not isinstance(data, dict):
@@ -1010,16 +1110,16 @@ async def capture_dedicated_baseline(
         row for row in rows
         if not (owner := (row.get("owner_lpar") or "").strip()) or owner == "null"
     ]
-    if config.drc_index is not None:
+    if arm.drc_index is not None:
         selected = next(
-            (row for row in unassigned if row.get("drc_index") == config.drc_index),
+            (row for row in unassigned if row.get("drc_index") == arm.drc_index),
             None,
         )
         if selected is None:
             state.skip(
                 29,
                 "dedicated slot selection",
-                f"configured drc_index {config.drc_index!r} is absent from the "
+                f"configured drc_index {arm.drc_index!r} is absent from the "
                 "inventory or already owned — SKIP dedicated arm rather than "
                 "mutate a slot this run did not select",
             )
@@ -1030,15 +1130,15 @@ async def capture_dedicated_baseline(
         state.skip(
             29,
             "dedicated slot selection",
-            f"no unassigned dedicated PCIe slot on {config.system_name!r} "
+            f"no unassigned dedicated PCIe slot on {arm.system_name!r} "
             f"({len(rows)} slot(s) inventoried, all owned) — SKIP dedicated arm",
         )
         return None
 
     run_marker = _new_run_marker()
-    lpar_name = f"{config.lpar_prefix}{run_marker}"
+    lpar_name = f"{arm.lpar_prefix}{run_marker}"
     fixture = _DedicatedFixture(
-        config=config,
+        config=arm,
         run_marker=run_marker,
         lpar_name=lpar_name,
         probe_lpar_name=f"{lpar_name}-createtime",
@@ -1050,10 +1150,38 @@ async def capture_dedicated_baseline(
         "PASS",
         f"selected drc_index={fixture.drc_index!r} "
         f"description={selected.get('description')!r} on "
-        f"{config.system_name!r}; fixture lpar={fixture.lpar_name!r} "
+        f"{arm.system_name!r}; fixture lpar={fixture.lpar_name!r} "
         f"run_marker={run_marker!r}",
     )
     return fixture
+
+
+async def _created_despite_failure(
+    client: Client, state: RunState, fixture: _DedicatedFixture, lpar_name: str
+) -> str | None:
+    """Return the UUID of *lpar_name* when a failed create in fact created it.
+
+    Applies to a create the invariant every ``chsyscfg`` in this module already
+    obeys: a command whose response was lost has still executed. A create that
+    times out after the HMC made the partition would otherwise leave an orphan
+    the run believes it never made — and for the create-time probe, one holding
+    the dedicated slot — with no cleanup and no manual-recovery row.
+
+    Ownership is confirmed by the run marker before claiming the partition, so
+    a name collision with something this run did not create is never adopted.
+    """
+    st, data = await state.call(
+        client,
+        "hmc_get_lpar_description",
+        system_name_or_uuid=fixture.config.system_name,
+        lpar_name_or_uuid=lpar_name,
+    )
+    if st != "PASS" or not isinstance(data, str):
+        return None
+    if parse_lpar_ownership_caller_token(data) != fixture.run_marker:
+        return None
+    uuid_match = re.search(r"'UUID':\s*'([0-9A-Fa-f-]{36})'", data)
+    return uuid_match.group(1) if uuid_match else ""
 
 
 async def create_dedicated_fixture(
@@ -1064,7 +1192,7 @@ async def create_dedicated_fixture(
     Returns True when the fixture exists and its UUID was resolved, which is
     the only state in which the arm may mutate hardware.
     """
-    config = fixture.config
+    arm = fixture.config
     print("\n=== ST30: Dedicated PCIe Fixture Create (issue #217) ===")
 
     # Create-time assignment: `prevalidate_lpar_pcie_assignments` refuses this
@@ -1074,33 +1202,25 @@ async def create_dedicated_fixture(
     st, data = await state.call(
         client,
         "hmc_create_lpar",
-        system_name_or_uuid=config.system_name,
+        expected=[_DEDICATED_CREATE_TIME_UNAVAILABLE],
+        system_name_or_uuid=arm.system_name,
         name=fixture.probe_lpar_name,
         caller_token=fixture.run_marker,
         assignments={
             "dedicated": [
                 {
-                    "profile_name": config.profile_name,
+                    "profile_name": arm.profile_name,
                     "drc_index": fixture.drc_index,
                 }
             ]
         },
     )
-    state.record_expected_or_real(
+    state.record_with_expected(
         30,
         "hmc_create_lpar (create-time dedicated assignment)",
         st,
         data,
-        expected_fail_substrings=[
-            "PcieAssignmentUnavailableError",
-            PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
-        ],
-        skip_reason=(
-            "create-time dedicated assignment is capability-unavailable "
-            "(ADR 0055 fails closed before any mutating command, pending "
-            "exact io_slots readback under ADR 0053) — SKIP this path; the "
-            "refusal happens in prevalidation, ahead of partition creation"
-        ),
+        [_DEDICATED_CREATE_TIME_UNAVAILABLE],
     )
     if st == "PASS":
         # The gate has been lifted since this arm was written. A partition now
@@ -1114,26 +1234,70 @@ async def create_dedicated_fixture(
             "FAIL",
             "MANUAL RECOVERY REQUIRED (if cleanup below does not clear it): "
             f"the create-time probe created partition "
-            f"{fixture.probe_lpar_name!r} on {config.system_name!r} with "
+            f"{fixture.probe_lpar_name!r} on {arm.system_name!r} with "
             f"dedicated slot {fixture.drc_index!r} assigned. ADR 0055's gate "
-            "no longer refuses, so this arm's probe and ADR 0115 both need "
+            "no longer refuses, so this arm's probe and ADR 0161 both need "
             "revisiting alongside the ADR 0053 capability update.",
         )
+    else:
+        # The refusal is expected, but a lost response is not a refusal: read
+        # back before believing nothing was created.
+        probe_uuid = await _created_despite_failure(
+            client, state, fixture, fixture.probe_lpar_name
+        )
+        if probe_uuid is not None:
+            fixture.probe_created = True
+            fixture.probe_lpar_uuid = probe_uuid or None
+            state.record(
+                30,
+                "create-time probe created a partition despite reporting failure",
+                "FAIL",
+                "MANUAL RECOVERY REQUIRED (if cleanup below does not clear it): "
+                f"the create-time probe reported {st} but partition "
+                f"{fixture.probe_lpar_name!r} exists on {arm.system_name!r} "
+                f"carrying this run's marker {fixture.run_marker!r}. Cleanup "
+                "will attempt to remove it.",
+            )
 
     st, data = await state.call(
         client,
         "hmc_create_lpar",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
         name=fixture.lpar_name,
         caller_token=fixture.run_marker,
     )
     state.record(30, "hmc_create_lpar (fixture)", st, data)
     if st != "PASS":
+        # Same invariant as the probe above: confirm the partition is really
+        # absent rather than assuming a failed create created nothing.
+        stray_uuid = await _created_despite_failure(
+            client, state, fixture, fixture.lpar_name
+        )
+        if stray_uuid is None:
+            state.skip(
+                30,
+                "dedicated fixture create",
+                "fixture LPAR create failed and no partition carrying this "
+                "run's marker exists — SKIP dedicated arm; nothing to clean up",
+            )
+            return False
+        fixture.created = True
+        fixture.lpar_uuid = stray_uuid or None
+        state.record(
+            30,
+            "fixture create reported failure but created a partition",
+            "FAIL",
+            "MANUAL RECOVERY REQUIRED (if cleanup below does not clear it): "
+            f"fixture create reported {st} but partition {fixture.lpar_name!r} "
+            f"exists on {arm.system_name!r} carrying this run's marker "
+            f"{fixture.run_marker!r}. SKIP the arm; cleanup will attempt to "
+            "remove it.",
+        )
         state.skip(
             30,
             "dedicated fixture create",
-            "fixture LPAR create failed — SKIP dedicated arm; no partition to "
-            "clean up",
+            "fixture LPAR create failed — SKIP dedicated arm; the partition it "
+            "created despite failing is handed to cleanup",
         )
         return False
     fixture.created = True
@@ -1178,7 +1342,7 @@ async def create_dedicated_fixture(
             st_desc, data_desc = await state.call(
                 client,
                 "hmc_get_lpar_description",
-                system_name_or_uuid=config.system_name,
+                system_name_or_uuid=arm.system_name,
                 lpar_name_or_uuid=fixture.lpar_name,
             )
             confirmed_token = (
@@ -1216,7 +1380,7 @@ async def create_dedicated_fixture(
             client,
             "hmc_get_lpar",
             lpar_name_or_uuid=fixture.lpar_name,
-            system_name_or_uuid=config.system_name,
+            system_name_or_uuid=arm.system_name,
         )
         if st_get == "PASS" and isinstance(data_get, dict):
             fixture.lpar_uuid = data_get.get("UUID") or data_get.get("uuid")
@@ -1246,32 +1410,24 @@ async def assign_dedicated_slot(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> bool:
     """Assign the selected slot to the fixture profile and confirm by readback."""
-    config = fixture.config
+    arm = fixture.config
     print("\n=== ST31: Dedicated PCIe Assign (issue #217) ===")
 
     st, data = await state.call(
         client,
         "hmc_assign_dedicated_pcie_slot",
-        system_name_or_uuid=config.system_name,
+        expected=[_DEDICATED_ASSIGN_UNAVAILABLE],
+        system_name_or_uuid=arm.system_name,
         lpar_name_or_uuid=fixture.lpar_name,
-        profile_name=config.profile_name,
+        profile_name=arm.profile_name,
         drc_index=fixture.drc_index,
     )
-    state.record_expected_or_real(
+    state.record_with_expected(
         31,
         "hmc_assign_dedicated_pcie_slot",
         st,
         data,
-        expected_fail_substrings=[
-            "PcieAssignmentUnavailableError",
-            PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
-        ],
-        skip_reason=(
-            "the admitted dedicated assignment operation is "
-            "capability-unavailable (ADR 0055); this run gathers the exact "
-            "io_slots evidence ADR 0053 names as the precondition for lifting "
-            "it, through the documented profile grammar below"
-        ),
+        [_DEDICATED_ASSIGN_UNAVAILABLE],
     )
 
     st, data = await state.call(
@@ -1287,7 +1443,7 @@ async def assign_dedicated_slot(
     # early on a FAIL would leave the run believing it had not written
     # something it had, which is the belief cleanup must never hold.
     applied = await _read_profile_io_slots(client, state, fixture)
-    assigned = applied is not None and str(fixture.drc_index) in applied
+    assigned = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
     if assigned:
         fixture.applied_io_slots = applied
     state.record(
@@ -1308,7 +1464,7 @@ async def verify_dedicated_assigned(
     observed = await _read_dedicated_state(client, state, fixture)
     profile_ok = (
         observed.profile_io_slots is not None
-        and str(fixture.drc_index) in observed.profile_io_slots
+        and _io_slots_contains(observed.profile_io_slots, str(fixture.drc_index))
     )
     state.record(
         32,
@@ -1372,7 +1528,7 @@ async def reassign_dedicated_slot(
     # a lost confirming read here is the most dangerous of the three; read
     # back regardless.
     applied = await _read_profile_io_slots(client, state, fixture)
-    ok = applied is not None and str(fixture.drc_index) in applied
+    ok = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
     if ok:
         fixture.applied_io_slots = applied
     state.record(
@@ -1395,11 +1551,11 @@ async def _cleanup_probe_partition(
     The probe was created with `caller_token=fixture.run_marker`, so a
     partition of that name carrying a different token is not this run's.
     """
-    config = fixture.config
+    arm = fixture.config
     st_desc, data_desc = await state.call(
         client,
         "hmc_get_lpar_description",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
         lpar_name_or_uuid=fixture.probe_lpar_name,
     )
     probe_token = (
@@ -1413,7 +1569,7 @@ async def _cleanup_probe_partition(
             "dedicated cleanup: probe run-marker mismatch",
             "FAIL",
             "MANUAL RECOVERY REQUIRED: the create-time probe partition "
-            f"{fixture.probe_lpar_name!r} on {config.system_name!r} does not "
+            f"{fixture.probe_lpar_name!r} on {arm.system_name!r} does not "
             f"carry this run's caller token (read {probe_token!r}, expected "
             f"{fixture.run_marker!r}); it was NOT deleted. Inspect it and "
             "remove it by hand once identified.",
@@ -1424,7 +1580,7 @@ async def _cleanup_probe_partition(
     # the arm that provably holds the dedicated slot at cleanup time — the
     # probe succeeded only because it was allowed to apply the assignment —
     # so deleting it without removing the slot is precisely the stranding
-    # ADR 0115 forbids. The probe carries its own profile, so it gets its
+    # ADR 0161 forbids. The probe carries its own profile, so it gets its
     # own removal command and its own confirming read.
     probe = replace(
         fixture, lpar_name=fixture.probe_lpar_name, lpar_uuid=fixture.probe_lpar_uuid
@@ -1434,7 +1590,11 @@ async def _cleanup_probe_partition(
     )
     state.record(34, "chsyscfg io_slots- (probe partition)", st_rm, data_rm)
     after = await _read_profile_io_slots(client, state, probe)
-    if st_rm != "PASS" or after is None or str(fixture.drc_index) in after:
+    if (
+        st_rm != "PASS"
+        or after is None
+        or _io_slots_contains(after, str(fixture.drc_index))
+    ):
         state.record(
             34,
             "dedicated cleanup: probe slot removal failed",
@@ -1442,7 +1602,7 @@ async def _cleanup_probe_partition(
             "MANUAL RECOVERY REQUIRED: dedicated slot "
             f"{fixture.drc_index!r} could not be confirmed removed from the "
             f"create-time probe partition {fixture.probe_lpar_name!r} on "
-            f"{config.system_name!r} (io_slots={after!r}); the partition was "
+            f"{arm.system_name!r} (io_slots={after!r}); the partition was "
             "NOT deleted, because deleting it would strand the slot. Run "
             f"`{_change_io_slots_command(probe, add=False)}` and then delete "
             f"{fixture.probe_lpar_name!r}.",
@@ -1453,7 +1613,7 @@ async def _cleanup_probe_partition(
     st, data = await state.call(
         client,
         "hmc_delete_lpar",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
         lpar_name_or_uuid=fixture.probe_lpar_uuid or fixture.probe_lpar_name,
     )
     state.record(34, "hmc_delete_lpar (create-time probe partition)", st, data)
@@ -1463,7 +1623,7 @@ async def _cleanup_probe_partition(
             "dedicated cleanup: probe partition delete failed",
             "FAIL",
             "MANUAL RECOVERY REQUIRED: the create-time probe partition "
-            f"{fixture.probe_lpar_name!r} on {config.system_name!r} still "
+            f"{fixture.probe_lpar_name!r} on {arm.system_name!r} still "
             f"exists and must be removed by hand. Error: {str(data)[:400]}",
         )
 
@@ -1472,7 +1632,7 @@ async def cleanup_dedicated(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> None:
     """Remove the slot, then delete the fixture — each only on an exact match."""
-    config = fixture.config
+    arm = fixture.config
     print("\n=== ST34: Dedicated PCIe Cleanup (issue #217) ===")
 
     # Hardware before partitions, and the probe holds hardware on a
@@ -1488,7 +1648,7 @@ async def cleanup_dedicated(
     state.record(34, "dedicated pre-cleanup state", "PASS", _dedicated_state_summary(observed))
     recovery = (
         f"MANUAL RECOVERY REQUIRED: fixture {fixture.lpar_name!r} on "
-        f"{config.system_name!r} could not be confirmed as this run's; no "
+        f"{arm.system_name!r} could not be confirmed as this run's; no "
         "mutation was attempted. Inspect it and, once you have confirmed it "
         f"is this run's fixture, remove slot {fixture.drc_index!r} with "
         f"`{_change_io_slots_command(fixture, add=False)}` and then delete the "
@@ -1632,7 +1792,7 @@ async def cleanup_dedicated(
     st, data = await state.call(
         client,
         "hmc_delete_lpar",
-        system_name_or_uuid=config.system_name,
+        system_name_or_uuid=arm.system_name,
         lpar_name_or_uuid=fixture.lpar_uuid or fixture.lpar_name,
     )
     state.record(34, "hmc_delete_lpar (fixture cleanup)", st, data)
@@ -1642,7 +1802,7 @@ async def cleanup_dedicated(
             "dedicated cleanup: fixture delete failed",
             "FAIL",
             f"MANUAL RECOVERY REQUIRED: fixture {fixture.lpar_name!r} on "
-            f"{config.system_name!r} still exists and must be deleted by hand. "
+            f"{arm.system_name!r} still exists and must be deleted by hand. "
             f"Its slot assignment was already removed. Error: {str(data)[:400]}",
         )
 

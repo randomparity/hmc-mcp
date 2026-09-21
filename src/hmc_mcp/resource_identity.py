@@ -37,9 +37,11 @@ async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
         return value
     entry = await hmc.find_system_by_name(value)
     if not entry or not entry.get("UUID"):
-        raise ValueError(
+        raise ResourceNotFoundError(
+            "managed system",
+            value,
             f"No managed system named {value!r} found. "
-            "Use hmc_list_systems to list available systems."
+            "Use hmc_list_systems to list available systems.",
         )
     return str(entry["UUID"])
 
@@ -51,9 +53,11 @@ async def resolve_system_name(hmc: HMCClient, value: str) -> str:
     entry = await hmc.get_managed_system(value)
     name = ((entry or {}).get("Resource") or {}).get("SystemName")
     if not name:
-        raise ValueError(
+        raise ResourceNotFoundError(
+            "managed system",
+            value,
             f"Managed system {value!r} has no SystemName. "
-            "Use hmc_list_systems to inspect available systems."
+            "Use hmc_list_systems to inspect available systems.",
         )
     return str(name)
 
@@ -101,8 +105,10 @@ async def resolve_vios_uuid(
         else await hmc.find_vios_by_name(value)
     )
     if not entry or not entry.get("UUID"):
-        raise ValueError(
+        raise ResourceNotFoundError(
+            "VIOS",
+            value,
             f"No VIOS named {value!r} found. "
-            "Use hmc_list_vios to list available Virtual I/O Servers."
+            "Use hmc_list_vios to list available Virtual I/O Servers.",
         )
     return str(entry["UUID"])

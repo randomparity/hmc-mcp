@@ -7,9 +7,11 @@ from conftest import make_config
 from hmc_mcp.client.core import HMCClient
 from hmc_mcp.documents import build_managed_system_document
 
-SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+
+SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:sys-uuid-1</id>
+  <id>urn:uuid:{SYSTEM_UUID}</id>
   <title>ManagedSystem:newsysname</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -93,12 +95,12 @@ def test_build_managed_system_document_namespace():
 
 @pytest.mark.asyncio
 async def test_modify_managed_system(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/ManagedSystem/sys-uuid-1").mock(
+    route = mock_hmc.post(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     xml = build_managed_system_document(new_name="newsysname", power_off_policy=1)
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.modify_managed_system("sys-uuid-1", xml)
+        result = await hmc.modify_managed_system(SYSTEM_UUID, xml)
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "newsysname" in body

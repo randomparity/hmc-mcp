@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import AsyncMock
 
 import pytest
 
 from hmc_mcp.client.client_cluster import ClusterMixin
+
+UUID_A = "12345678-1234-1234-1234-1234567890ab"
 
 
 class ClusterHarness(ClusterMixin):
@@ -36,17 +39,17 @@ async def test_create_logical_unit_submits_cluster_job_document():
     client = ClusterHarness()
 
     result = await client.create_logical_unit(
-        "cluster-1",
+        UUID_A,
         "data",
         50,
-        "THICK",
-        "VirtualIO_Disk",
-        "source-udid",
+        lu_type="THICK",
+        device_type="VirtualIO_Disk",
+        cloned_from="source-udid",
     )
 
     assert result == {"UUID": "job"}
     path, document = client.submit_job.await_args.args
-    assert path == "/rest/api/uom/Cluster/cluster-1/do/CreateLogicalUnit"
+    assert path == f"/rest/api/uom/Cluster/{UUID_A}/do/CreateLogicalUnit"
     for name, value in (
         ("LUName", "data"),
         ("LUSize", "50"),
@@ -57,14 +60,21 @@ async def test_create_logical_unit_submits_cluster_job_document():
         assert f">{value}</ParameterValue>" in document
 
 
+def test_logical_unit_optional_controls_are_keyword_only():
+    parameters = inspect.signature(ClusterMixin.create_logical_unit).parameters
+
+    for name in ("lu_type", "device_type", "cloned_from"):
+        assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+
+
 @pytest.mark.asyncio
 async def test_delete_logical_unit_submits_cluster_job_document():
     client = ClusterHarness()
 
-    result = await client.delete_logical_unit("cluster-1", "lu-udid")
+    result = await client.delete_logical_unit(UUID_A, "lu-udid")
 
     assert result == {"UUID": "job"}
     path, document = client.submit_job.await_args.args
-    assert path == "/rest/api/uom/Cluster/cluster-1/do/DeleteLogicalUnit"
+    assert path == f"/rest/api/uom/Cluster/{UUID_A}/do/DeleteLogicalUnit"
     assert ">LogicalUnitUDID</ParameterName>" in document
     assert ">lu-udid</ParameterValue>" in document

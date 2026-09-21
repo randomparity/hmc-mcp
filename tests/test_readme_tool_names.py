@@ -1,8 +1,8 @@
-"""Guard that every ``hmc_*`` tool name in README prose is a registered tool.
+"""Guard that every ``hmc_*`` tool name in README and guide prose is a registered tool.
 
-Tool names in the README are facts derivable from the registry, so a tool removal must
+Tool names in user documentation are facts derivable from the registry, so a tool removal must
 not be able to strand a prose reference behind it. ADR 0076 deleted
-``hmc_remove_ldap_config`` while the README kept naming it, because nothing derived the
+``hmc_remove_ldap_config`` while the documentation kept naming it, because nothing derived the
 prose names from ``TOOL_SECURITY``.
 """
 
@@ -11,12 +11,22 @@ from pathlib import Path
 
 from hmc_mcp.server import TOOL_SECURITY
 
-README = Path(__file__).resolve().parents[1] / "README.md"
+ROOT = Path(__file__).resolve().parents[1]
+DOCUMENTS = (
+    "README.md",
+    "docs/configuration.md",
+    "docs/compatibility.md",
+    "docs/python-api.md",
+    "docs/development.md",
+    "docs/cli.md",
+    "docs/mcp-server.md",
+    "docs/operations.md",
+)
 
 # ``\b`` before the prefix keeps this from matching the tail of a longer identifier.
 IDENTIFIER = re.compile(r"\bhmc_[a-z0-9_]+")
 
-# ``hmc_*`` identifiers the README names that are not tools. Both invariants below hold
+# ``hmc_*`` identifiers the documentation names that are not tools. Both invariants below hold
 # them to their subject, so neither can outlive it and quietly widen the guard.
 NON_TOOL_IDENTIFIERS = frozenset(
     {
@@ -26,37 +36,39 @@ NON_TOOL_IDENTIFIERS = frozenset(
 )
 
 
-def readme_identifiers() -> dict[str, int]:
-    """Map each ``hmc_*`` identifier in the README to the line it first appears on."""
-    found: dict[str, int] = {}
-    for lineno, line in enumerate(README.read_text(encoding="utf-8").splitlines(), 1):
-        for name in IDENTIFIER.findall(line):
-            found.setdefault(name, lineno)
+def documentation_identifiers() -> dict[str, str]:
+    """Map each identifier to its first source location across the moved guides."""
+    found: dict[str, str] = {}
+    for document in DOCUMENTS:
+        text = (ROOT / document).read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for name in IDENTIFIER.findall(line):
+                found.setdefault(name, f"{document}:{lineno}")
     return found
 
 
-def test_every_readme_tool_name_is_registered() -> None:
-    """No README ``hmc_*`` name may be absent from the tool registry."""
-    found = readme_identifiers()
+def test_every_documented_tool_name_is_registered() -> None:
+    """No documented ``hmc_*`` name may be absent from the tool registry."""
+    found = documentation_identifiers()
     unregistered = {
         name: lineno
         for name, lineno in found.items()
         if name not in TOOL_SECURITY and name not in NON_TOOL_IDENTIFIERS
     }
     assert not unregistered, (
-        "README.md names hmc_* identifiers that are neither registered tools nor "
+        "Documentation names hmc_* identifiers that are neither registered tools nor "
         "listed in NON_TOOL_IDENTIFIERS: "
         + ", ".join(
-            f"{name} (README.md:{lineno})"
+            f"{name} ({lineno})"
             for name, lineno in sorted(unregistered.items())
         )
         + ". Drop the reference or name a tool that server.TOOL_SECURITY registers."
     )
 
 
-def test_readme_names_registered_tools() -> None:
+def test_documentation_names_registered_tools() -> None:
     """The extraction reaches real tool names, so a green run is not a vacuous one."""
-    assert readme_identifiers().keys() & set(TOOL_SECURITY)
+    assert documentation_identifiers().keys() & set(TOOL_SECURITY)
 
 
 def test_non_tool_identifiers_are_still_absent_from_the_registry() -> None:
@@ -68,10 +80,10 @@ def test_non_tool_identifiers_are_still_absent_from_the_registry() -> None:
     )
 
 
-def test_non_tool_identifiers_are_still_in_the_readme() -> None:
-    """An exemption whose subject left the README must leave with it."""
-    stale = NON_TOOL_IDENTIFIERS - readme_identifiers().keys()
+def test_non_tool_identifiers_are_still_in_the_documentation() -> None:
+    """An exemption whose subject left the documentation must leave with it."""
+    stale = NON_TOOL_IDENTIFIERS - documentation_identifiers().keys()
     assert not stale, (
-        f"NON_TOOL_IDENTIFIERS lists identifiers the README no longer names: "
+        f"NON_TOOL_IDENTIFIERS lists identifiers the documentation no longer names: "
         f"{sorted(stale)}. Remove them so the set stays minimal."
     )

@@ -20,8 +20,8 @@ pager, or a prompt will stall the agent with no recovery path.
 - Suppress the pager: `git --no-pager <subcommand>` or set `GIT_PAGER=cat`.
 - **Never squash-merge** (`gh pr merge --squash` / `git merge --squash`) unless
   the PR is documentation-only. Squash merges collapse commit history and break
-  `git bisect`. Use `--merge` (merge commit) for all code, test, config, and
-  script changes.
+  `git bisect`. For all code, test, config, and script changes, use either
+  `gh pr merge --merge` (merge commit) or `gh pr merge --rebase` (rebase merge).
   - **Documentation-only** means **no changed file's content is asserted by a
     test or a `static` gate.** *Content*, specifically: repo-wide scans like
     `just secrets` read every tracked file, and counting those would make the
@@ -45,13 +45,12 @@ pager, or a prompt will stall the agent with no recovery path.
       and H1, never its body — so editing an ADR's prose is not caught by that
       gate. Most ADRs are in this class, which is why a prose-only ADR edit is
       one of the few real documentation-only changes here.
-    - **Content-unasserted** today: the `docs/plan-*`, `docs/spec-*`,
-      `docs/scorecard-*`, `docs/workflow/` and `docs/superpowers/` pages. Test
-      modules cite some of those specs in module docstrings, which asserts
-      nothing about the file. `just doc-freshness` does read every tracked
-      Markdown file's *first line*, looking for a generation banner — so a page
-      here can still redden it by opening with something banner-shaped, but its
-      body is unchecked.
+    - **Content-unasserted** today: the `docs/scorecard-*` and `docs/workflow/`
+      pages. Test modules cite some of those specs in module docstrings, which
+      asserts nothing about the file. `just doc-freshness` does read every
+      tracked Markdown file's *first line*, looking for a generation banner —
+      so a page here can still redden it by opening with something
+      banner-shaped, but its body is unchecked.
   - **When the answer is not obvious, use `--merge`.** It costs one merge
     commit. A wrong `--squash` is not reversible once it is on `main`.
   - Two shell mechanics, for whatever check you do write over
@@ -63,17 +62,19 @@ pager, or a prompt will stall the agent with no recovery path.
     output, and treat an unanswered query as "not documentation-only".
   - The policy is prose, not a gate: **nothing in the repo enforces it** —
     `rg -ni squash` over `.github/`, `tests/`, `scripts/`, `justfile`, and
-    `.pre-commit-config.yaml` returns nothing. Your own reading before the merge
+    `.pre-commit-config.yaml` returns nothing. The maintainer has intentionally
+    retained squash-merge availability and selected this documented human
+    pre-merge check as the sufficient control; your own reading before the merge
     is the only control.
   - **A single-parent commit on `main` is not evidence of a squash.** This repo
     has also landed PRs with `--rebase`, which replays each commit onto `main`
-    and preserves the per-commit history the policy protects — PR #455's seven
-    commits landed that way as `aec6125^..f528e94`. To tell a squash from a
+    and preserves the per-commit history the policy protects — seven commits
+    from PR #455 landed that way as `aec6125^..f528e94`. To tell a squash from a
     rebase, compare the commit's own diff with the PR's: on a squash they are
     equal, on a rebase the commit carries only its own slice. This paragraph is
-    forensic — how to read history after the fact. It is **not** a second
-    blessed strategy: the rule above still says `--merge`, and whether
-    `--rebase` should join it is open in #530.
+    forensic — how to read history after the fact. It does not prefer one
+    permitted non-squash strategy over the other: both `--merge` and `--rebase`
+    preserve the per-commit history this policy protects.
 
 **Other common interactive traps**
 
@@ -114,7 +115,8 @@ you have already confirmed the file is syntax-clean.
 repo's only sync recipe (`justfile`):
 
 ```sh
-just setup   # uv sync --locked --extra app --link-mode copy; then prek install
+just setup   # uv sync --locked --extra app --link-mode copy; prek install;
+             # then link the local reference corpus into the worktree
 ```
 
 **Never run a bare `uv sync`.** `pyproject.toml` declares no `[tool.uv]` table
@@ -168,6 +170,14 @@ error surfaces at a `src/` path — that one is yours to fix in source. A
 `SyntaxError` at a `.venv/lib/…/site-packages/` path is third-party code, so it
 means the extras or lock state is wrong, or the interpreter does not match what
 the environment was built for; `just setup` is the fix for that one.
+
+**A local-only reference corpus may exist beside this repo.** A companion file
+this repository does not track can name a vendored API reference corpus kept
+on one operator host only; `just setup` symlinks it into a linked worktree
+when the main checkout has it, and otherwise prints that it is unavailable —
+so its absence is discoverable rather than silent. When it is present, cite
+it as `docs/refs/<path>:<line>` and report what a search over it returns;
+never reproduce its prose into a tracked file.
 
 ## Pre-existing test failures
 
@@ -346,24 +356,9 @@ the recipe its `entry: just <recipe>` names, and each block must carry
 without its hook and a test in a file about CI shape goes red for a reason that
 looks unrelated.
 
-**Adding a name to `hmc_mcp.api.__all__` is a four-part duty**, and none of it is
-automatic:
-
-1. the export itself in `__all__`;
-2. the module inventory in
-   `docs/adr/0029-supported-reusable-python-api-contract.md`, between its
-   `<!-- ADR-0029-INVENTORY:BEGIN -->` and `<!-- ADR-0029-INVENTORY:END -->`
-   markers — `tests/unit/test_public_api.py` parses that block and compares
-   every clause against the facade's own imports;
-3. the contract tests, including the transitive type-export closure — an
-   exported model's fields, a `TypedDict`'s keys, and an exported error's or
-   `HMCClient`'s constructor parameters all pull further package-owned types into
-   the supported surface;
-4. a **coded** bullet under `[Unreleased]`'s `### Facade manifest` section in
-   `CHANGELOG.md`. `tests/unit/test_changelog.py` asserts the manifest against
-   `__all__`; a prose mention does not satisfy it. Per ADR 0029 any addition,
-   removal, or rename there requires a minor release during `0.x`.
-   `CONTRIBUTING.md` carries the full changelog rules.
+**`hmc_mcp.api` is the six-name stable facade in ADR 0118.** Keep its exact
+exports in `tests/unit/test_public_api.py`. Domain operations and models are
+pre-release module APIs, not facade exports; add no compatibility re-exports.
 
 **ADR conventions.** `just adr-numbering` (`scripts/check_adr_numbering.py`)
 enforces that each record's number is unique, that the filename matches

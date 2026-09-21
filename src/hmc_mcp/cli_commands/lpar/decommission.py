@@ -7,9 +7,9 @@ from dataclasses import asdict
 import typer
 from rich.table import Table
 
-from ...operations.lpar.decommission import decommission_lpar
+from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
 from ..output import console, print_json
-from ..runtime import client, run
+from ..runtime import with_client
 
 
 def lpars_decommission(
@@ -45,63 +45,67 @@ def lpars_decommission(
             abort=True,
         )
 
-    async def _go():
-        async with client() as hmc:
-            return await decommission_lpar(
-                hmc,
-                system,
-                name_or_uuid,
-                dry_run=dry_run,
-                ownership_override=ownership_override,
-                immediate=immediate,
-                timeout_seconds=timeout_seconds,
-                poll_interval=poll_interval,
-            )
+    result = with_client(
+        lambda hmc: decommission_lpar(
+            hmc,
+            system,
+            name_or_uuid,
+            dry_run=dry_run,
+            ownership_override=ownership_override,
+            immediate=immediate,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        )
+    )
 
-    result = run(_go)
-
-    if as_json:
-        print_json(asdict(result))
-    else:
-        if result.dry_run:
-            console.print(
-                "[yellow]DRY RUN — decommission plan generated; no adapters or LPARs "
-                "were deleted[/yellow]"
-            )
-        elif result.workflow_completed:
-            console.print(
-                f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]"
-            )
-        else:
-            console.print(
-                f"[yellow]LPAR '{name_or_uuid}' was not fully decommissioned — "
-                "check step results[/yellow]"
-            )
-
-        table = Table(title=f"Decommission steps: {name_or_uuid}")
-        table.add_column("Step", style="cyan")
-        table.add_column("Status", style="green")
-        table.add_column("Result")
-        for step in result.steps:
-            status = step.status
-            style = (
-                "green"
-                if status == "ok"
-                else ("yellow" if status in ("dry_run", "skipped") else "red")
-            )
-            table.add_row(
-                step.step,
-                f"[{style}]{status}[/{style}]",
-                "-" if step.result is None else str(step.result),
-            )
-        console.print(table)
-
-        if result.warnings:
-            for warning in result.warnings:
-                console.print(f"[yellow]Warning: {warning}[/yellow]")
+    _render_decommission_result(result, name_or_uuid, as_json)
 
     if not result.dry_run and not result.workflow_completed:
         raise typer.Exit(1)
+
+
+def _render_decommission_result(
+    result: DecommissionResult, name_or_uuid: str, as_json: bool
+) -> None:
+    """Render a structured decommission result for JSON or terminal callers."""
+    if as_json:
+        print_json(asdict(result))
+        return
+    if result.dry_run:
+        console.print(
+            "[yellow]DRY RUN — decommission plan generated; no adapters or LPARs "
+            "were deleted[/yellow]"
+        )
+    elif result.workflow_completed:
+        console.print(f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]")
+    else:
+        console.print(
+            f"[yellow]LPAR '{name_or_uuid}' was not fully decommissioned — "
+            "check step results[/yellow]"
+        )
+
+    table = Table(title=f"Decommission steps: {name_or_uuid}")
+    table.add_column("Step", style="cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Result")
+    for step in result.steps:
+        status = step.status
+        style = _step_style(status)
+        table.add_row(
+            step.step,
+            f"[{style}]{status}[/{style}]",
+            "-" if step.result is None else str(step.result),
+        )
+    console.print(table)
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning: {warning}[/yellow]")
+
+
+def _step_style(status: str) -> str:
+    """Return the terminal color associated with one workflow step status."""
+    if status == "ok":
+        return "green"
+    return "yellow" if status in ("dry_run", "skipped") else "red"
 
 
 def register_commands(group: typer.Typer) -> None:

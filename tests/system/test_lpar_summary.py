@@ -9,8 +9,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.operations.composite import _lpar_summary
-from hmc_mcp.server_tools.composite import hmc_lpar_summary
+from hmc_mcp.operations.inventory.composite import _lpar_summary
+from hmc_mcp.server_tools.inventory.composite import hmc_lpar_summary
 
 LPAR_UUID = "aabbccdd-1234-5678-abcd-000000000001"
 ADAPTER1_UUID = "aabbccdd-1234-5678-abcd-000000000002"
@@ -142,20 +142,20 @@ def test_lpar_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
 
     result = hmc_lpar_summary(LPAR_UUID)
 
-    assert result["uuid"] == LPAR_UUID
-    assert result["name"] == "aix-prod"
-    assert result["state"] == "running"
-    assert result["rmc_state"] == "active"
-    assert result["partition_type"] == "AIX/Linux"
-    assert result["partition_id"] == "3"
-    assert result["desired_memory_mib"] == "8192"
-    assert result["desired_proc_units"] == "1.0"
-    assert result["desired_vcpus"] == "2"
-    assert result["os_version"] == "AIX 7.2"
-    assert result["os_type"] == "AIX"
-    assert result["client_network_adapter_count"] == 2
-    assert result["description"] == "Production LPAR"
-    assert result["mapped_storage"] is None
+    assert result.uuid == LPAR_UUID
+    assert result.name == "aix-prod"
+    assert result.state == "running"
+    assert result.rmc_state == "active"
+    assert result.partition_type == "AIX/Linux"
+    assert result.partition_id == "3"
+    assert result.desired_memory_mib == "8192"
+    assert result.desired_proc_units == "1.0"
+    assert result.desired_vcpus == "2"
+    assert result.os_version == "AIX 7.2"
+    assert result.os_type == "AIX"
+    assert result.client_network_adapter_count == 2
+    assert result.description == "Production LPAR"
+    assert result.mapped_storage is None
 
 
 def test_lpar_summary_no_adapters(monkeypatch, mock_hmc):
@@ -172,8 +172,8 @@ def test_lpar_summary_no_adapters(monkeypatch, mock_hmc):
 
     result = hmc_lpar_summary(LPAR_UUID)
 
-    assert result["client_network_adapter_count"] == 0
-    assert result["state"] == "not activated"
+    assert result.client_network_adapter_count == 0
+    assert result.state == "not activated"
 
 
 def test_lpar_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
@@ -208,9 +208,9 @@ def test_lpar_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
 
     result = hmc_lpar_summary("myname")
 
-    assert result["name"] == "myname"
-    assert result["state"] == "running"
-    assert result["uuid"] == LPAR_UUID
+    assert result.name == "myname"
+    assert result.state == "running"
+    assert result.uuid == LPAR_UUID
 
 
 def test_lpar_summary_name_not_found_raises(monkeypatch, mock_hmc):
@@ -238,8 +238,8 @@ def test_lpar_summary_missing_optional_fields(monkeypatch, mock_hmc):
 
     result = hmc_lpar_summary(LPAR_UUID)
 
-    assert result["name"] == "bare"
-    assert result["os_version"] is None
-    assert result["description"] is None
-    assert result["rmc_state"] is None
-    assert result["mapped_storage"] is None
+    assert result.name == "bare"
+    assert result.os_version is None
+    assert result.description is None
+    assert result.rmc_state is None
+    assert result.mapped_storage is None

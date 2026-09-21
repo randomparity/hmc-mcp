@@ -10,7 +10,7 @@ from hmc_mcp.server_tools.lpar.configuration import (
     hmc_get_lpar_proc_compat,
     hmc_set_lpar_proc_compat,
 )
-from hmc_mcp.server_tools.system_resources import (
+from hmc_mcp.server_tools.systems.resources import (
     hmc_get_proc_compat_modes,
 )
 

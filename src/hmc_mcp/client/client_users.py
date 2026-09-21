@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, get_args
+from typing import Any
 from urllib.parse import quote
 
 from ..documents import merge_remote_access_document
 from ..errors import HMCError
-from .client_contracts import UsersClient
+from .client_contracts import (
+    AUTHENTICATION_TYPES,
+    VALID_AUTHENTICATION_FILTERS,
+    AuthenticationFilter,
+    UsersClient,
+    _reject_over_long_path_value,
+    _reject_unknown_uom_type,
+)
 from .client_parse import _parse_feed
 
 REMOTE_ACCESS_MEDIA = "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
-
-AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
-_AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
-_VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
-
 
 class UsersMixin:
     """Operations below a documented UOM ``ManagementConsole`` resource."""
@@ -31,6 +33,16 @@ class UsersMixin:
 
     @staticmethod
     def _child_path(console_uuid: str, child_type: str) -> str:
+        """Build a documented ``ManagementConsole`` child path.
+
+        The type segment is validated here rather than relied on from the
+        callers. Every caller passes a literal today, and most are checked only
+        because that same literal also reaches ``_uom_headers``; neither
+        coupling survives a caller that stops passing one. ADR 0147 carries the
+        call-site census, with the date and evidence that make it checkable.
+        """
+        _reject_unknown_uom_type("child_type", child_type)
+        _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         return f"/rest/api/uom/ManagementConsole/{console_path_id}/{child_type}"
 
@@ -40,16 +52,16 @@ class UsersMixin:
         authentication_type: AuthenticationFilter = "all",
     ) -> list[dict[str, Any]]:
         """List documented ``UserProfile`` children of a management console."""
-        if authentication_type not in _VALID_AUTHENTICATION_FILTERS:
+        if authentication_type not in VALID_AUTHENTICATION_FILTERS:
             raise ValueError(
                 f"Invalid authentication_type {authentication_type!r}. Must be one of: "
-                f"{', '.join(sorted(_VALID_AUTHENTICATION_FILTERS))}"
+                f"{', '.join(sorted(VALID_AUTHENTICATION_FILTERS))}"
             )
         path = self._child_path(console_uuid, "UserProfile")
         entries = self._entries(await self._get(path, "UserProfile"), path)
         if authentication_type == "all":
             return entries
-        expected = _AUTHENTICATION_TYPES[authentication_type]
+        expected = AUTHENTICATION_TYPES[authentication_type]
         return [
             entry
             for entry in entries
@@ -59,6 +71,7 @@ class UsersMixin:
     async def get_hmc_user(
         self: UsersClient, console_uuid: str, user_profile_uuid: str
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("user_profile_uuid", user_profile_uuid)
         profile_path_id = quote(user_profile_uuid, safe="")
         path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         return self._first_entry(await self._get(path, "UserProfile"), path)
@@ -72,6 +85,7 @@ class UsersMixin:
     async def modify_hmc_user(
         self: UsersClient, console_uuid: str, user_profile_uuid: str, user_xml: str
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("user_profile_uuid", user_profile_uuid)
         profile_path_id = quote(user_profile_uuid, safe="")
         path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         return self._first_entry(await self._post(path, user_xml, "UserProfile"), path)
@@ -79,6 +93,7 @@ class UsersMixin:
     async def delete_hmc_user(
         self: UsersClient, console_uuid: str, user_profile_uuid: str
     ) -> None:
+        _reject_over_long_path_value("user_profile_uuid", user_profile_uuid)
         profile_path_id = quote(user_profile_uuid, safe="")
         path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         await self._delete(path)
@@ -98,6 +113,7 @@ class UsersMixin:
     async def get_remote_access(
         self: UsersClient, console_uuid: str
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         xml = await self._get_remote_access_xml(path)
@@ -119,11 +135,12 @@ class UsersMixin:
         values: dict[str, str | int | bool] | None,
         clear_fields: list[str] | None,
     ) -> dict[str, Any] | None:
+        _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         current_xml = await self._get_remote_access_xml(path)
         if not current_xml.strip():
-            raise ValueError("RemoteAccess GET returned no ManagementConsole document")
+            raise HMCError(f"GET {path} returned no ManagementConsole document", 200)
         remote_access_xml = merge_remote_access_document(
             current_xml, values, clear_fields
         )

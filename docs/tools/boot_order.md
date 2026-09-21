@@ -4,8 +4,8 @@
 
 3 tools in the `boot_order` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_clear_lpar_boot_order` | `mutate` | `boot_order.clear` | `lpar` | Restore the HMC default boot order on the LPAR's next activation. |
-| `hmc_read_lpar_boot_order` | `read` | `boot_order.read` | `lpar` | Read current, pending, and last-used boot-device state for an LPAR. |
-| `hmc_set_lpar_boot_order` | `mutate` | `boot_order.set` | `lpar` | Set the pending boot order used on the LPAR's next activation. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_clear_lpar_boot_order` | `mutate` | `boot_order.clear` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Restore the HMC default boot order on the LPAR's next activation. |
+| `hmc_read_lpar_boot_order` | `read` | `boot_order.read` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read current, pending, and last-used boot-device state for an LPAR. |
+| `hmc_set_lpar_boot_order` | `mutate` | `boot_order.set` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set the pending boot order used on the LPAR's next activation. |

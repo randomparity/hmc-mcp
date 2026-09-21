@@ -16,6 +16,7 @@ from types import MappingProxyType
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from hmc_mcp import config as config_module
 from hmc_mcp.config import (
@@ -32,6 +33,76 @@ from hmc_mcp.config import (
     load_profile,
     resolve_config_path,
 )
+
+# ---------------------------------------------------------------------------
+# Response ceiling
+# ---------------------------------------------------------------------------
+
+
+def test_response_bytes_default():
+    assert HMCConfig().max_response_bytes == 33554432
+    assert HMCConfig.from_mapping({}).max_response_bytes == 33554432
+
+
+@pytest.mark.parametrize("value", [1, 8, 67108864])
+def test_response_bytes_explicit_override(value):
+    assert HMCConfig(max_response_bytes=value).max_response_bytes == value
+    assert HMCConfig.from_mapping({"max_response_bytes": value}).max_response_bytes == value
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, "bad", None])
+@pytest.mark.parametrize("source", ["constructor", "mapping"])
+def test_response_bytes_invalid_value(value, source):
+    values = {"max_response_bytes": value}
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        if source == "mapping":
+            HMCConfig.from_mapping(values)
+        else:
+            HMCConfig(**values)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1.5", "bad", ""])
+def test_response_bytes_invalid_environment(monkeypatch, value):
+    monkeypatch.setenv("HMC_MAX_RESPONSE_BYTES", value)
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        HMCConfig()
+
+
+def test_response_bytes_constructor_beats_environment(monkeypatch):
+    monkeypatch.setenv("HMC_MAX_RESPONSE_BYTES", "67108864")
+    assert HMCConfig().max_response_bytes == 67108864
+    assert HMCConfig(max_response_bytes=8).max_response_bytes == 8
+
+
+@pytest.mark.parametrize("value", ["67108864", "bad"])
+def test_response_bytes_mapping_ignores_environment(monkeypatch, value):
+    monkeypatch.setenv("HMC_MAX_RESPONSE_BYTES", value)
+    config = HMCConfig.from_mapping({})
+    assert config.max_response_bytes == 33554432
+    assert "max_response_bytes" not in config.model_fields_set
+    explicit = HMCConfig.from_mapping({"max_response_bytes": 8})
+    assert explicit.max_response_bytes == 8
+    assert "max_response_bytes" in explicit.model_fields_set
+
+
+@pytest.mark.parametrize("name", [
+    "HMC_MAX_RESPONSE_BYTES", "hmc_max_response_bytes", "Hmc_Max_Response_Bytes",
+])
+def test_response_bytes_environment_beats_toml(tmp_path, monkeypatch, name):
+    path = _write_toml(tmp_path / "config.toml", MINIMAL_TOML + "max_response_bytes = 8\n")
+    assert load_profile("dev", config_path=path).max_response_bytes == 8
+    monkeypatch.setenv(name, "67108864")
+    assert load_profile("dev", config_path=path).max_response_bytes == 67108864
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1.5", '"bad"'])
+def test_response_bytes_invalid_toml(tmp_path, value):
+    path = _write_toml(
+        tmp_path / "config.toml", MINIMAL_TOML + f"max_response_bytes = {value}\n",
+    )
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        load_profile("dev", config_path=path)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -461,6 +532,47 @@ def test_agent_id_from_env(monkeypatch):
     cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
     assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+
+
+# ---------------------------------------------------------------------------
+# Printable-ASCII header configuration (issue #839, ADR 0153)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\r", "\n", "\t", "\x1f", "\x7f", "V1_\u00e9"])
+@pytest.mark.parametrize("field", ["schema_version", "audit_memento"])
+@pytest.mark.parametrize("source", ["constructor", "mapping"])
+def test_header_config_rejects_non_printable_ascii(field, bad, source):
+    """Controls, DEL and non-ASCII are refused at construction.
+
+    The constructor path starts from the isolated defaults of
+    ``from_mapping({})`` so no ambient ``HMC_*`` variable supplies any other
+    field; the mapping path is isolated by construction (ADR 0096).
+    """
+    base = HMCConfig.from_mapping({}).model_dump()
+    with pytest.raises(ValidationError) as caught:
+        if source == "mapping":
+            HMCConfig.from_mapping({field: bad})
+        else:
+            HMCConfig(**{**base, field: bad})
+    errors = caught.value.errors()
+    assert [error["loc"] for error in errors] == [(field,)]
+    assert "printable ASCII" in errors[0]["msg"]
+
+
+def test_header_config_accepts_printable_ascii_and_empty():
+    accepted = "".join(chr(codepoint) for codepoint in range(0x20, 0x7F))
+    for field in ("schema_version", "audit_memento"):
+        assert HMCConfig.from_mapping({field: accepted}) is not None
+        assert HMCConfig.from_mapping({field: ""}) is not None
+
+
+def test_header_config_rejects_overridden_audit_memento():
+    # agent_id overrides the effective header value, but the stored field is
+    # still validated at construction: the defect is refused where introduced.
+    with pytest.raises(ValidationError) as caught:
+        HMCConfig.from_mapping({"agent_id": "alice", "audit_memento": "bad\rvalue"})
+    assert [error["loc"] for error in caught.value.errors()] == [("audit_memento",)]
 
 
 # ---------------------------------------------------------------------------
@@ -1133,8 +1245,10 @@ def test_from_mapping_applies_every_supplied_key():
         "user": "rowuser",
         "password": "rowpass",  # pragma: allowlist secret
         "ssh_key_file": "/keys/row",
+        "ssh_verify_host_key": False,
         "verify_ssl": True,
         "timeout": 15.0,
+        "max_response_bytes": 67108864,
         "ssh_timeout": 30.0,
         "audit_memento": "hmc-mcp",
         "schema_version": "V1_0",
@@ -1349,7 +1463,7 @@ def test_case_variant_export_beats_a_profile_boolean(
 
 def test_build_config_uses_a_supplied_document_without_resolving_a_path(monkeypatch):
     """An invocation snapshot changes only the source of the parsed mapping."""
-    document = config_module._ConfigDocument(
+    document = config_module.ConfigDocument(
         Path("snapshot-config.toml"),
         {
             "profiles": {

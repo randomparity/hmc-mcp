@@ -53,11 +53,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-          version: "0.12.3"
+          version: "0.12.10"
       - name: Install just
         uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4
         with:
@@ -97,11 +97,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           enable-cache: true
           python-version: "3.13"
-          version: "0.12.3"
+          version: "0.12.10"
       - name: Download validated wheel
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -126,7 +126,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import CapacitySummary, capacity_report
+          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".library-wheel-venv").resolve()
@@ -159,7 +159,7 @@ jobs:
                       },
                   }]
 
-          report = asyncio.run(capacity_report(FakeHMC()))
+          report = asyncio.run(fetch_capacity_report(FakeHMC()))
           assert report == [CapacitySummary(
               system_uuid="system-1",
               system_name="p10",
@@ -176,11 +176,11 @@ jobs:
       - name: Prove the marker makes the installed facade readable to a checker
         run: |
           cat > consumer_probe.py <<'PY'
-          from hmc_mcp.api import LparCreation
+          from hmc_mcp.api import HMCConfig
 
 
-          def probe(request: LparCreation) -> object:
-              return request.field_that_does_not_exist
+          def probe(config: HMCConfig) -> object:
+              return config.field_that_does_not_exist
           PY
           # mypy is the checker that enforces PEP 561 as written: without a
           # readable py.typed it refuses the import outright ([import-untyped])
@@ -215,11 +215,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           enable-cache: true
           python-version: "3.13"
-          version: "0.12.3"
+          version: "0.12.10"
       - name: Download validated wheel
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -269,7 +269,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.api import CapacitySummary, capacity_report
+          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
           package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
           environment = Path(".floor-venv").resolve()
@@ -301,7 +301,7 @@ jobs:
                       },
                   }]
 
-          report = asyncio.run(capacity_report(FakeHMC()))
+          report = asyncio.run(fetch_capacity_report(FakeHMC()))
           assert report == [CapacitySummary(
               system_uuid="system-1",
               system_name="p10",
@@ -355,11 +355,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-          version: "0.12.3"
+          version: "0.12.10"
       - name: Download validated wheel
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -410,6 +410,24 @@ jobs:
           uv pip install --no-deps --python .wheel-venv/bin/python \
             "${wheels[0]}[app]"
           .wheel-venv/bin/hmc-mcp --help >/dev/null
+          .wheel-venv/bin/hmc-mcp capabilities --json > capabilities.json
+          .wheel-venv/bin/python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          capabilities = json.loads(Path("capabilities.json").read_text())
+          assert capabilities
+          for capability in capabilities:
+              assert re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", capability["operation"])
+              assert capability["implementation"] in {
+                  "unrecorded", "absent", "partial", "implemented"
+              }
+              assert capability["verification"] in {
+                  "unrecorded", "unevidenced", "current", "stale", "failed"
+              }
+              assert capability["runtime_eligibility"] == "existing-runtime-guards"
+          PY
           # Renders every group's help page off the command tree the installed
           # wheel builds, so a new group needs no edit here. The script is
           # harness code, not package code: run this way sys.path[0] is
@@ -457,10 +475,40 @@ jobs:
         with:
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           enable-cache: true
           python-version: "3.11"
-          version: "0.12.3"
+          version: "0.12.10"
       - name: Check Python lifecycle policy
         run: uv run --no-project python scripts/check_python_support.py 3.11 3.12 3.13 3.14
+
+  # Derived live-verification staleness (ADR 0127). Recording evidence must never
+  # turn a pull request red, so the report only warns there; the weekly run is the
+  # forcing function that makes stale evidence someone's problem.
+  verification-report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.11"
+          version: "0.12.10"
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4
+        with:
+          just-version: "1.58.0"
+      - name: Set up development environment
+        run: just setup
+      - name: Report live-verification staleness
+        if: github.event_name != 'schedule'
+        run: just verification-report
+      - name: Fail on stale live verification
+        if: github.event_name == 'schedule'
+        run: just verification-report --fail-on-stale

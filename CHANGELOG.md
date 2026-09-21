@@ -2,33 +2,181 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
-pre-1.0, so versions follow ADR 0029 (`docs/adr/0029-supported-reusable-python-api-contract.md`):
-any change to the facade manifest — adding, removing, or renaming an export of
-`hmc_mcp.api`, or changing an exported enum member or literal alternative — requires a minor
-release during `0.x`.
-
-## Convention: the Facade manifest section is mandatory
-
-Every release entry below **must** contain a `### Facade manifest` section, even when nothing
-moved. An entry whose manifest section says "no change to `hmc_mcp.api.__all__`" converts silence
-into a positive statement for consumers deciding whether an upgrade can break them. Where the
-manifest changed, the section names every added, removed, and renamed export, and every changed
-exported enum member or literal alternative.
-
-A metadata test (`tests/unit/test_changelog.py`) enforces this contract: the version declared in
-`pyproject.toml` must have a matching entry, every release entry must carry a non-empty
-`### Facade manifest` section, and that section's *content* is checked — every export in
-`hmc_mcp.api.__all__` that the oldest entry's enumerated manifest does not already name must be
-named in the `[Unreleased]` manifest. The repository carries no git tags, so that enumeration,
-not a tag, is the boundary the delta is derived against. Removals and renames stay outside the
-mechanism: a removed export is absent from `__all__`, and with no per-release snapshot to diff
-against there is nothing to corroborate a `Removed:` or `Renamed:` line.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The six-name
+`hmc_mcp.api` facade is defined by ADR 0118; record changes to it under ordinary release
+categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Added
+
+- `HMCClient.list_search_parameters(resource_type)` reads the search-parameter names an HMC defines
+  for a resource type, at `/rest/api/uom/{R}/search`, returning them with the response's
+  `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the `SearchParameterSet` the
+  anchor answers with, captured at `V1_17_0` and `V1_20_0` across eleven types. A type that defines
+  no search parameters returns an empty list — six of the eleven do; the names are `None` rather
+  than a list when the level's answer is not a fact about the type, which is a 204 or a
+  `SearchParameterSet` holding parameters this parse cannot name, whether they carry an empty
+  `ParameterName` or no `ParameterName` at all (ADR 0144). A 200 carrying no
+  `SearchParameterSet` at all raises `HMCError`, as does a level that does not serve the anchor,
+  carrying its status. **No captured level serves a child-anchored form:** the reference documents
+  `/rest/api/uom/{P}/{UUID}/{C}/search` and the HMC answers it 400 `INVALID_URL` while serving the
+  plain child feed and `/quick` on the same parent, so no parent arguments are offered
+  (ADR 0142, #789).
+
+- `HMCClient.search_uom` takes a keyword-only `validate=False`. With `validate=True` a property
+  name the resource type does not define raises `ValueError` before any request is sent, checked
+  against the names `list_search_parameters` reports; those are read once per type and cached for
+  the client's lifetime, and a level where the read yields no names validates nothing rather than
+  raising. A type that defines none is refused locally instead — every name of it, with a message
+  saying so (ADR 0144). Off by default, because the client is constructed per tool call, so the
+  cache would rarely be reused. The round trip it saves is a 500, not the 400 the design was
+  written against (ADR 0142, #789).
+
+- `HMCClient.get_quick_property` takes a keyword-only `validate=False`. With `validate=True` an
+  unknown property name raises `ValueError` before any request is sent, checked against the names
+  `list_quick_properties` reports for the resource type; those are read once per type and cached for
+  the client's lifetime, and a level where the read yields no names validates nothing rather than
+  raising. A type that defines none is refused locally instead — every name of it, with a message
+  saying so (ADR 0144). Off by default, because the client is constructed per tool call
+  (ADR 0141, #799).
+
+- `HMCClient.list_quick_properties(resource_type, *, parent_type=None, parent_uuid=None)` reads
+  the quick-property names an HMC defines for a resource type, at the root anchor
+  `/rest/api/uom/{R}/quick` and the child anchor `/rest/api/uom/{P}/{UUID}/{C}/quick`. It returns
+  those names paired with the response's `X-HMC-Schema-Version`, that second element being `None`
+  when the HMC sends no such header
+  (ADR 0139, ADR 0140, #788). The body is an Atom `<entry>` wrapping a `QuickProperty_Collection`,
+  and the names are the `Nickname` texts. A type that defines no quick properties returns an empty
+  list — a 200 carrying the container with neither a `QuickProperty` nor a `Nickname` element under
+  it; the names are `None` rather
+  than a list when the level's answer is not a fact about the type, which is a 204 or a
+  `QuickProperty_Collection` holding properties this parse cannot name, whether they carry an empty
+  `Nickname` or no `Nickname` at all (ADR 0144). A 200 carrying no
+  `QuickProperty_Collection` at all raises `HMCError`, because without the container it is
+  indistinguishable from the HMC's known `HttpErrorResponse` feed (#811). The returned header value
+  is verbatim and is not guaranteed to hold a version. Confirmed against FW950: 39 names for
+  `ManagedSystem`, 28 for `LogicalPartition`, and the returned names resolve when fed back to
+  `get_quick_property`. Anchor availability is per type — `NetworkBridge` answers 400 at the root
+  and 200 as a child.
+  **There is no `/quick/all`** — that anchor answers 400, so no `all_properties` argument is
+  offered; the differently capitalized `/quick/All` is a separate endpoint returning per-instance
+  values, not names.
+
+- `xmlutil.find_all_text(xml_text, *names)`, the all-matches sibling of `find_text`, returning the
+  text of every element whose local name matches instead of only the first.
+
+- `HMCClient.list_operations(resource_type, *, parent_type=None, parent_uuid=None)` reads
+  the job operations an HMC defines for a resource type, at the root anchor
+  `/rest/api/uom/{R}/operations` and the child anchor
+  `/rest/api/uom/{P}/{UUID}/{C}/operations`. It returns the parsed feed paired with the
+  response's `X-HMC-Schema-Version`, or `None` when the HMC sends none (ADR 0139, #787).
+  The feed is one `OperationSet` per anchor holding every operation the type defines, not
+  one entry per operation, and repeated elements within it collapse to a bare dict when the
+  HMC sends exactly one — see the method's docstring before iterating the result. The
+  returned header value is verbatim and is not guaranteed to be a version string. Not
+  available on every firmware level: V1_20_0 HMCs answered 500.
+
+- Transport and inventory contract tests bound to the F1 reference corpus
+  (`rest:logon-and-logoff`, `rest:job-status`): logon PUT endpoint and method,
+  `LogonRequest`/`LogonResponse` media types, X-API-Session token propagation,
+  UOM Accept/Content-Type header behaviour, and complete terminal-status vocabulary
+  including `EXCEPTION` and `COMPLETED_WITH_ERROR`. Eight inventory operations
+  (`system.get`, `lpar.list`, `lpar.get`, `vios.list`, `console.list_resources`,
+  `system.summary`, `lpar.summary`, `console.info`) now emit `record_verified`
+  observations from the live runner, adding maturity evidence for seven operations
+  and recording the firmware-500 gap for `console.info` on this hardware (#625).
+
+### Fixed
+
+- Virtual-disk create and attach keep their `capacity_mib` inputs, but the HMC
+  VolumeGroup document now emits the integral GiB value V10R3 expects. Invalid,
+  non-integral GiB requests fail before dispatch. VolumeGroup inventory now exposes
+  `capacity_gib` and `free_space_gib`; an impossible free-space reading is null with
+  `free_space_diagnostic="free_space_exceeds_capacity"` (#779).
+
+- The live runner's SR-IOV scenarios now dispatch `adapter_id`, `physical_port_id` and
+  `logical_port_id` as the `str` the tools declare. Every SR-IOV call was passing the
+  numeric config value, so each failed pydantic validation before reaching the HMC
+  (`Input should be a valid string`) and the ST23 baseline aborted, starving every
+  dependent SR-IOV subtask. The same mismatch also made `_adapter_is_healthy` and
+  `_logical_port_is_configured` compare a number against the `str` the tools project,
+  which is never equal — so a port still configured after cleanup would have reported
+  as unconfigured, a wrong answer in a cleanup assertion rather than a loud failure
+  (#763).
+
+- The live runner's static dispatch guard now checks argument *types* against the
+  served tool schema, not only argument names. It reads the type of every literal,
+  config-backed, converted and f-string argument at each dispatch site and fails the
+  build on a mismatch, which is what would have caught the SR-IOV defect above before
+  it reached hardware. A dispatch naming a config field that does not exist is
+  reported rather than passed over, and the guard asserts a floor on how many
+  arguments it actually type-checks, so a change that quietly stops reading a class
+  of arguments fails instead of reading as a clean run (#763).
+
+  The same check runs at dispatch time in a live run, where it is now stricter than
+  the transport: FastMCP validates in pydantic's lax mode and would coerce `"5"` or
+  `5.0` into an `int` parameter, whereas the runner reports `InvalidDispatch` and
+  never reaches the HMC. That is the intended direction — a harness defect should
+  stop at the harness — and no current dispatch site relies on the coercion (#763).
+
+- `list_volume_groups` and `list_optical_media` no longer fail on a well-formed HMC
+  reply that reports a quantity with a fractional part. `GroupCapacity`, `FreeSpace`
+  and `MediaSize` were admitted only by `str.isdecimal()`, which is false for any
+  string containing `.`, so hardware returning `279.25` raised
+  `HMCError: list_volume_groups returned an invalid GroupCapacity` even though the
+  REST call had succeeded. These fields now accept a plain non-negative decimal and
+  widen to `float | None`; an integral value is still returned as `int`, so rendered
+  output is unchanged for hardware that reports whole numbers. A value that is not a
+  plain decimal — a sign, an exponent, `nan`, `inf`, non-ASCII digits, a trailing
+  newline, or any non-numeric text — still raises, and bools are still rejected.
+  Accepted widths are bounded at 20 integer and 10 fractional digits, beyond any real
+  storage quantity, so a digit string long enough to exhaust `int()` or saturate
+  `float()` to `inf` is rejected as malformed rather than parsed (#762).
+
+- The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
+  port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
+  common port, but it was covered by a strictly-positive check that aborted the run
+  during configuration parsing — before the runner reached the HMC. Adapter and logical
+  port IDs keep the positive check; the physical port ID is now bounded at zero (#708).
+
 ### Changed
 
+- Installed CLI, MCP discovery, and generated tool references now publish the same
+  operation-keyed implementation, verification, and runtime-eligibility evidence.
+  Compatibility guidance now describes the POWER10/POWER11 reference corpus and
+  per-operation evidence instead of claiming blanket HMC V8–V11 and POWER support
+  (#624, ADR 0131).
+
+- `scripts/run_tests.py` now preserves an interrupted pytest's `KeyboardInterrupt`
+  diagnostic under the host load ADR 0130 measured, where a fixed 3-second grace
+  truncated it. The window before `SIGTERM` and the reap before `SIGKILL` are separate
+  bounds sized to the quantities they guard, and a second `Ctrl-C` escalates at once
+  instead of escaping with the captured output unreplayed, the status misreported and
+  the pytest child orphaned (#728, ADR 0130).
+
+- Live-verification evidence is now trustworthy promotion evidence. `maturity.json`
+  moves to format 2: one closed observation shape, no stored currency, and no free
+  text beyond two grammar-bound environment strings. Staleness is derived when the
+  catalog is read — from the operation's own import closure, or a 90-day ceiling —
+  and is never a validation error, so recording evidence cannot turn the build red.
+  `just verification-report` prints each operation's state; it warns on pull requests
+  and fails only on the weekly scheduled run. The live runner asserts named
+  postconditions instead of treating "the call returned" as a pass, checks every
+  dispatch against the served tool schema, and emits observations only from a clean
+  tree to a path Git ignores (#623, ADR 0127, superseding ADR 0126).
+
+- Streamlined the README around installation, CLI, and MCP quick starts; moved
+  configuration, API contracts, operation details, and development reference into
+  topic guides under `docs/`.
+
+- SSH commands and consoles now verify host keys against the process user's
+  `~/.ssh/known_hosts`; provision independently verified keys before upgrading.
+  `ssh_verify_host_key=false` (or `HMC_SSH_VERIFY_HOST_KEY=false`) explicitly
+  bypasses verification with a warning. The operator probe requires `--insecure`
+  for its own per-run bypass (#605, ADR 0116).
+- The HMC PTF query operation and MCP tool now use submission-oriented names:
+  `submit_available_hmc_ptfs_query` and `hmc_submit_available_hmc_ptfs_query`.
 - SR-IOV physical-port inventory now queries both evidenced `roce` and `ethc`
   levels, accepts exactly one non-empty result, and maps HMC states `1` and `0`
   to `up` and `down` respectively (#557, ADR 0113).
@@ -68,9 +216,33 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `lpar_name_or_uuid`, including LPM, disk attachment, summaries, ownership
   authorization, and PCIe assignment workflows. Presentation adapters pass
   `None` when they intentionally request fleet-wide LPAR-name resolution.
+- Exported VIOS storage operations now require `vios_name_or_uuid` first and
+  accept the optional `system_name_or_uuid` selector as a keyword-only argument.
+- The supported VIOS storage-detail operation and MCP tool are now
+  `get_vios_storage_detail` and `hmc_get_vios_storage_detail`; the ambiguous
+  `get_vios` and `hmc_get_vios` names were removed.
+- Storage inventory operations now return bounded `VolumeGroup`, `OpticalMedia`,
+  and `StorageMapping` values instead of raw HMC response mappings (ADR 0117).
 
 ### Added
 
+- `docs/capabilities/maturity.json` carries its first live observation, from the
+  harness shake-down run against V10R3 / POWER10 hardware: `console.info`, result
+  `failed`, on an HMC firmware defect serializing a null `Session/SessionId` property.
+  The row derives as `stale (closure-changed)` rather than `failed` on current `main`,
+  because the operation's import closure moved after the observation was taken — the
+  staleness rule working as designed, not a recording error (#708).
+
+- `python -m hmc_mcp` now runs the CLI, as an alias for the `hmc-mcp` console script wherever
+  the `app` extra is installed — like the console script, it needs that extra and fails the
+  same way without it. It delegates to the same entry point and takes no arguments of its own,
+  so the two remain one program; the program name Typer reports differs. One difference does
+  matter operationally: `-m` places the current working directory first on `sys.path`, where
+  the console script does not, so prefer `hmc-mcp` for a served process and use
+  `python -P -m hmc_mcp` (or `PYTHONSAFEPATH=1`) when launching from a directory you do not
+  control. The live audit proof uses it because the generated console script cannot be relied
+  on to exec with stderr closed once the interpreter path is long enough that `uv` emits a
+  `/bin/sh` trampoline (#709, ADR 0128).
 - A warning-level `install-submitted` audit event now carries the remote PID returned by a
   detached `installios` submission to served operators (#544, ADR 0109).
 - Serve startup now submits a warning-level `power-ownership-guard` audit record for every
@@ -93,6 +265,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - `StorageMapResult` records the authorized LPAR UUID beside the resource returned by
   `map_storage`, so library and CLI callers no longer resolve the partition independently
   before the guarded storage operation (ADR 0104).
+- `VolumeGroup`, `OpticalMedia`, and `StorageMapping` provide stable storage
+  inventory values for reusable Python callers (ADR 0117).
 - Opt-in ADR 0011 ownership guard on LPAR power operations (#371, ADR 0092 §4): the new
   `authorize_power_operations` setting (`HMC_AUTHORIZE_POWER_OPERATIONS`, TOML profile key
   `authorize_power_operations`) defaults to `false`, leaving the `power_lpar` call path
@@ -183,8 +357,8 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `system_name_or_uuid` now discovers the owning managed system by a bounded fleet walk, because
   the guard is keyed by CLI system name — supply the selector to skip it. ADR 0094 records the
   derivation and its alternatives.
-- `install_lpar_os` and `install_vios` operations and facade exports (#366, ADR 0013/0029/0070):
-  the `installios` orchestration moves out of the `hmc_install_lpar_os` / `hmc_install_vios` tool
+- `install_vios_by_lpar_selector` and `install_vios` operations and facade exports (#366, ADR 0013/0029/0070):
+  the `installios` orchestration moves out of the `hmc_install_vios_by_lpar_selector` / `hmc_install_vios` tool
   bodies into a new `operations_install` module, so a consumer already running an event loop can
   call it — the tool path reached it only through `asyncio.run`. Both return the CLI bridge's
   detach handle (resolved system and partition names, the remote PID, the install log path, and a
@@ -244,7 +418,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   a fourth argument and stays a pure function of its arguments; `EffectivePermissions` is not
   a `hmc_mcp.api` export, so the facade manifest is unaffected.
 - `install-attempted` audit record for a detached `installios` submission (#469, ADR 0102).
-  `install_lpar_os` and `install_vios` submit an irreversible install against a partition's
+  `install_vios_by_lpar_selector` and `install_vios` submit an irreversible install against a partition's
   disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
   `hmc_mcp.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
   it left instead went to the unconfigured `hmc_mcp.operations_install` logger, whose
@@ -265,7 +439,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   explicit typed keyword parameters instead of accepting an untyped `**fields` bag.
 - User deletion and remote-access MCP tools now call the client boundary directly;
   remote-access validation and document merging have one owner in the client layer.
-- `metric_links` and `metric_data` require metric kind, time range, sample count, and
+- `fetch_metric_links` and `fetch_metric_data` require metric kind, time range, sample count, and
   managed-system scope as named arguments after the resource selector.
 - Affinity assessment models, pure evaluation, and live orchestration now live together
   in `operations.affinity`; snapshot modules consume that boundary without a reverse
@@ -327,7 +501,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `hmc jobs` CLI commands keep the previous behaviour; #526 owns that pass.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
-- `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI
+- `hmc_install_vios_by_lpar_selector` and `hmc_install_vios` now drive the HMC CLI
   `installios` command over SSH (submit-and-detach: they return the remote PID
   and log path instead of a job, and `hmc_get_job`/`hmc_wait_for_job` do not
   apply). The targeted `InstallLPAR`/`InstallVIOS` REST jobs do not exist on
@@ -470,6 +644,21 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 
 ### Facade manifest
 
+- Changed: `hmc_mcp.api` now exports only `HMCClient`, `HMCConfig`,
+  `ConfigError`, `HMCError`, `HMCTransportError`, and
+  `TLSVerificationDisabledWarning`; every operation and operation-specific
+  model previously exported by the facade is removed (ADR 0118).
+- Added: named LPM affinity literal types (`LpmCapability`, `LpmDestinationCheckBasis`,
+  `LpmPreflightStatus`, and `LpmResponse`) for typed reusable callers.
+- Added: `RemoteRestartRequest` groups remote-restart-specific controls while common
+  polling controls remain keyword-only.
+- Added: `ProvisionRequest` groups the typed inputs for end-to-end LPAR provisioning;
+  the operation now accepts this request object directly.
+- Changed: VIOS backup, restore, and backup-catalog operations now take the VIOS selector
+  first and accept managed-system scope as a keyword-only argument.
+- Renamed: `list_available_hmc_ptfs` to `submit_available_hmc_ptfs_query`.
+- Renamed: `metric_data` to `fetch_metric_data` and `capacity_report` to
+  `fetch_capacity_report` in the reusable facade.
 - Changed: removed the stale `ambiguous` literal alternative from
   `PowerOwnershipGuard.source`; exact and case-variant environment spellings now report
   `environment` in both the MCP response and startup audit schema. No `hmc_mcp.api.__all__`
@@ -493,8 +682,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   matching the CLI and MCP tool boundary.
 - Changed: `list_systems` accepts any exact HMC state string; removed the
   misleading finite `ManagedSystemState` facade type and tool-schema enum.
-- Changed: `get_vios` now accepts the required VIOS selector first and makes its
-  optional managed-system scope keyword-only.
+- Renamed: `get_vios` is now `get_vios_storage_detail`.
 - Added: `DecommissionBlastRadius` and `DecommissionAdapterRecord` type the
   stable inventory returned through `DecommissionResult.blast_radius`.
 - Added: `list_clusters`, `list_shared_storage_pools`, and
@@ -505,13 +693,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Changed: `read_lpar_boot_order`, `set_lpar_boot_order`, and
   `clear_lpar_boot_order` now accept a system-scoped LPAR name or UUID.
 - Changed: SSH affinity result types and workflows now live in
-  `operations.ssh_affinity`; network inventory and vNIC mutation now live in
-  `operations.vnic`.
-- Changed: `get_vios`, `delete_vios`, `update_vios`, and `upgrade_vios` now place the
+  `operations.affinity.ssh`; network inventory and vNIC mutation now live in
+  `operations.virtualization.vnic`.
+- Changed: `delete_vios`, `update_vios`, and `upgrade_vios` now place the
   optional managed-system selector before the VIOS selector, matching sibling VIOS
   operations and allowing update and upgrade names to be disambiguated.
 
-- Added: `get_vios`, `list_vios`, and the latter's `PartitionState` selector
+- Added: `get_vios_storage_detail`, `list_vios`, and the latter's `PartitionState` selector
   type as the shared VIOS inventory boundary used by both presentation layers.
 - Changed: `power_system` and `power_vios` now name their action flag
   `power_on`, matching `power_lpar`.
@@ -522,9 +710,11 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
 - Changed: SSH-backed network and affinity operations now consistently name their
   selectors `system_name_or_uuid` and `lpar_name_or_uuid`.
 - Added: `resolve_and_authorize_lpar_mutation` and `resolve_and_authorize_lpar_names` after
-  ownership authorization moved to the cross-cutting `operations.ownership` module.
+  ownership authorization moved to the cross-cutting `operations.lpar.ownership` module.
 - Added: `StorageMapResult`; `map_storage` now returns this concrete result instead of the
   mapped resource alone.
+- Added: `VolumeGroup`, `OpticalMedia`, and `StorageMapping` replace raw HMC storage
+  inventory mappings at the supported operation boundary (ADR 0117).
 - Added: `upgrade_vios`, splitting VIOS upgrades from `update_vios`; `update_vios` now accepts
   only `VIOSUpdateSource` and has no `kind` mode selector.
 - Removed: `add_vios_adapter`; use the explicit `add_vscsi_adapter` or `add_vfc_adapter`
@@ -579,13 +769,13 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `AuthenticationType` input type. These presentation-neutral operations already back the user
   MCP tools and now satisfy ADR 0029's selection rule.
 - Changed: `install_vios` now places `system_name_or_uuid` before `vios_name_or_uuid`,
-  matching `install_lpar_os` and the other system-scoped partition operations. This moves the
+  matching `install_vios_by_lpar_selector` and the other system-scoped partition operations. This moves the
   frozen public signature digest.
 - Changed: `capture_lpar_snapshot` now reads the SSH configuration from its `HMCClient`
   instead of requiring callers to pass the same client's configuration separately. This removes
   the redundant `config` parameter and moves the frozen public signature digest.
 - Changed: LPAR-targeting facade operations now consistently place the managed-system selector
-  before the partition selector. This reorders `install_lpar_os`, `power_lpar`,
+  before the partition selector. This reorders `install_vios_by_lpar_selector`, `power_lpar`,
   `set_lpar_processors`, `set_lpar_memory`, and all four virtual-adapter operations; callers
   that want fleet discovery pass `None` explicitly for the system selector. Operation-specific
   controls remain after the two selectors and the frozen signature digest moves.
@@ -605,7 +795,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   MCP and CLI adapters. ADR 0029's selection rule requires it in the reusable facade.
 - Added: `HMCIdentity`, replacing the inconsistently capitalized `HmcIdentity` export. This is a
   breaking public rename and moves the frozen signature digest; no compatibility alias remains.
-- Added: `InstallHandle` (#468), the `TypedDict` `install_lpar_os` and `install_vios` now return
+- Added: `InstallHandle` (#468), the `TypedDict` `install_vios_by_lpar_selector` and `install_vios` now return
   in place of `dict[str, Any]`. Runtime behaviour and both MCP tool responses are unchanged — a
   `TypedDict` is a plain `dict` — but the five keys `system`, `partition`, `pid`, `log_path`, and
   `message` are now part of the frozen public signature digest, so renaming one is a manifest
@@ -615,7 +805,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   expected, or adding or deleting a key are all errors against a `TypedDict`. Annotate with
   `InstallHandle`, or with `Mapping[str, object]` where the consumer only reads.
 - Added: `InstallRequest`, the shared source, network, and profile value object accepted by
-  `install_lpar_os` and `install_vios`.
+  `install_vios_by_lpar_selector` and `install_vios`.
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
   cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
   so each contributes to the frozen public signature digest. This records the manifest catching
@@ -660,7 +850,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   signature digest. Both take `system_name_or_uuid` and `ownership_override` as keyword-only
   parameters; the managed-system selector stays optional per ADR 0063, so a `hmc_mcp.api` caller
   may omit it and have the owning system derived.
-- Added: `install_lpar_os`, `install_vios` (#366); this moves the frozen public signature digest.
+- Added: `install_vios_by_lpar_selector`, `install_vios` (#366); this moves the frozen public signature digest.
   Their `dict[str, Any]` return is **not** one of ADR 0029's opaque HMC resource payloads — the
   package composes all five keys itself, and no firmware level can add or remove one. The keys
   `system`, `partition`, `pid`, `log_path` and `message` are pinned by a contract test
@@ -721,7 +911,7 @@ against there is nothing to corroborate a `Removed:` or `Renamed:` line.
   `"tls-verification-disabled"` above — `hmc_mcp.audit` is not part of the `hmc_mcp.api` facade,
   so the manifest and the frozen public signature digest are unmoved, but the literal vocabulary
   a consumer reading the audit stream matches against is wider.
-- Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
+- Unchanged otherwise: #410 rebuilt `hmc_install_vios_by_lpar_selector` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
   `hmc_mcp.api` exports; their parameter changes do not move the frozen
   manifest or its signature digest — the operations behind them that #366 later
@@ -768,18 +958,18 @@ added afterwards; every later addition is recorded above.
 `create_virtual_disk`, `create_virtual_network`, `create_volume_group`, `decommission_lpar`,
 `delete_adapter`, `delete_logical_unit`, `delete_lpar`, `delete_media_repository`,
 `delete_optical_media`, `delete_virtual_disk`, `delete_virtual_network`,
-`deploy_partition_template`, `detach_storage_mapping`, `find_placement`, `fleet_health`,
+`deploy_partition_template`, `detach_storage_mapping`, `find_placement`, `fetch_fleet_health`,
 `get_media_repository`, `get_partition_template`, `get_pcm_preferences`, `list_adapters`,
 `list_dedicated_slots`, `list_fc_ports`, `list_network_bridges`, `list_optical_media`,
 `list_partition_templates`, `list_sea_adapters`, `list_sriov_adapters`,
 `list_sriov_logical_ports`, `list_sriov_physical_ports`, `list_storage_mappings`,
 `list_virtual_networks`, `list_virtual_switches`, `list_vnics`, `list_volume_groups`,
-`load_profile`, `lpar_summary`, `map_storage`, `metric_data`, `metric_links`, `migrate_lpar`,
+`load_profile`, `fetch_lpar_summary`, `map_storage`, `metric_data`, `fetch_metric_links`, `migrate_lpar`,
 `power_lpar`, `power_system`, `power_vios`, `prevalidate_lpar_pcie_assignments`,
 `provision_lpar`, `read_lpar_boot_order`, `recover_lpar_migration`, `remote_restart_lpar`,
 `remove_vnic`, `rename_lpar`, `resolve_lpar_ownership_names`, `resolve_pcm_resource`,
 `set_lpar_boot_order`, `set_pcm_preferences`, `set_sriov_adapter_mode`,
-`stamp_created_lpar_ownership`, `system_summary`, `unassign_dedicated_pcie_slot`,
+`stamp_created_lpar_ownership`, `fetch_system_summary`, `unassign_dedicated_pcie_slot`,
 `unassign_sriov_logical_port`, `upload_iso`
 
 [unreleased]: https://github.com/randomparity/hmc-mcp/compare/0.1.0...HEAD

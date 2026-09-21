@@ -4,6 +4,6 @@
 
 1 tool in the `io_slot` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_list_io_slots` | `read` | `io_slot.list` | `managed_system` | List physical I/O slots, optionally filtered by PCI class. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_list_io_slots` | `read` | `io_slot.list` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List physical I/O slots, optionally filtered by PCI class. |

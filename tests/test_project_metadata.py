@@ -16,7 +16,7 @@ PROJECT_URLS = {
 }
 PRIVATE_ADVISORY_URL = "https://github.com/randomparity/hmc-mcp/security/advisories/new"
 GOVERNANCE_HEADING = "## Contributing, security, and license"
-GOVERNANCE_NEXT = "## Install"
+GOVERNANCE_NEXT = None
 CONTRIBUTING_HEADING = "# Contributing"
 CONTRIBUTING_NEXT = "## Changelog"
 LOCAL_PATH_COMMANDS = (
@@ -128,7 +128,7 @@ def test_governance_links_relocated_out_of_their_section_are_caught() -> None:
     """The negative variant: every link stays in the file but leaves its section."""
     readme = (ROOT / "README.md").read_text()
     relocated = _relocate(
-        readme, _section(readme, GOVERNANCE_HEADING, GOVERNANCE_NEXT), "## Stack\n"
+        readme, _section(readme, GOVERNANCE_HEADING, GOVERNANCE_NEXT), "## Install\n"
     )
 
     assert all(link in relocated for link in POLICY_LINKS.values())
@@ -136,52 +136,38 @@ def test_governance_links_relocated_out_of_their_section_are_caught() -> None:
     assert [link for link in POLICY_LINKS.values() if link in moved] == []
 
 
-def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
-    readme = (ROOT / "README.md").read_text()
-    # Fail loudly on a renamed *or reordered* heading: without this the second
-    # split silently returns the rest of the file and the section gate stops
-    # being a section. Ordering subsumes mere presence.
-    assert readme.index("## Reusable Python API") < readme.index("## Configure")
-    library = " ".join(
-        readme.split("## Reusable Python API", 1)[1].split("## Configure", 1)[0].split()
-    )
+def test_library_guide_documents_the_typed_facade_and_its_covered_surface() -> None:
+    guide = (ROOT / "docs/python-api.md").read_text()
+    library = " ".join(_section(guide, "## Stable connection API").split())
 
     assert "PEP 561" in library
     assert "py.typed" in library
-    # Pins the note's covered-surface wording so an edit cannot quietly narrow
-    # or widen what the marker is documented to cover.
-    for covered in (
-        "call signature",
-        "package-owned model",
-        "exception type",
-        "enum and literal alias",
-    ):
-        assert covered in library
-    # The fake-client remedy has to be a mechanism that actually type-checks.
-    assert "typing.cast(HMCClient, fake)" in library
-    # The limit is pinned next to the claim: 36 exported operations return raw
-    # HMC mappings, so a bare "everything is typed" note would oversell it.
-    assert "`dict[str, Any]`" in library
-    assert "payload contents stay opaque" in library
+    assert "exactly six stable names" in library
+    assert "Domain operations" in guide
+    assert "not compatibility promises" in guide
 
 
-def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
-    readme = (ROOT / "README.md").read_text()
+def test_hmc_compatibility_claims_are_evidence_scoped() -> None:
+    readme = (ROOT / "docs/compatibility.md").read_text()
     cheatsheet = (ROOT / "docs" / "hmc-cli-cheatsheet.md").read_text()
     compatibility = readme.split("## HMC version compatibility", 1)[1].split(
         "### Firmware write-path compatibility", 1
     )[0]
 
-    assert "HMC V8 through V11" in compatibility
+    assert "HMC V8 through V11" not in compatibility
+    assert "all the POWER generations" not in compatibility
+    assert "POWER10 and POWER11" in compatibility
+    assert "capabilities/README.md" in compatibility
     assert "HMC V10 or newer" in compatibility
     for tool in VIOS_BACKUP_TOOLS:
         assert tool in compatibility
         assert tool in cheatsheet
     assert "require HMC V10 or newer" in cheatsheet
+    assert "Some HMC V10 firmware builds return HTTP 406" in readme
 
 
 def test_access_policy_guidance_matches_connectionless_dispatch_semantics() -> None:
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "docs/mcp-server.md").read_text()
     connectionless = " ".join(
         readme.split("### What the policy does not bound", 1)[1]
         .split("### Migrating to a required access policy", 1)[0]
@@ -196,7 +182,7 @@ def test_access_policy_guidance_matches_connectionless_dispatch_semantics() -> N
 
 
 def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "docs/mcp-server.md").read_text()
     adr = (
         ROOT
         / "docs"
@@ -232,8 +218,8 @@ def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
     assert not FIXED_TOOL_COUNT.search("31 total non-exhaustive tools")
 
 
-def test_readme_preserves_reviewed_policy_during_recovery() -> None:
-    readme = (ROOT / "README.md").read_text()
+def test_mcp_guide_preserves_reviewed_policy_during_recovery() -> None:
+    readme = (ROOT / "docs/mcp-server.md").read_text()
     migration = readme.split("### Migrating to a required access policy", 1)[1].split(
         "### Detecting access-policy drift", 1
     )[0]

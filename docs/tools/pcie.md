@@ -4,11 +4,11 @@
 
 6 tools in the `pcie` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_assign_dedicated_pcie_slot` | `mutate` | `pcie.assign_dedicated_slot` | `lpar` | Assign a dedicated PCIe slot when safe profile readback is available. |
-| `hmc_list_dedicated_pcie_slots` | `read` | `pcie.list_dedicated_slots` | `managed_system` | List normalized dedicated PCIe slots with stable DRC identities. |
-| `hmc_list_sriov_adapters` | `read` | `pcie.list_sriov_adapters` | `managed_system` | List normalized SR-IOV adapters, or report capability unavailable. |
-| `hmc_list_sriov_logical_ports` | `read` | `pcie.list_sriov_logical_ports` | `managed_system` | List normalized SR-IOV logical ports, or report capability unavailable. |
-| `hmc_list_sriov_physical_ports` | `read` | `pcie.list_sriov_physical_ports` | `managed_system` | List normalized SR-IOV physical ports, or report capability unavailable. |
-| `hmc_unassign_dedicated_pcie_slot` | `mutate` | `pcie.unassign_dedicated_slot` | `lpar` | Unassign a dedicated PCIe slot when safe profile readback is available. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_assign_dedicated_pcie_slot` | `mutate` | `pcie.assign_dedicated_slot` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Assign a dedicated PCIe slot when safe profile readback is available. |
+| `hmc_list_dedicated_pcie_slots` | `read` | `pcie.list_dedicated_slots` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized dedicated PCIe slots with stable DRC identities. |
+| `hmc_list_sriov_adapters` | `read` | `pcie.list_sriov_adapters` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized SR-IOV adapters, or report capability unavailable. |
+| `hmc_list_sriov_logical_ports` | `read` | `pcie.list_sriov_logical_ports` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized SR-IOV logical ports, or report capability unavailable. |
+| `hmc_list_sriov_physical_ports` | `read` | `pcie.list_sriov_physical_ports` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized SR-IOV physical ports, or report capability unavailable. |
+| `hmc_unassign_dedicated_pcie_slot` | `mutate` | `pcie.unassign_dedicated_slot` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Unassign a dedicated PCIe slot when safe profile readback is available. |

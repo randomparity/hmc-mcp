@@ -34,6 +34,33 @@ _RESOURCE_GROUP_CALCULATED_FIELDS = (
 _HMC_ERROR_CODE = re.compile(r"(?:^|[\r\n]|:\s)(HSCL[A-Z0-9]{4})\b")
 
 
+def _validate_selector_names(names: tuple[str, ...], label: str) -> None:
+    invalid = any(
+        not isinstance(name, str)
+        or not name.strip()
+        or "," in name
+        or any(ord(character) < 32 or ord(character) == 127 for character in name)
+        for name in names
+    )
+    if invalid:
+        raise ValueError(f"{label} must be nonblank and contain no commas or control characters")
+    if len(set(names)) != len(names):
+        raise ValueError(f"{label} must not contain duplicates")
+
+
+def _validate_selector_ids(ids: tuple[int, ...], label: str, minimum: int) -> None:
+    invalid = any(
+        not isinstance(identifier, int)
+        or isinstance(identifier, bool)
+        or identifier < minimum
+        for identifier in ids
+    )
+    if invalid:
+        raise ValueError(f"{label} must be {('positive' if minimum else 'non-negative')} integers")
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"{label} must not contain duplicates")
+
+
 @dataclass(frozen=True)
 class MemoptLparSelector:
     """Select LPARs by name or ID for an affinity-planning scenario."""
@@ -53,33 +80,9 @@ class MemoptLparSelector:
         if self.names and self.ids:
             raise ValueError("memopt LPAR selector must contain names or ids, not both")
         if self.names:
-            if any(
-                not isinstance(name, str)
-                or not name.strip()
-                or "," in name
-                or any(
-                    ord(character) < 32 or ord(character) == 127 for character in name
-                )
-                for name in self.names
-            ):
-                raise ValueError(
-                    "memopt LPAR selector names must be nonblank and contain no "
-                    "commas or control characters"
-                )
-            if len(set(self.names)) != len(self.names):
-                raise ValueError(
-                    "memopt LPAR selector names must not contain duplicates"
-                )
+            _validate_selector_names(self.names, "memopt LPAR selector names")
         if self.ids:
-            if any(
-                not isinstance(lpar_id, int)
-                or isinstance(lpar_id, bool)
-                or lpar_id <= 0
-                for lpar_id in self.ids
-            ):
-                raise ValueError("memopt LPAR selector ids must be positive integers")
-            if len(set(self.ids)) != len(self.ids):
-                raise ValueError("memopt LPAR selector ids must not contain duplicates")
+            _validate_selector_ids(self.ids, "memopt LPAR selector ids", 1)
 
 
 @dataclass(frozen=True)
@@ -103,34 +106,17 @@ class MemoptResourceGroupSelector:
         if modes != 1:
             raise ValueError("resource-group selector must contain names, ids, or all")
         if self.names:
-            invalid = any(
-                not isinstance(name, str)
-                or not name.strip()
-                or "," in name
-                or any(
-                    ord(character) < 32 or ord(character) == 127 for character in name
-                )
-                for name in self.names
-            )
-            if invalid:
-                raise ValueError(
-                    "resource-group names must be nonblank and contain no commas or control characters"
-                )
-            if len(set(self.names)) != len(self.names):
-                raise ValueError("resource-group names must not contain duplicates")
+            _validate_selector_names(self.names, "resource-group names")
         if self.ids:
-            invalid = any(
-                not isinstance(group_id, int)
-                or isinstance(group_id, bool)
-                or group_id < 0
-                for group_id in self.ids
+            _validate_selector_ids(self.ids, "resource-group ids", 0)
+        if (
+            len(_resource_group_selector_option(self).encode("utf-8"))
+            > _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES
+        ):
+            raise ValueError(
+                "resource-group selector option exceeds "
+                f"{_MEMOPT_SELECTOR_SAFETY_CEILING_BYTES} UTF-8 bytes"
             )
-            if invalid:
-                raise ValueError("resource-group ids must be non-negative integers")
-            if len(set(self.ids)) != len(self.ids):
-                raise ValueError("resource-group ids must not contain duplicates")
-        if len(_resource_group_selector_option(self).encode("utf-8")) > 4096:
-            raise ValueError("resource-group selector option exceeds 4096 UTF-8 bytes")
 
 
 @dataclass(frozen=True)
@@ -364,35 +350,6 @@ def validate_memopt_scenario(
         )
 
 
-# HMC CLI -i attribute record grammar (see ADR 0045)
-# `chsyscfg`/`mksyscfg` take their configuration as one `-i` argument holding
-# an attribute record: `name=lpar1,description=web tier`.  Three characters carry
-# that record's structure, and the HMC splits the record itself *after* the
-# shell has finished with the argument — so `shlex.quote` cannot protect them.
-
-_RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
-    ",": ("a comma", "a comma separates one attribute from the next"),
-    "=": (
-        "an equals sign",
-        "an equals sign separates an attribute name from its value",
-    ),
-    '"': (
-        "a double quote",
-        ("a double quote is the HMC's own escape for a value containing a comma, "
-         "so it opens a quoted region that swallows the attributes after it"),
-    ),
-}
-
-# An HMC attribute name, optionally carrying the list append/remove operator
-# that `chsyscfg -r prof` uses (`io_slots+=…` / `io_slots-=…`).
-_ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*[+-]?$")
-
-# Characters `set_lpar_description` has always refused in the LPAR name it
-# writes a description for.  Neither is record structure — IBM's own escaping
-# note shows an unquoted `name=No comma name` — so this rejection is not part
-# of the record grammar and is deliberately not extended to the other records.
-# It is kept at its historical site, unchanged, because widening or dropping a
-# public tool's accepted input is not this module's call to make.  See ADR 0045.
 async def list_lpar_memopt_scores(
     config: HMCConfig,
     system_name: str,
@@ -547,8 +504,8 @@ async def plan_system_memopt_score(
         raise HMCCLIError(
             f"lsmemopt system query returned {len(rows)} rows; expected exactly 1"
         )
-    result = _validated_memopt_rows(output, {"curr_sys_score", "predicted_sys_score"})[
-        0
-    ]
+    result = _validated_memopt_rows(
+        output, {"curr_sys_score", "predicted_sys_score"}
+    )[0]
     result["prediction_guaranteed"] = False
     return result

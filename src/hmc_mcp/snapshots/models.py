@@ -50,11 +50,11 @@ class SnapshotValidationError(ValueError):
         self.correction = correction
 
 
-class _Value(BaseModel):
+class _StrictSnapshotModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class HMCIdentity(_Value):
+class HMCIdentity(_StrictSnapshotModel):
     uuid: str = Field(min_length=1)
     name: str | None
     version: str | None
@@ -70,7 +70,7 @@ class HMCIdentity(_Value):
         return _nonblank(value) if value is not None else None
 
 
-class SystemIdentity(_Value):
+class SystemIdentity(_StrictSnapshotModel):
     uuid: str = Field(min_length=1)
     name: str | None
     machine_type_model: str = Field(min_length=1)
@@ -87,7 +87,7 @@ class SystemIdentity(_Value):
         return _nonblank(value) if value is not None else None
 
 
-class LparIdentity(_Value):
+class LparIdentity(_StrictSnapshotModel):
     uuid: str = Field(min_length=1)
     name: str = Field(min_length=1)
     partition_id: int = Field(gt=0)
@@ -98,13 +98,13 @@ class LparIdentity(_Value):
         return _nonblank(value)
 
 
-class SnapshotSource(_Value):
+class SnapshotSource(_StrictSnapshotModel):
     hmc: HMCIdentity
     system: SystemIdentity
     lpar: LparIdentity
 
 
-class SnapshotCapability(_Value):
+class SnapshotCapability(_StrictSnapshotModel):
     name: Literal[
         "affinity-scores",
         "lpar-profile-record",
@@ -122,12 +122,12 @@ class SnapshotCapability(_Value):
         return _nonblank(value) if value is not None else None
 
 
-class NativeProfile(_Value):
+class NativeProfile(_StrictSnapshotModel):
     media_type: Literal["text/vnd.ibm.hmc.lssyscfg-profile;version=1;charset=utf-8"]
     data: str = Field(min_length=1)
 
 
-class MemoryProjection(_Value):
+class MemoryProjection(_StrictSnapshotModel):
     minimum: int = Field(gt=0)
     desired: int = Field(gt=0)
     maximum: int = Field(gt=0)
@@ -139,7 +139,7 @@ class MemoryProjection(_Value):
         return self
 
 
-class ProcessorProjection(_Value):
+class ProcessorProjection(_StrictSnapshotModel):
     dedicated: bool
     minimum: float = Field(gt=0)
     desired: float = Field(gt=0)
@@ -183,12 +183,12 @@ class ProcessorProjection(_Value):
         return self
 
 
-class NormalizedConfiguration(_Value):
+class NormalizedConfiguration(_StrictSnapshotModel):
     memory_mib: MemoryProjection
     processors: ProcessorProjection
 
 
-class SnapshotConfiguration(_Value):
+class SnapshotConfiguration(_StrictSnapshotModel):
     profile_name: str = Field(min_length=1)
     native: NativeProfile
     normalized: NormalizedConfiguration
@@ -199,19 +199,19 @@ class SnapshotConfiguration(_Value):
         return _nonblank(value)
 
 
-class ObservationEnvelope(_Value):
+class ObservationEnvelope(_StrictSnapshotModel):
     media_type: str = Field(min_length=1)
     data: dict[str, Any]
 
 
-class SnapshotObservations(_Value):
+class SnapshotObservations(_StrictSnapshotModel):
     observed_at: datetime
     runtime_placement: ObservationEnvelope | None = None
     scores: ObservationEnvelope | None = None
     minimum_affinity_policy: ObservationEnvelope | None = None
 
 
-class LparSnapshot(_Value):
+class LparSnapshot(_StrictSnapshotModel):
     format: Literal["hmc-mcp.lpar-snapshot"]
     version: Literal[1]
     captured_at: datetime
@@ -273,27 +273,32 @@ class LparSnapshot(_Value):
         if capability.collection != "hmc-cli":
             raise ValueError(f"{name} capability must use hmc-cli collection")
         if capability.supported:
-            if capability.unavailable_reason is not None or observation is None:
-                raise ValueError(
-                    f"supported {name} requires an observation and no unavailable reason"
-                )
-            if observation.media_type != MINIMUM_AFFINITY_POLICY_MEDIA_TYPE:
-                raise ValueError(f"{name} observation media_type is unsupported")
-            expected = {"min_affinity_score", "min_affinity_score_action"}
-            if set(observation.data) != expected:
-                raise ValueError(f"{name} observation fields are invalid")
-            score = observation.data["min_affinity_score"]
-            action = observation.data["min_affinity_score_action"]
-            if (
-                isinstance(score, bool)
-                or not isinstance(score, int)
-                or not 0 <= score <= 100
-            ):
-                raise ValueError(f"{name} score must be an integer from 0 through 100")
-            if action not in {"none", "warn", "fail"}:
-                raise ValueError(f"{name} action must be none, warn, or fail")
-        elif capability.unavailable_reason is None or observation is not None:
+            self._check_supported_minimum_affinity_policy(capability, observation)
+            return
+        if capability.unavailable_reason is None or observation is not None:
             raise ValueError(f"unsupported {name} requires a reason and no observation")
+
+    def _check_supported_minimum_affinity_policy(
+        self,
+        capability: SnapshotCapability,
+        observation: ObservationEnvelope | None,
+    ) -> None:
+        name = "minimum-affinity-policy"
+        if capability.unavailable_reason is not None or observation is None:
+            raise ValueError(
+                f"supported {name} requires an observation and no unavailable reason"
+            )
+        if observation.media_type != MINIMUM_AFFINITY_POLICY_MEDIA_TYPE:
+            raise ValueError(f"{name} observation media_type is unsupported")
+        expected = {"min_affinity_score", "min_affinity_score_action"}
+        if set(observation.data) != expected:
+            raise ValueError(f"{name} observation fields are invalid")
+        score = observation.data["min_affinity_score"]
+        action = observation.data["min_affinity_score_action"]
+        if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
+            raise ValueError(f"{name} score must be an integer from 0 through 100")
+        if action not in {"none", "warn", "fail"}:
+            raise ValueError(f"{name} action must be none, warn, or fail")
 
     def _check_observation(
         self, name: str, value: ObservationEnvelope | None, media_type: str
@@ -307,7 +312,7 @@ class LparSnapshot(_Value):
             raise ValueError(f"{name} observation media_type is unsupported")
 
 
-class SnapshotInspection(_Value):
+class SnapshotInspection(_StrictSnapshotModel):
     format: str | None
     version: int | None
     supported: bool
@@ -339,7 +344,7 @@ def _relabel(error: SnapshotValidationError, operation: str) -> SnapshotValidati
     )
 
 
-def _bounded(text: str) -> None:
+def _validate_snapshot_size(text: str) -> None:
     if len(text.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         _error("/", "document exceeds 1 MiB", "provide a snapshot no larger than 1 MiB")
 
@@ -404,25 +409,31 @@ class _DuplicateScanner:
         if index < len(self.text) and self.text[index] == "}":
             return index + 1
         while index < len(self.text):
-            try:
-                key, end = self.decoder.raw_decode(self.text, index)
-            except json.JSONDecodeError:
-                return len(self.text)
-            if not isinstance(key, str):
-                return len(self.text)
-            if key in keys:
-                _error(_pointer((*path, key)), "duplicate JSON member")
-            keys.add(key)
-            index = self._space(end)
-            if index >= len(self.text) or self.text[index] != ":":
-                return len(self.text)
-            index = self._space(self._value(index + 1, (*path, key), len(path) + 1))
+            _, index = self._object_member(index, path, keys)
             if index < len(self.text) and self.text[index] == "}":
                 return index + 1
             if index >= len(self.text) or self.text[index] != ",":
                 return len(self.text)
             index = self._space(index + 1)
         return index
+
+    def _object_member(
+        self, index: int, path: tuple[Any, ...], keys: set[str]
+    ) -> tuple[str, int]:
+        try:
+            key, end = self.decoder.raw_decode(self.text, index)
+        except json.JSONDecodeError:
+            return "", len(self.text)
+        if not isinstance(key, str):
+            return "", len(self.text)
+        if key in keys:
+            _error(_pointer((*path, key)), "duplicate JSON member")
+        keys.add(key)
+        index = self._space(end)
+        if index >= len(self.text) or self.text[index] != ":":
+            return "", len(self.text)
+        value = self._value(index + 1, (*path, key), len(path) + 1)
+        return key, self._space(value)
 
     def _array(self, index: int, path: tuple[Any, ...]) -> int:
         index = self._space(index + 1)
@@ -441,7 +452,7 @@ class _DuplicateScanner:
 
 
 def _load(text: str) -> Any:
-    _bounded(text)
+    _validate_snapshot_size(text)
     try:
         _DuplicateScanner(text).scan()
         return json.loads(
@@ -625,7 +636,7 @@ def serialize_snapshot(snapshot: LparSnapshot) -> str:
             "correct the snapshot document",
         ) from exc
     try:
-        _bounded(text)
+        _validate_snapshot_size(text)
     except SnapshotValidationError as exc:
         raise _relabel(exc, "snapshot serialization") from exc
     return text

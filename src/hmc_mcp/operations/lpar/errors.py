@@ -3,10 +3,10 @@
 from ...errors import HMCError
 
 
-def translate_lpar_write_error(exc: HMCError) -> None:
+def translate_lpar_write_error(exc: HMCError) -> HMCError:
     """Translate an LPAR write rejection while preserving its response body."""
     if exc.status_code == 406:
-        raise HMCError(
+        return HMCError(
             "The HMC rejected the LPAR write request (Not Acceptable). "
             "Likely causes: (1) Accept or Content-Type header mismatch — "
             "the HMC may require a more specific media type; "
@@ -14,4 +14,5 @@ def translate_lpar_write_error(exc: HMCError) -> None:
             "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
             exc.status_code,
             body=exc.body,
-        ) from exc
+        )
+    return exc

@@ -1,6 +1,6 @@
 """Contract tests for the presentation-neutral ``installios`` operations.
 
-ADR 0013 assigns the orchestration to ``operations.install``; ADR 0070 fixes the
+ADR 0013 assigns the orchestration to ``operations.vios.install``; ADR 0070 fixes the
 mechanism as a detached HMC CLI submission, so the operations return the bridge's
 detach handle rather than an HMC job identifier (there is no job on this path).
 """
@@ -18,14 +18,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import make_config
 
-from hmc_mcp import api
 from hmc_mcp.audit import sink as audit_sink
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.install import (
+from hmc_mcp.operations.vios.install import (
     InstallHandle,
     InstallRequest,
-    install_lpar_os,
     install_vios,
+    install_vios_by_lpar_selector,
 )
 from hmc_mcp.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
 from hmc_mcp.ssh.transport import HMCCLIError
@@ -65,7 +64,7 @@ def _hmc(**resolutions) -> AsyncMock:
     return hmc
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -90,7 +89,7 @@ async def test_operation_rejects_install_target_before_submission(
     hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_uuid_target_rejects_before_ssh_submission(operation):
     hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
@@ -132,7 +131,7 @@ def _patch_ssh(ssh: _Ssh):
 
 @pytest.mark.parametrize(
     ("operation", "finder"),
-    [(install_lpar_os, "find_partition_by_name"), (install_vios, "find_vios_by_name")],
+    [(install_vios_by_lpar_selector, "find_partition_by_name"), (install_vios, "find_vios_by_name")],
 )
 @pytest.mark.asyncio
 async def test_operation_submits_the_composed_installios_command(operation, finder):
@@ -163,7 +162,7 @@ async def test_operation_submits_the_composed_installios_command(operation, find
     getattr(hmc, finder).assert_awaited_once_with("target1", system_uuid=SYSTEM_UUID)
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_operation_returns_without_polling_for_completion(operation):
     """Submit-and-detach: exactly one SSH round trip, and no job polling."""
@@ -177,11 +176,11 @@ async def test_operation_returns_without_polling_for_completion(operation):
         )
 
     assert len(ssh.commands) == 1
-    hmc.get_job.assert_not_awaited()
+    hmc.get_job_entry.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_operation_resolves_uuid_targets_to_cli_names(operation):
     """A UUID target is named over REST for the system and SSH for the partition."""
@@ -199,7 +198,7 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
     hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -235,7 +234,7 @@ async def test_operation_rejects_invalid_input_before_any_io(
 @pytest.mark.parametrize(
     ("operation", "finder", "message"),
     [
-        (install_lpar_os, "find_partition_by_name", "No LPAR named"),
+        (install_vios_by_lpar_selector, "find_partition_by_name", "No LPAR named"),
         (install_vios, "find_vios_by_name", "No VIOS named"),
     ],
 )
@@ -254,7 +253,7 @@ async def test_operation_fails_before_submission_for_an_unknown_target(
     assert ssh.commands == []
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_operation_surfaces_a_failed_submission(operation):
     hmc = _hmc()
@@ -271,7 +270,7 @@ async def test_operation_surfaces_a_failed_submission(operation):
         )
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_unresolvable_uuid_target_raises_before_submitting(operation):
     """An HMCCLIError from name resolution must leave nothing submitted."""
@@ -308,7 +307,7 @@ def _one_install_record(text: str, event: str = "install-attempted") -> dict:
     return records[0]
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     """#469, ADR 0102. Only ``install_audit_sink`` is configured — no ``basicConfig``.
@@ -316,7 +315,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     That is what ``server._serve_application`` does and all it does for this
     package's own namespace, so this is the served MCP deployment's real state.
     Before ADR 0102 the submission's only trace was an ``INFO`` record on the
-    unconfigured ``hmc_mcp.operations.install`` logger, whose effective level is
+    unconfigured ``hmc_mcp.operations.vios.install`` logger, whose effective level is
     the root's ``WARNING`` — dropped before formatting, and below
     ``logging.lastResort``'s threshold too.
     """
@@ -356,7 +355,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     }
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsys):
     """The other half of #469: a process that configures no logging at all.
@@ -386,7 +385,7 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     assert (record["system"], record["partition"]) == ("sys1", "target1")
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_a_failed_submission_is_still_recorded(operation, capsys):
     """The record is written *before* the submit, which is the case it exists for.
@@ -422,7 +421,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     )
 
 
-@pytest.mark.parametrize("operation", [install_lpar_os, install_vios])
+@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
 async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
     operation, capsys
@@ -450,11 +449,9 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
     assert _install_records(capsys.readouterr().err) == []
 
 
-@pytest.mark.parametrize("name", ["install_lpar_os", "install_vios"])
-def test_operations_are_exported_from_the_facade(name):
-    """ADR 0029: every selected operation is part of the supported manifest."""
-    assert name in api.__all__
-    assert getattr(api, name) is globals()[name]
+@pytest.mark.parametrize("name", ["install_vios_by_lpar_selector", "install_vios"])
+def test_operations_are_owned_by_the_install_module(name):
+    assert globals()[name].__module__ == "hmc_mcp.operations.vios.install"
 
 
 def test_detach_handle_is_the_declared_return_type():
@@ -466,8 +463,6 @@ def test_detach_handle_is_the_declared_return_type():
     both: the digest text now carries ``InstallHandle``, and the key set below
     is the same object the runtime assertion above compares the payload against.
     """
-    assert "InstallHandle" in api.__all__
-    assert api.InstallHandle is InstallHandle
     assert get_type_hints(InstallHandle) == {
         "system": str,
         "partition": str,
@@ -476,5 +471,5 @@ def test_detach_handle_is_the_declared_return_type():
         "message": str,
     }
     assert InstallHandle.__optional_keys__ == frozenset()
-    for operation in (install_lpar_os, install_vios):
+    for operation in (install_vios_by_lpar_selector, install_vios):
         assert get_type_hints(operation)["return"] is InstallHandle

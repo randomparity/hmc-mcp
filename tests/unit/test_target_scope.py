@@ -20,7 +20,7 @@ from hmc_mcp.authorization.target_scope import (
     ABSENT,
     UNREADABLE,
     TargetScopeError,
-    _value,
+    _normalize_selector_value,
     audit_state,
     denial_reason,
     selected_targets,
@@ -500,18 +500,18 @@ def test_a_value_allowed_for_one_kind_is_not_allowed_for_another():
 _LPAR = ("lpar", "lpar_name_or_uuid", True)
 
 
-def test_audit_state_maps_each_arm_of_value():
-    """Spec 6a. The seam between `_value`'s result and the record's `state`.
+def test_audit_state_maps_each_arm_of_normalized_selector_value():
+    """Spec 6a. The seam between normalized selector values and record state.
 
-    `_value`'s own arms are covered above; what this pins is the *mapping*, which
+    The helper's own arms are covered above; what this pins is the *mapping*, which
     would otherwise be an inline conditional in `dispatch_scope`, one module away
     from the singletons it interprets.
     """
-    assert audit_state(_value("db-01")) == "present"
-    assert audit_state(_value(3)) == "present"
-    assert audit_state(_value(None)) == "absent"
-    assert audit_state(_value(True)) == "unreadable"
-    assert audit_state(_value(object())) == "unreadable"
+    assert audit_state(_normalize_selector_value("db-01")) == "present"
+    assert audit_state(_normalize_selector_value(3)) == "present"
+    assert audit_state(_normalize_selector_value(None)) == "absent"
+    assert audit_state(_normalize_selector_value(True)) == "unreadable"
+    assert audit_state(_normalize_selector_value(object())) == "unreadable"
 
 
 def test_each_denial_template_has_exactly_one_reason_code():
@@ -626,7 +626,7 @@ def _nested(*selectors, exhaustive=False):
 PROVISION_NESTED = _nested(
     ("managed_system", "system_name_or_uuid", True, None),
     ("vios", "vios_uuid", True, "storage"),
-    ("vios", "vios_partition_id", False, "network"),
+    ("vios", "vios_partition_id", False, "adapters"),
 )
 _SYS = ("managed_system", "system_name_or_uuid", "sys-a")
 
@@ -637,13 +637,13 @@ def test_a_nested_selector_reads_the_caller_supplied_object():
         {
             "system_name_or_uuid": "sys-a",
             "storage": _ProvisionStorage(vios_uuid="vios-uuid-1"),
-            "network": _ProvisionAdapters(vios_partition_id=5),
+            "adapters": _ProvisionAdapters(vios_partition_id=5),
         },
     )
     assert extracted == (
         _SYS,
         ("vios", "storage.vios_uuid", "vios-uuid-1"),
-        ("vios", "network.vios_partition_id", "5"),
+        ("vios", "adapters.vios_partition_id", "5"),
     )
 
 
@@ -651,10 +651,10 @@ def test_a_none_sub_object_is_unreadable_not_absent():
     """Fail closed: a None where the schema requires an object is malformed."""
     extracted = selected_targets(
         PROVISION_NESTED,
-        {"system_name_or_uuid": "sys-a", "storage": None, "network": None},
+        {"system_name_or_uuid": "sys-a", "storage": None, "adapters": None},
     )
     assert extracted[1] == ("vios", "storage.vios_uuid", UNREADABLE)
-    assert extracted[2] == ("vios", "network.vios_partition_id", UNREADABLE)
+    assert extracted[2] == ("vios", "adapters.vios_partition_id", UNREADABLE)
 
 
 def test_a_missing_attribute_is_unreadable():
@@ -667,7 +667,7 @@ def test_a_missing_attribute_is_unreadable():
         {
             "system_name_or_uuid": "sys-a",
             "storage": Impostor(),
-            "network": Impostor(),
+            "adapters": Impostor(),
         },
     )
     assert extracted[1][2] is UNREADABLE
@@ -681,7 +681,7 @@ def test_a_none_field_value_is_absent():
         {
             "system_name_or_uuid": "sys-a",
             "storage": _ProvisionStorage(vios_uuid=None),
-            "network": _ProvisionAdapters(),
+            "adapters": _ProvisionAdapters(),
         },
     )
     assert extracted[1] == ("vios", "storage.vios_uuid", ABSENT)
@@ -696,7 +696,7 @@ def test_a_missing_container_argument_is_still_malformed():
 def test_an_unreadable_sub_object_denies_even_under_all_targets():
     extracted = selected_targets(
         PROVISION_NESTED,
-        {"system_name_or_uuid": "sys-a", "storage": None, "network": None},
+        {"system_name_or_uuid": "sys-a", "storage": None, "adapters": None},
     )
     assert targets_permitted(ALL_TARGETS, PROVISION_NESTED, extracted) is False
 
@@ -705,7 +705,7 @@ def test_an_unreadable_nested_selector_is_reported_by_its_path():
     """The operator must be able to act: 'vios_uuid' alone names four fields."""
     extracted = selected_targets(
         PROVISION_NESTED,
-        {"system_name_or_uuid": "sys-a", "storage": None, "network": None},
+        {"system_name_or_uuid": "sys-a", "storage": None, "adapters": None},
     )
     message = str(target_denial("t", "p", PROVISION_NESTED, extracted))
     assert "'storage.vios_uuid'" in message

@@ -4,8 +4,8 @@
 
 1 tool in the `command` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_run_command` | `arbitrary-command` | `command.run` | `console` | Execute an arbitrary HMC CLI command over SSH. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_run_command` | `arbitrary-command` | `command.run` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Execute an arbitrary HMC CLI command over SSH. |
 
 > Registered but not exposed by a default deployment: `hmc_run_command`. The server must be started with `--enable-arbitrary-command` and the selected access policy must name the tool in a grant's `tools`.

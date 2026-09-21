@@ -12,7 +12,7 @@ import pytest
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations.lpar.configuration import restore_system_lpar_profiles
-from hmc_mcp.operations.ownership import _authorize_system_lpar_profile_restore
+from hmc_mcp.operations.lpar.ownership import _authorize_system_lpar_profile_restore
 from hmc_mcp.server_tools.lpar import profiles as server_profiles
 
 SYSTEM_UUID = "11111111-1111-4111-8111-111111111111"

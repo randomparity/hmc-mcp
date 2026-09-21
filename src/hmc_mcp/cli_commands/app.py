@@ -10,6 +10,7 @@ from __future__ import annotations
 import typer
 from typer._click.core import ParameterSource
 
+from .capabilities import capabilities
 from .runtime import GlobalOpts
 from .serve import serve
 
@@ -119,4 +120,5 @@ def main(
     )
 
 
+app.command()(capabilities)
 app.command()(serve)

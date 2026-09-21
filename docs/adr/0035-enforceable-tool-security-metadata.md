@@ -211,7 +211,7 @@ asserting coverage.
   `TOOL_SECURITY`. ADRs 0003, 0004, 0005, and 0010 mention the frozensets in their
   consequences; those are historical records of decisions this one does not supersede, and
   they are left untouched.
-- `hmc_install_vios` and `hmc_install_lpar_os` are classified `destructive`, not `mutate`:
+- `hmc_install_vios` and `hmc_install_vios_by_lpar_selector` are classified `destructive`, not `mutate`:
   they PXE-boot an existing partition and overwrite its OS and boot disk, which is the same
   irreversible overwrite that already made `hmc_restore_vios` destructive. Both were untagged
   before, so a cautious client already treated them as destructive under MCP's defaults and
@@ -223,7 +223,7 @@ asserting coverage.
   > firmware and software update tools are classified `destructive`.** Each overwrites
   > existing firmware or system software it did not create — the boundary criterion of
   > this record verbatim — which places them beside `hmc_install_vios` and
-  > `hmc_install_lpar_os`, not beside routine configuration changes. The declarations in
+  > `hmc_install_vios_by_lpar_selector`, not beside routine configuration changes. The declarations in
   > `src/hmc_mcp/server_tools/updates.py` carry `effect="destructive"` now; on the wire this
   > only makes `destructiveHint=True` explicit, which cautious MCP clients already
   > defaulted to for `mutate` tools, so the operative change is server-side: a policy

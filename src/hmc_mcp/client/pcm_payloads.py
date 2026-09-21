@@ -16,7 +16,7 @@ ProcessedMetrics, AggregatedMetrics.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
 from defusedxml import ElementTree as ET
 
@@ -34,7 +34,17 @@ PREFERENCE_FIELDS = (
 )
 
 
-def build_pcm_preferences_document(**flags: bool) -> str:
+class PCMPreferenceFlags(TypedDict, total=False):
+    """The five optional fields accepted by the PCM preferences endpoint."""
+
+    LongTermMonitorEnabled: bool
+    ShortTermMonitorEnabled: bool
+    AggregationEnabled: bool
+    ComputeLTMEnabled: bool
+    EnergyMonitorEnabled: bool
+
+
+def build_pcm_preferences_document(**flags: Unpack[PCMPreferenceFlags]) -> str:
     """Build a PCM preferences XML document.
 
     Only the flags you pass are included; omitted flags are left unchanged on
@@ -106,8 +116,8 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
     return links
 
 
-def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str]:
-    """Return the link whose ``updated`` timestamp is newest.
+def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str] | None:
+    """Return the newest link, or ``None`` when the feed contains no links.
 
     The PCM feed does not guarantee entries are ordered by age, so picking the
     last row (``links[-1]``) could select a stale document. Compare each
@@ -124,4 +134,4 @@ def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str]:
             dt = dt.replace(tzinfo=UTC)
         return dt
 
-    return max(links, key=_key)
+    return max(links, key=_key, default=None)

@@ -13,7 +13,7 @@ from ...operations.lpar.workflows import create_lpar
 from ...ssh.lpar import validate_caller_token
 from ..output import console, err_console, print_json, usage_error
 from ..runtime import with_client
-from .config import _load_pcie_assignments
+from .assignment_input import load_pcie_assignments
 
 
 def lpars_create(
@@ -97,7 +97,7 @@ def lpars_create(
         max_vcpus=max_vcpus,
         uncapped=not capped,
     )
-    assignments = _load_pcie_assignments(pcie_assignments)
+    assignments = load_pcie_assignments(pcie_assignments)
 
     result = with_client(
         lambda hmc: create_lpar(

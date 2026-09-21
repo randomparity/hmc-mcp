@@ -12,10 +12,15 @@ import pytest
 LIVE_TEST_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(LIVE_TEST_ROOT))
 from live_test import pcie  # noqa: E402
+from live_test.observation import CallFailure  # noqa: E402
+from live_test_runner import LiveTestConfig, RunState  # noqa: E402
 
-_ENV = {
-    "HMC_LIVE_PCIE_SYSTEM": "sys-one",
-    "HMC_LIVE_PCIE_LPAR_PREFIX": "live-",
+#: The arm's own settings. Everything else on `LiveTestConfig` keeps its
+#: declared default: this arm reads only these four, and reads them from the
+#: validated configuration rather than the environment (ADR 0115).
+_CONFIG = {
+    "dedicated_pcie_system_name": "sys-one",
+    "dedicated_pcie_lpar_prefix": "live-",
 }
 _DRC = "553713664"
 _ASSIGNED = f"{_DRC}//0"
@@ -28,12 +33,15 @@ class ScenarioState:
         self,
         responses: dict[str, Any],
         statuses: dict[str, Any] | None = None,
+        config: LiveTestConfig | None = None,
     ) -> None:
         self.responses = responses
         self.statuses = statuses or {}
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.results: list[tuple[int, str, str, Any]] = []
         self.context = SimpleNamespace(system_name="unused", lp3_name="unused")
+        self.config = config if config is not None else LiveTestConfig(**_CONFIG)
+        self.gaps: list[dict[str, Any]] = []
         self.tool_counts: dict[str, int] = {}
         self.cleanup_start: int | None = None
 
@@ -63,21 +71,11 @@ class ScenarioState:
     def skip(self, subtask: int, tool: str, reason: str) -> None:
         self.results.append((subtask, tool, "SKIP", reason))
 
-    def record_expected_or_real(
-        self,
-        subtask: int,
-        tool: str,
-        status: str,
-        data: Any,
-        expected_fail_substrings: list[str],
-        skip_reason: str,
-    ) -> None:
-        if status == "FAIL" and any(
-            text.lower() in str(data).lower() for text in expected_fail_substrings
-        ):
-            self.skip(subtask, tool, skip_reason)
-            return
-        self.record(subtask, tool, status, data)
+    # The production classifier, not a re-implementation of it. It reads only
+    # `skip`, `record` and `gaps`, all of which this seam provides — so the
+    # tests exercise the real declared-limitation matching rather than a copy
+    # that can agree with a broken arm.
+    record_with_expected = RunState.record_with_expected
 
     # -- views -------------------------------------------------------------
 
@@ -108,9 +106,18 @@ class ScenarioState:
 
 _ADMITTED_VERSION = "Version: 10\nRelease: 3\nService Pack: 1060"
 _ADMITTED_MODEL = "8375-42A"
-_REFUSAL = (
-    "PcieAssignmentUnavailableError: ADR 0053 admits no exact dedicated "
-    "PCIe profile readback; assignment cannot be safely verified"
+#: The ADR 0055 refusal as `RunState.call` delivers it — a classified
+#: `CallFailure`, not loose text, because that is what `record_with_expected`
+#: matches its declared outcomes against.
+_REFUSAL = CallFailure(
+    exception_type="PcieAssignmentUnavailableError",
+    message=(
+        "PcieAssignmentUnavailableError: ADR 0053 admits no exact dedicated "
+        "PCIe profile readback; assignment cannot be safely verified"
+    ),
+    traceback_text="",
+    http_status=None,
+    denied=False,
 )
 
 
@@ -149,6 +156,7 @@ def _happy_responses(
     system_model: str = _ADMITTED_MODEL,
     inventory_owner: str = "",
     run_command: Any = None,
+    probe_exists: bool = False,
 ) -> dict[str, Any]:
     """Responses for a run in which every step succeeds.
 
@@ -178,8 +186,15 @@ def _happy_responses(
         # Keyed on which partition is being asked about, so a test can give the
         # probe a foreign token while the fixture keeps this run's — the only
         # way `_cleanup_probe_partition`'s comparison can be made to refuse.
-        if _is_probe_name(kwargs) and probe_description is not None:
-            return probe_description
+        if _is_probe_name(kwargs):
+            if probe_description is not None:
+                return probe_description
+            if not probe_exists:
+                # ADR 0055 refused the probe create, so this partition does not
+                # exist. Answering with the fixture's own stamp would tell the
+                # arm's lost-response readback that a refused create had in
+                # fact created something, which is the opposite of the truth.
+                return "[no such partition]"
         if descriptions is not None:
             return descriptions[min(index, len(descriptions) - 1)]
         if description is not None:
@@ -247,17 +262,9 @@ async def _run_arm(
     responses: dict[str, Any],
     marker_holder: dict[str, str],
     statuses: dict[str, Any] | None = None,
-    env: dict[str, str] | None = None,
+    config: dict[str, str] | None = None,
 ) -> ScenarioState:
-    for name in (
-        "HMC_LIVE_PCIE_SYSTEM",
-        "HMC_LIVE_PCIE_LPAR_PREFIX",
-        "HMC_LIVE_PCIE_PROFILE",
-        "HMC_LIVE_PCIE_DRC_INDEX",
-    ):
-        monkeypatch.delenv(name, raising=False)
-    for key, value in (env if env is not None else _ENV).items():
-        monkeypatch.setenv(key, value)
+    live = LiveTestConfig(**(config if config is not None else _CONFIG))
 
     real_marker = pcie._new_run_marker
 
@@ -280,7 +287,7 @@ async def _run_arm(
 
     merged: dict[str, Any] = {"hmc_create_lpar": _probe_refused}
     merged.update(statuses or {})
-    state = ScenarioState(responses, merged)
+    state = ScenarioState(responses, merged, config=live)
     await pcie.exercise_dedicated_pcie_assignment(None, state)
     return state
 
@@ -295,7 +302,7 @@ async def test_missing_configuration_skips_without_any_tool_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     holder: dict[str, str] = {}
-    state = await _run_arm(monkeypatch, {}, holder, env={})
+    state = await _run_arm(monkeypatch, {}, holder, config={})
     assert state.calls == []
     assert [status for _, _, status, _ in state.results] == ["SKIP"]
 
@@ -314,7 +321,7 @@ async def test_delimiter_bearing_config_skips_without_any_tool_call(
         monkeypatch,
         {},
         holder,
-        env={**_ENV, "HMC_LIVE_PCIE_PROFILE": "prof,x"},
+        config={**_CONFIG, "dedicated_pcie_profile_name": "prof,x"},
     )
     assert state.calls == []
 
@@ -353,7 +360,7 @@ async def test_configured_drc_absent_from_inventory_skips(
         monkeypatch,
         responses,
         holder,
-        env={**_ENV, "HMC_LIVE_PCIE_DRC_INDEX": "999"},
+        config={**_CONFIG, "dedicated_pcie_drc_index": "999"},
     )
     assert state.cleanup_start is None
     assert any("drc_index" in str(r[3]).lower() for r in state.results if r[2] == "SKIP")
@@ -391,7 +398,7 @@ async def test_probe_unexpectedly_succeeds_records_fail_cleans_probe_then_fixtur
             "warnings": [],
         }
 
-    responses = _happy_responses(holder)
+    responses = _happy_responses(holder, probe_exists=True)
     responses["hmc_create_lpar"] = create_lpar_both_succeed
 
     state = await _run_arm(
@@ -485,9 +492,17 @@ async def test_assign_tool_refusal_is_skip_then_grammar_runs(
     """hmc_assign_dedicated_pcie_slot is SKIP; io_slots+ is still issued."""
     holder: dict[str, str] = {}
     responses = _happy_responses(holder)
-    # Give the response the refusal text so `record_expected_or_real` maps FAIL → SKIP.
-    responses["hmc_assign_dedicated_pcie_slot"] = lambda _k, _n: (
-        "PcieAssignmentUnavailableError: " + pcie.PCIE_ASSIGNMENT_UNAVAILABLE_REASON
+    # Deliver the refusal the way `RunState.call` does, so `record_with_expected`
+    # matches its declared outcome and maps FAIL → SKIP.
+    responses["hmc_assign_dedicated_pcie_slot"] = lambda _k, _n: CallFailure(
+        exception_type="PcieAssignmentUnavailableError",
+        message=(
+            "PcieAssignmentUnavailableError: "
+            + pcie.PCIE_ASSIGNMENT_UNAVAILABLE_REASON
+        ),
+        traceback_text="",
+        http_status=None,
+        denied=False,
     )
     state = await _run_arm(
         monkeypatch,
@@ -762,27 +777,33 @@ async def test_identity_drift_before_delete_blocks_guard_c(
 ) -> None:
     """Guard C: caller token changes between slot removal and deletion.
 
-    The happy path makes exactly three description reads:
+    The happy path makes exactly three description reads *of the fixture*:
       - ST32's _read_dedicated_state (verify_dedicated_assigned)
       - Guard A's _read_dedicated_state
       - Guard C's _read_dedicated_state
     The foreign stamp must be at index 2 so Guard A sees the correct token
-    and Guard C sees the foreign one.
+    and Guard C sees the foreign one. Reads of the *probe* name are the
+    refused-create absence check and are counted separately, so adding or
+    removing one cannot silently shift which read gets the foreign stamp.
     """
     holder: dict[str, str] = {}
 
     def make_description() -> list[str]:
         # Two matching stamps, then the foreign one on the third read.
-        # get_description clamps at the last entry so index 2 is the final value.
+        # The index clamps at the last entry, so read 3 onward is the foreign one.
         base = "[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller {token}]"
         foreign = "[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]"
         return [base, base, foreign]
 
     descriptions = make_description()
+    fixture_reads = {"n": 0}
 
-    def get_description(kwargs: dict[str, Any], index: int) -> str:
+    def get_description(kwargs: dict[str, Any], _index: int) -> str:
+        if _is_probe_name(kwargs):
+            return "[no such partition]"
         token = holder.get("marker", "")
-        entry = descriptions[min(index, len(descriptions) - 1)]
+        entry = descriptions[min(fixture_reads["n"], len(descriptions) - 1)]
+        fixture_reads["n"] += 1
         return entry.format(token=token)
 
     responses = _happy_responses(holder)
@@ -891,3 +912,111 @@ async def test_fixture_lpar_name_starts_with_prefix(
     creates = [k for t, k in state.calls if t == "hmc_create_lpar" and not _is_probe(k)]
     assert creates
     assert creates[0]["name"].startswith("live-")
+
+
+# ---------------------------------------------------------------------------
+# A create whose response was lost has still created the partition
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("io_slots", "drc", "expected"),
+    [
+        ("none", "21010020", False),
+        ("21010020//0", "21010020", True),
+        ("21010020/none/0", "21010020", True),
+        ("21010020//0,21030030//1", "21030030", True),
+        # The substring traps: a longer DRC index that merely contains the one
+        # under test, and a run of characters spanning the `/` and `,` joins.
+        ("210100201//0", "21010020", False),
+        ("121010020//0", "21010020", False),
+        ("21010//0,20999//1", "0,2099", False),
+    ],
+)
+def test_io_slots_membership_is_by_entry_not_substring(
+    io_slots: str, drc: str, expected: bool
+) -> None:
+    """A DRC index counts as present only as a whole first field of an entry."""
+    assert pcie._io_slots_contains(io_slots, drc) is expected
+
+
+@pytest.mark.asyncio
+async def test_fixture_create_reporting_failure_but_creating_is_cleaned_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A timed-out fixture create that in fact created must not orphan it.
+
+    The SSH transport raises when its timeout expires, after the HMC has
+    already made the partition. Believing a failed create created nothing is
+    the belief that leaves a partition behind with no manual-recovery row.
+    """
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    state = await _run_arm(
+        monkeypatch,
+        responses,
+        holder,
+        # Both creates report failure; the description read still finds the
+        # fixture carrying this run's marker.
+        statuses={"hmc_create_lpar": "FAIL"},
+    )
+    row = state.row("created a partition")
+    assert row is not None and row[2] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in str(row[3])
+    # The arm still SKIPs, but cleanup ran and deleted what was created.
+    assert state.cleanup_start is not None
+    assert "hmc_delete_lpar" in state.cleanup_tools()
+
+
+@pytest.mark.asyncio
+async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The readback's other answer: nothing was created, so nothing is cleaned."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    # No partition of either name carries this run's marker.
+    responses["hmc_get_lpar_description"] = lambda _k, _n: "[no such partition]"
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
+    )
+    assert state.cleanup_start is None
+    assert "hmc_delete_lpar" not in [t for t, _ in state.calls]
+    skip = state.row("dedicated fixture create")
+    assert skip is not None and skip[2] == "SKIP"
+    assert "nothing to clean up" in str(skip[3])
+
+
+@pytest.mark.asyncio
+async def test_probe_create_reporting_failure_but_creating_is_cleaned_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe holds the dedicated slot, so a lost response is worse there."""
+    holder: dict[str, str] = {}
+    # The probe exists despite its create reporting the ADR 0055 refusal.
+    responses = _happy_responses(holder, probe_exists=True)
+    state = await _run_arm(monkeypatch, responses, holder)
+    row = state.row("create-time probe created a partition despite")
+    assert row is not None and row[2] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in str(row[3])
+    deletes = [k for t, k in state.cleanup_calls() if t == "hmc_delete_lpar"]
+    assert any(
+        str(k.get("lpar_name_or_uuid", "")).endswith("-createtime") for k in deletes
+    ), "the probe partition must be deleted, not just the fixture"
+
+
+@pytest.mark.asyncio
+async def test_foreign_partition_of_the_same_name_is_never_adopted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The readback claims a partition only when it carries this run's marker."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    responses["hmc_get_lpar_description"] = lambda _k, _n: (
+        "[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]"
+    )
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
+    )
+    assert state.cleanup_start is None
+    assert "hmc_delete_lpar" not in [t for t, _ in state.calls]

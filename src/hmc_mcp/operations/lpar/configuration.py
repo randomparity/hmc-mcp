@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.ownership import (
+from hmc_mcp.operations.lpar.ownership import (
     _authorize_system_lpar_profile_restore,
     resolve_and_authorize_lpar_names,
 )

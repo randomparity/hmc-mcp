@@ -4,6 +4,8 @@
 
 Accepted (2026-08-15)
 
+> **Superseded by [0118](0118-core-library-facade.md) (2026-09-05)**
+
 ## Context
 
 Reusable asynchronous workflows already live in presentation-neutral `operations_*.py` modules,
@@ -58,7 +60,11 @@ synchronous function is a transformation, parser, or validator rather than an as
 operation and is excluded for that concrete contract-readiness reason. Imported transport types
 such as `Any` and built-in containers are not facade exports.
 
-`operations.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
+The adapter-facing `operations.vios.core` workflow and its SSH command type are intentionally
+excluded from the reusable facade. They are shared by the MCP and CLI presentation layers but are
+not a supported Python consumer boundary.
+
+`operations.virtualization.pcie.require_admitted_environment` is the one asynchronous exception. It is a shared
 admission-policy guard called by complete PCIe and SSH-network operations, not a domain operation a
 consumer can use independently: it accepts an already-resolved CLI system name and returns no
 domain result. It therefore remains outside the facade while retaining a public module name so
@@ -147,21 +153,29 @@ names are internal everywhere and are never inventoried.
 - `operations.adapters` — operations: `add_network_adapter`, `add_vfc_adapter`,
   `add_vscsi_adapter`, `delete_adapter`, `list_adapters`; types: `AdapterResult`; excluded
   synchronous: none.
-- `operations.affinity` — operations: `assess_post_activation_affinity`; types:
-  `AffinityAssessmentInput`, `AffinityAssessmentResult`, `AffinityClassification`,
-  `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
-  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`; excluded synchronous:
-  `affinity_not_measured`, `assess_affinity`, `classify_affinity_outcome`,
-  `validate_affinity_request`.
-- `operations.capacity` — operations: `capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
-  synchronous: `lpar_processing_units`, `system_capacity`.
-- `operations.composite` — operations: `lpar_summary`, `system_summary`; types: `LparSummary`, `SystemSummary`; excluded
+- `operations.affinity` — operations: none; types: none; excluded synchronous: none.
+- `operations.affinity.rest` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
+  `AffinityClassification`, `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`,
+  `PostActivationAffinityAssessment`, `ProvisionAffinityAssessment`,
+  `assess_post_activation_affinity`.
+- `operations.affinity.ssh` — exports: `MemoptLparSelector`, `MemoptResourceGroupSelector`,
+  `MinimumAffinityPolicyResult`, `ResourceGroupAffinityResult`, `get_lpar_memopt_score`,
+  `get_minimum_affinity_policy`, `get_system_memopt_score`, `list_lpar_memopt_scores`,
+  `list_resource_group_memopt_scores`, `plan_lpar_memopt_scores`,
+  `plan_resource_group_memopt_scores`, `plan_system_memopt_score`,
+  `set_minimum_affinity_policy`.
+- `operations.capacity` — operations: `fetch_capacity_report`, `find_placement`; types: `CapacitySummary`; excluded
+  synchronous: `calculate_system_capacity`, `lpar_processing_units`.
+- `operations.cluster` — operations: `create_logical_unit`, `delete_logical_unit`,
+  `get_shared_storage_pool`, `list_clusters`, `list_shared_storage_pools`; types: none;
+  excluded synchronous: `validate_logical_unit_create`, `validate_logical_unit_wait`.
+- `operations.composite` — operations: `fetch_lpar_summary`, `fetch_system_summary`; types: `LparSummary`, `SystemSummary`; excluded
   synchronous: none.
 - `operations.error_translation` — operations: none; types: none; excluded synchronous:
   `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
-- `operations.health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
+- `operations.health` — operations: `fetch_fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
-- `operations.install` — operations: `install_lpar_os`, `install_vios`; types: `InstallHandle`, `InstallRequest`;
+- `operations.vios.install` — operations: `install_vios`, `install_vios_by_lpar_selector`; types: `InstallHandle`, `InstallRequest`;
   excluded synchronous: `validate_install_request`.
   - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
     client is opened, which the operations cannot do. Both operations submit the detached
@@ -177,6 +191,17 @@ names are internal everywhere and are never inventoried.
     record; §6's recording obligation for them is discharged there, not here. It does not reach
     `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
     Domain A over exported *functions*, which a type is not.
+- `operations.virtualization` — operations: none; types: none; excluded synchronous: none.
+- `operations.virtualization.pcie` — exports: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
+  `InventorySelector`, `PcieAssignmentUnavailableError`, `ResourceKind`, `SriovAdapter`,
+  `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
+  `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`,
+  `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`, `list_dedicated_slots`,
+  `list_sriov_adapters`, `list_sriov_logical_ports`, `list_sriov_physical_ports`,
+  `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`, `unassign_sriov_logical_port`.
+- `operations.virtualization.vnic` — exports: `VnicBackingSelector`, `VnicBackingSnapshot`,
+  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`,
+  `add_vnic`, `list_fc_ports`, `list_sea_adapters`, `list_vnics`, `remove_vnic`.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
   `is_unsupported_job_listing`.
 - `operations.lpar` — operations: none; types: none; excluded synchronous: none.
@@ -196,17 +221,19 @@ names are internal everywhere and are never inventoried.
 - `operations.lpar.dlpar` — exports: `modify_lpar`, `set_lpar_memory`,
   `set_lpar_processors`.
 - `operations.lpar.provision` — exports: `AttachDiskResult`, `ProvisionAdapters`,
-  `ProvisionResult`, `ProvisionStorage`, `attach_disk_to_lpar`, `provision_lpar`.
+  `ProvisionRequest`, `ProvisionResult`, `ProvisionStorage`, `attach_disk_to_lpar`, `provision_lpar`.
 - `operations.lpar.workflows` — exports: `create_lpar`.
-- `operations.lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
+- `operations.lpar.migration` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`, `validate_lpar_migration`; types: `LpmAffinityMigrationResult`,
-  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmMigrationRequest`,
-  `LpmResult`; excluded synchronous: `evaluate_lpm_affinity_preflight`.
+  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmCapability`,
+  `LpmDestinationCheckBasis`, `LpmMigrationRequest`, `LpmPreflightStatus`, `LpmResponse`,
+  `LpmResult`, `RemoteRestartRequest`;
+  excluded synchronous: `evaluate_lpm_affinity_preflight`.
 - `operations.network` — operations: `create_virtual_network`, `delete_virtual_network`,
   `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types:
   `VirtualNetworkResult`; excluded synchronous: none.
-- `operations.ownership` — operations: `authorize_decommission_lpar_ownership_snapshot`,
+- `operations.lpar.ownership` — operations: `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `list_lpar_ownership`, `resolve_and_authorize_lpar_mutation`,
   `resolve_and_authorize_lpar_names`, `resolve_lpar_ownership_names`,
   `set_lpar_ownership_description`, `stamp_created_lpar_ownership`; types: none; excluded
@@ -214,61 +241,38 @@ names are internal everywhere and are never inventoried.
   `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`.
 - `operations.partition_state` — types: `PartitionState`; operations: none; excluded
   synchronous: none.
-- `operations.pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
-  `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
-  `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,
-  `unassign_sriov_logical_port`; types: `CapabilityState`, `DedicatedSlot`, `InventoryResult`,
-  `InventorySelector`, `PcieAssignmentUnavailableError`, `ResourceKind`, `SriovAdapter`,
-  `SriovLogicalPort`, `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
-  `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`; excluded
-  synchronous: none.
-- `operations.pcie_validation` — operations: none; types: none; excluded synchronous:
-  `require_command_safe_text`, `require_nonblank_text`, `validate_capacity_percent`.
-- `operations.pcm` — operations: `get_pcm_preferences`, `metric_data`, `metric_links`,
+- `operations.metrics.pcm` — operations: `fetch_metric_data`, `fetch_metric_links`, `get_pcm_preferences`,
   `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
   `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
   `validate_pcm_preferences_category`.
-- `operations.ssh_affinity` — operations: `get_lpar_memopt_score`,
-  `get_minimum_affinity_policy`, `get_system_memopt_score`,
-  `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`,
-  `plan_lpar_memopt_scores`, `plan_resource_group_memopt_scores`,
-  `plan_system_memopt_score`, `set_minimum_affinity_policy`; types:
-  `MemoptLparSelector`, `MemoptResourceGroupSelector`, `MinimumAffinityPolicyResult`,
-  `ResourceGroupAffinityResult`; excluded synchronous: none.
-- `operations.storage` — operations: `create_logical_unit`, `create_media_repository`,
-  `create_optical_media`, `create_virtual_disk`, `create_volume_group`, `delete_logical_unit`,
+- `operations.storage` — operations: `create_media_repository`,
+  `create_optical_media`, `create_virtual_disk`, `create_volume_group`,
   `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
-  `detach_storage_mapping`, `get_media_repository`, `get_shared_storage_pool`, `list_clusters`,
-  `list_optical_mappings`, `list_optical_media`, `list_shared_storage_pools`,
+  `detach_storage_mapping`, `get_media_repository`, `list_optical_mappings`, `list_optical_media`,
   `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
-  `unmount_optical_media`, `upload_iso`; types: `StorageMapResult`; excluded synchronous:
-  `validate_logical_unit_create`, `validate_logical_unit_wait`.
+  `unmount_optical_media`, `upload_iso`; types: `OpticalMedia`, `StorageMapResult`,
+  `StorageMapping`, `VolumeGroup`; excluded synchronous: none.
 - `operations.systems` — operations: `get_system`, `list_systems`, `modify_system`,
   `power_system`; types: `ManagedSystemPatch`; excluded synchronous: none.
-- `operations.templates` — operations: `deploy_partition_template`, `get_partition_template`,
+- `operations.templates.core` — operations: `deploy_partition_template`, `get_partition_template`,
   `list_partition_templates`; types: none; excluded synchronous: none.
-- `operations.update_models` — operations: none; types: `ConsoleUpdateMediaType`,
-  `ConsoleUpdateSource`, `IOAdapterUpdateModel`, `PlatformUpdateParameter`,
-  `SriovAdapterUpdate`, `SystemFirmwareUpdateModel`, `VIOSPlatformUpdate`,
-  `VIOSUpdateHMCSource`, `VIOSUpdateIBMWebsiteSource`, `VIOSUpdateNFSSource`,
-  `VIOSUpdateSFTPSource`, `VIOSUpdateUSBSource`, `VIOSUpgradeHMCSource`,
-  `VIOSUpgradeNFSSource`, `VIOSUpgradeSFTPSource`, `VIOSUpgradeUSBSource`; excluded
-  synchronous: `list_management_console_updates_job`, `platform_update_job`,
-  `update_hmc_job`, `update_vios_job`, `upgrade_vios_job`.
-- `operations.updates` — operations: `list_available_hmc_ptfs`, `update_console_software`,
-  `update_firmware`, `update_vios`, `upgrade_vios`; types: none; excluded synchronous: none.
-- `operations.users` — operations: `configure_remote_access`, `create_user`, `delete_user`,
+- `operations.updates` — operations: none; types: none; excluded synchronous: none.
+- `operations.updates.models` — exports: `ConsoleUpdateMediaType`, `ConsoleUpdateSource`,
+  `IOAdapterUpdateModel`, `PlatformUpdateParameter`, `SriovAdapterUpdate`,
+  `SystemFirmwareUpdateModel`, `VIOSPlatformUpdate`, `VIOSUpdateHMCSource`,
+  `VIOSUpdateIBMWebsiteSource`, `VIOSUpdateNFSSource`, `VIOSUpdateSFTPSource`,
+  `VIOSUpdateUSBSource`, `VIOSUpgradeHMCSource`, `VIOSUpgradeNFSSource`,
+  `VIOSUpgradeSFTPSource`, `VIOSUpgradeUSBSource`.
+- `operations.updates.service` — exports: `submit_available_hmc_ptfs_query`,
+  `update_console_software`, `update_firmware`, `update_vios`, `upgrade_vios`.
+- `operations.users.core` — operations: `configure_remote_access`, `create_user`, `delete_user`,
   `modify_user`; types: `CreateUserRequest`, `ModifyUserPatch`; excluded synchronous: none.
-- `operations.vios` — operations: `backup_vios`, `create_vios`, `delete_vios`,
-  `get_vios`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
+- `operations.vios.core` — operations: `backup_vios`, `create_vios`, `delete_vios`,
+  `get_vios_storage_detail`, `list_vios`, `list_vios_backups`, `power_vios`, `restore_vios`; types:
   `BackupType`, `RestoreBackupType`;
   excluded synchronous: `validate_vios_backup_name`, `validate_vios_backup_request`,
   `validate_vios_restore_request`.
-- `operations.vnic` — operations: `add_vnic`, `list_fc_ports`,
-  `list_sea_adapters`, `list_vnics`, `remove_vnic`; types:
-  `VnicBackingSelector`, `VnicBackingSnapshot`,
-  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
-  synchronous: none.
+- `operations.vios.core` — operations: none; types: none; excluded synchronous: none.
 - `snapshots.models` — exports: `HMCIdentity`, `LparIdentity`, `LparSnapshot`, `MemoryProjection`,
   `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`, `ProcessorProjection`,
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
@@ -348,7 +352,7 @@ wrapper. And at runtime it is a plain `dict`, so it reports no call signature: w
 Pydantic model reaches the frozen digest through the constructor its shape generates, a
 `TypedDict`'s keys are read into the digest directly. Without that an exported one would contribute
 no digest entry at all and renaming a key would move nothing (#468), which is the hole its five-key
-`operations.install` handle was filed against.
+`operations.vios.install` handle was filed against.
 
 Both halves run a third time over the constructors of the exported classes the field walk reads no
 field off — the pair the Decision names above. `typing.get_type_hints(cls.__init__)` feeds the type

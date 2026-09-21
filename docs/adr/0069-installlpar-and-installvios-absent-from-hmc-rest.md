@@ -26,9 +26,9 @@ and firmware level surveyed.
 
 Two HMCs, seven managed systems:
 
-- **HMC V10R3 M1060** (`ltcvhmc1b`; managing P9 and P10): build level
+- **HMC V10R3 M1060** (`<REDACTED-HMC-A>`; managing P9 and P10): build level
   2408210051, MF71689 plus three iFix levels.
-- **HMC V11R2 M1120** (`ltcvhmc11`; managing P9, P10, and P11): build level
+- **HMC V11R2 M1120** (`<REDACTED-HMC-B>`; managing P9, P10, and P11): build level
   2607082225.
 
 | Type-Model | Generation | Firmware |
@@ -123,9 +123,9 @@ from a specific adapter slot but does not drive the NIM install handshake —
 that remains entirely on the NIM master. Any OS-install automation therefore
 needs NIM-master credentials regardless of what the HMC is asked to do.
 
-**Tool disposition is out of scope here.** `hmc_install_lpar_os`
-(`src/hmc_mcp/server_tools/vios.py:193`, endpoint `:253`) and `hmc_install_vios`
-(`src/hmc_mcp/server_tools/vios.py:127`, endpoint `:182`) POST to operations that no
+**Tool disposition is out of scope here.** `hmc_install_vios_by_lpar_selector`
+(`src/hmc_mcp/server_tools/vios/core.py:193`, endpoint `:253`) and `hmc_install_vios`
+(`src/hmc_mcp/server_tools/vios/core.py:127`, endpoint `:182`) POST to operations that no
 surveyed HMC advertises — they are phantom tools, not under-parameterized
 ones. Their removal or rework is tracked in issue #410 (operator decision
 pending); this ADR deliberately changes no source code.
@@ -141,7 +141,7 @@ pending); this ADR deliberately changes no source code.
  *prove* nonexistence (the package itself relies on undocumented
   `/rest/api/web/File/`), which is why the live PUT probes returning REST0006
   on both HMCs are the load-bearing evidence.
-- Until #410 resolves, `hmc_install_lpar_os` and `hmc_install_vios` will fail
+- Until #410 resolves, `hmc_install_vios_by_lpar_selector` and `hmc_install_vios` will fail
   at runtime with `REST0006 No such Operation` on any surveyed HMC; callers
   should treat them as non-functional rather than mis-parameterized.
 - OS-install workflows built on this package must retain NIM-master SSH

@@ -14,6 +14,7 @@
 setup:
     uv sync --locked --extra app --link-mode copy
     uv run --no-sync prek install
+    uv run --no-sync python scripts/link_reference_corpus.py
 
 # Python lint
 lint:
@@ -40,6 +41,23 @@ env-vars:
 nicknames:
     uv run --no-sync python scripts/check_nicknames.py
 
+# reject conftest files that shadow the canonical test configuration
+test-layout:
+    uv run --no-sync python scripts/check_test_layout.py
+
+# verify the capability ledger remains structurally valid and reconciles the registry
+capability-inventory:
+    uv run --no-sync python scripts/check_capability_inventory.py
+
+# regenerate the packaged operation-maturity projection
+capability-metadata:
+    uv run --no-sync python scripts/check_capability_inventory.py \
+        --write-runtime-projection src/hmc_mcp/_operation_maturity.json
+
+# report each operation's derived live-verification state (ADR 0127)
+verification-report *ARGS:
+    uv run --no-sync python scripts/check_capability_inventory.py --verification-report {{ARGS}}
+
 # regenerate docs/tools/ from the MCP tool registry
 tool-docs:
     uv run --no-sync python scripts/gen_tool_reference.py
@@ -57,8 +75,8 @@ doc-freshness:
     uv run --no-sync python scripts/check_generated_docs.py
 
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames \
-        tool-docs-check adr-numbering doc-freshness
+static: lint typecheck secrets workflow-security env-vars nicknames test-layout \
+        capability-inventory tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary
 test:

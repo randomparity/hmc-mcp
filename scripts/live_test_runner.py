@@ -1,4 +1,4 @@
-"""Live integration test runner for the ltczz386 test plan — Round 2.
+"""Live integration test runner for a configured HMC test plan — Round 2.
 
 Calls HMC MCP tools via the in-process FastMCP client against the real HMC
 configured in .env.  Results are printed to stdout as they complete and
@@ -10,24 +10,30 @@ Usage:
 If SUBTASK_NUMBER is omitted, all sub-tasks (ST0–ST15) are run in order.
 If a specific number is given (0-15), only that sub-task runs.
 
-Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be set in .env.
-The script warns and patches .env automatically if it is missing, then exits
-so the updated environment is loaded on restart.
+Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
+environment or an existing local .env file. The preflight never creates or
+patches .env: when the value is absent, it exits with manual configuration
+instructions.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
+import inspect
 import json
 import os
-import sys
-import traceback
-from dataclasses import asdict, dataclass, field
+import re
+import subprocess
+import tempfile
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
+import check_capability_inventory
 from fastmcp import Client
 from live_test.connectivity import inventory_connectivity
 from live_test.escape_hatch import exercise_cli_escape_hatch
@@ -39,6 +45,15 @@ from live_test.lpar import (
 )
 from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
 from live_test.network import inventory_network, mutate_virtual_networking
+from live_test.observation import (
+    CLEANUP,
+    SCENARIO_ID,
+    Assertion,
+    CallFailure,
+    ExpectedOutcome,
+    KnownGap,
+    classify_failure,
+)
 from live_test.pcie import exercise_dedicated_pcie_assignment, exercise_sriov_assignment
 from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
@@ -70,6 +85,41 @@ from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
 _ENV_FILE = Path(".env")
 
+_ENVIRONMENT_PREFIX = "LIVE_TEST_ENV_"
+
+#: The environment a live observation was made in. Both or neither: a lone key
+#: is a configuration error, caught at startup rather than after a hardware run.
+ENVIRONMENT_KEYS = ("LIVE_TEST_ENV_HMC_RELEASE", "LIVE_TEST_ENV_HARDWARE_FAMILY")
+
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(?P<name>password|passwd|token|secret|api[_-]?key)"
+    r"(?P<separator>\s*(?:=|:)\s*)(?P<quote>['\"]?)(?P<value>[^\s,;'\"&]+)"
+    r"(?P=quote)"
+)
+_URL_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s@]+@")
+_HOSTNAME_RE = re.compile(
+    r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b"
+)
+_ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
+
+
+def _redact_failure_text(value: str) -> str:
+    """Replace sensitive values in runner failure diagnostics."""
+    value = _SECRET_VALUE_RE.sub(r"\g<name>\g<separator><REDACTED-SECRET>", value)
+    value = _URL_USERINFO_RE.sub(r"\g<scheme><REDACTED-URL-USERINFO>@", value)
+    value = _HOSTNAME_RE.sub("<REDACTED-HOST>", value)
+    return _ABSOLUTE_PATH_RE.sub("<REDACTED-PATH>", value)
+
+
+def _redact_failure_data(data: Any) -> Any:
+    """Preserve failure result shapes while redacting their string leaves."""
+    if isinstance(data, dict):
+        return {key: _redact_failure_data(value) for key, value in data.items()}
+    if isinstance(data, list):
+        return [_redact_failure_data(value) for value in data]
+    return _redact_failure_text(str(data))
+
+
 #: The `HMC_*` names whose reader folds their casing: `HMCConfig`'s own fields,
 #: and only those. `HMC_PROFILE` and a profile's `password_env` target carry the
 #: prefix but are looked up in `os.environ` directly (see the "Variable names are
@@ -90,16 +140,7 @@ _FOLDED_ENV_NAMES = frozenset(
 
 
 def _already_set(name: str) -> bool:
-    """Whether the environment already carries *name*, matched as its reader matches it.
-
-    This is what makes an exported variable outrank `.env` and `config.toml` — the
-    priority `_bootstrap_config` documents — for a case variant as well as the
-    canonical spelling. An exact-case membership test did not recognise an
-    exported `hmc_host` as an already-set `HMC_HOST`, so it injected the canonical
-    name; a newly created key lands last in `os.environ` order and therefore wins
-    the fold, and an operator who exported a lab host ran the destructive suite
-    against the HMC `.env` named (#543).
-    """
+    """Return whether *name* is already set using HMCConfig's case-insensitive lookup."""
     if name.lower() in _FOLDED_ENV_NAMES:
         return env_var_value(name) is not None
     return name in os.environ
@@ -120,7 +161,7 @@ def _load_dotenv() -> None:
             os.environ[key] = val
 
 
-def _bootstrap_config() -> None:
+def _bootstrap_config() -> bool:
     """Populate HMC_* env vars from config.toml profile, then .env fallback.
 
     Priority (highest first):
@@ -130,7 +171,7 @@ def _bootstrap_config() -> None:
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, load_profile, resolve_config_path
+    from hmc_mcp.config import ConfigError, load_profile
 
     # Try the TOML config first.
     try:
@@ -147,11 +188,13 @@ def _bootstrap_config() -> None:
         for key, val in mapping.items():
             if val and not _already_set(key):
                 os.environ[key] = val
-        config_path = resolve_config_path()
-        print(f"  Credentials loaded from {config_path} (profile: {cfg.host})")
-        return
+        print("  Credentials loaded from configured profile")
+        return True
     except ConfigError as exc:
-        print(f"  ⚠️  config.toml: {exc} — falling back to .env")
+        print(
+            "  ⚠️  config.toml: "
+            f"{_redact_failure_text(str(exc))} — falling back to .env"
+        )
 
     # Fallback: local .env
     _load_dotenv()
@@ -163,47 +206,286 @@ def _bootstrap_config() -> None:
     if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
         print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
-        sys.exit(1)
+        return False
+    return True
 
 
-def _ensure_schema_version() -> None:
-    """Warn if HMC_SCHEMA_VERSION is absent; exit so the operator sets it explicitly.
-
-    Note: HMC_SCHEMA_VERSION only affects GET requests — it has no effect on
-    write-path HTTP 406 errors (those are fixed by suppressing the header on
-    PUT/POST paths entirely).  We still require it to be present so that the
-    test runner's GET paths behave deterministically, but we do not silently
-    mutate .env — the operator must add it intentionally.
-    """
+def _ensure_schema_version() -> bool:
+    """Warn when HMC_SCHEMA_VERSION is absent; the operator must set it explicitly."""
     _load_dotenv()
-    # env_var_value for the same reason as the credential pre-check above:
-    # `schema_version` is an `HMCConfig` field, so an exact-case probe exits 1
-    # telling the operator to set a variable a case variant has already set and
-    # the server is already sending (#543).
     if env_var_value("HMC_SCHEMA_VERSION"):
-        return
+        return True
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
     print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
     print("   Note: this variable only affects GET requests; it does NOT fix")
     print("   HTTP 406 on write paths (LPAR create, adapter PUT, etc.).")
-    sys.exit(1)
+    return False
+
+
+@dataclass(frozen=True)
+class LiveTestConfig:
+    """Validated operator configuration for live-test executions."""
+
+    system_name: str = "example-lt-609-system"
+    lp3_name: str = "example-lt-609-lpar"
+    scratch_name: str = "example-lt-609-scratch"
+    nettest_name: str = "example-lt-609-network"
+    test_user: str = "example-lt-609-user"
+    vdisk_name: str = "example-lt-609-disk"
+    scratch_create_desired_memory_mib: int = 1536
+    scratch_create_max_memory_mib: int = 3072
+    scratch_create_desired_vcpus: int = 3
+    scratch_create_max_vcpus: int = 6
+    scratch_modify_desired_memory_mib: int = 2304
+    scratch_modify_max_memory_mib: int = 4608
+    dry_run_lpar_name: str = "example-lt-609-dry-run"
+    dry_run_storage_name: str = "example-lt-609-dry-disk"
+    vdisk_volume_group_name: str = "example-lt-609-vg"
+    dry_run_vios_slot: int = 17
+    dry_run_vios_partition_id: int = 307
+    dry_run_memory_mib: int = 1536
+    provision_min_memory_mib: int = 1536
+    provision_desired_memory_mib: int = 3072
+    provision_max_memory_mib: int = 6144
+    provision_desired_vcpus: int = 3
+    provision_max_vcpus: int = 6
+    protected_lpar_names: tuple[str, ...] = (
+        "example-lt-609-protected-a",
+        "example-lt-609-protected-b",
+    )
+    sriov_adapter_id: int = 17
+    sriov_physical_port_id: int = 9
+    sriov_logical_port_id: int = 917003
+    sriov_capacity_percent: float = 7.5
+    sriov_profile_name: str = "example-lt-609-profile"
+    # The dedicated PCIe arm creates and deletes a partition on the system it
+    # names, so it refuses to run on a default: an empty system name or LPAR
+    # prefix SKIPs the arm rather than selecting one (issue #217).
+    dedicated_pcie_system_name: str = ""
+    dedicated_pcie_lpar_prefix: str = ""
+    dedicated_pcie_profile_name: str = ""
+    dedicated_pcie_drc_index: str = ""
+    iso_path: str = "/srv/example-lt-609/example-lt-609.iso"
+    iso_media_name: str = "example-lt-609.iso"
+    iso_http_media_name: str = "example-lt-609-http.iso"
+    iso_bind_host: str = "0.0.0.0"
+    iso_advertised_host: str = "iso.example.test"
+    iso_http_port: int = 18090
+    vmedia_repository_size_mib: int = 6144
+    vmedia_short_repository_size_mib: int = 1536
+    placement_memory_mib: int = 3072
+    vlan_range_start: int = 3100
+    vlan_range_end: int = 3199
+
+    @property
+    def iso_filename(self) -> str:
+        """Return the file name published by this run's ISO server."""
+        return Path(self.iso_path).name
+
+    @property
+    def iso_host(self) -> str:
+        """Return the host and port visible to the HMC."""
+        return f"{self.iso_advertised_host}:{self.iso_http_port}"
+
+    @property
+    def iso_url(self) -> str:
+        """Return the HMC-visible URL for the configured ISO."""
+        return f"http://{self.iso_host}/{self.iso_filename}"
+
+    _CONFIG_FIELDS: ClassVar[dict[str, str]] = {
+        "LIVE_TEST_SYSTEM_NAME": "system_name",
+        "LIVE_TEST_LPAR_NAME": "lp3_name",
+        "LIVE_TEST_SCRATCH_LPAR_NAME": "scratch_name",
+        "LIVE_TEST_NETWORK_TEST_LPAR_NAME": "nettest_name",
+        "LIVE_TEST_TEST_USER_NAME": "test_user",
+        "LIVE_TEST_VDISK_NAME": "vdisk_name",
+        "LIVE_TEST_SCRATCH_CREATE_DESIRED_MEMORY_MIB": "scratch_create_desired_memory_mib",
+        "LIVE_TEST_SCRATCH_CREATE_MAX_MEMORY_MIB": "scratch_create_max_memory_mib",
+        "LIVE_TEST_SCRATCH_CREATE_DESIRED_VCPUS": "scratch_create_desired_vcpus",
+        "LIVE_TEST_SCRATCH_CREATE_MAX_VCPUS": "scratch_create_max_vcpus",
+        "LIVE_TEST_SCRATCH_MODIFY_DESIRED_MEMORY_MIB": "scratch_modify_desired_memory_mib",
+        "LIVE_TEST_SCRATCH_MODIFY_MAX_MEMORY_MIB": "scratch_modify_max_memory_mib",
+        "LIVE_TEST_DRY_RUN_LPAR_NAME": "dry_run_lpar_name",
+        "LIVE_TEST_DRY_RUN_STORAGE_NAME": "dry_run_storage_name",
+        "LIVE_TEST_VDISK_VOLUME_GROUP_NAME": "vdisk_volume_group_name",
+        "LIVE_TEST_DRY_RUN_VIOS_SLOT": "dry_run_vios_slot",
+        "LIVE_TEST_DRY_RUN_VIOS_PARTITION_ID": "dry_run_vios_partition_id",
+        "LIVE_TEST_DRY_RUN_MEMORY_MIB": "dry_run_memory_mib",
+        "LIVE_TEST_PROVISION_MIN_MEMORY_MIB": "provision_min_memory_mib",
+        "LIVE_TEST_PROVISION_DESIRED_MEMORY_MIB": "provision_desired_memory_mib",
+        "LIVE_TEST_PROVISION_MAX_MEMORY_MIB": "provision_max_memory_mib",
+        "LIVE_TEST_PROVISION_DESIRED_VCPUS": "provision_desired_vcpus",
+        "LIVE_TEST_PROVISION_MAX_VCPUS": "provision_max_vcpus",
+        "LIVE_TEST_PROTECTED_LPAR_NAMES": "protected_lpar_names",
+        "LIVE_TEST_SRIOV_ADAPTER_ID": "sriov_adapter_id",
+        "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID": "sriov_physical_port_id",
+        "LIVE_TEST_SRIOV_LOGICAL_PORT_ID": "sriov_logical_port_id",
+        "LIVE_TEST_SRIOV_CAPACITY_PERCENT": "sriov_capacity_percent",
+        "LIVE_TEST_SRIOV_PROFILE_NAME": "sriov_profile_name",
+        "LIVE_TEST_ISO_PATH": "iso_path",
+        "LIVE_TEST_ISO_MEDIA_NAME": "iso_media_name",
+        "LIVE_TEST_ISO_HTTP_MEDIA_NAME": "iso_http_media_name",
+        "LIVE_TEST_ISO_BIND_HOST": "iso_bind_host",
+        "LIVE_TEST_ISO_ADVERTISED_HOST": "iso_advertised_host",
+        "LIVE_TEST_ISO_HTTP_PORT": "iso_http_port",
+        "LIVE_TEST_VMEDIA_REPOSITORY_SIZE_MIB": "vmedia_repository_size_mib",
+        "LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB": "vmedia_short_repository_size_mib",
+        "LIVE_TEST_PLACEMENT_MEMORY_MIB": "placement_memory_mib",
+        "LIVE_TEST_VLAN_RANGE_START": "vlan_range_start",
+        "LIVE_TEST_VLAN_RANGE_END": "vlan_range_end",
+    }
+
+    #: Settings read from the same authoritative ``.env`` as ``_CONFIG_FIELDS``
+    #: but not required, because they configure one opt-in arm rather than the
+    #: run as a whole. An absent key leaves the field at its declared default,
+    #: and the arm that owns it decides what that means — the dedicated PCIe
+    #: arm SKIPs. They are read here, not from ``os.environ``, so an ambient
+    #: export cannot redirect an arm that creates and deletes partitions
+    #: (ADR 0115).
+    _OPTIONAL_CONFIG_FIELDS: ClassVar[dict[str, str]] = {
+        "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME": "dedicated_pcie_system_name",
+        "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX": "dedicated_pcie_lpar_prefix",
+        "LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME": "dedicated_pcie_profile_name",
+        "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX": "dedicated_pcie_drc_index",
+    }
+
+    @classmethod
+    def from_env_file(cls, path: Path | None = None) -> LiveTestConfig:
+        """Load required live-test identifiers from one authoritative local file."""
+        path = path or _ENV_FILE
+        if not path.is_file():
+            raise ValueError(f"live-test configuration file not found: {path}")
+        values: dict[str, str] = {}
+        duplicates: list[str] = []
+        for line_number, raw in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if not key.startswith("LIVE_TEST_"):
+                continue
+            if key.startswith(_ENVIRONMENT_PREFIX):
+                # Read separately by `_read_environment`; not a config field.
+                continue
+            if key not in cls._CONFIG_FIELDS and key not in cls._OPTIONAL_CONFIG_FIELDS:
+                duplicates.append(f"unknown setting {key} (line {line_number})")
+                continue
+            if key in values:
+                duplicates.append(f"{key} (line {line_number})")
+            values[key] = value
+        errors = [key for key in cls._CONFIG_FIELDS if not values.get(key)] + duplicates
+        if errors:
+            raise ValueError("invalid live-test configuration: " + ", ".join(errors))
+        try:
+            parsed: dict[str, Any] = {
+                field: values[key] for key, field in cls._CONFIG_FIELDS.items()
+            }
+            parsed.update(
+                {
+                    field: values[key]
+                    for key, field in cls._OPTIONAL_CONFIG_FIELDS.items()
+                    if key in values
+                }
+            )
+            for key in cls._CONFIG_FIELDS:
+                if key.endswith(
+                    (
+                        "_MIB",
+                        "_VCPUS",
+                        "_SLOT",
+                        "_PARTITION_ID",
+                        "_PORT",
+                        "_ID",
+                        "_START",
+                        "_END",
+                    )
+                ):
+                    parsed[cls._CONFIG_FIELDS[key]] = int(values[key])
+            parsed["sriov_capacity_percent"] = float(
+                values["LIVE_TEST_SRIOV_CAPACITY_PERCENT"]
+            )
+            parsed["protected_lpar_names"] = tuple(
+                name.strip()
+                for name in values["LIVE_TEST_PROTECTED_LPAR_NAMES"].split(",")
+                if name.strip()
+            )
+        except ValueError as exc:
+            raise ValueError(f"invalid live-test configuration: {exc}") from exc
+        # Fields that must be strictly positive (> 0).
+        # sriov_physical_port_id is intentionally excluded: physical port IDs
+        # are zero-indexed on Power hardware, so port 0 is valid.
+        positive_fields = (
+            "scratch_create_desired_memory_mib",
+            "scratch_create_max_memory_mib",
+            "scratch_create_desired_vcpus",
+            "scratch_create_max_vcpus",
+            "scratch_modify_desired_memory_mib",
+            "scratch_modify_max_memory_mib",
+            "dry_run_vios_slot",
+            "dry_run_vios_partition_id",
+            "dry_run_memory_mib",
+            "provision_min_memory_mib",
+            "provision_desired_memory_mib",
+            "provision_max_memory_mib",
+            "provision_desired_vcpus",
+            "provision_max_vcpus",
+            "sriov_adapter_id",
+            "sriov_logical_port_id",
+            "sriov_capacity_percent",
+            "iso_http_port",
+            "vmedia_repository_size_mib",
+            "vmedia_short_repository_size_mib",
+            "placement_memory_mib",
+            "vlan_range_start",
+            "vlan_range_end",
+        )
+        # sriov_physical_port_id must be non-negative (>= 0).
+        invalid = [name for name in positive_fields if parsed[name] <= 0]
+        if parsed["sriov_physical_port_id"] < 0:
+            invalid.append("sriov_physical_port_id")
+        if not parsed["protected_lpar_names"]:
+            invalid.append("LIVE_TEST_PROTECTED_LPAR_NAMES")
+        if parsed["iso_http_port"] > 65535:
+            invalid.append("LIVE_TEST_ISO_HTTP_PORT")
+        if (
+            parsed["vlan_range_start"] > parsed["vlan_range_end"]
+            or parsed["vlan_range_end"] > 4094
+        ):
+            invalid.append("LIVE_TEST_VLAN_RANGE_START/LIVE_TEST_VLAN_RANGE_END")
+        if (
+            parsed["scratch_create_desired_memory_mib"]
+            > parsed["scratch_create_max_memory_mib"]
+            or parsed["scratch_create_desired_vcpus"]
+            > parsed["scratch_create_max_vcpus"]
+            or parsed["scratch_modify_desired_memory_mib"]
+            > parsed["scratch_modify_max_memory_mib"]
+            or not (
+                parsed["provision_min_memory_mib"]
+                <= parsed["provision_desired_memory_mib"]
+                <= parsed["provision_max_memory_mib"]
+            )
+            or parsed["provision_desired_vcpus"] > parsed["provision_max_vcpus"]
+        ):
+            invalid.append("inconsistent resource limits")
+        if invalid:
+            raise ValueError("invalid live-test configuration: " + ", ".join(invalid))
+        return cls(**parsed)
 
 
 @dataclass
-class LiveTestContext:
-    """Identifiers and snapshots belonging to one live-test execution."""
+class LiveTestArtifacts:
+    """Mutable discoveries and recovery state owned by one live-test invocation."""
 
-    system_name: str = "ltczz386"
-    lp3_name: str = "ltczz386-lp3"
-    scratch_name: str = "ltczz386-lp3-test"
-    nettest_name: str = "ltczz386-lp3-nettest"
-    test_user: str = "hmc-mcp-testuser"
     system_uuid: str | None = None
     lp3_uuid: str | None = None
     scratch_uuid: str | None = None
     vios_uuid: str | None = None
     vios_partition_id: int | None = None
     console_uuid: str | None = None
+    test_user_uuid: str | None = None
     test_vlan_id: int | None = None
     test_vswitch_id: int | None = None
     test_network_uuid: str | None = None
@@ -211,27 +493,192 @@ class LiveTestContext:
     nettest_uuid: str | None = None
     job_uuid_sample: str | None = None
     vg_uuid: str | None = None
-    vdisk_name: str = "VG1-lp3"
     vdisk_vg_name: str | None = None
     vdisk_size_mib: int | None = None
     lp3_baseline: dict[str, Any] = field(default_factory=dict)
-    # Virtual-media round (ST16–ST22)
     vmedia_repo_created: bool = False
     vmedia_iso_name: str | None = None
     vmedia_mapping_uuid: str | None = None
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
 
 
+#: Stand-in for an argument whose value is not knowable without running the
+#: scenario. The static dispatch guard checks the types it *can* resolve and
+#: passes over the rest rather than guessing at them.
+UNRESOLVED_ARGUMENT: Any = object()
+
+#: JSON-schema type name to the Python types that satisfy it. `number` admits
+#: `int` under the PEP 484 numeric tower; `bool` is excluded from both numeric
+#: entries because it is an `int` subclass and would otherwise pass as a
+#: quantity.
+_SCHEMA_TYPES: Mapping[str, tuple[type, ...]] = {
+    "string": (str,),
+    "integer": (int,),
+    "number": (int, float),
+    "boolean": (bool,),
+    "array": (list, tuple),
+    "object": (dict,),
+    "null": (type(None),),
+}
+
+
+#: Schema keys that carry no constraint on a value's type. A property holding
+#: only these admits anything, so reading no type from it is the right answer
+#: rather than a gap.
+_UNCONSTRAINING_KEYS = frozenset(
+    {"description", "default", "title", "examples", "deprecated", "readOnly"}
+)
+
+
+def _declared_types(schema: Mapping[str, Any]) -> tuple[str, ...]:
+    """The JSON-schema type names one property accepts.
+
+    An optional parameter is served as `anyOf[{type: T}, {type: null}]` rather
+    than a bare `type`, so both spellings have to be read to see `T` at all.
+    """
+    declared = schema.get("type")
+    if isinstance(declared, str):
+        return (declared,)
+    if isinstance(declared, list):
+        return tuple(entry for entry in declared if isinstance(entry, str))
+    return tuple(
+        name
+        for branch in schema.get("anyOf") or ()
+        if isinstance(branch, Mapping)
+        for name in _declared_types(branch)
+    )
+
+
+def _type_problem(tool: str, name: str, value: Any, schema: Mapping[str, Any]) -> str | None:
+    """Report a supplied value whose Python type no declared schema type admits."""
+    if value is UNRESOLVED_ARGUMENT:
+        return None
+    declared = _declared_types(schema)
+    accepted = tuple(
+        accepted_type
+        for declared_name in declared
+        for accepted_type in _SCHEMA_TYPES.get(declared_name, ())
+    )
+    if not accepted:
+        if schema.keys() - _UNCONSTRAINING_KEYS:
+            # The property constrains something this guard cannot read — `$ref`,
+            # `allOf`, `oneOf`, `const`, a bare `enum`. Staying quiet would
+            # disable the check for that argument with nothing to show for it,
+            # which is the failure mode the guard exists to prevent, so say so.
+            return (
+                f"{tool}: {name} has a schema shape this guard cannot read: "
+                f"{sorted(schema.keys() - _UNCONSTRAINING_KEYS)}"
+            )
+        # A property with no constraints at all admits anything, so nothing to check.
+        return None
+    if isinstance(value, bool) and bool not in accepted:
+        # `bool` is an `int` subclass, so a plain isinstance check would admit it
+        # wherever a quantity is declared and report `True` as a capacity of 1.
+        return f"{tool}: {name} expects {' or '.join(declared)}, got bool"
+    if isinstance(value, accepted):
+        return None
+    return f"{tool}: {name} expects {' or '.join(declared)}, got {type(value).__name__}"
+
+
+def _dispatch_problems(
+    tool: str,
+    arguments: Iterable[str] | Mapping[str, Any],
+    schemas: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    """Report every way a dispatch disagrees with the tool's served input schema.
+
+    Passing a mapping also checks each supplied value's type, which is what
+    catches a scenario handing a tool an `int` where it declares a `str`. Names
+    alone are accepted so a caller that has no values can still check those.
+    """
+    schema = schemas.get(tool)
+    if schema is None:
+        return (f"{tool} is not a registered tool",)
+    properties = schema.get("properties") or {}
+    values: Mapping[str, Any] = (
+        arguments
+        if isinstance(arguments, Mapping)
+        else dict.fromkeys(arguments, UNRESOLVED_ARGUMENT)
+    )
+    supplied = list(values)
+    problems = [
+        f"{tool}: unknown argument {name}"
+        for name in supplied
+        if name not in properties
+    ]
+    problems += [
+        f"{tool}: missing required argument {name}"
+        for name in schema.get("required") or ()
+        if name not in supplied
+    ]
+    problems += [
+        problem
+        for name, value in values.items()
+        if name in properties
+        and (problem := _type_problem(tool, name, value, properties[name])) is not None
+    ]
+    return tuple(problems)
+
+
+def _result_for(status: str) -> str:
+    """Map a printed status to its result vocabulary entry.
+
+    None of the three promotes; ``passed`` is reachable only through
+    :meth:`RunState.record_verified`.
+    """
+    if status == "FAIL":
+        return "failed"
+    if status == "SKIP":
+        return "skipped"
+    return "observed"
+
+
+def _observation_id(subtask: int, tool: str) -> str:
+    """Derive an observation id from the recording site's subtask and tool."""
+    return f"st{subtask}-{tool.split(' (')[0].replace('_', '-')}"
+
+
 @dataclass
 class RunState:
     """Mutable output owned by a single invocation of the live runner."""
 
-    context: LiveTestContext = field(default_factory=LiveTestContext)
+    config: LiveTestConfig = field(default_factory=LiveTestConfig)
+    artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
+    observations: list[dict[str, Any]] = field(default_factory=list)
+    gaps: list[dict[str, Any]] = field(default_factory=list)
+    known_gaps: set[tuple[str, str]] = field(default_factory=set)
+    schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
-    async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
+    async def call(
+        self,
+        client: Client,
+        tool: str,
+        *,
+        expected: Sequence[ExpectedOutcome] = (),
+        reuse_gaps: bool = True,
+        **kwargs: Any,
+    ) -> tuple[str, Any]:
         """Call a tool and return a PASS or FAIL result without raising."""
+        # FastMCP would reject an invalid dispatch anyway; checking here is what
+        # gives the failure a stable reason instead of a pydantic rendering, and
+        # keeps a harness defect from ever reaching the real HMC.
+        _validate_expected_dispatch(tool, expected)
+        problems = (
+            _dispatch_problems(tool, kwargs, self.schemas) if self.schemas else ()
+        )
+        if problems:
+            return "FAIL", CallFailure(
+                "InvalidDispatch", "; ".join(problems), "", None, False
+            )
+        if reuse_gaps:
+            for outcome in expected:
+                if (
+                    not outcome.transient
+                    and (outcome.operation, outcome.variant) in self.known_gaps
+                ):
+                    return "SKIP", KnownGap(outcome)
         try:
             result = await client.call_tool(tool, kwargs)
             if hasattr(result, "data") and result.data is not None:
@@ -250,51 +697,158 @@ class RunState:
                 data = text
             return "PASS", data
         except Exception as exc:  # noqa: BLE001 - the harness records any tool failure as a FAIL row; totality is the contract
-            return "FAIL", f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+            return "FAIL", classify_failure(exc)
 
     def record(
-        self, subtask: int, tool: str, status: str, data: Any, note: str = ""
+        self,
+        subtask: int,
+        tool: str,
+        status: str,
+        data: Any,
+        note: str = "",
+        *,
+        result: str | None = None,
     ) -> None:
-        """Append and print one result entry."""
+        """Append and print one result entry.
+
+        `result` is supplied only by `record_verified`, the one path that can
+        reach `passed`. Passing it in keeps the row and its verdict written
+        together, rather than patching `results[-1]` after the fact where any
+        later change to how rows are appended would retarget the patch.
+        """
+        if isinstance(data, CallFailure):
+            # Only the message is persisted: the traceback text stays on the
+            # ``CallFailure`` for the caller that classifies it, and never reaches
+            # the results document, whose redaction pass reads string leaves.
+            safe_data: Any = _redact_failure_text(data.message)
+        else:
+            safe_data = _redact_failure_data(data) if status == "FAIL" else data
         entry = {
             "subtask": subtask,
             "tool": tool,
             "status": status,
+            "result": result or _result_for(status),
             "timestamp": datetime.now(UTC).isoformat(),
             "note": note,
-            "data": data if isinstance(data, (dict, list)) else str(data)[:2000],
+            "data": (
+                safe_data
+                if isinstance(safe_data, (dict, list))
+                else str(safe_data)[:2000]
+            ),
         }
         self.results.append(entry)
         icon = "✅" if status == "PASS" else ("⚠️" if status == "SKIP" else "❌")
         note_str = f" — {note}" if note else ""
         print(f"  {icon} ST{subtask} {tool}{note_str}")
         if status == "FAIL":
-            print(f"     ERROR: {str(data)[:300]}")
+            print(f"     ERROR: {str(safe_data)[:300]}")
 
     def skip(self, subtask: int, tool: str, reason: str) -> None:
         """Record a skipped operation."""
         self.record(subtask, tool, "SKIP", None, reason)
 
-    def record_expected_or_real(
+    def record_with_expected(
         self,
         subtask: int,
         tool: str,
         status: str,
         data: Any,
-        expected_fail_substrings: list[str],
-        skip_reason: str,
+        expected: Sequence[ExpectedOutcome],
     ) -> None:
-        """Turn a known HMC limitation into SKIP; record other outcomes verbatim."""
-        if status == "FAIL" and any(
-            text.lower() in str(data).lower() for text in expected_fail_substrings
-        ):
-            self.skip(subtask, tool, skip_reason)
+        """Turn a declared HMC limitation into SKIP; record other outcomes verbatim.
+
+        An ``InvalidDispatch`` failure is the harness's own defect, so it is
+        recorded before any declaration is consulted — that is the substitution
+        the old substring match allowed.
+        """
+        if status == "SKIP" and isinstance(data, KnownGap):
+            self.skip(subtask, tool, f"known gap: {data.outcome.reason}")
             return
+        if (
+            status == "FAIL"
+            and isinstance(data, CallFailure)
+            and data.exception_type != "InvalidDispatch"
+        ):
+            for outcome in expected:
+                if outcome.matches(data):
+                    self.skip(subtask, tool, outcome.reason)
+                    if not outcome.transient and not any(
+                        row["operation"] == outcome.operation
+                        and row["missing_scope"]["variant"] == outcome.variant
+                        for row in self.gaps
+                    ):
+                        self.gaps.append(
+                            {
+                                "operation": outcome.operation,
+                                "missing_scope": {
+                                    "variant": outcome.variant,
+                                    "parameters": [],
+                                    "confirmation": {
+                                        "observed_at": datetime.now(UTC).strftime(
+                                            "%Y-%m-%dT%H:%M:%SZ"
+                                        )
+                                    },
+                                },
+                            }
+                        )
+                    return
         self.record(subtask, tool, status, data)
+
+    def record_verified(
+        self,
+        subtask: int,
+        tool: str,
+        *,
+        operation: str,
+        scenario: str,
+        assertions: Sequence[Assertion],
+        cleanup: str,
+        data: Any,
+    ) -> None:
+        """Record one scenario's asserted postconditions — the only promoting path."""
+        if not assertions:
+            raise ValueError(
+                "a verified observation must assert at least one condition"
+            )
+        if cleanup not in CLEANUP:
+            raise ValueError(f"cleanup disposition is not a known value: {cleanup!r}")
+        if not SCENARIO_ID.fullmatch(scenario):
+            raise ValueError(f"scenario id is not a closed-shape token: {scenario!r}")
+        passed = all(item.holds for item in assertions) and cleanup in {
+            "passed",
+            "not-required",
+        }
+        unmet = [item.id for item in assertions if not item.holds]
+        note = "" if passed else "unmet: " + ", ".join(unmet or [f"cleanup {cleanup}"])
+        self.record(
+            subtask,
+            tool,
+            "PASS" if passed else "FAIL",
+            data,
+            note,
+            result="passed" if passed else "failed",
+        )
+        self.observations.append(
+            {
+                "operation": operation,
+                # ``tested_commit``, ``closure_fingerprint``, ``hmc_release`` and
+                # ``hardware_family`` are filled at emission; ``channel`` is not
+                # derivable there, so it is written here.
+                "observation": {
+                    "id": _observation_id(subtask, tool),
+                    "channel": "live",
+                    "result": "passed" if passed else "failed",
+                    "scenario": scenario,
+                    "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "cleanup": cleanup,
+                    "assertions": [item.id for item in assertions if item.holds],
+                },
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
-# ST0 — Capture ltczz386-lp3 Baseline
+# ST0 — Capture baseline LPAR state
 # ---------------------------------------------------------------------------
 
 
@@ -325,6 +879,179 @@ SUBTASKS = {
     23: exercise_sriov_assignment,
     24: exercise_dedicated_pcie_assignment,
 }
+_SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
+
+
+def _validate_expected_dispatch(tool: str, expected: Sequence[ExpectedOutcome]) -> None:
+    for outcome in expected:
+        security = TOOL_SECURITY.get(tool)
+        if security is None or outcome.operation != security.operation:
+            raise ValueError(f"expected outcome operation does not match tool {tool}")
+
+
+def _declared_names(
+    node: ast.expr, declarations: Mapping[str, ExpectedOutcome]
+) -> list[str]:
+    if not isinstance(node, ast.List) or not all(
+        isinstance(item, ast.Name) and item.id in declarations for item in node.elts
+    ):
+        raise ValueError(
+            "expected outcomes must be a literal list of module declarations"
+        )
+    return [item.id for item in node.elts if isinstance(item, ast.Name)]
+
+
+def _result_names(nodes: Sequence[ast.expr]) -> tuple[str, str]:
+    if len(nodes) != 2 or not all(isinstance(node, ast.Name) for node in nodes):
+        raise ValueError("declared results require a named status/data pair")
+    names = tuple(node.id for node in nodes if isinstance(node, ast.Name))
+    if names[0] == names[1]:
+        raise ValueError("declared status and data names must differ")
+    return names[0], names[1]
+
+
+def _call_result_names(
+    node: ast.Call, parents: Mapping[ast.AST, ast.AST]
+) -> tuple[str, str]:
+    awaiter = parents.get(node)
+    assignment = parents.get(awaiter) if awaiter else None
+    if (
+        not isinstance(awaiter, ast.Await)
+        or not isinstance(assignment, ast.Assign)
+        or len(assignment.targets) != 1
+        or not isinstance(assignment.targets[0], ast.Tuple)
+    ):
+        raise ValueError("declared calls require an assigned awaited status/data pair")
+    return _result_names(assignment.targets[0].elts)
+
+
+def _validate_declared_function(
+    function: ast.AsyncFunctionDef,
+    declarations: Mapping[str, ExpectedOutcome],
+) -> None:
+    parents = {
+        child: node
+        for node in ast.walk(function)
+        for child in ast.iter_child_nodes(node)
+    }
+    events = sorted(
+        (
+            node
+            for node in ast.walk(function)
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute))
+            or (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
+        ),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    pending: dict[tuple[str, str], list[str]] = {}
+    for node in events:
+        if isinstance(node, ast.Name):
+            if any(node.id in binding for binding in pending):
+                raise ValueError(
+                    f"unrecorded declared result overwritten in {function.name}"
+                )
+            continue
+        if node.func.attr == "record_with_expected":
+            if len(node.args) != 5:
+                raise ValueError(
+                    "expected-outcome recording must use five positional arguments"
+                )
+            names = _declared_names(node.args[4], declarations)
+            if pending.pop(_result_names(node.args[2:4]), None) != names:
+                raise ValueError(
+                    f"expected-outcome result pairing mismatch in {function.name}"
+                )
+        if node.func.attr != "call":
+            continue
+        expected = next(
+            (kw.value for kw in node.keywords if kw.arg == "expected"), None
+        )
+        if expected is None:
+            continue
+        binding = _call_result_names(node, parents)
+        names = _declared_names(expected, declarations)
+        tool = node.args[1] if len(node.args) > 1 else None
+        if not isinstance(tool, ast.Constant) or not isinstance(tool.value, str):
+            raise ValueError(  # noqa: TRY004 - invalid scenario source is a startup configuration error
+                "declared dispatch requires a literal tool name"
+            )
+        _validate_expected_dispatch(tool.value, [declarations[name] for name in names])
+        pending[binding] = names
+    if pending:
+        raise ValueError(f"unrecorded declared results in {function.name}")
+
+
+def _validate_declared_outcomes() -> None:
+    """Validate every registered scenario before any client can reach hardware."""
+    registered = {security.operation for security in TOOL_SECURITY.values()}
+    for module in _SCENARIO_MODULES:
+        if module is None:
+            raise ValueError("cannot resolve a live scenario module")
+        declarations = {
+            name: value
+            for name, value in vars(module).items()
+            if isinstance(value, ExpectedOutcome)
+        }
+        if any(
+            outcome.operation not in registered for outcome in declarations.values()
+        ):
+            raise ValueError(
+                f"unregistered expected outcome operation in {module.__name__}"
+            )
+        for function in ast.walk(ast.parse(inspect.getsource(module))):
+            if isinstance(function, ast.AsyncFunctionDef):
+                _validate_declared_function(function, declarations)
+
+
+def _load_known_gaps(
+    environment: tuple[str, str] | None,
+    repo_root: Path,
+    catalog_path: Path | None = None,
+) -> set[tuple[str, str]]:
+    document = check_capability_inventory.load_json(
+        catalog_path or repo_root / "docs/capabilities/maturity.json"
+    )
+    errors: list[str] = []
+    check_capability_inventory._exact_keys(
+        document,
+        {"format_version", "admission_policy", "operations"},
+        "maturity.json",
+        errors,
+    )
+    if (
+        type(document.get("format_version")) is not int
+        or document.get("format_version")
+        != check_capability_inventory.MATURITY_FORMAT_VERSION
+        or document.get("admission_policy") != "existing-runtime-guards"
+    ):
+        errors.append("maturity.json: invalid format version or admission policy")
+    records = check_capability_inventory._objects(
+        check_capability_inventory._array(document, "operations", errors),
+        "maturity operations",
+        errors,
+    )
+    handlers = {
+        tool.operation: tool.handler
+        for tool in check_capability_inventory.discover_registry()
+    }
+    check_capability_inventory._validate_maturity(records, set(handlers), errors)
+    if errors:
+        raise ValueError("invalid gap catalog: " + "; ".join(errors))
+    known: set[tuple[str, str]] = set()
+    if environment is not None:
+        for record in records:
+            for scope in record["implementation"]["missing_scope"]:
+                if "confirmation" not in scope:
+                    continue
+                fingerprint = check_capability_inventory.closure_fingerprint(
+                    repo_root, handlers[record["operation"]].rsplit(".", 1)[0]
+                )
+                if check_capability_inventory.gap_is_current(
+                    scope["confirmation"], environment, fingerprint
+                ):
+                    known.add((record["operation"], scope["variant"]))
+    return known
+
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(16)),
@@ -378,68 +1105,403 @@ def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
 def _run_from_arguments(argv: list[str] | None = None) -> int:
     """Validate arguments, then bootstrap configuration and execute the live run."""
     arguments = _parse_arguments(argv)
-    _bootstrap_config()
-    _ensure_schema_version()
+    try:
+        config = LiveTestConfig.from_env_file()
+        # Validated here, beside the rest of the configuration: `_emit_observations`
+        # runs after a completed hardware run, and an uncaught ValueError there
+        # would replace the run summary and failed-test listing with a traceback.
+        environment = _read_environment()
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        return 1
+    # Both destinations are checked before the run, not after it. The results
+    # document holds every tool response verbatim on the success path — the raw
+    # HMC data `.gitignore` line 1 describes as internal hostnames, addresses and
+    # serials — so a `--results-file` stem no pattern covers must cost a startup
+    # exit, never a completed run against real hardware whose output then has
+    # nowhere safe to land.
+    unsafe = [
+        str(path)
+        for path in (
+            Path(arguments.results_path),
+            _observations_path(arguments.results_path),
+        )
+        if not _destination_is_ignored(path)
+    ]
+    if unsafe:
+        print(
+            "❌ git does not ignore " + ", ".join(unsafe) + " — choose a results "
+            "path matching an ignored pattern (see .gitignore)"
+        )
+        return 1
+    if not _bootstrap_config() or not _ensure_schema_version():
+        return 1
     return asyncio.run(
         main(
             subtask_filter=arguments.subtask,
             results_path=arguments.results_path,
             group=arguments.group,
+            config=config,
+            environment=environment,
         )
     )
 
 
-def _restore_ctx_from_results(
+_ARTIFACT_NULLABLE_STRINGS = frozenset(
+    {
+        "system_uuid",
+        "lp3_uuid",
+        "scratch_uuid",
+        "vios_uuid",
+        "console_uuid",
+        "test_user_uuid",
+        "test_network_uuid",
+        "test_adapter_uuid",
+        "nettest_uuid",
+        "job_uuid_sample",
+        "vg_uuid",
+        "vdisk_vg_name",
+        "vmedia_iso_name",
+        "vmedia_mapping_uuid",
+    }
+)
+_ARTIFACT_NULLABLE_INTS = frozenset(
+    {"vios_partition_id", "test_vlan_id", "test_vswitch_id", "vdisk_size_mib"}
+)
+
+
+def _decode_saved_config(value: Any) -> LiveTestConfig:
+    """Decode the canonical JSON form of a live-test configuration."""
+    if not isinstance(value, dict):
+        raise TypeError("results config must be a JSON object")
+    expected = asdict(LiveTestConfig())
+    if set(value) != set(expected):
+        raise ValueError("results config fields do not match LiveTestConfig")
+    parsed = dict(value)
+    protected = parsed["protected_lpar_names"]
+    if not isinstance(protected, list) or not all(
+        isinstance(name, str) for name in protected
+    ):
+        raise TypeError(
+            "results config protected_lpar_names must be an array of strings"
+        )
+    parsed["protected_lpar_names"] = tuple(protected)
+    for name, expected_value in expected.items():
+        if name != "protected_lpar_names" and type(parsed[name]) is not type(
+            expected_value
+        ):
+            raise TypeError(f"results config {name} has the wrong JSON type")
+    return LiveTestConfig(**parsed)
+
+
+def _decode_artifacts(value: Any) -> LiveTestArtifacts:
+    """Decode a complete artifact object without mutating live run state."""
+    if not isinstance(value, dict):
+        raise TypeError("results artifacts must be a JSON object")
+    expected_fields = {item.name for item in fields(LiveTestArtifacts)}
+    parsed = dict(value)
+    # A results document written before `test_user_uuid` existed is still a valid
+    # restore source; every other field difference remains a mismatch.
+    parsed.setdefault("test_user_uuid", None)
+    if set(parsed) != expected_fields:
+        raise ValueError("results artifact fields do not match LiveTestArtifacts")
+    for name in _ARTIFACT_NULLABLE_STRINGS:
+        if parsed[name] is not None and not isinstance(parsed[name], str):
+            raise TypeError(f"results artifact {name} must be a string or null")
+    for name in _ARTIFACT_NULLABLE_INTS:
+        if parsed[name] is not None and type(parsed[name]) is not int:
+            raise TypeError(f"results artifact {name} must be an integer or null")
+    if type(parsed["vmedia_repo_created"]) is not bool:
+        raise TypeError("results artifact vmedia_repo_created must be a boolean")
+    baseline = parsed["lp3_baseline"]
+    if not isinstance(baseline, dict) or not all(
+        isinstance(key, str) for key in baseline
+    ):
+        raise TypeError("results artifact lp3_baseline must be an object")
+    boot_order = parsed["vmedia_orig_boot_order"]
+    if not isinstance(boot_order, list) or not all(
+        isinstance(entry, str) for entry in boot_order
+    ):
+        raise TypeError(
+            "results artifact vmedia_orig_boot_order must be an array of strings"
+        )
+    parsed["lp3_baseline"] = dict(baseline)
+    parsed["vmedia_orig_boot_order"] = list(boot_order)
+    return LiveTestArtifacts(**parsed)
+
+
+def _hmc_identity(config: HMCConfig) -> dict[str, str | int | bool]:
+    """Return the non-secret HMC identity bound to a persisted artifact set."""
+    return {
+        "host": config.host,
+        "port": config.port,
+        "user": config.user,
+        "verify_ssl": config.verify_ssl,
+    }
+
+
+def _restore_artifacts_from_results(
     state: RunState,
+    hmc_config: HMCConfig,
     results_path: str = "test-results-round2.json",
 ) -> None:
-    """Pre-seed context from the previous results file when running a single sub-task.
-
-    This allows sub-tasks run in isolation (e.g. `python runner.py 3`) to use
-    context captured by earlier sub-tasks (VIOS UUID, system UUID, etc.).
-    """
-    p = Path(results_path)
+    """Pre-seed artifacts from a compatible previous live-test report."""
+    path = Path(results_path)
     try:
-        if not p.exists():
+        if not path.exists():
             return
-        saved = json.loads(p.read_text())
+        saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
-        saved_ctx = saved.get("context")
-        if saved_ctx is None:
-            saved_ctx = {}
-        elif not isinstance(saved_ctx, dict):
-            raise TypeError("results context must be a JSON object")
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, KeyError) as exc:
-        print(f"  ⚠️  Could not restore context from {results_path}: {exc}")
+        if set(saved) != {"config", "hmc", "artifacts", "results"}:
+            raise ValueError("results document has an unsupported shape")
+        if _decode_saved_config(saved["config"]) != state.config:
+            raise ValueError("results configuration does not match this run")
+        saved_hmc = saved["hmc"]
+        current_hmc = _hmc_identity(hmc_config)
+        if not isinstance(saved_hmc, dict) or set(saved_hmc) != set(current_hmc):
+            raise TypeError("results hmc identity must contain the expected fields")
+        if any(
+            type(saved_hmc[key]) is not type(value)
+            for key, value in current_hmc.items()
+        ):
+            raise TypeError("results hmc identity has the wrong JSON type")
+        if saved_hmc != current_hmc:
+            raise ValueError("results HMC identity does not match this run")
+        candidate = _decode_artifacts(saved["artifacts"])
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        KeyError,
+    ) as exc:
+        print(f"  ⚠️  Could not restore artifacts from {results_path}: {exc}")
         return
 
-    context = state.context
-    for key, current in asdict(context).items():
-        if current is None and saved_ctx.get(key) is not None:
-            setattr(context, key, saved_ctx[key])
-        elif key == "lp3_baseline" and not current and saved_ctx.get(key):
-            context.lp3_baseline = saved_ctx[key]
-        elif key == "vmedia_orig_boot_order" and not current and saved_ctx.get(key):
-            context.vmedia_orig_boot_order = saved_ctx[key]
+    state.artifacts = candidate
     print(
-        f"  ℹ  Context restored from {results_path} "
-        f"(vios_uuid={context.vios_uuid}, "
-        f"system_uuid={context.system_uuid}, "
-        f"vg_uuid={context.vg_uuid})"
+        f"  ℹ  Artifacts restored from {results_path} "
+        f"(vios_uuid={candidate.vios_uuid}, "
+        f"system_uuid={candidate.system_uuid}, "
+        f"vg_uuid={candidate.vg_uuid})"
     )
+
+
+def _write_results(path: Path, document: str) -> None:
+    """Atomically replace the persisted live-test report."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", text=True
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(document)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _read_environment(path: Path | None = None) -> tuple[str, str] | None:
+    """Read the observation environment from `.env`: both keys, or neither."""
+    path = path or _ENV_FILE
+    values: dict[str, str] = {}
+    if path.is_file():
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if key in ENVIRONMENT_KEYS and value:
+                values[key] = value
+    if not values:
+        return None
+    if len(values) != len(ENVIRONMENT_KEYS):
+        raise ValueError(
+            "invalid live-test configuration: "
+            + " and ".join(ENVIRONMENT_KEYS)
+            + " must be set together"
+        )
+    # The catalog's own grammars, applied here rather than at copy-in: these two
+    # strings are the only free text an observation carries, and a hostname or a
+    # serial typed into either would otherwise be written to disk and discovered
+    # only when a human pastes it into `maturity.json`.
+    release, family = values[ENVIRONMENT_KEYS[0]], values[ENVIRONMENT_KEYS[1]]
+    invalid = [
+        key
+        for key, value, pattern in (
+            (ENVIRONMENT_KEYS[0], release, check_capability_inventory.HMC_RELEASE),
+            (ENVIRONMENT_KEYS[1], family, check_capability_inventory.HARDWARE_FAMILY),
+        )
+        if not pattern.fullmatch(value)
+    ]
+    if invalid:
+        raise ValueError(
+            "invalid live-test configuration: "
+            + ", ".join(f"{key} does not match its grammar" for key in invalid)
+        )
+    return release, family
+
+
+def _git(repo_root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _repository_root() -> Path | None:
+    """The repository the runner is checked out in, whatever directory it ran from.
+
+    `Path.cwd()` would silently produce an empty import closure when the runner
+    is invoked from a subdirectory, giving every observation the digest of no
+    files and marking it stale forever.
+    """
+    result = _git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if result.returncode != 0:
+        return None
+    root = Path(result.stdout.strip())
+    return root if (root / "src" / "hmc_mcp").is_dir() else None
+
+
+def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
+    """Report whether Git would let *path* be committed from where it is written.
+
+    Exit 0 means ignored, 1 means the path sits in a repository unignored, and
+    anything else means no repository, or a path outside one — in which case
+    there is nothing to commit into and the write is safe.
+    """
+    return (
+        _git(repo_root or Path.cwd(), "check-ignore", "-q", str(path)).returncode != 1
+    )
+
+
+def _observations_path(results_path: str) -> Path:
+    """The observations file written beside a run's results document."""
+    path = Path(results_path)
+    return path.with_name(f"{path.stem}-observations.json")
+
+
+def _tree_is_clean(repo_root: Path) -> bool:
+    """Report whether the implementation the observation names is what is committed."""
+    result = _git(repo_root, "status", "--porcelain", "--", "src", "scripts")
+    return result.returncode == 0 and not result.stdout.strip()
+
+
+def _emit_observations(
+    state: RunState,
+    path: Path,
+    environment: tuple[str, str] | None,
+    repo_root: Path,
+) -> bool:
+    """Write the run's catalog-shaped observations, or say why it wrote none."""
+    if environment is None:
+        print("no LIVE_TEST_ENV_* settings — observations not written")
+        return False
+    if not state.observations and not state.gaps:
+        print("no verified observations or confirmed gaps — nothing to write")
+        return False
+    if not _tree_is_clean(repo_root):
+        print("src/ or scripts/ is modified — observations not written")
+        return False
+    # `--results-file` lets an operator name any stem, so no fixed `.gitignore`
+    # pattern can establish that the destination is ignored; ask Git instead.
+    # `_run_from_arguments` checks the same thing before the run; this covers a
+    # direct call to `main`.
+    if not _destination_is_ignored(path, repo_root):
+        print(f"{path} is not ignored by git — observations not written")
+        return False
+    head = _git(repo_root, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        print("cannot resolve HEAD — observations not written")
+        return False
+    handlers = {
+        tool.operation: tool.handler
+        for tool in check_capability_inventory.discover_registry()
+    }
+    document: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for recorded in state.observations:
+        handler = handlers.get(recorded["operation"])
+        if handler is None:
+            # Skip the one unresolvable row rather than discarding the document:
+            # every other observation came from the same expensive hardware run,
+            # and `test_verified_scenarios_name_registered_operations` is what
+            # catches a mistyped operation before it ever reaches a live run.
+            print(
+                f"  ⚠️  unknown operation {recorded['operation']} — observation skipped"
+            )
+            continue
+        observation = dict(recorded["observation"])
+        if observation["id"] in seen:
+            print(
+                f"duplicate observation id {observation['id']} — observations not written"
+            )
+            return False
+        seen.add(observation["id"])
+        observation["tested_commit"] = head.stdout.strip()
+        observation["hmc_release"], observation["hardware_family"] = environment
+        observation["closure_fingerprint"] = (
+            check_capability_inventory.closure_fingerprint(
+                repo_root, handler.rsplit(".", 1)[0]
+            )
+        )
+        document.append(
+            {"operation": recorded["operation"], "observation": observation}
+        )
+    for recorded in state.gaps:
+        handler = handlers.get(recorded["operation"])
+        if handler is None:
+            print(f"unknown operation {recorded['operation']} — gap skipped")
+            continue
+        scope = dict(recorded["missing_scope"])
+        scope["confirmation"] = {
+            **scope["confirmation"],
+            "tested_commit": head.stdout.strip(),
+            "hmc_release": environment[0],
+            "hardware_family": environment[1],
+            "closure_fingerprint": check_capability_inventory.closure_fingerprint(
+                repo_root, handler.rsplit(".", 1)[0]
+            ),
+        }
+        document.append({"operation": recorded["operation"], "missing_scope": scope})
+    if not document:
+        print("no resolvable observations — nothing written")
+        return False
+    _write_results(path, json.dumps(document, indent=2))
+    print(f"Observations written to {path}")
+    return True
 
 
 async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
     group: str | None = None,
+    config: LiveTestConfig | None = None,
+    hmc_config: HMCConfig | None = None,
+    environment: tuple[str, str] | None = None,
 ) -> int:
-    state = RunState()
-    context = state.context
-    print(
-        f"Starting live integration tests at {datetime.now(UTC).isoformat()}"
-    )
+    if config is None:
+        try:
+            config = LiveTestConfig.from_env_file()
+        except ValueError as exc:
+            print(f"❌ {_redact_failure_text(str(exc))}")
+            return 1
+    try:
+        _validate_declared_outcomes()
+        repo_root = _repository_root()
+        known_gaps = _load_known_gaps(environment, repo_root) if repo_root else set()
+    except (OSError, ValueError) as exc:
+        print(f"❌ {_redact_failure_text(str(exc))}")
+        return 1
+    state = RunState(config=config, known_gaps=known_gaps)
+    hmc_config = hmc_config or HMCConfig()
+    print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
     print(f"HMC_SCHEMA_VERSION={schema_version}")
 
@@ -459,7 +1521,7 @@ async def main(
         # Try vmedia results first, then round2
         for prior in ["test-results-vmedia.json", "test-results-round2.json"]:
             if Path(prior).exists():
-                _restore_ctx_from_results(state, prior)
+                _restore_artifacts_from_results(state, hmc_config, prior)
                 break
 
     # The escape hatch is opted in because this harness drives `hmc_run_command`
@@ -477,6 +1539,9 @@ async def main(
     )
     try:
         async with Client(mcp) as client:
+            state.schemas = {
+                tool.name: tool.inputSchema for tool in await client.list_tools()
+            }
             for n in tasks:
                 fn = SUBTASKS.get(n)
                 if fn:
@@ -486,13 +1551,27 @@ async def main(
     finally:
         state.iso_http_server.close()
 
-    Path(results_path).write_text(
+    _write_results(
+        Path(results_path),
         json.dumps(
-            {"context": asdict(context), "results": state.results},
+            {
+                "config": asdict(state.config),
+                "hmc": _hmc_identity(hmc_config),
+                "artifacts": asdict(state.artifacts),
+                "results": state.results,
+            },
             indent=2,
             default=str,
-        )
+        ),
     )
+
+    repo_root = _repository_root()
+    if repo_root is None:
+        print("not inside the hmc-mcp repository — observations not written")
+    else:
+        _emit_observations(
+            state, _observations_path(results_path), environment, repo_root
+        )
 
     total = len(state.results)
     passed = sum(1 for r in state.results if r["status"] == "PASS")
@@ -507,7 +1586,7 @@ async def main(
         for r in state.results:
             if r["status"] == "FAIL":
                 print(f"  ST{r['subtask']} {r['tool']}")
-                print(f"    {str(r['data'])[:200]}")
+                print(f"    {str(_redact_failure_data(r['data']))[:200]}")
     return 1 if failed else 0
 
 

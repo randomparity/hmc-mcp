@@ -29,7 +29,8 @@ PACKAGE_NAME = "hmc_mcp"
 # exported model, alias, and signature as Any, so it is a shipped-artifact
 # invariant rather than a source-tree convenience.
 TYPE_MARKER = "py.typed"
-PACKAGE_SENTINELS = ("__init__.py", "server.py", TYPE_MARKER)
+PACKAGE_RESOURCES = (TYPE_MARKER, "_operation_maturity.json")
+PACKAGE_SENTINELS = ("__init__.py", "server.py", *PACKAGE_RESOURCES)
 CORE_METADATA_VERSION = "2.5"
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 4096
@@ -612,7 +613,10 @@ def _source_members(root: Path) -> dict[str, bytes]:
     package = root / "src" / PACKAGE_NAME
     members = {
         path.relative_to(root / "src").as_posix(): path.read_bytes()
-        for path in (*package.rglob("*.py"), package / TYPE_MARKER)
+        for path in (
+            *package.rglob("*.py"),
+            *(package / name for name in PACKAGE_RESOURCES),
+        )
         if path.is_file()
     }
     for sentinel in PACKAGE_SENTINELS:

@@ -9,14 +9,14 @@ Accepted (2026-08-26)
 
 ## Context
 
-`install_lpar_os` and `install_vios` submit an irreversible OS install against a
+`install_vios_by_lpar_selector` and `install_vios` submit an irreversible OS install against a
 partition's disks and detach. There is no HMC job to poll (ADR 0069/0070), no ADR 0011
 ownership guard and therefore no `ownership-denied` or `ownership-override` record
 (ADR 0092 §3.4a), and for a `hmc_mcp.api` consumer no #218 dispatch-boundary
 `authorization` record either. The HMC-side install log is keyed on the partition name
 alone, shared across managed systems, and truncated by the next submission.
 
-#366 left two `_logger.info` calls on `hmc_mcp.operations.install` in place of a record.
+#366 left two `_logger.info` calls on `hmc_mcp.operations.vios.install` in place of a record.
 Nothing configures that namespace: `server.py` binds only the reserved `hmc_mcp.audit`
 logger and the four third-party ones, and no `basicConfig` or `dictConfig` exists in
 `src/hmc_mcp`. The module logger's effective level is the root's `WARNING`, so an `INFO`

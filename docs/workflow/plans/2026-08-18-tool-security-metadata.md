@@ -859,7 +859,7 @@ no longer re-exports the frozensets.
 
    `server_tools/vios.py`: `hmc_create_vios` mutate `vios.create` `managed_system`;
    `hmc_delete_vios` destructive `vios.delete` `vios`; `hmc_install_vios` mutate
-   `vios.install` `vios`; `hmc_install_lpar_os` mutate `lpar.install_os` `lpar`;
+   `vios.install` `vios`; `hmc_install_vios_by_lpar_selector` mutate `lpar.install_os` `lpar`;
    `hmc_list_vios_backups` read `vios.list_backups` `vios`; `hmc_backup_vios` mutate
    `vios.backup` `vios`; `hmc_restore_vios` destructive `vios.restore` `vios`;
    `hmc_power_on_vios` mutate `vios.power_on` `vios`; `hmc_power_off_vios` destructive

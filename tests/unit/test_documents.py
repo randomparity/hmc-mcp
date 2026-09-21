@@ -2,6 +2,7 @@
 
 import pytest
 
+from hmc_mcp import documents
 from hmc_mcp.documents import (
     AUTHENTICATION_TYPES,
     PARTITION_TYPES,
@@ -11,6 +12,70 @@ from hmc_mcp.documents import (
     build_hmc_user_document,
     build_lpar_document,
 )
+
+
+@pytest.mark.parametrize(
+    ("name", "owner"),
+    [
+        ("AUTHENTICATION_TYPES", "access"),
+        ("AuthenticationType", "access"),
+        ("BOOT_DEVICE_SELECTORS", "boot"),
+        ("BootDeviceSelector", "boot"),
+        ("KEYLOCK_POSITIONS", "lpar"),
+        ("OS_TYPES", "lpar"),
+        ("PARTITION_TYPES", "lpar"),
+        ("SHARING_MODES", "lpar"),
+        ("Keylock", "lpar"),
+        ("LparResources", "lpar"),
+        ("OsType", "lpar"),
+        ("PartitionType", "lpar"),
+        ("SharingMode", "lpar"),
+        ("STORAGE_KINDS", "storage"),
+        ("StorageKind", "storage"),
+        ("MEM_MIRRORING_MODES", "system"),
+        ("POWER_OFF_POLICIES", "system"),
+        ("POWER_ON_LPAR_START_POLICIES", "system"),
+        ("MemoryMirroringMode", "system"),
+        ("PowerOffPolicy", "system"),
+        ("PowerOnLparStartPolicy", "system"),
+    ],
+)
+def test_document_facade_exports_domain_owned_objects(name, owner):
+    assert getattr(documents, name) is getattr(getattr(documents, owner), name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "AUTHENTICATION_TYPES",
+        "AuthenticationType",
+        "ATOM_NS",
+        "BOOT_DEVICE_SELECTORS",
+        "BootDeviceSelector",
+        "DET",
+        "ET",
+        "KEYLOCK_POSITIONS",
+        "LparResources",
+        "MEM_MIRRORING_MODES",
+        "OS_TYPES",
+        "PARTITION_TYPES",
+        "POWER_OFF_POLICIES",
+        "POWER_ON_LPAR_START_POLICIES",
+        "SHARING_MODES",
+        "STORAGE_KINDS",
+        "StorageKind",
+        "WEB_NS",
+        "_dedicated_processor_body",
+        "_memory_config",
+        "_processor_config",
+        "_shared_processor_body",
+        "_validate_sharing_mode",
+        "escapes_string_arguments",
+        "lpar_envelope",
+    ],
+)
+def test_common_has_no_domain_or_xml_primitive_exports(name):
+    assert not hasattr(documents.common, name)
 
 
 def test_minimal_create_document():

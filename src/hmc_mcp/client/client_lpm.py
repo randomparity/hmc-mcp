@@ -16,7 +16,15 @@ from ..jobs import (
     migrate_validate_lpar_job,
     remote_restart_lpar_job,
 )
-from .client_contracts import LpmClient
+from .client_contracts import LpmClient, _reject_non_uuid_path_argument
+
+# The LPM job operations this client submits, and the whole of the namespace
+# `_lpar_job` accepts. Membership rather than a character grammar, because unlike
+# the uom *type* namespace (ADR 0143) this one is closed: `_lpar_job` is private
+# and every caller below passes one of these literals (ADR 0151).
+_LPAR_JOB_OPERATIONS = frozenset(
+    {"Migrate", "MigrateValidate", "MigrateAbort", "MigrateRecover", "RemoteRestart"}
+)
 
 
 class LpmMixin:
@@ -24,6 +32,10 @@ class LpmMixin:
     async def _lpar_job(
         self: LpmClient, lpar_uuid: str, operation: str, job_xml: str
     ) -> dict[str, Any] | None:
+        if operation not in _LPAR_JOB_OPERATIONS:
+            allowed = ", ".join(sorted(_LPAR_JOB_OPERATIONS))
+            raise ValueError(f"LPM job operation must be one of: {allowed}")
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
         )
@@ -32,6 +44,7 @@ class LpmMixin:
         self: LpmClient,
         lpar_uuid: str,
         target_system: str,
+        *,
         target_profile_name: str | None = None,
         destination_lpar_id: str | None = None,
         shared_proc_pool_id: str | None = None,
@@ -52,6 +65,7 @@ class LpmMixin:
         self: LpmClient,
         lpar_uuid: str,
         target_system: str,
+        *,
         target_profile_name: str | None = None,
         destination_lpar_id: str | None = None,
         shared_proc_pool_id: str | None = None,

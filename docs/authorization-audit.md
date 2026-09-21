@@ -196,7 +196,7 @@ correlation identifier, so pairing them means matching those three fields inside
 time window — and an override that was never refused (`provision_lpar`'s activation
 leg, or any caller who passes `ownership_override` on the first attempt) will pair
 against an unrelated earlier denial if one is in the window. A refused `--dry-run`
-decommission preflight — the sequence `README.md` prescribes — emits the same record
+decommission preflight — the sequence the [CLI guide](cli.md) prescribes — emits the same record
 as a refused destructive one, because the inventory read authorizes ahead of the
 dry-run return. No field distinguishes either case; this is the same caveat the
 override record above carries for its own two sources.
@@ -221,7 +221,7 @@ nulls, for the reason the override record gives.
 
 ### `event: "install-attempted"`
 
-Emitted immediately **before** `install_lpar_os` or `install_vios` submits a detached
+Emitted immediately **before** `install_vios_by_lpar_selector` or `install_vios` submits a detached
 `installios` to the HMC. Always `WARNING`, so `--audit-level WARNING` keeps it. The
 decision is [ADR 0102](adr/0102-install-submission-audit-record.md).
 
@@ -267,7 +267,7 @@ partition and the path.
 job ([ADR 0069](adr/0069-installlpar-and-installvios-absent-from-hmc-rest.md)), and no
 [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership check and so no
 `ownership-denied` or `ownership-override`. A served deployment does write an
-`authorization` permit for the tool call, and `hmc_install_lpar_os` and `hmc_install_vios`
+`authorization` permit for the tool call, and `hmc_install_vios_by_lpar_selector` and `hmc_install_vios`
 each declare a partition and a managed-system selector — so that permit's `targets` already
 carry both, and at the default audit level the streams can be joined on them. What the
 permit cannot give you: it records the selector the caller passed, not the resolved name, so

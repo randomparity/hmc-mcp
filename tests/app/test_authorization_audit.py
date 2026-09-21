@@ -293,11 +293,11 @@ def test_target_unboundable_is_reachable(records):
     the `lpar` table below compiles (another granted tool declares that kind) and
     then bounds nothing for it. 24 tools in this checkout are in that position.
     """
-    security = TOOL_SECURITY["hmc_console_info"]
+    security = TOOL_SECURITY["hmc_get_console_info"]
     assert not security.exhaustive_targets
     with pytest.raises(TargetScopeError):
         dispatch_authorizer(_policy(LAB_TARGETS))(
-            "hmc_console_info", security, {"profile": "lab"}
+            "hmc_get_console_info", security, {"profile": "lab"}
         )
     assert records[0]["reason"] == "target-unboundable"
 

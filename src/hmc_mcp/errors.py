@@ -1,10 +1,17 @@
-"""Client-side exception type shared by client.py and its domain mixins."""
+"""Client exceptions shared by the transport core and domain mixins.
+
+The :mod:`hmc_mcp.client` package uses these exceptions from its transport
+implementation in :mod:`hmc_mcp.client.core` and from its domain mixin modules.
+"""
 
 from __future__ import annotations
 
 from defusedxml import ElementTree as DET
+from defusedxml.common import DefusedXmlException
 
 from .xmlutil import find_text
+
+MAX_ERROR_BODY_BYTES = 4096
 
 
 class HMCError(Exception):
@@ -18,6 +25,10 @@ class HMCError(Exception):
         self, message: str, status_code: int | None = None, body: str | None = None
     ):
         self.status_code = status_code
+        if body is not None:
+            body = body[:MAX_ERROR_BODY_BYTES].encode("utf-8")[:MAX_ERROR_BODY_BYTES].decode(
+                "utf-8", errors="ignore"
+            )
         self.body = body
         detail = message
         if status_code is not None:
@@ -27,7 +38,7 @@ class HMCError(Exception):
             # Fall back to raw body text if it is not valid XML.
             try:
                 msg = find_text(body, "Message", "msg", "error") or body[:500]
-            except DET.ParseError:
+            except (DET.ParseError, DefusedXmlException):
                 msg = body[:500]
             detail = f"{detail}: {msg}"
         super().__init__(detail)

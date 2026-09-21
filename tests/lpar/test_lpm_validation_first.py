@@ -8,7 +8,7 @@ import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpm import LpmMigrationRequest, migrate_lpar
+from hmc_mcp.operations.lpar.migration import LpmMigrationRequest, migrate_lpar
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpm.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
@@ -36,7 +36,7 @@ def _client(validation: dict, migration: dict | None = None) -> AsyncMock:
     client = AsyncMock()
     client.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     client.lpar_migrate_validate.return_value = _job("RUNNING")
-    client.wait_for_job.return_value = validation
+    client.wait_for_job_entry.return_value = validation
     client.lpar_migrate.return_value = migration or _job("RUNNING")
     return client
 
@@ -60,7 +60,7 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
         return _job("RUNNING")
 
     client.lpar_migrate_validate.side_effect = submit_validation
-    client.wait_for_job.side_effect = wait_for_validation
+    client.wait_for_job_entry.side_effect = wait_for_validation
     client.lpar_migrate.side_effect = submit_migration
 
     result = await migrate_lpar(
@@ -71,14 +71,18 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
     assert result.job.status == "RUNNING"
     assert events == ["validate", "wait", "migrate"]
     assert (
-        call.lpar_migrate_validate("lpar-1", "target", None, wait_time=None)
+        call.lpar_migrate_validate(
+            "lpar-1", "target", target_profile_name=None, wait_time=None
+        )
         in client.method_calls
     )
     assert (
-        call.lpar_migrate("lpar-1", "target", None, wait_time=None)
+        call.lpar_migrate(
+            "lpar-1", "target", target_profile_name=None, wait_time=None
+        )
         in client.method_calls
     )
-    client.wait_for_job.assert_awaited_once()
+    client.wait_for_job_entry.assert_awaited_once()
 
 
 @pytest.mark.parametrize("status", ["FAILED", "EXCEPTION", "COMPLETED_WITH_WARNINGS"])
@@ -122,7 +126,7 @@ async def test_validation_exception_blocks_migration(failure_point: str) -> None
     if failure_point == "submit":
         client.lpar_migrate_validate.side_effect = error
     else:
-        client.wait_for_job.side_effect = error
+        client.wait_for_job_entry.side_effect = error
 
     with pytest.raises(HMCError) as exc_info:
         await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))
@@ -141,7 +145,7 @@ async def test_validate_first_false_preserves_direct_submission() -> None:
 
     assert isinstance(result.job, JobOutcome)
     client.lpar_migrate_validate.assert_not_awaited()
-    client.wait_for_job.assert_not_awaited()
+    client.wait_for_job_entry.assert_not_awaited()
     client.lpar_migrate.assert_awaited_once()
 
 

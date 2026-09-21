@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.affinity import (
+from hmc_mcp.operations.affinity.rest import (
     LparAffinityAssessmentOutcome,
     ProvisionAffinityAssessment,
     affinity_not_measured,
@@ -16,7 +16,7 @@ from hmc_mcp.operations.affinity import (
     validate_affinity_request,
 )
 from hmc_mcp.operations.lpar.errors import translate_lpar_write_error
-from hmc_mcp.operations.ownership import (
+from hmc_mcp.operations.lpar.ownership import (
     resolve_and_authorize_lpar_mutation,
     stamp_created_lpar_ownership,
 )
@@ -49,6 +49,8 @@ from ...ssh.lpar import (
 from ...ssh.transport import HMCCLIError
 
 _logger = logging.getLogger(__name__)
+
+_LPAR_POWER_OPERATIONS = frozenset({"PowerOn", "PowerOff"})
 
 ProcessorCompatibilityMode = Literal[
     "default",
@@ -83,20 +85,27 @@ async def list_lpars(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
 ) -> list[dict[str, Any]]:
-    """List LPARs, optionally scoped to one system or one partition state."""
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-    if state is not None:
-        if state not in PARTITION_STATES:
-            allowed = ", ".join(sorted(PARTITION_STATES))
-            raise ValueError(f"state must be one of: {allowed}")
-        return await hmc.search_uom("LogicalPartition", "PartitionState", state)
+    """List LPARs, optionally scoped to one system and partition state."""
+    if state is not None and state not in PARTITION_STATES:
+        allowed = ", ".join(sorted(PARTITION_STATES))
+        raise ValueError(f"state must be one of: {allowed}")
     system_uuid = (
         await resolve_system_uuid(hmc, system_name_or_uuid)
         if system_name_or_uuid is not None
         else None
     )
-    return await hmc.list_logical_partitions(system_uuid)
+    lpars = (
+        await hmc.search_uom("LogicalPartition", "PartitionState", state)
+        if system_uuid is None and state is not None
+        else await hmc.list_logical_partitions(system_uuid)
+    )
+    if state is None or system_uuid is None:
+        return lpars
+    return [
+        entry
+        for entry in lpars
+        if (entry.get("Resource") or {}).get("PartitionState") == state
+    ]
 
 
 async def get_lpar(
@@ -486,6 +495,9 @@ async def power_lpar(
                 },
             )
     operation = "PowerOn" if power_on else "PowerOff"
+    if operation not in _LPAR_POWER_OPERATIONS:
+        allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))
+        raise ValueError(f"LPAR power job operation must be one of: {allowed}")
     document = (
         power_on_lpar_job() if power_on else power_off_lpar_job(immediate=immediate)
     )
@@ -518,6 +530,8 @@ async def rename_lpar(
             lpar_uuid, build_lpar_document(name=new_name)
         )
     except HMCError as exc:
-        translate_lpar_write_error(exc)
-        raise
+        translated = translate_lpar_write_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
     return lpar_uuid, updated

@@ -136,9 +136,9 @@ The type is shared, and the polling reading of its fields is scoped to this deci
 operations. `jobs.job_outcome` has six other callers, all of them *submitting* operations
 reporting a submission rather than a poll, and they do not satisfy the handle promise:
 `operations/provision.py:300` and `operations/lpar/core.py:339` pass the literal `"PowerOn"` as the
-identifier, and `operations/lpm.py:261` and `operations/decommission.py:466` fall back to `""`
+identifier, and `operations/lpar/migration.py:261` and `operations/decommission.py:466` fall back to `""`
 when a submission returned no identifier. Their `found=False` means "this submission returned no
-job entry", not "the HMC reaped it", and `operations.lpm._finish_job` pairs it with
+job entry", not "the HMC reaped it", and `operations.lpar.migration._finish_job` pairs it with
 `timed_out=False` for a fire-and-forget submission — a combination clause 4's table does not
 cover, because that table describes a poll.
 

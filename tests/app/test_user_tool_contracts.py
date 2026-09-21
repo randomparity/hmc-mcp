@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hmc_mcp.server_tools import users as server_users
+from hmc_mcp.server_tools.users import core as server_users
 
 
 def _client_context(client: MagicMock) -> MagicMock:

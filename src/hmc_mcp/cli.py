@@ -1,6 +1,7 @@
 """hmc-mcp command line interface.
 
 Usage examples:
+    hmc-mcp capabilities                 # show operation maturity
     hmc-mcp serve --access-policy NAME # run the MCP server over stdio
     hmc-mcp systems list              # list managed systems as a table
     hmc-mcp lpars list --json         # list LPARs as JSON
@@ -15,22 +16,12 @@ the complete tree.
 from __future__ import annotations
 
 from .cli_commands import (
-    adapters,
-    cluster,
     config,
     jobs,
-    memory_pools,
     metrics,
-    network,
-    pcie,
     raw,
     snapshot,
-    storage,
-    systems,
     templates,
-    vios,
-    vios_labels,
-    vnic,
 )
 from .cli_commands import (
     console as console_commands,
@@ -91,6 +82,13 @@ from .cli_commands.output import (
 from .cli_commands.runtime import (
     GlobalOpts as GlobalOpts,  # noqa: PLC0414 - PEP 484 explicit re-export; see the module docstring
 )
+from .cli_commands.storage import cluster
+from .cli_commands.storage import resources as storage
+from .cli_commands.systems import core as systems
+from .cli_commands.systems import memory_pools
+from .cli_commands.vios import core as vios
+from .cli_commands.vios import labels as vios_labels
+from .cli_commands.virtualization import adapters, network, pcie, vnic
 
 
 def _register_commands() -> None:

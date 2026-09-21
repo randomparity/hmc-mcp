@@ -4,8 +4,10 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-MAX_PARENT_DISCOVERY_SYSTEMS = 100
-PARENT_DISCOVERY_TIMEOUT_SECONDS = 30
+from ..discovery_limits import (
+    MAX_PARENT_DISCOVERY_SYSTEMS,
+    PARENT_DISCOVERY_TIMEOUT_SECONDS,
+)
 
 
 def ambiguity_candidate_ids(

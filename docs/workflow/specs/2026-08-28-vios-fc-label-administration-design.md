@@ -120,7 +120,7 @@ The opposite VIOS selector family and `vios_names-=`/`vios_ids-=` are symmetric 
 List-valued pairs are always final, satisfying the existing record builder's admitted grammar.
 Callers cannot supply resource type, operation code, attribute name, list operator, or raw record.
 
-`src/hmc_mcp/operations/_vios_labels.py` privately resolves the public managed-system selector
+`src/hmc_mcp/operations/vios_labels.py` privately resolves the public managed-system selector
 with the existing SSH selector resolver and delegates to the SSH module. MCP tools adapt
 scalar/list inputs to that internal operation layer through `with_config`, retain the exact
 `system_name_or_uuid` parameter

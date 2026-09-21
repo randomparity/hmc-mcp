@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Literal, cast
+from typing import cast
 
 import typer
 
@@ -13,10 +13,14 @@ from ...jobs import (
     RemoteRestartOperation,
     validate_wait_timing,
 )
-from ...operations.lpm import (
+from ...operations.lpar.migration import (
     LpmAffinityMigrationResult,
     LpmAffinityPreflightRequest,
+    LpmCapability,
+    LpmDestinationCheckBasis,
     LpmMigrationRequest,
+    LpmResponse,
+    RemoteRestartRequest,
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
@@ -25,23 +29,18 @@ from ...operations.lpm import (
     validate_lpar_migration,
 )
 from ..output import console, print_json
-from ..runtime import client, run
+from ..runtime import with_client
 
 
 def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
     """Confirm and present the result of a shared LPM operation."""
 
-    async def _go():
-        async with client() as hmc:
-            if not yes:
-                dest = f" to '{target}'" if target else ""
-                if not typer.confirm(
-                    f"Really {action} partition '{name_or_uuid}'{dest}?"
-                ):
-                    raise typer.Abort()
-            return await fn(hmc)
+    if not yes:
+        dest = f" to '{target}'" if target else ""
+        if not typer.confirm(f"Really {action} partition '{name_or_uuid}'{dest}?"):
+            raise typer.Abort()
 
-    result = run(_go)
+    result = with_client(fn)
     if isinstance(result, LpmAffinityMigrationResult):
         status = "Submitted" if result.job is not None else "Stopped"
         console.print(f"[green]{status} {action}[/green]")
@@ -95,14 +94,10 @@ def lpars_migrate_affinity(
     target: str = typer.Option(..., "--target", help="Target managed system name"),
     source_score: int | None = typer.Option(None, "--source-score"),
     destination_estimate: int | None = typer.Option(None, "--destination-estimate"),
-    check_basis: Literal["calculated", "migration-check"] = typer.Option(
-        "calculated", "--check-basis"
-    ),
+    check_basis: LpmDestinationCheckBasis = typer.Option("calculated", "--check-basis"),
     configured_minimum: int | None = typer.Option(None, "--configured-minimum"),
-    capability: Literal["available", "unavailable"] = typer.Option(
-        "available", "--capability"
-    ),
-    response: Literal["warn", "fail"] = typer.Option("warn", "--response"),
+    capability: LpmCapability = typer.Option("available", "--capability"),
+    response: LpmResponse = typer.Option("warn", "--response"),
     preflight_timeout: float = typer.Option(
         5.0, "--preflight-timeout", help="Affinity preflight timeout seconds"
     ),
@@ -249,14 +244,16 @@ def lpars_remote_restart(
             hmc,
             system,
             name_or_uuid,
-            cast(RemoteRestartOperation, operation),
-            target_system_name_or_uuid=target,
-            use_current_data=use_current_data,
-            retain_devices=retain_devices,
+            RemoteRestartRequest(
+                operation=cast(RemoteRestartOperation, operation),
+                target_system_name_or_uuid=target,
+                use_current_data=use_current_data,
+                retain_devices=retain_devices,
+                ownership_override=ownership_override,
+            ),
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
-            ownership_override=ownership_override,
         )
 
     _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)

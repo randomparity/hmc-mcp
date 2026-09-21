@@ -271,7 +271,7 @@ Effect assignment preserves today's classification exactly, with one correction:
 - the 53 tools carrying `readOnlyHint=True` become `read`;
 - the 26 carrying `destructiveHint=True` become `destructive`;
 - the 49 carrying neither become `mutate`, except `hmc_read_lpar_boot_order`, which becomes
-  `read` (one GET returning boot-order state), and `hmc_install_vios` / `hmc_install_lpar_os`,
+  `read` (one GET returning boot-order state), and `hmc_install_vios` / `hmc_install_vios_by_lpar_selector`,
   which become `destructive` (they overwrite an existing partition's OS and boot disk — the
   same irreversible overwrite that already made `hmc_restore_vios` destructive). See ADR 0035;
 - `hmc_run_command` becomes `arbitrary-command`.

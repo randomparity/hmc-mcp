@@ -22,8 +22,8 @@ Replace the following inconsistent public names outright:
 
 | Public tools | Removed | Replacement | Unit or selector |
 |---|---|---|---|
-| `hmc_install_vios`, `hmc_install_lpar_os` | `timeout` | `hmc_timeout_minutes` | minutes |
-| `hmc_install_vios`, `hmc_install_lpar_os` | `timeout_seconds` | `wait_timeout_seconds` | seconds |
+| `hmc_install_vios`, `hmc_install_vios_by_lpar_selector` | `timeout` | `hmc_timeout_minutes` | minutes |
+| `hmc_install_vios`, `hmc_install_vios_by_lpar_selector` | `timeout_seconds` | `wait_timeout_seconds` | seconds |
 | `hmc_attach_disk_to_lpar`, `hmc_create_virtual_disk` | `capacity_mb` | `capacity_mib` | MiB |
 | `hmc_create_media_repository`, `hmc_create_optical_media` | `size_mb` | `size_mib` | MiB |
 | `hmc_create_logical_unit` | `lu_size_gb` | `lu_size_gib` | GiB |

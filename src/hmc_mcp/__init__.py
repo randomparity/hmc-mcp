@@ -2,7 +2,12 @@
 
 from importlib.metadata import version
 
-__version__ = version("hmc-mcp")
+
+def __getattr__(name: str) -> str:
+    """Resolve package metadata only when a caller requests the version."""
+    if name == "__version__":
+        return version("hmc-mcp")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def main() -> None:

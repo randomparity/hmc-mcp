@@ -90,21 +90,8 @@ _DENIED = (
 )
 
 
-def _value(raw: Any) -> str | _Unresolved:
-    """One bound argument, as the string to compare or a sentinel.
-
-    The arms are ordered, and the order is the whole rule. ``bool`` is tested
-    before ``int`` because it is an ``int`` subclass, and ``str(True)`` would put
-    ``"True"`` into a comparison against resource names.
-
-    The ``int`` arm exists for ``vios_partition_id``, the surface's only non-string
-    selector. It is load-bearing rather than convenient: without it those calls
-    would be UNREADABLE, which denies even under ``all-targets``, and #225's
-    legacy-equivalent policy would stop covering three live tools. It does not
-    make the *comparison* unambiguous — a ``vios`` allowlist holds partition IDs
-    and VIOS names in one set — which is why ADR 0039 refuses ``vios_partition_id``
-    as a bounding identity outright instead of trusting the rendering.
-    """
+def _normalize_selector_value(raw: Any) -> str | _Unresolved:
+    """Normalize supported selectors, rejecting booleans and unknown values."""
     if isinstance(raw, str):
         # Including "": a well-formed string that no table can hold, because
         # `access_policy._check_entries` rejects an empty allowlist entry.
@@ -119,14 +106,7 @@ def _value(raw: Any) -> str | _Unresolved:
 
 
 def audit_state(value: str | _Unresolved) -> State:
-    """Which of the audit record's three input states *value* is.
-
-    Lives here rather than in the authorizer because this module owns the two
-    singletons, and a mapping written one module away from the values it
-    interprets is the drift ADR 0039 spent a design on avoiding. ``audit`` owns
-    the vocabulary and this owns the interpretation, which is the same split by
-    which ``denial_reason`` returns an ``audit.Reason``.
-    """
+    """Classify a normalized selector as present, absent, or unreadable."""
     if isinstance(value, str):
         return "present"
     return "absent" if value is ABSENT else "unreadable"
@@ -163,7 +143,7 @@ def selected_targets(
 def _read(target: TargetSelector, arguments: Mapping[str, Any]) -> str | _Unresolved:
     """One declared selector, by the rule its shape demands."""
     if target.container is None:
-        return _value(arguments[target.argument])
+        return _normalize_selector_value(arguments[target.argument])
     container = arguments[target.container]
     if container is None:
         return UNREADABLE
@@ -171,7 +151,7 @@ def _read(target: TargetSelector, arguments: Mapping[str, Any]) -> str | _Unreso
         raw = getattr(container, target.argument)
     except AttributeError:
         return UNREADABLE
-    return _value(raw)
+    return _normalize_selector_value(raw)
 
 
 def targets_permitted(
@@ -233,7 +213,7 @@ def denial_reason(
     return "target-not-granted"
 
 
-def _bounded(value: str | _Unresolved) -> str | _Unresolved:
+def _bounded_target_for_denial(value: str | _Unresolved) -> str | _Unresolved:
     """One extracted selector as the denial renders it, bounded.
 
     ``audit.MAX_VALUE_LENGTH`` rather than a second constant, for the reason
@@ -305,7 +285,8 @@ def target_denial(
             # them discloses nothing it did not send. repr() also neutralizes any
             # control character a caller puts in one.
             targets=", ".join(
-                f"{kind}={_bounded(value)!r}" for kind, _argument, value in extracted
+                f"{kind}={_bounded_target_for_denial(value)!r}"
+                for kind, _argument, value in extracted
             ),
         )
     )

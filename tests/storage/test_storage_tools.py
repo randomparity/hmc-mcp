@@ -16,15 +16,8 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.client.client_adapters import ADAPTER_TYPES
-from hmc_mcp.server_tools.adapters import (
-    hmc_add_network_adapter,
-    hmc_add_vfc_adapter,
-    hmc_add_vscsi_adapter,
-    hmc_delete_adapter,
-    hmc_list_adapters,
-)
-from hmc_mcp.server_tools.storage import (
+from hmc_mcp.client.client_contracts import ADAPTER_TYPES
+from hmc_mcp.server_tools.storage.resources import (
     hmc_create_logical_unit,
     hmc_create_media_repository,
     hmc_create_optical_media,
@@ -39,6 +32,13 @@ from hmc_mcp.server_tools.storage import (
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
 )
+from hmc_mcp.server_tools.virtualization.adapters import (
+    hmc_add_network_adapter,
+    hmc_add_vfc_adapter,
+    hmc_add_vscsi_adapter,
+    hmc_delete_adapter,
+    hmc_list_adapters,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -47,10 +47,10 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.adapters.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", authorize
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", authorize
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
@@ -58,7 +58,7 @@ LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "22222222-2222-2222-2222-222222220001"
 ADAPTER_UUID = "44444444-4444-4444-4444-444444440001"
-CLUSTER_UUID = "cluster-uuid-0001"
+CLUSTER_UUID = "00000000-0000-0000-0000-000000000005"
 SSP_UUID = "55555555-5555-5555-5555-555555555555"
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 
@@ -178,7 +178,7 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
 
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
-        "hmc_mcp.operations.storage.resolve_and_authorize_lpar_mutation", new=guard
+        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
     ):
         assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
 
@@ -290,8 +290,13 @@ def test_list_volume_groups(monkeypatch, mock_hmc):
         )
     )
     result = hmc_list_volume_groups(VIOS_UUID)
-    assert result[0]["UUID"] == VG_UUID
-    assert result[0]["Resource"]["GroupName"] == "vg_rootvg"
+    assert result[0] == {
+        "uuid": VG_UUID,
+        "name": "vg_rootvg",
+        "capacity_gib": None,
+        "free_space_gib": None,
+        "free_space_diagnostic": None,
+    }
 
 
 def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):
@@ -323,7 +328,7 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "<VirtualDisks" in body
     assert '<DiskName kb="CUD" kxe="false">lv_boot</DiskName>' in body
-    assert '<DiskCapacity kb="CUD" kxe="false">51200</DiskCapacity>' in body
+    assert '<DiskCapacity kb="CUD" kxe="false">50</DiskCapacity>' in body
 
 
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from dataclasses import asdict, is_dataclass
 from typing import Any, TypeVar, overload
 
 from fastmcp import FastMCP
@@ -27,6 +28,11 @@ from .config import HMCConfig, build_config
 from .ssh.selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
+
+
+def serialize_tool_result(value: Any) -> Any:
+    """Convert domain dataclasses at the MCP boundary; leave mappings unchanged."""
+    return asdict(value) if is_dataclass(value) else value
 
 INSTRUCTIONS = (
     "Tools for querying and operating IBM Power systems via the HMC "
@@ -48,7 +54,7 @@ INSTRUCTIONS = (
     "- **hmc_capacity_report()** — total, assigned, and free memory (MiB) "
     "and processor units for every managed system, plus running/total LPAR "
     "counts. Use to survey available capacity across the whole HMC.\n"
-    "- **hmc_fleet_health()** — exception-only estate view covering systems "
+    "- **hmc_fleet_health()** — issue-only estate view covering systems "
     "not operating, VIOS not running, inactive LPAR RMC, and recent failed "
     "jobs. Use for a bounded fleet health check instead of composing raw lists.\n"
     "- **hmc_find_placement(desired_memory_mib, desired_proc_units)** — "

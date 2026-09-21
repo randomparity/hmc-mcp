@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations import vios as operations_vios
 from hmc_mcp.operations.lpar.core import delete_lpar, power_lpar, rename_lpar
-from hmc_mcp.operations.vios import power_vios
-from hmc_mcp.server_tools import vios as server_vios
+from hmc_mcp.operations.vios import core as operations_vios
+from hmc_mcp.operations.vios.core import power_vios
 from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
+from hmc_mcp.server_tools.vios import core as server_vios
 
 
 def _client_factory(hmc):
@@ -97,8 +97,8 @@ async def test_power_vios_forwards_optional_system_scope():
 
     await power_vios(
         hmc,
-        "system-name",
         "vios1",
+        system_name_or_uuid="system-name",
         power_on=False,
     )
 
@@ -168,4 +168,5 @@ def test_power_off_vios_tool_forwards_system_scope(monkeypatch):
         "vios1", system_name_or_uuid="system-name"
     )
 
-    assert operation.await_args.args[1] == "system-name"
+    assert operation.await_args.args[1] == "vios1"
+    assert operation.await_args.kwargs["system_name_or_uuid"] == "system-name"

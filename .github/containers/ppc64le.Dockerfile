@@ -35,8 +35,8 @@ RUN ubuntu_snapshot=20260813T000000Z \
     && rm /tmp/ca-certificates.deb \
     && find /var/lib/apt/lists -mindepth 1 -delete
 
-RUN uv_version=0.12.3 \
-    && uv_sha256=bff188fcf2d867c5595f8db6061a39e54752ab213eaefc14287f37e85afe9ead \
+RUN uv_version=0.12.10 \
+    && uv_sha256=2e6beb653888d2d2721b46d3d8aa328a2339a6cc20d4df98bbf206e728a92174 \
     && archive="uv-powerpc64le-unknown-linux-gnu.tar.gz" \
     && curl --fail --location --proto '=https' --tlsv1.2 \
         --output "${archive}" \

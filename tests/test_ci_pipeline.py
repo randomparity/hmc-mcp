@@ -11,13 +11,38 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
     "detect-secrets==1.5.0",
-    "prek==0.4.14",
-    "ruff==0.16.4",
-    "ty==0.0.74",
+    "prek==0.5.0",
+    "ruff==0.16.5",
+    "ty==0.0.75",
     "zizmor==1.29.0",
 }
 TY_INCLUDE = ["src/hmc_mcp"]
+RUFF_EXTEND_SELECT = {
+    "E401",
+    "E402",
+    "E701",
+    "E702",
+    "E703",
+    "E711",
+    "E712",
+    "E713",
+    "E714",
+    "E721",
+    "E731",
+    "E741",
+    "E742",
+    "E743",
+    "F403",
+    "F405",
+    "F406",
+    "F722",
+}
+RUFF_PER_FILE_IGNORE_MODULES = {
+    "tests/unit/test_audit.py",
+    "tests/unit/test_ownership.py",
+}
 BASELINED_FINDINGS = {
+    "docs/capabilities/maturity.json": 3,
     "justfile": 1,
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
@@ -31,8 +56,8 @@ ACTION_PINS = {
         "v7.0.1",
     ),
     "astral-sh/setup-uv": (
-        "c771a70e6277c0a99b617c7a806ffedaca235ff9",  # pragma: allowlist secret
-        "v9.0.0",
+        "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",  # pragma: allowlist secret
+        "v10.0.1",
     ),
     "extractions/setup-just": (
         "53165ef7e734c5c07cb06b3c8e7b647c5aa16db3",  # pragma: allowlist secret
@@ -61,6 +86,8 @@ STATIC_GATES = {
     "workflow-security",
     "env-vars",
     "nicknames",
+    "test-layout",
+    "capability-inventory",
     "tool-docs-check",
     "adr-numbering",
     "doc-freshness",
@@ -80,8 +107,8 @@ PPC64LE_BASE = (
     "sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea"
 )
 UV_PPC64LE_SHA256 = (
-    "bff188fcf2d867c5595f8db6061a39"  # pragma: allowlist secret
-    "e54752ab213eaefc14287f37e85afe9ead"  # pragma: allowlist secret
+    "2e6beb653888d2d2721b46d3d8aa"  # pragma: allowlist secret
+    "328a2339a6cc20d4df98bbf206e728a92174"  # pragma: allowlist secret
 )
 
 
@@ -140,8 +167,8 @@ SCORECARD_ACTION_PINS = {
         "v7.0.1",
     ),
     "github/codeql-action/upload-sarif": (
-        "f205ea1c3313d32999d8d6a48b4f6530d4437b38",  # pragma: allowlist secret
-        "v4.37.4",
+        "cdf488f595d80d6e07e03d4674febd5ab45fa938",  # pragma: allowlist secret
+        "v4.37.9",
     ),
     "ossf/scorecard-action": (
         "2d1146689b8cda280b9bc96326124645441f03bc",  # pragma: allowlist secret
@@ -157,6 +184,11 @@ def test_quality_tools_are_pinned_with_a_strict_type_boundary() -> None:
     assert TOOL_PINS <= set(project["dependency-groups"]["dev"])
     assert project["tool"]["ty"]["src"]["include"] == TY_INCLUDE
     assert "rules" not in project["tool"]["ty"]
+    ruff = project["tool"]["ruff"]
+    assert "exclude" not in ruff
+    assert "ignore" not in ruff["lint"]
+    assert set(ruff["lint"]["extend-select"]) == RUFF_EXTEND_SELECT
+    assert set(ruff["lint"]["per-file-ignores"]) == RUFF_PER_FILE_IGNORE_MODULES
 
 
 def test_justfile_exposes_one_composed_verification_graph() -> None:
@@ -187,6 +219,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     assert (
         "\nadr-numbering:\n"
         "    uv run --no-sync python scripts/check_adr_numbering.py\n"
+        in justfile
+    )
+    assert (
+        "\nverification-report *ARGS:\n"
+        "    uv run --no-sync python scripts/check_capability_inventory.py"
+        " --verification-report {{ARGS}}\n"
         in justfile
     )
     assert (
@@ -384,7 +422,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert permissions["body"] == "  contents: read\n"
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
-    assert workflow.count("runs-on: ubuntu-24.04") == 4
+    assert workflow.count("runs-on: ubuntu-24.04") == 5
     assert "runs-on: ${{ matrix.runner }}" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 5" in workflow
@@ -393,7 +431,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     for action, (sha, version) in ACTION_PINS.items():
         assert f"uses: {action}@{sha}  # {version}" in workflow
     assert "persist-credentials: false" in workflow
-    assert 'version: "0.12.3"' in workflow
+    assert workflow.count('version: "0.12.10"') == 6
     assert 'just-version: "1.58.0"' in workflow
     for command in (
         "just setup",
@@ -427,7 +465,7 @@ def test_active_ci_checkouts_with_project_uv_do_not_fetch_full_history() -> None
         active_workflow,
     )
 
-    assert len(checkout_settings) == 5
+    assert len(checkout_settings) == 6
     assert active_workflow.count("uv run") >= 2
     # Full history is no longer fetched: the version is declared statically and no
     # workflow step reads Git history (ADR 0033).
@@ -569,11 +607,21 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert 'HMCClient.__module__ == "hmc_mcp.client.core"' in body
     assert "is_relative_to(environment)" in body
     assert ".wheel-venv/bin/hmc-mcp --help" in body
-    # Group help pages are rendered off the tree the installed wheel builds, so
-    # the job names no subcommand at all: anything after `hmc-mcp` other than
-    # the root `--help` is the hand-maintained mirror growing back.
+    assert (
+        ".wheel-venv/bin/hmc-mcp capabilities --json > capabilities.json" in body
+    )
+    assert 'json.loads(Path("capabilities.json").read_text())' in body
+    assert 'capability["operation"]' in body
+    for field in ("implementation", "verification", "runtime_eligibility"):
+        assert f'capability["{field}"]' in body
+    # Group help pages are rendered off the tree the installed wheel builds. The
+    # capability projection is the sole named subcommand because this job verifies
+    # its installed output; any other name is the hand-maintained mirror growing back.
     assert ".wheel-venv/bin/python scripts/smoke_cli_groups.py" in body
-    assert not re.search(r"\.wheel-venv/bin/hmc-mcp (?!--help)", body)
+    assert re.findall(r"\.wheel-venv/bin/hmc-mcp ([^\n]+)", body) == [
+        "--help >/dev/null",
+        "capabilities --json > capabilities.json",
+    ]
     assert ".wheel-venv/bin/python scripts/smoke_mcp.py" in body
     assert "just setup" not in body
     assert "uv sync" not in body
@@ -595,7 +643,10 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "name: release-wheel-amd64-py3.13" in body
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
-    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
+    assert (
+        "from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
+        in body
+    )
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
@@ -612,7 +663,7 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "class FakeHMC:" in body
     assert "async def list_managed_systems(" in body
     assert "async def list_logical_partitions(" in body
-    assert "asyncio.run(capacity_report(FakeHMC()))" in body
+    assert "asyncio.run(fetch_capacity_report(FakeHMC()))" in body
     assert "CapacitySummary(" in body
     assert 'system_name="p10"' in body
     assert "assert report ==" in body
@@ -624,6 +675,14 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "--no-deps" not in body
     assert "scripts/smoke_mcp.py" not in body
     assert "pip install -e" not in body
+
+
+def test_library_guide_separates_core_and_domain_imports() -> None:
+    readme = (ROOT / "docs/python-api.md").read_text()
+    assert "from hmc_mcp.api import HMCClient, HMCConfig" in readme
+    assert "from hmc_mcp.operations.inventory.capacity import fetch_capacity_report" in readme
+    assert "await fetch_capacity_report(hmc)" in readme
+    assert " hmc_capacity_report" not in readme
 
 
 def test_github_ci_exercises_each_declared_range_floor() -> None:
@@ -641,7 +700,10 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert '            "${wheels[0]}"' in body
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
-    assert "from hmc_mcp.api import CapacitySummary, capacity_report" in body
+    assert (
+        "from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
+        in body
+    )
     assert "CapacitySummary(" in body
     for field in ("total_memory_mib", "assigned_memory_mib", "free_memory_mib"):
         assert f"{field}=" in body
@@ -725,6 +787,7 @@ def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
     assert "/var/run/docker.sock" not in body
 
     assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
+    assert "uv_version=0.12.10" in dockerfile
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
     assert "ubuntu_snapshot=20260813T000000Z" in dockerfile
@@ -802,24 +865,24 @@ def test_scheduled_job_checks_the_same_explicit_versions() -> None:
     assert "just verify" not in body
 
 
-README_STACK_HEADING = "## Stack"
-README_STACK_NEXT = "## Contributing, security, and license"
+DEVELOPMENT_STACK_HEADING = "## Stack"
+DEVELOPMENT_STACK_NEXT = "## Setup"
 PYTHON_FLOOR_CLAIMS = ("Python ≥3.11", "stable, non-EOL CPython release")
 
 
-def _readme_stack(readme: str) -> str:
-    """Return the body of README's '## Stack' section.
+def _development_stack(readme: str) -> str:
+    """Return the body of development guide's '## Stack' section.
 
     Heading *order* is asserted, not mere presence: without it a renamed or reordered
     heading makes the second split return the rest of the file and the slice stops
     being a section.
     """
-    for heading in (README_STACK_HEADING, README_STACK_NEXT):
-        assert heading in readme, f"README has no '{heading}' heading"
-    assert readme.index(README_STACK_HEADING) < readme.index(README_STACK_NEXT), (
-        f"README must keep '{README_STACK_HEADING}' before '{README_STACK_NEXT}'"
+    for heading in (DEVELOPMENT_STACK_HEADING, DEVELOPMENT_STACK_NEXT):
+        assert heading in readme, f"development guide has no '{heading}' heading"
+    assert readme.index(DEVELOPMENT_STACK_HEADING) < readme.index(DEVELOPMENT_STACK_NEXT), (
+        f"development guide must keep '{DEVELOPMENT_STACK_HEADING}' before '{DEVELOPMENT_STACK_NEXT}'"
     )
-    return readme.split(README_STACK_HEADING, 1)[1].split(README_STACK_NEXT, 1)[0]
+    return readme.split(DEVELOPMENT_STACK_HEADING, 1)[1].split(DEVELOPMENT_STACK_NEXT, 1)[0]
 
 
 def test_python_policy_metadata_is_aligned() -> None:
@@ -831,21 +894,21 @@ def test_python_policy_metadata_is_aligned() -> None:
     assert project["project"]["requires-python"] == ">=3.11"
     assert (ROOT / ".python-version").read_text().strip() == "3.11"
     assert lockfile["requires-python"] == ">=3.11"
-    stack = _readme_stack((ROOT / "README.md").read_text())
+    stack = _development_stack((ROOT / "docs/development.md").read_text())
     for claim in PYTHON_FLOOR_CLAIMS:
-        assert claim in stack, f"'{README_STACK_HEADING}' must state {claim!r}"
+        assert claim in stack, f"'{DEVELOPMENT_STACK_HEADING}' must state {claim!r}"
 
 
 def test_python_floor_relocated_out_of_the_stack_section_is_caught() -> None:
-    """The negative variant: the floor stays in the README but leaves '## Stack'."""
-    readme = (ROOT / "README.md").read_text()
-    stack = _readme_stack(readme)
+    """The negative variant: the floor stays in the development guide but leaves '## Stack'."""
+    readme = (ROOT / "docs/development.md").read_text()
+    stack = _development_stack(readme)
     relocated = readme.replace(stack, "\n\n", 1).replace(
-        "## Install\n", f"## Install\n{stack}", 1
+        "## Testing\n", f"## Testing\n{stack}", 1
     )
 
     assert all(claim in relocated for claim in PYTHON_FLOOR_CLAIMS)
-    moved = _readme_stack(relocated)
+    moved = _development_stack(relocated)
     assert [claim for claim in PYTHON_FLOOR_CLAIMS if claim in moved] == []
 
 
@@ -1274,3 +1337,27 @@ def test_coverage_gate_passes_a_total_exactly_on_the_floor(tmp_path: Path) -> No
     # disagreement is the reported defect, and at 89.996% it still reproduces.
     # Asserting only the absence of the failure-path diagnostic would pass there.
     assert "FAIL" not in result.stdout, result.stdout
+
+
+def test_verification_report_job_warns_on_pull_requests_and_fails_on_schedule() -> None:
+    """Criterion 13: recording evidence never turns a pull request red.
+
+    Nothing else in this suite asserts the warn-on-PR / fail-on-schedule split or
+    that the job adds no `permissions:` block, so the narrowing that leaves both
+    untested is the one thing this test exists to prevent (charter amendment 3).
+    """
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    job = re.search(
+        r"\n  verification-report:\n(?P<body>(?:(?:    .*)?\n)+)", workflow
+    )
+
+    assert job
+    body = job["body"]
+    assert "timeout-minutes: 5" in body
+    assert "if: github.event_name != 'schedule'\n        run: just verification-report\n" in body
+    assert (
+        "if: github.event_name == 'schedule'\n"
+        "        run: just verification-report --fail-on-stale\n" in body
+    )
+    assert "permissions:" not in body
+    assert not [line for line in body.splitlines() if "run:" in line and "${{" in line]

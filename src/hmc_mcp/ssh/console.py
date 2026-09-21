@@ -36,12 +36,15 @@ sequence, but decoding remains the caller's decision (issue #385).
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import math
 import os
 import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
+
+import asyncssh
 
 from hmc_mcp.client.core import HMCClient
 
@@ -164,14 +167,16 @@ class _SealedStdin:
         if self._read_fd != -1:
             try:
                 os.close(self._read_fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                if exc.errno != errno.EBADF:
+                    raise
             self._read_fd = -1
         if self._write_fd != -1:
             try:
                 os.close(self._write_fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                if exc.errno != errno.EBADF:
+                    raise
             self._write_fd = -1
 
 
@@ -202,8 +207,10 @@ def _escape_complete(data: bytes, start: int, cut: int) -> bool:
         while index < cut and 0x20 <= data[index] <= 0x3F:
             index += 1
         return index < cut and 0x40 <= data[index] <= 0x7E
-    if introducer in (0x50, 0x58, 0x5E, 0x5F):  # DCS/SOS/PM/APC strings
-        return data.find(b"\x1b\\", index + 1, cut - 1) != -1
+    if introducer in (0x50, 0x58, 0x5E, 0x5F, 0x5D):  # DCS/SOS/PM/APC/OSC strings
+        return data.find(b"\x1b\\", index + 1, cut) != -1 or (
+            introducer == 0x5D and data.find(b"\x07", index + 1, cut) != -1
+        )
     if 0x20 <= introducer <= 0x2F:  # intermediates then a final 0x30-0x7E
         index += 1
         while index < cut and 0x20 <= data[index] <= 0x2F:
@@ -218,10 +225,12 @@ def _ansi_safe_cut(data: bytes, cut: int) -> int:
     Protocol-derived, not prototype-verified (P6): every live observation was
     7-bit ASCII with no escapes; only a live install stream exercises this.
     """
-    start = data.rfind(b"\x1b", 0, cut)
-    if start == -1 or _escape_complete(data, start, cut):
-        return cut
-    return start
+    start = data.find(b"\x1b", 0, cut)
+    while start != -1:
+        if not _escape_complete(data, start, cut):
+            return start
+        start = data.find(b"\x1b", start + 1, cut)
+    return cut
 
 
 def _truncate(data: bytes, limit: int) -> bytes:
@@ -306,6 +315,8 @@ async def _release_uncancellable(
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
+            if task.done():
+                return task.result()
             continue
 
 
@@ -366,51 +377,21 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
                 exc,
             )
             return False
-        saw_sentinel = False
-        acquired_evidence = False
-        remote_exited = False
         try:
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + _RELEASE_PROBE_SECONDS
-            buf = bytearray()
-            while True:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    break
-                try:
-                    chunk = await asyncio.wait_for(
-                        process.stdout.read(_CHUNK), remaining
-                    )
-                except TimeoutError:
-                    break
-                except Exception:  # noqa: BLE001 - transport trouble ends the probe; there is nothing more to learn
-                    break  # transport trouble: unproven, nothing more to learn
-                if not chunk:
-                    remote_exited = True
-                    break
-                buf += chunk
-                if HELD_SENTINEL in buf:
-                    saw_sentinel = True
-                    break
-                if ACQUIRED_SENTINEL in buf:
-                    # The recorded HMC acquisition banner proves the probe's
-                    # mkvterm owns the slot. Arbitrary partial output does not:
-                    # it may be the beginning of the contention sentinel.
-                    acquired_evidence = True
-                    break
+            outcome = await _read_release_probe(process)
         finally:
             stdin.close()
             connection.close()
-        if saw_sentinel:
+        if outcome == "held":
             return False
-        if remote_exited:
+        if outcome == "remote-exited":
             logger.warning(
                 "release probe for %s/%s exited without proof of release",
                 system_name,
                 lpar_name,
             )
             return False
-        if acquired_evidence:
+        if outcome == "acquired":
             try:
                 await run_hmc_command(config, rmvterm_command)
             except HMCCLIError as exc:
@@ -438,6 +419,30 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         stdin.close()
 
 
+async def _read_release_probe(
+    process: Any,
+) -> Literal["acquired", "held", "remote-exited", "unproven"]:
+    """Classify one bounded probe stream without making ownership decisions."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _RELEASE_PROBE_SECONDS
+    output = bytearray()
+    while (remaining := deadline - loop.time()) > 0:
+        try:
+            chunk = await asyncio.wait_for(process.stdout.read(_CHUNK), remaining)
+        except TimeoutError:
+            break
+        except Exception:  # noqa: BLE001 - transport trouble leaves ownership unproven
+            break
+        if not chunk:
+            return "remote-exited"
+        output += chunk
+        if HELD_SENTINEL in output:
+            return "held"
+        if ACQUIRED_SENTINEL in output:
+            return "acquired"
+    return "unproven"
+
+
 async def _open_capture_stream(
     config: HMCConfig, command: str, stdin: _SealedStdin
 ) -> tuple[Any, Any]:
@@ -451,6 +456,11 @@ async def _open_capture_stream(
         process = await connection.create_process(
             command, stdin=stdin.read_fd, encoding=None
         )
+    except (asyncssh.Error, OSError) as exc:
+        connection.close()
+        raise HMCCLIError(
+            f"Unable to create the HMC console process for {command!r}: {exc}"
+        ) from exc
     except BaseException:
         connection.close()
         raise
@@ -467,7 +477,14 @@ async def _acquire_capture_stream(
         async with asyncio.timeout(_RELEASE_PROBE_SECONDS):
             data = bytearray()
             while True:
-                chunk = await process.stdout.read(_CHUNK)
+                try:
+                    chunk = await process.stdout.read(_CHUNK)
+                except (asyncssh.Error, OSError) as exc:
+                    connection.close()
+                    raise HMCCLIError(
+                        "HMC console acquisition read failed before the console "
+                        f"was confirmed: {exc}"
+                    ) from exc
                 if not chunk:
                     raise HMCCLIError(
                         "mkvterm exited before confirming console acquisition"
@@ -501,6 +518,8 @@ async def _await_acquisition(
         try:
             connection, process, data = await asyncio.shield(task)
         except asyncio.CancelledError:
+            if task.done():
+                task.result()
             cancelled = True
             continue
         except BaseException:
@@ -597,7 +616,6 @@ async def capture_lpar_console(
             released=released,
             error=error,
         )
-        connection.close()
         return result
     finally:
         if connection is not None:

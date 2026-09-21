@@ -25,6 +25,7 @@ import dataclasses
 import inspect
 import pathlib
 import re
+import sys
 import types
 import typing
 from typing import Any, Literal, get_args, get_origin, get_type_hints
@@ -33,7 +34,8 @@ import pytest
 from defusedxml import ElementTree as DET
 
 from hmc_mcp import documents, jobs
-from hmc_mcp.operations import update_models as update_jobs
+from hmc_mcp.jobs import requests as jobs_requests
+from hmc_mcp.operations.updates import models as update_jobs
 from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 
 # A value an operator could plausibly type that carries all five XML
@@ -43,7 +45,7 @@ from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 PAYLOAD = "R&D <a> \"b\" 'c'"
 BENIGN = "benign"
 
-BUILDER_MODULES = (documents, jobs, update_jobs)
+BUILDER_MODULES = (documents, jobs, jobs_requests, update_jobs)
 
 ADR_0042 = (
     pathlib.Path(__file__).resolve().parents[2]
@@ -69,7 +71,10 @@ def _is_builder(name: str, obj: object, module: types.ModuleType) -> bool:
         and not inspect.iscoroutinefunction(obj)
         and not name.startswith("_")
         and (name.startswith("build_") or name.endswith("_job"))
-        and getattr(obj, "__module__", None) == module.__name__
+        and (
+            getattr(obj, "__module__", None) == module.__name__
+            or getattr(obj, "__module__", "").startswith(f"{module.__name__}.")
+        )
         and get_type_hints(obj).get("return") is str
     )
 
@@ -338,9 +343,10 @@ def test_every_documents_builder_escapes_its_arguments():
 
 
 def _renders_through_job_request(func: Any, seen: frozenset[str]) -> bool:
-    """Whether *func* reaches jobs.build_job_request, directly or via a helper."""
+    """Whether *func* reaches the canonical renderer, directly or via a helper."""
+    module = sys.modules[func.__module__]
     for name in func.__code__.co_names:
-        target = getattr(jobs, name, None)
+        target = getattr(module, name, None)
         if target is jobs.build_job_request:
             return True
         if (

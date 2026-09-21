@@ -22,8 +22,5 @@ mandatory and enforced by `tests/unit/test_changelog.py`:
 
 - The version declared in `pyproject.toml` must have a matching `## [<version>]` entry, so a
   release cannot ship without one.
-- Every release entry — including `[Unreleased]` — must contain a `### Facade manifest` section,
-  even when nothing moved ("no change to `hmc_mcp.api.__all__`" is a positive statement for
-  consumers). Where the manifest changed, name every added, removed, and renamed export and every
-  changed exported enum member or literal alternative; per ADR 0029 any of these requires a minor
-  release during `0.x`.
+- `hmc_mcp.api` is the six-name stable facade defined by ADR 0118. Record changes to it under
+  ordinary changelog categories; domain-module APIs remain pre-release.

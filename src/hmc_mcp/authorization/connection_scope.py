@@ -79,10 +79,8 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
        uncoerced;
     1. ``HMC_HOST`` set and non-empty collapses every token to the environment
        connection, because ``build_config`` gates its whole TOML branch on it.
-       Read through :func:`config.env_var_value`, as that gate is: reading it
-       exact-case while ``build_config`` reads it case-insensitively would
-       resolve the token to a profile key, let a grant naming that profile
-       authorize the call, and send the call to the exported host anyway (#531);
+       Read through :func:`config.env_var_value` so selection uses the same
+       case-insensitive environment semantics as configuration loading;
     2. a falsy token is the default connection. ``HMC_PROFILE`` and
        ``default_profile`` are deliberately *not* consulted: ADR 0036 fixed
        ``<default>`` as the denotation of the omitted argument and recorded its
@@ -146,7 +144,7 @@ def connection_permitted(connection: str | None, grant_connections: Container) -
     return connection in grant_connections
 
 
-def _bounded(token: Any) -> Any:
+def _connection_token_for_denial(token: Any) -> Any:
     """The caller's token as the denial renders it: absent-or-default, and bounded.
 
     Bounded to ``audit.MAX_VALUE_LENGTH`` rather than to a second constant, because the
@@ -180,7 +178,7 @@ def connection_denial(
             # that value is a profile key read from config.toml, and a denial is
             # one probe. repr() also neutralizes any control character a caller
             # puts in it.
-            connection=repr(_bounded(token)),
+            connection=repr(_connection_token_for_denial(token)),
             policy=repr(policy_name),
             clause=_clause(argument, collapsed),
         )

@@ -143,14 +143,14 @@ def test_set_lpar_boot_order_validates_devices():
     # Test that each selector is valid
     for selector in BOOT_DEVICE_SELECTORS:
         # This should not raise
-        from hmc_mcp.documents import _build_pending_boot_string
+        from hmc_mcp.documents.boot import _build_pending_boot_string
         result = _build_pending_boot_string([selector])
         assert selector in result
 
 
 def test_set_lpar_boot_order_rejects_invalid_devices():
     """Setting boot order rejects invalid device selectors."""
-    from hmc_mcp.documents import _build_pending_boot_string
+    from hmc_mcp.documents.boot import _build_pending_boot_string
 
     invalid_devices = ["invalid", "tape", "floppy", "invalid-device"]
     for device in invalid_devices:
@@ -160,7 +160,7 @@ def test_set_lpar_boot_order_rejects_invalid_devices():
 
 def test_boot_order_string_format():
     """PendingBootString is space-separated."""
-    from hmc_mcp.documents import _build_pending_boot_string
+    from hmc_mcp.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["cd", "disk", "network"])
     assert result == "cd disk network"
@@ -168,7 +168,7 @@ def test_boot_order_string_format():
 
 def test_boot_order_single_device_format():
     """Single device PendingBootString has no spaces."""
-    from hmc_mcp.documents import _build_pending_boot_string
+    from hmc_mcp.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["network"])
     assert result == "network"
@@ -176,7 +176,7 @@ def test_boot_order_single_device_format():
 
 def test_boot_order_string_no_extra_spaces():
     """No extra spaces in PendingBootString."""
-    from hmc_mcp.documents import _build_pending_boot_string
+    from hmc_mcp.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["cd", "disk"])
     assert result == "cd disk"
@@ -185,7 +185,7 @@ def test_boot_order_string_no_extra_spaces():
 
 def test_boot_order_string_order_preservation():
     """Device order is preserved in PendingBootString."""
-    from hmc_mcp.documents import _build_pending_boot_string
+    from hmc_mcp.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["network", "cd", "disk"])
     assert result == "network cd disk"

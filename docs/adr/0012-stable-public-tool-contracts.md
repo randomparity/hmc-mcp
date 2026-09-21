@@ -29,7 +29,7 @@ tool into a single-resource lookup or change the output kind.
   `hmc_list_partition_templates`, `hmc_list_users`, and
   `hmc_list_recent_jobs`.
 - Single-resource operations have explicit names:
-  `hmc_get_system`, `hmc_get_lpar`, `hmc_get_vios`, and
+  `hmc_get_system`, `hmc_get_lpar`, `hmc_get_vios_storage_detail`, and
   `hmc_get_partition_template`.
 - `hmc_processed_metric_links` and `hmc_aggregated_metric_links` return metric
   link collections. `hmc_processed_metrics` and `hmc_aggregated_metrics`

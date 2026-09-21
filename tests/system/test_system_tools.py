@@ -11,16 +11,16 @@ import httpx
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.server_tools.capacity import (
+from hmc_mcp.server_tools.inventory.capacity import (
     hmc_capacity_report,
     hmc_find_placement,
 )
-from hmc_mcp.server_tools.systems import (
-    hmc_console_info,
+from hmc_mcp.server_tools.systems.core import (
+    hmc_get_console_info,
     hmc_get_lpar,
     hmc_get_lpar_state,
     hmc_get_system,
-    hmc_get_vios,
+    hmc_get_vios_storage_detail,
     hmc_list_lpars,
     hmc_list_resources,
     hmc_list_systems,
@@ -95,7 +95,7 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
             text=_feed("mc-uuid-1", "ManagementConsole", Version="V10R1M1040"),
         )
     )
-    result = hmc_console_info()
+    result = hmc_get_console_info()
     assert result["UUID"] == "mc-uuid-1"
     assert result["Resource"]["Version"] == "V10R1M1040"
 
@@ -106,7 +106,7 @@ def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
         return_value=httpx.Response(500, text="null SessionId")
     )
     with pytest.raises(HMCError, match="null SessionId") as exc_info:
-        hmc_console_info()
+        hmc_get_console_info()
     assert exc_info.value.status_code == 500
     assert exc_info.value.body == "null SessionId"
     assert isinstance(exc_info.value.__cause__, HMCError)
@@ -118,7 +118,7 @@ def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="forbidden")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_console_info()
+        hmc_get_console_info()
     assert exc_info.value.status_code == 403
 
 
@@ -128,7 +128,7 @@ def test_console_info_propagates_unrelated_http_500(monkeypatch, mock_hmc):
         return_value=httpx.Response(500, text="database unavailable")
     )
     with pytest.raises(HMCError, match="database unavailable") as exc_info:
-        hmc_console_info()
+        hmc_get_console_info()
     assert exc_info.value.status_code == 500
 
 
@@ -304,7 +304,7 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
             200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
         )
     )
-    result = hmc_get_vios(VIOS_UUID)
+    result = hmc_get_vios_storage_detail(VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
 
@@ -357,8 +357,8 @@ def test_list_resources(monkeypatch, mock_hmc):
 # hmc_capacity_report + hmc_find_placement
 # ---------------------------------------------------------------------- #
 
-SYS_UUID_A = "sys-cap-0001"
-SYS_UUID_B = "sys-cap-0002"
+SYS_UUID_A = "00000000-0000-0000-0000-00000000000a"
+SYS_UUID_B = "00000000-0000-0000-0000-00000000000b"
 
 
 def _sys_feed(*entries: str) -> str:
@@ -438,21 +438,21 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     result = hmc_capacity_report()
 
     assert len(result) == 2
-    by_name = {r["system_name"]: r for r in result}
+    by_name = {item.system_name: item for item in result}
 
     a = by_name["p9-01"]
-    assert a["total_memory_mib"] == 131072
-    assert a["assigned_memory_mib"] == 16384
-    assert a["free_memory_mib"] == 131072 - 16384
-    assert a["total_proc_units"] == 16.0
-    assert a["assigned_proc_units"] == 2.0
-    assert a["free_proc_units"] == pytest.approx(14.0)
-    assert a["total_lpars"] == 2
-    assert a["running_lpars"] == 1  # only "running" counts
+    assert a.total_memory_mib == 131072
+    assert a.assigned_memory_mib == 16384
+    assert a.free_memory_mib == 131072 - 16384
+    assert a.total_proc_units == 16.0
+    assert a.assigned_proc_units == 2.0
+    assert a.free_proc_units == pytest.approx(14.0)
+    assert a.total_lpars == 2
+    assert a.running_lpars == 1  # only "running" counts
 
     b = by_name["p9-02"]
-    assert b["assigned_memory_mib"] == 4096
-    assert b["free_memory_mib"] == 65536 - 4096
+    assert b.assigned_memory_mib == 4096
+    assert b.free_memory_mib == 65536 - 4096
 
 
 def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
@@ -471,10 +471,10 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     )
 
     result = hmc_capacity_report()
-    assert result[0]["assigned_memory_mib"] == 0
-    assert result[0]["free_memory_mib"] == 65536
-    assert result[0]["running_lpars"] == 0
-    assert result[0]["total_lpars"] == 0
+    assert result[0].assigned_memory_mib == 0
+    assert result[0].free_memory_mib == 65536
+    assert result[0].running_lpars == 0
+    assert result[0].total_lpars == 0
 
 
 def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
@@ -511,8 +511,8 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
     result = hmc_find_placement(desired_memory_mib=4096, desired_proc_units=0.5)
     assert len(result) == 1
-    assert result[0]["system_name"] == "big-sys"
-    assert result[0]["free_memory_mib"] == 131072 - 8192
+    assert result[0].system_name == "big-sys"
+    assert result[0].free_memory_mib == 131072 - 8192
 
 
 def test_find_placement_no_candidates(monkeypatch, mock_hmc):
@@ -636,3 +636,25 @@ def test_vios_state_filter_rejects_unknown_state(monkeypatch, mock_hmc):
         hmc_list_vios(state="no-match")
 
     assert not route.called
+
+
+def test_vios_system_and_state_filters_compose(monkeypatch, mock_hmc):
+    """A system-scoped feed can also be filtered by PartitionState."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=_feed(
+                VIOS_UUID,
+                "VirtualIOServer",
+                PartitionName="vios1",
+                PartitionState="not activated",
+            ),
+        )
+    )
+
+    result = hmc_list_vios(system_name_or_uuid=SYSTEM_UUID, state="running")
+
+    assert result == []

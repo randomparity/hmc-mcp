@@ -4,6 +4,6 @@
 
 1 tool in the `upgrade` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_vios_upgrade` | `destructive` | `upgrade.vios` | `vios` | Submit a VIOS version upgrade job. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_vios_upgrade` | `destructive` | `upgrade.vios` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a VIOS version upgrade job. |

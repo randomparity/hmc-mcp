@@ -103,6 +103,19 @@ def test_built_artifacts_ship_the_pep_561_marker(
     assert sdist["src/hmc_mcp/py.typed"] == b""
 
 
+def test_built_artifacts_ship_the_operation_maturity_projection(
+    built_project: tuple[Path, Path],
+) -> None:
+    artifacts, project = built_project
+    resource = (project / "src" / "hmc_mcp" / "_operation_maturity.json").read_bytes()
+
+    wheel = validator._read_wheel(next(artifacts.glob("*.whl")))
+    _, sdist = validator._read_sdist(next(artifacts.glob("*.tar.gz")))
+
+    assert wheel["hmc_mcp/_operation_maturity.json"] == resource
+    assert sdist["src/hmc_mcp/_operation_maturity.json"] == resource
+
+
 def _artifact_copy(
     tmp_path: Path,
     built_project: tuple[Path, Path],

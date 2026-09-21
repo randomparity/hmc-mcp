@@ -2,37 +2,73 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
-from hmc_mcp.operations.composite import _fetch_lpar_data
+from hmc_mcp.operations.inventory.composite import (
+    _fetch_lpar_data,
+    _fetch_system_summary_data,
+)
 
 
 class _FailingCompositeClient:
-    def __init__(self) -> None:
-        self.sibling_finished = asyncio.Event()
-
     async def get_logical_partition(self, _uuid: str):
-        await asyncio.sleep(0)
         raise RuntimeError("primary request failed")
 
     async def list_child(self, *_args):
-        try:
-            await asyncio.Event().wait()
-        finally:
-            self.sibling_finished.set()
+        raise AssertionError("child endpoint must not be called")
 
 
 @pytest.mark.asyncio
-async def test_composite_failure_cancels_and_awaits_sibling():
-    client = _FailingCompositeClient()
+async def test_parent_failure_prevents_child_fetch():
+    with pytest.raises(RuntimeError, match="primary request failed"):
+        await _fetch_lpar_data(_FailingCompositeClient(), "lpar-uuid")
 
-    with pytest.raises(ExceptionGroup) as exc_info:
-        await _fetch_lpar_data(client, "lpar-uuid")
 
-    assert any(
-        "primary request failed" in str(error)
-        for error in exc_info.value.exceptions
-    )
-    assert client.sibling_finished.is_set()
+class _MissingParentClient:
+    async def get_logical_partition(self, _uuid: str):
+        return None
+
+    async def list_child(self, *_args):
+        raise RuntimeError("child endpoint must not be called")
+
+    async def get_managed_system(self, _uuid: str):
+        return None
+
+    async def list_logical_partitions(self, _uuid: str):
+        raise RuntimeError("child endpoint must not be called")
+
+    async def list_vios(self, _uuid: str):
+        raise RuntimeError("child endpoint must not be called")
+
+
+@pytest.mark.asyncio
+async def test_missing_lpar_is_reported_before_child_fetch():
+    with pytest.raises(ValueError, match="LPAR 'lpar-uuid' not found"):
+        await _fetch_lpar_data(_MissingParentClient(), "lpar-uuid")
+
+
+@pytest.mark.asyncio
+async def test_lpar_fetch_returns_parent_and_adapter_inventory():
+    parent = {"UUID": "lpar-uuid"}
+    adapters = [{"UUID": "adapter-uuid"}]
+
+    class Client:
+        async def get_logical_partition(self, uuid: str):
+            assert uuid == "lpar-uuid"
+            return parent
+
+        async def list_child(self, resource: str, uuid: str, child: str):
+            assert (resource, uuid, child) == (
+                "LogicalPartition",
+                "lpar-uuid",
+                "ClientNetworkAdapter",
+            )
+            return adapters
+
+    assert await _fetch_lpar_data(Client(), "lpar-uuid") == (parent, adapters)
+
+
+@pytest.mark.asyncio
+async def test_missing_system_is_reported_before_child_fetch():
+    with pytest.raises(ValueError, match="Managed system 'system-uuid' not found"):
+        await _fetch_system_summary_data(_MissingParentClient(), "system-uuid")

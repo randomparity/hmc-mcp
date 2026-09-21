@@ -4,9 +4,9 @@
 
 4 tools in the `snapshot` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
-| Tool | Effect | Operation | Target | Summary |
-| --- | --- | --- | --- | --- |
-| `hmc_snapshot_assess_affinity` | `read` | `snapshot.assess_affinity` | `none` | Assess snapshot affinity evidence locally without HMC I/O or mutation. |
-| `hmc_snapshot_capture` | `read` | `snapshot.capture` | `lpar` | Capture replayable profile configuration and separate placement observations. |
-| `hmc_snapshot_inspect` | `read` | `snapshot.inspect` | `none` | Inspect a snapshot format and version locally without accepting it. |
-| `hmc_snapshot_validate` | `read` | `snapshot.validate` | `none` | Validate bounded snapshot JSON locally without HMC I/O. |
+| Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hmc_snapshot_assess_affinity` | `read` | `snapshot.assess_affinity` | `none` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Assess snapshot affinity evidence locally without HMC I/O or mutation. |
+| `hmc_snapshot_capture` | `read` | `snapshot.capture` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Capture replayable profile configuration and separate placement observations. |
+| `hmc_snapshot_inspect` | `read` | `snapshot.inspect` | `none` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Inspect a snapshot format and version locally without accepting it. |
+| `hmc_snapshot_validate` | `read` | `snapshot.validate` | `none` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Validate bounded snapshot JSON locally without HMC I/O. |

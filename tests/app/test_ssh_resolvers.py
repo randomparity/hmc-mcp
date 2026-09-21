@@ -22,13 +22,38 @@ from conftest import make_config
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
-from hmc_mcp.ssh.selectors import resolve_lpar_name, resolve_system_name
+from hmc_mcp.ssh.selectors import (
+    _lpar_name_from_rest,
+    _system_name_from_rest,
+    resolve_lpar_name,
+    resolve_system_name,
+)
 from hmc_mcp.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "my-lpar"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resource", [None, [], {}, {"SystemName": ""}, {"SystemName": 1}])
+async def test_system_rest_selector_rejects_malformed_resource(resource):
+    hmc = MagicMock()
+    hmc.get_managed_system = AsyncMock(return_value={"Resource": resource})
+
+    with pytest.raises(ValueError, match="Could not resolve system UUID"):
+        await _system_name_from_rest(hmc, SYSTEM_UUID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resource", [None, [], {}, {"PartitionName": " "}, {"PartitionName": 1}])
+async def test_lpar_rest_selector_rejects_malformed_resource(resource):
+    hmc = MagicMock()
+    hmc.get_logical_partition = AsyncMock(return_value={"Resource": resource})
+
+    with pytest.raises(ValueError, match="Could not resolve LPAR UUID"):
+        await _lpar_name_from_rest(hmc, LPAR_UUID)
 
 # ``lssyscfg -F UUID,SystemName`` / ``-F UUID,PartitionName`` output rows.
 _SYS_ROWS = f"00000000-0000-0000-0000-000000000000,other\n{SYSTEM_UUID},{SYSTEM_NAME}\n"

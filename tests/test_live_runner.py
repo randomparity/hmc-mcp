@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
+from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.server import TOOL_SECURITY
+from hmc_mcp.authorization import target_scope
+from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
+from hmc_mcp.config import ConfigError, HMCConfig
+from hmc_mcp.jobs import JobOutcome
+from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
+from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 from hmc_mcp.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
@@ -25,6 +36,8 @@ from live_test import (  # noqa: E402
     lpar,
     metrics,
     network,
+    observation,
+    pcie,
     profiles,
     provisioning,
     results,
@@ -40,6 +53,7 @@ LIVE_WORKFLOW_MODULES = (
     lpar,
     metrics,
     network,
+    pcie,
     profiles,
     provisioning,
     storage,
@@ -64,6 +78,11 @@ class _FakeClient:
     async def __aexit__(self, *_args):
         return None
 
+    async def list_tools(self):
+        # An empty schema map leaves the runtime dispatch guard inert, which is
+        # what these isolation tests want: they script their own tool responses.
+        return []
+
 
 class _ToolResult:
     def __init__(self, *, data=None, content=None):
@@ -80,11 +99,765 @@ class _ScriptedClient:
     def __init__(self, result=None, error=None):
         self.result = result
         self.error = error
+        self.calls = []
 
     async def call_tool(self, _tool, _kwargs):
+        self.calls.append((_tool, _kwargs))
         if self.error is not None:
             raise self.error
         return self.result
+
+
+def _failure(text: str) -> observation.CallFailure:
+    """The shape `RunState.call` really returns on failure, for a scripted stub."""
+    return observation.classify_failure(RuntimeError(text))
+
+
+def _optical_mapping(media_name: str, lpar: str = "lp3-uuid") -> dict:
+    """One `hmc_list_optical_mappings` entry, shaped as the client really returns it."""
+    return {
+        "Storage": {"VirtualOpticalMedia": {"MediaName": media_name}},
+        "AssociatedLogicalPartition": {
+            "href": f"/rest/api/uom/LogicalPartition/{lpar}"
+        },
+    }
+
+
+class _ScriptedSriovState(runner.RunState):
+    """Run SR-IOV phases against an ordered in-memory tool transcript."""
+
+    def __init__(self, responses: list[tuple[str, str, object]]):
+        super().__init__()
+        self._responses = iter(responses)
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call(self, _client, tool, *, expected=(), reuse_gaps=True, **kwargs):
+        self.calls.append((tool, kwargs))
+        expected_tool, status, data = next(self._responses)
+        assert tool == expected_tool
+        return status, data
+
+
+def _logical_port_state(
+    state: _ScriptedSriovState, *, owner: str | None = None, capacity: float = 7.5
+) -> dict[str, object]:
+    items: list[dict[str, object]] = []
+    if owner is not None:
+        items.append(
+            {
+                "logical_port_id": str(state.config.sriov_logical_port_id),
+                "availability": "1",
+                "owner_lpar": owner,
+                "capacity_percent": capacity,
+            }
+        )
+    return {"items": items}
+
+
+def _profile_state(value: str = "none") -> tuple[str, str, object]:
+    return ("hmc_run_command", "PASS", value)
+
+
+def test_sriov_baseline_helpers_require_healthy_adapter() -> None:
+    """Baseline predicates reject wrong mode/availability and accept healthy data."""
+    assert pcie._adapter_is_healthy(
+        {"items": [{"adapter_id": "17", "mode": "sriov", "availability": "1"}]}, "17"
+    )
+    assert not pcie._adapter_is_healthy(
+        {"items": [{"adapter_id": "17", "mode": "ded", "availability": "1"}]}, "17"
+    )
+
+
+def test_sriov_baseline_helpers_compute_capacity_and_configuration() -> None:
+    """Capacity and clean-port predicates handle unconfigured rows and reject malformed data."""
+    data = {
+        "items": [
+            {"capacity_percent": "25", "availability": "1"},
+            {"capacity_percent": "bad", "availability": "1"},
+            {"capacity_percent": "50", "availability": "unconfigured"},
+        ]
+    }
+    with pytest.raises(ValueError, match="row 1.*capacity_percent"):
+        pcie._available_capacity(data)
+    assert not pcie._logical_port_is_configured({"items": []}, "917003")
+    assert pcie._logical_port_is_configured(
+        {"items": [{"logical_port_id": "917003", "availability": "1"}]},
+        "917003",
+    )
+    # The rows are projected as str; comparing the numeric config value is the
+    # #763 defect and must not read as "no such port".
+    assert not pcie._logical_port_is_configured(
+        {"items": [{"logical_port_id": "917003", "availability": "1"}]},
+        917003,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
+    state = _ScriptedSriovState([])
+    owned = _logical_port_state(state, owner=state.config.lp3_name)
+    state._responses = iter(
+        [
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+        ]
+    )
+
+    assert await pcie.assign_sriov_to_lp3(object(), state)
+    assert await pcie.verify_sriov_assigned(object(), state)
+    assert await pcie.unassign_sriov_from_lp3(object(), state)
+    assert await pcie.reassign_sriov_to_lp3(object(), state)
+
+    assign_tool, assign_args = state.calls[0]
+    assert assign_tool == "hmc_assign_sriov_logical_port"
+    assert assign_args == {
+        "system_name_or_uuid": state.config.system_name,
+        "lpar_name_or_uuid": state.config.lp3_name,
+        "adapter_id": str(state.config.sriov_adapter_id),
+        "physical_port_id": str(state.config.sriov_physical_port_id),
+        "logical_port_id": str(state.config.sriov_logical_port_id),
+        "capacity_percent": state.config.sriov_capacity_percent,
+        "profile_name": state.config.sriov_profile_name,
+        "ownership_override": True,
+    }
+    assert state.calls[3][0] == "hmc_unassign_sriov_logical_port"
+    assert state.calls[3][1]["ownership_override"] is True
+    assert [entry["status"] for entry in state.results if entry["subtask"] == 26] == [
+        "PASS",
+        "PASS",
+        "PASS",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sriov_verify_records_wrong_owner_without_mutation() -> None:
+    state = _ScriptedSriovState([])
+    state._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(state, owner="another-lpar"),
+            ),
+            _profile_state(),
+        ]
+    )
+
+    assert not await pcie.verify_sriov_assigned(object(), state)
+
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    assert any(
+        entry["tool"] == "sriov owner check" and entry["status"] == "FAIL"
+        for entry in state.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_cleanup_refuses_unowned_or_unconfigured_ports() -> None:
+    unconfigured = _ScriptedSriovState([])
+    unconfigured._responses = iter(
+        [
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            _profile_state(),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(unconfigured)),
+            _profile_state(),
+        ]
+    )
+    await pcie.cleanup_sriov(object(), unconfigured)
+    assert "hmc_unassign_sriov_logical_port" not in [
+        tool for tool, _ in unconfigured.calls
+    ]
+
+    foreign = _ScriptedSriovState([])
+    foreign._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(foreign, owner="another-lpar"),
+            ),
+            _profile_state(),
+        ]
+    )
+    await pcie.cleanup_sriov(object(), foreign)
+    assert [tool for tool, _ in foreign.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    assert any(
+        entry["tool"] == "sriov cleanup: owner mismatch"
+        and "MANUAL RECOVERY REQUIRED" in str(entry["data"])
+        for entry in foreign.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
+    state = _ScriptedSriovState([])
+    state._responses = iter(
+        [
+            (
+                "hmc_list_sriov_logical_ports",
+                "PASS",
+                _logical_port_state(state, owner=state.config.lp3_name),
+            ),
+            _profile_state("configured-port"),
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+            ("hmc_run_command", "PASS", "removed"),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(state)),
+            ("hmc_list_sriov_logical_ports", "PASS", _logical_port_state(state)),
+            _profile_state(),
+        ]
+    )
+
+    await pcie.cleanup_sriov(object(), state)
+
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+        "hmc_unassign_sriov_logical_port",
+        "hmc_run_command",
+        "hmc_list_sriov_logical_ports",
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+    ]
+    cleanup_command = state.calls[3][1]["cmd"]
+    assert "chhwres -r sriov --rsubtype logport" in cleanup_command
+    assert " -o r -p " in cleanup_command
+    assert all(entry["status"] == "PASS" for entry in state.results)
+
+
+@pytest.mark.asyncio
+async def test_profile_inventory_records_all_selector_scoped_probes() -> None:
+    tools = [
+        "hmc_get_lpar_description",
+        "hmc_get_lpar_msp",
+        "hmc_get_proc_compat_modes",
+        "hmc_get_lpar_proc_compat",
+        "hmc_list_vnics",
+        "hmc_get_lpar_memopt_score",
+        "hmc_list_lpar_memopt_scores",
+        "hmc_get_system_memopt_score",
+        "hmc_plan_lpar_memopt_scores",
+        "hmc_plan_system_memopt_score",
+        "hmc_list_resource_group_memopt_scores",
+        "hmc_plan_resource_group_memopt_scores",
+        "hmc_get_minimum_affinity_policy",
+    ]
+    state = _ScriptedSriovState([(tool, "PASS", {}) for tool in tools])
+
+    await profiles.inventory_lpar_profiles(object(), state)
+
+    assert [tool for tool, _ in state.calls] == tools
+    assert all(entry["subtask"] == 4 for entry in state.results)
+    for tool, kwargs in state.calls:
+        if tool in {
+            "hmc_get_proc_compat_modes",
+            "hmc_list_lpar_memopt_scores",
+            "hmc_get_system_memopt_score",
+            "hmc_plan_lpar_memopt_scores",
+            "hmc_plan_system_memopt_score",
+            "hmc_list_resource_group_memopt_scores",
+            "hmc_plan_resource_group_memopt_scores",
+        }:
+            assert kwargs == {"system_name_or_uuid": state.config.system_name}
+        else:
+            assert kwargs["system_name_or_uuid"] == state.config.system_name
+            if tool != "hmc_get_proc_compat_modes":
+                assert kwargs.get("lpar_name_or_uuid") == state.config.lp3_name
+
+
+@pytest.mark.asyncio
+async def test_connectivity_inventory_discovers_context_and_records_probes() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_console_info", "PASS", {"UUID": "console-uuid"}),
+            ("hmc_list_systems", "PASS", {"entries": []}),
+            ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
+            ("hmc_list_lpars", "PASS", {"entries": "malformed"}),
+            ("hmc_get_lpar", "PASS", {"UUID": "lp3-uuid"}),
+            (
+                "hmc_list_vios",
+                "PASS",
+                {"entries": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "3"}}]},
+            ),
+            ("hmc_capacity_report", "PASS", {}),
+            ("hmc_find_placement", "PASS", {}),
+            ("hmc_get_system", "PASS", {}),
+            ("hmc_list_resources", "PASS", {}),
+            ("hmc_list_recent_jobs", "PASS", {"entries": [{"UUID": "job-uuid"}]}),
+            ("hmc_system_summary", "PASS", {}),
+            ("hmc_lpar_summary", "PASS", {}),
+        ]
+    )
+
+    await connectivity.inventory_connectivity(object(), state)
+
+    assert (state.artifacts.console_uuid, state.artifacts.system_uuid) == (
+        "console-uuid",
+        "system-uuid",
+    )
+    assert (
+        state.artifacts.lp3_uuid,
+        state.artifacts.vios_uuid,
+        state.artifacts.vios_partition_id,
+    ) == (
+        "lp3-uuid",
+        "vios-uuid",
+        3,
+    )
+    assert state.artifacts.job_uuid_sample == "job-uuid"
+    assert state.calls[7] == (
+        "hmc_find_placement",
+        {"desired_memory_mib": state.config.placement_memory_mib},
+    )
+    assert all(entry["subtask"] == 1 for entry in state.results)
+
+
+@pytest.mark.asyncio
+async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": True}),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": False}),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_job", "PASS", {}),
+            ("hmc_wait_for_job", "PASS", {}),
+            ("hmc_list_recent_jobs", "PASS", {"entries": []}),
+            ("hmc_get_pcm_preferences", "FAIL", _failure("PCM unavailable")),
+            ("hmc_processed_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_aggregated_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_list_partition_templates", "FAIL", _failure("template unavailable")),
+        ]
+    )
+    state.artifacts.job_uuid_sample = "job-uuid"
+
+    await metrics.inspect_metrics_jobs(object(), state)
+    await metrics.inspect_metrics_templates(object(), state)
+
+    assert state.calls[1][1]["long_term_monitor"] is False
+    assert state.calls[3][1]["long_term_monitor"] is True
+    assert state.calls[5][1] == {
+        "job_id": "job-uuid",
+        "timeout_seconds": 10,
+        "poll_interval": 2,
+    }
+    assert state.artifacts.lp3_baseline.get("pcm_prefs") is None
+    assert [entry["status"] for entry in state.results if entry["subtask"] == 5] == [
+        "SKIP",
+        "SKIP",
+        "SKIP",
+        "SKIP",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_escape_hatch_uses_only_bounded_commands() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_run_command", "PASS", "version"),
+            ("hmc_run_command", "PASS", "systems"),
+        ]
+    )
+
+    await escape_hatch.exercise_cli_escape_hatch(object(), state)
+
+    assert state.calls == [
+        ("hmc_run_command", {"cmd": "lshmc -V"}),
+        ("hmc_run_command", {"cmd": "lssyscfg -r sys"}),
+    ]
+    assert [(entry["subtask"], entry["status"]) for entry in state.results] == [
+        (7, "PASS"),
+        (7, "PASS"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
+    missing = _ScriptedSriovState([])
+    await provisioning.validate_provisioning_dry_run(object(), missing)
+    assert missing.calls == []
+    assert missing.results[0]["status"] == "SKIP"
+
+    state = _ScriptedSriovState(
+        [("hmc_provision_lpar", "PASS", {"steps": [{"status": "dry_run"}]})]
+    )
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.lp3_baseline["pvid"] = 99
+    state.artifacts.vios_partition_id = 4
+    state.artifacts.lp3_baseline["vios_slot"] = 6
+    await provisioning.validate_provisioning_dry_run(object(), state)
+    assert state.calls == [
+        (
+            "hmc_provision_lpar",
+            {
+                "dry_run": True,
+                "system_name_or_uuid": state.config.system_name,
+                "name": state.config.dry_run_lpar_name,
+                "adapters": {
+                    "port_vlan_id": 99,
+                    "vios_partition_id": 4,
+                    "vios_slot": 6,
+                },
+                "storage": {
+                    "vios_uuid": "vios-uuid",
+                    "storage_name": state.config.dry_run_storage_name,
+                },
+                "resources": {"desired_memory": state.config.dry_run_memory_mib},
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_lpar_lifecycle_captures_jobs_and_clears_scratch_identity() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
+            ("hmc_create_lpar", "PASS", {"lpar": {"UUID": "scratch-uuid"}}),
+            ("hmc_get_lpar", "PASS", {"UUID": "scratch-uuid"}),
+            ("hmc_modify_lpar", "PASS", {}),
+            ("hmc_lpar_summary", "PASS", {}),
+            ("hmc_power_on_lpar", "PASS", {"job_uuid": "boot-job"}),
+            ("hmc_power_off_lpar", "PASS", {}),
+            ("hmc_delete_lpar", "PASS", {}),
+            ("hmc_list_lpars", "PASS", {"entries": []}),
+        ]
+    )
+
+    await lpar.exercise_lpar_lifecycle(object(), state)
+
+    assert state.artifacts.system_uuid == "system-uuid"
+    assert state.artifacts.scratch_uuid is None
+    assert state.artifacts.job_uuid_sample == "boot-job"
+    assert state.calls[1][1]["resources"] == {
+        "desired_memory": state.config.scratch_create_desired_memory_mib,
+        "max_memory": state.config.scratch_create_max_memory_mib,
+        "desired_vcpus": state.config.scratch_create_desired_vcpus,
+        "max_vcpus": state.config.scratch_create_max_vcpus,
+    }
+    assert [entry["subtask"] for entry in state.results] == [8] * 8
+
+
+@pytest.mark.asyncio
+async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_set_lpar_description", "PASS", {}),
+            ("hmc_get_lpar_description", "PASS", {}),
+            ("hmc_set_lpar_description", "PASS", {}),
+            ("hmc_run_command", "PASS", "aixlinux\n"),
+            ("hmc_set_lpar_msp", "FAIL", "only valid for a VIOS"),
+            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
+            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
+            ("hmc_sync_lpar_profile", "PASS", {}),
+            ("hmc_backup_lpar_profiles", "PASS", {}),
+        ]
+    )
+    state.artifacts.lp3_baseline["description"] = "original description"
+
+    await lpar.mutate_lpar_properties(object(), state)
+
+    assert "hmc_set_lpar_msp (toggle/verify/restore)" in [
+        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    ]
+    assert "hmc_set_lpar_proc_compat" in [
+        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    ]
+    assert state.calls[-1][1]["force"] is True
+
+
+@pytest.mark.asyncio
+async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() -> None:
+    missing = _ScriptedSriovState([])
+    await vmedia.vmedia_mount_unmount(object(), missing)
+    assert missing.calls == []
+    assert {entry["status"] for entry in missing.results} == {"SKIP"}
+
+    state = _ScriptedSriovState(
+        [
+            ("hmc_mount_optical_media", "PASS", {"ElementID": "mapping-uuid"}),
+            ("hmc_list_optical_mappings", "PASS", []),
+            ("hmc_delete_optical_media", "FAIL", _failure("media is mapped")),
+            ("hmc_unmount_optical_media", "PASS", {}),
+            ("hmc_list_optical_mappings", "PASS", []),
+            ("hmc_delete_optical_media", "PASS", {}),
+            ("hmc_list_optical_media", "PASS", []),
+        ]
+    )
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vmedia_iso_name = "boot.iso"
+
+    await vmedia.vmedia_mount_unmount(object(), state)
+
+    assert state.artifacts.vmedia_mapping_uuid is None
+    assert state.artifacts.vmedia_iso_name is None
+    assert state.calls[3] == (
+        "hmc_unmount_optical_media",
+        {
+            "vios_name_or_uuid": "vios-uuid",
+            "lpar_name_or_uuid": state.config.lp3_name,
+            "media_name": "boot.iso",
+        },
+    )
+    assert any(
+        entry["tool"] == "hmc_delete_optical_media (blocked — expected)"
+        and entry["status"] == "PASS"
+        for entry in state.results
+    )
+
+
+@pytest.mark.asyncio
+async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() -> None:
+    state = _ScriptedSriovState(
+        [
+            ("hmc_set_lpar_boot_order", "PASS", {}),
+            ("hmc_list_optical_mappings", "PASS", [_optical_mapping("orphan.iso")]),
+            ("hmc_unmount_optical_media", "PASS", {}),
+            ("hmc_list_optical_media", "PASS", [{"MediaName": "orphan.iso"}]),
+            ("hmc_delete_optical_media", "PASS", {}),
+            ("hmc_delete_media_repository", "PASS", {}),
+            ("hmc_get_media_repository", "PASS", {}),
+            ("hmc_list_volume_groups", "PASS", []),
+        ]
+    )
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.lp3_uuid = "lp3-uuid"
+    state.artifacts.vmedia_orig_boot_order = ["disk", "network"]
+    state.artifacts.vmedia_repo_created = True
+
+    await vmedia.vmedia_teardown(object(), state)
+
+    assert state.artifacts.vmedia_orig_boot_order == []
+    assert not state.artifacts.vmedia_repo_created
+    assert [tool for tool, _ in state.calls] == [
+        "hmc_set_lpar_boot_order",
+        "hmc_list_optical_mappings",
+        "hmc_unmount_optical_media",
+        "hmc_list_optical_media",
+        "hmc_delete_optical_media",
+        "hmc_delete_media_repository",
+        "hmc_get_media_repository",
+        "hmc_list_volume_groups",
+    ]
+    assert state.calls[0][1]["devices"] == ["disk", "network"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
+    """A successful round trip invokes every phase and always reaches cleanup."""
+    calls: list[str] = []
+
+    def phase(name: str):
+        def run(*_args) -> bool:
+            calls.append(name)
+            return True
+
+        return run
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(
+            pcie, "capture_sriov_baseline", AsyncMock(side_effect=phase("baseline"))
+        )
+        monkeypatch.setattr(
+            pcie, "assign_sriov_to_lp3", AsyncMock(side_effect=phase("assign"))
+        )
+        monkeypatch.setattr(
+            pcie, "verify_sriov_assigned", AsyncMock(side_effect=phase("verify"))
+        )
+        monkeypatch.setattr(
+            pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=phase("unassign"))
+        )
+        monkeypatch.setattr(
+            pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=phase("reassign"))
+        )
+        monkeypatch.setattr(
+            pcie, "cleanup_sriov", AsyncMock(side_effect=phase("cleanup"))
+        )
+
+        class State:
+            def skip(self, *_args) -> None:
+                raise AssertionError("successful orchestration must not skip a phase")
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "assign", "verify", "unassign", "reassign", "cleanup"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_stops_after_baseline_but_runs_cleanup() -> None:
+    """A failed baseline prevents mutations while preserving the cleanup arm."""
+    calls: list[str] = []
+
+    async def baseline(*_args) -> bool:
+        calls.append("baseline")
+        return False
+
+    async def cleanup(*_args) -> None:
+        calls.append("cleanup")
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline)
+        monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+        for name in (
+            "assign_sriov_to_lp3",
+            "verify_sriov_assigned",
+            "unassign_sriov_from_lp3",
+            "reassign_sriov_to_lp3",
+        ):
+            monkeypatch.setattr(pcie, name, AsyncMock(side_effect=AssertionError(name)))
+
+        class State:
+            pass
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "cleanup"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_skips_mutations_after_assign_failure() -> None:
+    """Assignment failure still verifies state, skips later mutations, and cleans up."""
+    calls: list[str] = []
+
+    async def baseline(*_args) -> bool:
+        calls.append("baseline")
+        return True
+
+    async def assign(*_args) -> bool:
+        calls.append("assign")
+        return False
+
+    async def verify(*_args) -> bool:
+        calls.append("verify")
+        return True
+
+    async def cleanup(*_args) -> None:
+        calls.append("cleanup")
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline)
+        monkeypatch.setattr(pcie, "assign_sriov_to_lp3", assign)
+        monkeypatch.setattr(pcie, "verify_sriov_assigned", verify)
+        monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+        monkeypatch.setattr(
+            pcie, "unassign_sriov_from_lp3", AsyncMock(side_effect=AssertionError)
+        )
+        monkeypatch.setattr(
+            pcie, "reassign_sriov_to_lp3", AsyncMock(side_effect=AssertionError)
+        )
+
+        class State:
+            def skip(self, *_args) -> None:
+                calls.append("skip")
+
+        await pcie.exercise_sriov_assignment(object(), State())
+    finally:
+        monkeypatch.undo()
+
+    assert calls == ["baseline", "assign", "verify", "skip", "skip", "cleanup"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failing_phase", "expected_calls"),
+    [
+        ("assign", ["baseline", "assign", "cleanup"]),
+        ("verify", ["baseline", "assign", "verify", "cleanup"]),
+        ("unassign", ["baseline", "assign", "verify", "unassign", "cleanup"]),
+        (
+            "reassign",
+            ["baseline", "assign", "verify", "unassign", "reassign", "cleanup"],
+        ),
+    ],
+)
+async def test_sriov_orchestrator_cleans_up_after_post_baseline_error(
+    monkeypatch, failing_phase: str, expected_calls: list[str]
+) -> None:
+    """Every mutation failure leaves cleanup as the final, single operation."""
+    calls: list[str] = []
+
+    def phase(name: str):
+        async def run(*_args) -> bool:
+            calls.append(name)
+            if name == failing_phase:
+                raise RuntimeError(f"{name} failed")
+            return True
+
+        return run
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", phase("baseline"))
+    monkeypatch.setattr(pcie, "assign_sriov_to_lp3", phase("assign"))
+    monkeypatch.setattr(pcie, "verify_sriov_assigned", phase("verify"))
+    monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", phase("unassign"))
+    monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", phase("reassign"))
+    monkeypatch.setattr(pcie, "cleanup_sriov", phase("cleanup"))
+
+    with pytest.raises(RuntimeError, match=f"{failing_phase} failed"):
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert calls == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_propagates_cleanup_error(monkeypatch) -> None:
+    """Cleanup remains observable when it is the only failure."""
+    cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "assign_sriov_to_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "verify_sriov_assigned", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "unassign_sriov_from_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "reassign_sriov_to_lp3", AsyncMock(return_value=True))
+    monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert cleanup.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_sriov_orchestrator_preserves_mutation_error_when_cleanup_fails(
+    monkeypatch,
+) -> None:
+    """A cleanup failure adds recovery context without replacing the mutation error."""
+    cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        pcie,
+        "assign_sriov_to_lp3",
+        AsyncMock(side_effect=RuntimeError("assign failed")),
+    )
+    monkeypatch.setattr(pcie, "cleanup_sriov", cleanup)
+
+    with pytest.raises(RuntimeError, match="assign failed") as exc_info:
+        await pcie.exercise_sriov_assignment(object(), object())
+
+    assert cleanup.await_count == 1
+    assert exc_info.value.__notes__ == ["SR-IOV cleanup failed: cleanup failed"]
 
 
 def _isolate_runner(monkeypatch) -> None:
@@ -133,10 +906,21 @@ def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")
     monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
 
-    with pytest.raises(SystemExit) as exc_info:
-        runner._ensure_schema_version()
+    assert runner._ensure_schema_version() is False
+    assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
 
-    assert exc_info.value.code == 1
+
+def test_schema_preflight_does_not_patch_dotenv(monkeypatch, capsys, tmp_path):
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    _isolated_environ(monkeypatch)
+    dotenv = tmp_path / ".env"
+    original = "HMC_HOST=example.test\n"
+    dotenv.write_text(original)
+    monkeypatch.setattr(runner, "_ENV_FILE", dotenv)
+
+    assert runner._ensure_schema_version() is False
+
+    assert dotenv.read_text() == original
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
 
 
@@ -167,14 +951,15 @@ def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch
     monkeypatch.setenv(name, "canonical.example.com")
     monkeypatch.setenv("hmc_iso_url_allowlist", "variant.example.com")
 
-    vmedia._allow_iso_host()
+    config = runner.LiveTestConfig()
+    vmedia._allow_iso_host(config)
 
     merged = os.environ[name]
     assert [k for k in os.environ if k.lower() == name.lower()] == [name]
-    assert merged.split(",") == ["variant.example.com", vmedia._ISO_HOST]
+    assert merged.split(",") == ["variant.example.com", config.iso_host]
     assert HMCConfig(host="h", user="u", password="p").iso_url_allowlist == merged
 
-    vmedia._allow_iso_host()
+    vmedia._allow_iso_host(config)
     assert os.environ[name] == merged
 
 
@@ -192,9 +977,85 @@ def test_the_iso_allowlist_merge_keeps_a_variant_only_operator_entry(monkeypatch
     _clear(monkeypatch, name)
     monkeypatch.setenv("hmc_iso_url_allowlist", "operator.example.com")
 
-    vmedia._allow_iso_host()
+    config = runner.LiveTestConfig()
+    vmedia._allow_iso_host(config)
 
-    assert os.environ[name].split(",") == ["operator.example.com", vmedia._ISO_HOST]
+    assert os.environ[name].split(",") == ["operator.example.com", config.iso_host]
+
+
+def test_live_config_is_frozen() -> None:
+    config = runner.LiveTestConfig()
+
+    with pytest.raises(FrozenInstanceError):
+        config.system_name = "changed"
+
+
+def test_live_config_reads_the_complete_example_and_ignores_exports(
+    monkeypatch, tmp_path
+) -> None:
+    """The checked-in example is a complete, authoritative live-test mapping."""
+    example = Path(__file__).parents[1] / ".env.example"
+    config_path = tmp_path / ".env"
+    config_path.write_text(example.read_text())
+    monkeypatch.setenv("LIVE_TEST_SYSTEM_NAME", "ambient-target")
+
+    config = runner.LiveTestConfig.from_env_file(config_path)
+
+    assert config.system_name == "example-lt-609-system"
+    assert config.sriov_logical_port_id == 917003
+    assert config.iso_url == "http://iso.example.test:18090/example-lt-609.iso"
+    assert config.protected_lpar_names == (
+        "example-lt-609-protected-a",
+        "example-lt-609-protected-b",
+    )
+
+
+def _example_env_with(tmp_path: Path, key: str, value: str) -> Path:
+    """Write the checked-in example with one key overridden."""
+    example = Path(__file__).parents[1] / ".env.example"
+    lines = [
+        f"{key}={value}" if line.startswith(f"{key}=") else line
+        for line in example.read_text().splitlines()
+    ]
+    config_path = tmp_path / ".env"
+    config_path.write_text("\n".join(lines) + "\n")
+    return config_path
+
+
+def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
+    """Physical port IDs are zero-indexed on Power, so port 0 is the first port.
+
+    A `> 0` check here aborts every SR-IOV run configured against port 0
+    before the runner reaches the HMC.
+    """
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID", "0")
+
+    config = runner.LiveTestConfig.from_env_file(config_path)
+
+    assert config.sriov_physical_port_id == 0
+
+
+def test_live_config_rejects_negative_sriov_physical_port_id(tmp_path) -> None:
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID", "-1")
+
+    with pytest.raises(ValueError, match="sriov_physical_port_id"):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+
+@pytest.mark.asyncio
+async def test_main_rejects_missing_live_test_file_before_creating_mcp(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    """Programmatic invocation cannot bypass required local live-test settings."""
+    monkeypatch.setattr(runner, "_ENV_FILE", tmp_path / ".env")
+    monkeypatch.setattr(
+        runner, "create_mcp", lambda *_args, **_kwargs: pytest.fail("created MCP")
+    )
+
+    assert await runner.main(results_path=str(tmp_path / "results.json")) == 1
+    output = capsys.readouterr().out
+    assert str(tmp_path / ".env") not in output
+    assert "live-test configuration file not found" in output
 
 
 def test_a_dotenv_entry_never_outranks_a_case_variant_export(monkeypatch, tmp_path):
@@ -236,6 +1097,25 @@ def test_bootstrap_propagates_unexpected_profile_loader_failure(monkeypatch):
 
     with pytest.raises(RuntimeError, match="profile loader defect"):
         runner._bootstrap_config()
+
+
+def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, capsys):
+    secret_path = "/home/operator/private/config.toml"
+
+    def fail_to_load_profile():
+        raise ConfigError(f"{secret_path}: password=runner-secret")
+
+    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
+    monkeypatch.delenv("HMC_PASSWORD", raising=False)
+
+    assert not runner._bootstrap_config()
+
+    output = capsys.readouterr().out
+    assert secret_path not in output
+    assert "runner-secret" not in output
+    assert "<REDACTED-PATH>" in output
+    assert "<REDACTED-SECRET>" in output
 
 
 def test_a_case_variant_of_an_exact_case_reader_does_not_suppress_its_dotenv_line(
@@ -314,14 +1194,38 @@ async def test_call_normalizes_fastmcp_result_shapes(result, expected):
 
 
 @pytest.mark.asyncio
-async def test_call_returns_traceable_failure():
-    status, data = await runner.RunState().call(
-        _ScriptedClient(error=RuntimeError("transport failed")), "tool"
+async def test_call_failure_is_redacted_when_recorded(capsys):
+    suffix = "-secret"
+    url_credential = "url" + suffix
+    credential = "runner" + suffix
+    sensitive = (
+        f"transport failed password={credential} "
+        f"https://operator:{url_credential}@hmc.lab.example.test/api "
+        "/home/operator/live-test.toml"
+    )
+    state = runner.RunState()
+    status, data = await state.call(
+        _ScriptedClient(error=RuntimeError(sensitive)), "tool"
     )
 
     assert status == "FAIL"
-    assert "RuntimeError: transport failed" in data
-    assert "Traceback" in data
+    state.record(0, "tool", status, data)
+
+    output = capsys.readouterr().out
+    recorded = str(state.results[0]["data"])
+    for value in (
+        credential,
+        f"operator:{url_credential}",
+        "hmc.lab.example.test",
+        "/home/operator/live-test.toml",
+    ):
+        assert value not in output
+        assert value not in recorded
+    assert "RuntimeError: transport failed" in recorded
+    # The traceback stays on the CallFailure for the caller that classifies it and
+    # is not persisted: the results document keeps only the redacted message.
+    assert "Traceback" not in recorded
+    assert "Traceback" in data.traceback_text
 
 
 @pytest.mark.asyncio
@@ -336,80 +1240,700 @@ async def test_call_reports_unexpected_result_parser_failure(monkeypatch):
     )
 
     assert status == "FAIL"
-    assert "TypeError: parser bug" in data
+    assert "TypeError: parser bug" in data.message
 
 
 def test_expected_hmc_limitation_is_classified_as_skip():
     state = runner.RunState()
 
-    state.record_expected_or_real(
+    state.record_with_expected(
         5,
         "optional_tool",
         "FAIL",
-        "HTTP 406 Not Acceptable",
-        ["406"],
-        "feature unavailable",
+        observation.classify_failure(RuntimeError("HTTP 406 Not Acceptable")),
+        [
+            observation.ExpectedOutcome(
+                operation="pcm.get_preferences",
+                variant="managed-system-pcm",
+                reason="feature unavailable",
+                error_codes=frozenset({"406"}),
+            )
+        ],
     )
 
     assert state.results[0]["status"] == "SKIP"
     assert state.results[0]["note"] == "feature unavailable"
 
 
-def test_result_helpers_preserve_resource_shapes():
-    entries = [{"Resource": {"UUID": "nested"}}]
+def test_declared_limitations_have_registered_gap_identities():
+    declarations = [
+        value
+        for module in LIVE_WORKFLOW_MODULES
+        for value in vars(module).values()
+        if isinstance(value, observation.ExpectedOutcome)
+    ]
+    assert declarations
+    registered = {security.operation for security in TOOL_SECURITY.values()}
+    assert all(
+        getattr(value, "operation", None) in registered for value in declarations
+    )
+    assert all(
+        re.fullmatch(r"[a-z][a-z0-9-]{0,63}", value.variant) for value in declarations
+    )
 
-    assert results.entries(entries) is entries
-    assert results.entries({"entries": entries}) is entries
-    assert results.entries("invalid") == []
-    assert results.resource(entries[0]) == {"UUID": "nested"}
-    assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
+
+@pytest.mark.parametrize(
+    "field,value", [("operation", "bad"), ("variant", ""), ("variant", "x y")]
+)
+def test_gap_identity_rejects_malformed_tokens(field, value):
+    arguments = {
+        "operation": "pcm.get_preferences", "variant": "managed-system-pcm",
+        "reason": "unavailable", "error_codes": frozenset({"406"}),
+    }
+    arguments[field] = value
+    with pytest.raises(ValueError, match="operation|variant"):
+        observation.ExpectedOutcome(**arguments)
 
 
-def test_restore_context_restores_identifiers_and_baseline(tmp_path):
-    results_path = tmp_path / "previous.json"
-    results_path.write_text(
+@pytest.mark.asyncio
+async def test_gap_identity_rejected_before_call():
+    state = runner.RunState()
+    client = _ScriptedClient(result={})
+    with pytest.raises(ValueError, match="operation"):
+        await state.call(client, "hmc_list_users", expected=[metrics._PCM_UNLICENSED])
+    assert client.calls == []
+
+
+@pytest.mark.asyncio
+async def test_later_invalid_declaration_stops_run_before_client(monkeypatch):
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        metrics,
+        "_PCM_UNLICENSED",
+        replace(metrics._PCM_UNLICENSED, operation="user.list"),
+    )
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a: pytest.fail("created client"))
+    assert (
+        await runner.main(config=runner.LiveTestConfig(), hmc_config=_live_hmc_config())
+        == 1
+    )
+
+
+@pytest.mark.parametrize("transient", [False, True])
+def test_matching_gap_is_separate_from_evidence(transient):
+    from dataclasses import replace
+
+    state = runner.RunState()
+    expected = replace(metrics._PCM_UNLICENSED, transient=transient)
+    for _ in range(2):
+        state.record_with_expected(
+            5,
+            "hmc_get_pcm_preferences",
+            "FAIL",
+            observation.classify_failure(RuntimeError("HTTP 406")),
+            [expected],
+        )
+    assert state.observations == []
+    assert {row["result"] for row in state.results} == {"skipped"}
+    assert len(state.gaps) == (0 if transient else 1)
+    if not transient:
+        assert state.gaps[0]["operation"] == expected.operation
+        assert state.gaps[0]["missing_scope"]["variant"] == expected.variant
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("same_operation", [False, True])
+async def test_swapped_declared_results_fail_before_client(monkeypatch, same_operation):
+    from dataclasses import replace
+    from types import ModuleType
+
+    module = ModuleType("swapped_declarations")
+    module.A = metrics._PCM_UNLICENSED
+    module.B = (
+        replace(module.A, variant="other-pcm")
+        if same_operation
+        else metrics._PROCESSED_UNLICENSED
+    )
+    second_tool = (
+        "hmc_get_pcm_preferences" if same_operation else "hmc_processed_metric_links"
+    )
+    source = f'''
+async def scenario(client, state):
+    st_a, data_a = await state.call(client, "hmc_get_pcm_preferences", expected=[A])
+    st_b, data_b = await state.call(client, "{second_tool}", expected=[B])
+    state.record_with_expected(5, "hmc_get_pcm_preferences", st_a, data_a, [B])
+    state.record_with_expected(5, "{second_tool}", st_b, data_b, [A])
+'''
+    monkeypatch.setattr(runner, "_SCENARIO_MODULES", [module])
+    monkeypatch.setattr(runner.inspect, "getsource", lambda _: source)
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a: pytest.fail("created client"))
+    assert (
+        await runner.main(config=runner.LiveTestConfig(), hmc_config=_live_hmc_config())
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "",
+        'st, data = await state.call(client, "hmc_list_users")',
+        'state.record_with_expected(5, "pcm", st, None, [A])',
+        'state.record_with_expected(5, "pcm", st, data, [])',
+        'st = "PASS"\n    state.record_with_expected(5, "pcm", st, data, [A])',
+        'data = None\n    state.record_with_expected(5, "pcm", st, data, [A])',
+    ],
+)
+def test_declared_results_require_one_matching_record(tail):
+    source = (
+        "async def scenario(client, state):\n"
+        '    st, data = await state.call(client, "hmc_get_pcm_preferences", expected=[A])\n'
+        f"    {tail}\n"
+    )
+    with pytest.raises(ValueError, match="declared|pair"):
+        runner._validate_declared_function(
+            ast.parse(source).body[0], {"A": metrics._PCM_UNLICENSED}
+        )
+
+
+def test_declared_calls_require_assigned_status_and_data():
+    source = (
+        "async def scenario(client, state):\n"
+        '    await state.call(client, "hmc_get_pcm_preferences", expected=[A])\n'
+    )
+    with pytest.raises(ValueError, match="assigned"):
+        runner._validate_declared_function(
+            ast.parse(source).body[0], {"A": metrics._PCM_UNLICENSED}
+        )
+
+
+@pytest.mark.asyncio
+async def test_current_gap_skips_call_without_refreshing_confirmation():
+    expected = metrics._PCM_UNLICENSED
+    state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
+    client = _ScriptedClient(result={})
+    status, data = await state.call(
+        client, "hmc_get_pcm_preferences", expected=[expected]
+    )
+    state.record_with_expected(5, "hmc_get_pcm_preferences", status, data, [expected])
+    assert client.calls == []
+    assert state.results[0]["status"] == "SKIP"
+    assert "known gap" in state.results[0]["note"]
+    assert state.observations == state.gaps == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_dispatch_precedes_known_gap():
+    expected = metrics._PCM_UNLICENSED
+    state = runner.RunState(
+        known_gaps={(expected.operation, expected.variant)},
+        schemas={"hmc_get_pcm_preferences": {"properties": {}}},
+    )
+    status, data = await state.call(
+        _ScriptedClient(result={}),
+        "hmc_get_pcm_preferences",
+        expected=[expected],
+        invalid_argument="406",
+    )
+    state.record_with_expected(5, "hmc_get_pcm_preferences", status, data, [expected])
+    assert state.results[0]["status"] == "FAIL"
+    assert data.exception_type == "InvalidDispatch"
+    assert state.observations == state.gaps == []
+
+
+@pytest.mark.asyncio
+async def test_cached_user_inventory_gap_does_not_skip_cleanup_discovery():
+    expected = users._HMCUSER_ENDPOINT_UNSUPPORTED
+    state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
+    state.artifacts.console_uuid = "console"
+    client = _ScriptedClient(
+        result=json.dumps([{"UserID": state.config.test_user, "uuid": "user-uuid"}])
+    )
+    await users.administer_test_user(client, state)
+    assert any(tool == "hmc_delete_user" for tool, _ in client.calls)
+
+
+def test_gap_output_can_be_copied_and_loaded_for_next_run(tmp_path):
+    repo = _live_repo(tmp_path)
+    expected = metrics._PCM_UNLICENSED
+    state = runner.RunState()
+    state.record_with_expected(
+        5,
+        "hmc_get_pcm_preferences",
+        "FAIL",
+        observation.classify_failure(RuntimeError("HTTP 406")),
+        [expected],
+    )
+    destination = repo / "test-results-gaps-observations.json"
+    assert runner._emit_observations(state, destination, ("V10R3", "POWER10"), repo)
+    emitted = json.loads(destination.read_text())
+    assert len(emitted) == 1 and set(emitted[0]) == {"operation", "missing_scope"}
+    catalog = repo / "maturity.json"
+    catalog.write_text(
         json.dumps(
             {
-                "context": {
-                    "system_uuid": "system-1",
-                    "vios_uuid": "vios-1",
-                    "lp3_baseline": {"description": "original"},
-                }
+                "format_version": runner.check_capability_inventory.MATURITY_FORMAT_VERSION,
+                "admission_policy": "existing-runtime-guards",
+                "operations": [
+                    {
+                        "operation": expected.operation,
+                        "implementation": {
+                            "state": "absent",
+                            "implemented_scope": [],
+                            "missing_scope": [emitted[0]["missing_scope"]],
+                        },
+                        "evidence": [],
+                    }
+                ],
             }
         )
     )
+    assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == {
+        (expected.operation, expected.variant)
+    }
+    assert runner._load_known_gaps(("V10R4", "POWER10"), repo, catalog) == set()
+    assert runner._load_known_gaps(None, repo, catalog) == set()
+    document = json.loads(catalog.read_text())
+    scope = document["operations"][0]["implementation"]["missing_scope"][0]
+    scope["confirmation"]["observed_at"] = "1970-01-01T00:00:00Z"
+    catalog.write_text(json.dumps(document))
+    assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == set()
+    del scope["confirmation"]
+    catalog.write_text(json.dumps(document))
+    assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == set()
+
+
+@pytest.mark.parametrize("records", [[None], [{"operation": "unknown.operation"}], "invalid"])
+def test_invalid_gap_catalog_fails_even_without_environment(tmp_path, records):
+    catalog = tmp_path / "maturity.json"
+    catalog.write_text(json.dumps({
+        "format_version": 3, "admission_policy": "existing-runtime-guards",
+        "operations": records,
+    }))
+    with pytest.raises(ValueError, match="invalid gap catalog"):
+        runner._load_known_gaps(None, tmp_path, catalog)
+
+
+def test_classify_failure_reads_the_message_not_the_traceback():
+    """A status quoted by an unrelated frame must not reclassify the failure."""
+    try:
+        try:
+            raise RuntimeError("inner frame mentions HTTP 500")
+        except RuntimeError as inner:
+            raise RuntimeError("transport returned HTTP 400") from inner
+    except RuntimeError as exc:
+        failure = observation.classify_failure(exc)
+
+    assert failure.http_status == 400
+    assert "HTTP 500" in failure.traceback_text
+
+
+@pytest.mark.asyncio
+async def test_a_real_access_policy_denial_classifies_as_denied():
+    """The denial pattern is coupled to the message the application really renders."""
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=False
+    )
+    async with Client(create_mcp(policy)) as client:
+        with pytest.raises(ToolError) as raised:
+            await client.call_tool("hmc_list_systems", {"profile": "not-granted"})
+
+    assert observation.classify_failure(raised.value).denied is True
+
+
+def test_a_target_scope_denial_classifies_as_denied():
+    """Three of the four target-scope templates omit the ``on <targets>`` segment."""
+    rendered = target_scope._UNREADABLE_VALUE.format(
+        tool="hmc_get_lpar",
+        policy="'legacy-equivalent'",
+        argument="lpar_name_or_uuid",
+        kind="lpar",
+    )
+
+    assert observation.classify_failure(RuntimeError(rendered)).denied is True
+
+
+def test_expected_outcome_matches_whole_tokens_in_the_message():
+    outcome = observation.ExpectedOutcome(
+        operation="pcm.get_preferences",
+        variant="managed-system-pcm",
+        reason="job REST type unsupported",
+        error_codes=frozenset({"REST000E"}),
+    )
+
+    assert outcome.matches(
+        observation.classify_failure(RuntimeError("saw REST000E here"))
+    )
+    assert not outcome.matches(
+        observation.classify_failure(RuntimeError("saw REST000EX here"))
+    )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        ("lpar._REST_MODIFY_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
+        ("network._REST_CREATE_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
+        (
+            "metrics._TEMPLATES_UNLICENSED",
+            "HMCError: partition templates are not available",
+        ),
+        ("metrics._PCM_UNLICENSED", "HMCError: PCM is not licensed"),
+        (
+            "provisioning._TEST_DISK_ABSENT",
+            "HMCError: 0516-306 lvmo: Unable to find device",
+        ),
+        ("provisioning._TEST_DISK_ABSENT", "HMCError: No Such device or address"),
+        ("vmedia._ALREADY_POWERED_OFF", "HMCError: partition is Not Running"),
+        ("users._HMCUSER_UNSUPPORTED", "HMCError: REST000E unsupported"),
+    ],
+)
+def test_declared_outcomes_match_the_message_forms_the_hmc_really_renders(
+    outcome, message
+):
+    """The substring match this replaced was case-insensitive; so is this one.
+
+    The HMC renders `Not Acceptable`, `No Such` and `Not Running` in title case,
+    and `templates` in the plural. A case-sensitive whole-token pattern misses
+    all four, recording a known limitation as a real failure on live hardware —
+    a regression no `tmp_path` fixture would show.
+    """
+    module, _, name = outcome.partition(".")
+    declared = getattr(globals()[module], name)
+
+    assert declared.matches(observation.classify_failure(RuntimeError(message)))
+
+
+def test_a_declared_outcome_does_not_match_an_unrelated_failure():
+    assert not metrics._PCM_UNLICENSED.matches(
+        observation.classify_failure(RuntimeError("HMCError: HTTP 500 internal"))
+    )
+
+
+def test_expected_outcome_requires_a_code_or_a_denial():
+    with pytest.raises(ValueError, match="error code or a denial"):
+        observation.ExpectedOutcome(
+            operation="pcm.get_preferences",
+            variant="managed-system-pcm",
+            reason="nothing to match on",
+        )
+
+
+def test_an_unmatched_failure_is_recorded_as_failed():
+    """An undeclared failure is never laundered into a skip."""
     state = runner.RunState()
 
-    runner._restore_ctx_from_results(state, str(results_path))
+    state.record_with_expected(
+        12,
+        "hmc_get_job",
+        "FAIL",
+        observation.classify_failure(RuntimeError("HTTP 500 Internal Server Error")),
+        [
+            observation.ExpectedOutcome(
+                operation="pcm.get_preferences",
+                variant="managed-system-pcm",
+                reason="job REST type unsupported",
+                error_codes=frozenset({"REST000E"}),
+            )
+        ],
+    )
 
-    assert state.context.system_uuid == "system-1"
-    assert state.context.vios_uuid == "vios-1"
-    assert state.context.lp3_baseline == {"description": "original"}
+    assert state.results[0]["status"] == "FAIL"
+    assert state.results[0]["result"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("PASS", "observed"), ("FAIL", "failed"), ("SKIP", "skipped")],
+)
+def test_record_always_yields_a_non_promoting_result(status, expected):
+    state = runner.RunState()
+
+    state.record(1, "hmc_get_console_info", status, {"uuid": "c"})
+
+    assert state.results[0]["result"] == expected
+    assert state.results[0]["result"] != "passed"
+
+
+def test_record_verified_yields_failed_on_a_false_assertion():
+    state = runner.RunState()
+
+    state.record_verified(
+        12,
+        "hmc_get_job",
+        operation="job.get",
+        scenario="st12-job-inspection",
+        assertions=[
+            observation.Assertion("job-found", True),
+            observation.Assertion("job-status-successful", False),
+        ],
+        cleanup="not-required",
+        data={"UUID": "j"},
+    )
+
+    assert state.results[0]["result"] == "failed"
+    assert state.observations[0]["observation"]["result"] == "failed"
+    assert state.observations[0]["observation"]["assertions"] == ["job-found"]
+
+
+def test_record_verified_yields_failed_on_failed_cleanup():
+    state = runner.RunState()
+
+    state.record_verified(
+        12,
+        "hmc_get_job",
+        operation="job.get",
+        scenario="st12-job-inspection",
+        assertions=[observation.Assertion("job-found", True)],
+        cleanup="failed",
+        data={"UUID": "j"},
+    )
+
+    assert state.results[0]["result"] == "failed"
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+
+
+def test_record_verified_writes_a_catalog_shaped_observation():
+    state = runner.RunState()
+
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "c"},
+    )
+
+    recorded = state.observations[0]
+    assert recorded["operation"] == "console.info"
+    assert recorded["observation"]["id"] == "st1-hmc-get-console-info"
+    assert recorded["observation"]["channel"] == "live"
+    assert recorded["observation"]["result"] == "passed"
+    assert set(recorded["observation"]) == {
+        "id",
+        "channel",
+        "result",
+        "scenario",
+        "observed_at",
+        "cleanup",
+        "assertions",
+    }
+
+
+@pytest.mark.parametrize(
+    ("assertions", "cleanup", "scenario", "match"),
+    [
+        ([], "not-required", "st1-console-identity", "at least one condition"),
+        (
+            [("console-uuid-present", True)],
+            "unknown",
+            "st1-console-identity",
+            "cleanup disposition",
+        ),
+        ([("console-uuid-present", True)], "not-required", "console", "scenario id"),
+    ],
+)
+def test_record_verified_rejects_a_malformed_observation(
+    assertions, cleanup, scenario, match
+):
+    state = runner.RunState()
+
+    with pytest.raises(ValueError, match=match):
+        state.record_verified(
+            1,
+            "hmc_get_console_info",
+            operation="console.info",
+            scenario=scenario,
+            assertions=[observation.Assertion(*item) for item in assertions],
+            cleanup=cleanup,
+            data={},
+        )
+
+
+def test_assertion_id_must_be_a_closed_shape_token():
+    with pytest.raises(ValueError, match="closed-shape token"):
+        observation.Assertion("entry UUID equals job id", True)
+
+
+def test_result_helpers_filter_malformed_entries_and_resource_shapes():
+    raw_entries = [
+        {"Resource": {"UUID": "nested"}},
+        "not-a-mapping",
+        {"UUID": "flat"},
+    ]
+
+    assert results.entries(raw_entries) == [raw_entries[0], raw_entries[2]]
+    assert results.entries({"entries": raw_entries}) == [raw_entries[0], raw_entries[2]]
+    assert results.entries({"entries": {"UUID": "not-a-list"}}) == []
+    assert results.entries("invalid") == []
+    assert results.resource(raw_entries[0]) == {"UUID": "nested"}
+    assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
+    assert results.resource({"Resource": "not-a-mapping"}) == {
+        "Resource": "not-a-mapping"
+    }
+
+
+def _live_hmc_config() -> HMCConfig:
+    return HMCConfig.from_mapping(
+        {"host": "hmc.test", "port": 12443, "user": "operator", "verify_ssl": False}
+    )
+
+
+def _result_document(
+    config: runner.LiveTestConfig,
+    hmc_config: HMCConfig,
+    artifacts: runner.LiveTestArtifacts | None = None,
+) -> dict:
+    return {
+        "config": asdict(config),
+        "hmc": runner._hmc_identity(hmc_config),
+        "artifacts": asdict(artifacts or runner.LiveTestArtifacts()),
+        "results": [{"status": "PASS"}],
+    }
+
+
+def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    artifacts = runner.LiveTestArtifacts(
+        system_uuid="system-1",
+        vios_uuid="vios-1",
+        lp3_baseline={"description": "original"},
+    )
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(_result_document(config, hmc_config, artifacts)))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.system_uuid == "system-1"
+    assert state.artifacts.vios_uuid == "vios-1"
+    assert state.artifacts.lp3_baseline == {"description": "original"}
+    assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
+
+
+def test_restore_artifacts_tolerates_a_results_document_without_test_user_uuid(
+    tmp_path,
+):
+    """A report written before the field existed is still a valid restore source."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    del document["artifacts"]["test_user_uuid"]
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.test_user_uuid is None
 
 
 @pytest.mark.parametrize("document", ["not JSON", "[]", '{"context": []}'])
-def test_restore_context_reports_expected_results_file_failures(
+def test_restore_artifacts_reports_expected_results_file_failures(
     tmp_path, capsys, document
 ):
     results_path = tmp_path / "previous.json"
     results_path.write_text(document)
 
-    runner._restore_ctx_from_results(runner.RunState(), str(results_path))
+    runner._restore_artifacts_from_results(
+        runner.RunState(), _live_hmc_config(), str(results_path)
+    )
 
-    assert "Could not restore context" in capsys.readouterr().out
+    assert "Could not restore artifacts" in capsys.readouterr().out
 
 
-def test_restore_context_propagates_unexpected_restoration_defects(
+def test_restore_artifacts_rejects_wrong_types_without_partial_mutation(
+    tmp_path, capsys
+):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["artifacts"]["system_uuid"] = "would-be-installed"
+    document["artifacts"]["vios_partition_id"] = True
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    original = runner.LiveTestArtifacts(system_uuid="original")
+    state = runner.RunState(config=config, artifacts=original)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts is original
+    assert state.artifacts.system_uuid == "original"
+    assert "must be an integer or null" in capsys.readouterr().out
+
+
+def test_restore_artifacts_rejects_config_mismatch_without_mutation(tmp_path, capsys):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["config"]["system_name"] = "other-system"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    original = runner.LiveTestArtifacts(system_uuid="original")
+    state = runner.RunState(config=config, artifacts=original)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts is original
+    assert "configuration does not match this run" in capsys.readouterr().out
+
+
+def test_restore_artifacts_rejects_unknown_fields_without_mutation(tmp_path, capsys):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["artifacts"]["unknown"] = "value"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    original = runner.LiveTestArtifacts(system_uuid="original")
+    state = runner.RunState(config=config, artifacts=original)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts is original
+    assert "fields do not match" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("field", ["host", "port", "user", "verify_ssl"])
+def test_restore_artifacts_rejects_each_hmc_identity_mismatch(tmp_path, capsys, field):
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["hmc"][field] = {
+        "host": "other.test",
+        "port": 443,
+        "user": "other",
+        "verify_ssl": True,
+    }[field]
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+
+    state = runner.RunState(config=config)
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts == runner.LiveTestArtifacts()
+    assert "does not match this run" in capsys.readouterr().out
+
+
+def test_restore_artifacts_propagates_unexpected_restoration_defects(
     tmp_path, monkeypatch
 ):
     results_path = tmp_path / "previous.json"
-    results_path.write_text('{"context": {}}')
+    results_path.write_text(
+        json.dumps(_result_document(runner.LiveTestConfig(), _live_hmc_config()))
+    )
     monkeypatch.setattr(
         runner, "asdict", lambda _context: (_ for _ in ()).throw(RuntimeError("defect"))
     )
 
     with pytest.raises(RuntimeError, match="defect"):
-        runner._restore_ctx_from_results(runner.RunState(), str(results_path))
+        runner._restore_artifacts_from_results(
+            runner.RunState(), _live_hmc_config(), str(results_path)
+        )
 
 
 @pytest.mark.parametrize(
@@ -467,11 +1991,11 @@ def test_live_runner_parses_selection_and_result_defaults():
     )
 
 
-def test_live_context_has_no_mapping_facade():
-    context = runner.LiveTestContext()
+def test_live_config_has_no_mapping_facade():
+    config = runner.LiveTestConfig()
 
-    assert not hasattr(context, "__getitem__")
-    assert not hasattr(context, "get")
+    assert not hasattr(config, "__getitem__")
+    assert not hasattr(config, "get")
 
 
 def test_numeric_dispatch_uses_intent_revealing_workflow_names():
@@ -524,19 +2048,40 @@ async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatc
     assert affinity_calls == [
         (
             "hmc_get_lpar_memopt_score",
-            {"system_name_or_uuid": "ltczz386", "lpar_name_or_uuid": "ltczz386-lp3"},
+            {
+                "system_name_or_uuid": "example-lt-609-system",
+                "lpar_name_or_uuid": "example-lt-609-lpar",
+            },
         ),
-        ("hmc_list_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_get_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_plan_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_plan_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_list_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
-        ("hmc_plan_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
+        (
+            "hmc_list_lpar_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_get_system_memopt_score",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_plan_lpar_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_plan_system_memopt_score",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_list_resource_group_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
+        (
+            "hmc_plan_resource_group_memopt_scores",
+            {"system_name_or_uuid": "example-lt-609-system"},
+        ),
         (
             "hmc_get_minimum_affinity_policy",
             {
-                "system_name_or_uuid": "ltczz386",
-                "lpar_name_or_uuid": "ltczz386-lp3",
+                "system_name_or_uuid": "example-lt-609-system",
+                "lpar_name_or_uuid": "example-lt-609-lpar",
             },
         ),
     ]
@@ -575,14 +2120,21 @@ def test_live_runner_contains_no_executable_optmem_command():
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
-def _dispatched_tool_names(source: str) -> set[str]:
-    """Every tool name ``source`` hands to the runner's ``call`` dispatcher.
+def _dispatched_calls(
+    source: str,
+) -> list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]]:
+    """Every ``call`` dispatch in ``source``: its line, tool name and arguments.
+
+    Each argument is its keyword name paired with the expression node supplying
+    it, so a caller can check the *type* a site passes and not only the name.
 
     A dispatch whose tool argument is not a string literal cannot be read here,
     and skipping it would silently shrink the guard's coverage, so it fails
-    instead.
+    instead. A ``**mapping`` splat yields ``None`` in place of a keyword name:
+    reporting that as one problem, rather than raising on it, is what lets the
+    caller finish enumerating every other site in the tree.
     """
-    names: set[str] = set()
+    dispatches: list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
@@ -594,8 +2146,144 @@ def _dispatched_tool_names(source: str) -> set[str]:
                 f"line {node.lineno}: call() dispatches a tool name this guard "
                 "cannot read — pass a string literal"
             )
-        names.add(tool.value)
-    return names
+        dispatches.append(
+            (
+                node.lineno,
+                tool.value,
+                tuple(
+                    (keyword.arg, keyword.value)
+                    for keyword in node.keywords
+                    if keyword.arg not in {"expected", "reuse_gaps"}
+                ),
+            )
+        )
+    return dispatches
+
+
+def _dispatched_tool_names(source: str) -> set[str]:
+    """Every tool name ``source`` hands to the runner's ``call`` dispatcher."""
+    return {tool for _, tool, _ in _dispatched_calls(source)}
+
+
+#: The holder a dispatch site reads statically-typed arguments from. A default
+#: instance is enough: the guard compares the *type* a field carries, and a
+#: config field's default has its declared type because the runner validates
+#: every one at startup. Run artifacts are deliberately absent — they default to
+#: None and are filled in mid-run, so their defaults describe no dispatch.
+_ARGUMENT_SOURCES = {"config": runner.LiveTestConfig()}
+
+_UNRESOLVED = runner.UNRESOLVED_ARGUMENT
+
+#: A dispatch site reading a config field that does not exist. It is not an
+#: unknowable type, it is a typo that would `AttributeError` against live
+#: hardware, so it is reported rather than passed over.
+_NO_SUCH_FIELD = object()
+
+#: A conversion whose result type is known even though its argument is not.
+#: `str(whatever)` is a `str`; that is the whole question the guard asks, and
+#: it is the spelling every converted dispatch site uses.
+_CONVERSIONS: dict[str, object] = {"str": "", "int": 0, "float": 0.0, "bool": False}
+
+
+def _resolved_argument(node: ast.expr) -> object:
+    """The value a dispatch site passes, or ``_UNRESOLVED`` when it is dynamic.
+
+    Four shapes are statically knowable: a literal; an attribute read off the run
+    config (``config.x`` or ``state.config.x``); a builtin conversion such as
+    ``str(...)``, whose result type is fixed regardless of its argument; and an
+    f-string, which is always a ``str``. Anything else is a local discovered
+    mid-run, which carries no static type and is passed over rather than guessed
+    at.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return ""
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id in _CONVERSIONS:
+            return _CONVERSIONS[node.func.id]
+        return _UNRESOLVED
+    if isinstance(node, ast.Attribute):
+        holder = node.value
+        if (
+            isinstance(holder, ast.Attribute)
+            and isinstance(holder.value, ast.Name)
+            and holder.value.id == "state"
+        ):
+            # `state.config.x`, but not any chain that merely ends in `.config`:
+            # matching those would resolve an unrelated object's field against
+            # LiveTestConfig and report a spurious missing-field problem.
+            holder = ast.Name(id=holder.attr)
+        if isinstance(holder, ast.Name) and holder.id in _ARGUMENT_SOURCES:
+            source = _ARGUMENT_SOURCES[holder.id]
+            if not hasattr(source, node.attr):
+                return _NO_SUCH_FIELD
+            return getattr(source, node.attr)
+    return _UNRESOLVED
+
+
+async def _served_schemas() -> dict[str, dict[str, object]]:
+    """The input schema the composed application actually serves for each tool."""
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+    )
+    application = create_mcp(policy)
+    permits, authorize = _gates(policy)
+    await configure_arbitrary_command_tool(
+        True, application, permits=permits, authorize=authorize
+    )
+    async with Client(application) as client:
+        return {
+            tool.name: tool.model_dump(by_alias=True)["inputSchema"]
+            for tool in await client.list_tools()
+        }
+
+
+def _dispatch_argument_report(
+    sources: dict[str, str], schemas
+) -> tuple[list[str], int, int]:
+    """Every disagreement with the served schema, plus how much was actually read.
+
+    The counts are the guard's own coverage. Without them a change that stops
+    resolving a whole class of arguments — turning checked dispatches into
+    unchecked ones — reads exactly like a clean run.
+    """
+    problems: list[str] = []
+    checked = total = 0
+    for path, source in sources.items():
+        for lineno, tool, arguments in _dispatched_calls(source):
+            if any(name is None for name, _ in arguments):
+                problems.append(
+                    f"{path}:{lineno} dispatches arguments this guard "
+                    "cannot read — name them"
+                )
+                continue
+            supplied: dict[str, object] = {}
+            for name, node in arguments:
+                if name is None:
+                    continue
+                total += 1
+                value = _resolved_argument(node)
+                if value is _NO_SUCH_FIELD:
+                    problems.append(
+                        f"{path}:{lineno} {tool}: {name} reads a field that does "
+                        "not exist on the run config"
+                    )
+                    continue
+                if value is not _UNRESOLVED:
+                    checked += 1
+                supplied[name] = value
+            problems += [
+                f"{path}:{lineno} {problem}"
+                for problem in runner._dispatch_problems(tool, supplied, schemas)
+            ]
+    return problems, checked, total
+
+
+def _assert_dispatch_arguments(sources: dict[str, str], schemas) -> None:
+    """Fail naming every dispatch whose arguments disagree with the served schema."""
+    problems, _, _ = _dispatch_argument_report(sources, schemas)
+    assert problems == [], "\n".join(problems)
 
 
 def test_every_dispatched_tool_name_is_registered():
@@ -631,6 +2319,337 @@ def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
         _dispatched_tool_names(source)
 
 
+_SRIOV_SCHEMA = {
+    "hmc_list_sriov_logical_ports": {
+        "properties": {
+            "system_name_or_uuid": {"type": "string"},
+            "adapter_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "logical_port_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+        "required": ["system_name_or_uuid"],
+    },
+    "hmc_assign_sriov_logical_port": {
+        "properties": {
+            "adapter_id": {"type": "string"},
+            "capacity_percent": {"type": "number"},
+            "ownership_override": {"type": "boolean"},
+        },
+        "required": [],
+    },
+}
+
+
+def test_dispatch_guard_reports_an_argument_of_the_wrong_type():
+    """An int where the tool declares a string is the #763 defect, caught statically.
+
+    The name is right and the tool is registered, so the pre-#763 guard passed it
+    through and the mismatch only surfaced as a pydantic error against a live HMC.
+    """
+    problems = runner._dispatch_problems(
+        "hmc_list_sriov_logical_ports",
+        {"system_name_or_uuid": "sys", "adapter_id": 17, "logical_port_id": 917003},
+        _SRIOV_SCHEMA,
+    )
+
+    assert sorted(problems) == [
+        "hmc_list_sriov_logical_ports: adapter_id expects string or null, got int",
+        "hmc_list_sriov_logical_ports: logical_port_id expects string or null, got int",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [
+        ("adapter_id", "17"),
+        ("capacity_percent", 7.5),
+        ("capacity_percent", 7),  # PEP 484 numeric tower: int satisfies number
+        ("ownership_override", True),
+    ],
+)
+def test_dispatch_guard_accepts_an_argument_of_the_declared_type(argument, value):
+    assert (
+        runner._dispatch_problems(
+            "hmc_assign_sriov_logical_port", {argument: value}, _SRIOV_SCHEMA
+        )
+        == ()
+    )
+
+
+def test_dispatch_guard_rejects_a_bool_where_a_number_is_declared():
+    """`bool` is an `int` subclass, so a naive isinstance check would admit it."""
+    assert runner._dispatch_problems(
+        "hmc_assign_sriov_logical_port", {"capacity_percent": True}, _SRIOV_SCHEMA
+    ) == ("hmc_assign_sriov_logical_port: capacity_percent expects number, got bool",)
+
+
+def test_dispatch_guard_accepts_none_for_an_optional_argument():
+    """`str | None` serves as `anyOf[string, null]`; passing None is a valid dispatch."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_logical_ports",
+            {"system_name_or_uuid": "sys", "adapter_id": None},
+            _SRIOV_SCHEMA,
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    ("property_schema", "unreadable"),
+    [
+        ({"$ref": "#/$defs/Selector"}, ["$ref"]),
+        ({"allOf": [{"type": "string"}]}, ["allOf"]),
+        ({"oneOf": [{"type": "string"}]}, ["oneOf"]),
+        ({"const": "sriov"}, ["const"]),
+        ({"enum": ["sriov", "ded"], "description": "mode"}, ["enum"]),
+    ],
+)
+def test_dispatch_guard_reports_a_schema_shape_it_cannot_read(
+    property_schema, unreadable
+):
+    """A shape the guard cannot read must be loud, not a silent skip.
+
+    None of these is served today, but FastMCP emits `$ref` as soon as a tool
+    parameter is annotated with a nested model rather than a scalar. Returning
+    "no problem" would drop that argument from type checking with nothing to
+    show for it.
+    """
+    problems = runner._dispatch_problems(
+        "hmc_list_sriov_adapters",
+        {"adapter_id": 17},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": property_schema}}},
+    )
+
+    assert problems == (
+        (
+            "hmc_list_sriov_adapters: adapter_id has a schema shape this guard "
+            f"cannot read: {unreadable}"
+        ),
+    )
+
+
+@pytest.mark.parametrize("property_schema", [{}, {"description": "anything"}])
+def test_dispatch_guard_accepts_a_property_that_constrains_nothing(property_schema):
+    """A property with no type and no constraint admits any value; that is not a gap."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_adapters",
+            {"adapter_id": 17},
+            {
+                "hmc_list_sriov_adapters": {
+                    "properties": {"adapter_id": property_schema}
+                }
+            },
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    "property_schema",
+    [
+        {"type": ["string", "null"]},
+        {"anyOf": [{"anyOf": [{"type": "string"}]}, {"type": "null"}]},
+    ],
+)
+def test_dispatch_guard_reads_type_lists_and_nested_any_of(property_schema):
+    """Neither shape is served today; both are read rather than passed over."""
+    assert runner._dispatch_problems(
+        "hmc_list_sriov_adapters",
+        {"adapter_id": 17},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": property_schema}}},
+    ) == ("hmc_list_sriov_adapters: adapter_id expects string or null, got int",)
+
+
+def test_dispatch_guard_passes_over_a_statically_unknowable_argument():
+    """A value discovered mid-run has no static type; the guard must not guess."""
+    assert (
+        runner._dispatch_problems(
+            "hmc_list_sriov_logical_ports",
+            {
+                "system_name_or_uuid": "sys",
+                "adapter_id": runner.UNRESOLVED_ARGUMENT,
+            },
+            _SRIOV_SCHEMA,
+        )
+        == ()
+    )
+
+
+def test_static_argument_resolution_reads_config_field_types():
+    """`config.x` and `state.config.x` both resolve, so both spellings are guarded."""
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_sriov_adapters",\n'
+        "        adapter_id=config.sriov_adapter_id,\n"
+        "        system_name_or_uuid=state.config.system_name,\n"
+        "        physical_port_id=discovered_at_runtime,\n"
+        '        logical_port_id="917003")\n'
+    )
+
+    (_, _, arguments), *rest = _dispatched_calls(source)
+    resolved = {name: _resolved_argument(node) for name, node in arguments}
+
+    assert rest == []
+    assert resolved["adapter_id"] == runner.LiveTestConfig().sriov_adapter_id
+    assert resolved["system_name_or_uuid"] == runner.LiveTestConfig().system_name
+    assert resolved["physical_port_id"] is _UNRESOLVED
+    assert resolved["logical_port_id"] == "917003"
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected_type"),
+    [
+        ("str(config.sriov_adapter_id)", str),
+        ("int(discovered)", int),
+        ("float(discovered)", float),
+        ("bool(discovered)", bool),
+        ('f"{config.sriov_adapter_id}"', str),
+    ],
+)
+def test_static_argument_resolution_reads_conversions_and_f_strings(
+    expression, expected_type
+):
+    """A conversion's result type is known even when its argument is not.
+
+    Every site #763 fixed is spelled `str(config.x)`. Passing over an `ast.Call`
+    would leave all 23 of them unchecked while the guard still reported a clean
+    run — the guard would bite only on a literal revert, never on a wrong
+    conversion such as `int(...)` where the tool declares a string.
+    """
+    source = (
+        "async def workflow(client):\n"
+        f'    await state.call(client, "hmc_list_sriov_adapters", adapter_id={expression})\n'
+    )
+
+    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+
+    assert type(_resolved_argument(node)) is expected_type
+
+
+def test_every_sriov_identifier_argument_is_actually_type_checked():
+    """The 23 arguments #763 fixed must stay resolvable, not just the global budget.
+
+    The coverage floor in the schema test is a whole-tree total, so a later change
+    could stop resolving every SR-IOV identifier and stay under it by resolving
+    something else. These are the arguments the guard was extended for, so they
+    are asserted by name.
+    """
+    source = Path(pcie.__file__).read_text(encoding="utf-8")
+    identifiers = {"adapter_id", "physical_port_id", "logical_port_id"}
+
+    passed_over = [
+        f"pcie.py:{lineno} {tool}: {name}"
+        for lineno, tool, arguments in _dispatched_calls(source)
+        if "sriov" in tool
+        for name, node in arguments
+        if name in identifiers and _resolved_argument(node) is _UNRESOLVED
+    ]
+
+    assert passed_over == [], "\n".join(passed_over)
+    assert (
+        sum(
+            name in identifiers
+            for _, tool, arguments in _dispatched_calls(source)
+            if "sriov" in tool
+            for name, _ in arguments
+        )
+        == 23
+    )
+
+
+def test_static_argument_resolution_reports_a_config_field_that_does_not_exist():
+    """A misspelled config field would `AttributeError` live; it must not read as dynamic."""
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_sriov_adapters",\n'
+        "        adapter_id=config.sriov_adapter_idd)\n"
+    )
+
+    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+
+    assert _resolved_argument(node) is _NO_SUCH_FIELD
+
+    problems, _, _ = _dispatch_argument_report(
+        {"pcie.py": source},
+        {"hmc_list_sriov_adapters": {"properties": {"adapter_id": {"type": "string"}}}},
+    )
+    assert problems == [
+        (
+            "pcie.py:2 hmc_list_sriov_adapters: adapter_id reads a field that "
+            "does not exist on the run config"
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_every_dispatched_argument_matches_the_served_schema():
+    """A dispatch the served schema rejects is a defect the harness ships blind."""
+    schemas = await _served_schemas()
+    sources = {
+        Path(module.__file__).name: Path(module.__file__).read_text(encoding="utf-8")
+        for module in LIVE_WORKFLOW_MODULES
+    }
+    # The runner itself dispatches nothing today; covering it keeps a dispatch
+    # added there from being the one the guard never reads.
+    sources[_RUNNER_PATH.name] = _RUNNER_PATH.read_text(encoding="utf-8")
+
+    problems, checked, total = _dispatch_argument_report(sources, schemas)
+
+    assert problems == [], "\n".join(problems)
+    # A floor, not the live number, so adding an argument the guard cannot read
+    # is allowed while losing a class of arguments it used to read is not. #763
+    # converted 23 checked arguments to unchecked ones and every test stayed
+    # green; that is precisely what this catches.
+    assert checked >= 230, (
+        f"the dispatch guard now type-checks only {checked} of {total} arguments; "
+        "a resolvable argument shape stopped resolving and the guard is quietly "
+        "covering less than it did"
+    )
+
+
+@pytest.mark.asyncio
+async def test_argument_guard_refuses_a_splat_it_cannot_read():
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_list_lpars", **overrides)\n'
+    )
+
+    with pytest.raises(AssertionError, match="cannot read"):
+        _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
+
+
+@pytest.mark.asyncio
+async def test_argument_guard_reports_an_unknown_keyword():
+    source = (
+        "async def workflow(client):\n"
+        '    await state.call(client, "hmc_get_job", job_uuid="x")\n'
+    )
+
+    with pytest.raises(AssertionError) as raised:
+        _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
+
+    assert "unknown argument job_uuid" in str(raised.value)
+    assert "missing required argument job_id" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_dispatch_never_reaches_the_client():
+    class _RefusingClient:
+        async def call_tool(self, _tool, _kwargs):
+            raise AssertionError("an invalid dispatch reached the client")
+
+    state = runner.RunState()
+    state.schemas = await _served_schemas()
+
+    status, data = await state.call(_RefusingClient(), "hmc_get_job", job_uuid="x")
+    state.record(12, "hmc_get_job", status, data)
+
+    assert status == "FAIL"
+    assert data.exception_type == "InvalidDispatch"
+    assert state.results[0]["result"] == "failed"
+
+
 def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
     """A duplicated client argument turns a live stage into an immediate TypeError."""
     invalid: list[str] = []
@@ -649,14 +2668,14 @@ def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
     assert invalid == []
 
 
-def _configure_vmedia_context(state, values):
+def _configure_vmedia_artifacts(state, values):
     for name, value in values.items():
-        setattr(state.context, name, value)
+        setattr(state.artifacts, name, value)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("workflow", "context", "expected_tools"),
+    ("workflow", "artifacts", "expected_tools"),
     [
         (
             runner.vmedia_bootstrap_and_create_repo,
@@ -767,7 +2786,7 @@ def _configure_vmedia_context(state, values):
     ],
 )
 async def test_vmedia_workflows_execute_their_behavioral_contracts(
-    monkeypatch, workflow, context, expected_tools
+    monkeypatch, workflow, artifacts, expected_tools
 ):
     calls = []
     counts = {}
@@ -798,14 +2817,14 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         if tool == "hmc_read_lpar_boot_order":
             return "PASS", {"pending_boot_string": "disk,network"}
         if tool == "hmc_list_optical_mappings" and workflow is runner.vmedia_teardown:
-            return "PASS", [{"UUID": "mapping"}]
+            return "PASS", [_optical_mapping("test.iso")]
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     monkeypatch.setattr(vmedia.Path, "is_file", lambda _path: True)
     state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda: None)
-    _configure_vmedia_context(state, context)
+    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
+    _configure_vmedia_artifacts(state, artifacts)
 
     await workflow(None, state)
 
@@ -847,8 +2866,8 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda: None)
-    _configure_vmedia_context(
+    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
+    _configure_vmedia_artifacts(
         state,
         {
             "vmedia_repo_created": True,
@@ -863,8 +2882,8 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
     tools = [tool for tool, _ in calls]
     assert "hmc_unmount_optical_media" in tools
     assert tools.count("hmc_set_lpar_boot_order") == 2
-    assert state.context.vmedia_mapping_uuid is None
-    assert state.context.vmedia_orig_boot_order == []
+    assert state.artifacts.vmedia_mapping_uuid is None
+    assert state.artifacts.vmedia_orig_boot_order == []
 
 
 @pytest.mark.asyncio
@@ -883,7 +2902,7 @@ async def test_vmedia_teardown_continues_after_orphan_unmount_failure(monkeypatc
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    _configure_vmedia_context(
+    _configure_vmedia_artifacts(
         state,
         {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
     )
@@ -908,17 +2927,23 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
         state.iso_http_server.close = lambda: closed_servers.append(
             state.iso_http_server
         )
-        initial_system_uuids.append(state.context.system_uuid)
-        state.context.system_uuid = "first-run-only"
+        initial_system_uuids.append(state.artifacts.system_uuid)
+        state.artifacts.system_uuid = "first-run-only"
         state.record(0, "fake", "PASS", {})
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: fake_subtask})
     first_path = tmp_path / "first.json"
     second_path = tmp_path / "second.json"
 
-    assert await runner.main(results_path=str(first_path)) == 0
-    seen_states[0].context.system_uuid = "mutated-after-run"
-    assert await runner.main(results_path=str(second_path)) == 0
+    assert (
+        await runner.main(results_path=str(first_path), config=runner.LiveTestConfig())
+        == 0
+    )
+    seen_states[0].artifacts.system_uuid = "mutated-after-run"
+    assert (
+        await runner.main(results_path=str(second_path), config=runner.LiveTestConfig())
+        == 0
+    )
 
     assert seen_states[0] is not seen_states[1]
     assert initial_system_uuids == [None, None]
@@ -928,24 +2953,50 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
         seen_states[1].iso_http_server,
     ]
     assert (
-        json.loads(second_path.read_text())["context"]["system_uuid"]
+        json.loads(second_path.read_text())["artifacts"]["system_uuid"]
         == "first-run-only"
     )
 
 
 @pytest.mark.asyncio
-async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
+async def test_main_redacts_direct_failure_before_persisting(
+    monkeypatch, tmp_path, capsys
+):
     _isolate_runner(monkeypatch)
+    suffix = "-secret"
+    url_credential = "url" + suffix
+    credential = "runner" + suffix
+    sensitive = (
+        f"direct failure password={credential} "
+        f"https://operator:{url_credential}@hmc.lab.example.test/api "
+        "/home/operator/live-test.toml"
+    )
 
     async def failing_subtask(_client, state):
-        state.record(0, "fake", "FAIL", "expected failure")
+        state.record(0, "fake", "FAIL", {"detail": sensitive})
 
     monkeypatch.setattr(runner, "SUBTASKS", {0: failing_subtask})
     results_path = tmp_path / "results.json"
 
-    assert await runner.main(results_path=str(results_path)) == 1
+    assert (
+        await runner.main(
+            results_path=str(results_path), config=runner.LiveTestConfig()
+        )
+        == 1
+    )
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["status"] == "FAIL"
+    assert isinstance(saved["results"][0]["data"], dict)
+    output = capsys.readouterr().out
+    persisted = json.dumps(saved)
+    for value in (
+        credential,
+        f"operator:{url_credential}",
+        "hmc.lab.example.test",
+        "/home/operator/live-test.toml",
+    ):
+        assert value not in output
+        assert value not in persisted
 
 
 @pytest.mark.asyncio
@@ -953,11 +3004,31 @@ async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
     _isolate_runner(monkeypatch)
     results_path = tmp_path / "unknown.json"
 
-    assert await runner.main(999, str(results_path)) == 1
+    assert (
+        await runner.main(999, str(results_path), config=runner.LiveTestConfig()) == 1
+    )
 
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["tool"] == "runner"
     assert saved["results"][0]["data"] == "Unknown sub-task 999"
+
+
+def test_result_write_preserves_existing_report_when_replacement_fails(
+    monkeypatch, tmp_path
+) -> None:
+    path = tmp_path / "results.json"
+    path.write_text('{"old": true}', encoding="utf-8")
+
+    def fail_replace(_temporary, _path):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replacement failed"):
+        runner._write_results(path, '{"new": true}')
+
+    assert path.read_text(encoding="utf-8") == '{"old": true}'
+    assert not list(tmp_path.glob(".results.json.*.tmp"))
 
 
 @pytest.mark.asyncio
@@ -966,12 +3037,15 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
 ):
     calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
         responses = {
-            "hmc_console_info": {"uuid": "console-uuid"},
+            "hmc_get_console_info": {"uuid": "console-uuid"},
             "hmc_list_systems": [
-                {"UUID": "system-uuid", "Resource": {"SystemName": "ltczz386"}}
+                {
+                    "UUID": "system-uuid",
+                    "Resource": {"SystemName": "example-lt-609-system"},
+                }
             ],
             "hmc_get_lpar": {"UUID": "lpar-uuid"},
             "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
@@ -985,7 +3059,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     await connectivity.inventory_connectivity(None, state)
 
     assert [tool for tool, _ in calls] == [
-        "hmc_console_info",
+        "hmc_get_console_info",
         "hmc_list_systems",
         "hmc_get_system",
         "hmc_list_lpars",
@@ -999,17 +3073,17 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "hmc_system_summary",
         "hmc_lpar_summary",
     ]
-    assert calls[2][1] == {"system_name_or_uuid": "ltczz386"}
-    assert calls[4][1] == {"lpar_name_or_uuid": "ltczz386-lp3"}
-    assert calls[7][1] == {"desired_memory_mib": 1024}
+    assert calls[2][1] == {"system_name_or_uuid": "example-lt-609-system"}
+    assert calls[4][1] == {"lpar_name_or_uuid": "example-lt-609-lpar"}
+    assert calls[7][1] == {"desired_memory_mib": 3072}
     assert calls[9][1] == {"resource_type": "LogicalPartition"}
     assert calls[10][1] == {"limit": 10}
-    assert state.context.console_uuid == "console-uuid"
-    assert state.context.system_uuid == "system-uuid"
-    assert state.context.lp3_uuid == "lpar-uuid"
-    assert state.context.vios_uuid == "vios-uuid"
-    assert state.context.vios_partition_id == 7
-    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.artifacts.console_uuid == "console-uuid"
+    assert state.artifacts.system_uuid == "system-uuid"
+    assert state.artifacts.lp3_uuid == "lpar-uuid"
+    assert state.artifacts.vios_uuid == "vios-uuid"
+    assert state.artifacts.vios_partition_id == 7
+    assert state.artifacts.job_uuid_sample == "job-uuid"
 
 
 @pytest.mark.asyncio
@@ -1018,12 +3092,12 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
 ):
     calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_get_pcm_preferences":
             return "PASS", {"long_term_monitor": True}
         if tool == "hmc_processed_metric_links":
-            return "FAIL", "PCM is not licensed"
+            return "FAIL", _failure("PCM is not licensed")
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -1039,10 +3113,10 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
     ]
     assert calls[0][1] == {
         "category": "ManagedSystem",
-        "resource_name_or_uuid": state.context.system_name,
+        "resource_name_or_uuid": state.config.system_name,
     }
     assert calls[1][1]["start_ts"] == "2026-01-01T00:00:00.000Z"
-    assert state.context.lp3_baseline["pcm_prefs"] == {"long_term_monitor": True}
+    assert state.artifacts.lp3_baseline["pcm_prefs"] == {"long_term_monitor": True}
     assert state.results[1]["status"] == "SKIP"
 
 
@@ -1050,16 +3124,32 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
 async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
     calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
-        return "FAIL", "REST000E: endpoint unavailable"
+        return "FAIL", _failure("REST000E: endpoint unavailable")
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
+
+    await users.inventory_users(None, state)
+
+    assert calls == [("hmc_list_users", {"console_uuid": "console-uuid"})]
+    assert state.results[0]["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_user_inventory_skips_without_a_console_uuid(monkeypatch):
+    """Every user tool addresses the console by UUID, so ST1 gates the whole path."""
+
+    async def scripted_call(_state, _client, _tool, **_kwargs):
+        raise AssertionError("a user tool ran without a console UUID")
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
 
     await users.inventory_users(None, state)
 
-    assert calls == [("hmc_list_users", {})]
     assert state.results[0]["status"] == "SKIP"
 
 
@@ -1095,11 +3185,16 @@ async def test_user_administration_cleans_up_only_a_created_user(
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_create_user":
-            return create_status, {} if create_status == "PASS" else "REST000E"
+            if create_status == "PASS":
+                return "PASS", {}
+            return "FAIL", _failure("REST000E")
+        if tool == "hmc_list_users":
+            return "PASS", [{"UserID": state.config.test_user, "uuid": "profile-uuid"}]
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
 
     await users.administer_test_user(None, state)
 
@@ -1108,15 +3203,50 @@ async def test_user_administration_cleans_up_only_a_created_user(
         expected.extend(["hmc_modify_user", "hmc_delete_user"])
     expected.append("hmc_list_users")
     assert [tool for tool, _ in calls] == expected
-    assert calls[0][1]["name"] == state.context.test_user
+    assert calls[0][1]["user_id"] == state.config.test_user
+    assert calls[0][1]["console_uuid"] == "console-uuid"
     if create_status == "PASS":
         assert calls[2][1]["description"].endswith("updated")
-        assert calls[3][1] == {"name": state.context.test_user}
+        assert calls[3][1] == {
+            "console_uuid": "console-uuid",
+            "user_profile_uuid": "profile-uuid",
+        }
+        assert state.artifacts.test_user_uuid is None
     else:
         skipped = [
             result["tool"] for result in state.results if result["status"] == "SKIP"
         ]
         assert skipped == ["hmc_create_user", "hmc_modify_user", "hmc_delete_user"]
+
+
+@pytest.mark.asyncio
+async def test_user_administration_skips_without_a_profile_uuid(monkeypatch):
+    """Modify and delete address the profile by UUID; without one they must not run."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        assert tool not in {"hmc_modify_user", "hmc_delete_user"}
+        if tool == "hmc_list_users":
+            return "PASS", [{"UserID": "someone-else", "uuid": "other-uuid"}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.console_uuid = "console-uuid"
+
+    await users.administer_test_user(None, state)
+
+    assert state.artifacts.test_user_uuid is None
+    skipped = [
+        (result["tool"], result["note"])
+        for result in state.results
+        if result["status"] == "SKIP"
+    ]
+    assert skipped == [
+        ("hmc_modify_user", "user profile UUID not found after create"),
+        ("hmc_delete_user", "user profile UUID not found after create"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -1133,7 +3263,7 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.job_uuid_sample = "job-uuid"
+    state.artifacts.job_uuid_sample = "job-uuid"
 
     await metrics.inspect_metrics_jobs(None, state)
 
@@ -1150,7 +3280,7 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
     assert [kwargs["long_term_monitor"] for kwargs in set_calls] == [True, False]
     wait_call = next(kwargs for tool, kwargs in calls if tool == "hmc_wait_for_job")
     assert wait_call == {
-        "job_uuid": "job-uuid",
+        "job_id": "job-uuid",
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
@@ -1165,7 +3295,7 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
         if tool == "hmc_list_virtual_switches":
             return "PASS", [{"Resource": {"SwitchID": "7"}}]
         if tool == "hmc_list_virtual_networks" and len(calls) < 7:
-            return "PASS", [{"Resource": {"NetworkVLANID": "3000"}}]
+            return "PASS", [{"Resource": {"NetworkVLANID": "3100"}}]
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -1177,9 +3307,9 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
     create_call = next(
         item for item in calls if item[0] == "hmc_create_virtual_network"
     )
-    assert state.context.test_vswitch_id == 7
-    assert state.context.test_vlan_id == 3001
-    assert create_call[1]["vlan_id"] == 3001
+    assert state.artifacts.test_vswitch_id == 7
+    assert state.artifacts.test_vlan_id == 3101
+    assert create_call[1]["vlan_id"] == 3101
     assert create_call[1]["virtual_switch_id"] == 7
 
 
@@ -1199,7 +3329,7 @@ async def test_malformed_vlan_inventory_blocks_network_mutation(monkeypatch):
     await runner.inventory_network(None, state)
     await runner.mutate_virtual_networking(None, state)
 
-    assert state.context.test_vlan_id is None
+    assert state.artifacts.test_vlan_id is None
     assert not any(tool == "hmc_create_virtual_network" for tool, _ in calls)
     result = next(
         item for item in state.results if item["tool"] == "hmc_list_virtual_networks"
@@ -1240,7 +3370,7 @@ async def test_mutating_workflows_stop_when_inventory_context_is_missing(
 
     monkeypatch.setattr(runner.RunState, "call", unexpected_call)
     state = runner.RunState()
-    configure(state.context)
+    configure(state.artifacts)
 
     await workflow(None, state)
 
@@ -1261,10 +3391,10 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
                 {
                     "UUID": "vg-uuid",
                     "Resource": {
-                        "GroupName": "VG1",
+                        "GroupName": "example-lt-609-vg",
                         "VirtualDisks": {
                             "VirtualDisk": {
-                                "DiskName": "VG1-lp3",
+                                "DiskName": "example-lt-609-disk",
                                 "DiskCapacity": "not-a-capacity",
                             }
                         },
@@ -1275,7 +3405,7 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.vios_uuid = "vios-uuid"
+    state.artifacts.vios_uuid = "vios-uuid"
 
     await runner.inventory_storage(None, state)
     await runner.exercise_storage_provisioning(None, state)
@@ -1286,8 +3416,88 @@ async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch)
         if result["tool"] == "parse virtual disk capacity"
     )
     assert failure["status"] == "FAIL"
-    assert state.context.vdisk_size_mib is None
+    assert state.artifacts.vdisk_size_mib is None
     assert not any(tool == "hmc_create_virtual_disk" for tool, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_storage_provisioning_runs_the_complete_successful_orchestration(
+    monkeypatch,
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_get_lpar":
+            return "PASS", {"uuid": "recreated-lp3"}
+        if tool == "hmc_provision_lpar":
+            return "PASS", {"steps": [{"step": "create", "status": "ok"}]}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vios_partition_id = 7
+    state.artifacts.vdisk_size_mib = 2048
+    state.artifacts.lp3_baseline = {
+        "pvid": 3101,
+        "vios_slot": 11,
+        "lpars": {
+            "Resource": {
+                "MinimumMemory": "1024",
+                "DesiredMemory": "2048",
+                "MaximumMemory": "4096",
+                "DesiredVirtualProcessors": "2",
+                "MaximumVirtualProcessors": "4",
+            }
+        },
+    }
+
+    await runner.exercise_storage_provisioning(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_get_lpar",
+        "hmc_power_off_lpar",
+        "hmc_delete_lpar",
+        "hmc_list_lpars",
+        "hmc_list_volume_groups",
+        "hmc_run_command",
+        "hmc_create_virtual_disk",
+        "hmc_list_volume_groups",
+        "hmc_provision_lpar",
+        "hmc_get_lpar",
+        "hmc_lpar_summary",
+    ]
+    provision = calls[8][1]
+    assert provision == {
+        "system_name_or_uuid": state.config.system_name,
+        "name": state.config.lp3_name,
+        "adapters": {
+            "port_vlan_id": 3101,
+            "vios_partition_id": 7,
+            "vios_slot": 11,
+        },
+        "storage": {
+            "vios_uuid": "vios-uuid",
+            "storage_name": state.config.vdisk_name,
+            "kind": "VirtualDisk",
+            "vg_uuid": "vg-uuid",
+        },
+        "resources": {
+            "min_memory": 1024,
+            "desired_memory": 2048,
+            "max_memory": 4096,
+            "desired_vcpus": 2,
+            "max_vcpus": 4,
+        },
+        "partition_type": "AIX/Linux",
+        "power_on": True,
+        "dry_run": False,
+    }
+    assert calls[9][1] == {"lpar_name_or_uuid": state.config.lp3_name}
+    assert calls[10][1] == {"lpar_name_or_uuid": state.config.lp3_name}
+    assert state.artifacts.lp3_uuid == "recreated-lp3"
 
 
 @pytest.mark.asyncio
@@ -1304,7 +3514,7 @@ async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.system_uuid = "system-uuid"
+    state.artifacts.system_uuid = "system-uuid"
 
     await runner.exercise_lpar_lifecycle(None, state)
 
@@ -1318,8 +3528,8 @@ async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
         "hmc_delete_lpar",
         "hmc_list_lpars",
     ]
-    assert state.context.scratch_uuid is None
-    assert state.context.job_uuid_sample == "job-uuid"
+    assert state.artifacts.scratch_uuid is None
+    assert state.artifacts.job_uuid_sample == "job-uuid"
 
 
 @pytest.mark.parametrize(
@@ -1355,7 +3565,7 @@ async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypa
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.lp3_baseline["description"] = "web tier, prod"
+    state.artifacts.lp3_baseline["description"] = "web tier, prod"
 
     await runner.mutate_lpar_properties(None, state)
 
@@ -1383,7 +3593,7 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.lp3_baseline["description"] = "original description"
+    state.artifacts.lp3_baseline["description"] = "original description"
 
     await runner.mutate_lpar_properties(None, state)
 
@@ -1414,7 +3624,7 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
-    state.context.lp3_baseline["description"] = "baseline"
+    state.artifacts.lp3_baseline["description"] = "baseline"
 
     await runner.restore_lpar_baseline(None, state)
 
@@ -1434,3 +3644,519 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
         "hmc_run_command",
         "hmc_lpar_summary",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "response"),
+    [
+        ("hmc_get_job", {"UUID": "job-uuid", "Status": "FAILED_BEFORE_COMPLETION"}),
+        (
+            "hmc_wait_for_job",
+            {
+                "job_id": "job-uuid",
+                "found": True,
+                "timed_out": False,
+                "status": "FAILED_BEFORE_COMPLETION",
+                "error": "the job did not complete",
+                "job": {"UUID": "job-uuid"},
+                "job_href": None,
+            },
+        ),
+    ],
+)
+async def test_job_scenarios_fail_on_a_non_successful_status(
+    monkeypatch, tool, response
+):
+    """`PASS` meant the call returned; a job that came back failed must not promote."""
+
+    async def scripted_call(_state, _client, dispatched, **_kwargs):
+        if dispatched == tool:
+            return "PASS", response
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.job_uuid_sample = "job-uuid"
+
+    await metrics.inspect_metrics_jobs(None, state)
+
+    row = next(entry for entry in state.results if entry["tool"] == tool)
+    assert row["result"] == "failed"
+    held = next(
+        item["observation"]["assertions"]
+        for item in state.observations
+        if item["observation"]["id"] == f"st12-{tool.replace('_', '-')}"
+    )
+    assert "job-status-successful" not in held
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_outcome_normalizes_from_the_served_shape():
+    """FastMCP serves `hmc_wait_for_job` unwrapped, so `result.data` is not a dict.
+
+    The scripted stubs above hand `_as_outcome` a mapping, so only this arm can
+    catch a normalizer that handles nothing else.
+    """
+    application = FastMCP("job-shape-probe")
+
+    @application.tool
+    async def probe() -> JobOutcome:
+        return JobOutcome(
+            job_id="job-uuid",
+            status="COMPLETED_OK",
+            timed_out=False,
+            error=None,
+            job={"UUID": "job-uuid"},
+            found=True,
+            job_href=None,
+        )
+
+    async with Client(application) as client:
+        result = await client.call_tool("probe", {})
+
+    assert not isinstance(result.data, dict)
+    outcome = metrics._as_outcome(result.data)
+    assert outcome is not None
+    assert outcome.status == "COMPLETED_OK"
+    assert outcome.job_id == "job-uuid"
+
+
+def _recorded_scenarios() -> dict[str, set[str]]:
+    """Every scenario's declared assertion ids, read from the workflow sources."""
+    declared: dict[str, set[str]] = {}
+    for module in LIVE_WORKFLOW_MODULES:
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        constants = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+            for target in node.targets
+            if isinstance(target, ast.Name) and isinstance(node.value.value, str)
+        }
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+            scenario = keywords["scenario"]
+            if isinstance(scenario, ast.Constant):
+                name = scenario.value
+            else:
+                name = constants[scenario.id]
+            declared.setdefault(name, set()).update(
+                _assertion_ids(keywords["assertions"], module)
+            )
+    return declared
+
+
+def _assertion_ids(node: ast.expr, module) -> set[str]:
+    """The ids of the `Assertion(...)` values a `record_verified` call declares."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        # A helper builds the list; read the ids from the helper's own body.
+        helper = next(
+            item
+            for item in ast.parse(
+                Path(module.__file__).read_text(encoding="utf-8")
+            ).body
+            if isinstance(item, ast.FunctionDef) and item.name == node.func.id
+        )
+        return _assertion_ids_in(helper)
+    return _assertion_ids_in(node)
+
+
+def _assertion_ids_in(node: ast.AST) -> set[str]:
+    return {
+        item.args[0].value
+        for item in ast.walk(node)
+        if isinstance(item, ast.Call)
+        and isinstance(item.func, ast.Name)
+        and item.func.id == "Assertion"
+        and item.args
+        and isinstance(item.args[0], ast.Constant)
+    }
+
+
+def _recorded_operations() -> set[str]:
+    """Every `operation=` literal a `record_verified` call names."""
+    declared: set[str] = set()
+    for module in LIVE_WORKFLOW_MODULES:
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            operation = {keyword.arg: keyword.value for keyword in node.keywords}[
+                "operation"
+            ]
+            assert isinstance(operation, ast.Constant), (
+                f"{Path(module.__file__).name}:{node.lineno} names an operation "
+                "this guard cannot read — pass a string literal"
+            )
+            declared.add(operation.value)
+    return declared
+
+
+def test_verified_scenarios_name_registered_operations():
+    """An observation whose operation is not in the catalog can never be filed.
+
+    `_emit_observations` resolves the closure fingerprint through the registry, so
+    a mistyped id yields an observation nothing can fingerprint. Caught here, in
+    the pull request, rather than after an expensive run against real hardware.
+    """
+    registered = {
+        tool.operation
+        for tool in runner.check_capability_inventory.discover_registry()
+    }
+    declared = _recorded_operations()
+
+    assert declared, "no record_verified operations found — the guard would pass vacuously"
+    assert sorted(declared - registered) == []
+
+
+def test_scenarios_declare_their_expected_assertion_ids():
+    """Deleting an assertion must fail here, not go unnoticed in a stale observation.
+
+    The closure fingerprint covers `src/hmc_mcp/` only, so removing an assertion
+    from a harness module leaves every committed observation still listing its id,
+    still matching its recomputed hash, and still reported `current` — a reader
+    concludes a postcondition was checked that nothing checks any more.
+    """
+    assert _recorded_scenarios() == {
+        "st12-job-inspection": {
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful",
+        },
+        "st1-console-identity": {"console-uuid-present"},
+        "st1-system-inventory": {
+            "system-uuid-present",
+            "system-summary-returned",
+        },
+        "st1-lpar-inventory": {
+            "lpar-list-non-empty",
+            "lpar-uuid-present",
+            "lpar-summary-returned",
+        },
+        "st1-vios-inventory": {
+            "vios-list-non-empty",
+            "vios-uuid-present",
+        },
+        "st1-resource-inventory": {"resource-list-non-empty"},
+    }
+
+
+def _live_repo(tmp_path: Path) -> Path:
+    """A throwaway git repository whose ignore rules match the real one's."""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    (tmp_path / ".gitignore").write_text(
+        "test-results*.json\n.test-results*.tmp\n", encoding="utf-8"
+    )
+    package = tmp_path / "src" / "hmc_mcp"
+    package.mkdir(parents=True)
+    # A real module, so the validated `closure_fingerprint` is a hash of files
+    # rather than the empty-input digest, which would say nothing about the walk.
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "placeholder.py").write_text("", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.email=t@example.test",
+         "-c", "user.name=t", "commit", "-qm", "base"],
+        check=True,
+    )
+    return tmp_path
+
+
+def _state_with_one_observation():
+    state = runner.RunState()
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "console"},
+    )
+    return state
+
+
+def test_a_lone_environment_key_is_rejected(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("LIVE_TEST_ENV_HMC_RELEASE=V10R3\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be set together"):
+        runner._read_environment(env_file)
+
+
+def test_both_environment_keys_are_read(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "LIVE_TEST_ENV_HMC_RELEASE=V10R3\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    assert runner._read_environment(env_file) == ("V10R3", "POWER10")
+
+
+def test_observations_are_not_emitted_without_environment(tmp_path, capsys):
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, None, repo
+    )
+    assert "no LIVE_TEST_ENV_* settings" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_observations_are_not_emitted_from_a_dirty_tree(tmp_path, capsys, monkeypatch):
+    repo = _live_repo(tmp_path)
+    monkeypatch.setattr(runner, "_tree_is_clean", lambda _root: False)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+    assert "is modified" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_emission_refuses_a_path_git_does_not_ignore(tmp_path, capsys):
+    """`--results-file` accepts any stem, so no fixed pattern can cover it."""
+    repo = _live_repo(tmp_path)
+    destination = repo / "evidence-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+    assert "is not ignored by git" in capsys.readouterr().out
+    assert not destination.exists()
+
+
+def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert runner._emit_observations(
+        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+    )
+
+    document = json.loads(destination.read_text())
+    errors: list[str] = []
+    # One shared id set across the document, so a duplicate id is caught here
+    # exactly as `just capability-inventory` would catch it after a copy-in.
+    evidence_ids: set[str] = set()
+    for entry in document:
+        runner.check_capability_inventory._validate_observation(
+            entry["observation"], entry["operation"], evidence_ids, errors
+        )
+    assert errors == []
+    assert document[0]["operation"] == "console.info"
+    assert document[0]["observation"]["result"] == "passed"
+    assert document[0]["observation"]["closure_fingerprint"] != hashlib.sha256(
+        b""
+    ).hexdigest()
+
+
+def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):
+    """A one-line `.env` typo costs a startup exit, not a hardware run's output."""
+    monkeypatch.setattr(
+        runner, "_read_environment", lambda *_a: (_ for _ in ()).throw(ValueError("lone key"))
+    )
+    monkeypatch.setattr(
+        runner.LiveTestConfig, "from_env_file", classmethod(lambda _cls: runner.LiveTestConfig())
+    )
+    monkeypatch.setattr(runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP"))
+
+    assert runner._run_from_arguments([]) == 1
+    assert "lone key" in capsys.readouterr().out
+
+
+def test_an_invalid_dispatch_is_never_laundered_into_a_skip():
+    """The harness's own defect must not be recorded as a known HMC limitation.
+
+    An `InvalidDispatch` message names the offending argument, so it can contain
+    a token a declared `ExpectedOutcome` matches; consulting declarations first
+    would turn the substitution the old substring match allowed back on.
+    """
+    state = runner.RunState()
+
+    state.record_with_expected(
+        12,
+        "hmc_get_job",
+        "FAIL",
+        observation.CallFailure(
+            "InvalidDispatch", "hmc_get_job: unknown argument 406", "", None, False
+        ),
+        [
+            observation.ExpectedOutcome(
+                operation="pcm.get_preferences",
+                variant="managed-system-pcm",
+                reason="not licensed",
+                error_codes=frozenset({"406"}),
+            )
+        ],
+    )
+
+    assert state.results[0]["status"] == "FAIL"
+    assert state.results[0]["result"] == "failed"
+
+
+def test_emission_skips_an_unknown_operation_and_keeps_the_rest(tmp_path, capsys):
+    """One unresolvable row must not discard an expensive run's other evidence."""
+    repo = _live_repo(tmp_path)
+    state = _state_with_one_observation()
+    state.observations.insert(
+        0, {"operation": "not.an.operation", "observation": dict(state.observations[0]["observation"], id="st0-bogus")}
+    )
+    destination = repo / "test-results-round2-observations.json"
+
+    assert runner._emit_observations(
+        state, destination, ("V10R3", "POWER10"), repo
+    )
+
+    document = json.loads(destination.read_text())
+    assert [entry["operation"] for entry in document] == ["console.info"]
+    assert "unknown operation not.an.operation" in capsys.readouterr().out
+
+
+def test_gitignore_covers_live_test_results():
+    """Both the results document and the atomic write's stranded temp file."""
+    root = Path(__file__).parents[1]
+    for name in ("test-results-round2.json", ".test-results-round2.json.abc123.tmp"):
+        assert (
+            subprocess.run(
+                ["git", "-C", str(root), "check-ignore", "-q", name], check=False
+            ).returncode
+            == 0
+        ), name
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["hmc01.lab.example.com", "0644C7T", "U78CB.001.WZS0044-P1-C2", "lab-hmc-3", "10.1.2.3"],
+)
+def test_an_environment_value_outside_its_grammar_is_rejected(tmp_path, value):
+    """These two strings are the only free text an observation carries.
+
+    Rejecting them at read time keeps a hostname or serial from reaching disk at
+    all, rather than surfacing when a human pastes it into `maturity.json`.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"LIVE_TEST_ENV_HMC_RELEASE={value}\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="does not match its grammar"):
+        runner._read_environment(env_file)
+
+
+def test_the_repository_root_is_resolved_from_git_not_the_working_directory(
+    tmp_path, monkeypatch
+):
+    """From a subdirectory, `Path.cwd()` would fingerprint no files at all."""
+    repo = _live_repo(tmp_path)
+    subdirectory = repo / "scripts"
+    monkeypatch.chdir(subdirectory)
+
+    assert runner._repository_root() == repo
+
+
+def test_the_repository_root_refuses_a_checkout_without_the_package(
+    tmp_path, monkeypatch
+):
+    """A repository that is not this one must not silently fingerprint nothing."""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert runner._repository_root() is None
+
+
+def test_an_unignored_results_path_exits_before_the_run(monkeypatch, tmp_path, capsys):
+    """The results document is the larger, more sensitive of the two writes.
+
+    Guarding only the observations file would refuse the small write and let the
+    verbatim HMC responses land unignored beside it.
+    """
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        runner.LiveTestConfig,
+        "from_env_file",
+        classmethod(lambda _cls: runner.LiveTestConfig()),
+    )
+    monkeypatch.setattr(runner, "_read_environment", lambda *_a: ("V10R3", "POWER10"))
+    monkeypatch.setattr(
+        runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP")
+    )
+
+    assert runner._run_from_arguments(["--results-file", "evidence.json"]) == 1
+
+    output = capsys.readouterr().out
+    assert "git does not ignore evidence.json" in output
+    assert "evidence-observations.json" in output
+    assert not (repo / "evidence.json").exists()
+
+
+def test_an_ignored_results_path_passes_the_startup_gate(monkeypatch, tmp_path):
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+
+    assert runner._destination_is_ignored(Path("test-results-round2.json"))
+    assert runner._destination_is_ignored(
+        runner._observations_path("test-results-round2.json")
+    )
+    assert not runner._destination_is_ignored(Path("evidence.json"))
+
+
+def test_record_honours_an_explicit_result():
+    """`record_verified` supplies its verdict here rather than patching it after."""
+    state = runner.RunState()
+
+    state.record(1, "hmc_get_console_info", "PASS", {}, result="passed")
+
+    assert state.results[0]["result"] == "passed"
+
+
+def test_record_verified_writes_its_verdict_with_the_row():
+    """The verdict must not be patched onto `results[-1]` after the append."""
+    state = runner.RunState()
+    state.record(0, "unrelated", "PASS", {})
+    state.record_verified(
+        1,
+        "hmc_get_console_info",
+        operation="console.info",
+        scenario="st1-console-identity",
+        assertions=[observation.Assertion("console-uuid-present", True)],
+        cleanup="not-required",
+        data={"uuid": "c"},
+    )
+
+    assert [row["result"] for row in state.results] == ["observed", "passed"]
+
+
+@pytest.mark.parametrize("identity", ["job-", "j", "ab", "Job-found", "-job", "job_found"])
+def test_assertion_id_rejects_a_truncated_or_malformed_token(identity):
+    """A trailing hyphen is a truncated token, not a closed-shape one."""
+    with pytest.raises(ValueError, match="closed-shape token"):
+        observation.Assertion(identity, True)
+
+
+def test_the_two_assertion_id_patterns_agree():
+    """The runner bounds ids on the way out; the validator bounds them on the way in."""
+    anchored = observation.ASSERTION_ID.pattern
+
+    assert anchored.startswith("\\A") and anchored.endswith("\\Z")
+    assert (
+        anchored.removeprefix("\\A").removesuffix("\\Z")
+        == runner.check_capability_inventory.ASSERTION_ID.pattern
+    )

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .client_contracts import LparsClient
+from .client_contracts import LparsClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
@@ -21,6 +21,7 @@ class LparsMixin:
         self: LparsClient, system_uuid: str | None = None
     ) -> list[dict[str, Any]]:
         if system_uuid:
+            _reject_non_uuid_path_argument("system_uuid", system_uuid)
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
             xml = await self._get(path, "LogicalPartition")
             return _parse_feed(xml, path) if xml else []
@@ -82,6 +83,7 @@ class LparsMixin:
         Omits X-HMC-Schema-Version header — some HMC firmware versions return
         HTTP 406 for this PUT when the schema-version header is present.
         """
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
         xml = await self._put(
             path,
@@ -104,6 +106,7 @@ class LparsMixin:
         Omits X-HMC-Schema-Version header — some HMC firmware versions return
         HTTP 406 for this POST when the schema-version header is present.
         """
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
         xml = await self._post(
             path,
@@ -116,4 +119,5 @@ class LparsMixin:
 
     async def delete_logical_partition(self: LparsClient, lpar_uuid: str) -> None:
         """Delete an LPAR. It must be powered off first."""
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         await self._delete(f"/rest/api/uom/LogicalPartition/{lpar_uuid}")
