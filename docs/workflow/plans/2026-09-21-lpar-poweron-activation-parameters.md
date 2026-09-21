@@ -427,8 +427,13 @@ Run in the branch worktree, bare, reading exit status:
 1. `just verify` — expect `verify: all groups load OK`.
 2. `uv run --no-sync prek run --all-files` — expect every hook `Passed`. CI runs this
    after `just verify` and `just verify` does not.
-3. `git --no-pager diff --stat "$(git merge-base HEAD origin/main)"` — expect only the
-   files in the file map.
+3. `git --no-pager diff --stat "$(git merge-base HEAD origin/main)" -- src tests docs/capabilities docs/tools`
+   — expect only the files in the file map, and nothing else. Scoping the pathspec is
+   deliberate: this branch also carries its own three design artifacts (the ADR, the spec
+   and this plan), which the file map does not list because they are the lane's output
+   rather than its subject. They land in the feature PR, as `docs/adr/0158-*` and
+   `docs/workflow/plans/2026-09-16-*` did on the branch that became PR #862. An unscoped
+   diff would report them every time and teach you to wave the step through.
 
 `just verify` is locally green on one interpreter; CI is eight legs across Python
 3.11-3.14 on two architectures. This change alters tool signatures that
