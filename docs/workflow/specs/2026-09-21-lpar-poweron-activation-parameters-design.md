@@ -137,9 +137,11 @@ The refusal is a `ValueError` before submission and does not echo the value.
 **Control per boundary.** `boot_mode` and `operation_type` are refused by
 `frozenset` membership in `power_on_lpar_job` before any XML is built, so a
 non-member never reaches the document; the `ValueError` names the permitted set and
-not the rejected value, matching ADR 0158. `partition_profile_uuid` is not
-validated for shape — the package has no profile feed to check it against — and is
-carried on the existing escaped path: `@escapes_string_arguments` on
+not the rejected value, matching ADR 0158. Both refusals run at the top of
+`power_lpar`, ahead of the ADR 0092 ownership leg that can write an audited override
+record, and again in the builder for direct callers. `partition_profile_uuid` is
+checked for containment but not for shape — the package has no profile *contents*
+read to check it against — and is carried on the existing escaped path: `@escapes_string_arguments` on
 `build_job_request` escapes every string argument before formatting, which
 `tests/unit/test_xml_escaping.py` proves by generated case for each string-carrying
 builder parameter. A malformed UUID therefore reaches the HMC as inert escaped text

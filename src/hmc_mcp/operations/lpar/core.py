@@ -561,6 +561,12 @@ async def power_lpar(
     :class:`HMCCLIError` and submits no job.
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+    if power_on:
+        # Beside the other argument validation, ahead of every side effect. The
+        # ADR 0092 ownership leg below can write an audited override record, and
+        # the already-running branch returns without building a document, so a
+        # builder-only refusal would run after the first and never on the second.
+        validate_power_on_activation(boot_mode, operation_type)
     if hmc.config.authorize_power_operations:
         lpar_uuid = await resolve_and_authorize_lpar_mutation(
             hmc,
@@ -572,10 +578,6 @@ async def power_lpar(
         lpar_uuid = await resolve_lpar_uuid(
             hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
         )
-    if power_on:
-        # Before the already-running read: that branch returns without ever
-        # building a document, so the builder's refusal would not run there.
-        validate_power_on_activation(boot_mode, operation_type)
     if power_on and not force:
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"
