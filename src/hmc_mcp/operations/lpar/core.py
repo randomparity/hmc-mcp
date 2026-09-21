@@ -34,6 +34,8 @@ from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
+    BootMode,
+    PowerOnOperationType,
     job_outcome,
     power_off_lpar_job,
     power_on_lpar_job,
@@ -235,8 +237,15 @@ async def power_on_lpar(
     force: bool = False,
     affinity_assessment: ProvisionAffinityAssessment | None = None,
     ownership_override: bool = False,
+    boot_mode: BootMode = "norm",
+    partition_profile_uuid: str | None = None,
+    operation_type: PowerOnOperationType | None = None,
 ) -> LparPowerOnOutcome:
-    """Activate an LPAR and optionally assess its resulting affinity."""
+    """Activate an LPAR and optionally assess its resulting affinity.
+
+    ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are passed
+    through to the PowerOn job document; their defaults leave it unchanged.
+    """
     if affinity_assessment is not None:
         if system_name_or_uuid is None:
             raise ValueError(
@@ -260,6 +269,9 @@ async def power_on_lpar(
         timeout_seconds=timeout_seconds,
         poll_interval=poll_interval,
         ownership_override=ownership_override,
+        boot_mode=boot_mode,
+        partition_profile_uuid=partition_profile_uuid,
+        operation_type=operation_type,
     )
     if (
         affinity_assessment is None
@@ -442,8 +454,17 @@ async def power_lpar(
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     ownership_override: bool = False,
+    boot_mode: BootMode = "norm",
+    partition_profile_uuid: str | None = None,
+    operation_type: PowerOnOperationType | None = None,
 ) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait.
+
+    ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are
+    activation parameters and apply to PowerOn only; the PowerOff arm builds a
+    different document and ignores them. ``partition_profile_uuid`` is the UUID
+    of a partition profile, not the connection profile the tool and CLI call
+    ``profile``. Their defaults emit the document this call has always emitted.
 
     ADR 0011 ownership is advisory here by default. Powering a partition another
     agent owns is only rejected when the operator sets
@@ -499,7 +520,13 @@ async def power_lpar(
         allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))
         raise ValueError(f"LPAR power job operation must be one of: {allowed}")
     document = (
-        power_on_lpar_job() if power_on else power_off_lpar_job(immediate=immediate)
+        power_on_lpar_job(
+            profile_uuid=partition_profile_uuid,
+            bootmode=boot_mode,
+            operation_type=operation_type,
+        )
+        if power_on
+        else power_off_lpar_job(immediate=immediate)
     )
     job = await hmc.submit_job(
         f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", document

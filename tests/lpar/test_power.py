@@ -1,10 +1,13 @@
 """Tests for managed-system, VIOS, and LPAR power jobs."""
 
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client.core import HMCClient
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.jobs import (
     BOOT_MODES,
     POWER_ON_OPERATION_TYPES,
@@ -14,6 +17,7 @@ from hmc_mcp.jobs import (
     power_on_system_job,
     power_on_vios_job,
 )
+from hmc_mcp.operations.lpar.core import LparPowerResult, power_lpar, power_on_lpar
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -163,3 +167,87 @@ async def test_power_off_vios(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         await hmc.power_off_vios(VIOS_UUID)
     assert route.called
+
+
+# --------------------------------------------------------------------------- #
+# The activation parameters reaching the job document through power_lpar
+# --------------------------------------------------------------------------- #
+
+LPAR_UUID = "11111111-1111-1111-1111-111111111111"
+
+
+def _power_client() -> AsyncMock:
+    """A client double whose config is real, so the ADR 0092 guard stays off.
+
+    ``AsyncMock().config.authorize_power_operations`` is a truthy child mock,
+    which would silently enable the ownership guard and change the call path.
+    """
+    hmc = AsyncMock()
+    hmc.config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "u", "password": "p"}
+    )
+    hmc.get_quick_property.return_value = "not activated"
+    hmc.submit_job.return_value = {"UUID": "job-uuid"}
+    return hmc
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_forwards_activation_parameters():
+    """PowerOn carries the caller's profile, boot mode and operation type."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=True,
+            boot_mode="sms",
+            partition_profile_uuid=PROFILE_UUID,
+            operation_type="activate",
+        )
+
+    _, document = hmc.submit_job.await_args.args
+    assert _parameter_values(document, "bootmode") == ["sms"]
+    assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
+    assert _parameter_values(document, "OperationType") == ["activate"]
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_power_off_document_is_unchanged():
+    """The PowerOff arm builds a different document and takes none of the three."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=False)
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOff")
+    for name in ("bootmode", "LogicalPartitionProfile", "OperationType"):
+        assert _parameter_values(document, name) == []
+
+
+@pytest.mark.asyncio
+async def test_power_on_lpar_passes_activation_parameters():
+    """power_on_lpar hands all three straight to the shared power entry point."""
+    hmc = _power_client()
+    forwarded = AsyncMock(return_value=LparPowerResult(LPAR_UUID, {"UUID": "job-uuid"}))
+
+    with patch("hmc_mcp.operations.lpar.core.power_lpar", new=forwarded):
+        await power_on_lpar(
+            hmc,
+            LPAR_UUID,
+            boot_mode="of",
+            partition_profile_uuid=PROFILE_UUID,
+            operation_type="activate",
+        )
+
+    assert forwarded.await_args.kwargs["boot_mode"] == "of"
+    assert forwarded.await_args.kwargs["partition_profile_uuid"] == PROFILE_UUID
+    assert forwarded.await_args.kwargs["operation_type"] == "activate"
