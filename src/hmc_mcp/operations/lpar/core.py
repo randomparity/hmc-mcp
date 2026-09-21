@@ -446,12 +446,7 @@ async def delete_lpar(
 async def _require_contained_partition_profile(
     hmc: HMCClient, lpar_uuid: str, partition_profile_uuid: str
 ) -> str:
-    """Return the target partition's own spelling of a profile it contains.
-
-    Returning the matched feed value rather than the caller's string is what
-    keeps the value authorized and the value emitted the same one: the match is
-    casefolded, so echoing the caller's spelling would put a string on the wire
-    that the containment check never compared.
+    """Refuse a partition profile the target partition does not contain.
 
     ADR 0039: ``hmc_power_on_lpar`` declares ``exhaustive_targets``, which means
     every resource it acts on is the value of a declared selector or is derived
@@ -464,6 +459,10 @@ async def _require_contained_partition_profile(
     the profile a derived, contained resource. ADR 0044 declined to rest this
     kind of classification on the premise that the HMC would reject the value,
     so the check is made here rather than assumed of the remote end.
+
+    Returns the partition's own spelling of the profile, because the match is
+    casefolded: echoing the caller's string would put a value on the wire that
+    this check never compared.
     """
     profiles = await hmc.list_child(
         "LogicalPartition", lpar_uuid, "LogicalPartitionProfile"
@@ -569,10 +568,8 @@ async def power_lpar(
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     if power_on:
-        # Beside the other argument validation, ahead of every side effect. The
-        # ADR 0092 ownership leg below can write an audited override record, and
-        # the already-running branch returns without building a document, so a
-        # builder-only refusal would run after the first and never on the second.
+        # Ahead of every side effect: the ownership leg below can write an
+        # audited override, and the already-running branch never reaches a builder.
         validate_power_on_activation(boot_mode, operation_type)
     if hmc.config.authorize_power_operations:
         lpar_uuid = await resolve_and_authorize_lpar_mutation(
