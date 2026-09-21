@@ -50,6 +50,7 @@ from hmc_mcp.server_tools.updates import (
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+PARTITION_PROFILE_UUID = "00000000-0000-0000-0000-0000000000aa"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 MC_UUID = "mc-uuid-0001"
 CONSOLE_SOURCE = {
@@ -263,6 +264,39 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
     assert result.already_running is False
     assert result.job["Resource"]["JobID"] == "job-uuid-999"
     assert result.message is None
+
+
+def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc):
+    """The three activation parameters reach the PowerOn job document."""
+    import inspect
+
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
+    ).mock(return_value=httpx.Response(200, text="not activated"))
+    route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+
+    hmc_power_on_lpar(
+        LPAR_UUID,
+        boot_mode="sms",
+        partition_profile_uuid=PARTITION_PROFILE_UUID,
+        operation_type="activate",
+    )
+
+    body = route.calls.last.request.content.decode()
+    assert ">bootmode</ParameterName>" in body
+    assert '<ParameterValue kb="CUR" kxe="false">sms</ParameterValue>' in body
+    assert ">LogicalPartitionProfile</ParameterName>" in body
+    assert PARTITION_PROFILE_UUID in body
+    assert ">OperationType</ParameterName>" in body
+
+    # ADR 0161: the partition profile is never named `profile`, which is the
+    # connection profile and stays exactly what it was.
+    parameters = inspect.signature(hmc_power_on_lpar).parameters
+    assert {"boot_mode", "partition_profile_uuid", "operation_type"} <= set(parameters)
+    assert parameters["profile"].default is None
 
 
 def test_power_off_lpar_submits_job(monkeypatch, mock_hmc):
