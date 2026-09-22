@@ -62,7 +62,8 @@ the arm's escape hatch, MCP/CLI signatures, facade promotion, any live HMC acces
    (nothing changed). Anything else, a readback failure included → the new
    `PcieAssignmentPartialError` (a `RuntimeError`) naming the cause and the before/after
    `io_slots` values, chained from the underlying exception.
-6. **Create/modify time.** `_analyze_assignment_requests` validates dedicated selectors and
+6. **Create/modify time.** `_analyze_assignment_requests` validates dedicated selectors
+   (`require_command_safe_text` on the profile, `require_drc_index` on the DRC) and
    rejects a duplicate `(profile_name, drc_index)` pair with `ValueError`; it no longer raises.
    `prevalidate_lpar_pcie_assignments` resolves the system name with `resolve_ssh_names` and
    calls `require_dedicated_pcie_environment(hmc.config, system_name)` when `dedicated` is
@@ -81,6 +82,12 @@ the arm's escape hatch, MCP/CLI signatures, facade promotion, any live HMC acces
    slot removal on the probe's live `io_slots`: remove only if it lists the DRC, confirm it is
    gone, refuse the delete otherwise. ST31 assigns via `hmc_assign_dedicated_pcie_slot` only; the
    raw `io_slots+` is not issued after it. ST33/ST34 and every read keep the escape-hatch grammar.
+
+9. **State matrix.** The dedicated row's create-time and inactive cells in
+   `docs/workflow/specs/2026-08-20-pcie-capability-contract-design.md` say mutation happens inside
+   the envelope under ADR 0166 and stays unavailable unconditionally outside it; the pin in
+   `tests/system/test_pcie_contract.py::test_operation_matrix_fails_closed_for_every_mutation_row`
+   moves with them.
 
 ## Failure model
 
