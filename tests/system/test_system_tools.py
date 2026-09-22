@@ -126,9 +126,7 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
     assert result["Resource"]["Version"] == "V10R1M1040"
 
 
-@pytest.mark.parametrize(
-    "body", [NULL_PROPERTY_500_BODY, NULL_PROPERTY_500_XML_BODY]
-)
+@pytest.mark.parametrize("body", [NULL_PROPERTY_500_BODY, NULL_PROPERTY_500_XML_BODY])
 def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc, body):
     """A null-property 500 becomes the actionable firmware error.
 
