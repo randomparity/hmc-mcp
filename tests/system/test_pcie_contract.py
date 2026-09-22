@@ -308,9 +308,12 @@ def test_dedicated_profile_io_slots_capture_is_pinned() -> None:
         "invalid-attribute-control": 1,
     }
     assert {probe["stderr"] for probe in record["probes"]} == {""}
-    # `lshmc -V` prints no identifier, so this is the one probe whose length the
-    # capture comment's own byte-count table can check.
+    # These two probes print no identifier, so their lengths are the ones the
+    # capture comment's own byte-count table can check against the published
+    # (post-redaction) transcript. The other three are shorter than the table by
+    # exactly the identifiers that were redacted out of them.
     assert len(probes["hmc-version"]["stdout"].encode()) == 236
+    assert len(probes["invalid-attribute-control"]["stdout"].encode()) == 126
     readback = probes["io-slots-readback"]
     assert readback["command"] == (
         "lssyscfg -r prof -m sys-R1 -F lpar_name,name,io_slots --header"
@@ -364,6 +367,10 @@ def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
     for outcome in rows["Assign/unassign dedicated slot"][:2]:
         assert "admitted by ADR 0165" in outcome
         assert "#882" in outcome
+        # The envelope is the whole of what ADR 0165 confines, so widening it in
+        # the spec must redden here rather than pass unremarked.
+        assert "V10R3 M1060" in outcome
+        assert "8375-42A" in outcome
     assert all(
         "do not mutate" in outcome
         for outcome in rows["Assign/unassign dedicated slot"][:3]

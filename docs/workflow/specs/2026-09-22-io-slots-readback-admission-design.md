@@ -6,10 +6,12 @@ Decision record: [ADR 0165](../../adr/0165-admitted-io-slots-profile-readback.md
 ## Problem
 
 Dedicated PCIe profile mutation is sealed by decision record, not by missing code.
-ADR 0053's dedicated-slot profile clause (`:73-74`; the issue cites the `:72-74` span, whose
-first line belongs to the `chhwres -r io` sentence #873 owns) makes profile mutation
-capability-unavailable "until exact `io_slots` readback is admitted", ADR 0055
-(`:24-25`, `:27-29`) makes every
+ADR 0053's dedicated-slot profile clause — "Dedicated-slot profile grammar is recorded, but
+profile mutation likewise remains capability-unavailable until exact `io_slots` readback is
+admitted", at `:73-74` on `origin/main` and `:80-81` once this branch's Status banner lands —
+makes profile mutation capability-unavailable. The issue cites the `:72-74` span, whose first
+line belongs to the `chhwres -r io` sentence #873 owns. ADR 0055's two gate clauses
+(`:24-25` and `:27-29` on `origin/main`, `:33-34` and `:37-38` after the banner) make every
 assign and unassign fail closed on the same condition, and
 `src/hmc_mcp/operations/virtualization/pcie.py:43-46` carries that condition as its error
 text. Nothing downstream can be wired until the admission exists.
@@ -22,8 +24,9 @@ write-side input attribute — `rg -c io_slots docs/refs` reports hits in
 gitignored and operator-host-only, so it grounds only the negative; the IBM Power8
 `lssyscfg` page — already an admitted read-side locator family via
 `tests/fixtures/pcie/power8-profile.json` — was fetched on 2026-09-22, is openable by any
-reviewer, and confirms the same negative independently. ADR 0053:39-40 forbids admitting a
-field because another family documents it, and the state matrix forbids composing mutation
+reviewer, and confirms the same negative independently. ADR 0053's no-cross-family rule
+(`:39-40` on `origin/main`, `:46-47` after the banner) forbids admitting a field because
+another family documents it, and the state matrix forbids composing mutation
 evidence with read evidence, so a `documented`-support record here would be a fabricated
 locator.
 
@@ -113,9 +116,10 @@ none is added here.
 - Probe `stdout` fidelity for the four identifier-bearing probes cannot be checked against
   the comment's published byte counts, because those counts are pre-redaction (50/73/166/126)
   and the transcripts are post-redaction (48/64/157/126); fidelity there rests on the capture
-  author. Bounded: only `lshmc -V`, which prints no identifier, is independently
-  byte-checkable, and it matches its published figure exactly at 236; every probe's exit
-  status and stream is published, so none is inferred.
+  author. Bounded: the two probes that print no identifier — `lshmc -V` and the
+  unknown-attribute control — are independently byte-checkable and match their published
+  figures exactly at 236 and 126; every probe's exit status and stream is published, so none
+  is inferred.
 - Release and model outside `V10R3 M1060` / `8375-42A` are not admitted at all. Bounded by
   the envelope decision, which is the confinement rather than a gap in it.
 
@@ -157,7 +161,9 @@ document, which this change does not read.
 ## Success
 
 1. `tests/fixtures/pcie/power9-v10r3m1060-live-ioslots.json` exists, satisfies the
-   live-capture schema pinned at `tests/system/test_pcie_contract.py:162-217`, and cites the
+   live-capture schema pinned by
+   `tests/system/test_pcie_contract.py::test_evidence_records_have_closed_versioned_shapes`,
+   and cites the
    capture comment as `source_url`.
 2. ADR 0165 decides all four questions the issue names, states the three limits it carries
    (VIOS-only; byte-stability on an already-populated profile; the read rendering's
@@ -197,7 +203,8 @@ document, which this change does not read.
   Green: `uv run --no-sync pytest tests/system/test_pcie_contract.py -k matrix --no-cov -q`.
 - **Contract: the new sha256 literal does not redden the secrets gate.**
   Mode: `focused-test`. `just secrets` reds on a bare hex high-entropy literal; green once it
-  carries `# pragma: allowlist secret`, matching `tests/system/test_pcie_contract.py:155`.
+  carries `# pragma: allowlist secret`, matching the existing pin on
+  `power9-v10r3m1060-live-sriov.json`.
   Green: `just secrets`.
 - **Contract: ADR 0165's filename and H1 agree.**
   Mode: `focused-test`. `just adr-numbering` reds on a mismatched H1. Green: `just adr-numbering`.

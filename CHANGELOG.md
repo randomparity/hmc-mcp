@@ -170,7 +170,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
-- Exact `lssyscfg -r prof -F io_slots` profile readback is admitted, on a redacted live
+- Exact `lssyscfg -r prof -m SYSTEM -F lpar_name,name,io_slots --header` profile readback is
+  admitted, on a redacted live
   capture rather than on documentation — `io_slots` is documented input-side only, so a
   `documented`-support record would have carried a fabricated locator. The admission is
   confined to HMC V10R3 M1060 on managed-system model 8375-42A, the pair the capture covers

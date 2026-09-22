@@ -13,13 +13,13 @@ shut until #882. On the completed branch `just verify` exits 0 (3m04s) and
 
 ADR 0053 sealed dedicated-slot profile mutation on one named condition — "profile mutation
 likewise remains capability-unavailable until exact `io_slots` readback is admitted"
-(`:73-74`) — and ADR 0055 made every assign and unassign fail closed on the same condition
-(`:24-25`, `:27-29`). The condition is a documentation condition in form and could not be
+(`:80-81`) — and ADR 0055 made every assign and unassign fail closed on the same
+condition (`:33-34`, `:37-38`). The condition is a documentation condition in form and could not be
 met in fact. `io_slots` is documented input-side only: `rg -c io_slots docs/refs` reports it
 in `hmc-commands-p{10,11}/commands/chsyscfg.md` and `mksyscfg.md` and returns **no match** in
 either `lssyscfg.md`, and the IBM Power8 `lssyscfg` page — already an admitted read-side
 locator family through `tests/fixtures/pcie/power8-profile.json` — does not mention it
-either. ADR 0053:39-40 forbids admitting a field because another family documents it.
+either. ADR 0053 (`:46-47`) forbids admitting a field because another family documents it.
 
 That corpus is the gitignored, operator-host-only vendored reference AGENTS.md describes,
 linked into a worktree by `scripts/link_reference_corpus.py`. It is cited here the way
@@ -58,10 +58,14 @@ comment as its `source_url`. What is admitted is the command the capture actuall
 
     lssyscfg -r prof -m SYSTEM -F lpar_name,name,io_slots --header
 
-Its `io_slots` column is a comma-separated list of `drc_index/pool_id/is_required` triples
-inside one double-quoted field. `none` is recorded as the **observed rendering of the pool
-position in every captured triple**; no captured slot belongs to a pool, so whether a pooled
-slot renders its pool ID there is not established here. Three forms are **not** admitted by
+Its `io_slots` column is a comma-separated list of three-position, `/`-separated triples
+inside one double-quoted field. What the capture establishes is the **shape**: three positions,
+the first a DRC index matching the slots on the system, the second the literal `none` in every
+captured triple, the third `0` or `1`. The position *names* `drc_index/pool_id/is_required` are
+the documented input-side ones, used here as labels for positions the capture shows — not as
+read-side semantics admitted by it, which composing the input grammar is exactly what Decision
+2's rejected alternatives refuse. No captured slot belongs to a pool, so whether a pooled slot
+renders its pool ID in position two is not established here. Three forms are **not** admitted by
 this capture and must not be inferred from it: the single-field `-F io_slots`, a read without
 `--header`, and a `--filter`-narrowed read. That matters concretely —
 `scripts/live_test/pcie.py:profile_io_slots_command` builds
@@ -71,7 +75,8 @@ either issue the admitted form or obtain a capture of the one it issues. The rec
 
 **2. The operator-held 2026-09-21 results document is not admissible evidence for this
 admission.**
-ADR 0053:26 — "the evidence is documentation-backed; it is not a live-HMC capture" —
+ADR 0053 (`:33`) — "the evidence is documentation-backed; it is not a live-HMC
+capture" —
 describes ADR 0053's own evidence base, which this record does not join; it joins the
 live-capture class that already exists beside it. The question the issue raised therefore
 changes shape but keeps its answer: that document is git-ignored (`.gitignore:1-2`) because
@@ -92,8 +97,8 @@ on the new pair, not an argument from this one.
 
 **4. Supersession.** This record supersedes exactly one sentence of ADR 0053 — "Dedicated-slot
 profile grammar is recorded, but profile mutation likewise remains capability-unavailable
-until exact `io_slots` readback is admitted" (`:73-74`) — and the gate conditions of ADR
-0055:24-25 and `:27-29`. The sentence immediately above it (`:71-72`), which seals
+until exact `io_slots` readback is admitted" (`:80-81`) — and the gate conditions of ADR
+0055 (`:33-34`, `:37-38`). The sentence immediately above it (`:78-79`), which seals
 `chhwres -r io` dynamic grammar until one family admits both that grammar and exact
 readback, is untouched and stays with #873. Their condition — *until exact `io_slots`
 readback is admitted* — is met, inside the envelope. What keeps the operations failing
@@ -149,11 +154,11 @@ record that test reads.
   corpus's own examples render an unset pool empty — `21030003//0` at
   `docs/refs/hmc-commands-p11/commands/mksyscfg.md:69` and `2105001B//0` at `:80` — where the
   capture's read path renders it `none`, so the two grammars demonstrably differ. ADR
-  0053:39-40 and the state matrix's "do not compose" clause forbid it independently.
+  0053 (`:46-47`) and the state matrix's "do not compose" clause forbid it independently.
 - **Admit the operator-held 2026-09-21 results document as corroborating evidence.**
   verified: `.gitignore:1-2` excludes `test-results*.json` because it holds raw API data
   with internal hostnames, IPs and serials, and the fixture schema requires a `source_url`
-  starting `https://github.com/` (`tests/system/test_pcie_contract.py:181`). Nothing a
+  starting `https://github.com/` (`tests/system/test_pcie_contract.py:183`). Nothing a
   reviewer can open, nothing to falsify.
 - **Admit the single-field `lssyscfg -r prof -F io_slots` that this repository's live arm
   already issues.** verified: the capture contains no such probe — its only `io_slots` read
@@ -162,7 +167,7 @@ record that test reads.
   repeat the invented-fixture failure recorded in
   `docs/solutions/2026-09-14-fixtures-invented-for-an-endpoint-never-spoken.md`.
 - **Leave the hardware envelope unconfined and let #882 decide.** verified: the capture
-  covers exactly one release/model pair; ADR 0053:39-40 records that a field admitted for one
+  covers exactly one release/model pair; ADR 0053 (`:46-47`) records that a field admitted for one
   family cannot be assumed present in another, and ADR 0163 confined the live arm to this
   same pair for this same reason. Deciding by omission would have let #882 mutate arbitrary
   Power8, Power10 or Power11 profiles on one machine's readback.
@@ -173,6 +178,6 @@ record that test reads.
   evidence question is reviewed before any code can mutate a real profile. Admitting the
   evidence and consuming it in one change gives that review nothing to stand on.
 - **Do nothing and leave the sealed clause in place.** verified: the clause at
-  `docs/adr/0053-evidence-backed-pcie-capability-contract.md:73-74` names a condition the
+  `docs/adr/0053-evidence-backed-pcie-capability-contract.md::80-81` names a condition the
   published capture now meets, so leaving it would state a reason that no longer holds while
   #882 — which that same clause blocks — waits on it.

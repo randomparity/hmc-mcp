@@ -16,8 +16,10 @@ merge, and is not a precondition of acceptance.
 > **Correction (2026-09-22, via [0165](0165-admitted-io-slots-profile-readback.md)).** The
 > paragraph above was true when written and is no longer. A live run against real hardware on
 > 2026-09-21 has since exercised this arm; [ADR 0162](0162-live-test-operator-tooling.md) is the
-> record that holds it, and the four defects that run falsified were in the live-test tooling —
-> three of them in `scripts/live_test_recovery.py` — not in the arm. Its PASS/SKIP/FAIL matrix is
+> record that holds it. All four defects that run falsified were in the live-test tooling rather
+> than in this arm: ADR 0162 attributes each to `scripts/live_test_recovery.py`, and the one fix
+> that touched `scripts/live_test/pcie.py` only made this arm's own command builder public for
+> that check to reuse. Its PASS/SKIP/FAIL matrix is
 > deliberately not restated here: a live matrix is evidence only for the commit it ran on
 > (`AGENTS.md`), and that commit is stamped only in the git-ignored results document. The arm has
 > changed twice since the run, and neither change alters what it issues: `f9e00e4f` made
