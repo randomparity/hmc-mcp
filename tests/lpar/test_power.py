@@ -1,5 +1,6 @@
 """Tests for managed-system, VIOS, and LPAR power jobs."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -19,6 +20,7 @@ from hmc_mcp.jobs import (
     power_on_system_job,
     power_on_vios_job,
 )
+from hmc_mcp.operations.lpar import decommission
 from hmc_mcp.operations.lpar.core import (
     LparPowerResult,
     _unapplied_activation_clause,
@@ -297,6 +299,123 @@ async def test_power_lpar_forwards_activation_parameters():
     assert _parameter_values(document, "bootmode") == ["sms"]
     assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
     assert _parameter_values(document, "OperationType") == ["activate"]
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_forwards_power_off_parameters():
+    """PowerOff carries the caller's restart flag and shutdown operation."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=False,
+            restart=True,
+            operation="osshutdown",
+        )
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOff")
+    assert _parameter_values(document, "restart") == ["true"]
+    assert _parameter_values(document, "operation") == ["osshutdown"]
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_power_on_document_ignores_power_off_parameters():
+    """The PowerOn arm builds a different document and takes none of the three."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=True,
+            force=True,
+            restart=True,
+            operation="dumprestart",
+            allow_dump_restart=True,
+        )
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOn")
+    assert _parameter_values(document, "restart") == []
+    assert _parameter_values(document, "operation") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"operation": "dumpretry"}, "dumprestart, osshutdown, shutdown"),
+        ({"operation": "dumprestart"}, "allow_dump_restart"),
+    ],
+)
+async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected):
+    """A refused PowerOff reads nothing, submits nothing and audits nothing."""
+    hmc = _power_client()
+    resolver = AsyncMock(return_value=LPAR_UUID)
+
+    with (
+        patch("hmc_mcp.operations.lpar.core.resolve_lpar_uuid", new=resolver),
+        pytest.raises(ValueError) as refused,
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=False, **kwargs)
+
+    assert expected in str(refused.value)
+    resolver.assert_not_awaited()
+    hmc.submit_job.assert_not_awaited()
+    hmc.get_quick_property.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_decommission_power_off_document_is_unchanged(immediate):
+    """The decommission path shares the builder, so its defaults must not move.
+
+    #872 widened power_off_lpar_job with restart and operation. This workflow
+    passes neither, so it must keep emitting restart=false and
+    operation=shutdown; epic #871 freezes this document. The private
+    ``_power_off`` is called deliberately: the contract is exactly which
+    document that call site builds.
+    """
+    hmc = _power_client()
+    inventory = SimpleNamespace(
+        state="running", lpar_uuid=LPAR_UUID, lpar_name="lpar-a"
+    )
+
+    with patch(
+        "hmc_mcp.operations.lpar.decommission.wait_for_submitted_job",
+        new=AsyncMock(
+            return_value={
+                "UUID": "job-uuid",
+                "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
+            }
+        ),
+    ):
+        await decommission._power_off(
+            hmc,
+            inventory,
+            immediate=immediate,
+            timeout_seconds=30,
+            poll_interval=1,
+        )
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOff")
+    assert _parameter_values(document, "immediate") == [
+        "true" if immediate else "false"
+    ]
+    assert _parameter_values(document, "restart") == ["false"]
+    assert _parameter_values(document, "operation") == ["shutdown"]
 
 
 @pytest.mark.asyncio
