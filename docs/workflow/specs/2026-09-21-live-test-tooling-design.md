@@ -42,10 +42,13 @@ attribution disappears exactly when a run fails early. It gains:
 
 ```json
 "run": {"tested_commit": "<sha>", "tree_clean": true, "group": "dedicated",
-        "subtask": null, "started_at": "<iso8601>"}
+        "subtasks": [24], "finished": "<iso8601>"}
 ```
 
 reusing the commit and clean-tree reads the observations path already performs.
+`subtasks` lists what actually dispatched, which a nullable single id cannot
+express for a group; `finished` is named for when the block is written, since the
+document is written on exit.
 
 **Recovery needs a structured record.** Its inputs exist today only inside a formatted `data`
 string, and the run marker is per-run random. `LiveTestArtifacts` gains
@@ -164,16 +167,22 @@ Redaction correctness for FAIL rows belongs to ADR 0120.
 
 "Every invalid configuration the runner itself would reject" in (3) is bounded to what
 `LiveTestConfig.from_env_file`, `_bootstrap_config` and `_ensure_schema_version` reject:
-a missing, empty, unknown or duplicate `LIVE_TEST_*` key, a value carrying an HMC record
-delimiter, unresolvable credentials, and a missing `HMC_SCHEMA_VERSION`. Anything requiring
-the HMC is a predicted SKIP per the failure model, not a detection.
+a missing, empty, unknown or duplicate `LIVE_TEST_*` key, a non-integer or non-positive
+numeric value, inconsistent resource limits, unresolvable credentials, and a missing
+`HMC_SCHEMA_VERSION`.
+
+An HMC record delimiter in a value is **not** in that set, contrary to an earlier draft:
+`from_env_file` performs no delimiter check. `_config_value_safe` does, inside
+`pcie._dedicated_config`, and it stops that arm rather than the run — so preflight reports
+it as a predicted SKIP at exit 0. Anything requiring the HMC is likewise a predicted SKIP
+per the failure model, not a detection.
 
 ## Validation
 
 | # | Contract | Mode | Evidence |
 |---|---|---|---|
 | 1 | Runbook is sufficient without source | `task-test-not-applicable` | The contract is a human or agent following prose; no executable consumer reads `docs/live-testing.md`, and a test over its wording would assert the assertion. Discharged by criteria 2–9 plus one operator walkthrough recorded in the PR. |
-| 2 | `--help` content and shape | `focused-test` | `tests/test_live_runner.py::test_help_documents_current_invocation` — assert `uv run --no-sync` and `0-24` present, no bare `uv run ` outside it, and that two consecutive usage lines survive as separate lines (pins `RawDescriptionHelpFormatter`). Red: default formatter collapses them. Green: `pytest tests/test_live_runner.py -k help` |
+| 2 | `--help` content and shape | `focused-test` | `tests/test_live_runner.py::test_module_docstring_prescribes_no_sync_and_the_real_subtask_range` and `::test_help_renders_the_docstring_unwrapped_with_every_group` — the range is derived from `SUBTASKS` rather than restated, and the usage line survives as its own line. **Done**: both green; faulting the formatter turns the second red. Green: `pytest tests/test_live_runner.py -k 'help or docstring'` |
 | 3 | Preflight agrees with the runner's own verdict | `focused-test` | `tests/scripts/test_live_test_preflight.py` — one case per bounded rejection in Success (3), each in `tmp_path` with `monkeypatch.chdir`, asserting preflight's exit status equals what the delegated validator returns. Red: script absent. Green: `pytest tests/scripts/test_live_test_preflight.py` |
 | 4 | No `HMC_*` value is printed | `focused-test` | Same module — `monkeypatch.setenv("HMC_PASSWORD", "SENTINEL-d4f2")` and a TOML profile with a sentinel host, on the path where preflight reports credentials resolved; assert neither sentinel appears in stdout or stderr. Red: printing the resolved config. Green: same command. |
 | 5 | Verdict names what a mutating arm will touch | `focused-test` | Same module — a `.env` with the four dedicated keys set; assert the verdict line contains the system name, LPAR prefix and DRC index. Red: verdict prints only RUNNABLE. Green: same command. |
@@ -182,10 +191,10 @@ the HMC is a predicted SKIP per the failure model, not a detection.
 | 8 | Evidence matrix matches the document | `focused-test` | Same module — fixture with known PASS/SKIP/FAIL totals and a `tree_clean: false` case; assert rendered totals, rows, and the dirty-tree qualifier. Red: script absent. Green: same command. |
 | 9 | Recovery detects each stranded condition | `focused-test` | `tests/scripts/test_live_test_recovery.py` — four cases against a stubbed client (surviving marked partition, stranded slot, profile drift, all-clean), plus one driving `--results` from a document with the four artifact fields populated. Red: script absent. Green: `pytest tests/scripts/test_live_test_recovery.py` |
 | 10 | Recovery issues no mutating call | `focused-test` | Same module — a stub raising for any tool off a read-only allowlist; assert every case passes. Red: a delete slips in. Green: same command. |
-| 11 | The arm records its recovery inputs | `focused-test` | `tests/scripts/test_pcie.py` — run the arm through the existing `ScenarioState` seam and assert `state.artifacts.pcie_run_marker`, `_fixture_lpar`, `_drc_index`, `_baseline_io_slots` are populated after ST29. Red: fields stay `None`. Green: `pytest tests/scripts/test_pcie.py -k artifacts` |
+| 11 | The arm records its recovery inputs | `focused-test` | `tests/scripts/test_pcie.py` — run the arm through the existing `ScenarioState` seam and `::test_arm_records_what_it_created_into_artifacts` covers the happy run and `::test_a_fixture_abandoned_before_the_baseline_is_still_recorded` the run that ends between ST29 and ST30 — the case the ST29 write exists for, and the only one that fails when it is removed. **Done**: green, both verified by controlled fault. Green: `pytest tests/scripts/test_pcie.py -k 'artifacts or abandoned'` |
 | 12 | Each wrapper dispatches its own group through the argument entry point | `focused-test` | One module per wrapper — patch `live_test_runner._run_from_arguments`, assert it is called with exactly `["--group", "<arm>"]`. Red: wrapper absent, or calls `main` directly. Green: `pytest tests/scripts/ -q` |
-| 13 | Runner stamps run provenance | `focused-test` | `tests/test_live_runner.py` — assert the written document's `run` block carries `tested_commit`, `tree_clean`, `group`, `started_at`; plus a case with `_repository_root` patched to `None` asserting `tested_commit` is `None` and the run still completes. Red: `KeyError: 'run'`. Green: `pytest tests/test_live_runner.py -k provenance` |
-| 14 | Test-layout enforces the script→test mapping | `focused-test` | `tests/scripts/test_check_test_layout.py` — a fixture tree with a `scripts/` file and no matching module; assert non-zero exit naming it, and that both documented exceptions pass. Red: current checker returns 0. Green: `pytest tests/scripts/test_check_test_layout.py` |
+| 13 | Runner stamps run provenance | `focused-test` | `tests/test_live_runner.py` — `::test_main_stamps_run_provenance_into_the_results_document` pins the written block's exact key set; `::test_run_provenance_outside_a_repository_reports_no_commit` and `::test_run_provenance_reports_a_dirty_tree` cover the unattributable and dirty cases. **Done**: green, and removing the block from the document write turns the first red. Green: `pytest tests/test_live_runner.py -k provenance` |
+| 14 | Test-layout enforces the script→test mapping | `focused-test` | `tests/scripts/test_check_test_layout.py` — a fixture tree with a `scripts/` file and no matching module; non-zero exit naming it, both documented exceptions pass, an exception whose target was deleted fails, and `scripts/live_test/` modules are outside the rule. **Done**: green, and `just test-layout` goes red on a real untested script. Green: `pytest tests/scripts/test_check_test_layout.py` |
 | 15 | AGENTS.md live-test section | `task-test-not-applicable` | Prose convention for human and agent readers; no executable consumer, and `just doc-freshness` reads only a first-line generation banner. |
 
 Guardrails: `just verify` exits 0 and `uv run --no-sync prek run --all-files` passes every hook.

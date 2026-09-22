@@ -1413,7 +1413,7 @@ def _run_provenance(
             commit = head.stdout.strip()
         tree_clean = _tree_is_clean(repo_root)
     return {
-        "commit": commit,
+        "tested_commit": commit,
         "tree_clean": tree_clean,
         "group": group,
         "subtasks": list(tasks),

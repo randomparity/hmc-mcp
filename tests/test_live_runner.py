@@ -1809,7 +1809,7 @@ def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
         text=True,
         check=True,
     )
-    assert block["commit"] == head.stdout.strip()
+    assert block["tested_commit"] == head.stdout.strip()
     assert block["group"] == "dedicated"
     assert block["subtasks"] == [24]
     assert isinstance(block["tree_clean"], bool)
@@ -1821,7 +1821,7 @@ def test_run_provenance_outside_a_repository_reports_no_commit():
     block = runner._run_provenance([0, 1], None, None)
 
     assert block == {
-        "commit": None,
+        "tested_commit": None,
         "tree_clean": None,
         "group": None,
         "subtasks": [0, 1],
@@ -1845,7 +1845,7 @@ def test_run_provenance_reports_a_dirty_tree(tmp_path):
 
     block = runner._run_provenance([24], "dedicated", tmp_path)
 
-    assert block["commit"] is not None
+    assert block["tested_commit"] is not None
     assert block["tree_clean"] is False
 
 
@@ -1893,7 +1893,7 @@ def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
     config = runner.LiveTestConfig()
     hmc_config = _live_hmc_config()
     document = _result_document(config, hmc_config)
-    document["run"] = {"commit": "a" * 40, "tree_clean": True, "subtasks": [24]}
+    document["run"] = {"tested_commit": "a" * 40, "tree_clean": True, "subtasks": [24]}
     results_path = tmp_path / "previous.json"
     results_path.write_text(json.dumps(document))
     state = runner.RunState(config=config)
@@ -3068,7 +3068,7 @@ async def test_main_stamps_run_provenance_into_the_results_document(
 
     block = json.loads(results_path.read_text())["run"]
     assert block["subtasks"] == [24]
-    assert set(block) == {"commit", "tree_clean", "group", "subtasks", "finished"}
+    assert set(block) == {"tested_commit", "tree_clean", "group", "subtasks", "finished"}
 
 
 @pytest.mark.asyncio
