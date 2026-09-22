@@ -44,7 +44,8 @@ third boolean gating the one member of the vocabulary that crashes a partition.
 - `src/hmc_mcp/cli_commands/lpar/lifecycle.py` — `lpars_power_off` (`:64`) gains
   `--restart`, `--operation`, `--allow-dump-restart`, threaded through `_power_lpar` (`:103`).
   The `typer.confirm` prompt (`:121`) and `--yes` stay, and the prompt names a non-default
-  operation so the human it asks knows which one. `lpars_power_on` is untouched.
+  operation *and* a requested restart, so the human it asks is not told "PowerOff" about a
+  call that reboots. `lpars_power_on` is untouched.
 - Records: the `signature` field of the `hmc_power_off_lpar` record in
   `docs/capabilities/operations.json` and nothing else — it stores
   `str(inspect.signature(handler))`, compared by string equality inside `just verify` and the
@@ -158,8 +159,9 @@ PowerOff submissions — unchanged, held by the existing ADR 0011 path.
 4. On `power_lpar`, both refusals occur before any `hmc` method is awaited, so a refused
    PowerOff performs no REST read, submits no job and writes no ownership audit record.
 5. `power_lpar`, `hmc_power_off_lpar` and `hmc-mcp lpars power-off` each carry all three
-   parameters, and the CLI's flags are `--restart`, `--operation`, `--allow-dump-restart`.
-   The PowerOn arm of `power_lpar` ignores all three.
+   parameters; the CLI's flags are `--restart`, `--operation`, `--allow-dump-restart`, its
+   `typer.confirm` prompt and `--yes` still work, and the prompt names a requested restart and
+   a non-default operation. The PowerOn arm of `power_lpar` ignores all three.
 6. `hmc_power_off_lpar`'s docstring records the kdive mapping in job terms — `off` →
    `operation=shutdown, immediate=true`; `cycle` and `reset` → the same with `restart=true`;
    graceful → `operation=osshutdown`, which needs active RMC — and every new parameter has an

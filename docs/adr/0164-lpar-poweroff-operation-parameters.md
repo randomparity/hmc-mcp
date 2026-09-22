@@ -81,9 +81,13 @@ MCP schema descriptions that `tests/app/test_lifecycle_schema_descriptions.py` r
 every parameter. `docs/tools/lpar.md` publishes the first docstring line and is regenerated.
 
 Adding `dumpretry` later means editing one `Literal` and the tests that enumerate it.
-`lpar.power_off` has no entry in `docs/capabilities/maturity.json`, so this change strands no
-live observation; #879 owns the live window that would promote it, and whether `dumprestart`
-behaves as documented stays unproven until then.
+`lpar.power_off` has no entry in `docs/capabilities/maturity.json`, so nothing this change
+does strands an observation *of it*; #879 owns the live window that would promote it, and
+whether `dumprestart` behaves as documented stays unproven until then. The eight observations
+that do exist already read `stale` on `main` (`just verification-report`: 8 stale, 0 current),
+and `jobs/requests.py` is inside every one of their ADR 0127 closures, so this change
+re-fingerprints them without moving any of them off a state they already hold. That is why
+epic #871 requirement 9 sequences this ahead of the #879 live window rather than after it.
 
 ## Considered & rejected
 
