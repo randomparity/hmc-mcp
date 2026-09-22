@@ -85,6 +85,13 @@ reassign, cleanup and every read keep the ADR 0163 escape-hatch grammar.
   both operations refuse that DRC or that profile. Recovery is a manual profile edit by the
   operator, using the values the error carries. ADR 0165's VIOS-only and populated-profile
   byte-stability limits also stand. Decision 2 tolerates reordering and refuses re-rendering.
+- **Some refusals come after earlier workflow legs commit.** Create, provision and modify
+  prevalidate only the selectors and the envelope. The LPAR-state, holder, profile and
+  other-form refusals run in the dedicated step, after the partition is created or the earlier
+  modify legs are applied. The workflow result reports them as an error step, and nothing is
+  rolled back. For the live arm, this means the operator must configure a slot that no
+  profile lists. A slot listed by another partition's profile, even an inactive one, makes
+  ST30 and ST31 FAIL by design.
 - **Reach is narrower than the HMC's.** A slot the operator added as required, or in a pool, is
   refused rather than handled. Widening that needs a capture that feeds a read value back.
 - **The arm now exercises the operations.** Its ST30 and ST31 rows are evidence about
