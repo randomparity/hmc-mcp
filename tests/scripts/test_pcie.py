@@ -34,6 +34,36 @@ _NOT_FOUND = CallFailure(
     False,
 )
 
+_CONNECTION_LOST = CallFailure(
+    "HMCCLIError", "HMCCLIError: connection lost", "", None, False
+)
+#: Same wording as HSCL8012, but IBM's only recovery for it is rebuilding the
+#: managed system, so it is not read as "no such partition".
+_SIBLING_NOT_FOUND = CallFailure(
+    "HMCCLIError",
+    "HMCCLIError: HSCL7002 The partition named live-x-createtime was not found.",
+    "",
+    None,
+    False,
+)
+
+
+@pytest.mark.parametrize(
+    ("status", "data", "expected"),
+    [
+        ("FAIL", _NOT_FOUND, True),
+        # Only a failed call is the HMC's "no such partition" answer.
+        ("PASS", _NOT_FOUND, False),
+        ("FAIL", _CONNECTION_LOST, False),
+        ("FAIL", _SIBLING_NOT_FOUND, False),
+        ("FAIL", None, False),
+        ("PASS", "description text", False),
+    ],
+)
+def test_partition_not_found_reads_only_a_failed_hscl8012(status, data, expected):
+    """HSCL8012 is the one "no such partition" answer; nothing else counts."""
+    assert pcie.partition_not_found(status, data) is expected
+
 
 class ScenarioState:
     """State seam recording every tool call in order, with per-call outcomes."""
