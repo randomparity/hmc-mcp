@@ -393,7 +393,7 @@ class HMCConfig(BaseSettings):
 
 
 class ConfigError(ValueError):
-    """Raised when hmc-mcp/config.toml is invalid or a profile cannot be selected."""
+    """Raised when hmcpctl/config.toml is invalid or a profile cannot be selected."""
 
 
 class NoProfileSelectedError(ConfigError):
@@ -412,11 +412,11 @@ def resolve_config_path() -> Path | None:
     """Return the platform-native config.toml path, or None when absent.
 
     Platform resolution:
-    - Linux/other POSIX: $XDG_CONFIG_HOME/hmc-mcp/config.toml
-      (fallback: ~/.config/hmc-mcp/config.toml)
-    - macOS:  ~/Library/Application Support/hmc-mcp/config.toml
-    - Windows: %APPDATA%/hmc-mcp/config.toml
-      (fallback: ~/.config/hmc-mcp/config.toml)
+    - Linux/other POSIX: $XDG_CONFIG_HOME/hmcpctl/config.toml
+      (fallback: ~/.config/hmcpctl/config.toml)
+    - macOS:  ~/Library/Application Support/hmcpctl/config.toml
+    - Windows: %APPDATA%/hmcpctl/config.toml
+      (fallback: ~/.config/hmcpctl/config.toml)
     """
     if sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
@@ -428,12 +428,12 @@ def resolve_config_path() -> Path | None:
         xdg = os.environ.get("XDG_CONFIG_HOME", "")
         base = Path(xdg) if xdg else Path.home() / ".config"
 
-    p = base / "hmc-mcp" / "config.toml"
+    p = base / "hmcpctl" / "config.toml"
     return p if p.exists() else None
 
 
 def config_dir() -> Path:
-    """Return the platform-native hmc-mcp/ config directory (no existence check).
+    """Return the platform-native hmcpctl/ config directory (no existence check).
 
     Same platform resolution as resolve_config_path() but never checks whether
     the directory or file exists. Used by ``config init`` to compute the target
@@ -447,7 +447,7 @@ def config_dir() -> Path:
     else:
         xdg = os.environ.get("XDG_CONFIG_HOME", "")
         base = Path(xdg) if xdg else Path.home() / ".config"
-    return base / "hmc-mcp"
+    return base / "hmcpctl"
 
 
 def _selected_config_path(config_path: Path | None) -> Path | None:

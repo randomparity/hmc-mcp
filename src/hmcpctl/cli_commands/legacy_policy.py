@@ -59,15 +59,15 @@ _SHORT_ESCAPES: Final[Mapping[str, str]] = {
 }
 
 _HEADER: Final = f"""\
-# hmc-mcp access policy — generated, and meant to be read before it is used.
+# hmcpctl access policy — generated, and meant to be read before it is used.
 #
-# This is the {LEGACY_POLICY_NAME!r} policy: it grants exactly what an hmc-mcp server
+# This is the {LEGACY_POLICY_NAME!r} policy: it grants exactly what an hmcpctl server
 # granted before an access policy became mandatory. It is a MIGRATION AID, not a
 # recommended posture — it names every ordinary tool, including every destructive one, on
 # every configured connection, with no target restriction. A new deployment should start
 # from the read-only example in the README instead and add what it needs.
 #
-# Activate it with:  hmc-mcp serve --access-policy {LEGACY_POLICY_NAME}
+# Activate it with:  hmcpctl serve --access-policy {LEGACY_POLICY_NAME}
 # Inspect it live with the hmc_effective_permissions tool.
 #
 # {ARBITRARY_COMMAND_TOOL} is deliberately absent. It executes arbitrary HMC CLI commands,
@@ -77,7 +77,7 @@ _HEADER: Final = f"""\
 # REGENERATING. This command never overwrites, so regenerate to a scratch path and merge by
 # hand:
 #
-#     hmc-mcp config init-access-policy --output /tmp/access-policy.new
+#     hmcpctl config init-access-policy --output /tmp/access-policy.new
 #     diff /tmp/access-policy.new <this file>
 #
 # Compare BOTH the tools and the connections arrays: a tool added by an upgrade and a

@@ -31,7 +31,7 @@ from typing import NotRequired, TypedDict
 
 import asyncssh
 
-_CONFIG_PATH = pathlib.Path.home() / ".config/hmc-mcp/config.toml"
+_CONFIG_PATH = pathlib.Path.home() / ".config/hmcpctl/config.toml"
 
 
 @dataclass

@@ -334,7 +334,7 @@ def _compile_grant(
                 f"{where}: unknown tool {tool!r}; remove this entry or replace it "
                 "with the tool's current name. To find current names, generate a "
                 "reference copy with\n"
-                "    hmc-mcp config init-access-policy --output /tmp/access-policy.new\n"
+                "    hmcpctl config init-access-policy --output /tmp/access-policy.new\n"
                 "and diff it against this file — that document grants the widest "
                 "policy this system expresses, so copy only the tool name you need"
             )

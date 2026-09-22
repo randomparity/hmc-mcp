@@ -101,7 +101,7 @@ def main(
         None,
         "--profile",
         envvar="HMC_PROFILE",
-        help="Named profile from ~/.config/hmc-mcp/config.toml (or platform equivalent)",
+        help="Named profile from ~/.config/hmcpctl/config.toml (or platform equivalent)",
     ),
 ) -> None:
     option_names = ("host", "user", "password", "verify_ssl", "profile")

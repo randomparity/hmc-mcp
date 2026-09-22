@@ -1,10 +1,10 @@
-"""Configuration subgroup commands for hmc-mcp.
+"""Configuration subgroup commands for hmcpctl.
 
-hmc-mcp config init                — create the platform-native config file
-hmc-mcp config list                — list configured profile names
-hmc-mcp config show                — show non-secret connection metadata for a profile
-hmc-mcp config init-access-policy  — generate a legacy-equivalent server access policy
-hmc-mcp config diff-access-policy  — diff a deployed policy against what would generate now
+hmcpctl config init                — create the platform-native config file
+hmcpctl config list                — list configured profile names
+hmcpctl config show                — show non-secret connection metadata for a profile
+hmcpctl config init-access-policy  — generate a legacy-equivalent server access policy
+hmcpctl config diff-access-policy  — diff a deployed policy against what would generate now
 
 Two different files live under this group, and they are not two spellings of one
 thing. ``config.toml`` holds **HMC connection profiles**: which consoles this
@@ -38,7 +38,7 @@ from .output import console, err_console, fail
 from .serve import _policy_file
 
 _STARTER_TOML = """\
-# hmc-mcp configuration — see docs/configuration.md for profile setup
+# hmcpctl configuration — see docs/configuration.md for profile setup
 # default_profile = "prod"
 
 [profiles.example]
@@ -235,7 +235,7 @@ def config_init_access_policy(
     should start from the read-only example in the README.
 
     It activates nothing. Review the file, then pass its name to
-    ``hmc-mcp serve --access-policy legacy-equivalent``.
+    ``hmcpctl serve --access-policy legacy-equivalent``.
 
     Never overwrites an existing file. Run it as the identity and with the environment
     ``serve`` runs under: both resolve the file through the same config directory, and
@@ -294,14 +294,14 @@ def config_init_access_policy(
     # MarkupError in place of the success line.
     # `soft_wrap=True` because this line is the command's machine-readable output: a
     # rich Console hard-folds at 80 columns on a non-tty, so
-    # `hmc-mcp config init-access-policy > path.txt` would otherwise capture a path
+    # `hmcpctl config init-access-policy > path.txt` would otherwise capture a path
     # broken across lines. Escaped for the reason `fail` escapes — under --output the
     # path is the operator's own, and a bracketed segment would be silently deleted
     # while a `[/x]`-shaped one would raise MarkupError in place of the success line.
     console.print(escape(str(target)), soft_wrap=True)
     if output is None:
         err_console.print(
-            "Review it, then start the server with: hmc-mcp serve --access-policy "
+            "Review it, then start the server with: hmcpctl serve --access-policy "
             f"{LEGACY_POLICY_NAME}"
         )
     else:
@@ -391,7 +391,7 @@ def config_diff_access_policy(
             RuntimeError(
                 f"No deployed access policy at {path}. Pass the path of the "
                 "access-policy.toml the server loads; if none exists yet, create "
-                "one with `hmc-mcp config init-access-policy` first."
+                "one with `hmcpctl config init-access-policy` first."
             ),
             code=DEPLOYED_UNREADABLE,
         )

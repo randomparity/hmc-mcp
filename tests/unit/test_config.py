@@ -144,7 +144,7 @@ def _write_toml(path: Path, content: str) -> Path:
 def test_resolve_linux_xdg(tmp_path, monkeypatch):
     """XDG_CONFIG_HOME set → uses it."""
     xdg = tmp_path / "xdg"
-    cfg = xdg / "hmc-mcp" / "config.toml"
+    cfg = xdg / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     with patch.object(sys, "platform", "linux"):
@@ -153,10 +153,10 @@ def test_resolve_linux_xdg(tmp_path, monkeypatch):
 
 
 def test_resolve_linux_fallback(tmp_path, monkeypatch):
-    """XDG_CONFIG_HOME unset on Linux → ~/.config/hmc-mcp/config.toml."""
+    """XDG_CONFIG_HOME unset on Linux → ~/.config/hmcpctl/config.toml."""
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     fake_home = tmp_path / "home"
-    cfg = fake_home / ".config" / "hmc-mcp" / "config.toml"
+    cfg = fake_home / ".config" / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     with patch.object(sys, "platform", "linux"), \
          patch("pathlib.Path.home", return_value=fake_home):
@@ -165,9 +165,9 @@ def test_resolve_linux_fallback(tmp_path, monkeypatch):
 
 
 def test_resolve_macos(tmp_path, monkeypatch):
-    """sys.platform=darwin → ~/Library/Application Support/hmc-mcp/config.toml."""
+    """sys.platform=darwin → ~/Library/Application Support/hmcpctl/config.toml."""
     fake_home = tmp_path / "home"
-    cfg = fake_home / "Library" / "Application Support" / "hmc-mcp" / "config.toml"
+    cfg = fake_home / "Library" / "Application Support" / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     with patch.object(sys, "platform", "darwin"), \
          patch("pathlib.Path.home", return_value=fake_home):
@@ -176,9 +176,9 @@ def test_resolve_macos(tmp_path, monkeypatch):
 
 
 def test_resolve_windows(tmp_path, monkeypatch):
-    """sys.platform=win32, APPDATA set → %APPDATA%/hmc-mcp/config.toml."""
+    """sys.platform=win32, APPDATA set → %APPDATA%/hmcpctl/config.toml."""
     appdata = tmp_path / "appdata"
-    cfg = appdata / "hmc-mcp" / "config.toml"
+    cfg = appdata / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     monkeypatch.setenv("APPDATA", str(appdata))
     with patch.object(sys, "platform", "win32"):
@@ -189,6 +189,15 @@ def test_resolve_windows(tmp_path, monkeypatch):
 def test_resolve_returns_none_when_absent(tmp_path, monkeypatch):
     """Returns None when file does not exist."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    with patch.object(sys, "platform", "linux"):
+        result = resolve_config_path()
+    assert result is None
+
+
+def test_resolve_ignores_old_only_directory(tmp_path, monkeypatch):
+    old_config = tmp_path / "hmc-mcp" / "config.toml"
+    _write_toml(old_config, MINIMAL_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = resolve_config_path()
     assert result is None
@@ -422,16 +431,16 @@ def test_config_dir_linux_xdg(monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     with patch.object(sys, "platform", "linux"):
         result = config_dir()
-    assert result == xdg / "hmc-mcp"
+    assert result == xdg / "hmcpctl"
 
 
 def test_config_dir_macos(monkeypatch):
-    """config_dir() returns ~/Library/Application Support/hmc-mcp on macOS."""
+    """config_dir() returns ~/Library/Application Support/hmcpctl on macOS."""
     fake_home = Path("/tmp/fake_home")
     with patch.object(sys, "platform", "darwin"), \
          patch("pathlib.Path.home", return_value=fake_home):
         result = config_dir()
-    assert result == fake_home / "Library" / "Application Support" / "hmc-mcp"
+    assert result == fake_home / "Library" / "Application Support" / "hmcpctl"
 
 
 def test_config_dir_returns_path_even_when_absent(tmp_path, monkeypatch):
@@ -440,7 +449,7 @@ def test_config_dir_returns_path_even_when_absent(tmp_path, monkeypatch):
     with patch.object(sys, "platform", "linux"):
         result = config_dir()
     assert not result.exists()
-    assert result.name == "hmc-mcp"
+    assert result.name == "hmcpctl"
 
 
 # ---------------------------------------------------------------------------

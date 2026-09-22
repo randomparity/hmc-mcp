@@ -1,4 +1,4 @@
-"""Tests for hmc-mcp config init/list/show/init-access-policy commands.
+"""Tests for hmcpctl config init/list/show/init-access-policy commands.
 
 The first three are issue #125. `init-access-policy` is issue #225; it covers
 docs/workflow/specs/2026-08-19-fail-closed-startup-design.md.
@@ -75,7 +75,7 @@ def _write_toml(path: Path, content: str) -> Path:
 
 def test_init_creates_file(tmp_path, monkeypatch):
     """init creates the config file and prints the path when it does not exist."""
-    target = tmp_path / "hmc-mcp" / "config.toml"
+    target = tmp_path / "hmcpctl" / "config.toml"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "init"])
@@ -83,12 +83,12 @@ def test_init_creates_file(tmp_path, monkeypatch):
     assert target.exists()
     # Rich may wrap long paths across lines — compare against the filename
     assert "config.toml" in result.output
-    assert "hmc-mcp" in result.output
+    assert "hmcpctl" in result.output
 
 
 def test_init_refuses_existing_file(tmp_path, monkeypatch):
     """init exits 1 with an error message when the file already exists."""
-    target = tmp_path / "hmc-mcp" / "config.toml"
+    target = tmp_path / "hmcpctl" / "config.toml"
     _write_toml(target, "[profiles.x]\nhost='h'\nuser='u'\npassword='p'  # pragma: allowlist secret\n")
     original_content = target.read_text()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
@@ -107,7 +107,7 @@ def test_init_permissions(tmp_path, monkeypatch):
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "init"])
     assert result.exit_code == 0, result.output
-    target = tmp_path / "hmc-mcp" / "config.toml"
+    target = tmp_path / "hmcpctl" / "config.toml"
     mode = stat.S_IMODE(os.stat(target).st_mode)
     assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
 
@@ -119,7 +119,7 @@ def test_init_permissions(tmp_path, monkeypatch):
 
 def test_list_shows_profiles_and_default(tmp_path, monkeypatch):
     """list shows both profile names; the default is marked."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "list"])
@@ -136,7 +136,7 @@ def test_list_shows_profiles_and_default(tmp_path, monkeypatch):
 
 def test_list_no_default_key(tmp_path, monkeypatch):
     """list shows names without any (default) marker when default_profile absent."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NO_DEFAULT_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NO_DEFAULT_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "list"])
@@ -163,7 +163,7 @@ def test_list_absent_file(tmp_path, monkeypatch):
 
 def test_show_password_redacted(tmp_path, monkeypatch):
     """show emits password_configured:True but never the literal password."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
@@ -176,7 +176,7 @@ def test_show_password_redacted(tmp_path, monkeypatch):
 
 def test_show_password_env_not_resolved(tmp_path, monkeypatch):
     """show reports password_configured:True for password_env without resolving the var."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     # Deliberately DO NOT set HMC_DEV_PW — show must not resolve it.
@@ -195,7 +195,7 @@ def test_show_password_env_not_resolved(tmp_path, monkeypatch):
 
 def test_show_json_flag(tmp_path, monkeypatch):
     """show --json emits valid JSON with no password key."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
@@ -215,7 +215,7 @@ def test_show_reports_the_power_ownership_guard(tmp_path, monkeypatch):
     result is indistinguishable from a correct ``false``, so ``config show`` is
     the only way an operator can confirm the guard is actually on.
     """
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
@@ -238,7 +238,7 @@ def test_show_reports_the_power_ownership_guard(tmp_path, monkeypatch):
 
 def test_show_unknown_profile_error(tmp_path, monkeypatch):
     """show exits 1 with a message containing the unknown profile name."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
@@ -258,7 +258,7 @@ def test_show_absent_config_file_error(tmp_path, monkeypatch):
 
 def test_show_unreadable_config_file_error(tmp_path, monkeypatch):
     """An unreadable config.toml exits 1 with a message, not a traceback (#257)."""
-    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    cfg = _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     cfg.chmod(0o000)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
@@ -274,7 +274,7 @@ def test_show_unreadable_config_file_error(tmp_path, monkeypatch):
 
 def test_show_non_table_profiles_key_error(tmp_path, monkeypatch):
     """`profiles = "x"` exits 1 instead of an AttributeError traceback (#257)."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", "profiles = 'not-a-table'\n")
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", "profiles = 'not-a-table'\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
@@ -287,7 +287,7 @@ def test_show_non_table_profiles_key_error(tmp_path, monkeypatch):
 
 def test_list_unreadable_config_file_error(tmp_path, monkeypatch):
     """`config list` reports an unreadable file rather than raising (#257)."""
-    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    cfg = _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     cfg.chmod(0o000)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     try:
@@ -307,7 +307,7 @@ def test_list_non_table_profiles_key_error(tmp_path, monkeypatch):
     than through `list_profiles_with_default` (#300); this pins that the
     error handling PR #294 unified survives that change.
     """
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", "profiles = 'not-a-table'\n")
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", "profiles = 'not-a-table'\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "list"])
@@ -324,7 +324,7 @@ def test_list_non_table_nicknames_key_error(tmp_path, monkeypatch):
     handling PR #294 unified survives that change.
     """
     _write_toml(
-        tmp_path / "hmc-mcp" / "config.toml",
+        tmp_path / "hmcpctl" / "config.toml",
         "nicknames = 'not-a-table'\n\n[profiles.prod]\nhost='h'\nuser='u'\n"
         "password='p'  # pragma: allowlist secret\n",
     )
@@ -338,7 +338,7 @@ def test_list_non_table_nicknames_key_error(tmp_path, monkeypatch):
 
 def test_show_no_profile_no_default_error(tmp_path, monkeypatch):
     """show exits 1 when no --profile, no HMC_PROFILE, no default_profile in TOML."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NO_DEFAULT_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NO_DEFAULT_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)
@@ -349,7 +349,7 @@ def test_show_no_profile_no_default_error(tmp_path, monkeypatch):
 
 def test_show_local_profile_flag_takes_precedence(tmp_path, monkeypatch):
     """show --profile (subcommand arg) selects the profile, not global --profile."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     # dev profile uses password_env — set a dummy value so load_profile succeeds
@@ -400,7 +400,7 @@ ghost = "does-not-exist"
 
 def test_list_surfaces_nicknames(tmp_path, monkeypatch):
     """config list prints each nickname as 'nick -> target'."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
@@ -412,7 +412,7 @@ def test_list_surfaces_nicknames(tmp_path, monkeypatch):
 
 def test_list_flags_dangling_nickname_target(tmp_path, monkeypatch):
     """A nickname whose target is not a profile is flagged in config list."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
@@ -424,7 +424,7 @@ def test_list_flags_dangling_nickname_target(tmp_path, monkeypatch):
 
 def test_show_resolves_nickname(tmp_path, monkeypatch):
     """config show <nick> resolves the nickname and reports resolved_from."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.setenv("HMC_PROD_PW", "dummy-value-for-test")   # pragma: allowlist secret
@@ -440,7 +440,7 @@ def test_show_resolves_nickname(tmp_path, monkeypatch):
 
 def test_show_profile_key_has_null_resolved_from(tmp_path, monkeypatch):
     """A direct profile key reports resolved_from as null."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     monkeypatch.setenv("HMC_PROD_PW", "dummy-value-for-test")   # pragma: allowlist secret
@@ -454,7 +454,7 @@ def test_show_profile_key_has_null_resolved_from(tmp_path, monkeypatch):
 
 def test_init_scaffolds_commented_nicknames(tmp_path, monkeypatch):
     """config init writes a commented nicknames example to the starter file."""
-    target = tmp_path / "hmc-mcp" / "config.toml"
+    target = tmp_path / "hmcpctl" / "config.toml"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "init"])
@@ -466,7 +466,7 @@ def test_init_scaffolds_commented_nicknames(tmp_path, monkeypatch):
 
 def test_show_env_nickname_target_differs_from_default(tmp_path, monkeypatch):
     """HMC_PROFILE nickname resolves to its target profile, not the default."""
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setenv("HMC_PROFILE", "staging")
     monkeypatch.delenv("HMC_PROD_PW", raising=False)
@@ -498,7 +498,7 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
 
     import hmcpctl.config as config_mod
 
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
 
@@ -528,7 +528,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
 
     import hmcpctl.config as config_mod
 
-    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
 
@@ -565,7 +565,7 @@ def test_init_access_policy_writes_a_loadable_policy_at_0600(tmp_path, monkeypat
     result = _generate(tmp_path, monkeypatch)
 
     assert result.exit_code == 0, result.output
-    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    target = tmp_path / "hmcpctl" / "access-policy.toml"
     assert target.exists()
     assert "access-policy.toml" in result.output
 
@@ -590,7 +590,7 @@ def test_init_access_policy_refuses_to_overwrite_and_names_the_remedy(
     """
     first = _generate(tmp_path, monkeypatch)
     assert first.exit_code == 0, first.output
-    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    target = tmp_path / "hmcpctl" / "access-policy.toml"
     before = target.read_bytes()
 
     second = _generate(tmp_path, monkeypatch)
@@ -640,7 +640,7 @@ def test_init_access_policy_output_at_the_default_path_uses_output_case(
     --output; the handler must key off the presence of --output itself.
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    default_target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    default_target = tmp_path / "hmcpctl" / "access-policy.toml"
 
     with patch.object(sys, "platform", "linux"):
         first = RUNNER.invoke(
@@ -665,7 +665,7 @@ def test_init_access_policy_output_redirects_the_write(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert scratch.exists()
-    assert not (tmp_path / "hmc-mcp" / "access-policy.toml").exists()
+    assert not (tmp_path / "hmcpctl" / "access-policy.toml").exists()
     if sys.platform != "win32":
         assert stat.S_IMODE(scratch.stat().st_mode) == 0o600
 
@@ -680,7 +680,7 @@ def test_init_access_policy_refuses_a_key_that_cannot_be_a_connection(
     leave one that refuses to load, and the message must reach past the policy document
     the operator never wrote to the config key they did.
     """
-    config_dir = tmp_path / "hmc-mcp"
+    config_dir = tmp_path / "hmcpctl"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
@@ -731,7 +731,7 @@ def test_a_write_failure_after_the_create_leaves_no_partial_file(tmp_path, monke
     result = _generate(tmp_path, monkeypatch)
 
     assert result.exit_code == 1
-    assert not (tmp_path / "hmc-mcp" / "access-policy.toml").exists()
+    assert not (tmp_path / "hmcpctl" / "access-policy.toml").exists()
 
 
 def test_every_spec_numbered_test_named_in_the_header_still_exists():
@@ -756,10 +756,10 @@ DIFF_ARGV = ["config", "diff-access-policy"]
 def _generate_and_deploy(tmp_path, monkeypatch, config_toml=None):
     """Generate the platform-native policy with init-access-policy; return its path."""
     if config_toml is not None:
-        config_dir = tmp_path / "hmc-mcp"
+        config_dir = tmp_path / "hmcpctl"
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "config.toml").write_text(config_toml, encoding="utf-8")
-    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    target = tmp_path / "hmcpctl" / "access-policy.toml"
     result = _generate(tmp_path, monkeypatch)
     assert result.exit_code == 0, result.output
     return target
@@ -809,7 +809,7 @@ def test_diff_access_policy_shows_a_profile_added_after_generation(
 ):
     """#276 drift arm 2: a profile key config.toml gains after the policy was written."""
     deployed = _generate_and_deploy(tmp_path, monkeypatch, TWO_PROFILE_TOML)
-    config_dir = tmp_path / "hmc-mcp"
+    config_dir = tmp_path / "hmcpctl"
     (config_dir / "config.toml").write_text(
         TWO_PROFILE_TOML
         + '\n[profiles.staging]\n'
@@ -857,7 +857,7 @@ def test_diff_access_policy_generation_failure_beats_the_deployed_file_check(
     fine and never gets read. Distinct from the exit-3 unreadable-deployed arm above.
     """
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
-    config_dir = tmp_path / "hmc-mcp"
+    config_dir = tmp_path / "hmcpctl"
     (config_dir / "config.toml").write_text(
         '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
     )

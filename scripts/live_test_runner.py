@@ -23,7 +23,7 @@ or `test-results-round2.json` for a bare or whole-suite run, unless
 
 Pre-run requirement: HMC credentials, from the environment, a `config.toml`
 profile in the platform config directory, or a local .env file. That directory
-is `~/.config/hmc-mcp` on Linux and `~/Library/Application Support/hmc-mcp` on
+is `~/.config/hmcpctl` on Linux and `~/Library/Application Support/hmcpctl` on
 macOS. The runner never creates or patches .env: when credentials are absent,
 it exits with manual configuration instructions.
 
