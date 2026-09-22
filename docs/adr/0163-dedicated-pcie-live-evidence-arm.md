@@ -26,6 +26,13 @@ merge, and is not a precondition of acceptance.
 > `_profile_io_slots_command` public as `profile_io_slots_command` for the recovery check's
 > benefit, and `801d4fa7` renumbered this record.
 
+> **Partially superseded by [0166](0166-dedicated-pcie-assignment-wiring-and-create-time-probe.md)**
+> (2026-09-22) for one Decision sentence, quoted here because line numbers move: "The dedicated
+> arm in `scripts/live_test/pcie.py` records the admitted operation's capability refusal as an
+> explicit SKIP row". Once ADR 0166 lifted the gate the operation no longer refuses, so the arm
+> now exercises it and its create-time probe is verified and cleaned up; ADR 0166 decision 4 holds
+> the replacement. The rest of this record stands.
+
 ## Context
 
 ADR 0055 makes `assign_dedicated_pcie_slot` and `unassign_dedicated_pcie_slot` fail closed:
