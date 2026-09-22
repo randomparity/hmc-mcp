@@ -498,7 +498,9 @@ def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_recover(
     message = str(caught.value)
     assert "may hold the change, none of it, or a form this operation refuses" in message
     assert "lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header" in message
-    assert "restore profile 'prof' of LPAR 'lpar' to the before value" in message
+    assert "Reverse only slot 21010020 of profile 'prof' of LPAR 'lpar'" in message
+    assert "`io_slots-=21010020//0` or `io_slots+=21010020//0`" in message
+    assert "Never write the read value back as `io_slots=` input" in message
 
 
 def test_a_write_the_readback_does_not_show_is_a_partial_error(monkeypatch, hmc):

@@ -411,6 +411,10 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
     # refusal inside the envelope is a finding.
     probe_row = state.row("create-time dedicated assignment")
     assert probe_row is not None and probe_row[2] == "FAIL"
+    check_row = state.row("create-time probe partition not confirmed absent")
+    assert check_row is not None and check_row[2] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
+    assert "-createtime" in str(check_row[3])
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
     assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
     assert not any(

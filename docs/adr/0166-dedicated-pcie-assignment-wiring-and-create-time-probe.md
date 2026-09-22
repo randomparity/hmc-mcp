@@ -104,8 +104,9 @@ reassign, cleanup and every read keep the ADR 0163 escape-hatch grammar.
   refuse, or it may not parse at all, and from then on both operations refuse that DRC or that
   profile. The error names what to do next. It carries the before and after `io_slots`
   values. It gives the exact admitted read command to inspect the profile. It tells the
-  operator to restore that LPAR's profile to the before value by hand before retrying. The
-  tool cannot undo a change it cannot verify. ADR 0165's VIOS-only and populated-profile
+  operator to reverse only this operation's DRC, using the documented `<drc>//0` grammar or the
+  HMC UI, and never to paste the read rendering back as `io_slots=` input. The tool cannot
+  undo a change it cannot verify. ADR 0165's VIOS-only and populated-profile
   byte-stability limits also stand. Decision 2 tolerates reordering and refuses re-rendering.
 - **Some refusals come after earlier workflow legs commit.** Create, provision and modify
   prevalidate only the selectors and the envelope. The LPAR-state, holder, profile and
@@ -119,8 +120,11 @@ reassign, cleanup and every read keep the ADR 0163 escape-hatch grammar.
 - **The live question moves to #879 by name.** Before the maturity of
   `pcie.assign_dedicated_slot` or `pcie.unassign_dedicated_slot` is promoted from `unrecorded`,
   the #879 live window must exercise assign and unassign on this path. That run must include an
-  element stored with `is_required=1`, to observe what `io_slots-=<drc>//0` does to it. Until
-  then, maturity stays `unrecorded`.
+  element stored with `is_required=1`, to observe what `io_slots-=<drc>//0` does to it. The
+  operations refuse that form, so this observation needs a raw `chsyscfg` over the escape
+  hatch. Run it against a disposable, non-VIOS profile created for the run, never against the
+  VIOS profiles the capture shows holding required slots. Until then, maturity stays
+  `unrecorded`. The obligation is recorded here. #879's issue body does not yet carry it.
 - **The arm now exercises the operations.** Its ST30 and ST31 rows are evidence about
   `src/` behaviour on the commit that ran, and a FAIL there is a finding, not an expected
   refusal. Its own `io_slots` read stays the `--filter` single-field form ADR 0165 did not admit;

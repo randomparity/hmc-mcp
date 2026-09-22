@@ -424,9 +424,13 @@ async def _verify_dedicated_change(
         f"{reason}; io_slots before={target.io_slots!r} after={after_text!r}. "
         "The chsyscfg may have run, so the profile may hold the change, none of it, or a "
         "form this operation refuses. Read it with `lssyscfg -r prof -m "
-        f"{target.system_name} -F lpar_name,name,io_slots --header`, restore profile "
-        f"{target.profile_name!r} of LPAR {target.lpar_name!r} to the before value by "
-        "hand, then retry."
+        f"{target.system_name} -F lpar_name,name,io_slots --header` and compare it with "
+        f"the before value. Reverse only slot {target.drc_index} of profile "
+        f"{target.profile_name!r} of LPAR {target.lpar_name!r}, using the documented "
+        f"`io_slots-={target.drc_index}//0` or `io_slots+={target.drc_index}//0` grammar "
+        "or the HMC UI. Never write the read value back as `io_slots=` input: that "
+        "rendering is not established as valid input (ADR 0166). Where another LPAR is "
+        "named as also listing the slot, resolve that conflict there."
     ) from cause
 
 
