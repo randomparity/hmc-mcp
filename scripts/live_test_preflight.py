@@ -1,11 +1,11 @@
 """Answer whether a live run would start, and what it would touch.
 
 The runner already validates configuration and credentials before its first
-dispatch. What it cannot do is answer the question without
-being the run. This script asks the same validators the runner gates on, so
-there is one definition of a valid configuration, and adds the two facts the
-runner never establishes: what a selected arm will create, mutate and delete,
-and whether the managed system is inside the ADR 0053 admitted envelope.
+dispatch. What it cannot do is answer the question without being the run. This
+script asks the same validators the runner gates on, so there is one definition
+of a valid configuration, and adds the two facts the runner never establishes:
+what a selected arm will create, mutate and delete, and whether the managed
+system is inside the ADR 0053 admitted envelope.
 
 Usage:
     uv run --no-sync python scripts/live_test_preflight.py [--group NAME]
@@ -156,10 +156,9 @@ def _check_credentials() -> tuple[bool, dict[str, bool]]:
     """
     with contextlib.redirect_stdout(io.StringIO()):
         resolved = runner._bootstrap_config()
-        # The same pair, in the same order, as the runner's own startup gate:
-        # `_bootstrap_config` reads `.env` only when the TOML profile fails, so
-        # without this a profile-resolved host reports a `.env`-only `HMC_*`
-        # value as absent and names a request environment the run will not use.
+        # The same two calls in the same order as the runner's own startup
+        # gate, and for the reason recorded there. Dropping one would make
+        # preflight name a request environment the run will not use.
         runner._load_dotenv()
     return resolved, {key: env_var_value(key) is not None for key in _CREDENTIAL_KEYS}
 
@@ -213,9 +212,9 @@ def main(argv: list[str] | None = None) -> int:
     # Reported, never gated: the variable is opt-in and a run starts either way
     # (#875). It is on its own row because `MISSING` on the credentials row read
     # as a defect to fix, which is what made the runner demand it.
-    pinned = "set" if env_var_value("HMC_SCHEMA_VERSION") else "not set"
+    presence = "set" if env_var_value("HMC_SCHEMA_VERSION") else "not set"
     print(
-        f"schema version INFO  HMC_SCHEMA_VERSION={pinned} — optional; recorded "
+        f"schema version INFO  HMC_SCHEMA_VERSION={presence} — optional; recorded "
         "so a run's evidence names its request environment (docs/compatibility.md)"
     )
     if verdicts:
