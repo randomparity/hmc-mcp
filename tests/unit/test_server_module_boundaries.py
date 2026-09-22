@@ -15,7 +15,7 @@ from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
 from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
 from hmc_mcp.server_tools import command, jobs
 from hmc_mcp.server_tools.inventory import capacity
-from hmc_mcp.server_tools.lpar import configuration, lifecycle
+from hmc_mcp.server_tools.lpar import configuration, lifecycle, lifecycle_boot
 from hmc_mcp.server_tools.storage import resources as storage
 from hmc_mcp.server_tools.systems import core as systems
 from hmc_mcp.server_tools.systems import health
@@ -41,6 +41,9 @@ def test_domain_handlers_live_in_focused_modules() -> None:
         lifecycle.hmc_power_off_lpar: "hmc_mcp.server_tools.lpar.lifecycle",
         configuration.hmc_get_lpar_description: (
             "hmc_mcp.server_tools.lpar.configuration"
+        ),
+        lifecycle_boot.hmc_read_lpar_refcodes: (
+            "hmc_mcp.server_tools.lpar.lifecycle_boot"
         ),
         system_resources.hmc_get_proc_compat_modes: (
             "hmc_mcp.server_tools.systems.resources"

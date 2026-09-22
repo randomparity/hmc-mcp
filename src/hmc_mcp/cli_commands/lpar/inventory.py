@@ -17,8 +17,9 @@ from ...operations.lpar.core import (
 )
 from ...operations.partition_state import PartitionState
 from ...resource_identity import ResourceNotFoundError
+from ...ssh.refcodes import MAX_REFCODE_COUNT, list_lpar_refcodes
 from ..output import console, first_field, output, partition_not_found, print_json
-from ..runtime import with_client
+from ..runtime import run_cli_coroutine, ssh_config, with_client
 
 
 def lpars_summary(
@@ -140,9 +141,27 @@ def lpars_state(
     console.print(state)
 
 
+def lpars_refcodes(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    lpar_name: str = typer.Argument(..., help="Partition name"),
+    count: int = typer.Option(
+        1, "--count", help=f"Reference codes to return, 1 to {MAX_REFCODE_COUNT}"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Read recent reference codes (SRCs) for one partition (HMC CLI via SSH)."""
+
+    rows = run_cli_coroutine(
+        lambda: list_lpar_refcodes(ssh_config(), system_name, lpar_name, count)
+    )
+
+    output(rows, as_json, None, "No reference codes found")
+
+
 def register_commands(group: typer.Typer) -> None:
     """Register this module’s commands on *group*."""
     group.command("summary")(lpars_summary)
     group.command("list")(lpars_list)
     group.command("show")(lpars_show)
     group.command("state")(lpars_state)
+    group.command("refcodes")(lpars_refcodes)

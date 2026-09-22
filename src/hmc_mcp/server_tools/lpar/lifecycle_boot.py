@@ -1,4 +1,4 @@
-"""MCP tools for LPAR boot order and ownership."""
+"""MCP tools for LPAR boot order, boot progress, and ownership."""
 
 from __future__ import annotations
 
@@ -6,12 +6,13 @@ from typing import Any
 
 from hmc_mcp.operations.lpar.ownership import list_lpar_ownership
 
-from ..._app import with_client
+from ..._app import ssh_with_client, with_client
 from ...operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
 )
+from ...ssh.refcodes import list_lpar_refcodes
 from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -41,6 +42,46 @@ def hmc_read_lpar_boot_order(
         )
 
     return with_client(read_boot_order, profile=profile)
+
+
+@tool(effect="read", operation="lpar.list_refcodes", target_kind="lpar")
+def hmc_read_lpar_refcodes(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    count: int = 1,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read the most recent reference codes (SRCs) for one partition.
+
+    Boot progress without a virtual terminal: ``lsrefcode -r lpar`` needs no
+    console, so an activation can be followed read-only. Rows come back
+    most-recent first, each carrying ``lpar_name``, ``time_stamp`` and
+    ``refcode``. Whether an SRC is still reported once the partition reaches
+    ``Running`` is reported by the caller epic (#871) and has not been
+    confirmed against hardware here; #879 owns that observation.
+
+    An empty list means no reference codes for that selector. A partition that
+    does not exist is believed to answer the same way rather than failing, but
+    that has not been confirmed against hardware; #879 owns the live check.
+
+    Broader reference-code, FRU and LED inventory is #691's; this is the narrow
+    partition-scoped read and it reaches no LED control.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Name or UUID of the logical partition.
+        count: How many reference codes to return, 1 to 100, newest first.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    return ssh_with_client(
+        lambda config, system_name, lpar_name: list_lpar_refcodes(
+            config, system_name, lpar_name, count
+        ),
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
+    )
 
 
 @tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
