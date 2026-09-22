@@ -1156,6 +1156,27 @@ def _record_fixture_artifacts(state: RunState, fixture: _DedicatedFixture) -> No
     state.artifacts.pcie_baseline_io_slots = fixture.baseline_io_slots
 
 
+def partition_not_found(status: str, data: object) -> bool:
+    """Whether a failed partition lookup is the HMC's "no such partition" answer.
+
+    HSCL8012 is the HMC's message for a partition name it does not have: "The
+    partition named ... was not found" (seen live in ADR 0162; IBM HSCL reference
+    `docs/refs/ibm-hsc-ref/HSCL80xx.md:147`). Every other
+    failure -- a lost connection, an authentication refusal, any other HSCL code --
+    says nothing about whether the partition exists, so it is not this.
+
+    It is also not proof of absence: IBM's recovery action for HSCL8012 includes
+    rebuilding the managed system (`docs/refs/ibm-hsc-ref/HSCL80xx.md:157`), so a
+    stale HMC inventory can answer it too.
+    Callers treat it as the best available evidence, not a guarantee (#906).
+    """
+    return (
+        status != "PASS"
+        and isinstance(data, CallFailure)
+        and "HSCL8012" in data.message
+    )
+
+
 class _Absence(Enum):
     """Why a failed create's readback found no partition of this run's."""
 
@@ -1176,11 +1197,11 @@ async def _created_despite_failure(
 
     Ownership is confirmed by the run marker before claiming the partition, so
     a name collision with something this run did not create is never adopted.
-    Absence is confirmed by HSCL8012, which the HMC answers for a name it does
-    not have (`scripts/live_test_recovery.py:172-173`), or by a readback that
-    answered with something other than this run's marker. Any other failed read,
-    or an empty description (a partition whose ownership stamp never landed),
-    leaves it unconfirmed.
+    Absence is confirmed by HSCL8012 (see `partition_not_found`), or by a readback
+    that answered with something other than this run's marker. Any other failed
+    read, or an empty description (a partition whose ownership stamp never
+    landed), leaves it unconfirmed. HSCL8012 is the best available evidence rather
+    than proof: IBM documents a stale HMC inventory as one of its causes (#906).
     """
     st, data = await state.call(
         client,
@@ -1188,7 +1209,7 @@ async def _created_despite_failure(
         system_name_or_uuid=fixture.config.system_name,
         lpar_name_or_uuid=lpar_name,
     )
-    if st != "PASS" and isinstance(data, CallFailure) and "HSCL8012" in data.message:
+    if partition_not_found(st, data):
         return _Absence.CONFIRMED
     if st != "PASS" or not isinstance(data, str) or not data.strip():
         return _Absence.UNCONFIRMED

@@ -16,6 +16,7 @@ import pytest
 SCRIPTS_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 import live_test_recovery as recovery  # noqa: E402
+from live_test.observation import CallFailure  # noqa: E402
 
 _MARKER = "pcie-deadbeef"
 _SYSTEM = "sys-R1"
@@ -51,15 +52,27 @@ def _caller(responses: dict[str, object], seen: list[str] | None = None):
         response = responses.get(tool)
         if response is None:
             return "FAIL", None
+        if isinstance(response, CallFailure):
+            return "FAIL", response
         return "PASS", response
 
     return call
 
 
+#: How the HMC answers a lookup for a partition it does not have: a failing
+#: command carrying HSCL8012 (ADR 0162), not a successful empty answer.
+_NOT_FOUND = CallFailure(
+    "HMCCLIError",
+    f"HMCCLIError: HSCL8012 The partition named {_LPAR} was not found.",
+    "",
+    None,
+    False,
+)
+
 #: A system with nothing left behind: no partition, slot unowned, profile at
 #: its baseline.
 _CLEAN = {
-    "hmc_get_lpar_description": "not found",
+    "hmc_get_lpar_description": _NOT_FOUND,
     "hmc_list_dedicated_pcie_slots": {
         "items": [{"drc_index": _DRC, "owner_lpar": None}]
     },
@@ -229,6 +242,44 @@ async def test_an_unreadable_system_carries_the_findings_already_confirmed():
         await recovery.check(_caller(responses), _INPUTS)
 
     assert [f.what for f in raised.value.findings] == ["surviving partition"]
+
+
+@pytest.mark.asyncio
+async def test_a_partition_lookup_failing_for_another_reason_is_not_clean():
+    """Only HSCL8012 means "no such partition"; any other failure is unreadable.
+
+    Reading every failed lookup as "gone" reported a system clean after, say, an
+    authentication refusal, while a partition carrying this run's marker survived.
+    """
+    lost = CallFailure("HMCCLIError", "HMCCLIError: connection lost", "", None, False)
+    responses = _responses(hmc_get_lpar_description=lost)
+
+    with pytest.raises(recovery.StateUnreadable, match="could not look up"):
+        await recovery.check(_caller(responses), _INPUTS)
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_partition_lookup_keeps_the_stranded_slot():
+    lost = CallFailure("HMCCLIError", "HMCCLIError: connection lost", "", None, False)
+    responses = _responses(
+        hmc_get_lpar_description=lost,
+        hmc_list_dedicated_pcie_slots={
+            "items": [{"drc_index": _DRC, "owner_lpar": "someone"}]
+        },
+    )
+
+    with pytest.raises(recovery.StateUnreadable) as raised:
+        await recovery.check(_caller(responses), _INPUTS)
+
+    assert [f.what for f in raised.value.findings] == ["stranded slot"]
+
+
+@pytest.mark.asyncio
+async def test_a_partition_lookup_answering_no_description_is_not_clean():
+    responses = _responses(hmc_get_lpar_description={"unexpected": "shape"})
+
+    with pytest.raises(recovery.StateUnreadable, match="could not look up"):
+        await recovery.check(_caller(responses), _INPUTS)
 
 
 @pytest.mark.asyncio
