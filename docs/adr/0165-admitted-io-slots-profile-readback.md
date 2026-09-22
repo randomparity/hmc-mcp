@@ -47,8 +47,9 @@ A second observation points the same way. The corpus renders an unset pool ID as
 in its `mksyscfg` examples — `21030003//0` at
 `docs/refs/hmc-commands-p11/commands/mksyscfg.md:69` and `2105001B//0` at `:80` — while the
 capture's read path renders the same position as the literal **`none`**. The field layout
-matches the documented input grammar; the rendering of an absent pool does not. The input
-grammar was therefore never the read contract, which is exactly what ADR 0053's
+matches the documented input grammar; the rendering of an absent pool does not. A parser
+written from the documentation would expect an empty field there and would not anticipate
+`none` — so the input grammar was never the read contract, which is exactly what ADR 0053's
 no-cross-family rule and the state matrix's "do not compose" clause were protecting.
 
 ## Decision
@@ -140,6 +141,17 @@ dedicated PCIe profile readback; assignment cannot be safely verified". After th
 first clause is false; what remains true is that no code path reads it. The operations keep
 refusing either way, so nothing is unsafe in the interval — but the reason they give is wrong
 until #882 rewrites it.
+
+Two facts about how the capture was taken belong with the record, because the record pins
+fields that would otherwise be read as rawer than they are. **`stderr: ""` means the remote
+command's stderr**, not the session's: each probe ran as its own non-interactive SSH
+invocation with the two streams redirected separately and `$?` captured immediately, and the
+local client's own post-quantum warning lines were filtered out. So the negative control's
+"stderr empty" above is a processed observation, not a claim that nothing was written to any
+stderr. And **one probe first returned 255** on HMC authentication rate-limiting and was
+re-run after a backoff to obtain the recorded result. That 255 was a transport failure rather
+than a probe result and is deliberately absent from the record; it is named here so its
+absence is a decision on the page rather than a gap.
 
 The record is pinned by sha256 in `tests/system/test_pcie_contract.py`, so editing published
 evidence reddens a test instead of landing quietly, and the same pin asserts every probe's
