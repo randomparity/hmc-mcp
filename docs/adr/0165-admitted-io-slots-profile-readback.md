@@ -9,6 +9,15 @@ No runtime behaviour changes with it: `git diff --name-only $(git merge-base HEA
 shut until #882. On the completed branch `just verify` exits 0 (3m04s) and
 `uv run --no-sync prek run --all-files` passes every hook.
 
+> **Partially superseded by [0166](0166-dedicated-pcie-assignment-wiring-and-create-time-probe.md)**
+> (2026-09-22) for one Decision 3 sentence, quoted here because line numbers move: "#882 must
+> also establish that a value read back in this rendering is accepted as `chsyscfg` input — the
+> capture never fed one back — before issuing any mutating command". ADR 0166 narrows that
+> precondition rather than meeting it: the operations never write a read value, write only the
+> documented `io_slots±=<drc>//0` input grammar, and verify every change by readback. Live
+> acceptance of that grammar remains unestablished and belongs to the #879 window. The envelope
+> and the rest of this record stand.
+
 ## Context
 
 ADR 0053 sealed dedicated-slot profile mutation on one named condition — "profile mutation
