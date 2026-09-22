@@ -97,9 +97,12 @@ NULL_PROPERTY_500_BODY = (
     "nestedPath=Session/SessionId/Value"
 )
 
-# Also constructed. errors.py states that HMC error bodies are XML, and a
-# body of this shape renders as `... (HTTP 500): Internal Server Error` --
-# the guard sees the null-property text only by reading the body itself.
+# Also constructed, and hypothetical: no ManagementConsole 500 body has been
+# observed in this shape, and the vendored reference corpus names neither
+# HttpErrorResponse nor the marker. errors.py states that HMC error bodies
+# are XML, and a body of this shape renders as
+# `... (HTTP 500): Internal Server Error` -- the guard sees the
+# null-property text only by reading the body itself.
 NULL_PROPERTY_500_XML_BODY = (
     '<?xml version="1.0" encoding="UTF-8"?>'
     "<HttpErrorResponse>"

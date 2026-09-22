@@ -98,10 +98,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   two managed-system guards beside it already use (ADR 0138), and reads it from the response
   body rather than from the rendered detail those two match: `str(exc)` shows only the first
   `Message` element of an XML body, or its first 500 characters when the body is not XML,
-  and no raw body for this endpoint has been captured yet. Its message names a null
-  property rather than a null `SessionId`, because the match no longer establishes which
-  property it was. An HTTP 403 still propagates untranslated even when it carries the same
-  text, and so does an unrelated HTTP 500 (#880).
+  and no raw body for this endpoint has been captured yet — every error recorded for this
+  defect class so far puts the marker where either surface would find it, so the XML shape
+  the new test carries is hypothetical until a live capture settles it. Its message names a
+  null property rather than a null `SessionId`, because the match no longer establishes
+  which property it was. An HTTP 403 still propagates untranslated even when it carries
+  the same text, and so does an unrelated HTTP 500 (#880).
 
 - Virtual-disk create and attach keep their `capacity_mib` inputs, but the HMC
   VolumeGroup document now emits the integral GiB value V10R3 expects. Invalid,

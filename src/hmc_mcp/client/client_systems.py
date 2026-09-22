@@ -40,11 +40,15 @@ class SystemsMixin:
         # str(exc): the rendered detail carries only the first
         # Message/msg/error element of an XML body, or its first 500
         # characters when the body is not XML (errors.py), while the body is
-        # what the transport received. No raw body for this endpoint has
-        # been captured, so the wider surface is the one that holds whatever
-        # shape a live capture turns out to show. The message names no
-        # particular property because the marker does not establish one; the
-        # HMC's own detail still reaches the operator through the body.
+        # the response text as received, truncated to MAX_ERROR_BODY_BYTES --
+        # a wider window either way. No raw body for this endpoint has been
+        # captured, and no observed body needs the wider window: every error
+        # recorded for this defect class puts the marker in the first 500
+        # characters. The wider surface is here so that whatever shape a live
+        # capture shows, the guard already covers it; the XML case its test
+        # carries is hypothetical. The message names no particular property
+        # because the marker does not establish one; the HMC's own detail
+        # still reaches the operator through the body.
         try:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
