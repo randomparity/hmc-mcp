@@ -16,13 +16,13 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import Tool
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, operation_maturity_middleware
-from hmc_mcp.authorization.access_policy import compile_access_policy
-from hmc_mcp.cli_commands import capabilities as capability_commands
-from hmc_mcp.cli_commands import runtime
-from hmc_mcp.operation_maturity import OperationMaturity, operation_maturity_meta
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.tool_registry import ToolSecurity
+from hmcpctl import cli, operation_maturity_middleware
+from hmcpctl.authorization.access_policy import compile_access_policy
+from hmcpctl.cli_commands import capabilities as capability_commands
+from hmcpctl.cli_commands import runtime
+from hmcpctl.operation_maturity import OperationMaturity, operation_maturity_meta
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.tool_registry import ToolSecurity
 
 MATURITY_META_KEY = "io.github.randomparity.hmc-mcp/operation-maturity"
 _NOW = datetime(2026, 9, 10, tzinfo=UTC)

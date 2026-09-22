@@ -14,12 +14,12 @@ from click import unstyle
 from fastmcp import FastMCP
 from typer.testing import CliRunner
 
-from hmc_mcp import server as server_app
-from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
-from hmc_mcp.cli import app
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_SECURITY, _is_loopback
+from hmcpctl import server as server_app
+from hmcpctl.audit import sink as audit_sink
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
+from hmcpctl.cli import app
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.server import TOOL_SECURITY, _is_loopback
 
 # ADR 0041 made --access-policy required, so every invocation below that expects a
 # *start* has to select one. The `run` patch target moved with it: there is no
@@ -46,7 +46,7 @@ def selectable_policy(tmp_path, monkeypatch):
     invocation that quietly read the developer's own `access-policy.toml` would be a
     test whose result depends on the machine it runs on.
     """
-    import hmc_mcp.authorization.access_policy as access_policy_module
+    import hmcpctl.authorization.access_policy as access_policy_module
 
     path = tmp_path / "access-policy.toml"
     path.write_text(POLICY_FILE, encoding="utf-8")
@@ -62,7 +62,7 @@ def _address_info(address, family=socket.AF_INET):
 
 def test_is_loopback_accepts_only_loopback_resolution():
     addresses = [_address_info("127.0.0.2"), _address_info("::1", socket.AF_INET6)]
-    with patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses):
+    with patch("hmcpctl.server.socket.getaddrinfo", return_value=addresses):
         assert _is_loopback("localhost")
 
 
@@ -75,13 +75,13 @@ def test_is_loopback_accepts_only_loopback_resolution():
     ],
 )
 def test_is_loopback_rejects_unsafe_resolution(addresses):
-    with patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses):
+    with patch("hmcpctl.server.socket.getaddrinfo", return_value=addresses):
         assert not _is_loopback("localhost")
 
 
 def test_is_loopback_rejects_resolution_failure():
     with patch(
-        "hmc_mcp.server.socket.getaddrinfo", side_effect=socket.gaierror("unknown")
+        "hmcpctl.server.socket.getaddrinfo", side_effect=socket.gaierror("unknown")
     ):
         assert not _is_loopback("missing.example")
 
@@ -89,7 +89,7 @@ def test_is_loopback_rejects_resolution_failure():
 def test_serve_http_mixed_address_refuses_without_allow_remote():
     addresses = [_address_info("127.0.0.1"), _address_info("203.0.113.5")]
     with (
-        patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses),
+        patch("hmcpctl.server.socket.getaddrinfo", return_value=addresses),
         patch.object(FastMCP, "run") as run,
     ):
         result = CliRunner().invoke(
@@ -103,7 +103,7 @@ def test_serve_http_mixed_address_refuses_without_allow_remote():
 
 def test_serve_http_loopback_bind_is_allowed():
     """Loopback bind needs no --allow-remote (default is loopback)."""
-    with patch("hmc_mcp.server.main_http") as main_http:
+    with patch("hmcpctl.server.main_http") as main_http:
         result = CliRunner().invoke(app, ["serve", "--http", *POLICY_ARGS])
     assert result.exit_code == 0, result.output
     forwarded, kwargs = main_http.call_args.args, main_http.call_args.kwargs
@@ -131,7 +131,7 @@ def test_serve_http_non_loopback_refuses_without_allow_remote():
 
 
 def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
-    with patch("hmc_mcp.server.main_http") as main_http:
+    with patch("hmcpctl.server.main_http") as main_http:
         result = CliRunner().invoke(
             app,
             [
@@ -166,7 +166,7 @@ def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
     ],
 )
 def test_serve_rejects_command_line_hmc_options(root_option):
-    with patch("hmc_mcp.server.main_stdio") as main_stdio:
+    with patch("hmcpctl.server.main_stdio") as main_stdio:
         result = CliRunner().invoke(app, [*root_option, "serve"])
 
     assert result.exit_code == 2
@@ -176,7 +176,7 @@ def test_serve_rejects_command_line_hmc_options(root_option):
 
 def test_serve_allows_environment_hmc_options(monkeypatch):
     monkeypatch.setenv("HMC_HOST", "hmc.example.com")
-    with patch("hmc_mcp.server.main_stdio") as main_stdio:
+    with patch("hmcpctl.server.main_stdio") as main_stdio:
         result = CliRunner().invoke(app, ["serve", *POLICY_ARGS])
 
     assert result.exit_code == 0, result.output
@@ -190,7 +190,7 @@ def test_serve_allows_environment_hmc_options(monkeypatch):
 @pytest.mark.parametrize("http", [False, True])
 def test_serve_passes_arbitrary_command_opt_in(http):
     args = ["serve", "--enable-arbitrary-command", *POLICY_ARGS]
-    target = "hmc_mcp.server.main_http" if http else "hmc_mcp.server.main_stdio"
+    target = "hmcpctl.server.main_http" if http else "hmcpctl.server.main_stdio"
     if http:
         args.append("--http")
 
@@ -216,7 +216,7 @@ def test_serve_passes_arbitrary_command_opt_in(http):
 
 def test_serve_rejects_an_unknown_audit_level():
     """A misspelled --audit-level is a usage error naming the valid levels."""
-    with patch("hmc_mcp.server.main_stdio") as main_stdio:
+    with patch("hmcpctl.server.main_stdio") as main_stdio:
         result = CliRunner().invoke(
             app, ["serve", "--audit-level", "LOUD", *POLICY_ARGS]
         )
@@ -233,7 +233,7 @@ def test_serve_rejects_an_unknown_audit_level():
 @pytest.mark.parametrize("http", [False, True])
 def test_serve_forwards_the_audit_level(http, level_name):
     args = ["serve", "--audit-level", level_name, *POLICY_ARGS]
-    target = "hmc_mcp.server.main_http" if http else "hmc_mcp.server.main_stdio"
+    target = "hmcpctl.server.main_http" if http else "hmcpctl.server.main_stdio"
     if http:
         args.append("--http")
 
@@ -342,7 +342,7 @@ def test_serve_http_without_a_policy_refuses_before_binding():
     pins that the HTTP transport cannot slip past the same gate, which matters more
     there — that listener is unauthenticated.
     """
-    with patch("hmc_mcp.server.main_http") as main_http:
+    with patch("hmcpctl.server.main_http") as main_http:
         result = CliRunner().invoke(app, ["serve", "--http"])
 
     assert result.exit_code == 2

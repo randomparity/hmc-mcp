@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.virtualization.pcie import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.virtualization.pcie import (
     PcieAssignmentUnavailableError,
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
 )
-from hmc_mcp.server_tools.lpar.profiles import tool_security
-from hmc_mcp.ssh.profiles import assign_profile_io_slot, unassign_profile_io_slot
+from hmcpctl.server_tools.lpar.profiles import tool_security
+from hmcpctl.ssh.profiles import assign_profile_io_slot, unassign_profile_io_slot
 
 
 def _config() -> HMCConfig:
@@ -25,7 +25,7 @@ def _config() -> HMCConfig:
 )
 def test_profile_commands_are_symmetric_and_never_force(monkeypatch, operation, token):
     command = AsyncMock(return_value="ok")
-    monkeypatch.setattr("hmc_mcp.ssh.profiles.run_hmc_command", command)
+    monkeypatch.setattr("hmcpctl.ssh.profiles.run_hmc_command", command)
 
     assert asyncio.run(operation(_config(), "sys", "lpar", "profile", "123")) == "ok"
     built = command.await_args.args[1]
@@ -43,9 +43,9 @@ def test_assignment_rejects_before_mutation_when_profile_readback_is_unavailable
     inventory = AsyncMock()
     authorize.return_value = ("sys", "lpar")
     monkeypatch.setattr(
-        "hmc_mcp.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
+        "hmcpctl.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
     )
-    monkeypatch.setattr("hmc_mcp.operations.virtualization.pcie.list_dedicated_slots", inventory)
+    monkeypatch.setattr("hmcpctl.operations.virtualization.pcie.list_dedicated_slots", inventory)
 
     with pytest.raises(PcieAssignmentUnavailableError, match="profile readback"):
         asyncio.run(assign_dedicated_pcie_slot(hmc, "sys", "lpar", "prof", "123"))
@@ -60,7 +60,7 @@ def test_unassignment_passes_explicit_ownership_override(monkeypatch):
     authorize = AsyncMock()
     authorize.return_value = ("sys", "lpar")
     monkeypatch.setattr(
-        "hmc_mcp.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
+        "hmcpctl.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
     )
 
     with pytest.raises(PcieAssignmentUnavailableError):

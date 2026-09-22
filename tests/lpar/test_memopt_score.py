@@ -9,12 +9,12 @@ import asyncssh
 import pytest
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.server_tools.lpar.configuration import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.server_tools.lpar.configuration import (
     hmc_get_lpar_memopt_score,
     hmc_list_lpar_memopt_scores,
 )
-from hmc_mcp.ssh.affinity import (
+from hmcpctl.ssh.affinity import (
     HMCCLIError,
     get_lpar_memopt_score,
     list_lpar_memopt_scores,
@@ -76,7 +76,7 @@ def test_get_lpar_memopt_score_runs_correct_command():
     cfg = _config()
     conn = _make_ssh_mock(SCORE_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         result = asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
 
     expected_cmd = (
@@ -96,7 +96,7 @@ def test_get_lpar_memopt_score_preserves_none_score():
     cfg = _config()
     conn = _make_ssh_mock(NONE_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         result = asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, "dalpar2rrd1t"))
 
     assert result["curr_lpar_score"] == "none"
@@ -107,7 +107,7 @@ def test_get_lpar_memopt_score_quotes_selectors():
     cfg = _config()
     conn = _make_ssh_mock("lpar_name=my lpar,lpar_id=1,curr_lpar_score=100")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         asyncio.run(get_lpar_memopt_score(cfg, "sys one", "my lpar"))
 
     expected_cmd = (
@@ -123,7 +123,7 @@ def test_get_lpar_memopt_score_rejects_empty_lpar_name(bad_name):
     conn = _make_ssh_mock("")
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(ValueError, match="lpar_name"),
     ):
         asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, bad_name))
@@ -137,7 +137,7 @@ def test_get_lpar_memopt_score_raises_when_no_row_reported():
     conn = _make_ssh_mock("")
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="returned 0 rows; expected exactly 1"),
     ):
         asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
@@ -149,7 +149,7 @@ def test_get_lpar_memopt_score_rejects_multiple_rows():
     conn = _make_ssh_mock(MULTI_ROW)
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="returned 2 rows; expected at most 1"),
     ):
         asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
@@ -161,7 +161,7 @@ def test_get_lpar_memopt_score_rejects_mismatched_row():
     conn = _make_ssh_mock(SECOND_ROW)
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(
             HMCCLIError, match="reported LPAR 'dapurea1t'; expected 'p9da10v1t'"
         ),
@@ -180,7 +180,7 @@ def test_get_lpar_memopt_score_unknown_lpar_raises_hmcclierror():
     conn.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="doesnotexist"),
     ):
         asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, "doesnotexist"))
@@ -196,7 +196,7 @@ def test_list_lpar_memopt_scores_runs_correct_command_without_filter():
     cfg = _config()
     conn = _make_ssh_mock(MULTI_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         result = asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, None))
 
     expected_cmd = f"lsmemopt -m {SYSTEM_NAME} -r lpar -o currscore"
@@ -212,7 +212,7 @@ def test_list_lpar_memopt_scores_with_lpar_filter():
     cfg = _config()
     conn = _make_ssh_mock(SCORE_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         result = asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, LPAR_NAME))
 
     expected_cmd = (
@@ -230,7 +230,7 @@ def test_list_lpar_memopt_scores_filter_rejects_multiple_rows():
     conn = _make_ssh_mock(MULTI_ROW)
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="returned 2 rows; expected at most 1"),
     ):
         asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, LPAR_NAME))
@@ -242,7 +242,7 @@ def test_list_lpar_memopt_scores_filter_rejects_mismatched_row():
     conn = _make_ssh_mock(SECOND_ROW)
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(
             HMCCLIError, match="reported LPAR 'dapurea1t'; expected 'p9da10v1t'"
         ),
@@ -255,7 +255,7 @@ def test_list_lpar_memopt_scores_empty_output_returns_empty_list():
     cfg = _config()
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         result = asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, None))
 
     assert result == []
@@ -267,7 +267,7 @@ def test_list_lpar_memopt_scores_rejects_malformed_rows():
     conn = _make_ssh_mock("lpar_name=p9da10v1t,curr_lpar_score=100")
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="missing required fields: lpar_id"),
     ):
         asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME))
@@ -279,7 +279,7 @@ def test_list_lpar_memopt_scores_rejects_empty_filter_name():
     conn = _make_ssh_mock("")
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(ValueError, match="lpar_name"),
     ):
         asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, "  "))
@@ -294,7 +294,7 @@ def test_list_lpar_memopt_scores_rejects_filter_grammar(bad_name):
     conn = _make_ssh_mock("")
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="lpar_names"),
     ):
         asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, bad_name))
@@ -320,7 +320,7 @@ def test_hmc_get_lpar_memopt_score_resolves_uuids(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock(SCORE_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_memopt_score(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
@@ -341,7 +341,7 @@ def test_hmc_get_lpar_memopt_score_preserves_none_score(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock(NONE_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_memopt_score("p9da10", "dalpar2rrd1t")
 
     assert result["curr_lpar_score"] == "none"
@@ -359,7 +359,7 @@ def test_hmc_get_lpar_memopt_score_unknown_lpar(monkeypatch, mock_hmc):
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
         pytest.raises(HMCCLIError, match="doesnotexist"),
     ):
         hmc_get_lpar_memopt_score("p9da10", "doesnotexist")
@@ -371,7 +371,7 @@ def test_hmc_list_lpar_memopt_scores_all_lpars(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(MULTI_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_lpar_memopt_scores(SYSTEM_UUID)
 
     expected_cmd = f"lsmemopt -m {SYSTEM_NAME} -r lpar -o currscore"
@@ -385,7 +385,7 @@ def test_hmc_list_lpar_memopt_scores_filtered_by_uuid(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock(SCORE_ROW)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_lpar_memopt_scores(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
@@ -402,7 +402,7 @@ def test_hmc_list_lpar_memopt_scores_empty(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_lpar_memopt_scores(SYSTEM_UUID)
 
     assert result == []

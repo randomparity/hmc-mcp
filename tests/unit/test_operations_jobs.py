@@ -14,10 +14,10 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.jobs import get_job, wait_for_job
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
+from hmcpctl.jobs import JobOutcome
+from hmcpctl.operations.jobs import get_job, wait_for_job
 
 _JOB_ID = "job-uuid-999"
 _GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"
@@ -169,7 +169,7 @@ async def test_get_job_reports_an_empty_job_response_as_not_found(
     """
     mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(204))
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             outcome = await get_job(hmc, _JOB_ID)
 
@@ -362,7 +362,7 @@ async def test_get_job_warns_with_the_discarded_detail_when_a_job_is_missing(
         return_value=httpx.Response(404, text="<Message>Unknown job</Message>")
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             assert (await get_job(hmc, _JOB_ID)).found is False
 
@@ -388,7 +388,7 @@ async def test_get_job_confirms_a_stale_link_against_the_global_path(
         )
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
 
@@ -434,7 +434,7 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
         ]
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             outcome = await wait_for_job(
                 hmc,

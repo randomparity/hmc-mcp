@@ -1,6 +1,6 @@
 """Contracts for storage-client response-shape normalization helpers."""
 
-from hmc_mcp.client.client_storage import (
+from hmcpctl.client.client_storage import (
     _extract_optical_media,
     _filter_optical_mappings,
 )

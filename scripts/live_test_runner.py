@@ -28,10 +28,10 @@ macOS. The runner never creates or patches .env: when credentials are absent,
 it exits with manual configuration instructions.
 
 HMC_SCHEMA_VERSION is not among them. It is opt-in and unset by default
-(`src/hmc_mcp/config.py`), and where it lands is per call site rather than per
+(`src/hmcpctl/config.py`), and where it lands is per call site rather than per
 HTTP method: UOM requests carry `X-HMC-Schema-Version` unless their own call
 site passes `include_schema_version=False` (issue #96 — grep that flag under
-`src/hmc_mcp/client/` for the current set, which no list here can track), every
+`src/hmcpctl/client/` for the current set, which no list here can track), every
 `/rest/api/web/` request carries it (issue #99), and requests that build their
 own headers never carry it — including `submit_job`, so the job path every
 power operation takes is unaffected either way. A run therefore starts with or
@@ -100,11 +100,11 @@ from live_test.vmedia import (
     vmedia_upload_iso,
 )
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.config import HMCConfig, env_var_value
-from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.config import HMCConfig, env_var_value
+from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
+from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
 # Pre-run guard: HMC credentials must resolve before the first dispatch
@@ -198,7 +198,7 @@ def _bootstrap_config() -> bool:
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, config_dir, load_profile
+    from hmcpctl.config import ConfigError, config_dir, load_profile
 
     # Try the TOML config first.
     try:
@@ -1403,7 +1403,7 @@ def _repository_root() -> Path | None:
     if result.returncode != 0:
         return None
     root = Path(result.stdout.strip())
-    return root if (root / "src" / "hmc_mcp").is_dir() else None
+    return root if (root / "src" / "hmcpctl").is_dir() else None
 
 
 def _run_provenance(

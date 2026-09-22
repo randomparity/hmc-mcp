@@ -6,7 +6,7 @@ shell *word*; the HMC splits the record itself afterwards, so quoting does
 nothing about the record's own delimiters.  A caller value containing ``,`` or
 ``=`` therefore used to add or override attributes the caller was never given.
 
-:func:`hmc_mcp.ssh.commands.build_attribute_record` owns the record grammar.
+:func:`hmcpctl.ssh.commands.build_attribute_record` owns the record grammar.
 These tests pin three things: the grammar itself, a per-site refusal for every
 function that builds a record, and the coupling — a new ``-i`` site that skips
 the builder fails here rather than waiting for a reviewer.
@@ -21,28 +21,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh import io_inventory, sriov, vnic
-from hmc_mcp.ssh import memory as ssh_memory
-from hmc_mcp.ssh import profiles as ssh_profiles
-from hmc_mcp.ssh.commands import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.ssh import io_inventory, sriov, vnic
+from hmcpctl.ssh import memory as ssh_memory
+from hmcpctl.ssh import profiles as ssh_profiles
+from hmcpctl.ssh.commands import (
     build_attribute_record,
     build_filter,
 )
-from hmc_mcp.ssh.description_validation import validate_lpar_description
-from hmc_mcp.ssh.io_inventory import list_fc_ports
-from hmc_mcp.ssh.lpar import create_lpar_via_cli
-from hmc_mcp.ssh.profiles import (
+from hmcpctl.ssh.description_validation import validate_lpar_description
+from hmcpctl.ssh.io_inventory import list_fc_ports
+from hmcpctl.ssh.lpar import create_lpar_via_cli
+from hmcpctl.ssh.profiles import (
     assign_profile_io_slot,
     set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
     sync_lpar_profile,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmcpctl.ssh.transport import HMCCLIError
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-SCANNED_ROOTS = (_REPO_ROOT / "src" / "hmc_mcp", _REPO_ROOT / "scripts")
+SCANNED_ROOTS = (_REPO_ROOT / "src" / "hmcpctl", _REPO_ROOT / "scripts")
 
 
 def _config() -> HMCConfig:
@@ -316,7 +316,7 @@ def test_list_fc_ports_renders_the_whole_expression_quoted():
         sent.append(command)
         return ""
 
-    with patch("hmc_mcp.ssh.io_inventory.run_hmc_command", side_effect=fake_run):
+    with patch("hmcpctl.ssh.io_inventory.run_hmc_command", side_effect=fake_run):
         asyncio.run(list_fc_ports(_config(), "system-a", "my name"))
     assert "--filter 'lpar_names=my name'" in sent[0]
 
@@ -330,7 +330,7 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
 @pytest.mark.parametrize("name", ["my lpar", "lpar;name"])
 def test_set_lpar_description_quotes_hmc_legal_names(name):
     """Live HMC testing confirms space and semicolon are ordinary value data."""
-    with patch("hmc_mcp.ssh.profiles.run_hmc_command") as run:
+    with patch("hmcpctl.ssh.profiles.run_hmc_command") as run:
         asyncio.run(set_lpar_description(_config(), "sys", name, "text"))
 
     run.assert_called_once_with(
@@ -399,7 +399,7 @@ def test_set_lpar_msp_rejects_a_hostile_lpar_name():
     """The msp record refuses a hostile name after the lpar_env probe."""
     conn = _ssh_mock("vioserver\n")
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="comma"),
     ):
         asyncio.run(set_lpar_msp(_config(), "sys", HOSTILE, True))

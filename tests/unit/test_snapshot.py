@@ -5,13 +5,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from hmc_mcp.snapshots.models import (
+from hmcpctl.snapshots.models import (
     SnapshotValidationError,
     inspect_snapshot,
     parse_snapshot,
     serialize_snapshot,
 )
-from hmc_mcp.snapshots.operations import assess_snapshot_affinity
+from hmcpctl.snapshots.operations import assess_snapshot_affinity
 
 
 def _document() -> dict:

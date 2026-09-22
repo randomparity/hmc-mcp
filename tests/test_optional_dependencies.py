@@ -48,11 +48,11 @@ class BlockAppOnlyPackages(MetaPathFinder):
 
 sys.meta_path.insert(0, BlockAppOnlyPackages())
 
-import hmc_mcp
-from hmc_mcp import operations
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
+import hmcpctl
+from hmcpctl import operations
+from hmcpctl.client.core import HMCClient
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError
 
 assert HMCClient
 assert HMCConfig
@@ -64,7 +64,7 @@ operation_modules = sorted(
 )
 assert operation_modules
 for module in operation_modules:
-    import_module(f"hmc_mcp.operations.{module}")
+    import_module(f"hmcpctl.operations.{module}")
 assert not (_BLOCKED & set(sys.modules))
 """
 

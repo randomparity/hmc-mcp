@@ -2,11 +2,11 @@
 
 import pytest
 
-from hmc_mcp.operations.inventory.capacity import (
+from hmcpctl.operations.inventory.capacity import (
     calculate_system_capacity,
     find_placement,
 )
-from hmc_mcp.operations.inventory.composite import _system_summary
+from hmcpctl.operations.inventory.composite import _system_summary
 
 SYSTEM = {
     "UUID": "system-1",

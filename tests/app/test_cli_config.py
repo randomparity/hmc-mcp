@@ -31,7 +31,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import cli
+from hmcpctl import cli
 
 RUNNER = CliRunner()
 
@@ -489,14 +489,14 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """config show parses config.toml once, not three times (#295).
 
     Patches the shared choke point `_read_config_document` in both the module
-    that owns it (`hmc_mcp.config`, where `list_nicknames`/`load_profile`
+    that owns it (`hmcpctl.config`, where `list_nicknames`/`load_profile`
     resolve the name as a module global at call time) and
-    `hmc_mcp.cli_config`'s own imported name (its direct call site), so every
+    `hmcpctl.cli_config`'s own imported name (its direct call site), so every
     read reaches the same counter regardless of which call site makes it.
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.config as config_mod
+    import hmcpctl.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
@@ -518,7 +518,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
 
     Same technique as test_show_reads_config_document_exactly_once: patch the
     shared choke point `_read_config_document` in both the owning module and
-    `hmc_mcp.cli_config`'s own imported name, so a read from either call site
+    `hmcpctl.cli_config`'s own imported name, so a read from either call site
     reaches the same counter. `config list` calls no other module-level
     reader (no `load_profile`), so both reads previously came from
     `cli_config`'s own call sites — patching the module-owned name alone
@@ -526,7 +526,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.config as config_mod
+    import hmcpctl.config as config_mod
 
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
@@ -558,9 +558,9 @@ def _generate(tmp_path, monkeypatch, *extra):
 
 def test_init_access_policy_writes_a_loadable_policy_at_0600(tmp_path, monkeypatch):
     """R11: the file a server has to read, created the way `config init` creates one."""
-    from hmc_mcp.authorization.access_policy import load_access_policy
-    from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME
-    from hmc_mcp.server import TOOL_SECURITY
+    from hmcpctl.authorization.access_policy import load_access_policy
+    from hmcpctl.cli_commands.legacy_policy import LEGACY_POLICY_NAME
+    from hmcpctl.server import TOOL_SECURITY
 
     result = _generate(tmp_path, monkeypatch)
 
@@ -721,7 +721,7 @@ def test_a_write_failure_after_the_create_leaves_no_partial_file(tmp_path, monke
     over it, and does not compile, so `serve` refuses too. That is a deployment that can
     neither start nor recover without a manual delete.
     """
-    import hmc_mcp.cli_commands.config as cli_config
+    import hmcpctl.cli_commands.config as cli_config
 
     def _explode(*_args, **_kwargs):
         raise OSError(28, "No space left on device")
@@ -790,7 +790,7 @@ def test_diff_access_policy_shows_a_tool_a_later_release_added(tmp_path, monkeyp
     """
     from dataclasses import replace
 
-    from hmc_mcp.server_tools import catalog
+    from hmcpctl.server_tools import catalog
 
     deployed = _generate_and_deploy(tmp_path, monkeypatch)
     drifted = dict(catalog.TOOL_SECURITY)

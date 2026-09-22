@@ -20,15 +20,15 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
-from hmc_mcp.ssh.selectors import (
+from hmcpctl.errors import HMCError
+from hmcpctl.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
+from hmcpctl.ssh.selectors import (
     _lpar_name_from_rest,
     _system_name_from_rest,
     resolve_lpar_name,
     resolve_system_name,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmcpctl.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
@@ -82,7 +82,7 @@ async def test_ssh_system_name_parses_matching_row():
     """resolve_system_cli_name returns the name on the matching UUID,SystemName row."""
     conn = _make_ssh_mock(_SYS_ROWS)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         name = await resolve_system_cli_name(make_config(), SYSTEM_UUID)
 
     assert name == SYSTEM_NAME
@@ -96,7 +96,7 @@ async def test_ssh_system_name_raises_when_uuid_missing():
     conn = _make_ssh_mock("00000000-0000-0000-0000-000000000000,other\n")
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
         pytest.raises(HMCCLIError, match="Could not resolve system UUID"),
     ):
         await resolve_system_cli_name(make_config(), SYSTEM_UUID)
@@ -107,7 +107,7 @@ async def test_resolve_lpar_cli_name_scopes_to_system():
     """resolve_lpar_cli_name scopes lssyscfg with -m when a system is given."""
     conn = _make_ssh_mock(_LPAR_ROWS)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         name = await resolve_lpar_cli_name(
             make_config(), LPAR_UUID, system_name=SYSTEM_NAME
         )
@@ -124,7 +124,7 @@ async def test_resolve_lpar_cli_name_unscoped_without_system():
     """Without a system name the lookup spans all managed systems (no -m)."""
     conn = _make_ssh_mock(_LPAR_ROWS)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         name = await resolve_lpar_cli_name(make_config(), LPAR_UUID)
 
     assert name == LPAR_NAME
@@ -141,8 +141,8 @@ async def test_resolve_lpar_cli_name_unscoped_without_system():
 async def test_resolve_system_name_passes_names_through():
     """A plain name is returned untouched — no REST session, no SSH command."""
     with (
-        patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client,
-        patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect,
+        patch("hmcpctl.ssh.selectors.HMCClient") as mock_client,
+        patch("hmcpctl.ssh.transport.asyncssh.connect") as mock_connect,
     ):
         name = await resolve_system_name(make_config(), SYSTEM_NAME)
 
@@ -155,8 +155,8 @@ async def test_resolve_system_name_passes_names_through():
 async def test_resolve_lpar_name_passes_names_through():
     """A plain LPAR name is returned untouched."""
     with (
-        patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client,
-        patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect,
+        patch("hmcpctl.ssh.selectors.HMCClient") as mock_client,
+        patch("hmcpctl.ssh.transport.asyncssh.connect") as mock_connect,
     ):
         name = await resolve_lpar_name(make_config(), LPAR_NAME, SYSTEM_NAME)
 
@@ -176,7 +176,7 @@ async def test_resolve_system_name_falls_back_to_ssh_when_rest_down(
     )
     conn = _make_ssh_mock(_SYS_ROWS)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         name = await resolve_system_name(make_config(), SYSTEM_UUID)
 
     assert name == SYSTEM_NAME
@@ -190,7 +190,7 @@ async def test_resolve_lpar_name_falls_back_scoped_by_system(mock_hmc):
     )
     conn = _make_ssh_mock(_LPAR_ROWS)
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         name = await resolve_lpar_name(
             make_config(), LPAR_UUID, system_name=SYSTEM_NAME
         )
@@ -215,7 +215,7 @@ async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
     )
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect") as mock_connect,
+        patch("hmcpctl.ssh.transport.asyncssh.connect") as mock_connect,
         pytest.raises(HMCError),
     ):
         await resolve_system_name(make_config(), SYSTEM_UUID)

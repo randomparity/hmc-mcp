@@ -9,7 +9,7 @@ prose names from ``TOOL_SECURITY``.
 import re
 from pathlib import Path
 
-from hmc_mcp.server import TOOL_SECURITY
+from hmcpctl.server import TOOL_SECURITY
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENTS = (
@@ -30,7 +30,7 @@ IDENTIFIER = re.compile(r"\bhmc_[a-z0-9_]+")
 # them to their subject, so neither can outlive it and quietly widen the guard.
 NON_TOOL_IDENTIFIERS = frozenset(
     {
-        "hmc_mcp",  # the import package, named in library-usage examples
+        "hmcpctl",  # the import package, named in library-usage examples
         "hmc_timeout_minutes",  # an argument of the NIM install tools
     }
 )

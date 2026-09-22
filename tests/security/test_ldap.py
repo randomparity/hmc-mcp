@@ -5,9 +5,9 @@ import pytest
 from conftest import make_config
 from defusedxml import ElementTree as DET
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.documents import build_remote_access_document
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.core import HMCClient
+from hmcpctl.documents import build_remote_access_document
+from hmcpctl.errors import HMCError
 
 CONSOLE = "console-1"
 PATH = f"/rest/api/uom/ManagementConsole/{CONSOLE}?group=RemoteAccess"

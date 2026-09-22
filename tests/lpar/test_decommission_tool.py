@@ -9,16 +9,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import assert_only_these_client_methods_used
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar.assignments import WorkflowStep
-from hmc_mcp.operations.lpar.decommission import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.assignments import WorkflowStep
+from hmcpctl.operations.lpar.decommission import (
     DecommissionAdapterRecord,
     DecommissionBlastRadius,
     DecommissionResult,
     decommission_lpar,
 )
-from hmc_mcp.server_tools.lpar.lifecycle import (
+from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_decommission_lpar,
 )
 
@@ -150,7 +150,7 @@ def _client() -> AsyncMock:
 
 
 def _patch_common(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
-    from hmc_mcp.operations.lpar import decommission as ops
+    from hmcpctl.operations.lpar import decommission as ops
 
     async def resolve_system_uuid(hmc, value: str) -> str:
         calls.append(f"resolve_system_uuid:{value}")
@@ -211,9 +211,9 @@ def test_hmc_decommission_lpar_delegates_with_one_configured_client() -> None:
         return fake_client_context(profile)
 
     with (
-        patch("hmc_mcp._app.client_from_env", side_effect=fake_client_from_env),
+        patch("hmcpctl._app.client_from_env", side_effect=fake_client_from_env),
         patch(
-            "hmc_mcp.server_tools.lpar.lifecycle.decommission_lpar",
+            "hmcpctl.server_tools.lpar.lifecycle.decommission_lpar",
             new=AsyncMock(return_value=expected),
         ) as decommission_mock,
     ):
@@ -248,7 +248,7 @@ async def test_decommission_rejects_uuid_outside_selected_system(monkeypatch: py
     hmc.list_logical_partitions.return_value = [_lpar(uuid="other-uuid")]
     authorize = AsyncMock()
 
-    from hmc_mcp.operations.lpar import decommission as ops
+    from hmcpctl.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(ops, "authorize_decommission_lpar_ownership_snapshot", authorize)
@@ -506,7 +506,7 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
 async def test_decommission_enforces_ownership_even_for_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     hmc = _client()
 
-    from hmc_mcp.operations.lpar import decommission as ops
+    from hmcpctl.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(
@@ -553,7 +553,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
         host="hmc.test", user="user", agent_id="alice"
     )
 
-    from hmc_mcp.operations.lpar import decommission as ops
+    from hmcpctl.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(
@@ -567,7 +567,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
             "[hmc-mcp owner:bob created:2026-08-14]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations.lpar.ownership.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions)
 
     result = await decommission_lpar(
         hmc, "system-a", "aix-prod", ownership_override=True
@@ -587,7 +587,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
         host="hmc.test", user="user", agent_id="alice"
     )
 
-    from hmc_mcp.operations.lpar import decommission as ops
+    from hmcpctl.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
     monkeypatch.setattr(
@@ -601,7 +601,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
             "[hmc-mcp owner:bob created:2026-08-15]",
         )
     )
-    monkeypatch.setattr("hmc_mcp.operations.lpar.ownership.get_lpar_description", descriptions)
+    monkeypatch.setattr("hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions)
 
     with pytest.raises(PermissionError, match="owned by 'bob'"):
         await decommission_lpar(hmc, "system-a", "aix-prod")

@@ -96,8 +96,8 @@ from typing import get_args
 
 import pytest
 
-from hmc_mcp.audit import records as audit
-from hmc_mcp.audit import sink as audit_sink
+from hmcpctl.audit import records as audit
+from hmcpctl.audit import sink as audit_sink
 
 SENTINEL = "SENTINEL-DO-NOT-LOG-9c1f"
 
@@ -338,7 +338,7 @@ def test_resolved_connection_is_bound_to_the_sentinel_that_owns_it():
     this is the connection half's equivalent, paid for in a test rather than a
     dependency.
     """
-    from hmc_mcp.authorization import connection_scope
+    from hmcpctl.authorization import connection_scope
 
     assert audit.resolved_connection(connection_scope.UNRESOLVED) == (
         audit.UNRESOLVED_RENDERING
@@ -378,7 +378,7 @@ def test_a_case_variant_agent_id_reaches_the_record_and_the_stamp_alike(monkeypa
     Both halves are driven here rather than one, because the defect was never
     visible in either alone.
     """
-    from hmc_mcp.config import HMCConfig
+    from hmcpctl.config import HMCConfig
 
     for spelling in ("HMC_AGENT_ID", "hmc_agent_id", "Hmc_Agent_Id"):
         monkeypatch.delenv(spelling, raising=False)
@@ -404,7 +404,7 @@ def test_the_last_agent_id_casing_in_the_environment_is_the_one_recorded(monkeyp
     an empty ``HMC_AGENT_ID`` in the record while ``hmc_agent_id`` stamped the
     partitions — the same divergence in the other direction.
     """
-    from hmc_mcp.config import HMCConfig
+    from hmcpctl.config import HMCConfig
 
     for spelling in ("HMC_AGENT_ID", "hmc_agent_id", "Hmc_Agent_Id"):
         monkeypatch.delenv(spelling, raising=False)
@@ -436,12 +436,12 @@ def test_the_last_agent_id_casing_in_the_environment_is_the_one_recorded(monkeyp
 def test_the_audit_env_fold_agrees_with_the_configs(monkeypatch, spellings):
     """#543. The two folds are one rule, and this is what keeps them one.
 
-    ``audit`` imports nothing from ``hmc_mcp`` by design, so it cannot call
+    ``audit`` imports nothing from ``hmcpctl`` by design, so it cannot call
     ``config.env_var_value`` and carries its own copy of the fold. A second
     mechanism for one job only stays honest if something compares them, and
     nothing else does — the copy is invisible from either side.
     """
-    from hmc_mcp.config import env_var_value
+    from hmcpctl.config import env_var_value
 
     for spelling in ("HMC_AGENT_ID", "hmc_agent_id", "Hmc_Agent_Id"):
         monkeypatch.delenv(spelling, raising=False)
@@ -695,7 +695,7 @@ def test_the_tls_record_carries_host_and_source():
     """#379. The durable counterpart of the logon warning names the HMC and the knob.
 
     `source` is the operator-facing half of the record: it says which knob to turn
-    to stop the exposure. Its closed vocabulary is `hmc_mcp.client.core.VerifySSLSource`
+    to stop the exposure. Its closed vocabulary is `hmcpctl.client.core.VerifySSLSource`
     and the value below is one member of it, not a restatement of the set (#504).
     No credential, session token or request body travels — a construction-time
     event has none to carry.
@@ -820,7 +820,7 @@ def test_the_install_record_names_the_target_and_the_log_path():
 
 def test_the_install_record_is_emitted_at_warning():
     """ADR 0102 §3. `logging.lastResort` drops anything below `WARNING`, and on a
-    bare `hmc_mcp.api` consumer — which installs no sink — that is the whole
+    bare `hmcpctl.api` consumer — which installs no sink — that is the whole
     delivery path. `INFO` would silence the record exactly where it is the only
     trace of an irreversible submission that exists."""
     levels: list[int] = []
@@ -928,7 +928,7 @@ def test_only_audit_sink_resolves_the_audit_logger():
     assert offenders == [], f"{offenders} name the reserved audit logger"
 
     source = Path(audit_sink.__file__).read_text()
-    assert "from ." not in source and "from hmc_mcp" not in source, (
+    assert "from ." not in source and "from hmcpctl" not in source, (
         "audit/sink.py must import nothing from the package so records can depend "
         "on its emission boundary without a cycle"
     )
@@ -1045,7 +1045,7 @@ def test_a_stream_that_cannot_be_written_drops_and_says_so(
 def test_import_is_inert_until_sink_installation(tmp_path):
     """Import leaves logging untouched; explicit installation owns mutation."""
     probe = (
-        "import logging, hmc_mcp.audit.sink as a; "
+        "import logging, hmcpctl.audit.sink as a; "
         "logger = logging.getLogger(a.AUDIT_LOGGER_NAME); "
         "print(logger.propagate, a._SINK is None); "
         "a.install_audit_sink(); "

@@ -16,7 +16,7 @@ TOOL_PINS = {
     "ty==0.0.75",
     "zizmor==1.29.0",
 }
-TY_INCLUDE = ["src/hmc_mcp"]
+TY_INCLUDE = ["src/hmcpctl"]
 RUFF_EXTEND_SELECT = {
     "E401",
     "E402",
@@ -601,10 +601,10 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "--requirements .wheel-app-requirements.txt" in body
     assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
     assert '"${wheels[0]}[app]"' in body
-    assert "import hmc_mcp" in body
-    assert "from hmc_mcp.api import HMCClient" in body
-    assert "from hmc_mcp.client import HMCClient" not in body
-    assert 'HMCClient.__module__ == "hmc_mcp.client.core"' in body
+    assert "import hmcpctl" in body
+    assert "from hmcpctl.api import HMCClient" in body
+    assert "from hmcpctl.client import HMCClient" not in body
+    assert 'HMCClient.__module__ == "hmcpctl.client.core"' in body
     assert "is_relative_to(environment)" in body
     assert ".wheel-venv/bin/hmc-mcp --help" in body
     assert (
@@ -644,10 +644,10 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "uv pip install --python .library-wheel-venv/bin/python" in body
     assert '            "${wheels[0]}"' in body
     assert (
-        "from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
+        "from hmcpctl.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
         in body
     )
-    assert "import hmc_mcp.api" not in body
+    assert "import hmcpctl.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
         assert f'assert find_spec("{package}") is None' in body
     # PEP 561: the marker is asserted against the installed distribution, so a
@@ -679,8 +679,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
 
 def test_library_guide_separates_core_and_domain_imports() -> None:
     readme = (ROOT / "docs/python-api.md").read_text()
-    assert "from hmc_mcp.api import HMCClient, HMCConfig" in readme
-    assert "from hmc_mcp.operations.inventory.capacity import fetch_capacity_report" in readme
+    assert "from hmcpctl.api import HMCClient, HMCConfig" in readme
+    assert "from hmcpctl.operations.inventory.capacity import fetch_capacity_report" in readme
     assert "await fetch_capacity_report(hmc)" in readme
     assert " hmc_capacity_report" not in readme
 
@@ -701,7 +701,7 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert "uv venv" in body
     # The exercised surface is the bare installed API, not the app extra.
     assert (
-        "from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
+        "from hmcpctl.operations.inventory.capacity import CapacitySummary, fetch_capacity_report"
         in body
     )
     assert "CapacitySummary(" in body
@@ -715,7 +715,7 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert "uv export" not in body
     assert "--no-deps" not in body
     assert "pip install -e" not in body
-    assert "import hmc_mcp.api" not in body
+    assert "import hmcpctl.api" not in body
 
 
 def test_the_floor_derivation_covers_every_declared_range(tmp_path: Path) -> None:
@@ -1088,9 +1088,9 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     assert report["precision"] >= 2
     assert project["tool"]["coverage"]["run"] == {"branch": True}
     # Without a measured source nothing consults fail_under at all. Token, not
-    # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
+    # substring: "--cov=hmcpctl/config.py" contains "--cov=hmcpctl" and would
     # narrow the measured source to one file, giving a total near 100%.
-    assert "--cov=hmc_mcp" in addopts.split()
+    assert "--cov=hmcpctl" in addopts.split()
     assert "--cov-report=" in addopts.split()
     assert "term-missing" not in addopts
     # Each of these silently disarms the gate: a command-line floor or precision
@@ -1154,7 +1154,7 @@ def test_coverage_gate_denominator_is_not_shrunk_in_source() -> None:
     """
     offenders = [
         location
-        for path in sorted((ROOT / "src" / "hmc_mcp").rglob("*.py"))
+        for path in sorted((ROOT / "src" / "hmcpctl").rglob("*.py"))
         for number, line in enumerate(path.read_text().splitlines(), start=1)
         if NO_COVER_PRAGMA.search(line)
         and (location := f"{path.relative_to(ROOT)}:{number}") not in REVIEWED_NO_COVER
@@ -1266,7 +1266,7 @@ def test_pyproject_is_the_coverage_configuration_source() -> None:
     pytest tries pytest.toml, .pytest.toml, pytest.ini, .pytest.ini,
     pyproject.toml, tox.ini, setup.cfg (_pytest/config/findpaths.py), and the
     first four win outright even when empty. That is the worse vector of the
-    two: it takes --cov=hmc_mcp out of addopts, so nothing is measured at all,
+    two: it takes --cov=hmcpctl out of addopts, so nothing is measured at all,
     fail_under is never consulted, and the run is indistinguishable from a
     project with no coverage configured. Verified against this repository --
     each of the four takes a subset run from exit 1 with a coverage table to

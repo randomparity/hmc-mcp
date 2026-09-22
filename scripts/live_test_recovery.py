@@ -40,11 +40,11 @@ from live_test.pcie import (
     profile_io_slots_command,
 )
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations.lpar.ownership import parse_lpar_ownership_caller_token
-from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
+from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
+from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
 #: Every tool this script may call. Enforced on the call path rather than left
 #: to review: the whole point of the script is that it cannot make things worse

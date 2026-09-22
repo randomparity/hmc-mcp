@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.lpar.assignments import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.operations.lpar.assignments import (
     AssignmentResult,
     LparPcieAssignments,
 )
-from hmc_mcp.operations.lpar.core import LparCreation, LparCreationResult
-from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
-from hmc_mcp.operations.lpar.workflows import create_lpar
+from hmcpctl.operations.lpar.core import LparCreation, LparCreationResult
+from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
+from hmcpctl.operations.lpar.workflows import create_lpar
 
 
 def _creation() -> LparCreation:
@@ -32,14 +32,14 @@ async def test_create_lpar_returns_create_step_when_creation_has_no_resource(mon
     )
     apply = AsyncMock()
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.workflows.prevalidate_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.workflows.prevalidate_lpar_pcie_assignments",
         prevalidate,
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.workflows.create_and_stamp_lpar", create
+        "hmcpctl.operations.lpar.workflows.create_and_stamp_lpar", create
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.workflows.apply_validated_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.workflows.apply_validated_lpar_pcie_assignments",
         apply,
     )
 
@@ -59,11 +59,11 @@ async def test_create_lpar_appends_assignment_steps(monkeypatch):
     assignments = LparPcieAssignments()
     lpar = {"UUID": "lpar-1"}
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.workflows.prevalidate_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.workflows.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.workflows.create_and_stamp_lpar",
+        "hmcpctl.operations.lpar.workflows.create_and_stamp_lpar",
         AsyncMock(return_value=LparCreationResult(True, lpar, True, ())),
     )
     apply = AsyncMock(
@@ -72,7 +72,7 @@ async def test_create_lpar_appends_assignment_steps(monkeypatch):
         )
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.workflows.apply_validated_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.workflows.apply_validated_lpar_pcie_assignments",
         apply,
     )
 

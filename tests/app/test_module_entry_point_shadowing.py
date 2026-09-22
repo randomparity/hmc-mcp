@@ -1,11 +1,11 @@
-"""`-P` is what closes `python -m hmc_mcp`'s `sys.path[0]` shadowing exposure.
+"""`-P` is what closes `python -m hmcpctl`'s `sys.path[0]` shadowing exposure.
 
 ADR 0128:120-133 records `-m` as putting the caller's working directory first on
-`sys.path` where the console script puts its own `bin` directory, so a `hmc_mcp/` in
+`sys.path` where the console script puts its own `bin` directory, so a `hmcpctl/` in
 the launch directory is imported before the installed package -- in a process that
 holds profile passwords and a granted access policy. The same record states that **no
 in-package guard closes this**, and names `-P` / `PYTHONSAFEPATH=1` as the one remedy;
-the `python -m hmc_mcp` entry under `### Added` in `CHANGELOG.md` is where operators are
+the `python -m hmcpctl` entry under `### Added` in `CHANGELOG.md` is where operators are
 told to use it. Cited by section rather than by line: a changelog gains entries above
 that one every release, so a line citation goes stale with nothing to notice.
 
@@ -34,7 +34,7 @@ Scope, from ADR 0128 and issue #725:
   directory at `sys.path[0]` -- so it has no case here.
 * the package half and the version-stable subset of the dependency half. A shadowed
   dependency is reachable
-  because `hmc_mcp/__init__.py`'s module-scope `from importlib.metadata import version`
+  because `hmcpctl/__init__.py`'s module-scope `from importlib.metadata import version`
   resolves `csv`, `email`, `zipfile`, `textwrap` -- and `json` on 3.13+ -- against the
   launch directory. Which of those names is reachable *is* version-dependent, but not
   uniformly: measured on 3.11.15, 3.12.13, 3.13.14 and 3.14.7 by launching
@@ -42,7 +42,7 @@ Scope, from ADR 0128 and issue #725:
   `email`, `zipfile` and `textwrap` are reached on all four while `csv` stops at 3.12
   and `json` starts at 3.13. The dependency cases therefore cover the stable `email`,
   `zipfile`, and `textwrap` subset; version-variable targets remain outside this module.
-* no `sys.path[0]` guard in `src/hmc_mcp/__main__.py` is proposed or implied. ADR 0128
+* no `sys.path[0]` guard in `src/hmcpctl/__main__.py` is proposed or implied. ADR 0128
   rejects that logic in that file: it would arrive after the module-scope imports above
   had already resolved against the launch directory.
 """
@@ -78,7 +78,7 @@ _DEADLINE = 60.0
 # the `COLUMNS` pinned below. The last two are this module's own and matter more here
 # than anywhere else in the suite: an exported `PYTHONSAFEPATH` is the remedy under
 # test, so inheriting it would make the bare arm fail while claiming the exposure had
-# closed, and `PYTHONPATH` moves where `hmc_mcp` resolves from under both arms.
+# closed, and `PYTHONPATH` moves where `hmcpctl` resolves from under both arms.
 _DROPPED = (
     "XDG_CONFIG_HOME",
     "APPDATA",
@@ -116,12 +116,12 @@ def _pinned_env(home: Path) -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def installed_package(tmp_path_factory) -> Path:
-    """Where a shadow-free launch finds `hmc_mcp` -- required to be this checkout's.
+    """Where a shadow-free launch finds `hmcpctl` -- required to be this checkout's.
 
     `tests/app/test_authorization_audit_live.py::server_module_command`'s guard, for
     its reason: "on PATH" and "the code on this branch" are different claims, and a
     `pytest` run from outside this checkout would otherwise prove `-P` protects some
-    other build of `hmc_mcp`. There is no PATH lookup here to go wrong, so the
+    other build of `hmcpctl`. There is no PATH lookup here to go wrong, so the
     interpreter is asked directly where the package it would import lives, under the
     same `-P` the remedy arm uses.
 
@@ -129,13 +129,13 @@ def installed_package(tmp_path_factory) -> Path:
     the in-checkout `.venv` fails this instead of passing as "this checkout".
 
     On `_pinned_env` and not a bare inherit, which is that fixture's other half: the
-    guard binds the child only while both resolve `hmc_mcp` the same way. `_DROPPED`
+    guard binds the child only while both resolve `hmcpctl` the same way. `_DROPPED`
     removes `PYTHONPATH` from the launches below, so a probe that inherited it would
     answer for a `sys.path` no launch has -- and on a developer host exporting one,
     report this checkout's `src/` while every launch imported something else.
     """
     probe = subprocess.run(
-        [sys.executable, "-P", "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
+        [sys.executable, "-P", "-c", "import hmcpctl; print(hmcpctl.__file__)"],
         capture_output=True,
         text=True,
         env=_pinned_env(tmp_path_factory.mktemp("probe-home")),
@@ -145,21 +145,21 @@ def installed_package(tmp_path_factory) -> Path:
     # Not `check=True`: `CalledProcessError` stringifies to the exit status alone and
     # leaves the child's traceback in an attribute nobody prints.
     assert probe.returncode == 0, (
-        f"{sys.executable} cannot import hmc_mcp, so there is no installed package for "
+        f"{sys.executable} cannot import hmcpctl, so there is no installed package for "
         f"the remedy to reach:\n{probe.stderr}"
     )
     origin = Path(probe.stdout.strip()).resolve()
     source = (REPO_ROOT / "src").resolve()
     assert origin.is_relative_to(source), (
         f"{origin} is not under {source}, so `-P` would be proved against a different "
-        "build of hmc_mcp than this checkout's"
+        "build of hmcpctl than this checkout's"
     )
     return origin
 
 
 @pytest.fixture
 def shadowed_cwd(tmp_path: Path) -> Path:
-    """A launch directory holding a `hmc_mcp/` that is observably not the installed one.
+    """A launch directory holding a `hmcpctl/` that is observably not the installed one.
 
     Both of the package's modules, carrying different statuses, because ADR 0128's
     claim is about which of them decides: `runpy` imports the package first, so a bare
@@ -167,7 +167,7 @@ def shadowed_cwd(tmp_path: Path) -> Path:
     A stub carrying only one of them could not tell those two apart, and it is the
     `__init__.py` half that the record says no guard inside `__main__.py` can reach.
     """
-    package = tmp_path / "hmc_mcp"
+    package = tmp_path / "hmcpctl"
     package.mkdir()
     (package / "__init__.py").write_text(f"raise SystemExit({_SHADOW_INIT_STATUS})\n")
     (package / "__main__.py").write_text(f"raise SystemExit({_SHADOW_MAIN_STATUS})\n")
@@ -189,12 +189,12 @@ def _launch(
     flags: tuple[str, ...] = (),
     overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """`python [flags] -m hmc_mcp --help`, from `cwd`, on a pinned environment."""
+    """`python [flags] -m hmcpctl --help`, from `cwd`, on a pinned environment."""
     env = _pinned_env(cwd)
     env.update(overrides or {})
 
     return subprocess.run(
-        [sys.executable, *flags, "-m", "hmc_mcp", "--help"],
+        [sys.executable, *flags, "-m", "hmcpctl", "--help"],
         capture_output=True,
         text=True,
         env=env,
@@ -217,8 +217,8 @@ def test_a_bare_module_launch_imports_the_shadowing_package(shadowed_cwd, instal
 
     assert result.returncode == _SHADOW_INIT_STATUS, (
         f"expected the shadowing package's __init__ to decide ({_SHADOW_INIT_STATUS}), "
-        f"got {result.returncode}; a bare `python -m hmc_mcp` no longer imports a "
-        f"`hmc_mcp/` in the launch directory ahead of the installed package, so nothing "
+        f"got {result.returncode}; a bare `python -m hmcpctl` no longer imports a "
+        f"`hmcpctl/` in the launch directory ahead of the installed package, so nothing "
         f"here is exercising ADR 0128:120-133. stderr={result.stderr!r}"
     )
     # `stdout` is deliberately not in that message: the failure this arm reports is a
@@ -242,7 +242,7 @@ def test_the_documented_remedy_reaches_the_installed_package(
         f"expected the installed CLI to render help (0), got {result.returncode}; "
         f"{_SHADOW_INIT_STATUS} or {_SHADOW_MAIN_STATUS} means the shadowing package "
         f"was reached anyway, so the remedy ADR 0128:120-133 and the `python -m "
-        f"hmc_mcp` CHANGELOG entry give operators no longer keeps the launch directory "
+        f"hmcpctl` CHANGELOG entry give operators no longer keeps the launch directory "
         f"off sys.path. "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )

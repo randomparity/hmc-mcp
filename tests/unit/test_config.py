@@ -18,8 +18,8 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from hmc_mcp import config as config_module
-from hmc_mcp.config import (
+from hmcpctl import config as config_module
+from hmcpctl.config import (
     ConfigError,
     HMCConfig,
     build_config,
@@ -592,20 +592,20 @@ def test_audit_memento_override_does_not_use_python_warnings():
 
 def test_audit_memento_override_logs_once_per_process(caplog):
     """The bounded log record is emitted once for an unchanged state."""
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         for _ in range(5):
             HMCConfig.from_mapping(
                 {"agent_id": "log-agent", "audit_memento": "mine"}
             )
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
     assert "HMC_AGENT_ID is set" in records[0].getMessage()
 
 
 def test_audit_memento_override_logs_once_across_changed_values(caplog):
     """The process-level diagnostic does not grow with caller-controlled values."""
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
         HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
         HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "mine"})
@@ -655,14 +655,14 @@ def test_audit_memento_override_warns_once_across_concurrent_threads(
         ready.wait()
         HMCConfig.from_mapping({"agent_id": "race-agent", "audit_memento": "mine"})
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         threads = [threading.Thread(target=build) for _ in range(workers)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
 
 
@@ -675,13 +675,13 @@ def test_audit_memento_override_repeat_is_recoverable_at_debug(caplog):
     evidence is the HMC's own audit log across the wire. ``_log_unresolved`` in
     ``server_permissions`` demotes its repeat for the same reason.
     """
-    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.DEBUG, logger="hmcpctl.config"):
         for _ in range(3):
             HMCConfig.from_mapping(
                 {"agent_id": "debug-agent", "audit_memento": "mine"}
             )
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert [record.levelno for record in records] == [
         logging.WARNING,
         logging.DEBUG,
@@ -710,12 +710,12 @@ def test_audit_memento_override_throttles_across_every_profile_in_the_file(
     _write_toml(config_dir() / "config.toml", f'default_profile = "p0"\n{body}')
     monkeypatch.setenv("HMC_AGENT_ID", "fleet-agent")
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         for _ in range(3):
             for index in range(profiles):
                 build_config(profile=f"p{index}")
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
 
 
@@ -1319,7 +1319,7 @@ def test_from_mapping_keeps_the_tls_audit_provenance_accurate(monkeypatch):
     ``explicit-argument`` for a value nobody supplied, pointing an operator at
     an argument that does not exist.
     """
-    from hmc_mcp.client.core import _verify_ssl_source
+    from hmcpctl.client.core import _verify_ssl_source
 
     monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
 
@@ -1713,7 +1713,7 @@ def test_env_var_value_survives_a_concurrent_environment_mutation():
     them, so a key deleted in between raises ``KeyError`` — out of
     ``selected_connection`` and ``connection_denial``, which sit on the ADR 0038
     dispatch-time authorization path and would surface it as a bare ``KeyError``
-    past the machinery that exists to explain a refused call. ``hmc_mcp`` is a
+    past the machinery that exists to explain a refused call. ``hmcpctl`` is a
     supported reusable API (ADR 0029), so an embedding host mutating the
     environment from another thread is reachable.
     """

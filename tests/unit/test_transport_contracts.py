@@ -18,8 +18,8 @@ import pytest
 import respx
 from conftest import LOGON_RESPONSE, make_config
 
-from hmc_mcp.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
+from hmcpctl.errors import HMCError
 
 _LOGON_PATH = "/rest/api/web/Logon"
 _LP_PATH = "/rest/api/uom/LogicalPartition"
@@ -243,7 +243,7 @@ async def test_wait_for_job_treats_remaining_terminal_statuses_as_terminal(
     A wait that did not recognise them would loop until the deadline; this test
     confirms they stop the poll immediately.
     """
-    from hmc_mcp.jobs import TERMINAL_JOB_STATUSES
+    from hmcpctl.jobs import TERMINAL_JOB_STATUSES
 
     assert status in TERMINAL_JOB_STATUSES, (
         f"{status!r} is not in TERMINAL_JOB_STATUSES — reference row contract broken"
@@ -279,7 +279,7 @@ async def test_terminal_status_set_matches_reference_row(mock_hmc):
     The reference (rows.json row 'rest:job-status') names eleven terminal states.
     This test pins the set so that a future edit is visible here.
     """
-    from hmc_mcp.jobs import TERMINAL_JOB_STATUSES
+    from hmcpctl.jobs import TERMINAL_JOB_STATUSES
 
     expected = {
         "CANCELED_BEFORE_START",

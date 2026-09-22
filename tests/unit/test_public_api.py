@@ -6,12 +6,13 @@ import ast
 import inspect
 import subprocess
 import sys
+from importlib.util import find_spec
 from pathlib import Path
 
-from hmc_mcp import api
-from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
-from hmc_mcp.config import ConfigError, HMCConfig
-from hmc_mcp.errors import HMCError, HMCTransportError
+from hmcpctl import api
+from hmcpctl.client.core import HMCClient, TLSVerificationDisabledWarning
+from hmcpctl.config import ConfigError, HMCConfig
+from hmcpctl.errors import HMCError, HMCTransportError
 
 _EXPECTED_EXPORTS = [
     "HMCClient",
@@ -42,6 +43,10 @@ def test_public_api_does_not_reexport_domain_operations() -> None:
     assert not hasattr(api, "VolumeGroup")
 
 
+def test_old_package_name_is_absent() -> None:
+    assert find_spec("hmc_mcp") is None
+
+
 def test_hmc_client_supported_lifecycle_members_are_present() -> None:
     assert {
         name for name in _SUPPORTED_CLIENT_LIFECYCLE if hasattr(api.HMCClient, name)
@@ -63,7 +68,7 @@ def test_public_error_hierarchy_is_frozen() -> None:
 
 
 def test_package_initializers_do_not_define_compatibility_manifests() -> None:
-    package_root = Path(__file__).resolve().parents[2] / "src/hmc_mcp"
+    package_root = Path(__file__).resolve().parents[2] / "src/hmcpctl"
     offenders = []
     for path in package_root.rglob("__init__.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -84,15 +89,15 @@ def test_package_initializers_do_not_define_compatibility_manifests() -> None:
 def test_importing_public_api_does_not_import_presentation_modules() -> None:
     script = """
 import sys
-import hmc_mcp.api
+import hmcpctl.api
 
 loaded = sorted(
     name for name in sys.modules
-    if name == 'hmc_mcp._app'
-    or name == 'hmc_mcp.cli'
-    or name.startswith('hmc_mcp.cli_commands')
-    or name == 'hmc_mcp.server'
-    or name.startswith('hmc_mcp.server_tools')
+    if name == 'hmcpctl._app'
+    or name == 'hmcpctl.cli'
+    or name.startswith('hmcpctl.cli_commands')
+    or name == 'hmcpctl.server'
+    or name.startswith('hmcpctl.server_tools')
 )
 assert loaded == [], loaded
 """

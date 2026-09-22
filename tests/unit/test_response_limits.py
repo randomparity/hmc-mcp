@@ -6,9 +6,9 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from hmc_mcp.client import core
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError, HMCTransportError
+from hmcpctl.client import core
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError, HMCTransportError
 
 PATH = "/rest/api/uom/ManagedSystem"
 UUID = "11111111-1111-4111-8111-111111111111"

@@ -42,8 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_test_runner as runner
 from live_test import pcie
 
-from hmc_mcp.config import HMCConfig, env_var_value
-from hmc_mcp.operations.virtualization.pcie import (
+from hmcpctl.config import HMCConfig, env_var_value
+from hmcpctl.operations.virtualization.pcie import (
     require_admitted_environment,
 )
 

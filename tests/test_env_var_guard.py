@@ -16,7 +16,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
+from hmcpctl.config import HMCConfig
 
 ROOT = Path(__file__).parents[1]
 GUARD = ROOT / "scripts" / "check_env_vars.py"

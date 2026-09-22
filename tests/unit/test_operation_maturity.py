@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-import hmc_mcp.operation_maturity as maturity
+import hmcpctl.operation_maturity as maturity
 
 _NOW = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
 

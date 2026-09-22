@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-import hmc_mcp.operation_maturity as maturity
-from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.tool_registry import ToolSecurity
+import hmcpctl.operation_maturity as maturity
+from hmcpctl.server import TOOL_SECURITY
+from hmcpctl.tool_registry import ToolSecurity
 
 ROOT = Path(__file__).parents[2]
 MODULE_PATH = ROOT / "scripts" / "gen_tool_reference.py"

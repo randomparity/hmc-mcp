@@ -11,19 +11,19 @@ import asyncio
 import pytest
 from fastmcp import Client, FastMCP
 
-from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.authorization.access_policy import (
+from hmcpctl.audit import sink as audit_sink
+from hmcpctl.authorization.access_policy import (
     DEFAULT_CONNECTION_TOKEN,
     compile_access_policy,
 )
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations.inventory.capacity import CapacitySummary
-from hmc_mcp.server import (
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operations.inventory.capacity import CapacitySummary
+from hmcpctl.server import (
     PERMISSIONS_TOOL_NAME,
     TOOL_SECURITY,
     create_mcp,
 )
-from hmc_mcp.server_tools.inventory import capacity
+from hmcpctl.server_tools.inventory import capacity
 
 
 def _legacy(*, include_arbitrary_command: bool = False):
@@ -238,7 +238,7 @@ def _guarded_stub(name: str = "hmc_list_systems"):
     Through `authorized` rather than by setting the marker by hand: a stub that
     forged the witness would let the recogniser rot without a test noticing.
     """
-    from hmc_mcp.tool_registry import authorized
+    from hmcpctl.tool_registry import authorized
 
     def handler(profile: str | None = None) -> str:
         return "ok"
@@ -261,7 +261,7 @@ def test_inspection_reports_no_policy_honestly():
     """
     from dataclasses import asdict
 
-    from hmc_mcp.server_tools.permissions import build_effective_permissions
+    from hmcpctl.server_tools.permissions import build_effective_permissions
 
     result = asdict(
         build_effective_permissions(
@@ -405,8 +405,8 @@ def _configure(application, enabled, permits=None, policy=None):
     `permits` stays a separate parameter because these tests vary the ceiling
     independently of the authorizer to isolate which gate withheld the tool.
     """
-    from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-    from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
+    from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+    from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
     effective = (
         policy if policy is not None else _legacy(include_arbitrary_command=True)
@@ -522,7 +522,7 @@ def test_the_two_dimension_tuples_partition_every_dimension_under_a_policy():
     The property the old encoding broke. Asserted over the enforcing composition
     and the drifted one together, since the bug was visible only in the second.
     """
-    from hmc_mcp.server_tools.permissions import DIMENSIONS
+    from hmcpctl.server_tools.permissions import DIMENSIONS
 
     enforcing = create_mcp(_policy(READ_ONLY_GRANT))
     drifted = create_mcp(_policy(READ_ONLY_GRANT))
@@ -545,7 +545,7 @@ def test_an_unwrapped_connection_bearing_tool_withholds_the_dispatch_claim():
     `ceiling_enforced` re-checks the tool dimension only. The claim now rests on
     the registered callable, which is the only thing that can carry the check.
     """
-    from hmc_mcp.server_tools.permissions import build_effective_permissions
+    from hmcpctl.server_tools.permissions import build_effective_permissions
 
     def hmc_list_systems(profile: str | None = None) -> str:
         return "ok"
@@ -564,7 +564,7 @@ def test_a_name_outside_the_index_withholds_every_enforcement_claim():
 
     The same fail-closed default `_permission` applies to `exhaustive_targets`.
     """
-    from hmc_mcp.server_tools.permissions import build_effective_permissions
+    from hmcpctl.server_tools.permissions import build_effective_permissions
 
     def hmc_not_in_the_index() -> str:
         return "ok"
@@ -591,7 +591,7 @@ def test_an_unwrapped_tool_costs_only_the_target_label():
     """
     from dataclasses import replace
 
-    from hmc_mcp.server_tools.permissions import build_effective_permissions
+    from hmcpctl.server_tools.permissions import build_effective_permissions
 
     def hmc_list_lpars(profile: str | None = None) -> str:
         return "ok"
@@ -660,7 +660,7 @@ def test_a_table_grant_registry_reports_targets_enforced():
     is called directly rather than through the tool: under a table-only policy the
     inspection tool denies itself, which is the denial the test above pins.
     """
-    from hmc_mcp.server_tools.permissions import build_effective_permissions
+    from hmcpctl.server_tools.permissions import build_effective_permissions
 
     policy = _policy(TABLE_GRANT)
     application = create_mcp(policy)
@@ -759,7 +759,7 @@ def test_the_authorization_witness_is_not_forged_by_functools_wraps():
     """
     import functools
 
-    from hmc_mcp.tool_registry import authorized, is_authorized_wrapper
+    from hmcpctl.tool_registry import authorized, is_authorized_wrapper
 
     def handler(profile: str | None = None) -> str:
         return "ok"
@@ -794,7 +794,7 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
     """R9, R9a: main_stdio serves its own application, wired to the ceiling."""
     from unittest.mock import patch
 
-    import hmc_mcp.server as server_module
+    import hmcpctl.server as server_module
 
     every_effect = _policy(
         [
@@ -835,7 +835,7 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
 
 
 def _warnings(tool_count, policy, enable_arbitrary_command=False):
-    from hmc_mcp.server import _startup_warnings
+    from hmcpctl.server import _startup_warnings
 
     return _startup_warnings(tool_count, policy, enable_arbitrary_command)
 
@@ -882,7 +882,7 @@ def test_an_authored_but_unselected_policy_file_is_warned():
     server that starts has chosen one, so the condition is unreachable and both the
     line and `_unselected_policy_file` are gone.
     """
-    import hmc_mcp.server as server_app
+    import hmcpctl.server as server_app
 
     assert not hasattr(server_app, "_unselected_policy_file")
     assert not any("access-policy.toml" in line for line in _warnings(129, _legacy()))
@@ -900,7 +900,7 @@ def test_an_unresolvable_policy_path_never_fails_the_start():
     """
     import inspect as inspect_module
 
-    import hmc_mcp.server as server_app
+    import hmcpctl.server as server_app
 
     source = inspect_module.getsource(server_app._startup_warnings)
 
@@ -940,9 +940,9 @@ def test_serve_forwards_the_compiled_policy_to_the_entry_point(
 
     from typer.testing import CliRunner
 
-    import hmc_mcp.authorization.access_policy as access_policy_module
-    from hmc_mcp.authorization.access_policy import AccessPolicy
-    from hmc_mcp.cli import app
+    import hmcpctl.authorization.access_policy as access_policy_module
+    from hmcpctl.authorization.access_policy import AccessPolicy
+    from hmcpctl.cli import app
 
     path = tmp_path / "access-policy.toml"
     path.write_text(POLICY_FILE, encoding="utf-8")
@@ -950,7 +950,7 @@ def test_serve_forwards_the_compiled_policy_to_the_entry_point(
         access_policy_module, "resolve_access_policy_path", lambda: path
     )
 
-    with patch(f"hmc_mcp.server.{target}") as entry_point:
+    with patch(f"hmcpctl.server.{target}") as entry_point:
         result = CliRunner().invoke(app, [*argv, "--access-policy", "lab"])
 
     assert result.exit_code == 0, result.output
@@ -982,7 +982,7 @@ def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys
     whatever happened to have been written by then, which on a loaded runner is
     nothing at all.
     """
-    import hmc_mcp.server as server_app
+    import hmcpctl.server as server_app
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(True, policy)
@@ -1003,7 +1003,7 @@ def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
 
     Drained before reading for the reason the test above gives.
     """
-    import hmc_mcp.server as server_app
+    import hmcpctl.server as server_app
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(False, policy)
@@ -1060,7 +1060,7 @@ def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
     """
     import sys
 
-    import hmc_mcp.server as server_app
+    import hmcpctl.server as server_app
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     monkeypatch.setattr(sys, "stderr", _unusable_stderr(state, tmp_path))
@@ -1086,8 +1086,8 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     """
     from typer.testing import CliRunner
 
-    import hmc_mcp.authorization.access_policy as access_policy_module
-    from hmc_mcp.cli import app
+    import hmcpctl.authorization.access_policy as access_policy_module
+    from hmcpctl.cli import app
 
     present = tmp_path / "access-policy.toml"
     present.write_text("this is not = = valid toml\n", encoding="utf-8")
@@ -1137,7 +1137,7 @@ def test_a_name_outside_the_index_is_reported_as_unbounded():
     bound it. Mutating that default to `True` left the whole suite green, so the
     justification had no test behind it.
     """
-    from hmc_mcp.server_tools.permissions import UNKNOWN, _permission
+    from hmcpctl.server_tools.permissions import UNKNOWN, _permission
 
     reported = _permission("hmc_not_in_the_index", {})
 
@@ -1181,7 +1181,7 @@ def _indexed_names(text: str) -> set[str]:
 
 def _split_correction(instructions: str) -> tuple[str, str]:
     """The recommendation prose and the ceiling correction appended to it."""
-    from hmc_mcp._app import CEILING_HEADING
+    from hmcpctl._app import CEILING_HEADING
 
     prose, _heading, correction = instructions.partition(CEILING_HEADING)
     return prose, correction
@@ -1196,7 +1196,7 @@ def test_the_instructions_shipped_at_initialize_recommend_no_withheld_tool():
     text — and a `tools`-only grant is the shape that can also withhold
     `hmc_effective_permissions`, so the client had no second opinion to consult.
     """
-    from hmc_mcp._app import CEILING_HEADING
+    from hmcpctl._app import CEILING_HEADING
 
     policy = _policy(TOOLS_ONLY_GRANT)
     instructions, names = _initialize(create_mcp(policy))
@@ -1223,7 +1223,7 @@ def test_a_legacy_ceiling_ships_the_instructions_unqualified():
     `hmc_provision_lpar`, which the composite section recommends as bullets, and
     the test below pins the suffix it earns.
     """
-    from hmc_mcp._app import CEILING_HEADING, INSTRUCTIONS
+    from hmcpctl._app import CEILING_HEADING, INSTRUCTIONS
 
     instructions, _names = _initialize(create_mcp(_legacy()))
 
@@ -1237,7 +1237,7 @@ def test_a_read_only_ceiling_corrects_the_write_recommendations_it_withholds():
     `hmc_effective_permissions` is a read tool, so an effects grant reaches it —
     the arm where the extra sentence is earned, opposite the tools-only one above.
     """
-    from hmc_mcp._app import CEILING_HEADING
+    from hmcpctl._app import CEILING_HEADING
 
     instructions, names = _initialize(create_mcp(_policy(READ_ONLY_GRANT)))
     _prose, correction = _split_correction(instructions)

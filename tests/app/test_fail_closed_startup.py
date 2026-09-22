@@ -48,12 +48,12 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from hmc_mcp import server as server_module
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.cli import app
-from hmc_mcp.cli_commands.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmcpctl import server as server_module
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.cli import app
+from hmcpctl.cli_commands.legacy_policy import LEGACY_POLICY_NAME, compile_legacy_policy
+from hmcpctl.server import TOOL_SECURITY, create_mcp
 
 REPO_ROOT = Path(__file__).parents[2]
 
@@ -72,7 +72,7 @@ def steer_config(tmp_path, monkeypatch):
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
-    from hmc_mcp.config import config_dir
+    from hmcpctl.config import config_dir
 
     directory = config_dir()
     directory.mkdir(parents=True, exist_ok=True)
@@ -159,7 +159,7 @@ def test_the_module_level_application_is_gone():
     assert not hasattr(server_module, "mcp")
 
     with pytest.raises(ImportError):
-        from hmc_mcp.server import mcp  # noqa: F401
+        from hmcpctl.server import mcp  # noqa: F401
 
 
 def test_no_module_composes_an_application_at_import():
@@ -171,7 +171,7 @@ def test_no_module_composes_an_application_at_import():
     """
     offenders = []
     for path in [
-        *sorted((REPO_ROOT / "src" / "hmc_mcp").glob("*.py")),
+        *sorted((REPO_ROOT / "src" / "hmcpctl").glob("*.py")),
         *sorted((REPO_ROOT / "scripts").glob("*.py")),
     ]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -296,8 +296,8 @@ def test_a_denial_bounds_the_callers_own_token():
     client. ADR 0041 is what makes that path universal rather than opt-in, which is why
     it is closed here rather than left to the layer that has always had it.
     """
-    from hmc_mcp.audit.records import MAX_VALUE_LENGTH
-    from hmc_mcp.authorization.connection_scope import ConnectionScopeError
+    from hmcpctl.audit.records import MAX_VALUE_LENGTH
+    from hmcpctl.authorization.connection_scope import ConnectionScopeError
 
     authorize = dispatch_authorizer(_legacy_policy())
     oversized = "z" * (MAX_VALUE_LENGTH * 40)
@@ -343,7 +343,7 @@ def test_a_mixed_effect_grant_warns_at_startup():
     operator already looks for what a compiled policy means for this run, so
     that is where the dead subset is named.
     """
-    from hmc_mcp.authorization.access_policy import compile_access_policy
+    from hmcpctl.authorization.access_policy import compile_access_policy
 
     policy = compile_access_policy(
         {
@@ -384,7 +384,7 @@ def test_error_text_survives_square_brackets(capsys):
     empty string, so the generator's most important diagnostic named a key the operator
     could not see.
     """
-    from hmc_mcp.cli_commands.output import fail
+    from hmcpctl.cli_commands.output import fail
 
     with pytest.raises(typer.Exit):
         fail(ValueError('came from a [profiles." prod"] key in config.toml'))
@@ -398,7 +398,7 @@ def test_error_text_survives_a_closing_tag_shape(capsys):
     `_check_entries` renders the offending value under `repr()`, so a profile key like
     `[/prod]` reaches this helper as literal text and must not be parsed as markup.
     """
-    from hmc_mcp.cli_commands.output import usage_error
+    from hmcpctl.cli_commands.output import usage_error
 
     with pytest.raises(typer.Exit):
         usage_error("connections entry '[/prod]' is empty or padded")
@@ -486,7 +486,7 @@ def test_a_dangling_symlink_is_not_reported_as_an_absent_file(steer_config):
 def test_serve_without_a_policy_exits_2_as_a_subprocess():
     """L1: an in-process assertion cannot see the exit code an operator sees.
 
-    The console script, not `python -m hmc_mcp`: since ADR 0128 both reach the same
+    The console script, not `python -m hmcpctl`: since ADR 0128 both reach the same
     `main`, but the console script is what an operator actually runs, and the exit
     code an operator meets is the whole of what this test proves.
     """

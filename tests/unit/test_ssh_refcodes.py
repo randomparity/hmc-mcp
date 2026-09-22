@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh.refcodes import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.ssh.refcodes import (
     MAX_REFCODE_COUNT,
     REFCODE_FIELDS,
     list_lpar_refcodes,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmcpctl.ssh.transport import HMCCLIError
 
 
 def _run(coroutine):
@@ -29,7 +29,7 @@ def _config():
 def _transport(monkeypatch, stdout="", side_effect=None):
     """Patch the module's transport and return the recording mock."""
     mock = AsyncMock(return_value=stdout, side_effect=side_effect)
-    monkeypatch.setattr("hmc_mcp.ssh.refcodes.run_hmc_command", mock)
+    monkeypatch.setattr("hmcpctl.ssh.refcodes.run_hmc_command", mock)
     return mock
 
 
@@ -216,7 +216,7 @@ def test_the_tool_forwards_resolved_names_and_the_count(monkeypatch):
     tool's body, so this stands in for that seam and checks what the lambda
     hands on.
     """
-    from hmc_mcp.server_tools.lpar import lifecycle_boot
+    from hmcpctl.server_tools.lpar import lifecycle_boot
 
     seen: dict[str, object] = {}
 

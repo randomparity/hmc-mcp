@@ -10,12 +10,12 @@ hmc_run_command (SSH) is covered there too.
 import httpx
 import pytest
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.server_tools.inventory.capacity import (
+from hmcpctl.errors import HMCError
+from hmcpctl.server_tools.inventory.capacity import (
     hmc_capacity_report,
     hmc_find_placement,
 )
-from hmc_mcp.server_tools.systems.core import (
+from hmcpctl.server_tools.systems.core import (
     hmc_get_console_info,
     hmc_get_lpar,
     hmc_get_lpar_state,

@@ -1,5 +1,5 @@
 [project]
-name = "hmc-mcp"
+name = "hmcpctl"
 version = "0.1.0"
 description = "MCP server and CLI for the IBM HMC (Hardware Management Console) REST API"
 readme = "README.md"
@@ -31,7 +31,7 @@ Contributing = "https://github.com/randomparity/hmc-mcp/blob/main/CONTRIBUTING.m
 Security = "https://github.com/randomparity/hmc-mcp/security/policy"
 
 [project.scripts]
-hmc-mcp = "hmc_mcp:main"
+hmcpctl = "hmcpctl:main"
 
 [build-system]
 requires = ["hatchling==1.32.0"]
@@ -42,7 +42,7 @@ include = [
     "/LICENSE",
     "/README.md",
     "/pyproject.toml",
-    "/src/hmc_mcp",
+    "/src/hmcpctl",
 ]
 
 [dependency-groups]
@@ -80,8 +80,8 @@ extend-select = [
 extend-immutable-calls = [
     "typer.Option",
     "typer.Argument",
-    "hmc_mcp.documents.LparResources",
-    "hmc_mcp.operations.lpar.assignments.LparPcieAssignments",
+    "hmcpctl.documents.LparResources",
+    "hmcpctl.operations.lpar.assignments.LparPcieAssignments",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -93,13 +93,13 @@ extend-immutable-calls = [
 "tests/unit/test_ownership.py" = ["PLE2502"]
 
 [tool.ty.src]
-include = ["src/hmc_mcp"]
+include = ["src/hmcpctl"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
 # Package-wide coverage gate lives in [tool.coverage.report]. Run a focused
 # subset with `--no-cov` when package-wide coverage is not meaningful.
-addopts = "--cov=hmc_mcp --cov-report="
+addopts = "--cov=hmcpctl --cov-report="
 
 [tool.coverage.run]
 branch = true

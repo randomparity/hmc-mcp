@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from fastmcp import Client
 
-from hmc_mcp.config import env_var_value
+from hmcpctl.config import env_var_value
 
 from .observation import ExpectedOutcome
 from .results import entries

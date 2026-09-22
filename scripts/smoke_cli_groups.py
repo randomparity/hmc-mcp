@@ -26,7 +26,7 @@ from collections.abc import Iterator
 import typer
 from typer.testing import CliRunner
 
-from hmc_mcp.cli import app
+from hmcpctl.cli import app
 
 
 def _subgroups(command: object, prefix: tuple[str, ...]) -> Iterator[tuple[str, ...]]:

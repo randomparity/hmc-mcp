@@ -14,9 +14,9 @@ from types import MappingProxyType
 
 import pytest
 
-from hmc_mcp.audit.records import REASONS
-from hmc_mcp.authorization.access_policy import ALL_TARGETS
-from hmc_mcp.authorization.target_scope import (
+from hmcpctl.audit.records import REASONS
+from hmcpctl.authorization.access_policy import ALL_TARGETS
+from hmcpctl.authorization.target_scope import (
     ABSENT,
     UNREADABLE,
     TargetScopeError,
@@ -27,7 +27,7 @@ from hmc_mcp.authorization.target_scope import (
     target_denial,
     targets_permitted,
 )
-from hmc_mcp.tool_registry import TargetSelector, ToolSecurity
+from hmcpctl.tool_registry import TargetSelector, ToolSecurity
 
 
 def _security(*selectors, exhaustive=True):

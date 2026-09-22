@@ -126,9 +126,9 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
+          from hmcpctl.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
-          package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
+          package_path = Path(sys.modules["hmcpctl"].__file__).resolve()
           environment = Path(".library-wheel-venv").resolve()
           assert package_path.is_relative_to(environment), package_path
           assert find_spec("fastmcp") is None
@@ -176,7 +176,7 @@ jobs:
       - name: Prove the marker makes the installed facade readable to a checker
         run: |
           cat > consumer_probe.py <<'PY'
-          from hmc_mcp.api import HMCConfig
+          from hmcpctl.api import HMCConfig
 
 
           def probe(config: HMCConfig) -> object:
@@ -269,9 +269,9 @@ jobs:
           from pathlib import Path
           import sys
 
-          from hmc_mcp.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
+          from hmcpctl.operations.inventory.capacity import CapacitySummary, fetch_capacity_report
 
-          package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
+          package_path = Path(sys.modules["hmcpctl"].__file__).resolve()
           environment = Path(".floor-venv").resolve()
           assert package_path.is_relative_to(environment), package_path
           assert find_spec("fastmcp") is None
@@ -389,13 +389,13 @@ jobs:
           from importlib.util import find_spec
           from pathlib import Path
 
-          import hmc_mcp
-          from hmc_mcp.api import HMCClient
+          import hmcpctl
+          from hmcpctl.api import HMCClient
 
-          package_path = Path(hmc_mcp.__file__).resolve()
+          package_path = Path(hmcpctl.__file__).resolve()
           environment = Path(".wheel-venv").resolve()
           assert package_path.is_relative_to(environment), package_path
-          assert HMCClient.__module__ == "hmc_mcp.client.core"
+          assert HMCClient.__module__ == "hmcpctl.client.core"
           for package in ("fastmcp", "mcp", "rich", "typer"):
               assert find_spec(package) is None, package
           PY
@@ -409,8 +409,8 @@ jobs:
             --requirements .wheel-app-requirements.txt
           uv pip install --no-deps --python .wheel-venv/bin/python \
             "${wheels[0]}[app]"
-          .wheel-venv/bin/hmc-mcp --help >/dev/null
-          .wheel-venv/bin/hmc-mcp capabilities --json > capabilities.json
+          .wheel-venv/bin/hmcpctl --help >/dev/null
+          .wheel-venv/bin/hmcpctl capabilities --json > capabilities.json
           .wheel-venv/bin/python - <<'PY'
           import json
           import re
@@ -431,7 +431,7 @@ jobs:
           # Renders every group's help page off the command tree the installed
           # wheel builds, so a new group needs no edit here. The script is
           # harness code, not package code: run this way sys.path[0] is
-          # scripts/, never the checkout's src/, so hmc_mcp still resolves
+          # scripts/, never the checkout's src/, so hmcpctl still resolves
           # inside .wheel-venv -- the same arrangement as smoke_mcp.py below.
           .wheel-venv/bin/python scripts/smoke_cli_groups.py
           .wheel-venv/bin/python scripts/smoke_mcp.py
@@ -456,13 +456,13 @@ jobs:
   #       run: >-
   #         docker build --platform linux/ppc64le
   #         --file .github/containers/ppc64le.Dockerfile
-  #         --tag hmc-mcp-verify-ppc64le
+  #         --tag hmcpctl-verify-ppc64le
   #         .github/containers
   #     - name: Run the verification suite under ppc64le emulation
   #       run: >-
   #         docker run --rm --platform linux/ppc64le
   #         --mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace
-  #         hmc-mcp-verify-ppc64le
+  #         hmcpctl-verify-ppc64le
   # ppc64le-release-artifact-template: end
 
   python-support-drift:

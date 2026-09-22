@@ -13,10 +13,10 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp import config
-from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.audit.sink import AUDIT_LOGGER_NAME
-from hmc_mcp.config import HMCConfig
+from hmcpctl import config
+from hmcpctl.audit import sink as audit_sink
+from hmcpctl.audit.sink import AUDIT_LOGGER_NAME
+from hmcpctl.config import HMCConfig
 
 #: The ``fastmcp`` logger and its handlers as importing ``fastmcp`` leaves them.
 #: Captured at collection time, before any test can serve, because ADR 0051 made
@@ -52,7 +52,7 @@ _PRISTINE_THIRD_PARTY = tuple(
 #: reconstructible — nothing configures it at import — so the fixture resets it to
 #: empty rather than applying a snapshot. Only the handler list: the install leaves
 #: ``propagate`` and the level alone, so nothing else about it moves.
-_PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
+_PACKAGE_LOGGER = logging.getLogger("hmcpctl")
 _PRISTINE_SHOWWARNING = warnings.showwarning
 
 
@@ -161,7 +161,7 @@ def _restore_third_party_loggers() -> None:
 
 @pytest.fixture(autouse=True)
 def isolate_audit_logging():
-    """Give every test a pristine ``hmc_mcp.audit`` logger, and restore it after.
+    """Give every test a pristine ``hmcpctl.audit`` logger, and restore it after.
 
     ``audit_sink.install_audit_sink`` mutates process-global state: it sets
     ``propagate = False`` unconditionally, attaches a handler, and sets a level.
@@ -194,9 +194,9 @@ def isolate_audit_logging():
     so the snapshots live at module level and this fixture only applies them — at
     setup as well as teardown, for the reason above.
 
-    Since #534 the ``hmc_mcp`` logger is reset the same way, for the same reason:
+    Since #534 the ``hmcpctl`` logger is reset the same way, for the same reason:
     ``server.install_package_stderr_sink`` attaches a handler to it, and a handler
-    left behind by a serving test would take a later test's ``hmc_mcp.*`` records
+    left behind by a serving test would take a later test's ``hmcpctl.*`` records
     onto the sink and out of whatever that test meant to read them from.
     """
     logging.captureWarnings(False)

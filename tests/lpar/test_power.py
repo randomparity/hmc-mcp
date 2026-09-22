@@ -7,9 +7,9 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.jobs import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.config import HMCConfig
+from hmcpctl.jobs import (
     BOOT_MODES,
     POWER_OFF_OPERATIONS,
     POWER_ON_OPERATION_TYPES,
@@ -20,8 +20,8 @@ from hmc_mcp.jobs import (
     power_on_system_job,
     power_on_vios_job,
 )
-from hmc_mcp.operations.lpar import decommission
-from hmc_mcp.operations.lpar.core import (
+from hmcpctl.operations.lpar import decommission
+from hmcpctl.operations.lpar.core import (
     LparPowerResult,
     _unapplied_activation_clause,
     power_lpar,
@@ -282,7 +282,7 @@ async def test_power_lpar_forwards_activation_parameters():
     hmc = _power_client()
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(
@@ -307,7 +307,7 @@ async def test_power_lpar_forwards_power_off_parameters():
     hmc = _power_client()
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(
@@ -331,7 +331,7 @@ async def test_power_lpar_power_on_document_ignores_power_off_parameters():
     hmc = _power_client()
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(
@@ -365,7 +365,7 @@ async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected):
     resolver = AsyncMock(return_value=LPAR_UUID)
 
     with (
-        patch("hmc_mcp.operations.lpar.core.resolve_lpar_uuid", new=resolver),
+        patch("hmcpctl.operations.lpar.core.resolve_lpar_uuid", new=resolver),
         pytest.raises(ValueError) as refused,
     ):
         await power_lpar(hmc, None, LPAR_UUID, power_on=False, **kwargs)
@@ -393,7 +393,7 @@ async def test_decommission_power_off_document_is_unchanged(immediate):
     )
 
     with patch(
-        "hmc_mcp.operations.lpar.decommission.wait_for_submitted_job",
+        "hmcpctl.operations.lpar.decommission.wait_for_submitted_job",
         new=AsyncMock(
             return_value={
                 "UUID": "job-uuid",
@@ -424,7 +424,7 @@ async def test_power_lpar_power_off_document_is_unchanged():
     hmc = _power_client()
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(
@@ -449,7 +449,7 @@ async def test_power_on_lpar_passes_activation_parameters():
     hmc = _power_client()
     forwarded = AsyncMock(return_value=LparPowerResult(LPAR_UUID, {"UUID": "job-uuid"}))
 
-    with patch("hmc_mcp.operations.lpar.core.power_lpar", new=forwarded):
+    with patch("hmcpctl.operations.lpar.core.power_lpar", new=forwarded):
         await power_on_lpar(
             hmc,
             LPAR_UUID,
@@ -475,7 +475,7 @@ async def test_power_lpar_already_running_names_the_dropped_activation_parameter
     hmc.get_quick_property.return_value = "running"
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         requested = await power_lpar(
@@ -552,7 +552,7 @@ async def test_power_lpar_accepts_a_profile_contained_by_the_target_partition():
     hmc.list_child.return_value = [{"UUID": PROFILE_UUID}, {"UUID": OTHER_PROFILE_UUID}]
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(
@@ -582,7 +582,7 @@ async def test_power_lpar_refuses_a_profile_the_target_partition_does_not_contai
     hmc.list_child.return_value = [{"UUID": OTHER_PROFILE_UUID}]
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ), pytest.raises(ValueError) as refused:
         await power_lpar(
@@ -604,7 +604,7 @@ async def test_power_lpar_reads_no_profile_feed_when_no_profile_is_supplied():
     hmc = _power_client()
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(hmc, None, LPAR_UUID, power_on=True, boot_mode="sms")
@@ -624,7 +624,7 @@ async def test_power_lpar_matches_a_profile_uuid_case_insensitively():
     hmc.list_child.return_value = [{"UUID": PROFILE_UUID.lower()}]
 
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         await power_lpar(
@@ -655,7 +655,7 @@ async def test_power_lpar_distinguishes_a_degraded_profile_feed_from_a_refusal(f
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
             new=AsyncMock(return_value=LPAR_UUID),
         ),
         pytest.raises(ValueError) as refused,
@@ -681,7 +681,7 @@ async def test_power_lpar_refuses_an_invalid_boot_mode_on_the_already_running_pa
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
             new=AsyncMock(return_value=LPAR_UUID),
         ),
         pytest.raises(ValueError, match="PowerOn boot mode must be one of"),

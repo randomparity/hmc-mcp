@@ -54,17 +54,17 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-from hmc_mcp.operations.lpar.ownership import parse_lpar_ownership_caller_token
+from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 
 # These two are imported rather than restated so the arm's SKIP envelope cannot
 # drift from the one require_admitted_environment enforces for the SR-IOV path;
 # a copied literal would go stale silently the first time the admitted release moves.
-from hmc_mcp.operations.virtualization.pcie import (
+from hmcpctl.operations.virtualization.pcie import (
     _ADMITTED_HMC_RELEASE,
     _ADMITTED_SYSTEM_MODEL,
     PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
 )
-from hmc_mcp.ssh.commands import build_attribute_record, build_filter
+from hmcpctl.ssh.commands import build_attribute_record, build_filter
 from live_test.observation import ExpectedOutcome
 
 if TYPE_CHECKING:

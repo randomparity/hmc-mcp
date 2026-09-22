@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import pytest
 
-from hmc_mcp.operations.updates.service import (
+from hmcpctl.operations.updates.service import (
     _require_platform_update_version,
     _with_vios_stdout,
     submit_available_hmc_ptfs_query,

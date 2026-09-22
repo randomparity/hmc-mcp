@@ -1,6 +1,6 @@
 """Tests for the Atom/XML parsing helpers."""
 
-from hmc_mcp.xmlutil import (
+from hmcpctl.xmlutil import (
     element_to_dict,
     find_all_text,
     find_text,

@@ -13,8 +13,8 @@ import asyncio
 
 import httpx
 
-from hmc_mcp.operations.lpar import ownership as lpar_ownership
-from hmc_mcp.server_tools.lpar.lifecycle_boot import hmc_list_lpar_ownership
+from hmcpctl.operations.lpar import ownership as lpar_ownership
+from hmcpctl.server_tools.lpar.lifecycle_boot import hmc_list_lpar_ownership
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
@@ -221,7 +221,7 @@ def test_operation_reuses_the_shared_ownership_parser(monkeypatch, mock_hmc):
 
     monkeypatch.setattr(lpar_ownership, "parse_lpar_ownership_owner", spy)
 
-    from hmc_mcp.client.client_factory import client_from_env
+    from hmcpctl.client.client_factory import client_from_env
 
     async def _run_op():
         async with client_from_env() as hmc:

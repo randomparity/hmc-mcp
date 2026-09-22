@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from hmc_mcp.jobs import SUCCESSFUL_JOB_STATUSES, JobOutcome, job_outcome
+from hmcpctl.jobs import SUCCESSFUL_JOB_STATUSES, JobOutcome, job_outcome
 
 from .observation import Assertion, ExpectedOutcome
 from .results import entries

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.client.client_cluster import ClusterMixin
+from hmcpctl.client.client_cluster import ClusterMixin
 
 UUID_A = "12345678-1234-1234-1234-1234567890ab"
 

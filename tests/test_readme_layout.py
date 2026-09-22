@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
-PACKAGE = ROOT / "src" / "hmc_mcp"
+PACKAGE = ROOT / "src" / "hmcpctl"
 LAYOUT_HEADING = "## Layout"
 ENTRY = re.compile(r"^\s+(\S+\.py)")
 
@@ -82,7 +82,7 @@ def test_every_named_entry_is_a_module_that_exists() -> None:
 
 def test_a_module_no_entry_names_is_reported(tmp_path: Path) -> None:
     """Adding a top-level module without a layout entry must fail the check."""
-    package = tmp_path / "hmc_mcp"
+    package = tmp_path / "hmcpctl"
     package.mkdir()
     (package / "client_lpars.py").touch()
     (package / "brand_new_module.py").touch()

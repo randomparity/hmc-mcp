@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hmc_mcp.operations.inventory.composite import (
+from hmcpctl.operations.inventory.composite import (
     _fetch_lpar_data,
     _fetch_system_summary_data,
 )

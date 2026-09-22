@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from hmc_mcp.operations.systems.health import FleetHealthResult
-from hmc_mcp.server_tools.systems.health import hmc_fleet_health
+from hmcpctl.operations.systems.health import FleetHealthResult
+from hmcpctl.server_tools.systems.health import hmc_fleet_health
 
 
 class _Context:
@@ -31,9 +31,9 @@ def test_fleet_health_handler_delegates_profile_and_preserves_shape() -> None:
     operation = AsyncMock(return_value=result)
     with (
         patch(
-            "hmc_mcp._app.client_from_env", return_value=_Context(client)
+            "hmcpctl._app.client_from_env", return_value=_Context(client)
         ) as factory,
-        patch("hmc_mcp.server_tools.systems.health.fetch_fleet_health", operation),
+        patch("hmcpctl.server_tools.systems.health.fetch_fleet_health", operation),
     ):
         actual = hmc_fleet_health(profile="prod")
 

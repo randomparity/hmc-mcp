@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import hmc_mcp.config as config_module
-from hmc_mcp.config import HMCConfig, build_config
-from hmc_mcp.resource_identity import (
+import hmcpctl.config as config_module
+from hmcpctl.config import HMCConfig, build_config
+from hmcpctl.resource_identity import (
     ResourceNotFoundError,
     resolve_lpar_uuid,
     resolve_vios_uuid,

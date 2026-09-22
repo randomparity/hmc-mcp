@@ -89,9 +89,9 @@ def _project_metadata() -> dict[str, object]:
 def test_architecture_documents_name_current_adapter_and_selector_modules() -> None:
     adr = (ROOT / "docs/adr/0013-resource-domain-module-ownership.md").read_text()
     server_doc = ast.get_docstring(
-        ast.parse((ROOT / "src/hmc_mcp/server.py").read_text())
+        ast.parse((ROOT / "src/hmcpctl/server.py").read_text())
     )
-    app_doc = ast.get_docstring(ast.parse((ROOT / "src/hmc_mcp/_app.py").read_text()))
+    app_doc = ast.get_docstring(ast.parse((ROOT / "src/hmcpctl/_app.py").read_text()))
 
     assert "`ssh/selectors.py` for HMC CLI selectors" in adr
     assert "`ssh_selectors.py`" not in adr

@@ -21,27 +21,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.virtualization.validation import require_command_safe_text
-from hmc_mcp.operations.virtualization.vnic import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.virtualization.validation import require_command_safe_text
+from hmcpctl.operations.virtualization.vnic import (
     VnicBackingSelector,
     _validate_vnic_backing_selector,
 )
-from hmc_mcp.server_tools.lpar.configuration import (
+from hmcpctl.server_tools.lpar.configuration import (
     hmc_set_lpar_description,
 )
-from hmc_mcp.server_tools.lpar.profiles import (
+from hmcpctl.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
 )
-from hmc_mcp.server_tools.systems.resources import (
+from hmcpctl.server_tools.systems.resources import (
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
 )
-from hmc_mcp.server_tools.vios.core import (
+from hmcpctl.server_tools.vios.core import (
     hmc_backup_vios,
     hmc_restore_vios,
 )
-from hmc_mcp.ssh.io_inventory import list_io_slots
+from hmcpctl.ssh.io_inventory import list_io_slots
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
@@ -107,7 +107,7 @@ def _vios_client_factory():
 async def test_list_io_slots_quotes_hostile_system_name():
     """A hostile system name is shell-quoted in the lshwres command."""
     conn = _make_ssh_mock("")
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         await list_io_slots(HMCConfig(host="h", user="u", password="p"), HOSTILE)
 
     cmd = _captured_cmd(conn)
@@ -140,7 +140,7 @@ def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_set_lpar_description(
             SYSTEM_UUID, LPAR_UUID, HOSTILE, ownership_override=True
         )
@@ -158,7 +158,7 @@ def test_remove_memory_pool_quotes_hostile_pool_name(monkeypatch, mock_hmc):
     # finds it and proceeds to the remove command.
     conn = _make_ssh_mock("pool_name=x; id,size=4096,curr_lpar_names=\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_remove_memory_pool(SYSTEM_UUID, HOSTILE)
 
     cmd = _captured_cmd(conn)  # last run() call is the chhwres remove
@@ -173,7 +173,7 @@ def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/bak;id")
 
     cmd = _captured_cmd(conn)
@@ -207,10 +207,10 @@ def test_vios_backup_tools_quote_hostile_backup_name(
     Quoting and containment are separate controls and this proves the first.
     """
     _hmc_env(monkeypatch)
-    monkeypatch.setattr("hmc_mcp._app.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         tool(*arguments, **keywords)
 
     cmd = _captured_cmd(conn)
@@ -238,10 +238,10 @@ def test_vios_backup_tools_keep_hostile_direct_system_name_in_one_argument(
 ):
     """A caller-controlled direct system name remains one exact ``-m`` word."""
     _hmc_env(monkeypatch)
-    monkeypatch.setattr("hmc_mcp._app.client_from_env", _vios_client_factory())
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         tool(*arguments, **keywords)
 
     assert _arg_after(shlex.split(_captured_cmd(conn)), "-m") == HOSTILE
@@ -258,7 +258,7 @@ def test_resolved_system_name_is_quoted_too(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, HOSTILE)  # hostile system name
     conn = _make_ssh_mock("")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         hmc_list_memory_pools(SYSTEM_UUID)
 
     cmd = _captured_cmd(conn)
