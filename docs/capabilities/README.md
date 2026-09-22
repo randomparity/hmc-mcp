@@ -129,7 +129,7 @@ Currency is **derived when the catalog is read**, never stored, and never a vali
 error. An observation goes stale when either trigger fires:
 
 - its operation's **import closure changed** — the SHA-256 over the handler module and
-  every `src/hmc_mcp/` module it transitively imports no longer matches; the closure is
+  every `src/hmcpctl/` module it transitively imports no longer matches; the closure is
   computed from the source, so nothing is omitted by hand;
 - it is **older than 90 days** — the ceiling that sees changes on the HMC itself, which
   this repository cannot observe.

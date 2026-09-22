@@ -157,7 +157,7 @@ def test_build_installios_command_exact_line():
         profile_name="default",
         vlan_id="100",
     )
-    assert log_path == "/tmp/hmc-mcp-installios-aixprod.log"
+    assert log_path == "/tmp/hmcpctl-installios-aixprod.log"
     assert command == (
         "nohup installios -d /extra/vios.iso -i 192.168.1.20 "
         "-S 255.255.255.0 -g 192.168.1.1 -s sys1 -p aixprod "
@@ -282,7 +282,7 @@ def test_install_vios_by_lpar_selector_tool_submits_detached_installios(monkeypa
     assert result["pid"] == 4242
     assert result["partition"] == "aixprod"
     assert result["system"] == "sys1"
-    assert result["log_path"] == "/tmp/hmc-mcp-installios-aixprod.log"
+    assert result["log_path"] == "/tmp/hmcpctl-installios-aixprod.log"
     assert "no HMC job exists on this path" in result["message"]
     # The exact command that would have gone over SSH:
     expected, _log_path = build_installios_command(

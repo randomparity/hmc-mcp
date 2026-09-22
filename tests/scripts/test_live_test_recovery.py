@@ -28,7 +28,7 @@ def _stamped(token: str) -> str:
     """An ADR 0064 ownership stamp as the HMC returns it in a description."""
     return (
         "{'UUID': '11111111-2222-3333-4444-555555555555'} "
-        f"[hmc-mcp owner:hmc-mcp created:2026-09-21] [caller {token}]"
+        f"[hmcpctl owner:hmcpctl created:2026-09-21] [caller {token}]"
     )
 
 _INPUTS = recovery.RecoveryInputs(

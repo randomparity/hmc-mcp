@@ -47,7 +47,7 @@ VG = "33333333-3333-4333-8333-333333333333"
 SYSTEM_NAME = "frame1"
 SYSTEM_UUID = "44444444-4444-4444-8444-444444444444"
 LPAR_NAME = "client1"
-FOREIGN_OWNER = "[hmc-mcp owner:another-agent created:2026-08-14]"
+FOREIGN_OWNER = "[hmcpctl owner:another-agent created:2026-08-14]"
 
 Operation = Callable[[AsyncMock], Awaitable[object]]
 

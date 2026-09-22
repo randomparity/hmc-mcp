@@ -226,7 +226,7 @@ def test_dlpar_without_a_system_selector_refuses_a_foreign_owner(
     )
     with patch(
         "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+        new=AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]"),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
         tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
     assert not route.called
@@ -250,7 +250,7 @@ def test_dlpar_override_without_a_selector_needs_no_discovery(
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    read = AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]")
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         tool(
             LPAR_UUID,
@@ -271,7 +271,7 @@ def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):
     )
     with patch(
         "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+        new=AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]"),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
         hmc_dlpar_proc(
             LPAR_UUID,
@@ -289,7 +289,7 @@ def test_dlpar_mem_ownership_override_reaches_the_write(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    read = AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]")
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         hmc_dlpar_mem(
             LPAR_UUID,

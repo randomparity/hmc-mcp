@@ -458,7 +458,7 @@ def _legacy(*, include_arbitrary_command: bool = False):
 
 
 def _serve(policy, *, enable_arbitrary_command=True):
-    """Compose exactly as `hmc-mcp serve --access-policy NAME` composes."""
+    """Compose exactly as `hmcpctl serve --access-policy NAME` composes."""
     from hmcpctl import server
 
     return server._serve_application(enable_arbitrary_command, policy)

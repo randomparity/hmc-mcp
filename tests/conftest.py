@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the hmc-mcp suite."""
+"""Shared pytest fixtures for the hmcpctl suite."""
 
 import io
 import logging

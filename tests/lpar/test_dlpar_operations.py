@@ -136,7 +136,7 @@ def _mock_modify(router, uuid: str = LPAR_UUID) -> httpx.Response:
 
 
 def _owned_by(agent_id: str) -> AsyncMock:
-    return AsyncMock(return_value=f"[hmc-mcp owner:{agent_id} created:2026-08-14]")
+    return AsyncMock(return_value=f"[hmcpctl owner:{agent_id} created:2026-08-14]")
 
 
 def _description(text: str) -> AsyncMock:
@@ -160,7 +160,7 @@ async def test_set_lpar_processors_runs_inside_a_running_event_loop(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
     ):
         async with HMCClient(make_config()) as hmc:
             result = await set_lpar_processors(
@@ -185,7 +185,7 @@ async def test_set_lpar_memory_runs_inside_a_running_event_loop(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
     ):
         async with HMCClient(make_config()) as hmc:
             result = await set_lpar_memory(
@@ -231,14 +231,14 @@ async def test_foreign_owner_is_rejected_before_any_mutation(mock_hmc, operation
 @pytest.mark.parametrize("operation", [set_lpar_processors, set_lpar_memory])
 @pytest.mark.asyncio
 async def test_malformed_ownership_token_is_rejected(mock_hmc, operation):
-    """A malformed hmc-mcp stamp fails closed rather than reading as unowned."""
+    """A malformed hmcpctl stamp fails closed rather than reading as unowned."""
     _mock_lpar_detail(mock_hmc)
     _mock_system_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
 
     with patch(
         "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=_description("[hmc-mcp owner:broken]"),
+        new=_description("[hmcpctl owner:broken]"),
     ):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             with pytest.raises(PermissionError, match="ownership_override=true"):
@@ -312,7 +312,7 @@ async def test_omitted_system_is_discovered_and_named_to_the_guard(mock_hmc):
     _mock_system_detail(mock_hmc)
     _mock_fleet(mock_hmc)
     route = _mock_modify(mock_hmc)
-    read = _owned_by("hmc-mcp")
+    read = _owned_by("hmcpctl")
 
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
@@ -335,7 +335,7 @@ async def test_a_supplied_system_skips_fleet_discovery(mock_hmc):
     _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
     ):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
@@ -435,7 +435,7 @@ async def test_a_blank_system_selector_is_read_as_absent(mock_hmc, blank):
     _mock_system_detail(mock_hmc)
     _mock_fleet(mock_hmc)
     route = _mock_modify(mock_hmc)
-    read = _owned_by("hmc-mcp")
+    read = _owned_by("hmcpctl")
 
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
@@ -461,7 +461,7 @@ async def test_an_upper_case_partition_uuid_still_matches_the_hmc_feed(mock_hmc)
     _mock_lpar_detail(mock_hmc, LPAR_UUID.upper())
     _mock_system_detail(mock_hmc)
     route = _mock_modify(mock_hmc, LPAR_UUID.upper())
-    read = _owned_by("hmc-mcp")
+    read = _owned_by("hmcpctl")
 
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
@@ -482,7 +482,7 @@ async def test_an_upper_case_partition_uuid_is_discoverable(mock_hmc):
     _mock_system_detail(mock_hmc)
     _mock_fleet(mock_hmc)
     route = _mock_modify(mock_hmc, LPAR_UUID.upper())
-    read = _owned_by("hmc-mcp")
+    read = _owned_by("hmcpctl")
 
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
@@ -555,7 +555,7 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
     _mock_lpar_detail(mock_hmc)
     _mock_system_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
-    read = _owned_by("hmc-mcp")
+    read = _owned_by("hmcpctl")
 
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
@@ -647,7 +647,7 @@ async def test_a_partition_uuid_off_the_selected_system_is_rejected(
     # server0 hosts a *different* partition that happens to share lpar1's name.
     _mock_partition_feed(mock_hmc, OTHER_SYSTEM_UUID, COLLIDING_LPAR_UUID)
     route = _mock_modify(mock_hmc)
-    read = _owned_by("hmc-mcp")
+    read = _owned_by("hmcpctl")
 
     with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         async with HMCClient(make_config()) as hmc:
@@ -749,7 +749,7 @@ async def test_a_partition_name_is_not_re_read_for_containment(mock_hmc, operati
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
     ):
         async with HMCClient(make_config()) as hmc:
             await operation(
@@ -857,7 +857,7 @@ async def test_http_406_is_translated_to_an_actionable_error(mock_hmc, operation
     )
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmc-mcp")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
     ):
         async with HMCClient(make_config()) as hmc:
             with pytest.raises(HMCError, match="HMC_SCHEMA_VERSION"):

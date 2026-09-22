@@ -3,21 +3,21 @@
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The six-name
-`hmc_mcp.api` facade is defined by ADR 0118; record changes to it under ordinary release
+`hmcpctl.api` facade is defined by ADR 0118; record changes to it under ordinary release
 categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
 ### Added
 
-- `hmc_power_off_lpar`, `power_lpar` and `hmc-mcp lpars power-off` accept the PowerOff job's
+- `hmc_power_off_lpar`, `power_lpar` and `hmcpctl lpars power-off` accept the PowerOff job's
   `restart` and `operation` parameters. `operation` is a closed set — `shutdown`, `osshutdown`,
   `dumprestart` — refused before any XML is built; the vendor's fourth value `dumpretry` is
   documented but not accepted. `dumprestart` crashes the partition and takes a platform dump, so
   it is refused unless the caller passes `allow_dump_restart` / `--allow-dump-restart`
   (ADR 0164, #872).
 
-- `hmc_read_lpar_refcodes` and `hmc-mcp lpars refcodes` read a partition's most recent reference
+- `hmc_read_lpar_refcodes` and `hmcpctl lpars refcodes` read a partition's most recent reference
   codes over SSH, bounded to 1-100 and projected onto `lpar_name`, `time_stamp` and `refcode`.
   Read-only and needing no virtual terminal, so an activation can be followed by polling alone
   (#874).
@@ -261,13 +261,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   because the operation's import closure moved after the observation was taken — the
   staleness rule working as designed, not a recording error (#708).
 
-- `python -m hmc_mcp` now runs the CLI, as an alias for the `hmc-mcp` console script wherever
+- `python -m hmcpctl` now runs the CLI, as an alias for the `hmcpctl` console script wherever
   the `app` extra is installed — like the console script, it needs that extra and fails the
   same way without it. It delegates to the same entry point and takes no arguments of its own,
   so the two remain one program; the program name Typer reports differs. One difference does
   matter operationally: `-m` places the current working directory first on `sys.path`, where
-  the console script does not, so prefer `hmc-mcp` for a served process and use
-  `python -P -m hmc_mcp` (or `PYTHONSAFEPATH=1`) when launching from a directory you do not
+  the console script does not, so prefer `hmcpctl` for a served process and use
+  `python -P -m hmcpctl` (or `PYTHONSAFEPATH=1`) when launching from a directory you do not
   control. The live audit proof uses it because the generated console script cannot be relied
   on to exec with stderr closed once the interpreter path is long enough that `uv` emits a
   `/bin/sh` trampoline (#709, ADR 0128).
@@ -281,7 +281,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   POWER10 and POWER11 `lslabelvios`/`labelvios` grammar. They do not expose MSP,
   vNIC, vSCSI, override-default, bulk-removal, or adapter-mutation behavior. Issue
   #559 tracks live-system field and mutation evidence not established by the manuals.
-  The matching `hmc-mcp vios` commands are `list-fc-port-labels`,
+  The matching `hmcpctl vios` commands are `list-fc-port-labels`,
   `set-fc-port-label`, `remove-fc-port-label`, `list-vfc-group-labels`,
   `create-vfc-group-label`, `update-vfc-group-label`, and `remove-vfc-group-label`.
 - `ManagedSystemPatch` and `LpmMigrationRequest` provide reusable typed request
@@ -305,7 +305,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   ADR 0094's shared resolve chain, which derives the owning managed system by bounded
   parent discovery when the caller omits it and confirms the partition lives on the
   named system when they supply it. `hmc_power_on_lpar`, `hmc_power_off_lpar`, and
-  `hmc-mcp lpars power-on` / `power-off` gained the matching `ownership_override`
+  `hmcpctl lpars power-on` / `power-off` gained the matching `ownership_override`
   argument, and the two CLI commands gained `--system`, which replaces the fleet walk
   with one read. `provision_lpar` passes the override on its own activation leg, which
   targets the partition that workflow just created and stamped. Both new parameters move
@@ -325,7 +325,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `docs/environment-variables.md` gains a "Library Consumers" section covering precedence
   and the isolation pattern.
 - Cross-process job polling: the `get_job` and `wait_for_job` operations in the new
-  `hmc_mcp.operations_jobs` module, plus the `JobOutcome` facade export (#364, ADR 0093). The
+  `hmcpctl.operations_jobs` module, plus the `JobOutcome` facade export (#364, ADR 0093). The
   supported handle for a job is two persistable strings — `job_id` and an optional `job_href` —
   so a consumer can store them, restart, construct a fresh `HMCClient`, and poll from a different
   process than the one that submitted the work. A job the HMC no longer knows about (reaped,
@@ -426,7 +426,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `profile`, or `default`, where `default` is the answer that means nothing the operator
   wrote arrived. Environment names are matched case-insensitively, so exact and variant
   spellings both report `environment` and override the profile consistently (#547, ADR 0110).
-  `hmc-mcp config show` could not answer
+  `hmcpctl config show` could not answer
   either deployment the documentation
   recommends: it exits 1 with no `config.toml`, and it reads the invoking shell's environment
   rather than the served process's. The entry keeps the setting's own name and polarity —
@@ -444,18 +444,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   already declares, the entries carry no host, user, or credential; ADR 0037's disclosure
   bullet is amended to record the narrowed claim. `describe()` takes the resolved guards as
   a fourth argument and stays a pure function of its arguments; `EffectivePermissions` is not
-  a `hmc_mcp.api` export, so the facade manifest is unaffected.
+  a `hmcpctl.api` export, so the facade manifest is unaffected.
 - `install-attempted` audit record for a detached `installios` submission (#469, ADR 0102).
   `install_vios_by_lpar_selector` and `install_vios` submit an irreversible install against a partition's
   disks and detach; the path has no HMC job, no ADR 0011 ownership guard, and — for an
-  `hmc_mcp.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
-  it left instead went to the unconfigured `hmc_mcp.operations_install` logger, whose
+  `hmcpctl.api` consumer — no dispatch-boundary `authorization` record. The two `INFO` lines
+  it left instead went to the unconfigured `hmcpctl.operations_install` logger, whose
   effective level is the root's `WARNING`, so they were dropped before formatting. That left a
-  bare `hmc_mcp.api` consumer with no local trace at all, and a served deployment with only
+  bare `hmcpctl.api` consumer with no local trace at all, and a served deployment with only
   the `authorization` permit for the tool call — which names the tool but never the resolved
   system, partition, or log path, and which `--audit-level WARNING` drops. One `WARNING`
   record now goes to the
-  reserved `hmc_mcp.audit` logger immediately **before** the submit — the ambiguous case,
+  reserved `hmcpctl.audit` logger immediately **before** the submit — the ambiguous case,
   since the raised exception cannot say whether anything was submitted — carrying the resolved
   system and partition, the HMC-side `log_path`, the HMC, and the acting agent. The
   post-submit "Detached" line stays on the module logger; the PID it adds is already in the
@@ -553,7 +553,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   would resolve to a profile key while the call reached the exported host — and pre-fix
   that divergence was already reachable, though only for a profile that omits `host`,
   since a profile carrying one handed it over as an init kwarg that outranked the variant.
-  One reader inside `src/hmc_mcp` was left behind by that change — `audit.py` imports
+  One reader inside `src/hmcpctl` was left behind by that change — `audit.py` imports
   nothing from the package by design, so its `HMC_AGENT_ID` attribution read needed a
   case-fold of its own — and #543 below carries it, along with the `scripts/live_test_runner.py`
   sweep. Several casings of one
@@ -568,7 +568,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   direction. A stale `hmc_verify_ssl=false` over a profile's `verify_ssl = true` is at
   least visible, as `client.py` emits `tls-verification-disabled` naming the environment.
   A stale `hmc_authorize_power_operations=false` over a profile's `true` leaves no runtime
-  record at all — a guard that is off simply does not run — so `hmc-mcp config show` is
+  record at all — a guard that is off simply does not run — so `hmcpctl config show` is
   the check for that one. The largest is on the access-policy surface: a stale
   `hmc_host` now collapses every connection token to `<default>`, so an ADR 0038 grant of
   `connections = ["<default>"]` permits calls it previously denied, issued against the
@@ -585,7 +585,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   case (#543, ADR 0040). `HMC_AGENT_ID` is an `HMCConfig` field and `HMCConfig` matches its
   variables case-blind, so a `hmc_agent_id=alice` export stamped every LPAR the process
   created with the ADR 0011 ownership token for `alice` and sent `X-Audit-Memento:
-  hmc-mcp:alice`, while every authorization record from that same process carried no
+  hmcpctl:alice`, while every authorization record from that same process carried no
   claimant at all — the audit stream said nobody acted while the partitions said `alice`
   did. Several casings at once resolve to the last in the process environment's order, as
   they do for every other `HMC_*` variable. `audit.py` imports nothing from the package, so
@@ -650,20 +650,20 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   absent-element empty semantics), superseding the issue's N×SSH sketch, and the
   parse-failure honesty policy (#375). Also corrects the disproven "not exposed via REST"
   claim in `get_lpar_description`'s docstring.
-- A served process now routes its own `hmc_mcp.*` log records through ADR 0043's bounded stderr
-  sink (#534, ADR 0043 amendment). Only the reserved `hmc_mcp.audit` logger and the third-party
-  set were on it, so a warning from any other module — `hmc_mcp.config`'s audit-memento override,
-  `hmc_mcp.server_permissions`' unresolved-profile line — reached fd 2 through
+- A served process now routes its own `hmcpctl.*` log records through ADR 0043's bounded stderr
+  sink (#534, ADR 0043 amendment). Only the reserved `hmcpctl.audit` logger and the third-party
+  set were on it, so a warning from any other module — `hmcpctl.config`'s audit-memento override,
+  `hmcpctl.server_permissions`' unresolved-profile line — reached fd 2 through
   `logging.lastResort`: synchronous, unbounded, and unescaped. Those *log records* now carry
-  the `hmc_mcp:` producer prefix and are drop-counted like every other line on the queue.
+  the `hmcpctl:` producer prefix and are drop-counted like every other line on the queue.
   `warnings.warn` is a separate mechanism and is not covered; #546 removes the redundant
   audit-memento warning while throttling that site's bounded log record.
-  **What an operator sees change:** the prefix, and — if you route `hmc_mcp.*` into your own
+  **What an operator sees change:** the prefix, and — if you route `hmcpctl.*` into your own
   logging — a second rendering, because `propagate` is deliberately left alone here, unlike on
-  `hmc_mcp.audit`. Your handlers keep receiving these records exactly as before; the sink is an
-  added destination, not a replacement. A handler you attach to `hmc_mcp` itself is left in
+  `hmcpctl.audit`. Your handlers keep receiving these records exactly as before; the sink is an
+  added destination, not a replacement. A handler you attach to `hmcpctl` itself is left in
   place and takes the records instead of the sink, with the two constraints
-  `docs/authorization-audit.md` states for a handler on `hmc_mcp.audit`: it must not write to
+  `docs/authorization-audit.md` states for a handler on `hmcpctl.audit`: it must not write to
   `sys.stdout` under stdio, and it is called on the dispatch path, so one that blocks there
   blocks the call. Nothing changes for a library or CLI process, which installs no sink. The
   `WARNING` floor is unchanged at the shipped default; what grows is the sink's share of the
@@ -672,7 +672,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Facade manifest
 
-- Changed: `hmc_mcp.api` now exports only `HMCClient`, `HMCConfig`,
+- Changed: `hmcpctl.api` now exports only `HMCClient`, `HMCConfig`,
   `ConfigError`, `HMCError`, `HMCTransportError`, and
   `TLSVerificationDisabledWarning`; every operation and operation-specific
   model previously exported by the facade is removed (ADR 0118).
@@ -689,7 +689,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `fetch_capacity_report` in the reusable facade.
 - Changed: removed the stale `ambiguous` literal alternative from
   `PowerOwnershipGuard.source`; exact and case-variant environment spellings now report
-  `environment` in both the MCP response and startup audit schema. No `hmc_mcp.api.__all__`
+  `environment` in both the MCP response and startup audit schema. No `hmcpctl.api.__all__`
   export changed.
 - No facade export changes for `install-submitted`; the event vocabulary is an internal
   audit-stream contract and `InstallHandle` is unchanged.
@@ -835,7 +835,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - Added: `InstallRequest`, the shared source, network, and profile value object accepted by
   `install_vios_by_lpar_selector` and `install_vios`.
 - Added: the exports below landed between the `[0.1.0]` entry's enumerated manifest and this
-  cycle with no manifest bullet of their own (#479). Each is an entry in `hmc_mcp.api.__all__`,
+  cycle with no manifest bullet of their own (#479). Each is an entry in `hmcpctl.api.__all__`,
   so each contributes to the frozen public signature digest. This records the manifest catching
   up, not new capability. Grouped by the change that added them:
   - `get_lpar_memopt_score`, `list_lpar_memopt_scores` (#252): memory-optimization scores read
@@ -876,7 +876,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   decision, so this records the manifest catching up rather than a new capability.
 - Added: `set_lpar_processors`, `set_lpar_memory` (#365, ADR 0094); this moves the frozen public
   signature digest. Both take `system_name_or_uuid` and `ownership_override` as keyword-only
-  parameters; the managed-system selector stays optional per ADR 0063, so a `hmc_mcp.api` caller
+  parameters; the managed-system selector stays optional per ADR 0063, so a `hmcpctl.api` caller
   may omit it and have the owning system derived.
 - Added: `install_vios_by_lpar_selector`, `install_vios` (#366); this moves the frozen public signature digest.
   Their `dict[str, Any]` return is **not** one of ADR 0029's opaque HMC resource payloads — the
@@ -894,7 +894,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   type-checker since the PEP 561 marker shipped (#367). This records the manifest catching up,
   not a new capability.
 - Added: nineteen types ADR 0029's type clause now reaches through the fields of an exported
-  model (#482); this moves the frozen public signature digest. Twelve `hmc_mcp.snapshot` models
+  model (#482); this moves the frozen public signature digest. Twelve `hmcpctl.snapshot` models
   behind `LparSnapshot` — `HMCIdentity`, `LparIdentity`,
   `MemoryProjection`, `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`,
   `ProcessorProjection`, `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotObservations`,
@@ -907,10 +907,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and `StopReason` (`duration`, `max_bytes`, `idle`, `remote-close`, `error`). ADR 0029's
   Decision already called the fields of an exported model supported, while its walk stopped at
   the types an operation *names*; a consumer therefore met `LparSnapshot.configuration` as
-  `hmc_mcp.snapshot.SnapshotConfiguration` with no supported import path to name it. This
+  `hmcpctl.snapshot.SnapshotConfiguration` with no supported import path to name it. This
   records the manifest catching up, not a new capability. No type moved modules and no value set
   changed.
-- Fixed: `set_sriov_adapter_mode` appeared twice in `hmc_mcp.api.__all__` (#446). The name is
+- Fixed: `set_sriov_adapter_mode` appeared twice in `hmcpctl.api.__all__` (#446). The name is
   imported once, so the duplicate was inert at runtime, but ADR 0029 calls `__all__` an
   exhaustive manifest and a repeated entry makes it malformed. The export set is unchanged.
 - Removed: none.
@@ -931,38 +931,38 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - Exported model/literal changes: `LparCreation` gained the
   `stamp_policy: Literal["best-effort", "required"]` field (defaults to `"best-effort"`), which
   moves the frozen public signature digest. The audit event vocabulary gained the
-  `"tls-verification-disabled"` literal on `hmc_mcp.audit.Event`; that module is not part of the
-  `hmc_mcp.api` facade, so it does not expand the manifest itself but is recorded here because it
+  `"tls-verification-disabled"` literal on `hmcpctl.audit.Event`; that module is not part of the
+  `hmcpctl.api` facade, so it does not expand the manifest itself but is recorded here because it
   widens a public literal vocabulary.
 - Exported model/literal changes: the audit event vocabulary gained the `"install-attempted"`
-  literal on `hmc_mcp.audit.Event` (#469, ADR 0102). Recorded here on the same terms as
-  `"tls-verification-disabled"` above — `hmc_mcp.audit` is not part of the `hmc_mcp.api` facade,
+  literal on `hmcpctl.audit.Event` (#469, ADR 0102). Recorded here on the same terms as
+  `"tls-verification-disabled"` above — `hmcpctl.audit` is not part of the `hmcpctl.api` facade,
   so the manifest and the frozen public signature digest are unmoved, but the literal vocabulary
   a consumer reading the audit stream matches against is wider.
 - Unchanged otherwise: #410 rebuilt `hmc_install_vios_by_lpar_selector` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
-  `hmc_mcp.api` exports; their parameter changes do not move the frozen
+  `hmcpctl.api` exports; their parameter changes do not move the frozen
   manifest or its signature digest — the operations behind them that #366 later
   exported are separate names with their own signatures. #362 likewise removed the
   `hmc_detach_optical_mapping` MCP tool and the `detach_optical_mapping`
-  operation; neither was exported from `hmc_mcp.api`, so the manifest and the
+  operation; neither was exported from `hmcpctl.api`, so the manifest and the
   frozen signature digest are unmoved and no minor release is gated on it.
 
 ## [0.1.0] - 2026-08-22
 
-Initial supported Python API surface per ADR 0029: the reusable facade at `hmc_mcp.api`, its
+Initial supported Python API surface per ADR 0029: the reusable facade at `hmcpctl.api`, its
 frozen export set (`tests/unit/test_public_api.py::test_public_api_manifest_is_frozen`) and its
 frozen signature digest
 (`tests/unit/test_public_api.py::test_public_operations_are_async_and_signatures_are_frozen`).
 
 ### Added
 
-- MCP server and CLI for the IBM HMC REST API, the `hmc_mcp.api` supported facade, and the
+- MCP server and CLI for the IBM HMC REST API, the `hmcpctl.api` supported facade, and the
   ownership-stamp workflow operations.
 
 ### Facade manifest
 
-Initial manifest of `hmc_mcp.api.__all__` (127 exports). This enumeration is the boundary the
+Initial manifest of `hmcpctl.api.__all__` (127 exports). This enumeration is the boundary the
 `[Unreleased]` manifest's delta is derived against, so it names the 0.1.0 export set and nothing
 added afterwards; every later addition is recorded above.
 

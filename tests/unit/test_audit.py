@@ -370,7 +370,7 @@ def test_a_case_variant_agent_id_reaches_the_record_and_the_stamp_alike(monkeypa
 
     ``HMCConfig`` leaves pydantic-settings' ``case_sensitive`` at its ``False``
     default, so ``hmc_agent_id=alice`` reaches ``config.agent_id``: the
-    ``X-Audit-Memento`` header goes out as ``hmc-mcp:alice`` and every LPAR the
+    ``X-Audit-Memento`` header goes out as ``hmcpctl:alice`` and every LPAR the
     process creates carries the ADR 0011 ownership token for ``alice``. The
     authorization record read the same variable exact-case and saw nothing, so
     the records said nobody acted while the partitions said ``alice`` did.
@@ -792,7 +792,7 @@ def test_the_install_record_names_the_target_and_the_log_path():
     audit.record_install_attempted(
         system="sys-a",
         partition="vios-01",
-        log_path="/tmp/hmc-mcp-installios-vios-01.log",
+        log_path="/tmp/hmcpctl-installios-vios-01.log",
         host="hmc.test",
         agent_id="agent-7",
     )
@@ -809,7 +809,7 @@ def test_the_install_record_names_the_target_and_the_log_path():
     assert record["event"] == "install-attempted"
     assert record["system"] == "sys-a"
     assert record["partition"] == "vios-01"
-    assert record["log_path"] == "/tmp/hmc-mcp-installios-vios-01.log"
+    assert record["log_path"] == "/tmp/hmcpctl-installios-vios-01.log"
     assert record["host"] == "hmc.test"
     assert record["attribution"] == {
         "claim": "agent-7",
@@ -847,7 +847,7 @@ def test_the_install_submitted_record_carries_the_remote_pid():
         system="sys-a",
         partition="vios-01",
         pid=4321,
-        log_path="/tmp/hmc-mcp-installios-vios-01.log",
+        log_path="/tmp/hmcpctl-installios-vios-01.log",
         host="hmc.test",
         agent_id="agent-7",
     )
@@ -856,7 +856,7 @@ def test_the_install_submitted_record_carries_the_remote_pid():
     assert record["pid"] == 4321
     assert record["system"] == "sys-a"
     assert record["partition"] == "vios-01"
-    assert record["log_path"] == "/tmp/hmc-mcp-installios-vios-01.log"
+    assert record["log_path"] == "/tmp/hmcpctl-installios-vios-01.log"
 
 
 def test_the_install_record_is_bounded_and_escaped():
@@ -886,14 +886,14 @@ def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recover
     """The bound applies to `log_path` too, and the document states the boundary.
 
     The template's fixed part is 28 characters, so a partition name past 100
-    pushes `/tmp/hmc-mcp-installios-<slug>.log` over the bound and the record
+    pushes `/tmp/hmcpctl-installios-<slug>.log` over the bound and the record
     carries a cut path with no marker. Whether the real path survives depends on
     `partition` beside it, which takes the same bound: at 110 it is whole and the
     path recomposes, at 200 it is cut too and nothing recovers it. Both are names
     `installios` would refuse, but the record precedes the submit.
     """
     partition = "p" * length
-    real = f"/tmp/hmc-mcp-installios-{partition}.log"
+    real = f"/tmp/hmcpctl-installios-{partition}.log"
     lines = _capture()
     audit.record_install_attempted(
         system="s", partition=partition, log_path=real, host="h", agent_id="a"
@@ -902,7 +902,7 @@ def test_a_long_partition_records_a_log_path_that_does_not_exist(length, recover
     assert len(real) > audit.MAX_VALUE_LENGTH
     assert record["log_path"] == real[: audit.MAX_VALUE_LENGTH]
     assert not record["log_path"].endswith(".log"), "a truncated path still looks whole"
-    recomposed = f"/tmp/hmc-mcp-installios-{record['partition']}.log"
+    recomposed = f"/tmp/hmcpctl-installios-{record['partition']}.log"
     assert (recomposed == real) is recoverable
 
 

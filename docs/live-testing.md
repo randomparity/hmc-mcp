@@ -17,8 +17,8 @@ Credentials resolve in this order, highest first:
 2. `config.toml` in the platform config directory — the documented profile
 3. a local `.env` file
 
-That directory is `~/.config/hmc-mcp` on Linux (or `$XDG_CONFIG_HOME/hmc-mcp`)
-and `~/Library/Application Support/hmc-mcp` on macOS. The runner resolves it
+That directory is `~/.config/hmcpctl` on Linux (or `$XDG_CONFIG_HOME/hmcpctl`)
+and `~/Library/Application Support/hmcpctl` on macOS. The runner resolves it
 per platform; when it finds nothing it prints the path it looked in.
 
 Scenario settings — every `LIVE_TEST_*` key — come **only** from `.env`. That

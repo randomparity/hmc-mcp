@@ -97,7 +97,7 @@ def _unstyle(text: str) -> str:
 
 
 def _console_script(*, proof: str) -> str:
-    """This checkout's `hmc-mcp` console script, or skip.
+    """This checkout's `hmcpctl` console script, or skip.
 
     The same-checkout assertion `test_authorization_audit_live.py` makes: a proof that
     silently ran against another build is worse than no proof. `proof` names what the
@@ -109,12 +109,12 @@ def _console_script(*, proof: str) -> str:
     second `conftest.py` shadow `tests/conftest.py` for the 49 modules that reach it
     with `from conftest import ...`.
     """
-    executable = shutil.which("hmc-mcp")
+    executable = shutil.which("hmcpctl")
     if executable is None:
-        pytest.skip("the hmc-mcp console script is not on PATH")
+        pytest.skip("the hmcpctl console script is not on PATH")
     assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
         f"the console script resolves outside this checkout, so the {proof} proved would "
-        "belong to a different build of hmc-mcp"
+        "belong to a different build of hmcpctl"
     )
     return executable
 
@@ -534,7 +534,7 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     assert generated.returncode == 0, generated.stderr
 
     # Taken from the command's own stdout rather than joined by hand: `config_dir()`
-    # is `~/Library/Application Support/hmc-mcp` on darwin and `~/.config/hmc-mcp`
+    # is `~/Library/Application Support/hmcpctl` on darwin and `~/.config/hmcpctl`
     # elsewhere, and a hand-built path would pin one platform's answer. Asserting it
     # lands under the steered HOME is what proves the isolation actually held — the
     # thing that matters, since this is the one check that writes.

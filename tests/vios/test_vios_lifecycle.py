@@ -83,7 +83,7 @@ def test_build_installios_command_exact_line_for_vios():
         profile_name="default",
         vlan_id="100",
     )
-    assert log_path == "/tmp/hmc-mcp-installios-vios1.log"
+    assert log_path == "/tmp/hmcpctl-installios-vios1.log"
     assert command == (
         "nohup installios -d /extra/viosimages/VIOS_4.1/dvdimage.v1.iso "
         "-i 192.168.1.20 -S 255.255.255.0 -g 192.168.1.1 -s sys1 -p vios1 "
@@ -157,7 +157,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
 
     assert result["partition"] == "vios1"
     assert result["pid"] == 4242
-    assert result["log_path"] == "/tmp/hmc-mcp-installios-vios1.log"
+    assert result["log_path"] == "/tmp/hmcpctl-installios-vios1.log"
     assert "no HMC job exists on this path" in result["message"]
     expected, _ = build_installios_command(
         install_source="/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",

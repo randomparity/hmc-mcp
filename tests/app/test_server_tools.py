@@ -400,7 +400,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(
         "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
-        new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
+        new=AsyncMock(return_value="[hmcpctl owner:hmcpctl created:2026-01-01]"),
     ):
         result = hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,

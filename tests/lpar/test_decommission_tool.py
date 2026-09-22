@@ -563,8 +563,8 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
     )
     descriptions = AsyncMock(
         side_effect=(
-            "[hmc-mcp owner:bob created:2026-08-14]",
-            "[hmc-mcp owner:bob created:2026-08-14]",
+            "[hmcpctl owner:bob created:2026-08-14]",
+            "[hmcpctl owner:bob created:2026-08-14]",
         )
     )
     monkeypatch.setattr("hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions)
@@ -597,8 +597,8 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
     )
     descriptions = AsyncMock(
         side_effect=(
-            "[hmc-mcp owner:alice created:2026-08-14]",
-            "[hmc-mcp owner:bob created:2026-08-15]",
+            "[hmcpctl owner:alice created:2026-08-14]",
+            "[hmcpctl owner:bob created:2026-08-15]",
         )
     )
     monkeypatch.setattr("hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions)

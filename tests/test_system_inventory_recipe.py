@@ -47,7 +47,7 @@ def test_system_inventory_recipe_has_required_read_only_contract() -> None:
                    "VIOS partition ID / server slot", "Candidate disk name",
                    "Free-space evidence"):
         assert marker in recipe
-    commands = set(re.findall(r"hmc-mcp ([^\n\x60]+)", recipe))
+    commands = set(re.findall(r"hmcpctl ([^\n\x60]+)", recipe))
     assert commands == READ_COMMANDS
 
 
@@ -84,5 +84,5 @@ def test_sriov_port_captures_always_supply_an_adapter_id() -> None:
     recipe = RECIPE.read_text()
     for command in ("list-sriov-physical-ports", "list-sriov-logical-ports"):
         for line in recipe.splitlines():
-            if command in line and "hmc-mcp" in line:
+            if command in line and "hmcpctl" in line:
                 assert "--adapter-id" in line, line

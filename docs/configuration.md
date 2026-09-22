@@ -6,9 +6,83 @@
 
 Configuration priority (highest to lowest): **CLI flags > `HMC_*` env vars > TOML profile**.
 
+## Clean cutover from the former name
+
+This pre-release changes the distribution, command, Python package, and configuration
+directory from `hmc-mcp`/`hmc_mcp` to `hmcpctl`. There is no compatibility alias or
+configuration fallback. Stop every old CLI or MCP server process before moving the directory.
+Each transaction below refuses to merge into an existing destination.
+
+On Linux (including a custom `XDG_CONFIG_HOME`):
+
+```bash
+old_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hmc-mcp"
+new_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hmcpctl"
+if [ -e "$new_dir" ]; then echo "refusing existing destination: $new_dir" >&2; exit 1; fi
+if [ -d "$old_dir" ]; then mv -- "$old_dir" "$new_dir"; fi
+```
+
+On macOS:
+
+```bash
+old_dir="$HOME/Library/Application Support/hmc-mcp"
+new_dir="$HOME/Library/Application Support/hmcpctl"
+if [ -e "$new_dir" ]; then echo "refusing existing destination: $new_dir" >&2; exit 1; fi
+if [ -d "$old_dir" ]; then mv -- "$old_dir" "$new_dir"; fi
+```
+
+On Windows PowerShell:
+
+```powershell
+$oldDir = Join-Path $env:APPDATA 'hmc-mcp'
+$newDir = Join-Path $env:APPDATA 'hmcpctl'
+if (Test-Path -LiteralPath $newDir) { throw "Refusing existing destination: $newDir" }
+if (Test-Path -LiteralPath $oldDir -PathType Container) {
+    Move-Item -LiteralPath $oldDir -Destination $newDir
+}
+```
+
+Then remove the former tool and install this checkout explicitly:
+
+```bash
+uv tool uninstall hmc-mcp
+cd /absolute/path/to/hmcpctl-checkout
+uv tool install --python 3.11 '.[app]'
+hmcpctl --help
+hmcpctl config show
+test -f "${XDG_CONFIG_HOME:-$HOME/.config}/hmcpctl/access-policy.toml"  # Linux
+if command -v hmc-mcp >/dev/null 2>&1; then echo "old command remains on PATH" >&2; exit 1; fi
+```
+
+For macOS, check `$HOME/Library/Application Support/hmcpctl/access-policy.toml` instead.
+For PowerShell, run the equivalent verification:
+
+```powershell
+uv tool uninstall hmc-mcp
+Set-Location -LiteralPath 'C:\absolute\path\to\hmcpctl-checkout'
+uv tool install --python 3.11 '.[app]'
+hmcpctl --help
+hmcpctl config show
+if (-not (Test-Path -LiteralPath (Join-Path $newDir 'access-policy.toml'))) {
+    throw 'access-policy.toml was not moved'
+}
+if (Get-Command hmc-mcp -ErrorAction SilentlyContinue) { throw 'old command remains on PATH' }
+```
+
+Update every MCP client entry from command `hmc-mcp` to `hmcpctl`, preserving its arguments and
+environment, and only then restart the client or server.
+
+Repository hosting and publication are separate operator actions and have **not** been performed
+by this source change. Before a public release, the operator must:
+
+1. Rename the GitHub repository and verify redirects and documentation links.
+2. Update package project URLs to the final repository slug.
+3. Configure the `hmcpctl` PyPI project and its trusted publisher or release token.
+4. Build clean artifacts, publish them, and verify a fresh `hmcpctl[app]` installation.
+
 ### TOML profile (recommended for multi-HMC setups)
 
-Create `~/.config/hmc-mcp/config.toml` (Linux / macOS `~/Library/Application Support/hmc-mcp/config.toml` / Windows `%APPDATA%/hmc-mcp/config.toml`):
+Create `~/.config/hmcpctl/config.toml` (Linux / macOS `~/Library/Application Support/hmcpctl/config.toml` / Windows `%APPDATA%/hmcpctl/config.toml`):
 
 ```toml
 default_profile = "prod"
@@ -78,10 +152,10 @@ and no target is itself a nickname.
 | HTTP timeout (s)  | `HMC_TIMEOUT`        | —                 | `60.0`    |
 | SSH timeout (s)   | `HMC_SSH_TIMEOUT`    | —                 | `300.0`   |
 | SSH key file      | `HMC_SSH_KEY_FILE`   | —                 | —         |
-| Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmc-mcp` |
+| Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmcpctl` |
 | Schema version    | `HMC_SCHEMA_VERSION` | —                 | _(unset)_ |
 
-When the REST port is omitted, hmc-mcp tries port 443 and retries logon once on
+When the REST port is omitted, hmcpctl tries port 443 and retries logon once on
 legacy port 12443 only if the first attempt fails at the transport layer. Setting
 `port` in TOML or `HMC_PORT` selects that port explicitly: a connection failure
 is returned immediately and never falls back. On an older HMC, leaving the port
@@ -99,9 +173,9 @@ SSH-backed operations use port 22 and either the configured password or
 running these operations; see [SSH trust setup](HMC_HINTS.md#ssh-host-key-trust).
 
 HMCs ship self-signed certificates, so TLS verification is off by default and
-`hmc-mcp` emits `TLSVerificationDisabledWarning` once per HMC host and
+`hmcpctl` emits `TLSVerificationDisabledWarning` once per HMC host and
 `verify_ssl` setting source per process while it stays off. Reusable Python
-consumers can import that category from `hmc_mcp.api` and filter it without
+consumers can import that category from `hmcpctl.api` and filter it without
 suppressing unrelated `UserWarning`s. To verify the HMC certificate, install
 its CA locally and set `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the
 HMC credentials are at risk of man-in-the-middle interception.

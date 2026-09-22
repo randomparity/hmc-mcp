@@ -71,9 +71,9 @@ def _write_config(tmp_path, body: str) -> None:
 
     ``no_native_config`` sets ``XDG_CONFIG_HOME`` to ``tmp_path / "xdg"`` and
     patches ``sys.platform`` to ``"linux"``, so ``resolve_config_path`` resolves
-    to ``tmp_path / "xdg" / "hmc-mcp" / "config.toml"`` on every OS.
+    to ``tmp_path / "xdg" / "hmcpctl" / "config.toml"`` on every OS.
     """
-    directory = tmp_path / "xdg" / "hmc-mcp"
+    directory = tmp_path / "xdg" / "hmcpctl"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "config.toml").write_text(body, encoding="utf-8")
 

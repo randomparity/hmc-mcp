@@ -121,7 +121,7 @@ def test_build_attribute_record_rejects_control_characters(control):
     [
         "No comma name",  # spaces are legal in an unquoted HMC name value
         "lpar;name",
-        "[hmc-mcp owner:agent-a created:2026-08-19]",
+        "[hmcpctl owner:agent-a created:2026-08-19]",
     ],
 )
 def test_build_attribute_record_keeps_characters_that_are_not_structure(value):
@@ -359,7 +359,7 @@ def test_validate_lpar_description_rejects_record_delimiters(bad, wording):
 
 def test_validate_lpar_description_still_accepts_an_ownership_token():
     """ADR 0011's ownership token has no record delimiter and stays valid."""
-    validate_lpar_description("[hmc-mcp owner:agent-a created:2026-08-19]")
+    validate_lpar_description("[hmcpctl owner:agent-a created:2026-08-19]")
 
 
 @pytest.mark.parametrize(

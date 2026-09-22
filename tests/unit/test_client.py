@@ -2821,7 +2821,7 @@ async def test_list_quick_properties_reads_names_at_any_depth(mock_hmc, body):
         ({"X-HMC-Schema-Version": "V1_0"}, "V1_0"),
         # FW950 echoes the request's X-Audit-Memento into this header, so the
         # value is returned verbatim rather than validated as a level (ADR 0139).
-        ({"X-HMC-Schema-Version": "hmc-mcp"}, "hmc-mcp"),
+        ({"X-HMC-Schema-Version": "hmcpctl"}, "hmcpctl"),
         ({}, None),
     ],
 )

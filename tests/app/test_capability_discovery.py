@@ -24,7 +24,7 @@ from hmcpctl.operation_maturity import OperationMaturity, operation_maturity_met
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.tool_registry import ToolSecurity
 
-MATURITY_META_KEY = "io.github.randomparity.hmc-mcp/operation-maturity"
+MATURITY_META_KEY = "io.github.randomparity.hmcpctl/operation-maturity"
 _NOW = datetime(2026, 9, 10, tzinfo=UTC)
 _SOURCE = "test-capability-discovery.toml"
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")

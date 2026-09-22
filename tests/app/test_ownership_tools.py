@@ -95,7 +95,7 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
         _setup_mock(router)
         with patch(
             "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
-            new=AsyncMock(return_value="[hmc-mcp owner:test-agent created:2026-08-13]"),
+            new=AsyncMock(return_value="[hmcpctl owner:test-agent created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
@@ -211,7 +211,7 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
         _setup_mock(router)
         with patch(
             "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
-            new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
+            new=AsyncMock(return_value="[hmcpctl owner:hmcpctl created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
@@ -243,7 +243,7 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
         config, system_name, lpar_name, *, agent_id=None, caller_token=None
     ):
         captured["description"] = (
-            f"[hmc-mcp owner:hmc-mcp created:2026-08-21] [caller {caller_token}]"
+            f"[hmcpctl owner:hmcpctl created:2026-08-21] [caller {caller_token}]"
         )
         return captured["description"]
 

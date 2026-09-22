@@ -2,7 +2,7 @@
 
 `docs/refs/` (vendored HMC API reference) and `AGENTS.local.md` are gitignored
 and exist on one operator host only (see AGENTS.md). A sibling worktree under
-`../hmc-mcp-worktrees/` starts without either path, so this script symlinks
+`../hmcpctl-worktrees/` starts without either path, so this script symlinks
 them in from the main checkout when present, and announces them as
 unavailable — rather than staying silent — when the host has no corpus.
 

@@ -513,7 +513,7 @@ def test_agent_id_is_recorded_as_unverified_attribution(records, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "value", [None, "lab-scoped", "lab", "prod", "hmc-mcp", "a" * 300]
+    "value", [None, "lab-scoped", "lab", "prod", "hmcpctl", "a" * 300]
 )
 def test_the_outcome_is_invariant_under_agent_id(records, monkeypatch, value):
     """Spec 28. The behavioural sample; test 8b is the invariant."""
@@ -572,7 +572,7 @@ def test_an_info_record_does_not_reach_stderr_without_a_sink(capsys):
 def test_gates_requires_a_policy_and_returns_both():
     """Spec 32, inverted by ADR 0041: every deployment now records every decision.
 
-    This asserted `_gates(None) == (None, None)` — the reason a default `hmc-mcp serve`
+    This asserted `_gates(None) == (None, None)` — the reason a default `hmcpctl serve`
     emitted no authorization record. A policy is mandatory now, so there is no such
     default and no such silence: both gates are always derived and neither is None.
     """

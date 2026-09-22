@@ -22,5 +22,5 @@ mandatory and enforced by `tests/unit/test_changelog.py`:
 
 - The version declared in `pyproject.toml` must have a matching `## [<version>]` entry, so a
   release cannot ship without one.
-- `hmc_mcp.api` is the six-name stable facade defined by ADR 0118. Record changes to it under
+- `hmcpctl.api` is the six-name stable facade defined by ADR 0118. Record changes to it under
   ordinary changelog categories; domain-module APIs remain pre-release.

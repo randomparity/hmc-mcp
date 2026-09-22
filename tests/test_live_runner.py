@@ -3737,7 +3737,7 @@ def test_unrestorable_description_names_the_reason(baseline):
     assert isinstance(reason, str) and reason
 
 
-@pytest.mark.parametrize("baseline", ["", "plain text", "[hmc-mcp owner:a created:x]"])
+@pytest.mark.parametrize("baseline", ["", "plain text", "[hmcpctl owner:a created:x]"])
 def test_restorable_description_is_not_blocked(baseline):
     """An ordinary baseline description is restored, not skipped."""
     assert lpar._unrestorable_description(baseline) is None

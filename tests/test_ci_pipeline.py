@@ -266,12 +266,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         in justfile
     )
     assert "--baseline .secrets.baseline --no-verify --" in justfile
-    assert "uv run --no-sync hmc-mcp --help >/dev/null" in justfile
+    assert "uv run --no-sync hmcpctl --help >/dev/null" in justfile
     assert "uv run --no-sync python scripts/smoke_cli_groups.py" in justfile
     # The group helps are derived, so a per-group line is the hand-maintained
-    # mirror growing back. `hmc-mcp --help` above is not one: the pattern needs a
+    # mirror growing back. `hmcpctl --help` above is not one: the pattern needs a
     # group token before the flag, which `--help` itself cannot supply.
-    assert re.search(r"hmc-mcp [a-z][a-z-]* --help", justfile) is None, (
+    assert re.search(r"hmcpctl [a-z][a-z-]* --help", justfile) is None, (
         "name a group's help here and it is a hand-maintained list again; "
         "scripts/smoke_cli_groups.py derives them from the Typer app"
     )
@@ -522,10 +522,10 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
 
     assert lint.returncode == 0, lint.stderr
     assert "All checks passed" in lint.stdout
-    assert "Building hmc-mcp" not in lint.stderr
+    assert "Building hmcpctl" not in lint.stderr
     assert hooks.returncode == 0, hooks.stdout + hooks.stderr
     assert "Ruff lint" in hooks.stdout
-    assert "Building hmc-mcp" not in hooks.stderr
+    assert "Building hmcpctl" not in hooks.stderr
 
 
 def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
@@ -587,42 +587,9 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     )
     assert "path: dist" in body
     assert "merge-multiple:" not in body
-    assert "wheels=(dist/*.whl)" in body
-    assert "${#wheels[@]} != 1" in body
-    assert "expected exactly one wheel" in body
-    assert "uv venv --python \"${MATRIX_PYTHON}\" .wheel-venv" in body
-    assert "uv export --frozen --no-dev --no-emit-project --no-header" in body
-    assert (
-        "uv export --frozen --extra app --no-dev --no-emit-project --no-header"
-        in body
-    )
-    assert "uv pip install --python .wheel-venv/bin/python" in body
-    assert "--requirements .wheel-requirements.txt" in body
-    assert "--requirements .wheel-app-requirements.txt" in body
-    assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
-    assert '"${wheels[0]}[app]"' in body
-    assert "import hmcpctl" in body
-    assert "from hmcpctl.api import HMCClient" in body
-    assert "from hmcpctl.client import HMCClient" not in body
-    assert 'HMCClient.__module__ == "hmcpctl.client.core"' in body
-    assert "is_relative_to(environment)" in body
-    assert ".wheel-venv/bin/hmc-mcp --help" in body
-    assert (
-        ".wheel-venv/bin/hmc-mcp capabilities --json > capabilities.json" in body
-    )
-    assert 'json.loads(Path("capabilities.json").read_text())' in body
-    assert 'capability["operation"]' in body
-    for field in ("implementation", "verification", "runtime_eligibility"):
-        assert f'capability["{field}"]' in body
-    # Group help pages are rendered off the tree the installed wheel builds. The
-    # capability projection is the sole named subcommand because this job verifies
-    # its installed output; any other name is the hand-maintained mirror growing back.
-    assert ".wheel-venv/bin/python scripts/smoke_cli_groups.py" in body
-    assert re.findall(r"\.wheel-venv/bin/hmc-mcp ([^\n]+)", body) == [
-        "--help >/dev/null",
-        "capabilities --json > capabilities.json",
-    ]
-    assert ".wheel-venv/bin/python scripts/smoke_mcp.py" in body
+    assert "UV_PYTHON: ${{ matrix.python-version }}" in body
+    assert "uv run --no-project python scripts/smoke_release_wheel.py dist" in body
+    assert "wheels=(dist/*.whl)" not in body
     assert "just setup" not in body
     assert "uv sync" not in body
     assert "pip install -e" not in body

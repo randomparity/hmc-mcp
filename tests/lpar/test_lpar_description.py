@@ -250,7 +250,7 @@ def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch, mock_h
         ),
         patch(
             "hmcpctl.operations.lpar.ownership.get_lpar_description",
-            new=AsyncMock(return_value="[hmc-mcp owner:other created:2026-08-14]"),
+            new=AsyncMock(return_value="[hmcpctl owner:other created:2026-08-14]"),
         ),
         patch("hmcpctl.operations.lpar.ownership.set_lpar_description", new=write),
         pytest.raises(PermissionError, match="owned by 'other'"),

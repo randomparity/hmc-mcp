@@ -605,7 +605,7 @@ def fake_hmc(monkeypatch):
         return "legacy partition"
 
     async def stamped(*_args, **_kwargs):
-        return "[hmc-mcp owner:hmc-mcp created:2026-08-14]"
+        return "[hmcpctl owner:hmcpctl created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", legacy_description)
     monkeypatch.setattr(lpar_ownership, "stamp_lpar_ownership", stamped)
@@ -1439,7 +1439,7 @@ def test_lpars_delete_denies_foreign_owned_partition_without_transport(
     fake_hmc, monkeypatch
 ):
     async def foreign_description(*_args):
-        return "[hmc-mcp owner:other-agent created:2026-08-14]"
+        return "[hmcpctl owner:other-agent created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", foreign_description)
 
@@ -1603,7 +1603,7 @@ def test_lpars_decommission_incomplete_json_result_exits_1_after_rendering(fake_
 
 def test_lpars_decommission_denies_foreign_owned_partition(fake_hmc, monkeypatch):
     async def foreign_description(*_args):
-        return "[hmc-mcp owner:other-agent created:2026-08-14]"
+        return "[hmcpctl owner:other-agent created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", foreign_description)
 

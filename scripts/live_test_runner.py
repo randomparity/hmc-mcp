@@ -1634,7 +1634,7 @@ async def main(
     )
 
     if repo_root is None:
-        print("not inside the hmc-mcp repository — observations not written")
+        print("not inside the hmcpctl repository — observations not written")
     else:
         _emit_observations(
             state, _observations_path(results_path), environment, repo_root

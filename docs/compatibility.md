@@ -28,7 +28,7 @@ and none whose requests all omit it:
 
 - **UOM requests carry it unless their own call site opts out.** A call site
   opts out by passing `include_schema_version=False`, so
-  `rg -n 'include_schema_version=False' src/hmc_mcp/client/` is the current set
+  `rg -n 'include_schema_version=False' src/hmcpctl/client/` is the current set
   and the only answer that cannot go stale. Opting out was a response to HTTP
   406 on specific endpoints, not a property of any HTTP method or resource
   type: `PUT`/`POST LogicalPartition`, `PUT VirtualNetwork` and child-resource

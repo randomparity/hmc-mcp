@@ -103,7 +103,7 @@ resets the timer.  This means:
   attempt before the password is ever tried.  See [the fix above](#password-authentication-with-asyncssh).
 - If you accidentally trigger a lockout, wait the full 5 minutes before
   retrying.  Retrying early resets the timer and extends the lockout.
-- The `hmc-mcp` asyncssh transport (`src/hmc_mcp/ssh/transport.py`) applies
+- The `hmcpctl` asyncssh transport (`src/hmcpctl/ssh/transport.py`) applies
   `client_keys=[]` and `preferred_auth="password"` automatically in
   password-auth mode; ad-hoc scripts must apply the same pattern manually.
 
@@ -201,7 +201,7 @@ empty when no label has been applied.
 
 [`scripts/probe_labelvios.py`](../scripts/probe_labelvios.py) is a reusable
 asyncssh-based probe template that applies all of the above.  It reads
-`~/.config/hmc-mcp/config.toml`, connects in parallel to all profiles on
+`~/.config/hmcpctl/config.toml`, connects in parallel to all profiles on
 port 22 with password-only auth, and runs a two-stage read-only query:
 stage 1 enumerates managed systems, stage 2 runs per-system commands.
 

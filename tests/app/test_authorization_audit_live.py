@@ -1,4 +1,4 @@
-"""The audit record proven against a real ``hmc-mcp serve`` stdio subprocess.
+"""The audit record proven against a real ``hmcpctl serve`` stdio subprocess.
 
 ADR 0040's contract is a *sink*, so a unit test against a mock logger proves the
 payload and almost nothing about delivery. This drives the real console script
@@ -63,7 +63,7 @@ targets = { lpar = ["db-01"], managed_system = ["sys-a"] }
 
 #: Every frame read waits at most this long. Without it a child that never answers
 #: waits until `scripts/run_tests.py` caps pytest at 1020s with exit 124, or CI caps
-#: the job at 20 minutes — and this is the suite's only long-lived `hmc-mcp serve`
+#: the job at 20 minutes — and this is the suite's only long-lived `hmcpctl serve`
 #: child.
 DEADLINE = 30.0
 
@@ -109,7 +109,7 @@ def child_env(fixture_home):
     """``os.environ`` copied with the four steering variables removed.
 
     A copy, not a from-scratch mapping: an explicitly built environment carries no
-    ``PATH``, and L1-L4 launch the child through the ``hmc-mcp`` console script, so
+    ``PATH``, and L1-L4 launch the child through the ``hmcpctl`` console script, so
     it would not be found at all. L5 instead uses ``server_module_command``.
 
     ``HMC_HOST`` matters as much as the config path and is easier to miss:
@@ -140,20 +140,20 @@ def child_env(fixture_home):
 
 @pytest.fixture
 def server_binary():
-    """The ``hmc-mcp`` console script — and specifically *this* checkout's.
+    """The ``hmcpctl`` console script — and specifically *this* checkout's.
 
     "On PATH" and "the code on this branch" are different claims. A pipx- or
-    uv-tool-installed `hmc-mcp` earlier on PATH, or a bare `pytest` outside the
+    uv-tool-installed `hmcpctl` earlier on PATH, or a bare `pytest` outside the
     project venv, would otherwise give this proof a green run against foreign
     code — the plausible-looking wrong answer the fixture above exists to avoid.
     """
-    path = shutil.which("hmc-mcp")
-    assert path is not None, "the hmc-mcp console script must be on PATH"
+    path = shutil.which("hmcpctl")
+    assert path is not None, "the hmcpctl console script must be on PATH"
     prefix = Path(sys.prefix).resolve()
     resolved = Path(path).resolve()
     assert resolved.is_relative_to(prefix), (
         f"{resolved} is not inside this interpreter's environment ({prefix}); "
-        "the live proof would run against a different build of hmc-mcp"
+        "the live proof would run against a different build of hmcpctl"
     )
     return path
 
@@ -507,7 +507,7 @@ def _assert_interpreter_launch(command: list[str]) -> None:
 
     ADR 0128's invariant is *no intermediate process may leave a descriptor open
     on fd 2 across the exec of the interpreter*. Past ``uv``'s shebang threshold
-    the ``hmc-mcp`` console script is a ``/bin/sh`` trampoline: the shell opens it
+    the ``hmcpctl`` console script is a ``/bin/sh`` trampoline: the shell opens it
     to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
     ``exec`` and lands on the fd 2 ``2>&-`` had just freed, so the interpreter
     inherits an unwritable stderr and exits 120 before answering.

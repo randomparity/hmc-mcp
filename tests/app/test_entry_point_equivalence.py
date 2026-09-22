@@ -1,4 +1,4 @@
-"""`hmc-mcp` and `python -m hmcpctl` are one program.
+"""`hmcpctl` and `python -m hmcpctl` are one program.
 
 ADR 0128 holds the two invocations equivalent "by construction, not by a standing
 test", and moved L5 -- the live suite's only fd-2-closed launch -- onto the module
@@ -33,7 +33,7 @@ and both are accommodated rather than asserted:
   Deriving it instead (from `sys.executable` plus the module name, say) would
   reproduce Click's own `_detect_program_name` and break on a Click upgrade for a
   reason that has nothing to do with `hmcpctl`. Confining the substitution to the
-  `Usage:` line matters: `hmc-mcp` recurs inside `--profile`'s help text, where
+  `Usage:` line matters: `hmcpctl` recurs inside `--profile`'s help text, where
   `python -m hmcpctl` does not, so a whole-output substitution corrupts the console
   form alone and is red at HEAD.
 * `sys.path[0]`, which `-m` sets to the working directory. Both forms are launched
@@ -92,12 +92,12 @@ def _launchers() -> tuple[list[str], list[str]]:
     pin, which `sys.executable` gives only while it is the interpreter beside that
     script -- so the two are required to share a `bin` directory.
     """
-    executable = shutil.which("hmc-mcp")
+    executable = shutil.which("hmcpctl")
     if executable is None:
-        pytest.skip("the hmc-mcp console script is not on PATH")
+        pytest.skip("the hmcpctl console script is not on PATH")
     assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
         "the console script resolves outside this checkout, so the equivalence proved "
-        "would belong to a different build of hmc-mcp"
+        "would belong to a different build of hmcpctl"
     )
     # The parent directories are resolved, not the interpreter: a venv's `bin/python`
     # is a symlink out to the interpreter it was created from, so resolving *it* would

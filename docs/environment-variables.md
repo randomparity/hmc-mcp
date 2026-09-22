@@ -1,6 +1,6 @@
 # Environment Variables
 
-`hmc-mcp` reads configuration from a platform-native TOML profile file,
+`hmcpctl` reads configuration from a platform-native TOML profile file,
 environment variables, or CLI flags (priority: CLI flags > environment variables > TOML profile).
 
 See [Configuration](configuration.md) for the TOML profile format.
@@ -14,17 +14,17 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_PORT` | integer | `443` | HMC REST API port. If unset, a transport failure during logon retries once on legacy port 12443; if set, connection failure is final and never falls back |
 | `HMC_USER` | string | _(required)_ | HMC user name |
 | `HMC_PASSWORD` | string | _(required)_ | HMC password |
-| `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmc-mcp/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
+| `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmcpctl/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
 | `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
 | `HMC_SSH_VERIFY_HOST_KEY` | bool | `true` | Verify SSH host keys against the process user's `~/.ssh/known_hosts`. Set `false` only for an explicit bypass; every connection warns. Profile key: `ssh_verify_host_key`. See [SSH trust setup](HMC_HINTS.md#ssh-host-key-trust) |
 | `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after installing the HMC CA locally |
 | `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |
 | `HMC_MAX_RESPONSE_BYTES` | positive integer | `33554432` (32 MiB) | Maximum HMC REST response size in bytes, including successful and error replies. Exact-boundary responses are accepted; larger declared or streamed bodies are refused. Raise for unusually large inventories only when memory permits: this bounds response bytes, not total process memory. Zero is invalid and cannot disable the ceiling. TOML profile key: `max_response_bytes`. Error-body diagnostics keep their separate 4096-byte cap |
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
-| `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs. Must contain only printable ASCII (U+0020 through U+007E); an empty string is accepted. See header configuration note below |
-| `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmc-mcp:<agent_id>` and new LPARs are stamped with `[hmc-mcp owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmc-mcp` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmc-mcp` is always used. |
-| `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmc-mcp lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
-| `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmc-mcp storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
+| `HMC_AUDIT_MEMENTO` | string | `hmcpctl` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs. Must contain only printable ASCII (U+0020 through U+007E); an empty string is accepted. See header configuration note below |
+| `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmcpctl:<agent_id>` and new LPARs are stamped with `[hmcpctl owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmcpctl` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmcpctl` is always used. |
+| `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmcpctl lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
+| `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmcpctl storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
 | `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on UOM requests whose call site does not opt out, and on every `/rest/api/web/` request; requests that build their own headers never send it. Must contain only printable ASCII (U+0020 through U+007E); an empty string omits the header. **Leave unset for normal operation** — see note below. |
 
 ## Notes
@@ -154,7 +154,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   per process**, on the first call that hits that failure, since the tool's call
   rate belongs to the MCP client; restart the server to see it again. In a served
   process that line goes through the bounded stderr sink of ADR 0043, prefixed
-  `hmc_mcp:` like every other diagnostic on it (#534). For a
+  `hmcpctl:` like every other diagnostic on it (#534). For a
   `ValidationError` there is no fuller message anywhere, in the report or the log:
   pydantic quotes the value it rejected, and a bad `password` would then be in
   your log, so you get the field name and read the value from the config source
@@ -162,9 +162,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   carry no host, user, or credential.
 
   Because the report is resolved inside the process being asked, it answers where
-  `hmc-mcp config show` cannot. `config show` requires a `config.toml` and exits 1
+  `hmcpctl config show` cannot. `config show` requires a `config.toml` and exits 1
   without one, so it cannot answer for an env-var-only setup at all. It reads the
-  environment of the shell that invoked it, not of the `hmc-mcp serve` process an
+  environment of the shell that invoked it, not of the `hmcpctl serve` process an
   MCP host launched with its own environment block. And when `HMC_HOST` (or an
   explicit `--host`) is set, a tool run skips the profile entirely and builds its
   config from environment variables alone — so a TOML-only
@@ -225,7 +225,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   When it is set, the header goes per call site, not per HTTP method. UOM
   requests carry it unless their own call site passes
   `include_schema_version=False`, so
-  `rg -n 'include_schema_version=False' src/hmc_mcp/client/` is the current set
+  `rg -n 'include_schema_version=False' src/hmcpctl/client/` is the current set
   and the only answer that cannot go stale. Opting out was a response to HTTP
   406 on specific endpoints (confirmed on HMC V10R3 build 2408210051 and likely
   other V10 builds), not a property of any method or resource type:
@@ -240,9 +240,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 
 ## Library Consumers
 
-The variables above configure the `hmc-mcp` CLI and MCP server, which are
+The variables above configure the `hmcpctl` CLI and MCP server, which are
 single-connection processes an operator owns end to end. A library consumer of
-`hmc_mcp.api` is usually not that: a server that builds one connection per HMC in
+`hmcpctl.api` is usually not that: a server that builds one connection per HMC in
 a single process inherits the ambient environment on every field it does not set.
 
 ### Precedence
@@ -321,7 +321,7 @@ Use `HMCConfig.from_mapping(values)` when a setting must come from `values` or
 from the declared field default, and never from the process environment:
 
 ```python
-from hmc_mcp.api import HMCConfig
+from hmcpctl.api import HMCConfig
 
 # row is e.g. a database row: {"host": ..., "user": ..., "password": ...}
 config = HMCConfig.from_mapping(row)
@@ -387,6 +387,6 @@ None of these raise. See ADR 0096 for the full reasoning.
 ## Adding a New Variable
 
 Every new `HMC_*` env var added to
-[`src/hmc_mcp/config.py`](../src/hmc_mcp/config.py) must be added to this
+[`src/hmcpctl/config.py`](../src/hmcpctl/config.py) must be added to this
 document before merging. The `just env-vars` guard (`scripts/check_env_vars.py`)
 enforces this in pre-commit hooks and CI.

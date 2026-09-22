@@ -168,7 +168,7 @@ ADR 0053 admits selectors and percentage capacity semantics but no SR-IOV read p
 three collections currently return `capability-unavailable` with no items and perform no inventory
 command. Percentage fields use decimal percentages, never bytes, bandwidth, or integer weights.
 
-The CLI equivalents are `hmc-mcp network list-dedicated-pcie-slots`, `list-sriov-adapters`,
+The CLI equivalents are `hmcpctl network list-dedicated-pcie-slots`, `list-sriov-adapters`,
 `list-sriov-physical-ports`, and `list-sriov-logical-ports`. All accept `--json`; the SR-IOV
 commands accept the applicable `--adapter-id`, `--physical-port-id`, and `--logical-port-id`
 selectors. The older `hmc_list_io_slots` / `network list-io-slots` surface remains raw and is not

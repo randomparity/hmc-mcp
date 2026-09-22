@@ -41,7 +41,7 @@ async def test_foreign_partition_blocks_restore_before_ssh(caplog) -> None:
             "UUID": "22222222-2222-4222-8222-222222222222",
             "Resource": {
                 "PartitionName": "db01",
-                "Description": "[hmc-mcp owner:bob created:2026-08-14]",
+                "Description": "[hmcpctl owner:bob created:2026-08-14]",
             },
         }
     ]

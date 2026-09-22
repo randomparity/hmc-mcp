@@ -111,8 +111,8 @@ def test_the_runbook_names_the_config_directory_of_every_platform_it_runs_on():
     """A Linux-only path sent the first macOS operator to a directory macOS
     never reads. The runner resolves the directory per platform; the runbook
     has to say so, because an operator reads the runbook, not `config.py`."""
-    assert "Library/Application Support/hmc-mcp" in TEXT
-    assert ".config/hmc-mcp" in TEXT
+    assert "Library/Application Support/hmcpctl" in TEXT
+    assert ".config/hmcpctl" in TEXT
 
 
 def test_agents_md_points_at_the_runbook():

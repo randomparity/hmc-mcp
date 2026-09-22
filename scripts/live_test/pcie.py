@@ -332,9 +332,9 @@ async def _check_sriov_physical_port_capacity(client: Client, state: RunState) -
             "sriov assign arm",
             f"phys_port {config.sriov_physical_port_id} has only {available}% capacity remaining "
             f"(need {config.sriov_capacity_percent}%); all unconfigured logical ports are T1-addressed "
-            "and hmc-mcp's location-code check blocks cross-port assignment — SKIP assign arm. "
+            "and hmcpctl's location-code check blocks cross-port assignment — SKIP assign arm. "
             "NOTE: chhwres assigns T1 logical ports to phys_port 1 (T2) successfully "
-            "at the firmware layer; the location-code check is an hmc-mcp admission gate, "
+            "at the firmware layer; the location-code check is an hmcpctl admission gate, "
             "not a firmware constraint.",
         )
         return False

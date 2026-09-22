@@ -1,7 +1,7 @@
 """Tests for the MCP server transport security gate.
 
 The streamable-HTTP transport is unauthenticated and exposes the full tool
-surface, so `hmc-mcp serve --http` must refuse non-loopback binds unless the
+surface, so `hmcpctl serve --http` must refuse non-loopback binds unless the
 operator explicitly opts in with --allow-remote.
 """
 
