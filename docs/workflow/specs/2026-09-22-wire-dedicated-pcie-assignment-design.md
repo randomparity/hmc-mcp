@@ -122,7 +122,9 @@ the arm's escape hatch, MCP/CLI signatures, facade promotion, any live HMC acces
 ### Threat model
 
 - **Boundaries:** caller strings `profile_name`/`drc_index` → `chsyscfg -i` record and shell
-  (existing, now reachable); HMC `lssyscfg` output → parser (added).
+  (existing, now reachable); HMC `lssyscfg` output → parser (added); HMC `lshmc -V`,
+  `type_model` and LPAR-state output → envelope and state gates (added; exact field match,
+  fail closed).
 - **Actors:** an authorized caller aiming at a partition it does not own; an HMC whose output
   deviates from the capture. Trust sits with the configured HMC credentials.
 - **Controls:** `require_command_safe_text` plus `build_attribute_record` and `shlex.quote` on
