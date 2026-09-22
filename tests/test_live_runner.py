@@ -1777,6 +1777,26 @@ def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     }
 
 
+def test_module_docstring_prescribes_no_sync_and_the_real_subtask_range():
+    """The docstring is argparse's description, so a stale one misdirects a run."""
+    assert "uv run --no-sync python scripts/live_test_runner.py" in runner.__doc__
+    assert not re.search(r"uv run (?!--no-sync)", runner.__doc__)
+    assert f"0 through {max(runner.SUBTASKS)}" in runner.__doc__
+
+
+def test_help_renders_the_docstring_unwrapped_with_every_group(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        runner._parse_arguments(["--help"])
+
+    assert exit_info.value.code == 0
+    help_text = capsys.readouterr().out
+    for group in runner.SUBTASK_GROUPS:
+        assert group in help_text
+    # The default formatter reflows the description into one paragraph, which
+    # would swallow the usage line and the --no-sync requirement with it.
+    assert "Usage:\n    uv run --no-sync" in help_text
+
+
 def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
 

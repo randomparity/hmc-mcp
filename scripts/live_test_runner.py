@@ -1,19 +1,26 @@
-"""Live integration test runner for a configured HMC test plan — Round 2.
+"""Live integration test runner: HMC MCP tools against real hardware.
 
-Calls HMC MCP tools via the in-process FastMCP client against the real HMC
-configured in .env.  Results are printed to stdout as they complete and
-written to test-results-round2.json on exit.
+Calls the tools through the in-process FastMCP client against the HMC named by
+the configuration. Results print to stdout as they complete and are written to
+a JSON document on exit.
+
+This mutates a managed system.
 
 Usage:
-    uv run python scripts/live_test_runner.py [SUBTASK_NUMBER]
+    uv run --no-sync python scripts/live_test_runner.py [SUBTASK] [options]
 
-If SUBTASK_NUMBER is omitted, all sub-tasks (ST0–ST15) are run in order.
-If a specific number is given (0-15), only that sub-task runs.
+`--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
+stops importing (AGENTS.md).
+
+With no selection every subtask runs, 0 through 24. A bare number runs that one
+subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
+or `test-results-round2.json` for a bare or whole-suite run, unless
+`--results-file` names another path. That path must be git-ignored.
 
 Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
-environment or an existing local .env file. The preflight never creates or
-patches .env: when the value is absent, it exits with manual configuration
-instructions.
+environment, a `~/.config/hmc-mcp/config.toml` profile, or a local .env file.
+The runner never creates or patches .env: when the value is absent, it exits
+with manual configuration instructions.
 """
 
 from __future__ import annotations
@@ -1080,7 +1087,12 @@ class RunnerArguments:
 
 def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
     """Parse the live-run selection without performing configuration or HMC work."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    # RawDescriptionHelpFormatter: the default re-wraps the docstring into one
+    # paragraph, collapsing the usage line and the `--no-sync` requirement into
+    # prose an operator skims past.
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
         "subtask",
