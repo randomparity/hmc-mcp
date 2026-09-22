@@ -411,10 +411,8 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
     # refusal inside the envelope is a finding.
     probe_row = state.row("create-time dedicated assignment")
     assert probe_row is not None and probe_row[2] == "FAIL"
-    check_row = state.row("create-time probe partition not confirmed absent")
-    assert check_row is not None and check_row[2] == "FAIL"
-    assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
-    assert "-createtime" in str(check_row[3])
+    # The readback reports no such partition, so absence is confirmed.
+    assert state.row("create-time probe partition not confirmed absent") is None
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
     assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
     assert not any(
@@ -426,6 +424,34 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
 
 def _index_of(state: ScenarioState, predicate: Any) -> int:
     return next(i for i, (t, k) in enumerate(state.calls) if predicate(t, k))
+
+
+def _probe_description_fails(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
+    return "FAIL" if _is_probe_name(kwargs) else "PASS"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("probe_description", "statuses"),
+    [
+        pytest.param(None, {"hmc_get_lpar_description": _probe_description_fails}, id="unread"),
+        pytest.param("", {}, id="unstamped"),
+    ],
+)
+async def test_probe_absence_that_cannot_be_confirmed_is_a_recovery_row(
+    monkeypatch: pytest.MonkeyPatch, probe_description: str | None, statuses: dict[str, Any]
+) -> None:
+    """A failed or unstamped readback cannot rule out a partition the create made."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_description=probe_description)
+    state = await _run_arm(monkeypatch, responses, holder, statuses=statuses)
+
+    check_row = state.row("create-time probe partition not confirmed absent")
+    assert check_row is not None and check_row[2] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
+    assert "-createtime" in str(check_row[3])
+    creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
+    assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
 
 
 @pytest.mark.asyncio
@@ -1108,3 +1134,5 @@ async def test_foreign_partition_of_the_same_name_is_never_adopted(
     )
     assert state.cleanup_start is None
     assert "hmc_delete_lpar" not in [t for t, _ in state.calls]
+    # A partition of that name held by someone else rules out one of this run's.
+    assert state.row("create-time probe partition not confirmed absent") is None

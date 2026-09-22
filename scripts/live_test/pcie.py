@@ -51,6 +51,7 @@ import shlex
 import sys
 import uuid
 from dataclasses import dataclass, replace
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from fastmcp import Client
@@ -1153,9 +1154,16 @@ def _record_fixture_artifacts(state: RunState, fixture: _DedicatedFixture) -> No
     state.artifacts.pcie_baseline_io_slots = fixture.baseline_io_slots
 
 
+class _Absence(Enum):
+    """Why a failed create's readback found no partition of this run's."""
+
+    CONFIRMED = "confirmed"
+    UNCONFIRMED = "unconfirmed"
+
+
 async def _created_despite_failure(
     client: Client, state: RunState, fixture: _DedicatedFixture, lpar_name: str
-) -> str | None:
+) -> str | _Absence:
     """Return the UUID of *lpar_name* when a failed create in fact created it.
 
     Applies to a create the invariant every ``chsyscfg`` in this module already
@@ -1166,6 +1174,9 @@ async def _created_despite_failure(
 
     Ownership is confirmed by the run marker before claiming the partition, so
     a name collision with something this run did not create is never adopted.
+    Absence is confirmed only by a readback that answered with something other
+    than this run's marker. A failed read, or an empty description (a partition
+    whose ownership stamp never landed), leaves it unconfirmed.
     """
     st, data = await state.call(
         client,
@@ -1173,10 +1184,10 @@ async def _created_despite_failure(
         system_name_or_uuid=fixture.config.system_name,
         lpar_name_or_uuid=lpar_name,
     )
-    if st != "PASS" or not isinstance(data, str):
-        return None
+    if st != "PASS" or not isinstance(data, str) or not data.strip():
+        return _Absence.UNCONFIRMED
     if parse_lpar_ownership_caller_token(data) != fixture.run_marker:
-        return None
+        return _Absence.CONFIRMED
     uuid_match = re.search(r"'UUID':\s*'([0-9A-Fa-f-]{36})'", data)
     return uuid_match.group(1) if uuid_match else ""
 
@@ -1219,7 +1230,9 @@ async def _probe_create_time_assignment(
         probe_uuid = await _created_despite_failure(
             client, state, fixture, fixture.probe_lpar_name
         )
-        if probe_uuid is None:
+        if probe_uuid is _Absence.CONFIRMED:
+            return True
+        if probe_uuid is _Absence.UNCONFIRMED:
             state.record(
                 30,
                 "create-time probe partition not confirmed absent",
@@ -1300,7 +1313,7 @@ async def create_dedicated_fixture(
         stray_uuid = await _created_despite_failure(
             client, state, fixture, fixture.lpar_name
         )
-        if stray_uuid is None:
+        if isinstance(stray_uuid, _Absence):
             state.skip(
                 30,
                 "dedicated fixture create",
