@@ -9,6 +9,7 @@ from ..._app import (
 )
 from ...client.core import HMCClient
 from ...documents import LparResources
+from ...jobs import BootMode, PowerOnOperationType
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import (
     LparPcieAssignments,
@@ -321,14 +322,21 @@ def hmc_power_on_lpar(
     system_name_or_uuid: str | None = None,
     affinity_assessment: ProvisionAffinityAssessment | None = None,
     ownership_override: bool = False,
+    boot_mode: BootMode = "norm",
+    partition_profile_uuid: str | None = None,
+    operation_type: PowerOnOperationType | None = None,
 ) -> LparPowerOnOutcome:
-    """Submit a PowerOn job for a logical partition.
+    """Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars). Returns ``already_running``, nullable ``job``,
     and nullable ``message`` fields. A submitted job is in ``job``; check it
     with hmc_get_job. This changes the state of a real partition — confirm the
     target with hmc_get_lpar(lpar_name_or_uuid=...) before calling.
+
+    Two unrelated things here are called a profile. ``profile`` selects which
+    configured HMC connection to use. ``partition_profile_uuid`` selects the
+    partition profile the partition activates against.
 
     If the partition is already in the 'running' state, ``already_running`` is
     true, ``job`` is null, and ``message`` explains that no job was submitted.
@@ -343,7 +351,9 @@ def hmc_power_on_lpar(
         timeout_seconds: Maximum polling duration in seconds when waiting.
         poll_interval: Seconds between job polls when waiting; must be positive.
         force: Submit PowerOn even when the partition already reports running.
-        profile: Optional configured HMC profile name; uses the default when omitted.
+        profile: Optional configured HMC connection profile name — not the
+            partition profile, which is partition_profile_uuid; uses the default
+            when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide. With
             HMC_AUTHORIZE_POWER_OPERATIONS set it also spares the ownership
@@ -352,6 +362,15 @@ def hmc_power_on_lpar(
             explicit warning or fail-closed response intent.
         ownership_override: Bypass ADR 0011 ownership rejection only after operator
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
+        boot_mode: Boot mode to activate into — norm, dd, ds, of, or sms. Defaults
+            to norm, which is what the partition activates into today. Use sms for
+            System Management Services or of for the Open Firmware prompt.
+        partition_profile_uuid: UUID of the partition profile to activate against.
+            This is not the profile argument above, which selects a configured HMC
+            connection. When omitted the partition activates against its current
+            configuration.
+        operation_type: PowerOn operation type; activate states the default
+            explicitly. Omit it to send no OperationType parameter.
     """
 
     return with_client(
@@ -365,6 +384,9 @@ def hmc_power_on_lpar(
             force=force,
             affinity_assessment=affinity_assessment,
             ownership_override=ownership_override,
+            boot_mode=boot_mode,
+            partition_profile_uuid=partition_profile_uuid,
+            operation_type=operation_type,
         ),
         profile=profile,
     )
