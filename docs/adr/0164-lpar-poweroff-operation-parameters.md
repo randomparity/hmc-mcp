@@ -7,13 +7,12 @@ Accepted (2026-09-22)
 ## Context
 
 `power_off_lpar_job(immediate)` (`jobs/requests.py:107-116`) emits `restart="false"` and
-`operation="shutdown"` as literals, so the only choice a caller has is `immediate`. The job
-documents three parameters —
-`docs/refs/hmc-rest-api-p11/jobs/logicalpartition-jobs/038-poweroff_logicalpartition-job.md:28-30`
-lists `immediate`, `restart`, and `operation` ∈ {`shutdown`, `osshutdown`, `dumprestart`,
-`dumpretry`}. Issue #872, under epic #871, makes `restart` and `operation` reachable so
-kdive's `PowerAction` has a `cycle`/`reset` path (`restart=true`), a graceful path
-(`osshutdown`), and the force-crash POWER offers (`dumprestart`).
+`operation="shutdown"` as literals, so `immediate` is a caller's only choice. The vendor job
+(`docs/refs/hmc-rest-api-p11/jobs/logicalpartition-jobs/038-poweroff_logicalpartition-job.md:28-30`)
+documents `immediate`, `restart`, and `operation` ∈ {`shutdown`, `osshutdown`, `dumprestart`,
+`dumpretry`}. Issue #872, under epic #871, makes the last two reachable so kdive's
+`PowerAction` has `cycle`/`reset` (`restart=true`), a graceful path (`osshutdown`), and the
+force-crash POWER offers (`dumprestart`).
 
 Three questions have viable answers. Which members of the vendor vocabulary this package
 admits; who refuses a non-member, and when; and what — if anything — stands between a caller
@@ -59,14 +58,21 @@ byte.** `src/hmc_mcp/operations/lpar/decommission.py:479` shares the builder and
 `immediate`; its emitted document is unchanged, and a test pins that rather than trusting the
 default to stay put.
 
+**The name `operation` goes to the job parameter, and `power_lpar`'s existing local becomes
+`path_operation`.** That local (`operations/lpar/core.py:607`) carries ADR 0158's
+`/do/{operation}` path segment, so without the rename the parameter is shadowed before the
+builder call at `:618` and every default PowerOff refuses. `_LPAR_POWER_OPERATIONS`, its guard
+and its message are unchanged, and `tests/lpar/test_power_ownership_guard.py:156` patches the
+frozenset rather than the local, so no test moves.
+
 ## Consequences
 
 `osshutdown` needs an active RMC connection to the partition's operating system; without one
-the job fails at the HMC, not here, and this package has no RMC-state read to pre-check it
-with. `dumprestart` is now reachable from the MCP tool, so an LLM client holding a `targets =
-{lpar = [...]}` grant can crash a partition it may already power off — `allow_dump_restart`
-is the whole of what stands between the two, and it is an argument the same client supplies.
-The `effect` classification does not change: `destructive` already covered a PowerOff.
+the job fails at the HMC, not here, and this package has no RMC-state read to pre-check with.
+`dumprestart` is now reachable from the MCP tool, so an LLM client holding a `targets = {lpar
+= [...]}` grant can crash a partition it may already power off — `allow_dump_restart` is the
+whole of what stands between the two, and the same client supplies it. The `effect`
+classification does not change: `destructive` already covered a PowerOff.
 
 Changing the tool's parameters restates its signature, which two committed artifacts
 record: `docs/capabilities/operations.json` stores `str(inspect.signature(handler))`, compared
@@ -88,9 +94,9 @@ behaves as documented stays unproven until then.
   #871 requirement 1 excludes it.
 - **Ship `dumprestart` with no opt-in, relying on the CLI's `typer.confirm`.** verified: the
   prompt exists at `cli_commands/lpar/lifecycle.py:121` and `--yes` skips it; the MCP tool and
-  `power_lpar` have no confirmation mechanism at all, and `server_tools/lpar/lifecycle.py:395`
-  is reached by an LLM client, not a human. judgment: the one surface that asks a human is the
-  one surface that was already safe; the gate has to live where the confirmation does not.
+  `power_lpar` have no confirmation mechanism, and `server_tools/lpar/lifecycle.py:395` is
+  reached by an LLM client. judgment: the one surface that asks a human is the one surface
+  already safe; the gate has to live where the confirmation does not.
 - **Give `dumprestart` its own MCP tool instead of a flag.** verified: the registry exposes
   155 tools (`just smoke`, this branch), so one more is structurally unremarkable. judgment: a
   separate grant target is a real benefit, but it duplicates the whole PowerOff argument list

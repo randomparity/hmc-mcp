@@ -5,13 +5,12 @@ Issue #872, under epic #871. Decision record: [ADR 0164](../../adr/0164-lpar-pow
 ## Problem
 
 `power_off_lpar_job(immediate)` (`src/hmc_mcp/jobs/requests.py:107-116`) emits
-`restart="false"` and `operation="shutdown"` as literals, so `immediate` is the only choice
-any caller has. The job documents three parameters —
-`docs/refs/hmc-rest-api-p11/jobs/logicalpartition-jobs/038-poweroff_logicalpartition-job.md:28-30`
-lists `immediate`, `restart`, and `operation` ∈ {`shutdown`, `osshutdown`, `dumprestart`,
+`restart="false"` and `operation="shutdown"` as literals, so `immediate` is any caller's only
+choice, while the vendor job
+(`docs/refs/hmc-rest-api-p11/jobs/logicalpartition-jobs/038-poweroff_logicalpartition-job.md:28-30`)
+documents `immediate`, `restart`, and `operation` ∈ {`shutdown`, `osshutdown`, `dumprestart`,
 `dumpretry`}. kdive's `PowerAction` therefore has no mapping for `cycle`, `reset`, a graceful
-OS shutdown, or the force-crash POWER offers: all are parameters of the job this package
-already submits, and none is reachable from any of its four surfaces.
+OS shutdown, or the force-crash POWER offers, on any of this package's four surfaces.
 
 ## Scope
 
@@ -31,9 +30,12 @@ third boolean gating the one member of the vocabulary that crashes a partition.
 - `src/hmc_mcp/operations/lpar/core.py` — `power_lpar` (`:523`) gains keyword-only
   `restart`, `operation`, `allow_dump_restart`, forwarded to the builder on the PowerOff arm
   only (`:618`). The validator runs at `:570-573`, where `validate_power_on_activation` runs
-  today, so both arms refuse ahead of the ADR 0092 ownership leg. ADR 0158's
-  `_LPAR_POWER_OPERATIONS` path guard (`:608-610`) is untouched and the already-running early
-  return stays PowerOn-only.
+  today, so both arms refuse ahead of the ADR 0092 ownership leg. The existing local
+  `operation` at `:607`, which carries ADR 0158's `/do/{operation}` path segment, is renamed
+  `path_operation` so the new parameter is not shadowed (ADR 0164); the
+  `_LPAR_POWER_OPERATIONS` guard's logic and message (`:608-610`), its test
+  (`tests/lpar/test_power_ownership_guard.py:156`, which patches the frozenset) and the
+  PowerOn-only already-running early return are all unchanged.
 - `src/hmc_mcp/server_tools/lpar/lifecycle.py` — `hmc_power_off_lpar` (`:396`) gains the same
   three, `operation` typed with the `Literal` alias so the tool schema carries an enum. Each
   gains an `Args:` entry, the source of the rendered MCP schema description. The docstring body
@@ -57,17 +59,17 @@ so `power_lpar`'s four existing callers (`operations/lpar/core.py:263`,
 `cli_commands/lpar/lifecycle.py:126`) and `power_off_lpar_job`'s second caller
 (`operations/lpar/decommission.py:479`, not modified here) keep today's behaviour.
 
-**Not in scope**, with owners, in the issue's `WORK:SCOPE` annotation. The two that bear on
-this design: `dumpretry` is excluded with no owner and no follow-up, and any change to the
-decommission path's emitted document is frozen by epic #871.
+**Not in scope**, with owners, in the issue's `WORK:SCOPE` annotation; the two bearing on
+this design are `dumpretry`, excluded with no owner and no follow-up, and any change to the
+decommission path's emitted document, frozen by epic #871.
 
 ## Failure model
 
 **Actors and deployments.** A local operator running `hmc-mcp lpars power-off`; an LLM
 client calling `hmc_power_off_lpar` over MCP stdio; a Python caller importing
-`hmc_mcp.operations.lpar.core` or `hmc_mcp.jobs`; and, inside the package,
-`operations/lpar/decommission.py:479`, which powers a partition off before deleting it. All
-four already reach a PowerOff job today, and decommission passes no new argument.
+`hmc_mcp.operations.lpar.core` or `hmc_mcp.jobs`; and `operations/lpar/decommission.py:479`
+inside the package. All four already reach a PowerOff job, and decommission passes nothing
+new.
 
 **Invariants and assets at stake.**
 
@@ -91,8 +93,10 @@ four already reach a PowerOff job today, and decommission passes no new argument
   `verification:live-hmc` label and owned by #879.
 - A caller who holds `allow_dump_restart=True` gets the crash they asked for. Accepted: that
   is the criterion, and the gate is an authorization, not a prediction of intent.
-- `restart=true` with `immediate=true` is a hard reboot. Accepted: the vendor job defines the
-  two as independent and documents no forbidden combination, so this package encodes none.
+- Any combination of `immediate`, `restart` and `operation` the caller asks for is sent —
+  `restart=true` with `immediate=true` is a hard reboot, `immediate=true` with
+  `osshutdown` overrides the graceful intent. Accepted: the vendor job defines the three as
+  independent and documents no forbidden combination, so this package encodes none.
 
 **Covered elsewhere.** XML escaping of every string argument — `@escapes_string_arguments`
 on `build_job_request` (`src/hmc_mcp/xmlutil.py`), proved by `tests/unit/test_xml_escaping.py`.
@@ -108,14 +112,12 @@ secret, permission grant, dependency, or security default is touched.
 **Boundaries.** Added: none — no new resource is read or named. Widened: four — the
 `hmc_power_off_lpar` tool call, the `lpars power-off` command line, the `power_lpar` call and
 the `power_off_lpar_job` builder call each accept three more caller-controlled values reaching
-the PowerOff document. Its encoding boundary (`build_job_request`) and the HTTPS boundary to
-the HMC are unchanged.
+the PowerOff document, whose encoding boundary (`build_job_request`) is unchanged.
 
 **Actors.** An LLM client driving the MCP tool is the untrusted party: its arguments
 originate in a conversation this package does not control, and it reaches no confirmation
-prompt. The local operator and the Python caller are trusted to the extent they already are —
-they can submit a PowerOff job today. The HMC is trusted and authenticated by the existing
-session.
+prompt. The local operator and the Python caller are trusted to the extent they already are;
+the HMC is trusted and authenticated by the existing session.
 
 **Control per boundary.** `operation` is refused by `frozenset` membership in
 `validate_power_off_operation` before any XML is built, so a non-member never reaches the
@@ -125,7 +127,10 @@ message naming what the operation does and what to pass. Both refusals run at th
 `power_lpar`, ahead of the ADR 0092 ownership leg that can write an audited override record
 and ahead of every REST read, and again in the builder for direct callers of the re-exported
 `jobs.power_off_lpar_job`. `restart` is a `bool` rendered to `"true"`/`"false"` by the builder
-and carries no caller text. `operation` reaches the document on the existing escaped path.
+and carries no caller text. `operation` is a closed
+vocabulary, so `tests/unit/test_xml_escaping.py` generates a vocabulary-refusal case for it
+rather than a taint case (`_carries_string` returns `False` for a `Literal`, `:135-136`); the
+`@escapes_string_arguments` boundary still escapes it, and the refusal is what bounds it.
 
 `hmc_power_off_lpar` keeps `exhaustive_targets=True`: the three new parameters name no
 resource, so the declared `lpar` selector still bounds everything this tool acts on and no
@@ -141,32 +146,31 @@ PowerOff submissions — unchanged, held by the existing ADR 0011 path.
 ## Success
 
 1. `power_off_lpar_job()` with no arguments returns a string equal, character for character,
-   to the document on `main`.
-2. `power_off_lpar_job` emits exactly `immediate`, `restart` and `operation`, in that order,
-   on every call. `restart` and `immediate` render `"true"`/`"false"` from their booleans;
-   `operation` renders the caller's value verbatim.
-3. Each of the three members of `POWER_OFF_OPERATIONS` is accepted when the opt-in permits
+   to the document on `main`; every call emits exactly `immediate`, `restart` and `operation`
+   in that order, the first two rendered `"true"`/`"false"` from their booleans and the third
+   the caller's value verbatim.
+2. Each of the three members of `POWER_OFF_OPERATIONS` is accepted when the opt-in permits
    it. Any `operation` value outside that frozenset — including `"dumpretry"` and `""` —
    raises `ValueError` naming the sorted set, before XML is built.
-4. `operation="dumprestart"` with `allow_dump_restart` false raises `ValueError` naming
+3. `operation="dumprestart"` with `allow_dump_restart` false raises `ValueError` naming
    `allow_dump_restart`, before XML is built, on both `power_off_lpar_job` and `power_lpar`.
    With it true, the document carries `operation=dumprestart`.
-5. On `power_lpar`, both refusals occur before any `hmc` method is awaited, so a refused
+4. On `power_lpar`, both refusals occur before any `hmc` method is awaited, so a refused
    PowerOff performs no REST read, submits no job and writes no ownership audit record.
-6. `power_lpar`, `hmc_power_off_lpar` and `hmc-mcp lpars power-off` each carry all three
+5. `power_lpar`, `hmc_power_off_lpar` and `hmc-mcp lpars power-off` each carry all three
    parameters, and the CLI's flags are `--restart`, `--operation`, `--allow-dump-restart`.
    The PowerOn arm of `power_lpar` ignores all three.
-7. `hmc_power_off_lpar`'s docstring records the kdive mapping in job terms — `off` →
+6. `hmc_power_off_lpar`'s docstring records the kdive mapping in job terms — `off` →
    `operation=shutdown, immediate=true`; `cycle` and `reset` → the same with `restart=true`;
    graceful → `operation=osshutdown`, which needs active RMC — and every new parameter has an
    `Args:` entry, so the rendered MCP schema description is non-empty for each.
-8. `decommission_lpar`'s power-off step submits the same document it submits on `main`, for
+7. `decommission_lpar`'s power-off step submits the same document it submits on `main`, for
    both values of `immediate`.
-9. `CHANGELOG.md` records the admitted closed set and the `dumpretry` exclusion under
+8. `CHANGELOG.md` records the admitted closed set and the `dumpretry` exclusion under
    `[Unreleased]`.
-10. `just verify` and `uv run --no-sync prek run --all-files` are green, with `docs/tools/`
-    regenerated and the `hmc_power_off_lpar` signature record in
-    `docs/capabilities/operations.json` updated.
+9. `just verify` and `uv run --no-sync prek run --all-files` are green, with `docs/tools/`
+   regenerated and the `hmc_power_off_lpar` signature record in
+   `docs/capabilities/operations.json` updated.
 
 ## Validation
 
@@ -175,13 +179,14 @@ Every material changed contract has `focused-test` evidence; none is
 observation and the exact green command; this is the map from success criterion to the task
 that proves it.
 
-- Success 1–4 (builder half) and the escaping surface — plan Task 1: new cases in
-  `tests/lpar/test_power.py`, plus the case `tests/unit/test_xml_escaping.py` generates for
-  `operation` from the builder's signature.
-- Success 4 (operation half), 5, 6 (operations layer) and 8 — plan Task 2: further cases in
-  `tests/lpar/test_power.py` and the decommission pin in `tests/lpar/test_decommission_tool.py`.
-- Success 6, 7, 9 and 10 at the presentation surfaces — plan Task 3:
+- Success 1–3 (builder half) — plan Task 1: new cases in `tests/lpar/test_power.py`, plus the
+  closed-vocabulary refusal case `tests/unit/test_xml_escaping.py` generates for `operation`
+  from the builder's signature.
+- Success 3 (operation half), 4, 5 (operations layer) and 7 — plan Task 2: further cases in
+  `tests/lpar/test_power.py`, including the decommission pin, which calls
+  `decommission._power_off` directly so it stays inside this change's surface.
+- Success 5, 6, 8 and 9 at the presentation surfaces — plan Task 3:
   `tests/app/test_server_tools.py` and `tests/app/test_cli_commands.py` for threading, flag
-  refusal and the retained prompt; the existing
-  `tests/app/test_lifecycle_schema_descriptions.py` for the rendered `Args:` descriptions;
-  `just capability-inventory`, `just tool-docs-check` and `just smoke` for the records.
+  refusal and the retained prompt; `tests/app/test_lifecycle_schema_descriptions.py` for the
+  rendered `Args:` descriptions; `just capability-inventory`, `just tool-docs-check` and
+  `just smoke` for the records.
