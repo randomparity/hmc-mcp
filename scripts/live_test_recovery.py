@@ -37,6 +37,7 @@ import live_test_runner as runner
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
+    partition_not_found,
     profile_io_slots_command,
 )
 
@@ -149,9 +150,10 @@ def guard_read_only(tool: str, arguments: dict[str, Any]) -> None:
 async def _read_slots(call, inputs: RecoveryInputs) -> list[dict[str, Any]]:
     """The system's dedicated slots, and the reachability probe for every check.
 
-    This runs first and raises rather than returning empty, which is what earns
-    the later checks the right to read a failed lookup as "absent": once the
-    HMC has answered once, a partition it cannot find is gone, not unreadable.
+    This runs first and raises rather than returning empty. It proves the HMC is
+    answering, but not that every later lookup will succeed: a later check still
+    reads only the HMC's "no such partition" answer as absent, and any other
+    failure as unreadable.
     """
     status, data = await call(
         "hmc_list_dedicated_pcie_slots", system_name_or_uuid=inputs.system_name
@@ -170,16 +172,24 @@ async def _surviving_fixture(call, inputs: RecoveryInputs) -> Finding | None:
     that merely shares the name is never attributed to this run — the same rule
     the arm applies before it will delete anything.
 
-    A failed lookup means the partition is gone: the HMC answers HSCL8012 for a
-    name it does not have, and `_read_slots` has already proved it is talking.
+    Only HSCL8012, the HMC's "no such partition" answer, reads as gone (see
+    `partition_not_found`). Any other failure -- an authentication refusal, a
+    lost connection, a different HSCL code -- or an answer that is not a
+    description says nothing about whether the partition survives, so it raises
+    rather than reporting the system clean.
     """
     status, data = await call(
         "hmc_get_lpar_description",
         system_name_or_uuid=inputs.system_name,
         lpar_name_or_uuid=inputs.fixture_lpar,
     )
-    if status != "PASS" or not isinstance(data, str):
+    if partition_not_found(status, data):
         return None
+    if status != "PASS" or not isinstance(data, str):
+        raise StateUnreadable(
+            f"could not look up {inputs.fixture_lpar} on {inputs.system_name} "
+            f"({status}): {getattr(data, 'message', data)!s}"
+        )
     if parse_lpar_ownership_caller_token(data) != inputs.run_marker:
         return None
     return Finding(
@@ -251,10 +261,13 @@ async def _profile_drift(call, inputs: RecoveryInputs) -> Finding | None:
 async def check(call, inputs: RecoveryInputs) -> list[Finding]:
     """Every stranded condition, in the order an operator should clear them."""
     slots = await _read_slots(call, inputs)
-    fixture = await _surviving_fixture(call, inputs)
-    findings = [
-        finding for finding in (fixture, _stranded_slot(slots, inputs)) if finding
-    ]
+    stranded = _stranded_slot(slots, inputs)
+    try:
+        fixture = await _surviving_fixture(call, inputs)
+    except StateUnreadable as unreadable:
+        unreadable.findings = [stranded] if stranded else []
+        raise
+    findings = [finding for finding in (fixture, stranded) if finding]
     if fixture is None:
         # A profile belongs to its partition. With the fixture gone there is no
         # profile left to have drifted, and asking for one answers HSCL8012 —
