@@ -252,7 +252,17 @@ def test_foreign_owner_is_refused_before_any_ssh_command(monkeypatch, hmc, opera
 
 @pytest.mark.parametrize(
     ("model", "version"),
-    [("9009-42A", _ADMITTED_VERSION), ("8375-42A", "version= Version: 10\n Release: 2\n")],
+    [
+        ("9009-42A", _ADMITTED_VERSION),
+        ("8375-42A", "version= Version: 10\n Release: 2\n Service Pack: 1060\n"),
+        # A later service pack that still lists an M1060 fix line is not M1060.
+        (
+            "8375-42A",
+            "version= Version: 10\n Release: 3\n Service Pack: 1061\nMF71689 - HMC V10R3 M1060\n",
+        ),
+        ("8375-42A", "HMC V10R3 M1060\n"),
+        ("8375-42A", _ADMITTED_VERSION + " Service Pack: 1060\n"),
+    ],
 )
 @pytest.mark.parametrize("operation", [_assign, _unassign])
 def test_outside_the_envelope_is_capability_unavailable_before_any_profile_command(

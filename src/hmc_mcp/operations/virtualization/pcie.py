@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Generic, Literal, TypeVar
@@ -472,9 +473,27 @@ def _is_admitted_environment(version: str, model: str) -> bool:
     return admitted and model == _ADMITTED_SYSTEM_MODEL
 
 
+_ADMITTED_RELEASE_FIELDS = {"version": "10", "release": "3", "service pack": "1060"}
+
+
+def _is_exact_admitted_environment(version: str, model: str) -> bool:
+    """Match `lshmc -V`'s own Version/Release/Service Pack fields exactly.
+
+    Stricter than the SR-IOV predicate, which also accepts ``V10R3 M1060`` anywhere in
+    the text: an HMC at a later service pack may still list an M1060 fix line.
+    """
+    pairs = re.findall(r"\b(Version|Release|Service Pack):[ \t]*(\S+)", version)
+    fields = {name.lower(): value for name, value in pairs}
+    return (
+        len(pairs) == len(_ADMITTED_RELEASE_FIELDS)
+        and fields == _ADMITTED_RELEASE_FIELDS
+        and model == _ADMITTED_SYSTEM_MODEL
+    )
+
+
 async def require_dedicated_pcie_environment(config: HMCConfig, system_name: str) -> None:
     """Refuse dedicated profile assignment outside the ADR 0165 envelope."""
-    if not _is_admitted_environment(*await read_sriov_environment(config, system_name)):
+    if not _is_exact_admitted_environment(*await read_sriov_environment(config, system_name)):
         raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
 
 

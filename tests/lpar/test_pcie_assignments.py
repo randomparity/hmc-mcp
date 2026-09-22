@@ -111,7 +111,9 @@ def _dedicated(drc: str = "21010020") -> LparPcieAssignments:
 
 
 def _environment(model: str) -> AsyncMock:
-    return AsyncMock(return_value=("HMC V10R3 M1060", model))
+    return AsyncMock(
+        return_value=("version= Version: 10\n Release: 3\n Service Pack: 1060\n", model)
+    )
 
 
 @pytest.mark.asyncio

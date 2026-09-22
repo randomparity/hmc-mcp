@@ -53,8 +53,11 @@ an empty pool position, an empty value, a malformed triple or a repeated DRC as 
 
 **3. The envelope is `require_admitted_environment`'s pair, checked after ADR 0011
 authorization and before any profile read or write.** Outside it both operations and create-time
-prevalidation raise `PcieAssignmentUnavailableError`, which is kept with that one meaning; its
-reason string, which ADR 0165 showed to be false, is rewritten to name the envelope. Inside it
+prevalidation raise `PcieAssignmentUnavailableError`, which is kept with that one meaning. The
+pair is matched on `lshmc -V`'s own `Version`, `Release` and `Service Pack` fields exactly, not
+by the SR-IOV predicate's substring test, which also passes a later service pack that still
+lists an M1060 fix line. Its reason string, which ADR 0165 showed to be false, is rewritten to
+name the envelope. Inside it
 the LPAR must be `Not Activated`, the one state the PCIe state matrix admits profile-only
 mutation for, and assign refuses a slot that a profile of another LPAR already lists, since two
 partitions contending for one slot at activation is a state no evidence characterizes.

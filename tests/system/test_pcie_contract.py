@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.virtualization.pcie import _is_exact_admitted_environment
 from hmc_mcp.ssh.commands import parse_hmc_delimited_rows
 from hmc_mcp.ssh.profiles import ProfileIoSlot, parse_profile_io_slots
 from hmc_mcp.ssh.sriov import list_sriov_physical_port_rows
@@ -353,6 +354,15 @@ def test_captured_io_slots_parse_with_a_none_pool() -> None:
     )
     assert parsed[0][-1] == ProfileIoSlot("21010020", None, False)
     assert {slot.pool_id for slots in parsed for slot in slots} == {None}
+
+
+def test_captured_hmc_version_is_the_exact_dedicated_envelope() -> None:
+    record = json.loads((FIXTURES / "power9-v10r3m1060-live-ioslots.json").read_text())
+    probes = {probe["name"]: probe for probe in record["probes"]}
+
+    assert _is_exact_admitted_environment(
+        probes["hmc-version"]["stdout"], record["system_model"]
+    )
 
 
 def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
