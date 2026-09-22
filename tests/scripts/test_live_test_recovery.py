@@ -133,24 +133,48 @@ async def test_a_slot_owned_by_the_literal_string_null_reads_as_unowned():
 
 @pytest.mark.asyncio
 async def test_profile_drift_from_the_baseline_is_reported():
-    findings = await recovery.check(
-        _caller(_responses(hmc_run_command=f"{_DRC}//0\n")), _INPUTS
+    """Drift is only reachable while the fixture survives: see `_surviving`."""
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER),
+        hmc_run_command=f"{_DRC}//0\n",
     )
 
-    assert [f.what for f in findings] == ["profile drift"]
-    assert "still listed" in findings[0].detail
-    assert _BASELINE in findings[0].remedy
+    findings = await recovery.check(_caller(responses), _INPUTS)
+
+    drift = [f for f in findings if f.what == "profile drift"]
+    assert len(drift) == 1
+    assert "still listed" in drift[0].detail
+    assert _BASELINE in drift[0].remedy
 
 
 @pytest.mark.asyncio
 async def test_profile_drift_to_an_unrelated_value_is_still_reported():
     """Drift is drift; the arm's own Guard B refuses on any mismatch."""
-    findings = await recovery.check(
-        _caller(_responses(hmc_run_command="21010020//0\n")), _INPUTS
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER),
+        hmc_run_command="21010020//0\n",
     )
 
-    assert [f.what for f in findings] == ["profile drift"]
-    assert "still listed" not in findings[0].detail
+    findings = await recovery.check(_caller(responses), _INPUTS)
+
+    drift = [f for f in findings if f.what == "profile drift"]
+    assert len(drift) == 1
+    assert "still listed" not in drift[0].detail
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_fixture_is_not_asked_for_its_profile():
+    """A profile dies with its partition; asking answers HSCL8012.
+
+    Without this gate every clean run would read that refusal as an unreadable
+    system and exit 2.
+    """
+    seen: list[str] = []
+
+    findings = await recovery.check(_caller(_responses(), seen), _INPUTS)
+
+    assert findings == []
+    assert "hmc_run_command" not in seen
 
 
 @pytest.mark.asyncio
@@ -173,22 +197,51 @@ async def test_every_condition_at_once_is_reported_together():
 
 
 @pytest.mark.asyncio
-async def test_an_unreadable_profile_is_not_reported_as_drift():
-    """A failed read is not evidence of a clean profile, nor of a dirty one."""
-    responses = _responses(hmc_run_command="")
+async def test_an_unreadable_profile_is_not_clean():
+    """A failed read is not evidence of a clean profile. Exit 2, not exit 0."""
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER), hmc_run_command=None
+    )
 
-    assert await recovery.check(_caller(responses), _INPUTS) == []
+    with pytest.raises(recovery.StateUnreadable, match="could not read profile"):
+        await recovery.check(_caller(responses), _INPUTS)
 
 
 @pytest.mark.asyncio
 async def test_a_multi_record_profile_answer_is_treated_as_unreadable():
-    responses = _responses(hmc_run_command="none\n21010020//0\n")
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER),
+        hmc_run_command="none\n21010020//0\n",
+    )
 
-    assert await recovery.check(_caller(responses), _INPUTS) == []
+    with pytest.raises(recovery.StateUnreadable, match="2 records"):
+        await recovery.check(_caller(responses), _INPUTS)
 
 
 @pytest.mark.asyncio
-async def test_a_run_with_no_drc_index_checks_only_the_partition():
+async def test_an_unreadable_system_carries_the_findings_already_confirmed():
+    """Exit 2 must not swallow what was found before the read failed."""
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER), hmc_run_command=None
+    )
+
+    with pytest.raises(recovery.StateUnreadable) as raised:
+        await recovery.check(_caller(responses), _INPUTS)
+
+    assert [f.what for f in raised.value.findings] == ["surviving partition"]
+
+
+@pytest.mark.asyncio
+async def test_an_unlistable_system_is_not_clean():
+    """The slot listing is the reachability probe; failing it is never clean."""
+    responses = _responses(hmc_list_dedicated_pcie_slots=None)
+
+    with pytest.raises(recovery.StateUnreadable, match="could not list"):
+        await recovery.check(_caller(responses), _INPUTS)
+
+
+@pytest.mark.asyncio
+async def test_a_run_with_no_drc_index_still_probes_then_checks_the_partition():
     inputs = recovery.RecoveryInputs(
         _SYSTEM, _MARKER, _LPAR, None, None, "default"
     )
@@ -196,7 +249,7 @@ async def test_a_run_with_no_drc_index_checks_only_the_partition():
 
     await recovery.check(_caller(_responses(), seen), inputs)
 
-    assert seen == ["hmc_get_lpar_description"]
+    assert seen == ["hmc_list_dedicated_pcie_slots", "hmc_get_lpar_description"]
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +299,82 @@ async def test_the_guard_is_on_the_call_path_not_only_in_review():
 
     with pytest.raises(recovery.MutatingCallRefused):
         await call("hmc_delete_lpar", lpar_name_or_uuid=_LPAR)
+
+
+# ---------------------------------------------------------------------------
+# The profile read is the arm's own, not a second spelling of it
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_profile_read_filters_on_the_profile_name_too():
+    """A partition may carry several profiles.
+
+    Filtering on `lpar_names` alone answers one record per profile, which the
+    "exactly one record" rule then calls an unreadable system. A real VIOS
+    partition with two profiles is where this surfaced.
+    """
+    sent: list[str] = []
+
+    async def call(tool: str, **arguments):
+        recovery.guard_read_only(tool, arguments)
+        if tool == "hmc_run_command":
+            sent.append(arguments["cmd"])
+            return "PASS", f"{_BASELINE}\n"
+        return "PASS", _CLEAN[tool]
+
+    inputs = recovery.RecoveryInputs(
+        _SYSTEM, _MARKER, _LPAR, _DRC, _BASELINE, "fixture-profile"
+    )
+    await recovery._profile_drift(call, inputs)
+
+    assert "profile_names=fixture-profile" in sent[0]
+    assert f"lpar_names={_LPAR}" in sent[0]
+
+
+def test_recovery_reads_the_profile_with_the_arms_own_command_builder():
+    """One definition of the admitted read, so the two cannot drift apart."""
+    from live_test import pcie
+
+    assert recovery.profile_io_slots_command is pcie.profile_io_slots_command
+
+
+def test_an_unset_profile_name_falls_back_to_the_arms_default():
+    """The run records an empty string; the fallback must be the arm's.
+
+    A second spelling would query, and tell the operator to repair, a profile
+    the arm never touched.
+    """
+    from live_test import pcie
+
+    document = _document()
+    document["config"]["dedicated_pcie_profile_name"] = ""
+
+    inputs = recovery.inputs_from_document(document)
+
+    assert inputs.profile_name == pcie._DEFAULT_DEDICATED_PROFILE
+
+
+# ---------------------------------------------------------------------------
+# The allowlisted tools exist on the server the checks actually talk to
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_every_read_only_tool_is_registered_on_the_composed_server():
+    """An allowlist of tools the server does not serve guards nothing.
+
+    `hmc_run_command` is an opt-in escape hatch. Composing without it left the
+    profile-drift check calling a tool that answered "Unknown tool", which the
+    check then read as no drift — a clean verdict on an unexamined system.
+    Every case above stubs the call path, so only this one sees it.
+    """
+    from fastmcp import Client
+
+    async with Client(await recovery._compose_server()) as client:
+        registered = {tool.name for tool in await client.list_tools()}
+
+    assert recovery._READ_ONLY_TOOLS <= registered
 
 
 # ---------------------------------------------------------------------------

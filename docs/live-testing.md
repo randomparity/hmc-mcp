@@ -123,6 +123,10 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 The check issues no mutating call. When it reports something stranded, run the
 command it prints yourself, then run the check again.
 
+Exit 2 still prints anything it had already confirmed before the read failed,
+so treat its findings as real and the silence after them as unknown. A run that
+ends on exit 2 has not been shown clean by anything — check the system yourself.
+
 It identifies this run's leftovers by the run marker recorded in the results
 document. A partition sharing the fixture's name but carrying a different
 marker is never attributed to your run, and never reported for you to delete.

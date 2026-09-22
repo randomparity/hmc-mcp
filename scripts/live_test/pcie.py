@@ -888,7 +888,9 @@ def _environment_admitted(version: str, model: str) -> bool:
     return admitted and model == _ADMITTED_SYSTEM_MODEL
 
 
-def _profile_io_slots_command(fixture: _DedicatedFixture) -> str:
+def profile_io_slots_command(
+    system_name: str, lpar_name: str, profile_name: str
+) -> str:
     """Return the exact `io_slots` profile read admitted by ADR 0053.
 
     The `--filter` expression goes through `build_filter` for the same reason
@@ -898,16 +900,19 @@ def _profile_io_slots_command(fixture: _DedicatedFixture) -> str:
     the arm did not name, while Guard B's exact-match comparisons still
     reported success. `shlex.quote` protects the remote shell, not the HMC's
     own record parser, and does not substitute for it.
+
+    `profile_names` is half the filter, not decoration: a partition may carry
+    several profiles, and filtering on `lpar_names` alone answers with one
+    record per profile. The recovery check read it that way and saw two
+    records from a real VIOS partition, which its "exactly one record" rule
+    then reported as an unreadable system. Public so that check builds the
+    same command this arm does, rather than a second one that drifts from it.
     """
-    arm = fixture.config
     filters = build_filter(
-        [
-            ("lpar_names", fixture.lpar_name),
-            ("profile_names", arm.profile_name),
-        ]
+        [("lpar_names", lpar_name), ("profile_names", profile_name)]
     )
     return (
-        f"lssyscfg -r prof -m {shlex.quote(arm.system_name)} "
+        f"lssyscfg -r prof -m {shlex.quote(system_name)} "
         f"--filter {shlex.quote(filters)} -F io_slots"
     )
 
@@ -955,7 +960,11 @@ async def _read_profile_io_slots(
     named — must read as unreadable rather than as its first line.
     """
     st, data = await state.call(
-        client, "hmc_run_command", cmd=_profile_io_slots_command(fixture)
+        client,
+        "hmc_run_command",
+        cmd=profile_io_slots_command(
+            fixture.config.system_name, fixture.lpar_name, fixture.config.profile_name
+        ),
     )
     if st != "PASS" or not isinstance(data, str):
         return None

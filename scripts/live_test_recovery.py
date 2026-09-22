@@ -34,12 +34,17 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test.pcie import _io_slots_contains
+from live_test.pcie import (
+    _DEFAULT_DEDICATED_PROFILE,
+    _io_slots_contains,
+    profile_io_slots_command,
+)
 
 from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations.lpar.ownership import parse_lpar_ownership_caller_token
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
+from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
 #: Every tool this script may call. Enforced on the call path rather than left
 #: to review: the whole point of the script is that it cannot make things worse
@@ -55,6 +60,22 @@ _READ_ONLY_COMMAND_PREFIX = "lssyscfg"
 
 class MutatingCallRefused(RuntimeError):
     """Raised when a call would leave the read-only surface."""
+
+
+class StateUnreadable(RuntimeError):
+    """Raised when a check could not read the state it is there to judge.
+
+    Distinct from "nothing stranded". A check that cannot see the system has
+    not found it clean, and the caller turns this into exit 2 rather than the
+    exit 0 that a returned empty list would mean.
+
+    It carries the findings already confirmed so an operator still sees what
+    was found before the read failed.
+    """
+
+    def __init__(self, message: str, findings: list[Finding] | None = None) -> None:
+        super().__init__(message)
+        self.findings: list[Finding] = findings or []
 
 
 @dataclass(frozen=True)
@@ -101,7 +122,13 @@ def inputs_from_document(document: Any) -> RecoveryInputs | None:
         fixture_lpar=str(fixture),
         drc_index=artifacts.get("pcie_drc_index"),
         baseline_io_slots=artifacts.get("pcie_baseline_io_slots"),
-        profile_name=str(config.get("dedicated_pcie_profile_name") or "default"),
+        # The arm's own default, imported rather than restated: a run that
+        # left the key unset records an empty string here, and a second
+        # spelling of the fallback would query and remediate a profile name
+        # the arm never used.
+        profile_name=str(
+            config.get("dedicated_pcie_profile_name") or _DEFAULT_DEDICATED_PROFILE
+        ),
     )
 
 
@@ -119,12 +146,32 @@ def guard_read_only(tool: str, arguments: dict[str, Any]) -> None:
         )
 
 
+async def _read_slots(call, inputs: RecoveryInputs) -> list[dict[str, Any]]:
+    """The system's dedicated slots, and the reachability probe for every check.
+
+    This runs first and raises rather than returning empty, which is what earns
+    the later checks the right to read a failed lookup as "absent": once the
+    HMC has answered once, a partition it cannot find is gone, not unreadable.
+    """
+    status, data = await call(
+        "hmc_list_dedicated_pcie_slots", system_name_or_uuid=inputs.system_name
+    )
+    if status != "PASS" or not isinstance(data, dict):
+        raise StateUnreadable(
+            f"could not list dedicated slots on {inputs.system_name} ({status})"
+        )
+    return [item for item in (data.get("items") or []) if isinstance(item, dict)]
+
+
 async def _surviving_fixture(call, inputs: RecoveryInputs) -> Finding | None:
     """Whether a partition this run created is still there.
 
     Ownership is confirmed by the run marker before reporting, so a partition
     that merely shares the name is never attributed to this run — the same rule
     the arm applies before it will delete anything.
+
+    A failed lookup means the partition is gone: the HMC answers HSCL8012 for a
+    name it does not have, and `_read_slots` has already proved it is talking.
     """
     status, data = await call(
         "hmc_get_lpar_description",
@@ -143,17 +190,14 @@ async def _surviving_fixture(call, inputs: RecoveryInputs) -> Finding | None:
     )
 
 
-async def _stranded_slot(call, inputs: RecoveryInputs) -> Finding | None:
+def _stranded_slot(
+    slots: list[dict[str, Any]], inputs: RecoveryInputs
+) -> Finding | None:
     """Whether the dedicated slot is still owned rather than back in the pool."""
     if inputs.drc_index is None:
         return None
-    status, data = await call(
-        "hmc_list_dedicated_pcie_slots", system_name_or_uuid=inputs.system_name
-    )
-    if status != "PASS" or not isinstance(data, dict):
-        return None
-    for item in data.get("items") or []:
-        if not isinstance(item, dict) or item.get("drc_index") != inputs.drc_index:
+    for item in slots:
+        if item.get("drc_index") != inputs.drc_index:
             continue
         owner = (item.get("owner_lpar") or "").strip()
         if not owner or owner == "null":
@@ -175,16 +219,20 @@ async def _profile_drift(call, inputs: RecoveryInputs) -> Finding | None:
         return None
     status, data = await call(
         "hmc_run_command",
-        cmd=(
-            f"lssyscfg -m {inputs.system_name} -r prof "
-            f'--filter "lpar_names={inputs.fixture_lpar}" -F io_slots'
+        cmd=profile_io_slots_command(
+            inputs.system_name, inputs.fixture_lpar, inputs.profile_name
         ),
     )
     if status != "PASS" or not isinstance(data, str):
-        return None
+        raise StateUnreadable(
+            f"could not read profile io_slots for {inputs.fixture_lpar} ({status})"
+        )
     records = [line.strip() for line in data.splitlines() if line.strip()]
     if len(records) != 1:
-        return None
+        raise StateUnreadable(
+            f"profile io_slots for {inputs.fixture_lpar} answered "
+            f"{len(records)} records; expected exactly 1"
+        )
     observed = records[0]
     if observed == inputs.baseline_io_slots:
         return None
@@ -202,12 +250,44 @@ async def _profile_drift(call, inputs: RecoveryInputs) -> Finding | None:
 
 async def check(call, inputs: RecoveryInputs) -> list[Finding]:
     """Every stranded condition, in the order an operator should clear them."""
-    found = [
-        await _surviving_fixture(call, inputs),
-        await _stranded_slot(call, inputs),
-        await _profile_drift(call, inputs),
+    slots = await _read_slots(call, inputs)
+    fixture = await _surviving_fixture(call, inputs)
+    findings = [
+        finding for finding in (fixture, _stranded_slot(slots, inputs)) if finding
     ]
-    return [finding for finding in found if finding is not None]
+    if fixture is None:
+        # A profile belongs to its partition. With the fixture gone there is no
+        # profile left to have drifted, and asking for one answers HSCL8012 —
+        # which would otherwise be read as an unreadable system and exit 2 on
+        # every clean run.
+        return findings
+    try:
+        drift = await _profile_drift(call, inputs)
+    except StateUnreadable as unreadable:
+        unreadable.findings = findings
+        raise
+    return findings + [drift] if drift else findings
+
+
+async def _compose_server():
+    """The MCP application the checks run against.
+
+    ``hmc_run_command`` is an opt-in escape hatch: ``create_mcp`` alone does
+    not register it, so a check that calls it fails with "Unknown tool". Before
+    ``_profile_drift`` raised, that failure read as "no drift" and the script
+    reported a system clean it had never looked at. Composed in one named place
+    so the registration is a property a test can assert, which is what the
+    2026-09-21 live run showed review alone had missed.
+    """
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+    )
+    mcp = create_mcp(policy)
+    permits, authorize = _gates(policy)
+    await configure_arbitrary_command_tool(
+        True, mcp, permits=permits, authorize=authorize
+    )
+    return mcp
 
 
 def _read_only_caller(client, state: runner.RunState):
@@ -223,9 +303,8 @@ def _read_only_caller(client, state: runner.RunState):
 async def _run_checks(inputs: RecoveryInputs) -> list[Finding]:
     from fastmcp import Client
 
-    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
     state = runner.RunState(config=runner.LiveTestConfig())
-    async with Client(create_mcp(policy)) as client:
+    async with Client(await _compose_server()) as client:
         return await check(_read_only_caller(client, state), inputs)
 
 
@@ -278,6 +357,12 @@ def main(argv: list[str] | None = None) -> int:
         findings = asyncio.run(_run_checks(inputs))
     except MutatingCallRefused as refused:
         print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
+        return 2
+    except StateUnreadable as unreadable:
+        if unreadable.findings:
+            _report(inputs, unreadable.findings)
+        print(f"ERROR: {unreadable}", file=sys.stderr)
+        print("The system was NOT confirmed clean.", file=sys.stderr)
         return 2
     except Exception as error:  # noqa: BLE001 - an unreadable system is not a clean one
         print(f"ERROR: could not read the managed system: {error}", file=sys.stderr)
