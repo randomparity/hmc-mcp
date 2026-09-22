@@ -41,9 +41,11 @@ on an unverified profile.
 `21020013/none/1`. What `io_slots-=<drc>//0` does to an element stored with `is_required=1` is
 unknown: it could remove it, leave it (no-op), or fail. The operations never send it there,
 because a DRC present as `drc/none/1` is refused before any write, by assign and unassign
-alike. Unit tests over the mocked transport pin each of the three branches as unreached and
-fault-inject the refusal. One path still reaches the question: a concurrent writer that turns
-the slot required between the read and the write (failure-model class 3). A no-op or a refused
+alike. Unit tests over the mocked transport model the three possible HMC responses to that
+removal and show each one unreached, because both operations refuse the form before writing;
+the modelled response changes nothing unless the refusal itself is broken. The same tests
+cover the one path that still reaches the question: a concurrent writer that turns the slot
+required between the read and the write (failure-model class 3). A no-op or a refused
 command then reads back as neither state and raises `PcieAssignmentPartialError`. A removal
 reads back as the requested absence and reports success, because the profile then holds what
 the caller asked for.
