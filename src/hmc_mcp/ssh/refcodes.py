@@ -6,6 +6,7 @@ import shlex
 
 from ..config import HMCConfig
 from .commands import build_filter, parse_hmc_delimited_rows
+from .install import validate_hmc_name
 from .transport import HMCCLIError, run_hmc_command
 
 MAX_REFCODE_COUNT = 100
@@ -33,15 +34,22 @@ async def list_lpar_refcodes(
         TypeError: If *count* is not an ``int``.  ``bool`` is rejected too:
             it is an ``int`` subclass, so ``True`` would otherwise reach the
             command string as ``-n 1``.
-        ValueError: If *count* is outside ``1..MAX_REFCODE_COUNT``.
+        ValueError: If *count* is outside ``1..MAX_REFCODE_COUNT``, or either
+            selector is empty, blank, or carries a control character.
         HMCCLIError: If the selector carries a record delimiter, the response
-            header does not name the three fields, or the HMC refuses the
-            command.
+            header does not name the three fields, the HMC reports a partition
+            other than the one asked for, or the HMC refuses the command.
     """
     if isinstance(count, bool) or not isinstance(count, int):
         raise TypeError(f"count must be an int, got {type(count).__name__}")
     if not 1 <= count <= MAX_REFCODE_COUNT:
         raise ValueError(f"count must be between 1 and {MAX_REFCODE_COUNT}, got {count}")
+    for field, value in (("system_name", system_name), ("lpar_name", lpar_name)):
+        # validate_hmc_name admits whitespace-only text, and an empty or blank
+        # selector composes a filter naming no partition rather than failing.
+        validate_hmc_name(value, field)
+        if not value.strip():
+            raise ValueError(f"{field} must be non-empty printable text")
     selector = build_filter([("lpar_names", lpar_name)])
     command = (
         f"lsrefcode -r lpar -m {shlex.quote(system_name)}"
@@ -55,9 +63,18 @@ async def list_lpar_refcodes(
     if not raw.strip() or raw.strip() == _NO_RESULTS:
         return []
     try:
-        return parse_hmc_delimited_rows(raw, REFCODE_FIELDS)
+        rows = parse_hmc_delimited_rows(raw, REFCODE_FIELDS)
     except ValueError as error:
         raise HMCCLIError(
-            "lsrefcode response did not match the expected "
-            f"{','.join(REFCODE_FIELDS)} fields"
+            f"lsrefcode response did not parse as {','.join(REFCODE_FIELDS)} "
+            f"rows: {error}"
         ) from error
+    # The --filter is the HMC's narrowing, not ours; check it landed, the way
+    # ssh/affinity.py does for its own filtered lsmemopt read.
+    for row in rows:
+        if row["lpar_name"] != lpar_name:
+            raise HMCCLIError(
+                f"lsrefcode reported partition {row['lpar_name']!r}; "
+                f"expected {lpar_name!r}"
+            )
+    return rows

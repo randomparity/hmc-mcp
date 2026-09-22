@@ -5,8 +5,10 @@
 ## Problem
 
 The only boot-progress signal the package offers is state polling or holding the virtual terminal.
-`lsrefcode -r lpar` needs no vterm and returns a partition's current SRC at the same poll that
-reports `Running`. `rg -n lsrefcode src/` returns nothing: no wrapper exists.
+`lsrefcode -r lpar` needs no vterm; epic #871 reports that it returns a partition's current SRC at
+the same poll that sees `Running`, which is not confirmed here and is #879's to observe. An empty
+read is not distinguishable from a cleared SRC. `rg -n lsrefcode src/` returns nothing: no wrapper
+exists.
 
 ## Scope
 
@@ -33,7 +35,8 @@ header mismatch; #879 confirms the set against hardware.
 
 **The bound** is `count: int = 1`: `ValueError` outside `1..MAX_REFCODE_COUNT` (100) and
 `TypeError` for a non-`int` — `bool` included, since `True` would otherwise become `-n 1` — both
-before any interpolation. The default matches the HMC's own — `-n`
+before any interpolation. Both selectors are refused there too when empty, blank, or
+control-bearing.
 omitted lists only the current code — while the command always passes `-n` so its shape is fixed.
 
 ### Failure model
@@ -61,10 +64,12 @@ omitted lists only the current code — while the command always passes `-n` so 
 - **Actor model** — the untrusted input is the selector text, not the caller, who is already
   authorized to run HMC commands. Trust sits in `ssh/transport.py` and the HMC's own
   authorization, as in every sibling SSH read.
-- **Control per boundary** — `system_name` and the composed filter: `shlex.quote`, so each is one
-  shell word. `lpar_name`: `build_filter`'s record-grammar check first, then `shlex.quote` — two
-  parsers, two guards, neither substituting for the other. `count`: type and range check before
-  interpolation, so no non-numeric text reaches the string. Refusals name the argument and the
+- **Control per boundary** — both selectors: `validate_hmc_name` (`ssh/install.py:109`) plus a
+  blank check, so neither is empty, blank, or control-bearing; then `shlex.quote`, so each is one
+  shell word. `lpar_name` additionally passes `build_filter`'s record-grammar check — two parsers,
+  two guards, neither substituting for the other. `count`: type and range check before
+  interpolation, so no non-numeric text reaches the string. The HMC's own narrowing is verified
+  rather than trusted: a row naming another partition raises. Refusals name the argument and the
   offending value and carry no credential.
 - **Out of scope** — HMC-side authorization; SSH host-key policy; anything the
   `arbitrary-command` tool already permits an operator to do directly.
@@ -81,14 +86,16 @@ omitted lists only the current code — while the command always passes `-n` so 
 
 ## Validation
 
-Every entry is `Mode: focused-test`. Seven live in the new `tests/unit/test_ssh_refcodes.py`:
-`count` outside `1..100` raises `ValueError` and a non-`int` raises `TypeError`, both before any
-SSH traffic; the command
-string is exactly Success 1's with every interpolated value quoted; shell metacharacters in a
-selector stay inside one quoted word; a comma-, `=`- or quote-bearing selector raises
-`HMCCLIError`; blank stdout, header-only stdout and the `No results were found.` sentinel each
-return `[]`; a header that does not match the three fields raises `HMCCLIError`; and a transport
-failure propagates rather than being swallowed. Three more pin registration:
-`tests/unit/test_server_module_boundaries.py` on the handler's module, `just capability-inventory`
-on the ledger record, `tests/app/test_application_boundaries.py` on the default deployment
-exposing one more tool.
+Every entry is `Mode: focused-test`. `tests/unit/test_ssh_refcodes.py` holds the SSH-layer and
+tool-body contracts: `count` outside `1..100` raises `ValueError` and a non-`int` raises
+`TypeError`; an empty, blank, or control-bearing selector raises `ValueError`; all before any SSH
+traffic. The command string is exactly Success 1's with every interpolated value quoted; shell
+metacharacters in a selector stay inside one quoted word; a comma-, `=`- or quote-bearing selector
+raises `HMCCLIError`; blank stdout, header-only stdout and the `No results were found.` sentinel
+each return `[]`; a header mismatch and a short row each raise `HMCCLIError` carrying the cause; a
+row naming another partition raises; a transport failure propagates unchanged; and the tool body
+forwards the resolved names and `count` in order. `tests/app/test_cli_commands.py` drives the CLI
+subcommand end to end, asserting the composed command and both output paths. Three more pin
+registration: `tests/unit/test_server_module_boundaries.py` on the handler's module, `just
+capability-inventory` on the ledger record, `tests/app/test_application_boundaries.py` on the
+default deployment exposing one more tool.

@@ -53,10 +53,12 @@ def hmc_read_lpar_refcodes(
 ) -> list[dict[str, Any]]:
     """Read the most recent reference codes (SRCs) for one partition.
 
-    Boot progress without a virtual terminal: ``lsrefcode -r lpar`` reports a
-    partition's current SRC at the same poll that reports ``Running``, so an
-    activation can be followed read-only. Rows come back most-recent first,
-    each carrying ``lpar_name``, ``time_stamp`` and ``refcode``.
+    Boot progress without a virtual terminal: ``lsrefcode -r lpar`` needs no
+    console, so an activation can be followed read-only. Rows come back
+    most-recent first, each carrying ``lpar_name``, ``time_stamp`` and
+    ``refcode``. Whether an SRC is still reported once the partition reaches
+    ``Running`` is reported by the caller epic (#871) and has not been
+    confirmed against hardware here; #879 owns that observation.
 
     An empty list means no reference codes for that selector. A partition that
     does not exist is believed to answer the same way rather than failing, but
