@@ -31,8 +31,9 @@ values for all of the reference code attributes" (`:34`), an unenumerated, firmw
 set, so the stable-fields criterion rules it out. `parse_hmc_delimited_rows` fails closed on a
 header mismatch; #879 confirms the set against hardware.
 
-**The bound** is `count: int = 1`, refused outside `1..MAX_REFCODE_COUNT` (100) and refused for a
-non-`int` (`bool` included) before any interpolation. The default matches the HMC's own — `-n`
+**The bound** is `count: int = 1`: `ValueError` outside `1..MAX_REFCODE_COUNT` (100) and
+`TypeError` for a non-`int` — `bool` included, since `True` would otherwise become `-n 1` — both
+before any interpolation. The default matches the HMC's own — `-n`
 omitted lists only the current code — while the command always passes `-n` so its shape is fixed.
 
 ### Failure model
@@ -81,7 +82,8 @@ omitted lists only the current code — while the command always passes `-n` so 
 ## Validation
 
 Every entry is `Mode: focused-test`. Seven live in the new `tests/unit/test_ssh_refcodes.py`:
-`count` outside `1..100` is refused before any SSH traffic, and so is a non-`int`; the command
+`count` outside `1..100` raises `ValueError` and a non-`int` raises `TypeError`, both before any
+SSH traffic; the command
 string is exactly Success 1's with every interpolated value quoted; shell metacharacters in a
 selector stay inside one quoted word; a comma-, `=`- or quote-bearing selector raises
 `HMCCLIError`; blank stdout, header-only stdout and the `No results were found.` sentinel each
