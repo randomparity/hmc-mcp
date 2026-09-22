@@ -549,8 +549,8 @@ async def power_lpar(
     of a partition profile, not the connection profile the tool and CLI call
     ``profile``. Their defaults emit the document this call has always emitted.
 
-    ``restart``, ``operation`` and ``allow_dump_restart`` are the mirror pair and
-    apply to PowerOff only; the PowerOn arm ignores them. ``operation`` is the
+    ``restart``, ``operation`` and ``allow_dump_restart`` mirror them on the other
+    arm: they apply to PowerOff only, and the PowerOn arm ignores them. ``operation`` is the
     job's closed vocabulary — ``shutdown``, ``osshutdown`` (needs an active RMC
     connection to the partition's operating system), and ``dumprestart``, which
     crashes the partition and takes a platform dump and is refused unless
