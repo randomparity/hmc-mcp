@@ -10,7 +10,9 @@ from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.jobs import (
     BOOT_MODES,
+    POWER_OFF_OPERATIONS,
     POWER_ON_OPERATION_TYPES,
+    power_off_lpar_job,
     power_off_system_job,
     power_off_vios_job,
     power_on_lpar_job,
@@ -58,6 +60,41 @@ POWER_ON_LPAR_DEFAULT_DOCUMENT = (
     "      <Metadata><Atom/></Metadata>\n"
     '      <ParameterName kb="ROR" kxe="false">bootmode</ParameterName>\n'
     '      <ParameterValue kb="CUR" kxe="false">norm</ParameterValue>\n'
+    "    </JobParameter>\n"
+    "  </JobParameters>\n"
+    "</JobRequest>\n"
+)
+
+# Captured from the builder before this change, so ADR 0164's byte-identity
+# promise is pinned against a recorded value rather than the current code.
+POWER_OFF_LPAR_DEFAULT_DOCUMENT = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<JobRequest xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"'
+    ' xmlns:JobRequest="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"'
+    ' schemaVersion="V1_0">\n'
+    "  <Metadata><Atom/></Metadata>\n"
+    '  <RequestedOperation kb="CUR" kxe="false" schemaVersion="V1_0">\n'
+    "    <Metadata><Atom/></Metadata>\n"
+    '    <OperationName kb="ROR" kxe="false">PowerOff</OperationName>\n'
+    '    <GroupName kb="ROR" kxe="false">LogicalPartition</GroupName>\n'
+    '    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>\n'
+    "  </RequestedOperation>\n"
+    '  <JobParameters kb="CUR" kxe="false" schemaVersion="V1_0">\n'
+    "    <Metadata><Atom/></Metadata>\n"
+    '    <JobParameter schemaVersion="V1_0">\n'
+    "      <Metadata><Atom/></Metadata>\n"
+    '      <ParameterName kb="ROR" kxe="false">immediate</ParameterName>\n'
+    '      <ParameterValue kb="CUR" kxe="false">false</ParameterValue>\n'
+    "    </JobParameter>\n"
+    '    <JobParameter schemaVersion="V1_0">\n'
+    "      <Metadata><Atom/></Metadata>\n"
+    '      <ParameterName kb="ROR" kxe="false">restart</ParameterName>\n'
+    '      <ParameterValue kb="CUR" kxe="false">false</ParameterValue>\n'
+    "    </JobParameter>\n"
+    '    <JobParameter schemaVersion="V1_0">\n'
+    "      <Metadata><Atom/></Metadata>\n"
+    '      <ParameterName kb="ROR" kxe="false">operation</ParameterName>\n'
+    '      <ParameterValue kb="CUR" kxe="false">shutdown</ParameterValue>\n'
     "    </JobParameter>\n"
     "  </JobParameters>\n"
     "</JobRequest>\n"
@@ -130,6 +167,44 @@ def test_power_on_lpar_job_rejects_unknown_vocabulary(kwargs, permitted):
     with pytest.raises(ValueError) as rejected:
         power_on_lpar_job(**kwargs)
     assert ", ".join(sorted(permitted)) in str(rejected.value)
+
+
+def test_power_off_lpar_job_default_document_is_unchanged():
+    """A call passing no new argument emits today's document exactly."""
+    assert power_off_lpar_job() == POWER_OFF_LPAR_DEFAULT_DOCUMENT
+
+
+@pytest.mark.parametrize(
+    ("immediate", "restart"),
+    [(False, False), (True, False), (False, True)],
+)
+def test_power_off_lpar_job_emits_restart_and_operation(immediate, restart):
+    """All three parameters are emitted on every call, in the document's order."""
+    document = power_off_lpar_job(immediate=immediate, restart=restart)
+    assert _parameter_values(document, "immediate") == ["true" if immediate else "false"]
+    assert _parameter_values(document, "restart") == ["true" if restart else "false"]
+    assert _parameter_values(document, "operation") == ["shutdown"]
+    assert _parameter_values(
+        power_off_lpar_job(operation="osshutdown"), "operation"
+    ) == ["osshutdown"]
+
+
+@pytest.mark.parametrize("operation", ["dumpretry", "", "reboot", "SHUTDOWN"])
+def test_power_off_lpar_job_rejects_unknown_vocabulary(operation):
+    """A non-member is refused before XML exists, naming the sorted permitted set."""
+    with pytest.raises(ValueError) as rejected:
+        power_off_lpar_job(operation=operation)
+    assert ", ".join(sorted(POWER_OFF_OPERATIONS)) in str(rejected.value)
+
+
+def test_power_off_lpar_job_gates_dumprestart_behind_the_opt_in():
+    """dumprestart crashes the partition, so it is refused without the opt-in."""
+    with pytest.raises(ValueError) as refused:
+        power_off_lpar_job(operation="dumprestart")
+    assert "allow_dump_restart" in str(refused.value)
+
+    permitted = power_off_lpar_job(operation="dumprestart", allow_dump_restart=True)
+    assert _parameter_values(permitted, "operation") == ["dumprestart"]
 
 
 @pytest.mark.asyncio
