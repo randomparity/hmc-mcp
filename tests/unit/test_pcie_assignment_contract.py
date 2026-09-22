@@ -487,17 +487,30 @@ def test_a_slot_turned_required_between_read_and_write(monkeypatch, hmc, branch,
             _unassign(hmc)
 
 
+def _partial_error_message(operation, hmc) -> str:
+    """Run *operation* to its partial error and check the advice issues no change command.
+
+    Rounds 1 and 2 of #882's review each found a concurrent state in which a named
+    reversal command was wrong, so the advice names none (ADR 0166).
+    """
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        operation(hmc)
+    message = str(caught.value)
+    for command in ("io_slots+=", "io_slots-=", "chsyscfg"):
+        assert command not in message
+    assert "ProfileIoSlot(" not in message
+    return message
+
+
 def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_inspect_it(
     monkeypatch, hmc
 ):
     _install(monkeypatch, _FakeHmc(applies=False))
 
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        _assign(hmc)
+    message = _partial_error_message(_assign, hmc)
 
-    message = str(caught.value)
     assert "may hold the change, none of it, or a form this operation refuses" in message
-    assert "lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header" in message
+    assert "`lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header`" in message
     assert "Never write the read value back as `io_slots=` input" in message
 
 
@@ -506,46 +519,59 @@ def _extra_slot(value: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ("operation", "io_slots", "fake_options"),
+    ("operation", "io_slots", "rendering"),
     [
-        pytest.param(_assign, "none", {"applies": False}, id="assign-no-op"),
-        pytest.param(_unassign, f"{_DRC}/none/0", {"applies": False}, id="unassign-no-op"),
+        pytest.param(_assign, "none", "absent", id="assign-no-op"),
+        pytest.param(_unassign, f"{_DRC}/none/0", f"{_DRC}/none/0", id="unassign-no-op"),
     ],
 )
 def test_a_readback_in_the_before_state_needs_no_reversal(
-    monkeypatch, hmc, operation, io_slots, fake_options
+    monkeypatch, hmc, operation, io_slots, rendering
 ):
-    _install(monkeypatch, _FakeHmc(io_slots, **fake_options))
+    _install(monkeypatch, _FakeHmc(io_slots, applies=False))
 
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        operation(hmc)
+    message = _partial_error_message(operation, hmc)
 
-    message = str(caught.value)
-    assert "The readback lists this slot as before" in message
-    assert f"slot {_DRC} of profile 'prof' of LPAR 'lpar' needs no reversal" in message
-    assert "use the documented" not in message
+    assert (
+        f"The readback lists slot {_DRC} of profile 'prof' of LPAR 'lpar' as before "
+        f"({rendering}), so no reversal is needed." in message
+    )
     assert "HMC UI" not in message
 
 
 @pytest.mark.parametrize(
-    ("operation", "io_slots", "grammar"),
+    ("operation", "io_slots", "fake_options"),
     [
-        pytest.param(_assign, "none", f"io_slots-={_DRC}//0", id="assign-landed"),
-        pytest.param(_unassign, f"{_DRC}/none/0", f"io_slots+={_DRC}//0", id="unassign-landed"),
+        pytest.param(_assign, "none", {"after_write": _extra_slot}, id="assign-landed"),
+        pytest.param(
+            _unassign, f"{_DRC}/none/0", {"after_write": _extra_slot}, id="unassign-landed"
+        ),
+        pytest.param(
+            _unassign,
+            f"{_DRC}/none/0",
+            {"other_form_removal": "noop", "before_write": "required"},
+            id="unassign-required-form",
+        ),
     ],
 )
-def test_a_readback_showing_the_change_names_its_reversal(
-    monkeypatch, hmc, operation, io_slots, grammar
+def test_any_other_readback_advises_comparing_and_the_ui(
+    monkeypatch, hmc, operation, io_slots, fake_options
 ):
-    _install(monkeypatch, _FakeHmc(io_slots, after_write=_extra_slot))
+    options = dict(fake_options)
+    if options.get("before_write") == "required":
 
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        operation(hmc)
+        def turn_required() -> None:
+            fake.rows[0] = ("lpar", "prof", f"{_DRC}/none/1")
 
-    message = str(caught.value)
-    assert "To reverse slot 21010020 of profile 'prof' of LPAR 'lpar'" in message
-    assert f"use the documented `{grammar}` or the HMC UI" in message
-    assert "needs no reversal" not in message
+        options["before_write"] = turn_required
+    fake = _install(monkeypatch, _FakeHmc(io_slots, **options))
+
+    message = _partial_error_message(operation, hmc)
+
+    assert "Compare the read value with the before value" in message
+    assert f"make any reversal of slot {_DRC} of profile 'prof' of LPAR 'lpar'" in message
+    assert "through the HMC UI" in message
+    assert "no reversal is needed" not in message
 
 
 @pytest.mark.parametrize(
@@ -568,44 +594,27 @@ def test_a_readback_that_does_not_parse_advises_the_ui_only(
 ):
     _install(monkeypatch, _FakeHmc(io_slots, **fake_options))
 
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        operation(hmc)
+    message = _partial_error_message(operation, hmc)
 
-    message = str(caught.value)
     assert "could not be read or parsed" in message
-    assert "use the HMC UI" in message
-    assert "use the documented" not in message
-    assert "needs no reversal" not in message
+    assert "inspect it with the read command above" in message
+    assert "through the HMC UI" in message
+    assert "no reversal is needed" not in message
 
 
 def test_the_read_command_quotes_the_system_name(monkeypatch, hmc):
     hmc.authorize.return_value = ("my sys", "lpar")
     _install(monkeypatch, _FakeHmc(applies=False))
 
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        _assign(hmc)
+    message = _partial_error_message(_assign, hmc)
 
-    assert "`lssyscfg -r prof -m 'my sys' -F lpar_name,name,io_slots --header`" in str(
-        caught.value
-    )
+    assert "`lssyscfg -r prof -m 'my sys' -F lpar_name,name,io_slots --header`" in message
 
 
-def test_a_required_form_after_the_write_advises_the_ui_not_the_grammar(monkeypatch, hmc):
-    def turn_required() -> None:
-        fake.rows[0] = ("lpar", "prof", f"{_DRC}/none/1")
-
-    fake = _install(
-        monkeypatch,
-        _FakeHmc(f"{_DRC}/none/0", other_form_removal="noop", before_write=turn_required),
-    )
-
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        _unassign(hmc)
-
-    message = str(caught.value)
-    assert "use the HMC UI" in message
-    assert "unestablished (ADR 0166)" in message
-    assert "use the documented" not in message
+_HOLDER_ADVICE = (
+    "The profile of LPAR other also lists the slot; do not edit that profile without its "
+    "owner"
+)
 
 
 def test_a_lost_response_with_a_new_holder_names_both_causes(monkeypatch, hmc):
@@ -615,17 +624,39 @@ def test_a_lost_response_with_a_new_holder_names_both_causes(monkeypatch, hmc):
 
     fake = _install(monkeypatch, _FakeHmc(chsyscfg_error=True, after_write=racing_writer))
 
-    with pytest.raises(PcieAssignmentPartialError) as caught:
-        _assign(hmc)
+    message = _partial_error_message(_assign, hmc)
 
-    message = str(caught.value)
     assert "response lost; slot is also listed by a profile of LPAR other" in message
-    assert "use the documented `io_slots-=21010020//0` or the HMC UI" in message
-    assert (
-        "reverse this operation's change on profile 'prof' of LPAR 'lpar' if appropriate, "
-        "and do not edit the profile of LPAR other without its owner" in message
-    )
+    assert "through the HMC UI" in message
+    assert _HOLDER_ADVICE in message
     assert "resolve that conflict there" not in message
+
+
+def test_a_holder_beside_an_unchanged_slot_asks_for_no_reversal(monkeypatch, hmc):
+    def racing_writer() -> None:
+        fake.rows.append(("other", "p2", f"{_DRC}/none/0"))
+
+    fake = _install(monkeypatch, _FakeHmc(applies=False, before_write=racing_writer))
+
+    message = _partial_error_message(_assign, hmc)
+
+    assert "as before (absent), so no reversal is needed" in message
+    assert _HOLDER_ADVICE in message
+    assert "reverse" not in message.lower().replace("no reversal is needed", "")
+
+
+def test_an_unassign_whose_slot_another_lpar_took_names_no_add_back(monkeypatch, hmc):
+    """Round 2 of #882: adding the slot back here would list it in two profiles."""
+
+    def racing_writer(value: str) -> str:
+        fake.rows.append(("other", "p2", f"{_DRC}/none/0"))
+        return _extra_slot(value)
+
+    fake = _install(monkeypatch, _FakeHmc(f"{_DRC}/none/0", after_write=racing_writer))
+
+    message = _partial_error_message(_unassign, hmc)
+
+    assert "through the HMC UI" in message
 
 
 def test_a_write_the_readback_does_not_show_is_a_partial_error(monkeypatch, hmc):

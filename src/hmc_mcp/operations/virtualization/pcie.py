@@ -421,55 +421,48 @@ async def _verify_dedicated_change(
     raise PcieAssignmentPartialError(
         f"dedicated slot {operation} could not be verified: "
         f"{'; '.join(reasons) or 'readback mismatch'}; io_slots before={target.io_slots!r} "
-        f"after={after_text!r}. The chsyscfg may have run, so the profile may hold the "
-        "change, none of it, or a form this operation refuses. Read it with `lssyscfg -r "
-        f"prof -m {shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header` and "
-        f"compare it with the before value. {_recovery_advice(target, after, add=add)} Never "
-        "write the read value back as `io_slots=` input: that rendering is not established "
-        f"as valid input (ADR 0166).{_holder_advice(target, holders)}"
+        f"after={after_text!r}. The write may have run, so the profile may hold the change, "
+        "none of it, or a form this operation refuses. Read it with `lssyscfg -r prof -m "
+        f"{shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header`. "
+        f"{_recovery_advice(target, after, add=add)} Never write the read value back as "
+        "`io_slots=` input: that rendering is not established as valid input (ADR 0166)."
+        f"{_holder_advice(holders)}"
     ) from cause
 
 
 def _recovery_advice(
     target: _DedicatedProfileTarget, after: dict[str, ProfileIoSlot] | None, *, add: bool
 ) -> str:
-    """Advise from what the readback shows, never from what the operation asked for.
+    """Advise from what the readback shows, naming no command that changes the profile.
 
-    Only the caller's validated DRC is ever named in a command; no read value is.
+    A named reversal was wrong in some concurrent state each time one was offered
+    (#882 review rounds 1 and 2), so every reversal goes through the HMC UI.
     """
     drc_index = target.drc_index
     where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
     if after is None:
         return (
-            f"The readback of {where} could not be read or parsed, so its state is "
-            "unknown: inspect it, and use the HMC UI for any reversal, not a command."
+            f"The profile holding {where} could not be read or parsed: inspect it with the "
+            "read command above, and make any reversal through the HMC UI."
         )
-    present = after.get(drc_index)
-    if present is not None and present != ProfileIoSlot(drc_index, None, False):
-        return (
-            f"To reverse {where}, use the HMC UI: the profile lists it as {present}, and "
-            f"`io_slots-={drc_index}//0` on that form is unestablished (ADR 0166)."
-        )
-    if (present is not None) != add:
-        state = f"{drc_index}/none/0" if present is not None else "absent"
-        return (
-            f"The readback lists this slot as before ({state}), so {where} needs no "
-            "reversal."
-        )
-    grammar = f"io_slots-={drc_index}//0" if add else f"io_slots+={drc_index}//0"
-    return f"To reverse {where}, use the documented `{grammar}` or the HMC UI."
+    written = ProfileIoSlot(drc_index, None, False)
+    if after.get(drc_index) == (None if add else written):
+        rendering = "absent" if add else f"{drc_index}/none/0"
+        return f"The readback lists {where} as before ({rendering}), so no reversal is needed."
+    return (
+        "Compare the read value with the before value, and make any reversal of "
+        f"{where} through the HMC UI."
+    )
 
 
-def _holder_advice(target: _DedicatedProfileTarget, holders: list[str]) -> str:
-    """Keep the operator on this profile: another LPAR's was neither written nor authorized."""
+def _holder_advice(holders: list[str]) -> str:
+    """Name another LPAR listing the slot, whose profile ADR 0011 does not authorize."""
     if not holders:
         return ""
-    others = ", ".join(holders)
     return (
-        f" The profile of LPAR {others} also lists the slot: reverse this operation's "
-        f"change on profile {target.profile_name!r} of LPAR {target.lpar_name!r} if "
-        f"appropriate, and do not edit the profile of LPAR {others} without its owner. "
-        "This tool did not write it, and ADR 0011 authorizes only the requested LPAR."
+        f" The profile of LPAR {', '.join(holders)} also lists the slot; do not edit that "
+        "profile without its owner: this tool did not write it, and ADR 0011 authorizes "
+        "only the requested LPAR."
     )
 
 
