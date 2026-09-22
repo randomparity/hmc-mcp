@@ -2,9 +2,12 @@
 
 ## Status
 
-Accepted on 2026-09-21. Implemented on the same branch; no live run against
-hardware has exercised the scripts yet, and the runbook's operator walkthrough
-(spec Validation 1) is outstanding.
+Accepted on 2026-09-21. Implemented and exercised against real hardware on
+2026-09-21: the dedicated arm ran end-to-end on an admitted managed system
+(`sys-R1`; 20 rows, 18 PASS, 0 FAIL, 2 SKIP, both SKIPs the ADR 0055
+fail-closed refusals), and the system was confirmed byte-identical to its
+pre-run baseline. That run is recorded below, including the four defects it
+found in the tooling this record describes.
 
 ## Context
 
@@ -126,6 +129,53 @@ the run decides.
 
 Nothing here runs in CI; the scripts' unit tests run in CI like any other.
 
+### What the first live run changed (2026-09-21)
+
+The run did what this record is for: it falsified four things review had passed.
+
+**`live_test_recovery.py` reported a system clean without looking at it.**
+`hmc_run_command` is an opt-in escape hatch — `create_mcp` alone does not
+register it, and the runner enables it in three further steps. The recovery
+script composed with `create_mcp` alone, so its profile-drift check called a
+tool the server did not have, took the failure for "no drift", and returned
+exit 0. Every test stubbed the call path, so none of them could see it. The
+composition now lives in one named function that a test asserts registers
+every tool on `_READ_ONLY_TOOLS`; removing the escape hatch turns that test,
+and only that test, red.
+
+**A failed read reported as clean.** Each check returned `None` on a failed
+read, which `check` could not distinguish from "nothing stranded" — so the
+exit-2 row in the runbook's table was unreachable. Reads that fail now raise
+`StateUnreadable`, carrying the findings already confirmed. The slot listing
+runs first as the reachability probe, which is what earns the later checks the
+right to read a failed lookup as *absent*: HSCL8012 for a partition the arm
+deleted is the clean answer, not an unreadable system. Profile drift is asked
+only while the fixture survives, because a profile dies with its partition.
+
+**The recovery check built its own profile read.** The arm filters on
+`lpar_names` *and* `profile_names` through `build_filter`; the recovery check
+filtered on `lpar_names` alone with an f-string. A real VIOS partition carries
+two profiles, so the read answered two records and the "exactly one record"
+rule called a readable system unreadable. `profile_io_slots_command` is now
+public and both callers use it.
+
+**Two spellings of one default.** The arm falls back to `default_profile`; the
+recovery check spelled the same fallback `default`. A run that leaves the key
+unset records an empty string, so recovery would have queried — and told the
+operator to repair — a profile the arm never touched. It imports the arm's
+constant now.
+
+One smaller one: the runbook and the runner named `~/.config/hmc-mcp` as the
+profile directory, which on macOS is a directory the resolver never reads. The
+run was driven from macOS, where following the runbook literally finds nothing;
+the no-credentials message prints the resolved path now.
+
+What the run did **not** falsify is as much of the point. Run provenance
+(`tested_commit`, `tree_clean`) reached the document; the arm recorded all four
+`pcie_*` artifacts; the evidence matrix rendered commit-stamped and carried no
+hostname, location code or serial; and the arm's own teardown returned the
+system to a byte-identical baseline with no operator action.
+
 ## Considered & rejected
 
 - **`just` recipes per arm.** judgment: the `justfile` is the guardrail namespace where every
@@ -185,3 +235,20 @@ Nothing here runs in CI; the scripts' unit tests run in CI like any other.
   of what the operator asked for.
 - **Do nothing and document the existing runner.** judgment: documentation supplies neither the
   commit stamp, the envelope prediction, nor the outside teardown witness.
+- **Composing recovery's server with `create_mcp` alone, as the first build did.** verified:
+  `hmc_run_command` is registered only via `compile_legacy_policy(..., include_arbitrary_command=True)`
+  plus `configure_arbitrary_command_tool`; without them the live run answered
+  `ToolError: Unknown tool: 'hmc_run_command'` and the drift check read that as no drift.
+- **Letting each recovery check return `None` on a failed read.** verified: the live run
+  reported `CLEAN` exit 0 through a check that had never executed, and the runbook's exit-2
+  row was unreachable from any input.
+- **Treating every failed read as unreadable, including the partition lookup.** verified: the
+  HMC answers `HSCL8012 The partition named ... was not found` for the fixture the arm
+  deleted, which is every clean run; the slot listing is the reachability probe instead.
+- **A second profile-read command in the recovery check.** verified: filtering on `lpar_names`
+  alone answered two records for the VIOS partition on `sys-R1`, which carries both a
+  `default_profile` and a second profile, and the "exactly one record" rule then called a
+  readable system unreadable.
+- **Asking for profile drift after the fixture is gone.** verified: the profile is deleted with
+  its partition, so the read answers HSCL8012 and — once failed reads raise — would exit 2 on
+  every clean run.
