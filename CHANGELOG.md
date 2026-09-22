@@ -10,6 +10,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_power_off_lpar`, `power_lpar` and `hmc-mcp lpars power-off` accept the PowerOff job's
+  `restart` and `operation` parameters. `operation` is a closed set — `shutdown`, `osshutdown`,
+  `dumprestart` — refused before any XML is built; the vendor's fourth value `dumpretry` is
+  documented but not accepted. `dumprestart` crashes the partition and takes a platform dump, so
+  it is refused unless the caller passes `allow_dump_restart` / `--allow-dump-restart`
+  (ADR 0164, #872).
+
 - `HMCClient.list_search_parameters(resource_type)` reads the search-parameter names an HMC defines
   for a resource type, at `/rest/api/uom/{R}/search`, returning them with the response's
   `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the `SearchParameterSet` the

@@ -31,7 +31,7 @@
 | `hmc_migrate_validate_lpar` | `mutate` | `lpar.migrate_validate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Validate whether an LPM migration of an LPAR to target_system would succeed. |
 | `hmc_modify_lpar` | `mutate` | `lpar.modify` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify an LPAR's memory or CPU resource assignment. |
 | `hmc_plan_lpar_memopt_scores` | `read` | `lpar.plan_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return predicted LPAR affinity scores without applying optimization. |
-| `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition. |
+| `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation. |
 | `hmc_power_on_lpar` | `mutate` | `lpar.power_on` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection. |
 | `hmc_remote_restart_lpar` | `destructive` | `lpar.remote_restart` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remote-restart a failed LPAR on another managed system. |
 | `hmc_rename_lpar` | `mutate` | `lpar.rename` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rename one LPAR after enforcing its ownership token. |

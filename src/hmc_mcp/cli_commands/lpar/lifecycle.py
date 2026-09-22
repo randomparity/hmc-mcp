@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import typer
 
-from ...jobs import BootMode, PowerOnOperationType, validate_wait_timing
+from ...jobs import (
+    BootMode,
+    PowerOffOperation,
+    PowerOnOperationType,
+    validate_wait_timing,
+)
 from ...operations.lpar.core import delete_lpar, power_lpar
 from ..output import console, err_console, print_json
 from ..runtime import with_client
@@ -85,6 +90,19 @@ def lpars_power_off(
         "--ownership-override",
         help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
     ),
+    restart: bool = typer.Option(
+        False, "--restart", help="Restart the partition instead of leaving it off"
+    ),
+    operation: PowerOffOperation = typer.Option(
+        "shutdown",
+        "--operation",
+        help="PowerOff shutdown operation; osshutdown needs an active RMC connection",
+    ),
+    allow_dump_restart: bool = typer.Option(
+        False,
+        "--allow-dump-restart",
+        help="Confirm --operation dumprestart, which crashes the partition and dumps",
+    ),
 ) -> None:
     """Power off an LPAR (submits a PowerOff job)."""
     _power_lpar(
@@ -97,6 +115,9 @@ def lpars_power_off(
         interval=interval,
         system=system,
         ownership_override=ownership_override,
+        restart=restart,
+        operation=operation,
+        allow_dump_restart=allow_dump_restart,
     )
 
 
@@ -114,10 +135,23 @@ def _power_lpar(
     boot_mode: BootMode = "norm",
     partition_profile: str | None = None,
     operation_type: PowerOnOperationType | None = None,
+    restart: bool = False,
+    operation: PowerOffOperation = "shutdown",
+    allow_dump_restart: bool = False,
 ) -> None:
     validate_wait_timing(wait, timeout, interval)
     if not yes:
-        op = "PowerOn" if on else ("Immediate PowerOff" if immediate else "PowerOff")
+        if on:
+            op = "PowerOn"
+        else:
+            # The prompt is the only place a human is asked, so it names what the
+            # job will actually do: a restart reboots rather than powers off, and
+            # dumprestart crashes the partition (ADR 0164).
+            op = "Immediate PowerOff" if immediate else "PowerOff"
+            if restart:
+                op = f"{op} with restart"
+            if operation != "shutdown":
+                op = f"{op} (operation={operation})"
         if not typer.confirm(f"Really submit {op} for partition '{name_or_uuid}'?"):
             err_console.print("Aborted.")
             raise typer.Abort()
@@ -137,6 +171,9 @@ def _power_lpar(
             boot_mode=boot_mode,
             partition_profile_uuid=partition_profile,
             operation_type=operation_type,
+            restart=restart,
+            operation=operation,
+            allow_dump_restart=allow_dump_restart,
         )
     )
     uuid, job = result.lpar_uuid, result.job
