@@ -487,7 +487,7 @@ def test_a_slot_turned_required_between_read_and_write(monkeypatch, hmc, branch,
             _unassign(hmc)
 
 
-def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_recover(
+def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_inspect_it(
     monkeypatch, hmc
 ):
     _install(monkeypatch, _FakeHmc(applies=False))
@@ -498,16 +498,96 @@ def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_recover(
     message = str(caught.value)
     assert "may hold the change, none of it, or a form this operation refuses" in message
     assert "lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header" in message
-    assert "To reverse slot 21010020 of profile 'prof' of LPAR 'lpar'" in message
-    assert "use the documented `io_slots-=21010020//0`" in message
     assert "Never write the read value back as `io_slots=` input" in message
 
 
-def test_an_unverified_unassign_names_the_add_back_grammar(monkeypatch, hmc):
-    _install(monkeypatch, _FakeHmc(f"{_DRC}/none/0", applies=False))
+def _extra_slot(value: str) -> str:
+    return ",".join(entry for entry in (value, "21040015/none/0") if entry != "none")
 
-    with pytest.raises(PcieAssignmentPartialError, match=r"use the documented `io_slots\+="):
-        _unassign(hmc)
+
+@pytest.mark.parametrize(
+    ("operation", "io_slots", "fake_options"),
+    [
+        pytest.param(_assign, "none", {"applies": False}, id="assign-no-op"),
+        pytest.param(_unassign, f"{_DRC}/none/0", {"applies": False}, id="unassign-no-op"),
+    ],
+)
+def test_a_readback_in_the_before_state_needs_no_reversal(
+    monkeypatch, hmc, operation, io_slots, fake_options
+):
+    _install(monkeypatch, _FakeHmc(io_slots, **fake_options))
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        operation(hmc)
+
+    message = str(caught.value)
+    assert "The readback lists this slot as before" in message
+    assert f"slot {_DRC} of profile 'prof' of LPAR 'lpar' needs no reversal" in message
+    assert "use the documented" not in message
+    assert "HMC UI" not in message
+
+
+@pytest.mark.parametrize(
+    ("operation", "io_slots", "grammar"),
+    [
+        pytest.param(_assign, "none", f"io_slots-={_DRC}//0", id="assign-landed"),
+        pytest.param(_unassign, f"{_DRC}/none/0", f"io_slots+={_DRC}//0", id="unassign-landed"),
+    ],
+)
+def test_a_readback_showing_the_change_names_its_reversal(
+    monkeypatch, hmc, operation, io_slots, grammar
+):
+    _install(monkeypatch, _FakeHmc(io_slots, after_write=_extra_slot))
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        operation(hmc)
+
+    message = str(caught.value)
+    assert "To reverse slot 21010020 of profile 'prof' of LPAR 'lpar'" in message
+    assert f"use the documented `{grammar}` or the HMC UI" in message
+    assert "needs no reversal" not in message
+
+
+@pytest.mark.parametrize(
+    ("operation", "io_slots", "fake_options"),
+    [
+        pytest.param(
+            _assign, "none", {"after_write": lambda _value: f"{_DRC}//0"}, id="assign-unparsed"
+        ),
+        pytest.param(
+            _unassign, f"{_DRC}/none/0", {"after_write": lambda _value: ""}, id="unassign-empty"
+        ),
+        pytest.param(_assign, "none", {"fail_reads_after_write": True}, id="assign-unread"),
+        pytest.param(
+            _unassign, f"{_DRC}/none/0", {"fail_reads_after_write": True}, id="unassign-unread"
+        ),
+    ],
+)
+def test_a_readback_that_does_not_parse_advises_the_ui_only(
+    monkeypatch, hmc, operation, io_slots, fake_options
+):
+    _install(monkeypatch, _FakeHmc(io_slots, **fake_options))
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        operation(hmc)
+
+    message = str(caught.value)
+    assert "could not be read or parsed" in message
+    assert "use the HMC UI" in message
+    assert "use the documented" not in message
+    assert "needs no reversal" not in message
+
+
+def test_the_read_command_quotes_the_system_name(monkeypatch, hmc):
+    hmc.authorize.return_value = ("my sys", "lpar")
+    _install(monkeypatch, _FakeHmc(applies=False))
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        _assign(hmc)
+
+    assert "`lssyscfg -r prof -m 'my sys' -F lpar_name,name,io_slots --header`" in str(
+        caught.value
+    )
 
 
 def test_a_required_form_after_the_write_advises_the_ui_not_the_grammar(monkeypatch, hmc):
@@ -538,7 +618,14 @@ def test_a_lost_response_with_a_new_holder_names_both_causes(monkeypatch, hmc):
     with pytest.raises(PcieAssignmentPartialError) as caught:
         _assign(hmc)
 
-    assert "response lost; slot is also listed by a profile of LPAR other" in str(caught.value)
+    message = str(caught.value)
+    assert "response lost; slot is also listed by a profile of LPAR other" in message
+    assert "use the documented `io_slots-=21010020//0` or the HMC UI" in message
+    assert (
+        "reverse this operation's change on profile 'prof' of LPAR 'lpar' if appropriate, "
+        "and do not edit the profile of LPAR other without its owner" in message
+    )
+    assert "resolve that conflict there" not in message
 
 
 def test_a_write_the_readback_does_not_show_is_a_partial_error(monkeypatch, hmc):

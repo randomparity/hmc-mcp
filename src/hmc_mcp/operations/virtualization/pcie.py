@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Generic, Literal, TypeVar
@@ -422,28 +423,54 @@ async def _verify_dedicated_change(
         f"{'; '.join(reasons) or 'readback mismatch'}; io_slots before={target.io_slots!r} "
         f"after={after_text!r}. The chsyscfg may have run, so the profile may hold the "
         "change, none of it, or a form this operation refuses. Read it with `lssyscfg -r "
-        f"prof -m {target.system_name} -F lpar_name,name,io_slots --header` and compare it "
-        f"with the before value. {_recovery_advice(target, after, add=add)} Never write the "
-        "read value back as `io_slots=` input: that rendering is not established as valid "
-        "input (ADR 0166). Where another LPAR is named as also listing the slot, resolve "
-        "that conflict there."
+        f"prof -m {shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header` and "
+        f"compare it with the before value. {_recovery_advice(target, after, add=add)} Never "
+        "write the read value back as `io_slots=` input: that rendering is not established "
+        f"as valid input (ADR 0166).{_holder_advice(target, holders)}"
     ) from cause
 
 
 def _recovery_advice(
     target: _DedicatedProfileTarget, after: dict[str, ProfileIoSlot] | None, *, add: bool
 ) -> str:
-    """Name the one reversal this operation's documented grammar can safely make."""
+    """Advise from what the readback shows, never from what the operation asked for.
+
+    Only the caller's validated DRC is ever named in a command; no read value is.
+    """
     drc_index = target.drc_index
     where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
-    present = None if after is None else after.get(drc_index)
+    if after is None:
+        return (
+            f"The readback of {where} could not be read or parsed, so its state is "
+            "unknown: inspect it, and use the HMC UI for any reversal, not a command."
+        )
+    present = after.get(drc_index)
     if present is not None and present != ProfileIoSlot(drc_index, None, False):
         return (
             f"To reverse {where}, use the HMC UI: the profile lists it as {present}, and "
             f"`io_slots-={drc_index}//0` on that form is unestablished (ADR 0166)."
         )
+    if (present is not None) != add:
+        state = f"{drc_index}/none/0" if present is not None else "absent"
+        return (
+            f"The readback lists this slot as before ({state}), so {where} needs no "
+            "reversal."
+        )
     grammar = f"io_slots-={drc_index}//0" if add else f"io_slots+={drc_index}//0"
     return f"To reverse {where}, use the documented `{grammar}` or the HMC UI."
+
+
+def _holder_advice(target: _DedicatedProfileTarget, holders: list[str]) -> str:
+    """Keep the operator on this profile: another LPAR's was neither written nor authorized."""
+    if not holders:
+        return ""
+    others = ", ".join(holders)
+    return (
+        f" The profile of LPAR {others} also lists the slot: reverse this operation's "
+        f"change on profile {target.profile_name!r} of LPAR {target.lpar_name!r} if "
+        f"appropriate, and do not edit the profile of LPAR {others} without its owner. "
+        "This tool did not write it, and ADR 0011 authorizes only the requested LPAR."
+    )
 
 
 async def _system_name(config: HMCConfig, system: str) -> str:

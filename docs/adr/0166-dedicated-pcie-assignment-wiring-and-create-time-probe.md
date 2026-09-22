@@ -103,10 +103,16 @@ reassign, cleanup and every read keep the ADR 0163 escape-hatch grammar.
   command may have run. The profile may hold the change, none of it, or a form the operations
   refuse, or it may not parse at all, and from then on both operations refuse that DRC or that
   profile. The error names what to do next. It carries the before and after `io_slots`
-  values. It gives the exact admitted read command to inspect the profile. It tells the
-  operator to reverse only this operation's DRC, using the documented `<drc>//0` grammar or the
-  HMC UI, and never to paste the read rendering back as `io_slots=` input. The tool cannot
-  undo a change it cannot verify. ADR 0165's VIOS-only and populated-profile
+  values. It gives the exact admitted read command to inspect the profile. Its advice follows
+  what the readback shows for this operation's DRC, not the direction the operation asked
+  for. A readback that could not be read or parsed, or that lists the DRC in a form other
+  than `drc/none/0`, gets the HMC UI and no command. A DRC that reads back in its before
+  state gets "needs no reversal". Only a DRC that shows this operation's effect gets the
+  documented `<drc>//0` reversal, for the caller's validated DRC. The error never tells the
+  operator to paste the read rendering back as `io_slots=` input. Where another LPAR's
+  profile also lists the slot, it names that LPAR but points the operator at this profile:
+  that profile was neither written by the tool nor authorized by ADR 0011, so it is left to
+  its owner. The tool cannot undo a change it cannot verify. ADR 0165's VIOS-only and populated-profile
   byte-stability limits also stand. Decision 2 tolerates reordering and refuses re-rendering.
 - **Some refusals come after earlier workflow legs commit.** Create, provision and modify
   prevalidate only the selectors and the envelope. The LPAR-state, holder, profile and
