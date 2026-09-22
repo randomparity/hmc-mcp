@@ -144,8 +144,9 @@ redacted HMC transcript into a public repository. It adds no input parser, no en
 and no command construction.
 
 **Actor model.** The reader of a public repository is untrusted with respect to lab
-identifiers. The capture's author is trusted to have redacted; this change trusts the
-published comment and nothing behind it.
+identifiers. The redaction owner is the party the capture comment names — the campaign
+orchestrator, acting on operator instruction with operator-provided lab access — and this
+change trusts the published comment and nothing behind it.
 
 **Control per boundary.** The record's probe `stdout` values are copied verbatim from the
 already-redacted published comment, so the redaction decision is the capture author's and is

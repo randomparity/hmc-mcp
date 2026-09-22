@@ -29,8 +29,10 @@ negative independently, and the admission below rests on neither. That is the di
 between this citation and the operator-held results document rejected in Decision 2, which
 would have had to ground a *positive* capability claim.
 
-So the gate could only be opened by a capture, and on 2026-09-22 an operator took one
-against a lab HMC and published it redacted, with a per-probe exit status and stream table.
+So the gate could only be opened by a capture, and on 2026-09-22 one was taken against a lab
+HMC — by the campaign orchestrator, on operator instruction and with operator-provided lab
+access — and published redacted, with a per-probe exit status and stream table. That party
+owns the redaction; this record uses the published form and nothing behind it.
 Its decisive part is the **negative control**:
 
     lssyscfg -r prof -m <system> -F bogus_attr_xyz --header
@@ -60,8 +62,9 @@ comment as its `source_url`. What is admitted is the command the capture actuall
 
 Its `io_slots` column is a comma-separated list of three-position, `/`-separated triples
 inside one double-quoted field. What the capture establishes is the **shape**: three positions,
-the first a DRC index matching the slots on the system, the second the literal `none` in every
-captured triple, the third `0` or `1`. The position *names* `drc_index/pool_id/is_required` are
+the first an index in the documented DRC-index form, the second the literal `none` in every
+captured triple, the third `0` or `1`. No probe in this capture enumerates the system's slots,
+so the first position is admitted as a form, not as a checked reference. The position *names* `drc_index/pool_id/is_required` are
 the documented input-side ones, used here as labels for positions the capture shows — not as
 read-side semantics admitted by it, which composing the input grammar is exactly what Decision
 2's rejected alternatives refuse. No captured slot belongs to a pool, so whether a pooled slot
@@ -93,7 +96,10 @@ pair `require_admitted_environment` already enforces for SR-IOV
 (`src/hmc_mcp/operations/virtualization/pcie.py:41-42`, `:295-306`). Issue #882 must enforce
 that same pair on the dedicated path **before issuing any mutating command**. Outside it the
 operations stay capability-unavailable unconditionally, and widening it takes a new capture
-on the new pair, not an argument from this one.
+on the new pair, not an argument from this one. #882 must also establish that a value read
+back in this rendering is accepted as `chsyscfg` input — the capture never fed one back — before
+issuing any mutating command; the third limit below is a precondition on that wiring, not a
+note about it.
 
 **4. Supersession.** This record supersedes exactly one sentence of ADR 0053 — "Dedicated-slot
 profile grammar is recorded, but profile mutation likewise remains capability-unavailable
