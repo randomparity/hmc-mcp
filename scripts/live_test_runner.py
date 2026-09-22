@@ -29,13 +29,13 @@ it exits with manual configuration instructions.
 
 HMC_SCHEMA_VERSION is not among them. It is opt-in and unset by default
 (`src/hmc_mcp/config.py`), and where it lands is per call site rather than per
-HTTP method: UOM requests carry `X-HMC-Schema-Version` unless their call site
-opts out, every `/rest/api/web/` request carries it (issue #99), the paths that
-answered HTTP 406 with it present opt out (issue #96,
-`src/hmc_mcp/client/client_lpars.py`, `client_network.py`), and requests that
-build their own headers never carry it — including `submit_job`, so the job
-path every power operation takes is unaffected either way. A run therefore
-starts with or without it. `docs/compatibility.md` is the full account.
+HTTP method: UOM requests carry `X-HMC-Schema-Version` unless their own call
+site passes `include_schema_version=False` (issue #96 — grep that flag under
+`src/hmc_mcp/client/` for the current set, which no list here can track), every
+`/rest/api/web/` request carries it (issue #99), and requests that build their
+own headers never carry it — including `submit_job`, so the job path every
+power operation takes is unaffected either way. A run therefore starts with or
+without it. `docs/compatibility.md` is the full account.
 
 The run header prints the resolved value, including `(not set)`, to stdout. The
 results and observations documents do not record it, so a matrix cited as

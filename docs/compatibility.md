@@ -26,12 +26,16 @@ Where the `X-HMC-Schema-Version` header goes when it *is* set. The rule is per
 call site, not per HTTP method — there is no method whose requests all carry it
 and none whose requests all omit it:
 
-- **UOM requests carry it unless their own call site opts out.** The paths that
-  answered HTTP 406 with the header present opt out, reads and writes alike:
-  `PUT`/`POST LogicalPartition`, `POST VirtualNetwork`, child-resource adapter
-  `PUT`, and the VolumeGroup and VirtualIOServer storage paths. The rest — HMC
-  user create/modify, the managed-system property `POST`, and the reads and
-  `DELETE`s that go through the shared UOM helpers — still send it.
+- **UOM requests carry it unless their own call site opts out.** A call site
+  opts out by passing `include_schema_version=False`, so
+  `rg -n 'include_schema_version=False' src/hmc_mcp/client/` is the current set
+  and the only answer that cannot go stale. Opting out was a response to HTTP
+  406 on specific endpoints, not a property of any HTTP method or resource
+  type: `PUT`/`POST LogicalPartition`, `PUT VirtualNetwork` and child-resource
+  adapter `PUT` opt out, and so do many — **not all** — of the VolumeGroup and
+  VirtualIOServer storage paths, reads included. Do not read a sibling
+  endpoint's omission as covering yours; check the flag at the call site you
+  are debugging.
 - **Every `/rest/api/web/` request carries it**, reads and writes alike,
   because some HMC releases require it there.
 - **Requests that build their own headers never carry it**, whatever this
@@ -41,8 +45,8 @@ and none whose requests all omit it:
   create/upload/cleanup calls, and every `do/{Operation}` job, which is the
   path LPAR power on/off and activation take.
 
-Unset is therefore the only setting under which no request carries the header
-at all.
+Unset — or set to the empty string, which disables the header the same way —
+is therefore the setting under which no request carries it at all.
 
 A live run prints the resolved value in its run header, on stdout. The
 `test-results-*.json` and observations documents do not record it, so a matrix

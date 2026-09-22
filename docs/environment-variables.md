@@ -223,17 +223,19 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   explicitly — for example while debugging a read path.
 
   When it is set, the header goes per call site, not per HTTP method. UOM
-  requests carry it unless their own call site opts out; the paths that
-  returned HTTP 406 with it present do opt out, reads and writes alike
-  (confirmed on HMC V10R3 build 2408210051 and likely other V10 builds):
-  `PUT`/`POST LogicalPartition`, `POST VirtualNetwork`, child-resource adapter
-  `PUT`, and the VolumeGroup and VirtualIOServer storage paths. The rest — HMC
-  user create/modify, the managed-system property `POST`, and the reads and
-  `DELETE`s that go through the shared UOM helpers — still send it. Every
-  `/rest/api/web/` request carries it. Requests that build their own headers
-  never do: the `Accept: */*` discovery reads (ADR 0139 records that omission
-  deliberately), the storage-broker ISO calls, and every `do/{Operation}` job,
-  so LPAR power operations are unaffected either way. See
+  requests carry it unless their own call site passes
+  `include_schema_version=False`, so
+  `rg -n 'include_schema_version=False' src/hmc_mcp/client/` is the current set
+  and the only answer that cannot go stale. Opting out was a response to HTTP
+  406 on specific endpoints (confirmed on HMC V10R3 build 2408210051 and likely
+  other V10 builds), not a property of any method or resource type:
+  `PUT`/`POST LogicalPartition`, `PUT VirtualNetwork` and child-resource
+  adapter `PUT` opt out, and so do many — **not all** — of the VolumeGroup and
+  VirtualIOServer storage paths, reads included. Every `/rest/api/web/` request
+  carries it. Requests that build their own headers never do: the `Accept: */*`
+  discovery reads (ADR 0139 records that omission deliberately), the
+  storage-broker ISO calls, and every `do/{Operation}` job, so LPAR power
+  operations are unaffected either way. See
   [`docs/compatibility.md`](compatibility.md) for the firmware context.
 
 ## Library Consumers
