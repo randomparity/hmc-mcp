@@ -21,12 +21,26 @@ subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
 or `test-results-round2.json` for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
 
-Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
-environment, a `config.toml` profile in the platform config directory, or a
-local .env file. That directory is `~/.config/hmc-mcp` on Linux and
-`~/Library/Application Support/hmc-mcp` on macOS.
-The runner never creates or patches .env: when the value is absent, it exits
-with manual configuration instructions.
+Pre-run requirement: HMC credentials, from the environment, a `config.toml`
+profile in the platform config directory, or a local .env file. That directory
+is `~/.config/hmc-mcp` on Linux and `~/Library/Application Support/hmc-mcp` on
+macOS. The runner never creates or patches .env: when credentials are absent,
+it exits with manual configuration instructions.
+
+HMC_SCHEMA_VERSION is not among them. It is opt-in and unset by default
+(`src/hmc_mcp/config.py`), and where it lands is per call site rather than per
+HTTP method: UOM requests carry `X-HMC-Schema-Version` unless their own call
+site passes `include_schema_version=False` (issue #96 — grep that flag under
+`src/hmc_mcp/client/` for the current set, which no list here can track), every
+`/rest/api/web/` request carries it (issue #99), and requests that build their
+own headers never carry it — including `submit_job`, so the job path every
+power operation takes is unaffected either way. A run therefore starts with or
+without it. `docs/compatibility.md` is the full account.
+
+The run header prints the resolved value, including `(not set)`, to stdout. The
+results and observations documents do not record it, so a matrix cited as
+evidence for a run does not by itself name the request environment it was
+gathered in.
 """
 
 from __future__ import annotations
@@ -93,7 +107,7 @@ from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
-# Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path
+# Pre-run guard: HMC credentials must resolve before the first dispatch
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
@@ -223,18 +237,6 @@ def _bootstrap_config() -> bool:
         print(f"   Configure {config_dir() / 'config.toml'} or a local .env file.")
         return False
     return True
-
-
-def _ensure_schema_version() -> bool:
-    """Warn when HMC_SCHEMA_VERSION is absent; the operator must set it explicitly."""
-    _load_dotenv()
-    if env_var_value("HMC_SCHEMA_VERSION"):
-        return True
-    print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
-    print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
-    print("   Note: this variable only affects GET requests; it does NOT fix")
-    print("   HTTP 406 on write paths (LPAR create, adapter PUT, etc.).")
-    return False
 
 
 @dataclass(frozen=True)
@@ -1161,8 +1163,13 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             "path matching an ignored pattern (see .gitignore)"
         )
         return 1
-    if not _bootstrap_config() or not _ensure_schema_version():
+    if not _bootstrap_config():
         return 1
+    # `_bootstrap_config` reads `.env` only when the TOML profile fails, so a
+    # resolved profile would otherwise leave every `.env`-only `HMC_*` value
+    # unread — including the HMC_SCHEMA_VERSION the run header reports below.
+    # Loading it here and not earlier keeps the profile's priority over `.env`.
+    _load_dotenv()
     return asyncio.run(
         main(
             subtask_filter=arguments.subtask,

@@ -1,11 +1,11 @@
 """Answer whether a live run would start, and what it would touch.
 
-The runner already validates configuration, credentials and the schema version
-before its first dispatch. What it cannot do is answer the question without
-being the run. This script asks the same validators the runner gates on, so
-there is one definition of a valid configuration, and adds the two facts the
-runner never establishes: what a selected arm will create, mutate and delete,
-and whether the managed system is inside the ADR 0053 admitted envelope.
+The runner already validates configuration and credentials before its first
+dispatch. What it cannot do is answer the question without being the run. This
+script asks the same validators the runner gates on, so there is one definition
+of a valid configuration, and adds the two facts the runner never establishes:
+what a selected arm will create, mutate and delete, and whether the managed
+system is inside the ADR 0053 admitted envelope.
 
 Usage:
     uv run --no-sync python scripts/live_test_preflight.py [--group NAME]
@@ -50,7 +50,7 @@ from hmc_mcp.operations.virtualization.pcie import (
 #: The credential names the runner needs resolved before it dispatches. Reported
 #: as present or absent and never by value: this output is meant to be pasted
 #: into an issue when a run will not start.
-_CREDENTIAL_KEYS = ("HMC_HOST", "HMC_USER", "HMC_PASSWORD", "HMC_SCHEMA_VERSION")
+_CREDENTIAL_KEYS = ("HMC_HOST", "HMC_USER", "HMC_PASSWORD")
 
 
 @dataclass(frozen=True)
@@ -149,13 +149,17 @@ def _check_configuration() -> tuple[runner.LiveTestConfig | None, str]:
 def _check_credentials() -> tuple[bool, dict[str, bool]]:
     """Resolve credentials the way the runner does, reporting presence only.
 
-    `_bootstrap_config` and `_ensure_schema_version` print their own diagnostics
-    and, on the TOML path, announce the profile they loaded. Their output is
-    captured and discarded rather than relayed: the caller gets a per-key
-    present/absent map, which says what to fix without disclosing what resolved.
+    `_bootstrap_config` prints its own diagnostics and, on the TOML path,
+    announces the profile it loaded. That output is captured and discarded
+    rather than relayed: the caller gets a per-key present/absent map, which
+    says what to fix without disclosing what resolved.
     """
     with contextlib.redirect_stdout(io.StringIO()):
-        resolved = runner._bootstrap_config() and runner._ensure_schema_version()
+        resolved = runner._bootstrap_config()
+        # The same two calls in the same order as the runner's own startup
+        # gate, and for the reason recorded there. Dropping one would make
+        # preflight name a request environment the run will not use.
+        runner._load_dotenv()
     return resolved, {key: env_var_value(key) is not None for key in _CREDENTIAL_KEYS}
 
 
@@ -205,6 +209,14 @@ def main(argv: list[str] | None = None) -> int:
         print("configuration  OK    .env validated by LiveTestConfig.from_env_file")
     detail = " ".join(f"{k}={'set' if v else 'MISSING'}" for k, v in present.items())
     print(f"credentials    {'OK  ' if credentials_ok else 'FAIL'}  {detail}")
+    # Reported, never gated: the variable is opt-in and a run starts either way
+    # (#875). It is on its own row because `MISSING` on the credentials row read
+    # as a defect to fix, which is what made the runner demand it.
+    presence = "set" if env_var_value("HMC_SCHEMA_VERSION") else "not set"
+    print(
+        f"schema version INFO  HMC_SCHEMA_VERSION={presence} — optional; recorded "
+        "so a run's evidence names its request environment (docs/compatibility.md)"
+    )
     if verdicts:
         _print_arms(verdicts, envelopes)
 

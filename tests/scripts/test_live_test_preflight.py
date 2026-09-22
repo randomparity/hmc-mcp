@@ -7,6 +7,7 @@ working directory.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -45,7 +46,13 @@ _DEDICATED = {
 
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
-    """An isolated working directory with no ambient HMC credentials."""
+    """An isolated working directory with no ambient HMC credentials.
+
+    The environ is swapped for a copy rather than only cleared: the credential
+    check reaches `runner._load_dotenv`, which assigns into `os.environ`
+    directly, and `monkeypatch` cannot take back a key it never recorded.
+    """
+    monkeypatch.setattr(os, "environ", dict(os.environ))
     monkeypatch.chdir(tmp_path)
     for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD", "HMC_SCHEMA_VERSION"):
         monkeypatch.delenv(key, raising=False)
@@ -64,9 +71,8 @@ def test_the_generated_fixture_env_is_one_the_runner_accepts(workspace):
 def _credentials(monkeypatch, resolved: bool = True) -> None:
     """Stand in for the runner's bootstrap without reading a real profile."""
     monkeypatch.setattr(runner, "_bootstrap_config", lambda: resolved)
-    monkeypatch.setattr(runner, "_ensure_schema_version", lambda: resolved)
     if resolved:
-        for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD", "HMC_SCHEMA_VERSION"):
+        for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
             monkeypatch.setenv(key, f"value-for-{key}")
 
 
@@ -129,6 +135,45 @@ def test_a_configuration_the_runner_accepts_is_never_rejected_here(
     assert preflight.main(["--skip-hardware"]) == 0
 
 
+def test_an_absent_schema_version_is_reported_without_stopping_the_run(
+    workspace, monkeypatch, capsys
+):
+    """#875. The variable is opt-in, so its absence is a report, not a FAIL row."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
+    for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
+        monkeypatch.setenv(key, f"value-for-{key}")
+
+    assert preflight.main(["--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "HMC_SCHEMA_VERSION=not set" in output
+    assert "MISSING" not in output
+    assert "the runner would start" in output
+
+
+def test_a_dotenv_only_schema_version_is_reported_as_set(
+    workspace, monkeypatch, capsys
+):
+    """#875. The mirror of the runner's own `.env` load, and for the same reason.
+
+    `_bootstrap_config` reads `.env` only when the TOML profile fails, so a
+    resolved profile that does not pin the variable would leave preflight
+    naming a request environment the run will not use.
+    """
+    (workspace / ".env").write_text(
+        _env_text(**_DEDICATED) + "HMC_SCHEMA_VERSION=V1_0\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(runner, "_ENV_FILE", workspace / ".env")
+    for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
+        monkeypatch.setenv(key, f"value-for-{key}")
+
+    assert preflight.main(["--skip-hardware"]) == 0
+
+    assert "HMC_SCHEMA_VERSION=set" in capsys.readouterr().out
+
+
 def test_unresolvable_credentials_are_a_non_zero_exit(workspace, monkeypatch, capsys):
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
     _credentials(monkeypatch, resolved=False)
@@ -150,11 +195,13 @@ def test_no_credential_value_reaches_either_output_stream(
     """The output is meant to be pasted into an issue when a run will not start."""
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
     monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
-    monkeypatch.setattr(runner, "_ensure_schema_version", lambda: True)
     monkeypatch.setenv("HMC_HOST", "SENTINEL-host-d4f2.internal")
     monkeypatch.setenv("HMC_USER", "SENTINEL-user-d4f2")
     monkeypatch.setenv("HMC_PASSWORD", "SENTINEL-pw-d4f2")
-    monkeypatch.setenv("HMC_SCHEMA_VERSION", "V1_0")
+    # A sentinel here too, not `V1_0`: the schema-version row is the newest
+    # thing on this output path (#875), and a plausible value gives the
+    # assertion below nothing to catch it printing.
+    monkeypatch.setenv("HMC_SCHEMA_VERSION", "SENTINEL-schema-d4f2")
 
     assert preflight.main(["--skip-hardware"]) == 0
 
@@ -173,7 +220,6 @@ def test_the_bootstrap_s_own_chatter_is_not_relayed(workspace, monkeypatch, caps
         return True
 
     monkeypatch.setattr(runner, "_bootstrap_config", chatty_bootstrap)
-    monkeypatch.setattr(runner, "_ensure_schema_version", lambda: True)
 
     preflight.main(["--skip-hardware"])
 
