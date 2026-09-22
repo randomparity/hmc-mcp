@@ -338,6 +338,7 @@ def test_dedicated_profile_io_slots_capture_is_pinned() -> None:
     with pytest.raises(AssertionError):
         assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
 
+
 def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
     spec = (
         ROOT
