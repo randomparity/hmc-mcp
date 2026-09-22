@@ -170,6 +170,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Exact `lssyscfg -r prof -m SYSTEM -F lpar_name,name,io_slots --header` profile readback is
+  admitted, on a redacted live
+  capture rather than on documentation — `io_slots` is documented input-side only, so a
+  `documented`-support record would have carried a fabricated locator. The admission is
+  confined to HMC V10R3 M1060 on managed-system model 8375-42A, the pair the capture covers
+  and the pair `require_admitted_environment` already enforces for SR-IOV. **No runtime
+  behaviour changes**: dedicated PCIe assign and unassign still fail closed, now because no
+  code path selects the readback rather than because none is admitted (ADR 0165, #881).
+
 - Installed CLI, MCP discovery, and generated tool references now publish the same
   operation-keyed implementation, verification, and runtime-eligibility evidence.
   Compatibility guidance now describes the POWER10/POWER11 reference corpus and

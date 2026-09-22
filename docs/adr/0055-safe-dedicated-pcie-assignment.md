@@ -4,6 +4,15 @@
 
 Accepted on 2026-08-20.
 
+> **Partially superseded by [0165](0165-admitted-io-slots-profile-readback.md)**
+> (2026-09-22) for two Decision clauses, quoted here because line numbers move: "Every assign
+> or unassign therefore fails with a capability-unavailable error before issuing a command,
+> including retries, until exact profile readback is admitted by ADR 0053" (`:33-34`),
+> and "They are not selected by the public operation until a version-labelled evidence record
+> admits exact profile readback" (`:37-38`). The record those clauses waited on exists;
+> the operations still fail closed, now because no code path selects the admitted readback.
+> Issue #882 owns that selection and the envelope check.
+
 ## Context
 
 The existing public profile helper appends `io_slots` with unconditional `--force`. ADR 0053
