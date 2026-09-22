@@ -51,6 +51,7 @@ import shlex
 import sys
 import uuid
 from dataclasses import dataclass, replace
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from fastmcp import Client
@@ -65,6 +66,8 @@ from hmc_mcp.operations.virtualization.pcie import (
     _ADMITTED_SYSTEM_MODEL,
 )
 from hmc_mcp.ssh.commands import build_attribute_record, build_filter
+
+from .observation import CallFailure
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -1153,9 +1156,16 @@ def _record_fixture_artifacts(state: RunState, fixture: _DedicatedFixture) -> No
     state.artifacts.pcie_baseline_io_slots = fixture.baseline_io_slots
 
 
+class _Absence(Enum):
+    """Why a failed create's readback found no partition of this run's."""
+
+    CONFIRMED = "confirmed"
+    UNCONFIRMED = "unconfirmed"
+
+
 async def _created_despite_failure(
     client: Client, state: RunState, fixture: _DedicatedFixture, lpar_name: str
-) -> str | None:
+) -> str | _Absence:
     """Return the UUID of *lpar_name* when a failed create in fact created it.
 
     Applies to a create the invariant every ``chsyscfg`` in this module already
@@ -1166,6 +1176,11 @@ async def _created_despite_failure(
 
     Ownership is confirmed by the run marker before claiming the partition, so
     a name collision with something this run did not create is never adopted.
+    Absence is confirmed by HSCL8012, which the HMC answers for a name it does
+    not have (`scripts/live_test_recovery.py:172-173`), or by a readback that
+    answered with something other than this run's marker. Any other failed read,
+    or an empty description (a partition whose ownership stamp never landed),
+    leaves it unconfirmed.
     """
     st, data = await state.call(
         client,
@@ -1173,10 +1188,12 @@ async def _created_despite_failure(
         system_name_or_uuid=fixture.config.system_name,
         lpar_name_or_uuid=lpar_name,
     )
-    if st != "PASS" or not isinstance(data, str):
-        return None
+    if st != "PASS" and isinstance(data, CallFailure) and "HSCL8012" in data.message:
+        return _Absence.CONFIRMED
+    if st != "PASS" or not isinstance(data, str) or not data.strip():
+        return _Absence.UNCONFIRMED
     if parse_lpar_ownership_caller_token(data) != fixture.run_marker:
-        return None
+        return _Absence.CONFIRMED
     uuid_match = re.search(r"'UUID':\s*'([0-9A-Fa-f-]{36})'", data)
     return uuid_match.group(1) if uuid_match else ""
 
@@ -1186,9 +1203,11 @@ async def _probe_create_time_assignment(
 ) -> bool:
     """Exercise create-time dedicated assignment, then remove the probe partition.
 
-    Returns False only when a probe partition exists and its cleanup did not
-    complete; the fixture must not be created then, because the fixture's
-    assign would ask for a slot another profile may still list.
+    Returns False only when a probe partition is known to exist and its cleanup
+    did not complete; the fixture must not be created then, because the fixture's
+    assign would ask for a slot another profile may still list. A failed create
+    whose partition cannot be confirmed either way returns True with a recovery
+    row: the fixture's own assign then refuses a slot another profile lists.
     """
     arm = fixture.config
     st, data = await state.call(
@@ -1217,7 +1236,20 @@ async def _probe_create_time_assignment(
         probe_uuid = await _created_despite_failure(
             client, state, fixture, fixture.probe_lpar_name
         )
-        if probe_uuid is None:
+        if probe_uuid is _Absence.CONFIRMED:
+            return True
+        if probe_uuid is _Absence.UNCONFIRMED:
+            state.record(
+                30,
+                "create-time probe partition not confirmed absent",
+                "FAIL",
+                "MANUAL RECOVERY REQUIRED (check): the create-time probe reported "
+                f"{st} and no partition {fixture.probe_lpar_name!r} carrying this "
+                f"run's marker {fixture.run_marker!r} could be confirmed on "
+                f"{arm.system_name!r}. A lost response may still have created it "
+                f"holding slot {fixture.drc_index!r}; if it exists with that marker, "
+                "remove the slot from its profile and then delete it.",
+            )
             return True
         fixture.probe_created = True
         fixture.probe_lpar_uuid = probe_uuid or None
@@ -1287,7 +1319,25 @@ async def create_dedicated_fixture(
         stray_uuid = await _created_despite_failure(
             client, state, fixture, fixture.lpar_name
         )
-        if stray_uuid is None:
+        if stray_uuid is _Absence.UNCONFIRMED:
+            state.record(
+                30,
+                "fixture partition not confirmed absent",
+                "FAIL",
+                "MANUAL RECOVERY REQUIRED (check): the fixture create reported "
+                f"{st} and no partition {fixture.lpar_name!r} carrying this run's "
+                f"marker {fixture.run_marker!r} could be confirmed on "
+                f"{arm.system_name!r}. A lost response may still have created it; "
+                "if it exists with that marker, delete it.",
+            )
+            state.skip(
+                30,
+                "dedicated fixture create",
+                "fixture LPAR create failed and its absence could not be confirmed "
+                "— SKIP dedicated arm; see the manual-recovery row",
+            )
+            return False
+        if stray_uuid is _Absence.CONFIRMED:
             state.skip(
                 30,
                 "dedicated fixture create",

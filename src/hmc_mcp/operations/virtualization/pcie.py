@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Generic, Literal, TypeVar
@@ -397,6 +398,7 @@ async def _verify_dedicated_change(
     concurrent assign elsewhere passes the pre-write holder check too.
     """
     after_text: str | None = None
+    after: dict[str, ProfileIoSlot] | None = None
     read_error: Exception | None = None
     holders: list[str] = []
     try:
@@ -412,18 +414,56 @@ async def _verify_dedicated_change(
         if error is not None and after == before:
             raise error
     cause = error or read_error
-    if cause is not None:
-        reason = str(cause)
-    elif holders:
-        reason = f"slot is also listed by a profile of LPAR {', '.join(holders)}"
-    else:
-        reason = "readback mismatch"
+    reasons = [str(cause)] if cause is not None else []
+    if holders:
+        reasons.append(f"slot is also listed by a profile of LPAR {', '.join(holders)}")
     operation = "assignment" if add else "unassignment"
     raise PcieAssignmentPartialError(
         f"dedicated slot {operation} could not be verified: "
-        f"{reason}; io_slots before={target.io_slots!r} "
-        f"after={after_text!r}"
+        f"{'; '.join(reasons) or 'readback mismatch'}; io_slots before={target.io_slots!r} "
+        f"after={after_text!r}. The write may have run, so the profile may hold the change, "
+        "none of it, or a form this operation refuses. Read it with `lssyscfg -r prof -m "
+        f"{shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header`. "
+        f"{_recovery_advice(target, after, add=add)} Never write the read value back as "
+        "`io_slots=` input: that rendering is not established as valid input (ADR 0166)."
+        f"{_holder_advice(holders)}"
     ) from cause
+
+
+def _recovery_advice(
+    target: _DedicatedProfileTarget, after: dict[str, ProfileIoSlot] | None, *, add: bool
+) -> str:
+    """Advise from what the readback shows, naming no command that changes the profile.
+
+    A named reversal was wrong in some concurrent state each time one was offered
+    (#882 review rounds 1 and 2), so every reversal goes through the HMC UI.
+    """
+    drc_index = target.drc_index
+    where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
+    if after is None:
+        return (
+            f"The profile holding {where} could not be read or parsed: inspect it with the "
+            "read command above, and make any reversal through the HMC UI."
+        )
+    written = ProfileIoSlot(drc_index, None, False)
+    if after.get(drc_index) == (None if add else written):
+        rendering = "absent" if add else f"{drc_index}/none/0"
+        return f"The readback lists {where} as before ({rendering}), so no reversal is needed."
+    return (
+        "Compare the read value with the before value, and make any reversal of "
+        f"{where} through the HMC UI."
+    )
+
+
+def _holder_advice(holders: list[str]) -> str:
+    """Name another LPAR listing the slot, whose profile ADR 0011 does not authorize."""
+    if not holders:
+        return ""
+    return (
+        f" The profile of LPAR {', '.join(holders)} also lists the slot; do not edit that "
+        "profile without its owner: this tool did not write it, and ADR 0011 authorizes "
+        "only the requested LPAR."
+    )
 
 
 async def _system_name(config: HMCConfig, system: str) -> str:

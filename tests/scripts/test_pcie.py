@@ -24,6 +24,15 @@ _CONFIG = {
 }
 _DRC = "21010020"
 _ASSIGNED = f"{_DRC}/none/0"
+#: What the HMC answers for a partition name it does not have
+#: (`scripts/live_test_recovery.py:172-173`, ADR 0162).
+_NOT_FOUND = CallFailure(
+    "HMCCLIError",
+    "HMCCLIError: HSCL8012 The partition named live-x-createtime was not found.",
+    "",
+    None,
+    False,
+)
 
 
 class ScenarioState:
@@ -57,7 +66,10 @@ class ScenarioState:
         response = self.responses.get(tool)
         if callable(response):
             response = response(kwargs, index)
-        status = self.statuses.get(tool, "PASS")
+        # A response that is a failure is what the tool raised, so it is a FAIL.
+        status = self.statuses.get(
+            tool, "FAIL" if isinstance(response, CallFailure) else "PASS"
+        )
         if callable(status):
             status = status(tool, kwargs, index)
         return status, response
@@ -150,7 +162,7 @@ def _happy_responses(
     *,
     description: str | None = None,
     descriptions: list[str] | None = None,
-    probe_description: str | None = None,
+    probe_description: Any = None,
     uuid_value: str | None = "fixture-uuid",
     uuids: list[str | None] | None = None,
     ownership_stamped: bool | None = True,
@@ -184,7 +196,7 @@ def _happy_responses(
             return ""
         return slots["io_slots"]
 
-    def get_description(kwargs: dict[str, Any], index: int) -> str:
+    def get_description(kwargs: dict[str, Any], index: int) -> Any:
         # Keyed on which partition is being asked about, so a test can give the
         # probe a foreign token while the fixture keeps this run's — the only
         # way `_cleanup_probe_partition`'s comparison can be made to refuse.
@@ -196,7 +208,7 @@ def _happy_responses(
                 # exist. Answering with the fixture's own stamp would tell the
                 # arm's lost-response readback that a refused create had in
                 # fact created something, which is the opposite of the truth.
-                return "[no such partition]"
+                return _NOT_FOUND
         if descriptions is not None:
             return descriptions[min(index, len(descriptions) - 1)]
         if description is not None:
@@ -411,6 +423,8 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
     # refusal inside the envelope is a finding.
     probe_row = state.row("create-time dedicated assignment")
     assert probe_row is not None and probe_row[2] == "FAIL"
+    # The readback answers HSCL8012 for the probe, so its absence is confirmed.
+    assert state.row("create-time probe partition not confirmed absent") is None
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
     assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
     assert not any(
@@ -422,6 +436,30 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
 
 def _index_of(state: ScenarioState, predicate: Any) -> int:
     return next(i for i, (t, k) in enumerate(state.calls) if predicate(t, k))
+
+
+_LOOKUP_LOST = CallFailure("HMCCLIError", "HMCCLIError: connection lost", "", None, False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "probe_description",
+    [pytest.param(_LOOKUP_LOST, id="unread"), pytest.param("", id="unstamped")],
+)
+async def test_probe_absence_that_cannot_be_confirmed_is_a_recovery_row(
+    monkeypatch: pytest.MonkeyPatch, probe_description: Any
+) -> None:
+    """A failed or unstamped readback cannot rule out a partition the create made."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_description=probe_description)
+    state = await _run_arm(monkeypatch, responses, holder)
+
+    check_row = state.row("create-time probe partition not confirmed absent")
+    assert check_row is not None and check_row[2] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
+    assert "-createtime" in str(check_row[3])
+    creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
+    assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
 
 
 @pytest.mark.asyncio
@@ -837,9 +875,9 @@ async def test_identity_drift_before_delete_blocks_guard_c(
     descriptions = make_description()
     fixture_reads = {"n": 0}
 
-    def get_description(kwargs: dict[str, Any], _index: int) -> str:
+    def get_description(kwargs: dict[str, Any], _index: int) -> Any:
         if _is_probe_name(kwargs):
-            return "[no such partition]"
+            return _NOT_FOUND
         token = holder.get("marker", "")
         entry = descriptions[min(fixture_reads["n"], len(descriptions) - 1)]
         fixture_reads["n"] += 1
@@ -1059,8 +1097,8 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     """The readback's other answer: nothing was created, so nothing is cleaned."""
     holder: dict[str, str] = {}
     responses = _happy_responses(holder)
-    # No partition of either name carries this run's marker.
-    responses["hmc_get_lpar_description"] = lambda _k, _n: "[no such partition]"
+    # The HMC has no partition of either name.
+    responses["hmc_get_lpar_description"] = lambda _k, _n: _NOT_FOUND
     state = await _run_arm(
         monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
     )
@@ -1069,6 +1107,25 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     skip = state.row("dedicated fixture create")
     assert skip is not None and skip[2] == "SKIP"
     assert "nothing to clean up" in str(skip[3])
+
+
+@pytest.mark.asyncio
+async def test_fixture_create_failure_with_unconfirmed_absence_is_a_recovery_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lookup that failed some other way cannot say nothing was created."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    responses["hmc_get_lpar_description"] = lambda _k, _n: _LOOKUP_LOST
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
+    )
+    row = state.row("fixture partition not confirmed absent")
+    assert row is not None and row[2] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in str(row[3])
+    assert "live-" in str(row[3])
+    assert "nothing to clean up" not in " ".join(str(r[3]) for r in state.results)
+    assert "hmc_delete_lpar" not in [t for t, _ in state.calls]
 
 
 @pytest.mark.asyncio
@@ -1104,3 +1161,5 @@ async def test_foreign_partition_of_the_same_name_is_never_adopted(
     )
     assert state.cleanup_start is None
     assert "hmc_delete_lpar" not in [t for t, _ in state.calls]
+    # A partition of that name held by someone else rules out one of this run's.
+    assert state.row("create-time probe partition not confirmed absent") is None

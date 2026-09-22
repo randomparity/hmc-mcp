@@ -114,7 +114,9 @@ the arm's escape hatch, MCP/CLI signatures, facade promotion, any live HMC acces
   from the arm's unadmitted read, not the capture — fails closed: before mutation on assign, and
   as a partial error after unassigning a profile's last slot; create-time assignment on a fresh
   partition meets it first; (3) a concurrent writer between read and write — the readback
-  mismatch reports it; no lock exists on the HMC CLI.
+  mismatch reports it, except a concurrent change of the slot to `is_required=1` that our
+  `io_slots-` then removes, which reads back as the requested absence; no lock exists on the
+  HMC CLI.
 - **Covered elsewhere:** live acceptance of `<drc>//0` on the envelope and maturity — #879;
   non-VIOS exercise and the bare-cec consumer — #876; SR-IOV envelope widening — #667/#668;
   dynamic `-r io` — ADR 0053 matrix.
