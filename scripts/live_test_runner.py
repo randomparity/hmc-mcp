@@ -28,14 +28,19 @@ macOS. The runner never creates or patches .env: when credentials are absent,
 it exits with manual configuration instructions.
 
 HMC_SCHEMA_VERSION is not among them. It is opt-in and unset by default
-(`src/hmc_mcp/config.py`): when set, it pins `X-HMC-Schema-Version` on GET
-requests and on every `/rest/api/web/` request (issue #99); the UOM write paths
-that answered HTTP 406 with the header present omit it by construction (issue
-#96, `src/hmc_mcp/client/client_lpars.py`, `client_network.py`); and
-`submit_job` builds its headers literally, so the job path every power
-operation takes never sends it. A run therefore starts either way. The run
-header prints the resolved value, including `(not set)`, because a results
-document is only evidence for the request environment it was gathered in.
+(`src/hmc_mcp/config.py`), and where it lands is per call site rather than per
+HTTP method: UOM requests carry `X-HMC-Schema-Version` unless their call site
+opts out, every `/rest/api/web/` request carries it (issue #99), the paths that
+answered HTTP 406 with it present opt out (issue #96,
+`src/hmc_mcp/client/client_lpars.py`, `client_network.py`), and requests that
+build their own headers never carry it — including `submit_job`, so the job
+path every power operation takes is unaffected either way. A run therefore
+starts with or without it. `docs/compatibility.md` is the full account.
+
+The run header prints the resolved value, including `(not set)`, to stdout. The
+results and observations documents do not record it, so a matrix cited as
+evidence for a run does not by itself name the request environment it was
+gathered in.
 """
 
 from __future__ import annotations

@@ -22,23 +22,32 @@ and unset by default, because HMC V8/V9 targets do not need it and uom
 documents already declare `schemaVersion=V1_0`. Set it only to pin schema
 negotiation explicitly — for example while debugging a read path.
 
-Where the `X-HMC-Schema-Version` header goes when it *is* set:
+Where the `X-HMC-Schema-Version` header goes when it *is* set. The rule is per
+call site, not per HTTP method — there is no method whose requests all carry it
+and none whose requests all omit it:
 
-- **`GET` requests** carry it, and so does **every `/rest/api/web/` request** —
-  reads and writes alike — because some HMC releases require it there.
-- **The UOM write paths that answered HTTP 406 with it present omit it by
-  construction**: `PUT`/`POST LogicalPartition`, `POST VirtualNetwork`,
-  child-resource adapter `PUT`, and the VolumeGroup and VirtualIOServer storage
-  paths. That omission is **per call site, not a blanket rule** — other UOM
-  writes, including HMC user create/modify, `ModifyManagedSystem`, and every
-  UOM `DELETE`, still send it. Unset is therefore the only setting under which
-  no write path sends it at all.
-- **The job path never carries it.** `submit_job` builds its headers literally,
-  so LPAR power on/off, activation, and every other `do/{Operation}` job is
-  unaffected by this variable either way.
+- **UOM requests carry it unless their own call site opts out.** The paths that
+  answered HTTP 406 with the header present opt out, reads and writes alike:
+  `PUT`/`POST LogicalPartition`, `POST VirtualNetwork`, child-resource adapter
+  `PUT`, and the VolumeGroup and VirtualIOServer storage paths. The rest — HMC
+  user create/modify, the managed-system property `POST`, and the reads and
+  `DELETE`s that go through the shared UOM helpers — still send it.
+- **Every `/rest/api/web/` request carries it**, reads and writes alike,
+  because some HMC releases require it there.
+- **Requests that build their own headers never carry it**, whatever this
+  variable is set to. That is the `Accept: */*` discovery reads — quick
+  properties, and the operation, schema and search-parameter listings, where
+  ADR 0139 records the omission deliberately — the storage-broker ISO
+  create/upload/cleanup calls, and every `do/{Operation}` job, which is the
+  path LPAR power on/off and activation take.
 
-A live run records the resolved value in its run header, so a results document
-says which of those two request environments produced it.
+Unset is therefore the only setting under which no request carries the header
+at all.
+
+A live run prints the resolved value in its run header, on stdout. The
+`test-results-*.json` and observations documents do not record it, so a matrix
+cited as evidence does not by itself say which of those two request
+environments produced it — read that from the run's output.
 See [`docs/environment-variables.md`](environment-variables.md) for all
 supported variables.
 

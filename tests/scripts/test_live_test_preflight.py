@@ -7,6 +7,7 @@ working directory.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -45,7 +46,13 @@ _DEDICATED = {
 
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
-    """An isolated working directory with no ambient HMC credentials."""
+    """An isolated working directory with no ambient HMC credentials.
+
+    The environ is swapped for a copy rather than only cleared: the credential
+    check reaches `runner._load_dotenv`, which assigns into `os.environ`
+    directly, and `monkeypatch` cannot take back a key it never recorded.
+    """
+    monkeypatch.setattr(os, "environ", dict(os.environ))
     monkeypatch.chdir(tmp_path)
     for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD", "HMC_SCHEMA_VERSION"):
         monkeypatch.delenv(key, raising=False)
@@ -143,6 +150,28 @@ def test_an_absent_schema_version_is_reported_without_stopping_the_run(
     assert "HMC_SCHEMA_VERSION=not set" in output
     assert "MISSING" not in output
     assert "the runner would start" in output
+
+
+def test_a_dotenv_only_schema_version_is_reported_as_set(
+    workspace, monkeypatch, capsys
+):
+    """#875. The mirror of the runner's own `.env` load, and for the same reason.
+
+    `_bootstrap_config` reads `.env` only when the TOML profile fails, so a
+    resolved profile that does not pin the variable would leave preflight
+    naming a request environment the run will not use.
+    """
+    (workspace / ".env").write_text(
+        _env_text(**_DEDICATED) + "HMC_SCHEMA_VERSION=V1_0\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(runner, "_ENV_FILE", workspace / ".env")
+    for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
+        monkeypatch.setenv(key, f"value-for-{key}")
+
+    assert preflight.main(["--skip-hardware"]) == 0
+
+    assert "HMC_SCHEMA_VERSION=set" in capsys.readouterr().out
 
 
 def test_unresolvable_credentials_are_a_non_zero_exit(workspace, monkeypatch, capsys):

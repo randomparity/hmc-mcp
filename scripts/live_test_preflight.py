@@ -156,6 +156,11 @@ def _check_credentials() -> tuple[bool, dict[str, bool]]:
     """
     with contextlib.redirect_stdout(io.StringIO()):
         resolved = runner._bootstrap_config()
+        # The same pair, in the same order, as the runner's own startup gate:
+        # `_bootstrap_config` reads `.env` only when the TOML profile fails, so
+        # without this a profile-resolved host reports a `.env`-only `HMC_*`
+        # value as absent and names a request environment the run will not use.
+        runner._load_dotenv()
     return resolved, {key: env_var_value(key) is not None for key in _CREDENTIAL_KEYS}
 
 
