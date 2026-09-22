@@ -34,16 +34,23 @@ class SystemsMixin:
         # ManagementConsole feed over a null nested property (observed:
         # Session/SessionId/Value). Translate that known response into an
         # actionable error rather than making a firmware failure
-        # indistinguishable from an empty feed. The match is the same
-        # live-confirmed text the two managed-system guards below use; the
-        # message names no particular property because the guard does not
-        # require one, and the body carries the HMC's own detail.
+        # indistinguishable from an empty feed. The marker is the
+        # live-confirmed text the two managed-system guards below also match
+        # (ADR 0138), but it is tested against the body rather than their
+        # str(exc): the rendered detail carries only the first
+        # Message/msg/error element of an XML body, or its first 500
+        # characters when the body is not XML (errors.py), while the body is
+        # what the transport received. No raw body for this endpoint has
+        # been captured, so the wider surface is the one that holds whatever
+        # shape a live capture turns out to show. The message names no
+        # particular property because the marker does not establish one; the
+        # HMC's own detail still reaches the operator through the body.
         try:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
         except HMCError as exc:
             if exc.status_code == 500 and (
-                "Nested path contains null property" in str(exc)
+                "Nested path contains null property" in (exc.body or "")
             ):
                 raise HMCError(
                     "Management-console inventory is unavailable because this HMC "

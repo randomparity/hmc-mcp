@@ -85,12 +85,27 @@ EMPTY_FEED = """\
 # Console
 # ---------------------------------------------------------------------- #
 
-# Captured, not constructed: the verbatim HTTP 500 body five lab HMC profiles
-# returned for GET /rest/api/uom/ManagementConsole, quoted in #880. The comma
-# before `currentProperty` and the space before it are the HMC's own.
+# Reconstructed, not captured. #880 quotes the *rendered* error for this
+# failure -- `GET ... failed (HTTP 500): ` plus the detail -- which is what
+# HMCError builds (errors.py), not what the HMC put on the wire. Two
+# transformations produced the string below: the client-added prefix was
+# removed, and the issue's three wrapped lines were joined with single
+# spaces. The raw response body has never been captured; the live-run record
+# for #880 is where a captured one belongs.
 NULL_PROPERTY_500_BODY = (
     "Nested path contains null property , currentProperty=SessionId "
     "nestedPath=Session/SessionId/Value"
+)
+
+# Also constructed. errors.py states that HMC error bodies are XML, and a
+# body of this shape renders as `... (HTTP 500): Internal Server Error` --
+# the guard sees the null-property text only by reading the body itself.
+NULL_PROPERTY_500_XML_BODY = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    "<HttpErrorResponse>"
+    "<Message>Internal Server Error</Message>"
+    f"<Detail>{NULL_PROPERTY_500_BODY}</Detail>"
+    "</HttpErrorResponse>"
 )
 
 
@@ -108,17 +123,21 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
     assert result["Resource"]["Version"] == "V10R1M1040"
 
 
-def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
-    """The real null-property 500 body becomes the actionable firmware error.
+@pytest.mark.parametrize(
+    "body", [NULL_PROPERTY_500_BODY, NULL_PROPERTY_500_XML_BODY]
+)
+def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc, body):
+    """A null-property 500 becomes the actionable firmware error.
 
     Asserting the produced message is what makes this test bite: the
     untranslated transport error carries the same status code and the same
     body, so only the message distinguishes a guard that fired from one that
-    did not.
+    did not. The XML case is what makes the guard read `exc.body` rather than
+    the rendered detail, which would show only `Internal Server Error`.
     """
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(500, text=NULL_PROPERTY_500_BODY)
+        return_value=httpx.Response(500, text=body)
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_get_console_info()
@@ -127,18 +146,26 @@ def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
     assert "could not serialize a null property" in message
     assert "update the HMC firmware and retry" in message
     assert exc_info.value.status_code == 500
-    assert exc_info.value.body == NULL_PROPERTY_500_BODY
+    assert exc_info.value.body == body
     assert isinstance(exc_info.value.__cause__, HMCError)
 
 
-def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
+@pytest.mark.parametrize("body", ["forbidden", NULL_PROPERTY_500_BODY])
+def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc, body):
+    """A non-500 stays untranslated even when it carries the null-property text.
+
+    The second case pins the status half of the guard: without it, deleting
+    `exc.status_code == 500` leaves every console test green.
+    """
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(403, text="forbidden")
+        return_value=httpx.Response(403, text=body)
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_get_console_info()
     assert exc_info.value.status_code == 403
+    assert "Management-console inventory is unavailable" not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
 
 
 def test_console_info_propagates_unrelated_http_500(monkeypatch, mock_hmc):
