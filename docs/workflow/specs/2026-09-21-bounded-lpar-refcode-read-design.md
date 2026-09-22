@@ -36,8 +36,8 @@ header mismatch; #879 confirms the set against hardware.
 **The bound** is `count: int = 1`: `ValueError` outside `1..MAX_REFCODE_COUNT` (100) and
 `TypeError` for a non-`int` — `bool` included, since `True` would otherwise become `-n 1` — both
 before any interpolation. Both selectors are refused there too when empty, blank, or
-control-bearing.
-omitted lists only the current code — while the command always passes `-n` so its shape is fixed.
+control-bearing. The default matches the HMC's own — `-n` omitted lists only the current code —
+while the command always passes `-n` so its shape is fixed.
 
 ### Failure model
 
