@@ -304,13 +304,6 @@ async def _authorize_pcie_profile_request(
     )
 
 
-async def _read_profile_io_slots(
-    config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
-) -> str:
-    rows = await read_profile_io_slot_rows(config, system_name)
-    return _select_profile_io_slots(rows, lpar_name, profile_name)
-
-
 def _select_profile_io_slots(
     profile_rows: list[dict[str, str]], lpar_name: str, profile_name: str
 ) -> str:
@@ -341,10 +334,10 @@ async def _change_dedicated_slot(target: _DedicatedProfileTarget, *, add: bool) 
             f"profile lists slot {drc_index} as {present}; only {drc_index}/none/0, "
             "the form this operation writes, is changed"
         )
-    if (present is not None) == add:
-        return
     if add:
         _refuse_slot_listed_by_another_lpar(target)
+    if (present is not None) == add:
+        return
     expected = dict(before)
     if add:
         expected[drc_index] = written
@@ -368,20 +361,26 @@ def _refuse_slot_listed_by_another_lpar(target: _DedicatedProfileTarget) -> None
     state no evidence characterizes. Only rows that mention the DRC are parsed, so an
     unrelated row cannot block the operation.
     """
-    holders = sorted(
-        {
-            row["lpar_name"]
-            for row in target.profile_rows
-            if row["lpar_name"] != target.lpar_name
-            and target.drc_index in row["io_slots"]
-            and target.drc_index in _slots_by_drc(row["io_slots"])
-        }
-    )
+    holders = _other_holders(target, target.profile_rows)
     if holders:
         raise ValueError(
             f"slot {target.drc_index} is already listed by a profile of LPAR "
             f"{', '.join(holders)}; remove it there first"
         )
+
+
+def _other_holders(
+    target: _DedicatedProfileTarget, profile_rows: list[dict[str, str]]
+) -> list[str]:
+    return sorted(
+        {
+            row["lpar_name"]
+            for row in profile_rows
+            if row["lpar_name"] != target.lpar_name
+            and target.drc_index in row["io_slots"]
+            and target.drc_index in _slots_by_drc(row["io_slots"])
+        }
+    )
 
 
 async def _verify_dedicated_change(
@@ -392,26 +391,37 @@ async def _verify_dedicated_change(
     *,
     add: bool,
 ) -> None:
-    """Classify a dispatched change by what the profile reads back as."""
+    """Classify a dispatched change by what the profile reads back as.
+
+    An assign is also re-checked for another LPAR listing the slot, since a
+    concurrent assign elsewhere passes the pre-write holder check too.
+    """
     after_text: str | None = None
     read_error: Exception | None = None
+    holders: list[str] = []
     try:
-        after_text = await _read_profile_io_slots(
-            target.config, target.system_name, target.lpar_name, target.profile_name
-        )
+        rows = await read_profile_io_slot_rows(target.config, target.system_name)
+        after_text = _select_profile_io_slots(rows, target.lpar_name, target.profile_name)
         after = _slots_by_drc(after_text)
+        holders = _other_holders(target, rows) if add else []
     except Exception as caught:  # noqa: BLE001 - reported through the partial error
         read_error = caught
     else:
-        if after == expected:
+        if after == expected and not holders:
             return
         if error is not None and after == before:
             raise error
     cause = error or read_error
+    if cause is not None:
+        reason = str(cause)
+    elif holders:
+        reason = f"slot is also listed by a profile of LPAR {', '.join(holders)}"
+    else:
+        reason = "readback mismatch"
     operation = "assignment" if add else "unassignment"
     raise PcieAssignmentPartialError(
         f"dedicated slot {operation} could not be verified: "
-        f"{cause or 'readback mismatch'}; io_slots before={target.io_slots!r} "
+        f"{reason}; io_slots before={target.io_slots!r} "
         f"after={after_text!r}"
     ) from cause
 

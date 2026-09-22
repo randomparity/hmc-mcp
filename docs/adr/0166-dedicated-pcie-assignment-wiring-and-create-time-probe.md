@@ -60,7 +60,9 @@ lists an M1060 fix line. Its reason string, which ADR 0165 showed to be false, i
 name the envelope. Inside it
 the LPAR must be `Not Activated`, the one state the PCIe state matrix admits profile-only
 mutation for, and assign refuses a slot that a profile of another LPAR already lists, since two
-partitions contending for one slot at activation is a state no evidence characterizes.
+partitions contending for one slot at activation is a state no evidence characterizes. The
+holder check runs again on the post-write readback, so a concurrent assign to another LPAR is
+reported as `PcieAssignmentPartialError` rather than as success.
 
 **4. The live arm's create-time probe becomes an asserted create-time assignment, cleaned up
 before the fixture exists.** Neither SKIP declaration survives. ST30 requests create-time

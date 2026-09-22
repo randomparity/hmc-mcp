@@ -42,8 +42,9 @@ the arm's escape hatch, MCP/CLI signatures, facade promotion, any live HMC acces
    a case-variant string — both before any HMC call;
    (b) `_authorize_pcie_profile_request` → `resolve_and_authorize_lpar_names` (ADR 0011; a foreign
    owner raises `PermissionError`);
-   (c) envelope: `require_dedicated_pcie_environment(config, system_name)`, which shares the pure
-   predicate `_is_admitted_environment(version, model)` with `require_admitted_environment`;
+   (c) envelope: `require_dedicated_pcie_environment(config, system_name)`, which matches
+   `lshmc -V`'s own Version/Release/Service Pack fields exactly through
+   `_is_exact_admitted_environment` (ADR 0166 decision 3), not the SR-IOV substring predicate;
    outside it raise `PcieAssignmentUnavailableError` with the rewritten
    `PCIE_ASSIGNMENT_UNAVAILABLE_REASON`;
    (c2) LPAR state via `read_sriov_lpar_state`: anything but `Not Activated` → `ValueError`,
@@ -56,7 +57,9 @@ the arm's escape hatch, MCP/CLI signatures, facade promotion, any live HMC acces
    False)` — what `<drc>//0` is expected to read back as. Assign: DRC absent → add; present as
    `WRITTEN` → return with no mutation (idempotent retry); present in any other form →
    `ValueError`, no mutation; absent but listed by a profile of another LPAR in the same
-   readback → `ValueError`, no mutation (only rows mentioning the DRC are parsed). Unassign:
+   readback → `ValueError`, no mutation (only rows mentioning the DRC are parsed), checked
+   before the idempotent return and again on the post-write readback, where a concurrent
+   assign elsewhere surfaces as `PcieAssignmentPartialError`. Unassign:
    absent → return (idempotent); present as `WRITTEN` → remove; other form → `ValueError`, no
    mutation.
 5. **Verify.** Expected after-state is the before-state plus (assign) or minus (unassign)

@@ -303,6 +303,31 @@ def test_assign_refuses_a_slot_another_lpars_profile_lists(monkeypatch, hmc):
     assert fake.mutations() == []
 
 
+def test_assign_refuses_an_already_doubled_listing(monkeypatch, hmc):
+    fake = _install(
+        monkeypatch,
+        _FakeHmc(rows=[("lpar", "prof", f"{_DRC}/none/0"), ("other", "p2", f"{_DRC}/none/0")]),
+    )
+
+    with pytest.raises(ValueError, match="already listed by a profile of LPAR other"):
+        _assign(hmc)
+
+    assert fake.mutations() == []
+
+
+def test_a_concurrent_assign_to_another_lpar_is_a_partial_error(monkeypatch, hmc):
+    def racing_writer(value: str) -> str:
+        fake.rows.append(("other", "p2", f"{_DRC}/none/0"))
+        return value
+
+    fake = _install(monkeypatch, _FakeHmc(after_write=racing_writer))
+
+    with pytest.raises(PcieAssignmentPartialError, match="also listed by a profile of LPAR other"):
+        _assign(hmc)
+
+    assert len(fake.mutations()) == 1
+
+
 def test_assign_ignores_the_same_lpars_other_profiles_and_unrelated_rows(monkeypatch, hmc):
     rows = [
         ("lpar", "prof", "none"),
