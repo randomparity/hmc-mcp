@@ -335,7 +335,7 @@ def test_dedicated_profile_io_slots_capture_is_pinned() -> None:
     with pytest.raises(AssertionError):
         assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
 
-def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
+def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
     spec = (
         ROOT
         / "docs"
@@ -358,6 +358,15 @@ def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
     assert (
         "do not compose Power10/11 mutation evidence with Power9 read evidence"
         in rows["Assign/unassign dedicated slot"][2]
+    )
+    # The dedicated row's profile cells no longer fail closed for want of a
+    # readback: ADR 0165 admits one. They fail closed because nothing selects it.
+    for outcome in rows["Assign/unassign dedicated slot"][:2]:
+        assert "admitted by ADR 0165" in outcome
+        assert "#882" in outcome
+    assert all(
+        "do not mutate" in outcome
+        for outcome in rows["Assign/unassign dedicated slot"][:3]
     )
     assert all(
         "do not mutate" in outcome
