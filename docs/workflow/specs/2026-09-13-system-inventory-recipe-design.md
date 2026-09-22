@@ -16,7 +16,9 @@ system before any later provisioning decision.
 ## Design
 
 The recipe sets `umask 077`, creates a private local directory, resolves the system UUID from
-`systems list --json`, and captures system details and summary. It then gathers
+`systems show "$SYSTEM_NAME" --json`, which captures the system in the same
+command, and records the console identity and the system summary. Resolution
+fails loudly rather than leaving `$SYSTEM` empty for every later command. It then gathers
 system-scoped network resources, LPAR and VIOS lists, and per-resource details.
 For each LPAR it captures the full document, summary, and supported adapter
 types. It also captures the system-wide NPIV/vFC port list. For each VIOS it
@@ -28,8 +30,9 @@ virtual-disk, media, and logical-unit detail. A small shell helper records
 unavailable or permission-denied command failures in an adjacent `.error.txt`
 file, preserving the category rather than treating it as absent.
 
-The recipe captures dedicated PCIe slots, SR-IOV adapters, physical ports,
-logical ports, and vFC ports with their existing stable CLI projections. Raw
+The recipe captures dedicated PCIe slots, SR-IOV adapters, Shared Ethernet
+Adapters, and vFC ports with their existing stable CLI projections, and SR-IOV
+physical and logical ports once per adapter, which those two commands require. Raw
 GET XML is reserved for physical I/O or other fields that those projections do
 not expose. The POST-only GetFreePhysicalVolumes job is excluded because the
 recipe's read-only contract permits only GETs.

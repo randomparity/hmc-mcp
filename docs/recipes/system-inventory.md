@@ -29,15 +29,18 @@ capture() {
 ## 2. Resolve and capture the managed system
 
 ```bash
-capture systems.json hmc-mcp systems list --json
-SYSTEM=$(jq -er --arg name "$SYSTEM_NAME" '.[] | select(.Resource.SystemName == $name) | .UUID' "$CAPTURE_DIR/systems.json")
-printf '%s\n' "$SYSTEM" >"$CAPTURE_DIR/system.uuid.txt"
-capture system.json hmc-mcp systems show "$SYSTEM" --json
+capture system.json hmc-mcp systems show "$SYSTEM_NAME" --json
+SYSTEM=$(jq -er '.UUID' "$CAPTURE_DIR/system.json")
+printf '%s\n' "${SYSTEM:?unresolved managed system — stop and read system.json.error.txt}" >"$CAPTURE_DIR/system.uuid.txt"
 capture system-summary.json hmc-mcp systems summary "$SYSTEM" --json
 capture managed-system.raw.xml hmc-mcp raw get "/rest/api/uom/ManagedSystem/$SYSTEM"
 ```
 
-The first three captures are stable CLI JSON for identity, firmware, RAM, CPU capacity, and partition counts. managed-system.raw.xml is **raw HMC XML** for physical-I/O fields that have no stable projection.
+`systems show` accepts the managed-system name, so one command both resolves the UUID and captures the system. The recipe does not list the console inventory to find it: that listing is not needed to capture a system you can already name, and some HMC firmware levels cannot serialize it at all.
+
+**Stop here if the UUID does not resolve.** Every later command interpolates `$SYSTEM`; an empty value asks the HMC for nothing and fills the directory with empty files. The `${SYSTEM:?...}` guard fails the command that writes system.uuid.txt, so an absent or empty system.uuid.txt means the capture never started.
+
+system.json and system-summary.json are stable CLI JSON for identity, firmware, RAM, CPU capacity, and partition counts. managed-system.raw.xml is **raw HMC XML** for fields the stable projections in step 3 do not expose.
 
 ## 3. Capture network, PCIe, and SR-IOV inventory
 
@@ -45,16 +48,27 @@ The first three captures are stable CLI JSON for identity, firmware, RAM, CPU ca
 capture virtual-switches.json hmc-mcp network list-switches "$SYSTEM" --json
 capture virtual-networks.json hmc-mcp network list-networks "$SYSTEM" --json
 capture network-bridges.json hmc-mcp network list-bridges "$SYSTEM" --json
+capture sea-adapters.json hmc-mcp network list-sea-adapters "$SYSTEM" --json
 capture dedicated-pcie-slots.json hmc-mcp network list-dedicated-pcie-slots "$SYSTEM" --json
 capture sriov-adapters.json hmc-mcp network list-sriov-adapters "$SYSTEM" --json
-capture sriov-physical-ports.json hmc-mcp network list-sriov-physical-ports "$SYSTEM" --json
-capture sriov-logical-ports.json hmc-mcp network list-sriov-logical-ports "$SYSTEM" --json
+jq -r '.items[]? | select(.adapter_id != null and .adapter_id != "null") | .adapter_id' "$CAPTURE_DIR/sriov-adapters.json" | while IFS= read -r adapter; do
+  capture "sriov-physical-ports-$adapter.json" hmc-mcp network list-sriov-physical-ports "$SYSTEM" --adapter-id "$adapter" --json
+  capture "sriov-logical-ports-$adapter.json" hmc-mcp network list-sriov-logical-ports "$SYSTEM" --adapter-id "$adapter" --json
+done
 capture vfc-ports.json hmc-mcp network list-fc-ports "$SYSTEM" --json
 ```
 
+sea-adapters.json records the Shared Ethernet Adapters that back bridged client networks.
+
+The SR-IOV port commands require an adapter, so they run once per adapter found
+in sriov-adapters.json and their files carry that adapter id. The filter skips
+the literal string `"null"`, which the HMC reports for an adapter in dedicated
+mode.
+
 These PCIe, SR-IOV, and vFC files are stable CLI output. Do not replace their
-normalized capability state with raw XML. Empty JSON lists, unavailable
-capability, and error.txt files are distinct evidence.
+normalized capability state with raw XML. The PCIe and SR-IOV commands return a
+capability envelope whose `items` array holds the rows. Empty item lists,
+unavailable capability, and error.txt files are distinct evidence.
 
 ## 4. Capture every LPAR and its adapters
 
