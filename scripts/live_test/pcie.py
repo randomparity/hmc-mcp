@@ -67,6 +67,8 @@ from hmc_mcp.operations.virtualization.pcie import (
 )
 from hmc_mcp.ssh.commands import build_attribute_record, build_filter
 
+from .observation import CallFailure
+
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
 
@@ -1174,9 +1176,11 @@ async def _created_despite_failure(
 
     Ownership is confirmed by the run marker before claiming the partition, so
     a name collision with something this run did not create is never adopted.
-    Absence is confirmed only by a readback that answered with something other
-    than this run's marker. A failed read, or an empty description (a partition
-    whose ownership stamp never landed), leaves it unconfirmed.
+    Absence is confirmed by HSCL8012, which the HMC answers for a name it does
+    not have (`scripts/live_test_recovery.py:172-173`), or by a readback that
+    answered with something other than this run's marker. Any other failed read,
+    or an empty description (a partition whose ownership stamp never landed),
+    leaves it unconfirmed.
     """
     st, data = await state.call(
         client,
@@ -1184,6 +1188,8 @@ async def _created_despite_failure(
         system_name_or_uuid=fixture.config.system_name,
         lpar_name_or_uuid=lpar_name,
     )
+    if st != "PASS" and isinstance(data, CallFailure) and "HSCL8012" in data.message:
+        return _Absence.CONFIRMED
     if st != "PASS" or not isinstance(data, str) or not data.strip():
         return _Absence.UNCONFIRMED
     if parse_lpar_ownership_caller_token(data) != fixture.run_marker:
@@ -1313,7 +1319,25 @@ async def create_dedicated_fixture(
         stray_uuid = await _created_despite_failure(
             client, state, fixture, fixture.lpar_name
         )
-        if isinstance(stray_uuid, _Absence):
+        if stray_uuid is _Absence.UNCONFIRMED:
+            state.record(
+                30,
+                "fixture partition not confirmed absent",
+                "FAIL",
+                "MANUAL RECOVERY REQUIRED (check): the fixture create reported "
+                f"{st} and no partition {fixture.lpar_name!r} carrying this run's "
+                f"marker {fixture.run_marker!r} could be confirmed on "
+                f"{arm.system_name!r}. A lost response may still have created it; "
+                "if it exists with that marker, delete it.",
+            )
+            state.skip(
+                30,
+                "dedicated fixture create",
+                "fixture LPAR create failed and its absence could not be confirmed "
+                "— SKIP dedicated arm; see the manual-recovery row",
+            )
+            return False
+        if stray_uuid is _Absence.CONFIRMED:
             state.skip(
                 30,
                 "dedicated fixture create",
