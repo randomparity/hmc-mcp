@@ -1119,6 +1119,26 @@ def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, caps
     assert "<REDACTED-SECRET>" in output
 
 
+def test_the_no_credentials_message_names_this_platforms_config_directory(
+    monkeypatch, capsys
+):
+    """It printed a Linux literal, which on macOS names a directory the
+    resolver never reads — so the operator it is instructing cannot follow it.
+    """
+    from hmc_mcp.config import ConfigError, config_dir
+
+    def fail_to_load_profile():
+        raise ConfigError("no profile")
+
+    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
+    monkeypatch.delenv("HMC_PASSWORD", raising=False)
+
+    assert not runner._bootstrap_config()
+
+    assert str(config_dir() / "config.toml") in capsys.readouterr().out
+
+
 def test_a_case_variant_of_an_exact_case_reader_does_not_suppress_its_dotenv_line(
     monkeypatch, tmp_path
 ):

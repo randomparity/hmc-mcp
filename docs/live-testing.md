@@ -14,8 +14,12 @@ repository checked out with `just setup` already run.
 Credentials resolve in this order, highest first:
 
 1. `HMC_*` environment variables already set
-2. `~/.config/hmc-mcp/config.toml` — the documented profile
+2. `config.toml` in the platform config directory — the documented profile
 3. a local `.env` file
+
+That directory is `~/.config/hmc-mcp` on Linux (or `$XDG_CONFIG_HOME/hmc-mcp`)
+and `~/Library/Application Support/hmc-mcp` on macOS. The runner resolves it
+per platform; when it finds nothing it prints the path it looked in.
 
 Scenario settings — every `LIVE_TEST_*` key — come **only** from `.env`. That
 file is git-ignored and must stay that way; it names the managed system a run

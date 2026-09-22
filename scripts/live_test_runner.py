@@ -22,7 +22,9 @@ or `test-results-round2.json` for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
 
 Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
-environment, a `~/.config/hmc-mcp/config.toml` profile, or a local .env file.
+environment, a `config.toml` profile in the platform config directory, or a
+local .env file. That directory is `~/.config/hmc-mcp` on Linux and
+`~/Library/Application Support/hmc-mcp` on macOS.
 The runner never creates or patches .env: when the value is absent, it exits
 with manual configuration instructions.
 """
@@ -177,12 +179,12 @@ def _bootstrap_config() -> bool:
 
     Priority (highest first):
       1. Already-set HMC_* environment variables
-      2. ~/.config/hmc-mcp/config.toml default profile
+      2. The default profile in the platform config directory's config.toml
       3. Local .env file (legacy key=value pairs)
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, load_profile
+    from hmc_mcp.config import ConfigError, config_dir, load_profile
 
     # Try the TOML config first.
     try:
@@ -216,7 +218,9 @@ def _bootstrap_config() -> bool:
     # would have connected (#543).
     if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
-        print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
+        # The resolved path, not a Linux literal: this same message sent a
+        # macOS operator to a directory their platform never reads.
+        print(f"   Configure {config_dir() / 'config.toml'} or a local .env file.")
         return False
     return True
 
