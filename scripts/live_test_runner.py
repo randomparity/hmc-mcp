@@ -500,6 +500,13 @@ class LiveTestArtifacts:
     vmedia_iso_name: str | None = None
     vmedia_mapping_uuid: str | None = None
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
+    # What the dedicated PCIe arm created, so `live_test_recovery.py` can check
+    # teardown from outside the run that attempted it. The marker is per-run
+    # random, so nothing outside the document can reconstruct these.
+    pcie_run_marker: str | None = None
+    pcie_fixture_lpar: str | None = None
+    pcie_drc_index: str | None = None
+    pcie_baseline_io_slots: str | None = None
 
 
 #: Stand-in for an argument whose value is not knowable without running the
@@ -1253,7 +1260,10 @@ def _restore_artifacts_from_results(
         saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
-        if set(saved) != {"config", "hmc", "artifacts", "results"}:
+        # `run` is provenance about the writing run, not state to restore, so it
+        # is tolerated rather than required: a document written before the block
+        # existed still resumes.
+        if set(saved) - {"run"} != {"config", "hmc", "artifacts", "results"}:
             raise ValueError("results document has an unsupported shape")
         if _decode_saved_config(saved["config"]) != state.config:
             raise ValueError("results configuration does not match this run")
@@ -1367,6 +1377,36 @@ def _repository_root() -> Path | None:
         return None
     root = Path(result.stdout.strip())
     return root if (root / "src" / "hmc_mcp").is_dir() else None
+
+
+def _run_provenance(
+    tasks: Sequence[int], group: str | None, repo_root: Path | None
+) -> dict[str, Any]:
+    """What this run was, so a matrix taken from it can be dated.
+
+    Written unconditionally, unlike the sibling observations document, which is
+    skipped when nothing resolves or the runner is outside the repository — the
+    run that fails early is the one whose provenance matters most. Outside a
+    repository the commit is `None`, which is a reportable state; a missing
+    block is not.
+
+    `tree_clean` qualifies `commit`: with `src` or `scripts` dirty the sha names
+    a tree that was not the one exercised, so evidence cannot cite it.
+    """
+    commit: str | None = None
+    tree_clean: bool | None = None
+    if repo_root is not None:
+        head = _git(repo_root, "rev-parse", "HEAD")
+        if head.returncode == 0:
+            commit = head.stdout.strip()
+        tree_clean = _tree_is_clean(repo_root)
+    return {
+        "commit": commit,
+        "tree_clean": tree_clean,
+        "group": group,
+        "subtasks": list(tasks),
+        "finished": datetime.now(UTC).isoformat(),
+    }
 
 
 def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
@@ -1555,6 +1595,7 @@ async def main(
         Path(results_path),
         json.dumps(
             {
+                "run": _run_provenance(tasks, group, repo_root),
                 "config": asdict(state.config),
                 "hmc": _hmc_identity(hmc_config),
                 "artifacts": asdict(state.artifacts),
@@ -1565,7 +1606,6 @@ async def main(
         ),
     )
 
-    repo_root = _repository_root()
     if repo_root is None:
         print("not inside the hmc-mcp repository — observations not written")
     else:

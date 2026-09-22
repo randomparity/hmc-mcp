@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError, asdict
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -1776,6 +1777,58 @@ def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     }
 
 
+def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    block = runner._run_provenance([24], "dedicated", repo_root)
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert block["commit"] == head.stdout.strip()
+    assert block["group"] == "dedicated"
+    assert block["subtasks"] == [24]
+    assert isinstance(block["tree_clean"], bool)
+    assert datetime.fromisoformat(block["finished"]).tzinfo is not None
+
+
+def test_run_provenance_outside_a_repository_reports_no_commit():
+    """A run that cannot be attributed says so; it does not omit the block."""
+    block = runner._run_provenance([0, 1], None, None)
+
+    assert block == {
+        "commit": None,
+        "tree_clean": None,
+        "group": None,
+        "subtasks": [0, 1],
+        "finished": block["finished"],
+    }
+
+
+def test_run_provenance_reports_a_dirty_tree(tmp_path):
+    """A sha naming a tree that was not exercised must not read as attribution."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "thing.py").write_text("x = 1\n", encoding="utf-8")
+    for args in (
+        ["config", "user.email", "t@example.invalid"],
+        ["config", "user.name", "T"],
+        ["add", "-A"],
+        ["commit", "-qm", "seed"],
+    ):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True)
+    (tmp_path / "scripts" / "thing.py").write_text("x = 2\n", encoding="utf-8")
+
+    block = runner._run_provenance([24], "dedicated", tmp_path)
+
+    assert block["commit"] is not None
+    assert block["tree_clean"] is False
+
+
 def _live_hmc_config() -> HMCConfig:
     return HMCConfig.from_mapping(
         {"host": "hmc.test", "port": 12443, "user": "operator", "verify_ssl": False}
@@ -1813,6 +1866,21 @@ def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path
     assert state.artifacts.vios_uuid == "vios-1"
     assert state.artifacts.lp3_baseline == {"description": "original"}
     assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
+
+
+def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
+    """The runner writes `run`; the guard that reads its own output must admit it."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["run"] = {"commit": "a" * 40, "tree_clean": True, "subtasks": [24]}
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts == runner.LiveTestArtifacts()
 
 
 def test_restore_artifacts_tolerates_a_results_document_without_test_user_uuid(
@@ -2956,6 +3024,31 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
         json.loads(second_path.read_text())["artifacts"]["system_uuid"]
         == "first-run-only"
     )
+
+
+@pytest.mark.asyncio
+async def test_main_stamps_run_provenance_into_the_results_document(
+    monkeypatch, tmp_path
+):
+    """A matrix taken from this document can be dated; #869's could not."""
+    _isolate_runner(monkeypatch)
+
+    async def fake_subtask(_client, state):
+        state.record(24, "fake", "PASS", {})
+
+    monkeypatch.setattr(runner, "SUBTASKS", {24: fake_subtask})
+    results_path = tmp_path / "results.json"
+
+    assert (
+        await runner.main(
+            results_path=str(results_path), config=runner.LiveTestConfig()
+        )
+        == 0
+    )
+
+    block = json.loads(results_path.read_text())["run"]
+    assert block["subtasks"] == [24]
+    assert set(block) == {"commit", "tree_clean", "group", "subtasks", "finished"}
 
 
 @pytest.mark.asyncio

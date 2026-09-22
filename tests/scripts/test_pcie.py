@@ -13,7 +13,7 @@ LIVE_TEST_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(LIVE_TEST_ROOT))
 from live_test import pcie  # noqa: E402
 from live_test.observation import CallFailure  # noqa: E402
-from live_test_runner import LiveTestConfig, RunState  # noqa: E402
+from live_test_runner import LiveTestArtifacts, LiveTestConfig, RunState  # noqa: E402
 
 #: The arm's own settings. Everything else on `LiveTestConfig` keeps its
 #: declared default: this arm reads only these four, and reads them from the
@@ -42,6 +42,9 @@ class ScenarioState:
         self.context = SimpleNamespace(system_name="unused", lp3_name="unused")
         self.config = config if config is not None else LiveTestConfig(**_CONFIG)
         self.gaps: list[dict[str, Any]] = []
+        # The production dataclass, not a stand-in: the arm records what it
+        # created here and `live_test_recovery.py` reads those exact fields.
+        self.artifacts = LiveTestArtifacts()
         self.tool_counts: dict[str, int] = {}
         self.cleanup_start: int | None = None
 
@@ -912,6 +915,51 @@ async def test_fixture_lpar_name_starts_with_prefix(
     creates = [k for t, k in state.calls if t == "hmc_create_lpar" and not _is_probe(k)]
     assert creates
     assert creates[0]["name"].startswith("live-")
+
+
+@pytest.mark.asyncio
+async def test_arm_records_what_it_created_into_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recovery reads these four from the results document, not from prose."""
+    holder: dict[str, str] = {}
+    state = await _run_arm(monkeypatch, _happy_responses(holder), holder)
+
+    assert state.artifacts.pcie_run_marker == holder["marker"]
+    assert state.artifacts.pcie_fixture_lpar == f"live-{holder['marker']}"
+    assert state.artifacts.pcie_drc_index == _DRC
+    assert state.artifacts.pcie_baseline_io_slots is not None
+
+
+@pytest.mark.asyncio
+async def test_a_fixture_abandoned_before_the_baseline_is_still_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The run that ends between ST29 and ST30 is the one recovery is for.
+
+    The partition exists and cleanup could not confirm it away, so the marker
+    and name have to reach the document even though no baseline was captured.
+    """
+    holder: dict[str, str] = {}
+    state = await _run_arm(monkeypatch, _happy_responses(holder, uuid_value=None), holder)
+
+    assert state.artifacts.pcie_run_marker == holder["marker"]
+    assert state.artifacts.pcie_fixture_lpar == f"live-{holder['marker']}"
+    assert state.artifacts.pcie_drc_index == _DRC
+    assert state.artifacts.pcie_baseline_io_slots is None
+
+
+@pytest.mark.asyncio
+async def test_a_skipped_arm_records_no_pcie_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing was created, so recovery must not be told to look for one."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, system_model="9080-M9S")
+    state = await _run_arm(monkeypatch, responses, holder)
+
+    assert state.artifacts.pcie_run_marker is None
+    assert state.artifacts.pcie_fixture_lpar is None
 
 
 # ---------------------------------------------------------------------------

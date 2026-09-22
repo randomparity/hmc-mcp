@@ -1144,6 +1144,7 @@ async def capture_dedicated_baseline(
         probe_lpar_name=f"{lpar_name}-createtime",
         drc_index=str(selected.get("drc_index")),
     )
+    _record_fixture_artifacts(state, fixture)
     state.record(
         29,
         "dedicated slot selection",
@@ -1154,6 +1155,24 @@ async def capture_dedicated_baseline(
         f"run_marker={run_marker!r}",
     )
     return fixture
+
+
+def _record_fixture_artifacts(state: RunState, fixture: _DedicatedFixture) -> None:
+    """Mirror what this arm created into the run's artifacts.
+
+    `live_test_recovery.py` checks teardown from outside the run that attempted
+    it, and needs the per-run marker, the fixture name, the slot and the
+    captured baseline. All four exist only inside this module otherwise, and the
+    marker is random per run, so nothing downstream can reconstruct them.
+
+    Recording only: no guard reads these fields and no cleanup decision turns on
+    them. Called again after the baseline is captured, since that is ST30 while
+    the rest is known at ST29.
+    """
+    state.artifacts.pcie_run_marker = fixture.run_marker
+    state.artifacts.pcie_fixture_lpar = fixture.lpar_name
+    state.artifacts.pcie_drc_index = fixture.drc_index
+    state.artifacts.pcie_baseline_io_slots = fixture.baseline_io_slots
 
 
 async def _created_despite_failure(
@@ -1396,6 +1415,7 @@ async def create_dedicated_fixture(
         return False
 
     fixture.baseline_io_slots = await _read_profile_io_slots(client, state, fixture)
+    _record_fixture_artifacts(state, fixture)
     state.record(
         30,
         "fixture profile io_slots (baseline)",
