@@ -198,7 +198,10 @@ def test_no_credential_value_reaches_either_output_stream(
     monkeypatch.setenv("HMC_HOST", "SENTINEL-host-d4f2.internal")
     monkeypatch.setenv("HMC_USER", "SENTINEL-user-d4f2")
     monkeypatch.setenv("HMC_PASSWORD", "SENTINEL-pw-d4f2")
-    monkeypatch.setenv("HMC_SCHEMA_VERSION", "V1_0")
+    # A sentinel here too, not `V1_0`: the schema-version row is the newest
+    # thing on this output path (#875), and a plausible value gives the
+    # assertion below nothing to catch it printing.
+    monkeypatch.setenv("HMC_SCHEMA_VERSION", "SENTINEL-schema-d4f2")
 
     assert preflight.main(["--skip-hardware"]) == 0
 
