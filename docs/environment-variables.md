@@ -25,7 +25,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmc-mcp:<agent_id>` and new LPARs are stamped with `[hmc-mcp owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmc-mcp` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmc-mcp` is always used. |
 | `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmc-mcp lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
 | `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmc-mcp storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
-| `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. Must contain only printable ASCII (U+0020 through U+007E); an empty string omits the header. **Leave unset for normal operation** — see note below. |
+| `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests and on every `/rest/api/web/` request; the UOM write paths that answered HTTP 406 with it present omit it, and the job path never sends it. Must contain only printable ASCII (U+0020 through U+007E); an empty string omits the header. **Leave unset for normal operation** — see note below. |
 
 ## Notes
 
@@ -218,13 +218,21 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 ## Notes
 
 - **Schema version** (`HMC_SCHEMA_VERSION`): **do not set this for normal
-  operation.** `hmc-mcp` omits `X-HMC-Schema-Version` from all write paths
-  (`PUT`/`POST`) regardless of this setting — some HMC firmware versions return
-  HTTP 406 on every UOM write endpoint when that header is present (confirmed on
-  HMC V10R3 build 2408210051 and likely other V10 builds). The variable only
-  affects `GET` requests. Set it only if you are debugging schema negotiation on
-  a specific read path; it has no effect on LPAR creation, adapter
-  configuration, storage operations, or any other mutating call.
+  operation.** It is opt-in; unset, no request carries
+  `X-HMC-Schema-Version` at all. Set it only to pin schema negotiation
+  explicitly — for example while debugging a read path.
+
+  When it is set, the header goes on `GET` requests and on every
+  `/rest/api/web/` request, reads and writes alike. The UOM write paths that
+  returned HTTP 406 with it present omit it by construction (confirmed on HMC
+  V10R3 build 2408210051 and likely other V10 builds): `PUT`/`POST
+  LogicalPartition`, `POST VirtualNetwork`, child-resource adapter `PUT`, and
+  the VolumeGroup and VirtualIOServer storage paths. That omission is per call
+  site, not a blanket rule — other UOM writes, including HMC user
+  create/modify, `ModifyManagedSystem`, and every UOM `DELETE`, still send it.
+  The job path never sends it, so LPAR power operations and every other
+  `do/{Operation}` job are unaffected either way. See
+  [`docs/compatibility.md`](compatibility.md) for the firmware context.
 
 ## Library Consumers
 

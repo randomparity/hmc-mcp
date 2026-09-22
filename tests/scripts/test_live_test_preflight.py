@@ -64,9 +64,8 @@ def test_the_generated_fixture_env_is_one_the_runner_accepts(workspace):
 def _credentials(monkeypatch, resolved: bool = True) -> None:
     """Stand in for the runner's bootstrap without reading a real profile."""
     monkeypatch.setattr(runner, "_bootstrap_config", lambda: resolved)
-    monkeypatch.setattr(runner, "_ensure_schema_version", lambda: resolved)
     if resolved:
-        for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD", "HMC_SCHEMA_VERSION"):
+        for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
             monkeypatch.setenv(key, f"value-for-{key}")
 
 
@@ -129,6 +128,23 @@ def test_a_configuration_the_runner_accepts_is_never_rejected_here(
     assert preflight.main(["--skip-hardware"]) == 0
 
 
+def test_an_absent_schema_version_is_reported_without_stopping_the_run(
+    workspace, monkeypatch, capsys
+):
+    """#875. The variable is opt-in, so its absence is a report, not a FAIL row."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
+    for key in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
+        monkeypatch.setenv(key, f"value-for-{key}")
+
+    assert preflight.main(["--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "HMC_SCHEMA_VERSION=not set" in output
+    assert "MISSING" not in output
+    assert "the runner would start" in output
+
+
 def test_unresolvable_credentials_are_a_non_zero_exit(workspace, monkeypatch, capsys):
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
     _credentials(monkeypatch, resolved=False)
@@ -150,7 +166,6 @@ def test_no_credential_value_reaches_either_output_stream(
     """The output is meant to be pasted into an issue when a run will not start."""
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
     monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
-    monkeypatch.setattr(runner, "_ensure_schema_version", lambda: True)
     monkeypatch.setenv("HMC_HOST", "SENTINEL-host-d4f2.internal")
     monkeypatch.setenv("HMC_USER", "SENTINEL-user-d4f2")
     monkeypatch.setenv("HMC_PASSWORD", "SENTINEL-pw-d4f2")
@@ -173,7 +188,6 @@ def test_the_bootstrap_s_own_chatter_is_not_relayed(workspace, monkeypatch, caps
         return True
 
     monkeypatch.setattr(runner, "_bootstrap_config", chatty_bootstrap)
-    monkeypatch.setattr(runner, "_ensure_schema_version", lambda: True)
 
     preflight.main(["--skip-hardware"])
 

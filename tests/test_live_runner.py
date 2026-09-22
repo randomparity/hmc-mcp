@@ -903,36 +903,94 @@ def _isolated_environ(monkeypatch) -> None:
     monkeypatch.setattr(os, "environ", dict(os.environ))
 
 
-def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
-    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
-    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
+def _startup_gate(monkeypatch, tmp_path) -> list[dict[str, object]]:
+    """Stub everything `_run_from_arguments` touches except the run itself.
 
-    assert runner._ensure_schema_version() is False
-    assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
+    Returns the list the stubbed `main` appends to, so a caller asserts on
+    whether the run started rather than on a return code the stub chose.
+    """
+    repo = _live_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        runner.LiveTestConfig,
+        "from_env_file",
+        classmethod(lambda _cls: runner.LiveTestConfig()),
+    )
+    monkeypatch.setattr(runner, "_read_environment", lambda *_a: ("V10R3", "POWER10"))
+    monkeypatch.setattr(runner, "_bootstrap_config", lambda: True)
+    started: list[dict[str, object]] = []
+
+    async def _record(**kwargs: object) -> int:
+        started.append(kwargs)
+        return 0
+
+    monkeypatch.setattr(runner, "main", _record)
+    return started
 
 
-def test_schema_preflight_does_not_patch_dotenv(monkeypatch, capsys, tmp_path):
+def test_the_startup_gate_runs_with_the_schema_version_absent(monkeypatch, tmp_path):
+    """#875. The variable is opt-in, so its absence cannot refuse to start a run."""
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")
     _isolated_environ(monkeypatch)
+    started = _startup_gate(monkeypatch, tmp_path)
+    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
+
+    assert runner._run_from_arguments([]) == 0
+    assert started, "the gate refused to start a run with HMC_SCHEMA_VERSION absent"
+
+
+def test_the_startup_gate_resolves_a_dotenv_only_schema_version(monkeypatch, tmp_path):
+    """#875. `_bootstrap_config` reads `.env` only when the TOML profile fails.
+
+    Deleting the old hard gate deletes the one unconditional `_load_dotenv()`
+    on the startup path, so a `.env`-only `HMC_*` value would stop resolving
+    whenever a profile loaded — and the run header below would then report a
+    request environment the run did not use.
+    """
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    _isolated_environ(monkeypatch)
+    started = _startup_gate(monkeypatch, tmp_path)
     dotenv = tmp_path / ".env"
-    original = "HMC_HOST=example.test\n"
-    dotenv.write_text(original)
+    dotenv.write_text("HMC_SCHEMA_VERSION=V1_0\n", encoding="utf-8")
     monkeypatch.setattr(runner, "_ENV_FILE", dotenv)
 
-    assert runner._ensure_schema_version() is False
+    assert runner._run_from_arguments([]) == 0
 
-    assert dotenv.read_text() == original
-    assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
+    assert started
+    assert runner.env_var_value("HMC_SCHEMA_VERSION") == "V1_0"
 
 
-def test_schema_preflight_accepts_a_case_variant_the_loader_reads(monkeypatch):
-    """#543. It must not refuse to start on a value the server will send."""
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("spelling", "reported"),
+    [
+        (None, "HMC_SCHEMA_VERSION=(not set)"),
+        # #543: `HMCConfig` reads the name case-blind, so a lower-case export
+        # reaches the client. A header that reported `(not set)` for one would
+        # describe the wrong request environment.
+        ("hmc_schema_version", "HMC_SCHEMA_VERSION=V1_0"),
+        ("HMC_SCHEMA_VERSION", "HMC_SCHEMA_VERSION=V1_0"),
+    ],
+)
+async def test_the_run_header_records_which_way_the_run_went(
+    monkeypatch, tmp_path, capsys, spelling, reported
+):
+    """#875 / ADR 0162. The variable is optional, so the evidence must say.
+
+    ADR 0162's recorded rows were gathered with the header pinned. A later run
+    may now legitimately execute without it, and the run header is the only
+    place a reader of `test-results-*.json` can tell the two apart.
+    """
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")
-    monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
-    monkeypatch.setenv("hmc_schema_version", "V1_0")
+    _isolated_environ(monkeypatch)
+    _isolate_runner(monkeypatch)
+    if spelling is not None:
+        monkeypatch.setenv(spelling, "V1_0")
+        assert HMCConfig(host="h", user="u", password="p").schema_version == "V1_0"
 
-    assert HMCConfig(host="h", user="u", password="p").schema_version == "V1_0"
-    runner._ensure_schema_version()  # returns rather than exiting 1
+    await runner.main(999, str(tmp_path / "results.json"), config=runner.LiveTestConfig())
+
+    assert reported in capsys.readouterr().out
 
 
 def test_the_iso_allowlist_merge_reaches_the_field_and_is_idempotent(monkeypatch):

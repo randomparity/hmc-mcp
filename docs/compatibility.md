@@ -17,13 +17,28 @@ Three VIOS backup catalog tools have a narrower floor:
 command inventory, so these tools have no runtime version probe or V8/V9
 fallback.
 
-**`HMC_SCHEMA_VERSION` — leave this unset for normal operation.**
-`hmc-mcp` omits the `X-HMC-Schema-Version` request header from all write
-paths (`PUT`/`POST`) regardless of this setting — some HMC firmware versions
-return HTTP 406 on every UOM write when that header is present. The variable
-only affects `GET` requests. Set it only if you are debugging schema
-negotiation on a specific HMC read path; it has no effect on LPAR creation,
-adapter configuration, storage operations, or any other mutating call.
+**`HMC_SCHEMA_VERSION` — leave this unset for normal operation.** It is opt-in
+and unset by default, because HMC V8/V9 targets do not need it and uom
+documents already declare `schemaVersion=V1_0`. Set it only to pin schema
+negotiation explicitly — for example while debugging a read path.
+
+Where the `X-HMC-Schema-Version` header goes when it *is* set:
+
+- **`GET` requests** carry it, and so does **every `/rest/api/web/` request** —
+  reads and writes alike — because some HMC releases require it there.
+- **The UOM write paths that answered HTTP 406 with it present omit it by
+  construction**: `PUT`/`POST LogicalPartition`, `POST VirtualNetwork`,
+  child-resource adapter `PUT`, and the VolumeGroup and VirtualIOServer storage
+  paths. That omission is **per call site, not a blanket rule** — other UOM
+  writes, including HMC user create/modify, `ModifyManagedSystem`, and every
+  UOM `DELETE`, still send it. Unset is therefore the only setting under which
+  no write path sends it at all.
+- **The job path never carries it.** `submit_job` builds its headers literally,
+  so LPAR power on/off, activation, and every other `do/{Operation}` job is
+  unaffected by this variable either way.
+
+A live run records the resolved value in its run header, so a results document
+says which of those two request environments produced it.
 See [`docs/environment-variables.md`](environment-variables.md) for all
 supported variables.
 
