@@ -8,6 +8,11 @@ state-matrix characterization, structural no-mutation check, and full `just veri
 > **Partially superseded by [0056](0056-evidence-bounded-sriov-logical-port-assignment.md)**
 > (2026-08-20) for captured POWER9/HMC V10R3 M1060 SR-IOV projections and mutation cells.
 
+> **Partially superseded by [0165](0165-admitted-io-slots-profile-readback.md)**
+> (2026-09-22) for the dedicated-slot sentence at `:73-74`: exact `io_slots` profile
+> readback is admitted from a live capture, for HMC V10R3 M1060 on model 8375-42A only.
+> The `chhwres -r io` sentence above it is unaffected.
+
 ## Context
 
 The repository exposes raw physical-slot rows and a profile-only slot append, while its SR-IOV

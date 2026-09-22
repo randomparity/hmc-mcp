@@ -4,6 +4,11 @@
 
 Accepted on 2026-08-20.
 
+> **Partially superseded by [0165](0165-admitted-io-slots-profile-readback.md)**
+> (2026-09-22) for the gate conditions at `:24-25` and `:27-29`. The evidence record those
+> clauses waited on exists; the operations still fail closed, now because no code path
+> selects the admitted readback. Issue #882 owns that selection and the envelope check.
+
 ## Context
 
 The existing public profile helper appends `io_slots` with unconditional `--force`. ADR 0053

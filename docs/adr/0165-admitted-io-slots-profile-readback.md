@@ -4,8 +4,10 @@
 
 Accepted on 2026-09-22, on the live capture published at
 [#881 comment 5779662835](https://github.com/randomparity/hmc-mcp/issues/881#issuecomment-5779662835).
-No runtime behaviour changes with it: no `src/` file is touched, the dedicated PCIe
-operations still fail closed, and the gate stays shut until #882.
+No runtime behaviour changes with it: `git diff --name-only $(git merge-base HEAD origin/main)
+-- src/` prints nothing, the dedicated PCIe operations still fail closed, and the gate stays
+shut until #882. On the completed branch `just verify` exits 0 (3m04s) and
+`uv run --no-sync prek run --all-files` passes every hook.
 
 ## Context
 

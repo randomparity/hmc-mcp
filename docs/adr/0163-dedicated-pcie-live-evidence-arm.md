@@ -13,6 +13,17 @@ lost create response as "nothing was created" — so its PASS/SKIP/FAIL matrix i
 for what this record describes. The arm's live matrix is the operator's, produced after
 merge, and is not a precondition of acceptance.
 
+> **Correction (2026-09-22, via [0165](0165-admitted-io-slots-profile-readback.md)).** The
+> paragraph above was true when written and is no longer. A live run against real hardware on
+> 2026-09-21 has since exercised this arm; [ADR 0162](0162-live-test-operator-tooling.md) is the
+> record that holds it, and the four defects that run falsified were in the live-test tooling —
+> three of them in `scripts/live_test_recovery.py` — not in the arm. Its PASS/SKIP/FAIL matrix is
+> deliberately not restated here: a live matrix is evidence only for the commit it ran on
+> (`AGENTS.md`), and that commit is stamped only in the git-ignored results document. The arm has
+> changed twice since the run, and neither change alters what it issues: `f9e00e4f` made
+> `_profile_io_slots_command` public as `profile_io_slots_command` for the recovery check's
+> benefit, and `801d4fa7` renumbered this record.
+
 ## Context
 
 ADR 0055 makes `assign_dedicated_pcie_slot` and `unassign_dedicated_pcie_slot` fail closed:
