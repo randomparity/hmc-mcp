@@ -498,9 +498,47 @@ def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_recover(
     message = str(caught.value)
     assert "may hold the change, none of it, or a form this operation refuses" in message
     assert "lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header" in message
-    assert "Reverse only slot 21010020 of profile 'prof' of LPAR 'lpar'" in message
-    assert "`io_slots-=21010020//0` or `io_slots+=21010020//0`" in message
+    assert "To reverse slot 21010020 of profile 'prof' of LPAR 'lpar'" in message
+    assert "use the documented `io_slots-=21010020//0`" in message
     assert "Never write the read value back as `io_slots=` input" in message
+
+
+def test_an_unverified_unassign_names_the_add_back_grammar(monkeypatch, hmc):
+    _install(monkeypatch, _FakeHmc(f"{_DRC}/none/0", applies=False))
+
+    with pytest.raises(PcieAssignmentPartialError, match=r"use the documented `io_slots\+="):
+        _unassign(hmc)
+
+
+def test_a_required_form_after_the_write_advises_the_ui_not_the_grammar(monkeypatch, hmc):
+    def turn_required() -> None:
+        fake.rows[0] = ("lpar", "prof", f"{_DRC}/none/1")
+
+    fake = _install(
+        monkeypatch,
+        _FakeHmc(f"{_DRC}/none/0", other_form_removal="noop", before_write=turn_required),
+    )
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        _unassign(hmc)
+
+    message = str(caught.value)
+    assert "use the HMC UI" in message
+    assert "unestablished (ADR 0166)" in message
+    assert "use the documented" not in message
+
+
+def test_a_lost_response_with_a_new_holder_names_both_causes(monkeypatch, hmc):
+    def racing_writer(value: str) -> str:
+        fake.rows.append(("other", "p2", f"{_DRC}/none/0"))
+        return value
+
+    fake = _install(monkeypatch, _FakeHmc(chsyscfg_error=True, after_write=racing_writer))
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        _assign(hmc)
+
+    assert "response lost; slot is also listed by a profile of LPAR other" in str(caught.value)
 
 
 def test_a_write_the_readback_does_not_show_is_a_partial_error(monkeypatch, hmc):

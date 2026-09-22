@@ -397,6 +397,7 @@ async def _verify_dedicated_change(
     concurrent assign elsewhere passes the pre-write holder check too.
     """
     after_text: str | None = None
+    after: dict[str, ProfileIoSlot] | None = None
     read_error: Exception | None = None
     holders: list[str] = []
     try:
@@ -412,26 +413,37 @@ async def _verify_dedicated_change(
         if error is not None and after == before:
             raise error
     cause = error or read_error
-    if cause is not None:
-        reason = str(cause)
-    elif holders:
-        reason = f"slot is also listed by a profile of LPAR {', '.join(holders)}"
-    else:
-        reason = "readback mismatch"
+    reasons = [str(cause)] if cause is not None else []
+    if holders:
+        reasons.append(f"slot is also listed by a profile of LPAR {', '.join(holders)}")
     operation = "assignment" if add else "unassignment"
     raise PcieAssignmentPartialError(
         f"dedicated slot {operation} could not be verified: "
-        f"{reason}; io_slots before={target.io_slots!r} after={after_text!r}. "
-        "The chsyscfg may have run, so the profile may hold the change, none of it, or a "
-        "form this operation refuses. Read it with `lssyscfg -r prof -m "
-        f"{target.system_name} -F lpar_name,name,io_slots --header` and compare it with "
-        f"the before value. Reverse only slot {target.drc_index} of profile "
-        f"{target.profile_name!r} of LPAR {target.lpar_name!r}, using the documented "
-        f"`io_slots-={target.drc_index}//0` or `io_slots+={target.drc_index}//0` grammar "
-        "or the HMC UI. Never write the read value back as `io_slots=` input: that "
-        "rendering is not established as valid input (ADR 0166). Where another LPAR is "
-        "named as also listing the slot, resolve that conflict there."
+        f"{'; '.join(reasons) or 'readback mismatch'}; io_slots before={target.io_slots!r} "
+        f"after={after_text!r}. The chsyscfg may have run, so the profile may hold the "
+        "change, none of it, or a form this operation refuses. Read it with `lssyscfg -r "
+        f"prof -m {target.system_name} -F lpar_name,name,io_slots --header` and compare it "
+        f"with the before value. {_recovery_advice(target, after, add=add)} Never write the "
+        "read value back as `io_slots=` input: that rendering is not established as valid "
+        "input (ADR 0166). Where another LPAR is named as also listing the slot, resolve "
+        "that conflict there."
     ) from cause
+
+
+def _recovery_advice(
+    target: _DedicatedProfileTarget, after: dict[str, ProfileIoSlot] | None, *, add: bool
+) -> str:
+    """Name the one reversal this operation's documented grammar can safely make."""
+    drc_index = target.drc_index
+    where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
+    present = None if after is None else after.get(drc_index)
+    if present is not None and present != ProfileIoSlot(drc_index, None, False):
+        return (
+            f"To reverse {where}, use the HMC UI: the profile lists it as {present}, and "
+            f"`io_slots-={drc_index}//0` on that form is unestablished (ADR 0166)."
+        )
+    grammar = f"io_slots-={drc_index}//0" if add else f"io_slots+={drc_index}//0"
+    return f"To reverse {where}, use the documented `{grammar}` or the HMC UI."
 
 
 async def _system_name(config: HMCConfig, system: str) -> str:
