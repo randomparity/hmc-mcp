@@ -31,21 +31,23 @@ class SystemsMixin:
     async def get_console_info(self: SystemsClient) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
         # Some HMC firmware builds return HTTP 500 on the unfiltered
-        # ManagementConsole feed due to a null SessionId in the response XML.
-        # Translate that known response into an actionable error rather than
-        # making a firmware failure indistinguishable from an empty feed.
+        # ManagementConsole feed over a null nested property (observed:
+        # Session/SessionId/Value). Translate that known response into an
+        # actionable error rather than making a firmware failure
+        # indistinguishable from an empty feed. The match is the same
+        # live-confirmed text the two managed-system guards below use; the
+        # message names no particular property because the guard does not
+        # require one, and the body carries the HMC's own detail.
         try:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
         except HMCError as exc:
-            if (
-                exc.status_code == 500
-                and exc.body is not None
-                and "null SessionId" in exc.body
+            if exc.status_code == 500 and (
+                "Nested path contains null property" in str(exc)
             ):
                 raise HMCError(
                     "Management-console inventory is unavailable because this HMC "
-                    "firmware could not serialize a null SessionId; update the HMC "
+                    "firmware could not serialize a null property; update the HMC "
                     "firmware and retry",
                     status_code=500,
                     body=exc.body,

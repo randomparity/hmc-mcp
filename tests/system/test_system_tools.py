@@ -85,6 +85,14 @@ EMPTY_FEED = """\
 # Console
 # ---------------------------------------------------------------------- #
 
+# Captured, not constructed: the verbatim HTTP 500 body five lab HMC profiles
+# returned for GET /rest/api/uom/ManagementConsole, quoted in #880. The comma
+# before `currentProperty` and the space before it are the HMC's own.
+NULL_PROPERTY_500_BODY = (
+    "Nested path contains null property , currentProperty=SessionId "
+    "nestedPath=Session/SessionId/Value"
+)
+
 
 def test_console_info_returns_management_console(monkeypatch, mock_hmc):
     """hmc_console_info GETs the ManagementConsole collection."""
@@ -101,14 +109,25 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
 
 
 def test_console_info_translates_known_firmware_500(monkeypatch, mock_hmc):
+    """The real null-property 500 body becomes the actionable firmware error.
+
+    Asserting the produced message is what makes this test bite: the
+    untranslated transport error carries the same status code and the same
+    body, so only the message distinguishes a guard that fired from one that
+    did not.
+    """
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(500, text="null SessionId")
+        return_value=httpx.Response(500, text=NULL_PROPERTY_500_BODY)
     )
-    with pytest.raises(HMCError, match="null SessionId") as exc_info:
+    with pytest.raises(HMCError) as exc_info:
         hmc_get_console_info()
+    message = str(exc_info.value)
+    assert "Management-console inventory is unavailable" in message
+    assert "could not serialize a null property" in message
+    assert "update the HMC firmware and retry" in message
     assert exc_info.value.status_code == 500
-    assert exc_info.value.body == "null SessionId"
+    assert exc_info.value.body == NULL_PROPERTY_500_BODY
     assert isinstance(exc_info.value.__cause__, HMCError)
 
 
@@ -130,6 +149,8 @@ def test_console_info_propagates_unrelated_http_500(monkeypatch, mock_hmc):
     with pytest.raises(HMCError, match="database unavailable") as exc_info:
         hmc_get_console_info()
     assert exc_info.value.status_code == 500
+    assert "Management-console inventory is unavailable" not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
 
 
 # ---------------------------------------------------------------------- #

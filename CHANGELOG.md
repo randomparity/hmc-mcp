@@ -89,6 +89,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `console info` reports the actionable firmware error again on the HMC levels that 500 on
+  the unfiltered `ManagementConsole` feed. `get_console_info`'s guard required the literal
+  `null SessionId`, which no firmware level has been observed to send: the body reads
+  `Nested path contains null property , currentProperty=SessionId` and then the nested path,
+  so the guard never fired and the operator saw the raw HTTP 500 transport error. The guard
+  now matches `Nested path contains null property`, the same live-confirmed text the two
+  managed-system guards beside it already use (ADR 0138), and its message names a null
+  property rather than a null `SessionId`, because the match no longer establishes which
+  property it was. An HTTP 403 and an unrelated HTTP 500 still propagate untranslated (#880).
+
 - Virtual-disk create and attach keep their `capacity_mib` inputs, but the HMC
   VolumeGroup document now emits the integral GiB value V10R3 expects. Invalid,
   non-integral GiB requests fail before dispatch. VolumeGroup inventory now exposes
