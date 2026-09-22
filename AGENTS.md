@@ -379,6 +379,21 @@ script gets it. The rule covers the entry points an operator can run — top-lev
 `scripts/*.py`. Modules under `scripts/live_test/` are library code the runner
 imports and are tested in behaviour-grouped modules instead.
 
+**Live testing follows [docs/live-testing.md](docs/live-testing.md), always.**
+A live run creates, mutates and deletes real partitions on a managed system.
+Do not invent an invocation: run `scripts/live_test_preflight.py` first,
+dispatch one arm through its named script, and run `scripts/live_test_recovery.py`
+afterwards — including after a run that looked fine. Nothing in CI or in any
+`just` recipe reaches an HMC, and nothing should be added that does.
+
+**A live matrix is evidence only for the commit it ran on.** Generate it with
+`scripts/live_test_evidence.py`, which stamps that commit and filters the
+HMC-derived fields; never transcribe one from a terminal. Before citing an
+existing matrix — in an ADR, a PR body, or an issue — check whether the branch
+has moved since, because a matrix nothing can falsify is not evidence. Never
+paste a `test-results-*.json` into a public location: its rows carry hostnames,
+account names and location codes, and the runner redacts only FAIL rows.
+
 **Diff a worktree against the merge base, not against `main`.** Local `main`
 advances under merges while a branch is open, so `git diff main` shows other
 people's landed work as if it were yours. Use:

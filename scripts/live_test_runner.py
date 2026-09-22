@@ -4,7 +4,11 @@ Calls the tools through the in-process FastMCP client against the HMC named by
 the configuration. Results print to stdout as they complete and are written to
 a JSON document on exit.
 
-This mutates a managed system.
+This mutates a managed system. The procedure is docs/live-testing.md: run
+`scripts/live_test_preflight.py` to see what a selection will touch,
+`scripts/live_{round2,vmedia,sriov,dedicated}.py` to dispatch one arm,
+`scripts/live_test_evidence.py` to produce a citable matrix, and
+`scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
 Usage:
     uv run --no-sync python scripts/live_test_runner.py [SUBTASK] [options]
