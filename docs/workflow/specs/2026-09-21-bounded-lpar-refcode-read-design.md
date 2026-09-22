@@ -12,7 +12,7 @@ reports `Running`. `rg -n lsrefcode src/` returns nothing: no wrapper exists.
 
 One read-only SSH function in a new `src/hmc_mcp/ssh/refcodes.py`, one MCP tool in
 `server_tools/lpar/lifecycle_boot.py`, one `lpars refcodes` subcommand in
-`cli_commands/lpar/inventory.py`, one `lpar.read_refcodes` record in
+`cli_commands/lpar/inventory.py`, one `lpar.list_refcodes` record in
 `docs/capabilities/operations.json`. A new focused `ssh/` module matches the existing
 one-topic-per-module layout (`affinity`, `console`, `memory`, `sriov`); neither `io_inventory`
 ("physical I/O, Fibre Channel, SEA") nor `lpar` ("creation, ownership, validation, name
@@ -22,12 +22,14 @@ this code today. No new quoting, parsing or empty-result primitive is written: `
 control character; `parse_hmc_delimited_rows` (`:29`) parses `-F --header` output, refusing a
 mismatched header; and the empty-result guard is the shape `ssh/sriov.py:28-34` already uses.
 
-**The parsed field set** is `-F lpar_name,time_stamp,refcode --header` — IBM's own documented
-example for this exact invocation, identical on both corpus pages at
-`docs/refs/hmc-commands-p11/commands/lsrefcode.md:54-55`. Bare `-F` with no attribute names
-"displays values for all of the reference code attributes" (`:34`), an unenumerated,
-firmware-dependent set, so the stable-fields criterion rules it out. `parse_hmc_delimited_rows`
-fails closed on a header mismatch; #879 confirms the set against hardware.
+**The parsed field set** is `-F lpar_name,time_stamp,refcode --header`. Those three names are
+IBM's own documented attribute list for `lsrefcode -r lpar`, identical on both corpus pages at
+`docs/refs/hmc-commands-p11/commands/lsrefcode.md:54-55`; that example carries no `--header`,
+`-n` or `--filter`, and `--header` is documented at `:35` as `-F`'s companion, so the composed
+invocation is assembled rather than transcribed. Bare `-F` with no attribute names "displays
+values for all of the reference code attributes" (`:34`), an unenumerated, firmware-dependent
+set, so the stable-fields criterion rules it out. `parse_hmc_delimited_rows` fails closed on a
+header mismatch; #879 confirms the set against hardware.
 
 **The bound** is `count: int = 1`, refused outside `1..MAX_REFCODE_COUNT` (100) and refused for a
 non-`int` (`bool` included) before any interpolation. The default matches the HMC's own — `-n`
@@ -72,7 +74,7 @@ omitted lists only the current code — while the command always passes `-n` so 
    lpar -m <sys> --filter lpar_names=<n> -n <N> -F lpar_name,time_stamp,refcode --header` and
    returns one dict per row.
 2. `hmc-mcp lpars refcodes <system> <lpar> [--count N] [--json]` mirrors it.
-3. `lpar.read_refcodes` is recorded in `docs/capabilities/operations.json`; `just tool-docs-check`,
+3. `lpar.list_refcodes` is recorded in `docs/capabilities/operations.json`; `just tool-docs-check`,
    `just doc-freshness` and `just capability-inventory` pass. It stays `unrecorded` in maturity.
 4. `just verify` and `uv run --no-sync prek run --all-files` are green.
 
