@@ -369,12 +369,15 @@ Number **gaps are deliberately legal** and several exist (0032, 0085, 0095); do
 not renumber to close one. There is **no ADR index**: navigation is by filename,
 so give a new record a slug that reads as its subject.
 
-**One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`.
-Two predate the convention and are exceptions to know about rather than a
-pattern to copy: `scripts/check_env_vars.py` is tested by
-`tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
-`tests/test_live_runner.py`. Every other script follows it, and a new script
-gets the convention.
+**One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`,
+enforced by `just test-layout`. Two predate the convention and are exceptions to
+know about rather than a pattern to copy: `scripts/check_env_vars.py` is tested
+by `tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
+`tests/test_live_runner.py`; both are named in the guard, so deleting one of
+those modules fails it. Every other script follows the convention, and a new
+script gets it. The rule covers the entry points an operator can run — top-level
+`scripts/*.py`. Modules under `scripts/live_test/` are library code the runner
+imports and are tested in behaviour-grouped modules instead.
 
 **Diff a worktree against the merge base, not against `main`.** Local `main`
 advances under merges while a branch is open, so `git diff main` shows other
