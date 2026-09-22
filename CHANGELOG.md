@@ -10,6 +10,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_read_lpar_refcodes` and `hmc-mcp lpars refcodes` read a partition's most recent reference
+  codes over SSH, bounded to 1-100 and projected onto `lpar_name`, `time_stamp` and `refcode`.
+  Read-only and needing no virtual terminal, so an activation can be followed by polling alone
+  (#874).
+
 - `HMCClient.list_search_parameters(resource_type)` reads the search-parameter names an HMC defines
   for a resource type, at `/rest/api/uom/{R}/search`, returning them with the response's
   `X-HMC-Schema-Version`. The names are the `ParameterName` texts of the `SearchParameterSet` the

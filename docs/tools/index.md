@@ -4,15 +4,15 @@
 
 This reference covers every tool the server registers, including the ones a default deployment does not expose. It is generated from the server's tool registry, so it cannot drift from what the code registers.
 
-- **156** tools are registered.
-- **155** are exposed by a default deployment.
+- **157** tools are registered.
+- **156** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
 | `destructive` | 31 |
 | `mutate` | 51 |
-| `read` | 73 |
+| `read` | 74 |
 
 ## Maturity vocabulary
 
@@ -36,7 +36,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `health` | 1 | [health.md](health.md) |
 | `io_slot` | 1 | [io_slot.md](io_slot.md) |
 | `job` | 3 | [job.md](job.md) |
-| `lpar` | 33 | [lpar.md](lpar.md) |
+| `lpar` | 34 | [lpar.md](lpar.md) |
 | `lpar_profile` | 3 | [lpar_profile.md](lpar_profile.md) |
 | `media` | 10 | [media.md](media.md) |
 | `memory_pool` | 2 | [memory_pool.md](memory_pool.md) |
@@ -193,6 +193,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_processed_metrics` | `read` | [metrics.md](metrics.md) |
 | `hmc_provision_lpar` | `mutate` | [provision.md](provision.md) |
 | `hmc_read_lpar_boot_order` | `read` | [boot_order.md](boot_order.md) |
+| `hmc_read_lpar_refcodes` | `read` | [lpar.md](lpar.md) |
 | `hmc_remote_restart_lpar` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_remove_memory_pool` | `destructive` | [memory_pool.md](memory_pool.md) |
 | `hmc_remove_vios_fc_port_label` | `destructive` | [vios_label.md](vios_label.md) |

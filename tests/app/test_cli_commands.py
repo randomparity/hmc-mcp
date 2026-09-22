@@ -33,6 +33,7 @@ from hmc_mcp.cli_commands import runtime as cli_runtime
 from hmc_mcp.cli_commands import snapshot as cli_snapshot
 from hmc_mcp.cli_commands.lpar import config as cli_lpars
 from hmc_mcp.cli_commands.lpar import decommission as cli_lpar_decommission
+from hmc_mcp.cli_commands.lpar import inventory as cli_lpar_inventory
 from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpar_lifecycle
 from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
 from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
@@ -60,6 +61,7 @@ from hmc_mcp.ssh import commands as ssh_commands
 from hmc_mcp.ssh import io_inventory, sriov, vnic
 from hmc_mcp.ssh import lpar as ssh_lpar
 from hmc_mcp.ssh import profiles as ssh_profiles
+from hmc_mcp.ssh import refcodes as ssh_refcodes
 
 LPAR_NAME = "lpar1"
 
@@ -73,9 +75,17 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
             "password": "test",  # pragma: allowlist secret
         }
     )
-    for module in (cli_lpars, cli_pcie, cli_vnic):
+    for module in (cli_lpars, cli_lpar_inventory, cli_pcie, cli_vnic):
         monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
-    for module in (ssh_affinity, ssh_lpar, io_inventory, sriov, vnic, ssh_profiles):
+    for module in (
+        ssh_affinity,
+        ssh_lpar,
+        io_inventory,
+        ssh_refcodes,
+        sriov,
+        vnic,
+        ssh_profiles,
+    ):
         monkeypatch.setattr(module, "run_hmc_command", replacement)
 
 
@@ -128,7 +138,7 @@ def _configured_ssh_config(monkeypatch) -> None:
             "password": "test",  # pragma: allowlist secret
         }
     )
-    for module in (cli_lpars, cli_pcie, cli_vnic):
+    for module in (cli_lpars, cli_lpar_inventory, cli_pcie, cli_vnic):
         monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
 
 
@@ -2532,6 +2542,52 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "enabled"
+
+
+def test_lpars_refcodes_via_ssh(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return (
+            "lpar_name,time_stamp,refcode\n"
+            "web01,2026-09-21 10:00:00,C2001150\n"
+            "web01,2026-09-21 09:59:00,C2001140\n"
+        )
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "refcodes", "sys1", "web01", "--count", "3", "--json"]
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["cmd"] == (
+        "lsrefcode -r lpar -m sys1 --filter lpar_names=web01"
+        " -n 3 -F lpar_name,time_stamp,refcode --header"
+    )
+    assert json.loads(result.stdout) == [
+        {
+            "lpar_name": "web01",
+            "time_stamp": "2026-09-21 10:00:00",
+            "refcode": "C2001150",
+        },
+        {
+            "lpar_name": "web01",
+            "time_stamp": "2026-09-21 09:59:00",
+            "refcode": "C2001140",
+        },
+    ]
+
+
+def test_lpars_refcodes_reports_an_empty_read(monkeypatch):
+    async def fake(cfg, cmd):
+        return "No results were found.\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "refcodes", "sys1", "web01"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "No reference codes found" in result.output
 
 
 def test_lpars_memopt_score_via_ssh(monkeypatch):
