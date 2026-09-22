@@ -34,9 +34,12 @@ from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
+    BootMode,
+    PowerOnOperationType,
     job_outcome,
     power_off_lpar_job,
     power_on_lpar_job,
+    validate_power_on_activation,
     validate_wait_timing,
     wait_for_submitted_job,
 )
@@ -235,8 +238,15 @@ async def power_on_lpar(
     force: bool = False,
     affinity_assessment: ProvisionAffinityAssessment | None = None,
     ownership_override: bool = False,
+    boot_mode: BootMode = "norm",
+    partition_profile_uuid: str | None = None,
+    operation_type: PowerOnOperationType | None = None,
 ) -> LparPowerOnOutcome:
-    """Activate an LPAR and optionally assess its resulting affinity."""
+    """Activate an LPAR and optionally assess its resulting affinity.
+
+    ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are passed
+    through to the PowerOn job document; their defaults leave it unchanged.
+    """
     if affinity_assessment is not None:
         if system_name_or_uuid is None:
             raise ValueError(
@@ -260,6 +270,9 @@ async def power_on_lpar(
         timeout_seconds=timeout_seconds,
         poll_interval=poll_interval,
         ownership_override=ownership_override,
+        boot_mode=boot_mode,
+        partition_profile_uuid=partition_profile_uuid,
+        operation_type=operation_type,
     )
     if (
         affinity_assessment is None
@@ -430,6 +443,83 @@ async def delete_lpar(
     return lpar_uuid
 
 
+async def _require_contained_partition_profile(
+    hmc: HMCClient, lpar_uuid: str, partition_profile_uuid: str
+) -> str:
+    """Refuse a partition profile the target partition does not contain.
+
+    ADR 0039: ``hmc_power_on_lpar`` declares ``exhaustive_targets``, which means
+    every resource it acts on is the value of a declared selector or is derived
+    by the server through the HMC's own containment from one. A caller-supplied
+    profile UUID is neither on its own — it is in no target table, so
+    ``targets_permitted`` never compares it against the policy grant, and a
+    narrow ``targets = {lpar = [...]}`` grant would otherwise bound nothing here.
+
+    Reading the partition's own ``LogicalPartitionProfile`` feed is what makes
+    the profile a derived, contained resource. ADR 0044 declined to rest this
+    kind of classification on the premise that the HMC would reject the value,
+    so the check is made here rather than assumed of the remote end.
+
+    Returns the partition's own spelling of the profile, because the match is
+    casefolded: echoing the caller's string would put a value on the wire that
+    this check never compared.
+    """
+    profiles = await hmc.list_child(
+        "LogicalPartition", lpar_uuid, "LogicalPartitionProfile"
+    )
+    wanted = partition_profile_uuid.casefold()
+    if not profiles or not any(
+        str(profile.get("UUID") or "") for profile in profiles
+    ):
+        raise ValueError(
+            "the target partition's profile feed came back empty or carried no "
+            "profile UUID, so the supplied partition profile could not be "
+            "verified; read /rest/api/uom/LogicalPartition/<uuid>/"
+            "LogicalPartitionProfile on the HMC to confirm the feed"
+        )
+    for profile in profiles:
+        contained = str(profile.get("UUID") or "")
+        if contained.casefold() == wanted:
+            return contained
+    raise ValueError(
+        "partition profile is not a profile of the target partition; "
+        "read /rest/api/uom/LogicalPartition/<uuid>/LogicalPartitionProfile on "
+        "the HMC to see the profiles it does contain"
+    )
+
+
+def _unapplied_activation_clause(
+    boot_mode: BootMode,
+    partition_profile_uuid: str | None,
+    operation_type: PowerOnOperationType | None,
+) -> str:
+    """Name the activation parameters an already-running partition discarded.
+
+    "Boot this partition into SMS" is usually asked about a running partition,
+    and a bare already-running message reads as success to a caller whose
+    request was never attempted. Only the parameters actually supplied are
+    named, and the remedy is leaving the running state: resubmitting PowerOn
+    with ``force`` does not apply a boot mode to a partition already running.
+    """
+    requested = [
+        name
+        for name, supplied in (
+            ("boot mode", boot_mode != "norm"),
+            ("partition profile", bool(partition_profile_uuid)),
+            ("operation type", bool(operation_type)),
+        )
+        if supplied
+    ]
+    if not requested:
+        return ""
+    if len(requested) == 1:
+        named, verb = requested[0], "was"
+    else:
+        named = f"{', '.join(requested[:-1])} and {requested[-1]}"
+        verb = "were"
+    return f" The requested {named} {verb} not applied; power the partition off first."
+
+
 async def power_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str | None,
@@ -442,8 +532,17 @@ async def power_lpar(
     timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
     poll_interval: int = DEFAULT_JOB_POLL_INTERVAL,
     ownership_override: bool = False,
+    boot_mode: BootMode = "norm",
+    partition_profile_uuid: str | None = None,
+    operation_type: PowerOnOperationType | None = None,
 ) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait.
+
+    ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are
+    activation parameters and apply to PowerOn only; the PowerOff arm builds a
+    different document and ignores them. ``partition_profile_uuid`` is the UUID
+    of a partition profile, not the connection profile the tool and CLI call
+    ``profile``. Their defaults emit the document this call has always emitted.
 
     ADR 0011 ownership is advisory here by default. Powering a partition another
     agent owns is only rejected when the operator sets
@@ -468,6 +567,10 @@ async def power_lpar(
     :class:`HMCCLIError` and submits no job.
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+    if power_on:
+        # Ahead of every side effect: the ownership leg below can write an
+        # audited override, and the already-running branch never reaches a builder.
+        validate_power_on_activation(boot_mode, operation_type)
     if hmc.config.authorize_power_operations:
         lpar_uuid = await resolve_and_authorize_lpar_mutation(
             hmc,
@@ -484,22 +587,35 @@ async def power_lpar(
             "LogicalPartition", lpar_uuid, "PartitionState"
         )
         if state == "running":
+            unapplied = _unapplied_activation_clause(
+                boot_mode, partition_profile_uuid, operation_type
+            )
             return LparPowerResult(
                 lpar_uuid,
                 {
                     "already_running": True,
                     "message": (
                         f"LPAR {lpar_uuid} is already running. "
-                        "Use force=True to submit PowerOn anyway."
+                        f"Use force=True to submit PowerOn anyway.{unapplied}"
                     ),
                 },
             )
+    if power_on and partition_profile_uuid:
+        partition_profile_uuid = await _require_contained_partition_profile(
+            hmc, lpar_uuid, partition_profile_uuid
+        )
     operation = "PowerOn" if power_on else "PowerOff"
     if operation not in _LPAR_POWER_OPERATIONS:
         allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))
         raise ValueError(f"LPAR power job operation must be one of: {allowed}")
     document = (
-        power_on_lpar_job() if power_on else power_off_lpar_job(immediate=immediate)
+        power_on_lpar_job(
+            profile_uuid=partition_profile_uuid,
+            bootmode=boot_mode,
+            operation_type=operation_type,
+        )
+        if power_on
+        else power_off_lpar_job(immediate=immediate)
     )
     job = await hmc.submit_job(
         f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", document

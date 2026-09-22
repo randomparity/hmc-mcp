@@ -80,6 +80,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
 
 
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
+PARTITION_PROFILE_UUID = "00000000-0000-0000-0000-0000000000aa"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 VG_UUID = "33333333-3333-4333-8333-333333333333"
 VIOS_UUID = "44444444-4444-4444-8444-444444444444"
@@ -257,6 +258,12 @@ class FakeHMC:
     async def submit_job(self, job_path, job_request_xml):
         self._record("submit_job", job_path, job_request_xml)
         return self.job
+
+    async def list_child(self, parent_type, parent_uuid, child_type):
+        # ADR 0039 containment: power-on reads the partition's own profile feed
+        # before carrying a caller-supplied LogicalPartitionProfile.
+        self._record("list_child", parent_type, parent_uuid, child_type)
+        return [{"UUID": PARTITION_PROFILE_UUID}]
 
     async def create_logical_partition(self, system_uuid, xml):
         self._record("create_logical_partition", system_uuid, xml)
@@ -941,6 +948,43 @@ def test_lpars_power_on_submits_power_on_job(fake_hmc):
     path, job_xml = fake_hmc.calls[0][1]
     assert path == f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
     assert "PowerOn</OperationName>" in job_xml
+
+
+def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
+    """--boot-mode, --partition-profile and --operation-type reach the document."""
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars", "power-on", LPAR_UUID, "--force", "--yes",
+            "--boot-mode", "sms",
+            "--partition-profile", PARTITION_PROFILE_UUID,
+            "--operation-type", "activate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    # Select by name: the ADR 0039 containment read precedes the submission.
+    assert ("list_child", ("LogicalPartition", LPAR_UUID, "LogicalPartitionProfile")) in [
+        (name, args) for name, args, _ in fake_hmc.calls
+    ]
+    submitted = [args for name, args, _ in fake_hmc.calls if name == "submit_job"]
+    assert len(submitted) == 1
+    _, job_xml = submitted[0]
+    assert '<ParameterValue kb="CUR" kxe="false">sms</ParameterValue>' in job_xml
+    assert ">LogicalPartitionProfile</ParameterName>" in job_xml
+    assert PARTITION_PROFILE_UUID in job_xml
+    assert ">OperationType</ParameterName>" in job_xml
+
+
+def test_lpars_power_on_rejects_an_unknown_boot_mode(fake_hmc):
+    """Typer refuses a non-member before the command body runs, so no job is sent."""
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "power-on", LPAR_UUID, "--force", "--yes", "--boot-mode", "bogus"],
+    )
+
+    assert result.exit_code == 2
+    assert fake_hmc.calls == []
 
 
 def test_lpars_power_on_skips_running_partition_without_force(fake_hmc):

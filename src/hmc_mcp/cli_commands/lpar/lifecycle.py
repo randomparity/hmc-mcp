@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ...jobs import validate_wait_timing
+from ...jobs import BootMode, PowerOnOperationType, validate_wait_timing
 from ...operations.lpar.core import delete_lpar, power_lpar
 from ..output import console, err_console, print_json
 from ..runtime import with_client
@@ -32,6 +32,17 @@ def lpars_power_on(
         "--ownership-override",
         help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
     ),
+    boot_mode: BootMode = typer.Option(
+        "norm", "--boot-mode", help="Boot mode to activate into"
+    ),
+    partition_profile: str | None = typer.Option(
+        None,
+        "--partition-profile",
+        help="UUID of the partition profile to activate against; not the connection profile",
+    ),
+    operation_type: PowerOnOperationType | None = typer.Option(
+        None, "--operation-type", help="PowerOn operation type"
+    ),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
     _power_lpar(
@@ -44,6 +55,9 @@ def lpars_power_on(
         interval=interval,
         system=system,
         ownership_override=ownership_override,
+        boot_mode=boot_mode,
+        partition_profile=partition_profile,
+        operation_type=operation_type,
     )
 
 
@@ -97,6 +111,9 @@ def _power_lpar(
     interval: int = 5,
     system: str | None = None,
     ownership_override: bool = False,
+    boot_mode: BootMode = "norm",
+    partition_profile: str | None = None,
+    operation_type: PowerOnOperationType | None = None,
 ) -> None:
     validate_wait_timing(wait, timeout, interval)
     if not yes:
@@ -117,6 +134,9 @@ def _power_lpar(
             timeout_seconds=timeout,
             poll_interval=interval,
             ownership_override=ownership_override,
+            boot_mode=boot_mode,
+            partition_profile_uuid=partition_profile,
+            operation_type=operation_type,
         )
     )
     uuid, job = result.lpar_uuid, result.job
