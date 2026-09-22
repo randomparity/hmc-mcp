@@ -63,10 +63,9 @@ def _run_git(args: list[str], cwd: Path | None = None) -> str:
 def _resolve_roots() -> tuple[Path, Path]:
     """Resolve the current worktree root and the main checkout root.
 
-    Uses the technique already in this repo's own docs
-    (docs/workflow/plans/2026-08-22-vios-update-contract.md:200):
-    `--git-common-dir` names the main checkout's `.git` directory even when
-    run from a linked worktree.
+    `--git-common-dir` names the main checkout's `.git` directory even when run
+    from a linked worktree, where `--git-dir` names the worktree's own
+    `.git/worktrees/<name>` instead. That difference is the whole technique.
     """
     worktree_root = Path(_run_git(["rev-parse", "--show-toplevel"]))
     common_dir = Path(_run_git(["rev-parse", "--git-common-dir"]))

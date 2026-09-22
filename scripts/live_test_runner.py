@@ -1,19 +1,32 @@
-"""Live integration test runner for a configured HMC test plan — Round 2.
+"""Live integration test runner: HMC MCP tools against real hardware.
 
-Calls HMC MCP tools via the in-process FastMCP client against the real HMC
-configured in .env.  Results are printed to stdout as they complete and
-written to test-results-round2.json on exit.
+Calls the tools through the in-process FastMCP client against the HMC named by
+the configuration. Results print to stdout as they complete and are written to
+a JSON document on exit.
+
+This mutates a managed system. The procedure is docs/live-testing.md: run
+`scripts/live_test_preflight.py` to see what a selection will touch,
+`scripts/live_{round2,vmedia,sriov,dedicated}.py` to dispatch one arm,
+`scripts/live_test_evidence.py` to produce a citable matrix, and
+`scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
 Usage:
-    uv run python scripts/live_test_runner.py [SUBTASK_NUMBER]
+    uv run --no-sync python scripts/live_test_runner.py [SUBTASK] [options]
 
-If SUBTASK_NUMBER is omitted, all sub-tasks (ST0–ST15) are run in order.
-If a specific number is given (0-15), only that sub-task runs.
+`--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
+stops importing (AGENTS.md).
+
+With no selection every subtask runs, 0 through 24. A bare number runs that one
+subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
+or `test-results-round2.json` for a bare or whole-suite run, unless
+`--results-file` names another path. That path must be git-ignored.
 
 Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
-environment or an existing local .env file. The preflight never creates or
-patches .env: when the value is absent, it exits with manual configuration
-instructions.
+environment, a `config.toml` profile in the platform config directory, or a
+local .env file. That directory is `~/.config/hmc-mcp` on Linux and
+`~/Library/Application Support/hmc-mcp` on macOS.
+The runner never creates or patches .env: when the value is absent, it exits
+with manual configuration instructions.
 """
 
 from __future__ import annotations
@@ -54,7 +67,7 @@ from live_test.observation import (
     KnownGap,
     classify_failure,
 )
-from live_test.pcie import exercise_sriov_assignment
+from live_test.pcie import exercise_dedicated_pcie_assignment, exercise_sriov_assignment
 from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
     exercise_storage_provisioning,
@@ -166,12 +179,12 @@ def _bootstrap_config() -> bool:
 
     Priority (highest first):
       1. Already-set HMC_* environment variables
-      2. ~/.config/hmc-mcp/config.toml default profile
+      2. The default profile in the platform config directory's config.toml
       3. Local .env file (legacy key=value pairs)
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, load_profile
+    from hmc_mcp.config import ConfigError, config_dir, load_profile
 
     # Try the TOML config first.
     try:
@@ -205,7 +218,9 @@ def _bootstrap_config() -> bool:
     # would have connected (#543).
     if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
-        print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
+        # The resolved path, not a Linux literal: this same message sent a
+        # macOS operator to a directory their platform never reads.
+        print(f"   Configure {config_dir() / 'config.toml'} or a local .env file.")
         return False
     return True
 
@@ -258,6 +273,13 @@ class LiveTestConfig:
     sriov_logical_port_id: int = 917003
     sriov_capacity_percent: float = 7.5
     sriov_profile_name: str = "example-lt-609-profile"
+    # The dedicated PCIe arm creates and deletes a partition on the system it
+    # names, so it refuses to run on a default: an empty system name or LPAR
+    # prefix SKIPs the arm rather than selecting one (issue #217).
+    dedicated_pcie_system_name: str = ""
+    dedicated_pcie_lpar_prefix: str = ""
+    dedicated_pcie_profile_name: str = ""
+    dedicated_pcie_drc_index: str = ""
     iso_path: str = "/srv/example-lt-609/example-lt-609.iso"
     iso_media_name: str = "example-lt-609.iso"
     iso_http_media_name: str = "example-lt-609-http.iso"
@@ -328,6 +350,20 @@ class LiveTestConfig:
         "LIVE_TEST_VLAN_RANGE_END": "vlan_range_end",
     }
 
+    #: Settings read from the same authoritative ``.env`` as ``_CONFIG_FIELDS``
+    #: but not required, because they configure one opt-in arm rather than the
+    #: run as a whole. An absent key leaves the field at its declared default,
+    #: and the arm that owns it decides what that means — the dedicated PCIe
+    #: arm SKIPs. They are read here, not from ``os.environ``, so an ambient
+    #: export cannot redirect an arm that creates and deletes partitions
+    #: (ADR 0115).
+    _OPTIONAL_CONFIG_FIELDS: ClassVar[dict[str, str]] = {
+        "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME": "dedicated_pcie_system_name",
+        "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX": "dedicated_pcie_lpar_prefix",
+        "LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME": "dedicated_pcie_profile_name",
+        "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX": "dedicated_pcie_drc_index",
+    }
+
     @classmethod
     def from_env_file(cls, path: Path | None = None) -> LiveTestConfig:
         """Load required live-test identifiers from one authoritative local file."""
@@ -349,7 +385,7 @@ class LiveTestConfig:
             if key.startswith(_ENVIRONMENT_PREFIX):
                 # Read separately by `_read_environment`; not a config field.
                 continue
-            if key not in cls._CONFIG_FIELDS:
+            if key not in cls._CONFIG_FIELDS and key not in cls._OPTIONAL_CONFIG_FIELDS:
                 duplicates.append(f"unknown setting {key} (line {line_number})")
                 continue
             if key in values:
@@ -362,6 +398,13 @@ class LiveTestConfig:
             parsed: dict[str, Any] = {
                 field: values[key] for key, field in cls._CONFIG_FIELDS.items()
             }
+            parsed.update(
+                {
+                    field: values[key]
+                    for key, field in cls._OPTIONAL_CONFIG_FIELDS.items()
+                    if key in values
+                }
+            )
             for key in cls._CONFIG_FIELDS:
                 if key.endswith(
                     (
@@ -472,6 +515,13 @@ class LiveTestArtifacts:
     vmedia_iso_name: str | None = None
     vmedia_mapping_uuid: str | None = None
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
+    # What the dedicated PCIe arm created, so `live_test_recovery.py` can check
+    # teardown from outside the run that attempted it. The marker is per-run
+    # random, so nothing outside the document can reconstruct these.
+    pcie_run_marker: str | None = None
+    pcie_fixture_lpar: str | None = None
+    pcie_drc_index: str | None = None
+    pcie_baseline_io_slots: str | None = None
 
 
 #: Stand-in for an argument whose value is not knowable without running the
@@ -849,6 +899,7 @@ SUBTASKS = {
     21: vmedia_mapping_crossvalidation,
     22: vmedia_teardown,
     23: exercise_sriov_assignment,
+    24: exercise_dedicated_pcie_assignment,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
 
@@ -1028,7 +1079,8 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(16)),
     "vmedia": list(range(16, 23)),
     "sriov": [23],
-    "all": list(range(24)),
+    "dedicated": [24],
+    "all": list(range(25)),
 }
 
 
@@ -1043,7 +1095,12 @@ class RunnerArguments:
 
 def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
     """Parse the live-run selection without performing configuration or HMC work."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    # RawDescriptionHelpFormatter: the default re-wraps the docstring into one
+    # paragraph, collapsing the usage line and the `--no-sync` requirement into
+    # prose an operator skims past.
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
         "subtask",
@@ -1223,7 +1280,10 @@ def _restore_artifacts_from_results(
         saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
-        if set(saved) != {"config", "hmc", "artifacts", "results"}:
+        # `run` is provenance about the writing run, not state to restore, so it
+        # is tolerated rather than required: a document written before the block
+        # existed still resumes.
+        if set(saved) - {"run"} != {"config", "hmc", "artifacts", "results"}:
             raise ValueError("results document has an unsupported shape")
         if _decode_saved_config(saved["config"]) != state.config:
             raise ValueError("results configuration does not match this run")
@@ -1337,6 +1397,36 @@ def _repository_root() -> Path | None:
         return None
     root = Path(result.stdout.strip())
     return root if (root / "src" / "hmc_mcp").is_dir() else None
+
+
+def _run_provenance(
+    tasks: Sequence[int], group: str | None, repo_root: Path | None
+) -> dict[str, Any]:
+    """What this run was, so a matrix taken from it can be dated.
+
+    Written unconditionally, unlike the sibling observations document, which is
+    skipped when nothing resolves or the runner is outside the repository — the
+    run that fails early is the one whose provenance matters most. Outside a
+    repository the commit is `None`, which is a reportable state; a missing
+    block is not.
+
+    `tree_clean` qualifies `commit`: with `src` or `scripts` dirty the sha names
+    a tree that was not the one exercised, so evidence cannot cite it.
+    """
+    commit: str | None = None
+    tree_clean: bool | None = None
+    if repo_root is not None:
+        head = _git(repo_root, "rev-parse", "HEAD")
+        if head.returncode == 0:
+            commit = head.stdout.strip()
+        tree_clean = _tree_is_clean(repo_root)
+    return {
+        "tested_commit": commit,
+        "tree_clean": tree_clean,
+        "group": group,
+        "subtasks": list(tasks),
+        "finished": datetime.now(UTC).isoformat(),
+    }
 
 
 def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
@@ -1525,6 +1615,7 @@ async def main(
         Path(results_path),
         json.dumps(
             {
+                "run": _run_provenance(tasks, group, repo_root),
                 "config": asdict(state.config),
                 "hmc": _hmc_identity(hmc_config),
                 "artifacts": asdict(state.artifacts),
@@ -1535,7 +1626,6 @@ async def main(
         ),
     )
 
-    repo_root = _repository_root()
     if repo_root is None:
         print("not inside the hmc-mcp repository — observations not written")
     else:

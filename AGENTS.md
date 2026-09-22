@@ -369,12 +369,30 @@ Number **gaps are deliberately legal** and several exist (0032, 0085, 0095); do
 not renumber to close one. There is **no ADR index**: navigation is by filename,
 so give a new record a slug that reads as its subject.
 
-**One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`.
-Two predate the convention and are exceptions to know about rather than a
-pattern to copy: `scripts/check_env_vars.py` is tested by
-`tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
-`tests/test_live_runner.py`. Every other script follows it, and a new script
-gets the convention.
+**One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`,
+enforced by `just test-layout`. Two predate the convention and are exceptions to
+know about rather than a pattern to copy: `scripts/check_env_vars.py` is tested
+by `tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
+`tests/test_live_runner.py`; both are named in the guard, so deleting one of
+those modules fails it. Every other script follows the convention, and a new
+script gets it. The rule covers the entry points an operator can run — top-level
+`scripts/*.py`. Modules under `scripts/live_test/` are library code the runner
+imports and are tested in behaviour-grouped modules instead.
+
+**Live testing follows [docs/live-testing.md](docs/live-testing.md), always.**
+A live run creates, mutates and deletes real partitions on a managed system.
+Do not invent an invocation: run `scripts/live_test_preflight.py` first,
+dispatch one arm through its named script, and run `scripts/live_test_recovery.py`
+afterwards — including after a run that looked fine. Nothing in CI or in any
+`just` recipe reaches an HMC, and nothing should be added that does.
+
+**A live matrix is evidence only for the commit it ran on.** Generate it with
+`scripts/live_test_evidence.py`, which stamps that commit and filters the
+HMC-derived fields; never transcribe one from a terminal. Before citing an
+existing matrix — in an ADR, a PR body, or an issue — check whether the branch
+has moved since, because a matrix nothing can falsify is not evidence. Never
+paste a `test-results-*.json` into a public location: its rows carry hostnames,
+account names and location codes, and the runner redacts only FAIL rows.
 
 **Diff a worktree against the merge base, not against `main`.** Local `main`
 advances under merges while a branch is open, so `git diff main` shows other
