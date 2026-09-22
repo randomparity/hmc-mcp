@@ -39,11 +39,11 @@ closed and `just verify` stays green with the gate shut.
 - **New** `tests/fixtures/pcie/power9-v10r3m1060-live-ioslots.json` — a `live-capture`
   record (`support: "captured"`) on the `power9-v10r3m1060-live-sriov.json` precedent,
   carrying each probe's published command, fields, exit status, stdout and stderr verbatim,
-  including the unknown-attribute negative control. The capture's `lshmc -V` probe is
-  **omitted**: the comment records 236 stdout bytes for it and publishes a 69-byte excerpt,
-  and `lshmc -V` prints no identifier, so redaction cannot account for the gap. The release
-  it would have carried is already the record's top-level `hmc_release`, which is the field
-  the contract test pins.
+  including the unknown-attribute negative control and the `lshmc -V` probe, whose complete
+  236-byte stdout the comment publishes verbatim — `"version= ` wrapper, leading spaces, four
+  iFix lines and trailing `base_version` record included. The precedent record's own
+  `hmc-version` value is a tidied four-line form and is **not** the precedent for this
+  field.
 - **New** `docs/adr/0165-admitted-io-slots-profile-readback.md` — decides the admission, the
   corroboration question, the hardware envelope, and the supersession.
 - **Changed** `tests/system/test_pcie_contract.py` — four moves. The new record forces three:
@@ -58,8 +58,12 @@ closed and `just verify` stays green with the gate shut.
   premise this change falsifies for the dedicated row.
 - **Changed** `docs/workflow/specs/2026-08-20-pcie-capability-contract-design.md` — the
   "Assign/unassign dedicated slot" row's create-time and inactive cells state the new
-  condition; the running cell is unchanged because `chhwres -r io` dynamic-grammar
-  admission belongs to #873.
+  condition. The running cell is unchanged because `chhwres -r io` dynamic-grammar
+  admission belongs to #873. The generalising sentence below the matrix ("A profile or
+  effective operation is likewise unavailable unless its exact readback fields are admitted
+  for the selected family") is **deliberately unchanged**: it states a necessary condition,
+  not a sufficient one, so it stays true after this admission, and rewriting it would reach
+  past criterion 3.
 - **Changed** `docs/adr/0053-...md` and `docs/adr/0055-...md` — Status supersession banners
   only. Their bodies are append-only.
 - **Changed** `docs/adr/0163-dedicated-pcie-live-evidence-arm.md` — Status block only,
@@ -107,11 +111,11 @@ none is added here.
   profiles, both on the VIOS partition. Bounded: this change admits a readback only, and
   the record and ADR state the limit.
 - Probe `stdout` fidelity for the four identifier-bearing probes cannot be checked against
-  the comment's published byte counts, because those counts are pre-redaction and the
-  transcripts are post-redaction; fidelity there rests on the capture author. Bounded: every
-  probe's exit status and stream **is** published, so none is inferred, and any probe whose
-  published byte count the transcript cannot account for is omitted rather than abridged into
-  a `stdout` field.
+  the comment's published byte counts, because those counts are pre-redaction (50/73/166/126)
+  and the transcripts are post-redaction (48/64/157/126); fidelity there rests on the capture
+  author. Bounded: only `lshmc -V`, which prints no identifier, is independently
+  byte-checkable, and it matches its published figure exactly at 236; every probe's exit
+  status and stream is published, so none is inferred.
 - Release and model outside `V10R3 M1060` / `8375-42A` are not admitted at all. Bounded by
   the envelope decision, which is the confinement rather than a gap in it.
 
@@ -121,6 +125,13 @@ none is added here.
   issue #882.
 - `chhwres -r io` dynamic-grammar admission — issue #873's state-matrix row.
 - The live arm's Guard B behaviour under a non-byte-stable `io_slots` — ADR 0163.
+- `PCIE_ASSIGNMENT_UNAVAILABLE_REASON`
+  (`src/hmc_mcp/operations/virtualization/pcie.py:43-46`) still reads "ADR 0053 admits no
+  exact dedicated PCIe profile readback", which ADR 0165 falsifies. `src/` is excluded from
+  this run, so the string is a deferral owned by #882, not a defect left unowned.
+- `scripts/live_test/pcie.py:profile_io_slots_command` builds a form ADR 0165 does not admit
+  and its docstring cites ADR 0053 as admitting it — `scripts/` is outside this run's
+  surface; recorded as a follow-up for #882's owner.
 
 ## Threat model
 
@@ -180,10 +191,9 @@ document, which this change does not read.
   `exit_status` and `stderr`, the negative control's exact diagnostic string, and the
   fixture's sha256; it reds with `KeyError` before the fixture exists.
   Green: `uv run --no-sync pytest tests/system/test_pcie_contract.py -k io_slots_capture --no-cov -q`.
-- **Contract: the state-matrix row, its generalising paragraph, and their pins agree.**
+- **Contract: the state-matrix row and its pins agree.**
   Mode: `focused-test`. `test_operation_matrix_fails_closed_for_every_mutation_row` (renamed
-  from `..._without_same_family_readback`) reds when the row or the paragraph below it
-  changes without its pin.
+  from `..._without_same_family_readback`) reds when the row changes without its pin.
   Green: `uv run --no-sync pytest tests/system/test_pcie_contract.py -k matrix --no-cov -q`.
 - **Contract: the new sha256 literal does not redden the secrets gate.**
   Mode: `focused-test`. `just secrets` reds on a bare hex high-entropy literal; green once it

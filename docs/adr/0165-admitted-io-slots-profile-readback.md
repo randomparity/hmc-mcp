@@ -120,6 +120,14 @@ Three limits ride with the admission and are not settled by it.
   nowhere on the input side, where the same position is written empty. #882 owns that round
   trip.
 
+One string in `src/` is now stale and is #882's to fix, not this change's:
+`PCIE_ASSIGNMENT_UNAVAILABLE_REASON`
+(`src/hmc_mcp/operations/virtualization/pcie.py:43-46`) still reads "ADR 0053 admits no exact
+dedicated PCIe profile readback; assignment cannot be safely verified". After this record the
+first clause is false; what remains true is that no code path reads it. The operations keep
+refusing either way, so nothing is unsafe in the interval — but the reason they give is wrong
+until #882 rewrites it.
+
 The record is pinned by sha256 in `tests/system/test_pcie_contract.py`, so editing published
 evidence reddens a test instead of landing quietly, and the same pin asserts every probe's
 exit status and the negative control's diagnostic — the fields the admission turns on.
