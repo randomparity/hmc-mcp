@@ -1,7 +1,7 @@
 # Dedicated PCIe live-assignment arm — design
 
 Issue: [#217](https://github.com/randomparity/hmc-mcp/issues/217) ·
-Decision record: [ADR 0161](../../adr/0161-dedicated-pcie-live-evidence-arm.md)
+Decision record: [ADR 0163](../../adr/0163-dedicated-pcie-live-evidence-arm.md)
 
 ## Goal
 
@@ -21,7 +21,7 @@ by the operator after merge.
 `LparPcieAssignments.dedicated` request all fail closed under ADR 0055 — before any
 *mutating* command, though `_authorize_pcie_profile_request` resolves and authorizes the
 target names first, so the refusal costs one HMC round trip. ADR 0053 states the
-condition that lifts the gate: exact `io_slots` readback must be admitted. ADR 0161 records
+condition that lifts the gate: exact `io_slots` readback must be admitted. ADR 0163 records
 the resulting decision — the arm records the refusal, then gathers the readback evidence
 through the documented profile grammar over the runner's `hmc_run_command` escape hatch.
 
@@ -285,7 +285,7 @@ resolved>)`. Two properties, both deliberate:
 - **`ownership_override` stays off.** The fixture was created and stamped by this run, so the
   tool's own description-token ownership check passes on every intended path; setting the
   override would remove the one operation-layer check that survives the escape hatch —
-  precisely the check ADR 0161 argues the fixture guards exist to *replace*, not to
+  precisely the check ADR 0163 argues the fixture guards exist to *replace*, not to
   duplicate and then disable. The same reasoning drops `ownership_override=True` from the
   `hmc_assign_dedicated_pcie_slot` refusal row, so the recorded refusal is the one an
   operator would actually see.

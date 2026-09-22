@@ -110,7 +110,7 @@ caller. No CI runner — no deployment of these scripts has an HMC.
 
 **Covered elsewhere.**
 - Redaction of FAIL text: ADR 0120, via the runner's existing pass.
-- Ownership stamping and cleanup refusal: ADR 0064 and ADR 0161's guards.
+- Ownership stamping and cleanup refusal: ADR 0064 and ADR 0163's guards.
 - Which `.env` keys exist and are required: ADR 0115 and `LiveTestConfig`.
 - Credential precedence: `_bootstrap_config`, which preflight calls rather than reimplements.
 

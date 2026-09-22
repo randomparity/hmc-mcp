@@ -1264,7 +1264,7 @@ async def create_dedicated_fixture(
             f"the create-time probe created partition "
             f"{fixture.probe_lpar_name!r} on {arm.system_name!r} with "
             f"dedicated slot {fixture.drc_index!r} assigned. ADR 0055's gate "
-            "no longer refuses, so this arm's probe and ADR 0161 both need "
+            "no longer refuses, so this arm's probe and ADR 0163 both need "
             "revisiting alongside the ADR 0053 capability update.",
         )
     else:
@@ -1609,7 +1609,7 @@ async def _cleanup_probe_partition(
     # the arm that provably holds the dedicated slot at cleanup time — the
     # probe succeeded only because it was allowed to apply the assignment —
     # so deleting it without removing the slot is precisely the stranding
-    # ADR 0161 forbids. The probe carries its own profile, so it gets its
+    # ADR 0163 forbids. The probe carries its own profile, so it gets its
     # own removal command and its own confirming read.
     probe = replace(
         fixture, lpar_name=fixture.probe_lpar_name, lpar_uuid=fixture.probe_lpar_uuid
