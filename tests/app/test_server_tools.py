@@ -1133,7 +1133,7 @@ JOB_RESPONSE_ERROR_DATA = """<?xml version="1.0" encoding="UTF-8" standalone="ye
       <Results>
         <JobParameter>
           <ParameterName>ErrorData</ParameterName>
-          <ParameterValue>HSCL3205 The partition entered an error state</ParameterValue>
+          <ParameterValue>Activation reported error data</ParameterValue>
         </JobParameter>
       </Results>
     </JobResponse>
@@ -1186,7 +1186,7 @@ def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
         (
             JOB_RESPONSE_ERROR_DATA,
             "COMPLETED_WITH_ERROR",
-            "HSCL3205 The partition entered an error state",
+            "Activation reported error data",
         ),
     ],
 )

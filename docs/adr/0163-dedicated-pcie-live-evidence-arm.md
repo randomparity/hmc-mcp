@@ -13,6 +13,26 @@ lost create response as "nothing was created" — so its PASS/SKIP/FAIL matrix i
 for what this record describes. The arm's live matrix is the operator's, produced after
 merge, and is not a precondition of acceptance.
 
+> **Correction (2026-09-22, via [0165](0165-admitted-io-slots-profile-readback.md)).** The
+> paragraph above was true when written and is no longer. A live run against real hardware on
+> 2026-09-21 has since exercised this arm; [ADR 0162](0162-live-test-operator-tooling.md) is the
+> record that holds it. All four defects that run falsified were in the live-test tooling rather
+> than in this arm: ADR 0162 attributes each to `scripts/live_test_recovery.py`, and the one fix
+> that touched `scripts/live_test/pcie.py` only made this arm's own command builder public for
+> that check to reuse. Its PASS/SKIP/FAIL matrix is
+> deliberately not restated here: a live matrix is evidence only for the commit it ran on
+> (`AGENTS.md`), and that commit is stamped only in the git-ignored results document. The arm has
+> changed twice since the run, and neither change alters what it issues: `f9e00e4f` made
+> `_profile_io_slots_command` public as `profile_io_slots_command` for the recovery check's
+> benefit, and `801d4fa7` renumbered this record.
+
+> **Partially superseded by [0166](0166-dedicated-pcie-assignment-wiring-and-create-time-probe.md)**
+> (2026-09-22) for one Decision sentence, quoted here because line numbers move: "The dedicated
+> arm in `scripts/live_test/pcie.py` records the admitted operation's capability refusal as an
+> explicit SKIP row". Once ADR 0166 lifted the gate the operation no longer refuses, so the arm
+> now exercises it and its create-time probe is verified and cleaned up; ADR 0166 decision 4 holds
+> the replacement. The rest of this record stands.
+
 ## Context
 
 ADR 0055 makes `assign_dedicated_pcie_slot` and `unassign_dedicated_pcie_slot` fail closed:

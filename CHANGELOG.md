@@ -170,6 +170,27 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `assign_dedicated_pcie_slot`, `unassign_dedicated_pcie_slot` (`hmc_assign_dedicated_pcie_slot`,
+  `hmc_unassign_dedicated_pcie_slot`) and create-time or modify-time `assignments.dedicated` now
+  change the profile on HMC V10R3 M1060 with managed-system model 8375-42A. They write the
+  documented `io_slots+=<drc>//0` / `io_slots-=<drc>//0` grammar without `--force`, then verify
+  the result with the ADR 0165 readback. They never write back a value they read, and they refuse
+  a slot the profile lists in any other form. The LPAR must be `Not Activated`, and assign
+  refuses a slot another LPAR's profile already lists. `drc_index` must be eight uppercase
+  hexadecimal digits. Outside that envelope they still raise `PcieAssignmentUnavailableError`, whose reason
+  now names the envelope. A dispatched change that the readback does not confirm raises the new
+  `PcieAssignmentPartialError`. The admitted read and its parser are
+  `ssh.profiles.read_profile_io_slot_rows` and `parse_profile_io_slots` (ADR 0166, #882).
+
+- Exact `lssyscfg -r prof -m SYSTEM -F lpar_name,name,io_slots --header` profile readback is
+  admitted, on a redacted live
+  capture rather than on documentation — `io_slots` is documented input-side only, so a
+  `documented`-support record would have carried a fabricated locator. The admission is
+  confined to HMC V10R3 M1060 on managed-system model 8375-42A, the pair the capture covers
+  and the pair `require_admitted_environment` already enforces for SR-IOV. **No runtime
+  behaviour changes**: dedicated PCIe assign and unassign still fail closed, now because no
+  code path selects the readback rather than because none is admitted (ADR 0165, #881).
+
 - Installed CLI, MCP discovery, and generated tool references now publish the same
   operation-keyed implementation, verification, and runtime-eligibility evidence.
   Compatibility guidance now describes the POWER10/POWER11 reference corpus and

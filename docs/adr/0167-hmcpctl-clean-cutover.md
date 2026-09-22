@@ -1,4 +1,4 @@
-# ADR 0165: Rename every active project identity to hmcpctl
+# ADR 0167: Rename every active project identity to hmcpctl
 
 ## Status
 

@@ -9,8 +9,8 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.virtualization.pcie import (
-    PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
     InventorySelector,
+    PcieAssignmentPartialError,
     PcieAssignmentUnavailableError,
     SriovLogicalPortCapabilityError,
     SriovLogicalPortPartialError,
@@ -19,6 +19,8 @@ from hmcpctl.operations.virtualization.pcie import (
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
+    require_dedicated_pcie_environment,
+    require_drc_index,
 )
 from hmcpctl.operations.virtualization.validation import (
     require_command_safe_text,
@@ -30,6 +32,7 @@ from hmcpctl.operations.virtualization.vnic import (
     VnicPartialError,
     add_vnic,
 )
+from hmcpctl.ssh.selectors import resolve_ssh_names
 from hmcpctl.ssh.sriov import list_sriov_configured_logical_port_rows
 from hmcpctl.ssh.vnic import (
     list_vnic_backing_rows,
@@ -153,15 +156,24 @@ async def _existing_capacity(
     )
 
 
+def _validate_dedicated_requests(items: tuple[DedicatedPcieAssignment, ...]) -> None:
+    """Validate dedicated selectors and refuse a repeated profile/slot pair."""
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        key = (
+            require_command_safe_text(item.profile_name, "profile_name"),
+            require_drc_index(item.drc_index),
+        )
+        if key in seen:
+            raise ValueError("duplicate dedicated slot assignment")
+        seen.add(key)
+
+
 def _analyze_assignment_requests(
     assignments: LparPcieAssignments,
 ) -> tuple[dict[tuple[str, str], Decimal], set[tuple[str, str]]]:
     """Validate request structure and return its inventory requirements."""
-    if assignments.dedicated:
-        for item in assignments.dedicated:
-            require_command_safe_text(item.profile_name, "profile_name")
-            require_command_safe_text(item.drc_index, "drc_index")
-        raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
+    _validate_dedicated_requests(assignments.dedicated)
 
     identities: dict[tuple[str, str], tuple[str, Decimal]] = {}
     requested_capacity: dict[tuple[str, str], Decimal] = {}
@@ -270,6 +282,9 @@ async def prevalidate_lpar_pcie_assignments(
 ) -> None:
     """Validate the complete collection without reserving or mutating resources."""
     requested_capacity, vios_identities = _analyze_assignment_requests(assignments)
+    if assignments.dedicated:
+        system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
+        await require_dedicated_pcie_environment(hmc.config, system_name)
     await _validate_sriov_inventory(hmc, system_name_or_uuid, requested_capacity)
     await _validate_vios_inventory(hmc, system_name_or_uuid, vios_identities)
 
@@ -366,6 +381,7 @@ async def apply_validated_lpar_pcie_assignments(
             PermissionError,
             HMCError,
             PcieAssignmentUnavailableError,
+            PcieAssignmentPartialError,
             SriovLogicalPortCapabilityError,
             SriovLogicalPortPartialError,
             VnicCapabilityError,

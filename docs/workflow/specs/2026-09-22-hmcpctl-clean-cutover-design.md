@@ -1,6 +1,6 @@
 # hmcpctl clean cutover
 
-Issue #898. Decision record: [ADR 0165](../../adr/0165-hmcpctl-clean-cutover.md).
+Issue #898. Decision record: [ADR 0167](../../adr/0167-hmcpctl-clean-cutover.md).
 
 ## Problem
 
@@ -76,7 +76,7 @@ saved snapshots exist.
 Current README, contribution, security, changelog, configuration, CLI, MCP, API, development,
 live-test, recipe, environment, and generated tool-reference material uses the new product,
 command, import, and config path. Generation-backed files are changed only through their
-recipes. Historical ADR bodies remain unchanged except ADR 0165; old spellings in history are
+recipes. Historical ADR bodies remain unchanged except ADR 0167; old spellings in history are
 not evidence of an incomplete active rename.
 
 The cutover guide distinguishes actions in this PR from operator actions. This PR documents
