@@ -1,4 +1,4 @@
-"""Stable connection boundary for reusable hmc-mcp library consumers.
+"""Stable connection boundary for reusable hmcpctl library consumers.
 
 Domain operations and their result types live in their owning modules. They are
 available to pre-release consumers who explicitly choose those module paths,

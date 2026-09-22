@@ -20,15 +20,15 @@ from pydantic import (
     model_validator,
 )
 
-FORMAT = "hmc-mcp.lpar-snapshot"
+FORMAT = "hmcpctl.lpar-snapshot"
 VERSION = 1
 MAX_SNAPSHOT_BYTES = 1024 * 1024
 MAX_JSON_NESTING = 100
 PROFILE_MEDIA_TYPE = "text/vnd.ibm.hmc.lssyscfg-profile;version=1;charset=utf-8"
-PLACEMENT_MEDIA_TYPE = "application/vnd.hmc-mcp.runtime-placement+json;version=1"
-SCORES_MEDIA_TYPE = "application/vnd.hmc-mcp.affinity-scores+json;version=1"
+PLACEMENT_MEDIA_TYPE = "application/vnd.hmcpctl.runtime-placement+json;version=1"
+SCORES_MEDIA_TYPE = "application/vnd.hmcpctl.affinity-scores+json;version=1"
 MINIMUM_AFFINITY_POLICY_MEDIA_TYPE = (
-    "application/vnd.hmc-mcp.minimum-affinity-policy+json;version=1"
+    "application/vnd.hmcpctl.minimum-affinity-policy+json;version=1"
 )
 _RFC3339 = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
@@ -212,7 +212,7 @@ class SnapshotObservations(_StrictSnapshotModel):
 
 
 class LparSnapshot(_StrictSnapshotModel):
-    format: Literal["hmc-mcp.lpar-snapshot"]
+    format: Literal["hmcpctl.lpar-snapshot"]
     version: Literal[1]
     captured_at: datetime
     source: SnapshotSource

@@ -397,7 +397,7 @@ async def capture_lpar_snapshot(
         console, console_resource, system, system_resource, lpar, lpar_resource
     )
     snapshot = LparSnapshot(
-        format="hmc-mcp.lpar-snapshot",
+        format="hmcpctl.lpar-snapshot",
         version=1,
         captured_at=_utcnow(),
         source=SnapshotSource(

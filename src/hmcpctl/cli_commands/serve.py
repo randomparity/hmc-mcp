@@ -30,9 +30,9 @@ def _no_policy_selected(detail: str) -> str:
     where = f" ({resolved[0]})" if resolved is not None else ""
     return (
         f"{detail}\n\n"
-        "hmc-mcp will not serve without an access policy. To keep what an unpolicied "
+        "hmcpctl will not serve without an access policy. To keep what an unpolicied "
         "server exposed, generate one and review it:\n"
-        "    hmc-mcp config init-access-policy\n"
+        "    hmcpctl config init-access-policy\n"
         f"then start the server with --access-policy legacy-equivalent{where}.\n"
         "For a new deployment, prefer the read-only example in the README or the "
         "limited-mutation example in docs/mcp-server.md over the generated "

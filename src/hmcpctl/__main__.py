@@ -1,6 +1,6 @@
 """``python -m hmcpctl`` — the console script's program, reached without the script.
 
-Delegation is the whole body, deliberately: `hmc-mcp` and `python -m hmcpctl` are
+Delegation is the whole body, deliberately: `hmcpctl` and `python -m hmcpctl` are
 meant to be one program, and logic here is where they would start to diverge. That
 includes needing the `app` extra — like the console script, this tracebacks without
 it, and guarding the import here is exactly the logic that would let the two differ.

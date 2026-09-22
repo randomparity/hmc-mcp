@@ -1,9 +1,9 @@
-"""Configuration for hmc-mcp.
+"""Configuration for hmcpctl.
 
 Settings are resolved in priority order:
   1. CLI options / explicit constructor args
   2. Environment variables (HMC_*)
-  3. TOML profile (~/.config/hmc-mcp/config.toml or platform equivalent)
+  3. TOML profile (~/.config/hmcpctl/config.toml or platform equivalent)
 
 Checkout-local .env files are NOT loaded: HMCConfig declares no ``env_file``, so
 no dotenv source is configured. Passing ``_env_file=None`` is therefore inert
@@ -54,8 +54,8 @@ def validate_agent_id(agent_id: str) -> None:
     """Validate an agent identifier used in audit and ownership tokens."""
     if not agent_id:
         raise ValueError("agent_id must not be empty")
-    if agent_id == "hmc-mcp":
-        raise ValueError("agent_id 'hmc-mcp' is reserved; choose a distinct identifier")
+    if agent_id == "hmcpctl":
+        raise ValueError("agent_id 'hmcpctl' is reserved; choose a distinct identifier")
     if len(agent_id) > 64:
         raise ValueError(f"agent_id is {len(agent_id)} characters; maximum is 64")
     if not agent_id.isascii() or any(
@@ -168,7 +168,7 @@ class HMCConfig(BaseSettings):
         "than REST calls, e.g. bkprofdata/rstprofdata; 60s is too tight)",
     )
     audit_memento: str = Field(
-        default="hmc-mcp",
+        default="hmcpctl",
         description=(
             "Value sent in the X-Audit-Memento header (shows up in HMC audit "
             "logs). Must be printable ASCII (U+0020 through U+007E); control "
@@ -191,7 +191,7 @@ class HMCConfig(BaseSettings):
         default=None,
         description=(
             "Per-agent identifier folded into the X-Audit-Memento header as "
-            "hmc-mcp:<agent_id>. Used for multi-agent LPAR ownership attribution. "
+            "hmcpctl:<agent_id>. Used for multi-agent LPAR ownership attribution. "
             "Must be 1–64 printable ASCII characters with no commas, = signs, "
             "square brackets, double quotes, or backslashes — any of those would "
             "corrupt the ownership stamp in the HMC CLI -i parser or the "
@@ -335,14 +335,14 @@ class HMCConfig(BaseSettings):
     @model_validator(mode="after")
     def _warn_audit_memento_override(self) -> HMCConfig:
         """Warn once per process when HMC_AGENT_ID overrides a custom audit memento."""
-        if not (self.agent_id and self.audit_memento != "hmc-mcp"):
+        if not (self.agent_id and self.audit_memento != "hmcpctl"):
             return self
         global _reported_memento_override
         msg = (
             f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
             f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
             "ignored — X-Audit-Memento is always sent as "
-            f"hmc-mcp:{self.agent_id}"
+            f"hmcpctl:{self.agent_id}"
         )
         with _override_report_lock:
             if _reported_memento_override:
@@ -356,16 +356,16 @@ class HMCConfig(BaseSettings):
     def effective_audit_memento(self) -> str:
         """Audit memento value sent in the X-Audit-Memento header.
 
-        Returns ``hmc-mcp:<agent_id>`` when ``agent_id`` is set and non-empty;
-        otherwise returns ``audit_memento`` (default ``"hmc-mcp"``).
+        Returns ``hmcpctl:<agent_id>`` when ``agent_id`` is set and non-empty;
+        otherwise returns ``audit_memento`` (default ``"hmcpctl"``).
 
         Note: when ``agent_id`` is set, ``audit_memento`` is ignored — the prefix
-        is always ``hmc-mcp``.  An operator who has customised ``HMC_AUDIT_MEMENTO``
+        is always ``hmcpctl``.  An operator who has customised ``HMC_AUDIT_MEMENTO``
         and then sets ``HMC_AGENT_ID`` will see the audit prefix revert to
-        ``hmc-mcp``.
+        ``hmcpctl``.
         """
         if self.agent_id:
-            return f"hmc-mcp:{self.agent_id}"
+            return f"hmcpctl:{self.agent_id}"
         return self.audit_memento
 
     @property

@@ -1,4 +1,4 @@
-"""Shared app state and entry points for the hmc-mcp server.
+"""Shared app state and entry points for the hmcpctl server.
 
 Builds empty :class:`FastMCP` instances for explicit composition and provides
 the small sync-run / SSH-passthrough helpers used by tool bodies. Tool
@@ -110,7 +110,7 @@ INSTRUCTIONS = (
     "tool scope (network, storage, templates, metrics, users).\n\n"
     "## Multi-agent ownership protocol\n\n"
     "When multiple agents share this server, LPAR ownership is tracked via "
-    "a description-field token: ``[hmc-mcp owner:<agent_id> created:<date>]``.\n\n"
+    "a description-field token: ``[hmcpctl owner:<agent_id> created:<date>]``.\n\n"
     "**On create:** Ownership tokens are stamped automatically by "
     "hmc_create_lpar and hmc_provision_lpar. A completed "
     "hmc_deploy_partition_template call also stamps automatically when wait=True "
@@ -120,13 +120,13 @@ INSTRUCTIONS = (
     "hmc_set_lpar_description to write the ownership token.\n\n"
     "**Before delete / rename / description-overwrite:** Read the LPAR "
     "description with hmc_get_lpar_description or hmc_lpar_summary. If it "
-    "contains ``[hmc-mcp owner:<id> ...]`` and <id> differs from your "
+    "contains ``[hmcpctl owner:<id> ...]`` and <id> differs from your "
     "HMC_AGENT_ID, stop and ask the operator before proceeding.\n\n"
     "**Absent token:** An LPAR with no token was created before this feature "
     "or through a path that does not stamp. Treat it as unowned and proceed "
     "with caution — ask the operator if in doubt.\n\n"
     "**Set HMC_AGENT_ID** in the environment for per-agent attribution in "
-    "HMC audit logs (X-Audit-Memento: hmc-mcp:<agent_id>)."
+    "HMC audit logs (X-Audit-Memento: hmcpctl:<agent_id>)."
 )
 
 _TOOL_MENTION = re.compile(r"\bhmc_[a-z0-9_]+\b")
@@ -188,7 +188,7 @@ def create_mcp(instructions: str = INSTRUCTIONS) -> FastMCP:
     *instructions* defaults to the unqualified prose; ``server.create_mcp``
     passes the ceiling-aware form built by :func:`ceiling_aware_instructions`.
     """
-    return FastMCP(name="hmc-mcp", instructions=instructions)
+    return FastMCP(name="hmcpctl", instructions=instructions)
 
 
 def run_sync(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:

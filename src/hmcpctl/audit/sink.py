@@ -161,7 +161,7 @@ class _StderrSink:
         """Begin draining. Caller holds ``_state``; importing must start nothing."""
         if self._writer is None:
             self._writer = threading.Thread(
-                target=self._run, name="hmc-mcp-audit-stderr", daemon=True
+                target=self._run, name="hmcpctl-audit-stderr", daemon=True
             )
             self._writer.start()
 

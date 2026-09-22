@@ -499,31 +499,31 @@ def test_list_profiles_with_default_absent(tmp_path):
 def test_agent_id_unset_uses_audit_memento_default():
     cfg = HMCConfig.from_mapping({})
     assert cfg.agent_id is None
-    assert cfg.effective_audit_memento == "hmc-mcp"
+    assert cfg.effective_audit_memento == "hmcpctl"
 
 
 def test_agent_id_set_prefixes_audit_memento():
     cfg = HMCConfig.from_mapping({"agent_id": "alice"})
-    assert cfg.effective_audit_memento == "hmc-mcp:alice"
+    assert cfg.effective_audit_memento == "hmcpctl:alice"
 
 
 def test_agent_id_overrides_audit_memento_field():
-    # When agent_id is set, effective_audit_memento uses hmc-mcp:<agent_id>
+    # When agent_id is set, effective_audit_memento uses hmcpctl:<agent_id>
     # regardless of the audit_memento field.
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         cfg = HMCConfig.from_mapping({"agent_id": "bob", "audit_memento": "custom"})
-    assert cfg.effective_audit_memento == "hmc-mcp:bob"
+    assert cfg.effective_audit_memento == "hmcpctl:bob"
 
 
 def test_agent_id_no_warning_when_audit_memento_is_default():
-    # When audit_memento is default ('hmc-mcp'), no warning is emitted even
+    # When audit_memento is default ('hmcpctl'), no warning is emitted even
     # when agent_id is set, because there is no custom value being silently discarded.
     import warnings as _warnings
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
         cfg = HMCConfig.from_mapping({"agent_id": "alice"})
-    assert cfg.effective_audit_memento == "hmc-mcp:alice"
+    assert cfg.effective_audit_memento == "hmcpctl:alice"
 
 
 def test_audit_memento_without_agent_id():
@@ -540,7 +540,7 @@ def test_agent_id_from_env(monkeypatch):
     monkeypatch.setenv("HMC_AGENT_ID", "env-agent")
     cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
-    assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+    assert cfg.effective_audit_memento == "hmcpctl:env-agent"
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +679,7 @@ def test_audit_memento_override_repeat_is_recoverable_at_debug(caplog):
     """The suppressed repeat stays reachable by raising the log level.
 
     Dropping it at every level leaves an operator no local way to confirm the
-    override is still discarding their configured memento — ``hmc-mcp config
+    override is still discarding their configured memento — ``hmcpctl config
     show`` prints the raw field, not the effective one, so the only other
     evidence is the HMC's own audit log across the wire. ``_log_unresolved`` in
     ``server_permissions`` demotes its repeat for the same reason.
@@ -1259,7 +1259,7 @@ def test_from_mapping_applies_every_supplied_key():
         "timeout": 15.0,
         "max_response_bytes": 67108864,
         "ssh_timeout": 30.0,
-        "audit_memento": "hmc-mcp",
+        "audit_memento": "hmcpctl",
         "schema_version": "V1_0",
         "agent_id": "row-agent",
         "authorize_power_operations": True,
@@ -1298,7 +1298,7 @@ def test_from_mapping_runs_model_validators_once(monkeypatch):
         cfg = HMCConfig.from_mapping({"agent_id": "row-agent", "audit_memento": "mine"})
 
     warning.assert_called_once()
-    assert cfg.effective_audit_memento == "hmc-mcp:row-agent"
+    assert cfg.effective_audit_memento == "hmcpctl:row-agent"
 
 
 def test_from_mapping_reports_only_the_supplied_keys_as_set():

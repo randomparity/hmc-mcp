@@ -25,7 +25,7 @@ from hmcpctl.snapshots.operations import assess_snapshot_affinity, capture_lpar_
 def _publish(path: Path, text: str) -> None:
     path.parent.mkdir(parents=False, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
-        prefix=".hmc-mcp-snapshot-", dir=path.parent
+        prefix=".hmcpctl-snapshot-", dir=path.parent
     )
     temporary = Path(temporary_name)
     try:

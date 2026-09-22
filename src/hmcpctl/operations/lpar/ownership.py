@@ -327,16 +327,16 @@ async def _authorize_override(
 
 
 _OWNERSHIP_TOKEN = re.compile(
-    r"\[hmc-mcp owner:(?P<owner>[^\s\[\]:]+) created:\d{4}-\d{2}-\d{2}\]"
+    r"\[hmcpctl owner:(?P<owner>[^\s\[\]:]+) created:\d{4}-\d{2}-\d{2}\]"
 )
 _CALLER_TOKEN = re.compile(
-    r"\[hmc-mcp owner:[^\s\[\]:]+ created:\d{4}-\d{2}-\d{2}\] "
+    r"\[hmcpctl owner:[^\s\[\]:]+ created:\d{4}-\d{2}-\d{2}\] "
     r"\[caller (?P<token>[^\s\[\]]+)\]"
 )
 
 
 def parse_lpar_ownership_owner(description: str) -> str | None:
-    """Return the advisory hmc-mcp owner token embedded in *description*."""
+    """Return the advisory hmcpctl owner token embedded in *description*."""
     match = _OWNERSHIP_TOKEN.search(description)
     return match.group("owner") if match is not None else None
 
@@ -388,7 +388,7 @@ def _audit_lpar_ownership_override(
         system=system_name,
         lpar=lpar_name,
         host=hmc.config.host,
-        agent_id=hmc.config.agent_id or "hmc-mcp",
+        agent_id=hmc.config.agent_id or "hmcpctl",
     )
 
 
@@ -408,7 +408,7 @@ def _audit_lpar_ownership_denied(
         lpar=lpar_name,
         owner=owner,
         host=hmc.config.host,
-        agent_id=hmc.config.agent_id or "hmc-mcp",
+        agent_id=hmc.config.agent_id or "hmcpctl",
     )
 
 
@@ -427,7 +427,7 @@ def authorize_lpar_ownership_description(
         _audit_lpar_ownership_override(hmc, system_name, lpar_name)
         return owner
     if owner is None:
-        if "[hmc-mcp" in description:
+        if "[hmcpctl" in description:
             _audit_lpar_ownership_denied(
                 hmc,
                 system_name,
@@ -437,11 +437,11 @@ def authorize_lpar_ownership_description(
                 owner=None,
             )
             raise PermissionError(
-                f"LPAR {lpar_name!r} has a malformed hmc-mcp ownership token; "
+                f"LPAR {lpar_name!r} has a malformed hmcpctl ownership token; "
                 "retry only with ownership_override=true after operator approval"
             )
         return None
-    current_owner = hmc.config.agent_id or "hmc-mcp"
+    current_owner = hmc.config.agent_id or "hmcpctl"
     if owner != current_owner:
         _audit_lpar_ownership_denied(
             hmc,

@@ -1,12 +1,12 @@
-"""hmc-mcp command line interface.
+"""hmcpctl command line interface.
 
 Usage examples:
-    hmc-mcp capabilities                 # show operation maturity
-    hmc-mcp serve --access-policy NAME # run the MCP server over stdio
-    hmc-mcp systems list              # list managed systems as a table
-    hmc-mcp lpars list --json         # list LPARs as JSON
-    hmc-mcp lpars show mylpar         # find an LPAR by name and show it
-    hmc-mcp console info              # HMC version / connectivity check
+    hmcpctl capabilities                 # show operation maturity
+    hmcpctl serve --access-policy NAME # run the MCP server over stdio
+    hmcpctl systems list              # list managed systems as a table
+    hmcpctl lpars list --json         # list LPARs as JSON
+    hmcpctl lpars show mylpar         # find an LPAR by name and show it
+    hmcpctl console info              # HMC version / connectivity check
 
 This module is the explicit composition root: ``cli_commands.app`` owns command
 groups, while domain modules expose registration functions called here to build

@@ -12,7 +12,7 @@ from fastmcp.tools.base import Tool
 from hmcpctl.operation_maturity import operation_maturity_meta
 from hmcpctl.tool_registry import ToolSecurity
 
-MATURITY_META_KEY = "io.github.randomparity.hmc-mcp/operation-maturity"
+MATURITY_META_KEY = "io.github.randomparity.hmcpctl/operation-maturity"
 
 
 def _utc_now() -> datetime:

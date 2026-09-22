@@ -119,7 +119,7 @@ def hmc_install_vios(
     installation that typically runs far longer than one SSH session; the tool
     launches ``installios`` in the background on the HMC (``nohup``, stdin
     closed) and returns as soon as the process is submitted, reporting the
-    remote PID and the log path (``/tmp/hmc-mcp-installios-<partition>.log``).
+    remote PID and the log path (``/tmp/hmcpctl-installios-<partition>.log``).
     It cannot report the install's progress or outcome. There is no HMC job on
     this path — hmc_get_job / hmc_wait_for_job do not apply. Monitor the
     install through the partition's console (mkvterm) or the log file, then
@@ -214,7 +214,7 @@ def hmc_install_vios_by_lpar_selector(
     installation that typically runs far longer than one SSH session; the tool
     launches ``installios`` in the background on the HMC (``nohup``, stdin
     closed) and returns as soon as the process is submitted, reporting the
-    remote PID and the log path (``/tmp/hmc-mcp-installios-<partition>.log``).
+    remote PID and the log path (``/tmp/hmcpctl-installios-<partition>.log``).
     It cannot report the install's progress or outcome. There is no HMC job on
     this path — hmc_get_job / hmc_wait_for_job do not apply. Monitor the
     install through the partition's console (mkvterm) or the log file, then

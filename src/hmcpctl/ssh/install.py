@@ -13,7 +13,7 @@ _IPV4_PATTERN = re.compile(rf"^{_IPV4_OCTET}(\.{_IPV4_OCTET}){{3}}$")
 _MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
 _VLAN_MIN, _VLAN_MAX = 0, 4094
 _LOG_SLUG_PATTERN = re.compile(r"[^A-Za-z0-9._-]")
-_INSTALLIOS_LOG_TEMPLATE = "/tmp/hmc-mcp-installios-{slug}.log"
+_INSTALLIOS_LOG_TEMPLATE = "/tmp/hmcpctl-installios-{slug}.log"
 
 INSTALLIOS_PID_PREFIX = "HMC_MCP_INSTALLIOS_PID="
 

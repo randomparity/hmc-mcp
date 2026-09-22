@@ -190,7 +190,7 @@ async def _submit_install(
         partition=partition_name,
         log_path=log_path,
         host=hmc.config.host,
-        agent_id=hmc.config.agent_id or "hmc-mcp",
+        agent_id=hmc.config.agent_id or "hmcpctl",
     )
     pid = await run_installios(hmc.config, command)
     audit.record_install_submitted(
@@ -199,7 +199,7 @@ async def _submit_install(
         pid=pid,
         log_path=log_path,
         host=hmc.config.host,
-        agent_id=hmc.config.agent_id or "hmc-mcp",
+        agent_id=hmc.config.agent_id or "hmcpctl",
     )
     # Keep the human-readable module log for embedders that configured it.
     _logger.info(

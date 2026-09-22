@@ -1313,7 +1313,7 @@ class HMCClient(
         ``None`` when the HMC sends none (ADR 0139). **It is returned verbatim
         and is not guaranteed to be a version string.** On firmware observed at
         V1_17_0 this endpoint echoes the request's ``X-Audit-Memento`` value
-        into that response header, so it reads ``hmc-mcp`` rather than a level;
+        into that response header, so it reads ``hmcpctl`` rather than a level;
         the same firmware returns a real level on ordinary uom feeds. Treat it
         as an opaque provenance tag unless it matches a level you recognise.
 

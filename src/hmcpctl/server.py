@@ -1,16 +1,16 @@
 """MCP server exposing the IBM HMC REST API as MCP tools.
 
 Run:
-    hmc-mcp config init-access-policy          # once, then review the file it writes
-    hmc-mcp serve --access-policy NAME         # stdio transport (default, for agents)
-    hmc-mcp serve --access-policy NAME --http  # streamable HTTP on 127.0.0.1:8000
+    hmcpctl config init-access-policy          # once, then review the file it writes
+    hmcpctl serve --access-policy NAME         # stdio transport (default, for agents)
+    hmcpctl serve --access-policy NAME --http  # streamable HTTP on 127.0.0.1:8000
 
 ``--access-policy`` is required: since ADR 0041 no application can be composed without
 one, and ``serve`` refuses rather than starting unbounded.
 
 The HTTP transport is UNAUTHENTICATED: it exposes every enabled tool,
 including user administration, to anyone who can reach the port. Bind only
-to loopback (the default). ``hmc-mcp serve --http`` refuses to bind beyond
+to loopback (the default). ``hmcpctl serve --http`` refuses to bind beyond
 loopback unless ``--allow-remote`` is passed; even then, gate the endpoint
 with an authenticated reverse proxy (MCP gateway or HTTPS proxy with
 bearer-token auth). Never expose it directly on a network. The arbitrary
@@ -109,7 +109,7 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
     which is what makes "no unbounded application exists" a property of the code
     rather than of the serve path alone: the stdio and HTTP transports, the
     arbitrary-command toggle, the smoke script, and the live-test runner all
-    arrive here. ``hmc-mcp config init-access-policy`` writes a policy granting
+    arrive here. ``hmcpctl config init-access-policy`` writes a policy granting
     what an unpolicied server used to grant, for a deployment that needs one.
 
     The ``None`` check is explicit because an annotation refuses nothing at
@@ -129,9 +129,9 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
     if policy is None:
         raise TypeError(
             "create_mcp requires an access policy; composing without one is no longer "
-            "supported. Run 'hmc-mcp config init-access-policy' to generate a policy "
+            "supported. Run 'hmcpctl config init-access-policy' to generate a policy "
             "granting what an unpolicied server used to grant, review it, then pass it "
-            "here or select it with 'hmc-mcp serve --access-policy NAME'."
+            "here or select it with 'hmcpctl serve --access-policy NAME'."
         )
     permits, authorize = _gates(policy)
     application = _create_base_mcp(ceiling_aware_instructions(permits, TOOL_SECURITY))

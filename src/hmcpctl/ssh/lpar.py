@@ -64,7 +64,7 @@ async def stamp_lpar_ownership(
 ) -> str | None:
     """Write an ownership token, plus an optional caller token, to *lpar_name*.
 
-    Builds ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and, when
+    Builds ``[hmcpctl owner:<agent_id> created:<YYYY-MM-DD>]`` and, when
     *caller_token* is given, appends `` [caller <token>]`` (ADR 0064), then
     writes the combined description with :func:`set_lpar_description` over SSH
     in one call.
@@ -75,15 +75,15 @@ async def stamp_lpar_ownership(
     A malformed *caller_token* raises ``ValueError`` before any SSH traffic
     instead of being swallowed, so it can never discard the ownership stamp.
 
-    *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
+    *agent_id* defaults to ``"hmcpctl"`` when ``None`` or empty.
     """
     import datetime
 
     if caller_token is not None:
         validate_caller_token(caller_token)
-    effective_id = agent_id if agent_id else "hmc-mcp"
+    effective_id = agent_id if agent_id else "hmcpctl"
     today = datetime.date.today().isoformat()  # noqa: DTZ011 - the ADR 0011 ownership stamp records the operator's local calendar date and is persisted on the HMC; moving it to UTC is not this issue's to make
-    description = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    description = f"[hmcpctl owner:{effective_id} created:{today}]"
     if caller_token is not None:
         description = f"{description} [caller {caller_token}]"
     try:

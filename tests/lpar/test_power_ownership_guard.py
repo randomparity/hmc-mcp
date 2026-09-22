@@ -28,8 +28,8 @@ from hmcpctl.ssh.transport import HMCCLIError
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_UUID = "22222222-2222-2222-2222-222222222222"
 OTHER_LPAR_UUID = "33333333-3333-3333-3333-333333333333"
-OWNED_BY_ALICE = "[hmc-mcp owner:alice created:2026-08-14]"
-OWNED_BY_BOB = "[hmc-mcp owner:bob created:2026-08-14]"
+OWNED_BY_ALICE = "[hmcpctl owner:alice created:2026-08-14]"
+OWNED_BY_BOB = "[hmcpctl owner:bob created:2026-08-14]"
 
 
 def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:

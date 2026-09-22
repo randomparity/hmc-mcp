@@ -136,7 +136,7 @@ class PowerOwnershipGuard:
     `power_lpar` reads no ownership token and opens no SSH connection. Naming it
     ``authorized`` would have read as "this connection is not authorized" for the
     permissive value — the reassuring misreading of the fail-open state, which is
-    the misreading #470 exists to end. `hmc-mcp config show` emits the same key
+    the misreading #470 exists to end. `hmcpctl config show` emits the same key
     for the same boolean.
 
     It is ``None`` only when the connection's configuration could not be built at

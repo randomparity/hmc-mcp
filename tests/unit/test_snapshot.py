@@ -16,7 +16,7 @@ from hmcpctl.snapshots.operations import assess_snapshot_affinity
 
 def _document() -> dict:
     return {
-        "format": "hmc-mcp.lpar-snapshot",
+        "format": "hmcpctl.lpar-snapshot",
         "version": 1,
         "captured_at": "2026-08-24T20:00:01Z",
         "source": {
@@ -73,11 +73,11 @@ def _document() -> dict:
         "observations": {
             "observed_at": "2026-08-24T20:00:00Z",
             "runtime_placement": {
-                "media_type": "application/vnd.hmc-mcp.runtime-placement+json;version=1",
+                "media_type": "application/vnd.hmcpctl.runtime-placement+json;version=1",
                 "data": {},
             },
             "scores": {
-                "media_type": "application/vnd.hmc-mcp.affinity-scores+json;version=1",
+                "media_type": "application/vnd.hmcpctl.affinity-scores+json;version=1",
                 "data": {"current": {}, "predicted": {}, "resource_groups": {}},
             },
         },
@@ -97,7 +97,7 @@ def _assessment_document() -> dict:
     )
     document["observations"]["minimum_affinity_policy"] = {
         "media_type": (
-            "application/vnd.hmc-mcp.minimum-affinity-policy+json;version=1"
+            "application/vnd.hmcpctl.minimum-affinity-policy+json;version=1"
         ),
         "data": {"min_affinity_score": 80, "min_affinity_score_action": "warn"},
     }
@@ -277,7 +277,7 @@ def test_minimum_affinity_policy_observation_round_trips() -> None:
     )
     document["observations"]["minimum_affinity_policy"] = {
         "media_type": (
-            "application/vnd.hmc-mcp.minimum-affinity-policy+json;version=1"
+            "application/vnd.hmcpctl.minimum-affinity-policy+json;version=1"
         ),
         "data": {"min_affinity_score": 80, "min_affinity_score_action": "warn"},
     }
@@ -326,6 +326,7 @@ def test_supported_minimum_affinity_policy_requires_observation_and_no_reason():
     [
         (lambda value: value.pop("source"), "/source"),
         (lambda value: value.update(extra=True), "/extra"),
+        (lambda value: value.update(format="hmc-mcp.lpar-snapshot"), "/format"),
         (lambda value: value.update(version=2), "/version"),
         (lambda value: value.update(captured_at="later"), "/captured_at"),
         (
@@ -347,9 +348,28 @@ def test_invalid_snapshot_reports_precise_pointer(mutation, pointer) -> None:
         parse_snapshot(json.dumps(document))
 
 
+@pytest.mark.parametrize(
+    ("observation", "media_type"),
+    [
+        (
+            "runtime_placement",
+            "application/vnd.hmc-mcp.runtime-placement+json;version=1",
+        ),
+        ("scores", "application/vnd.hmc-mcp.affinity-scores+json;version=1"),
+    ],
+)
+def test_legacy_snapshot_media_types_are_rejected(
+    observation: str, media_type: str
+) -> None:
+    document = _document()
+    document["observations"][observation]["media_type"] = media_type
+    with pytest.raises(SnapshotValidationError, match="media_type is unsupported"):
+        parse_snapshot(json.dumps(document))
+
+
 def test_duplicate_members_are_rejected() -> None:
     with pytest.raises(SnapshotValidationError, match="/version"):
-        parse_snapshot('{"format":"hmc-mcp.lpar-snapshot","version":1,"version":1}')
+        parse_snapshot('{"format":"hmcpctl.lpar-snapshot","version":1,"version":1}')
 
 
 def test_nested_duplicate_reports_full_pointer() -> None:
@@ -375,7 +395,7 @@ def test_nonstandard_json_constants_are_rejected(constant: str) -> None:
         match="snapshot inspection failed.*non-standard JSON constant",
     ):
         inspect_snapshot(
-            '{"format":"hmc-mcp.lpar-snapshot","version":1,"value":' + constant + "}"
+            '{"format":"hmcpctl.lpar-snapshot","version":1,"value":' + constant + "}"
         )
 
 
@@ -442,8 +462,8 @@ def test_native_profile_never_appears_in_diagnostic() -> None:
 
 
 def test_inspection_identifies_unsupported_version_without_validation() -> None:
-    result = inspect_snapshot('{"format":"hmc-mcp.lpar-snapshot","version":2}')
-    assert result.format == "hmc-mcp.lpar-snapshot"
+    result = inspect_snapshot('{"format":"hmcpctl.lpar-snapshot","version":2}')
+    assert result.format == "hmcpctl.lpar-snapshot"
     assert result.version == 2
     assert result.supported is False
 
@@ -464,7 +484,7 @@ def test_excessive_json_nesting_has_bounded_diagnostic(operation) -> None:
 
 @pytest.mark.parametrize("operation", [parse_snapshot, inspect_snapshot])
 def test_oversized_integer_literal_has_bounded_diagnostic(operation) -> None:
-    text = '{"format":"hmc-mcp.lpar-snapshot","version":' + ("9" * 5_000) + "}"
+    text = '{"format":"hmcpctl.lpar-snapshot","version":' + ("9" * 5_000) + "}"
     with pytest.raises(
         SnapshotValidationError, match="JSON number exceeds the supported size"
     ):
