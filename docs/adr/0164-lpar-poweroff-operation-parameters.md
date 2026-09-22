@@ -41,7 +41,10 @@ answer, so an unadorned call cannot reach the dangerous one.
 
 **Both the builder and `power_lpar` call the validator.** `power_lpar` calls it before the
 ADR 0092 ownership leg that can write an audited override record and before any REST read, so
-a refused request performs no side effect; the builder calls it again because
+a refusal inside `power_lpar` reads nothing, submits nothing and writes no ownership record.
+It is not ahead of the HMC session: `with_client` opens one through `client_from_env` before
+the operation runs, so a refused MCP-tool or CLI call has already logged on. The builder calls
+the validator again because
 `jobs.power_off_lpar_job` is re-exported for direct use and cannot trust its arguments. Same
 both-sites answer as ADR 0161, for a different reason: PowerOff has no already-running early
 return, so here the builder alone would be *sufficient* but not *early*.
@@ -102,7 +105,7 @@ epic #871 requirement 9 sequences this ahead of the #879 live window rather than
   reached by an LLM client. judgment: the one surface that asks a human is the one surface
   already safe; the gate has to live where the confirmation does not.
 - **Give `dumprestart` its own MCP tool instead of a flag.** verified: the registry exposes
-  155 tools (`just smoke`, this branch), so one more is structurally unremarkable. judgment: a
+  156 tools (`just smoke`, this branch), so one more is structurally unremarkable. judgment: a
   separate grant target is a real benefit, but it duplicates the whole PowerOff argument list
   to distinguish one job parameter, and a grant that already admits `hmc_power_off_lpar` is
   not made narrower by the split.

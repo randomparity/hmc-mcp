@@ -81,7 +81,10 @@ new.
   running state and any unflushed work are gone, and no confirmation mechanism exists in the
   operation layer or the MCP tool.
 - `restart=true` turns a PowerOff into a reboot, a different outcome than the caller of a
-  tool named `power_off` may expect if it is set by accident.
+  tool named `power_off` may expect if it is set by accident. Its control is the CLI
+  confirmation prompt, which names a requested restart; the MCP tool has none beyond the
+  parameter's own name and `Args:` description, which is the same standing this change gives
+  `immediate`.
 - `operation` is caller-supplied text that lands inside XML, so it is an injection surface.
 
 **Accepted failure classes.**

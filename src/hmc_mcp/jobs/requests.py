@@ -123,7 +123,8 @@ def validate_power_off_operation(
     if operation == "dumprestart" and not allow_dump_restart:
         raise ValueError(
             "PowerOff operation 'dumprestart' crashes the partition and takes a "
-            "platform dump; pass allow_dump_restart=True to request it."
+            "platform dump; pass allow_dump_restart=True (CLI: --allow-dump-restart) "
+            "to request it."
         )
 
 
