@@ -347,6 +347,12 @@ the git hook script, not a `prek` on `PATH`.
 
 ## Repository conventions
 
+**Implementation plans are local and transient.** Never commit files under
+`docs/workflow/plans/`; the directory is gitignored. Use a plan only as a
+sequencing aid during implementation, delete it when the implementation is
+complete, and record durable decisions and contracts in tracked ADRs or specs
+instead.
+
 **A new `static` sub-recipe needs a matching prek hook.** `tests/test_ci_pipeline.py`
 asserts a 1:1 correspondence between `static`'s dependency list and the hook ids
 in `.pre-commit-config.yaml`: the sets must be equal, each hook's `id` must equal
