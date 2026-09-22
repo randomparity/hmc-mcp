@@ -37,7 +37,10 @@ class _FakeHmc:
     """An HMC CLI double holding profile `io_slots` in the admitted read rendering.
 
     `chsyscfg` applies `io_slots+=<drc>//0` as `<drc>/none/0` and `io_slots-=<drc>//0`
-    by removing that entry, which is the behaviour ADR 0166 assumes and verifies.
+    by removing that entry, which is the behaviour ADR 0166 assumes and verifies. What
+    `io_slots-=<drc>//0` does to the DRC stored in another form (`<drc>/none/1`) is
+    unknown, so `other_form_removal` models each possibility: remove it, leave it
+    (no-op), or fail the command.
     """
 
     def __init__(
@@ -52,6 +55,8 @@ class _FakeHmc:
         after_write: Callable[[str], str] | None = None,
         fail_reads_after_write: bool = False,
         state: str = "Not Activated",
+        other_form_removal: str = "remove",
+        before_write: Callable[[], None] | None = None,
     ) -> None:
         self.rows = rows if rows is not None else [("lpar", "prof", io_slots)]
         self.model = model
@@ -61,6 +66,8 @@ class _FakeHmc:
         self.after_write = after_write
         self.fail_reads_after_write = fail_reads_after_write
         self.state = state
+        self.other_form_removal = other_form_removal
+        self.before_write = before_write
         self.written = False
         self.commands: list[str] = []
 
@@ -80,6 +87,8 @@ class _FakeHmc:
             return "\n".join(lines) + "\n"
         if command.startswith("chsyscfg -r prof"):
             self.written = True
+            if self.before_write is not None:
+                self.before_write()
             if self.applies:
                 self._apply(command)
             if self.chsyscfg_error:
@@ -98,11 +107,21 @@ class _FakeHmc:
             if "io_slots+" in fields:
                 entries.append(fields["io_slots+"].replace("//", "/none/"))
             else:
-                entries.remove(fields["io_slots-"].replace("//", "/none/"))
+                entries = self._remove(entries, fields["io_slots-"].replace("//", "/none/"))
             new = ",".join(entries) or "none"
             if self.after_write is not None:
                 new = self.after_write(new)
             self.rows[index] = (row_lpar, row_prof, new)
+
+    def _remove(self, entries: list[str], written: str) -> list[str]:
+        if written in entries:
+            return [entry for entry in entries if entry != written]
+        if self.other_form_removal == "error":
+            raise HMCCLIError("An invalid I/O slot was specified")
+        if self.other_form_removal == "remove":
+            drc_index = written.split("/")[0]
+            return [entry for entry in entries if entry.split("/")[0] != drc_index]
+        return entries
 
     def mutations(self) -> list[str]:
         return [command for command in self.commands if command.startswith("chsyscfg")]
@@ -414,6 +433,72 @@ def test_a_slot_in_another_form_is_refused_before_mutation(
         operation(hmc)
 
     assert fake.mutations() == []
+
+
+_REMOVAL_BRANCHES = ["remove", "noop", "error"]
+
+
+@pytest.mark.parametrize("branch", _REMOVAL_BRANCHES)
+@pytest.mark.parametrize("operation", [_assign, _unassign])
+def test_a_required_slot_is_refused_before_any_write_whatever_removal_would_do(
+    monkeypatch, hmc, operation, branch
+):
+    """ADR 0166: `io_slots-=<drc>//0` against `<drc>/none/1` is uncharacterized.
+
+    The captured VIOS slots are stored with `is_required=1`. Whether removing
+    `<drc>//0` would delete such an element, leave it, or fail is unknown, so the
+    operation never sends it: each branch the HMC might take stays unreached.
+    """
+    fake = _install(
+        monkeypatch, _FakeHmc(f"21020013/none/1,{_DRC}/none/1", other_form_removal=branch)
+    )
+
+    with pytest.raises(ValueError, match="only .*/none/0"):
+        operation(hmc)
+
+    assert fake.mutations() == []
+    assert fake.value() == f"21020013/none/1,{_DRC}/none/1"
+
+
+@pytest.mark.parametrize(
+    ("branch", "outcome"),
+    [("remove", None), ("noop", PcieAssignmentPartialError), ("error", PcieAssignmentPartialError)],
+)
+def test_a_slot_turned_required_between_read_and_write(monkeypatch, hmc, branch, outcome):
+    """The concurrent-writer case (failure model class 3), pinned per branch.
+
+    Only a removal that leaves the DRC absent reads back as the requested state;
+    a no-op or a refused command reads back as neither state and fails closed.
+    """
+
+    def turn_required() -> None:
+        fake.rows[0] = ("lpar", "prof", f"{_DRC}/none/1")
+
+    fake = _install(
+        monkeypatch,
+        _FakeHmc(f"{_DRC}/none/0", other_form_removal=branch, before_write=turn_required),
+    )
+
+    if outcome is None:
+        _unassign(hmc)
+        assert fake.value() == "none"
+    else:
+        with pytest.raises(outcome, match="could not be verified"):
+            _unassign(hmc)
+
+
+def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_recover(
+    monkeypatch, hmc
+):
+    _install(monkeypatch, _FakeHmc(applies=False))
+
+    with pytest.raises(PcieAssignmentPartialError) as caught:
+        _assign(hmc)
+
+    message = str(caught.value)
+    assert "may hold the change, none of it, or a form this operation refuses" in message
+    assert "lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header" in message
+    assert "restore profile 'prof' of LPAR 'lpar' to the before value" in message
 
 
 def test_a_write_the_readback_does_not_show_is_a_partial_error(monkeypatch, hmc):

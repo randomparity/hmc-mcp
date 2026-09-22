@@ -421,8 +421,12 @@ async def _verify_dedicated_change(
     operation = "assignment" if add else "unassignment"
     raise PcieAssignmentPartialError(
         f"dedicated slot {operation} could not be verified: "
-        f"{reason}; io_slots before={target.io_slots!r} "
-        f"after={after_text!r}"
+        f"{reason}; io_slots before={target.io_slots!r} after={after_text!r}. "
+        "The chsyscfg may have run, so the profile may hold the change, none of it, or a "
+        "form this operation refuses. Read it with `lssyscfg -r prof -m "
+        f"{target.system_name} -F lpar_name,name,io_slots --header`, restore profile "
+        f"{target.profile_name!r} of LPAR {target.lpar_name!r} to the before value by "
+        "hand, then retry."
     ) from cause
 
 
