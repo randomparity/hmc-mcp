@@ -17,18 +17,17 @@ One read-only SSH function in a new `src/hmc_mcp/ssh/refcodes.py`, one MCP tool 
 one-topic-per-module layout (`affinity`, `console`, `memory`, `sriov`); neither `io_inventory`
 ("physical I/O, Fibre Channel, SEA") nor `lpar` ("creation, ownership, validation, name
 resolution") owns reference codes. No ownership transition and no caller migration: nothing calls
-this code today. No new quoting or parsing primitive is written: `build_filter` (`ssh/commands.py:144`) emits
-`lpar_names=<n>` and refuses a value carrying `,`, `=`, `"` or a control character, and
-`parse_hmc_delimited_rows` (`:29`) parses `-F --header` output, refusing a mismatched header.
+this code today. No new quoting, parsing or empty-result primitive is written: `build_filter`
+(`ssh/commands.py:144`) emits `lpar_names=<n>` and refuses a value carrying `,`, `=`, `"` or a
+control character; `parse_hmc_delimited_rows` (`:29`) parses `-F --header` output, refusing a
+mismatched header; and the empty-result guard is the shape `ssh/sriov.py:28-34` already uses.
 
-**The parsed field set** is `-F lpar_name,time_stamp,refcode --header`. Neither corpus page
-enumerates `lsrefcode`'s `-F` attributes — the `-F` row at
-`docs/refs/hmc-commands-p11/commands/lsrefcode.md:33` names none, and those three are the only
-attribute names anywhere on either page (same file, `:54`), so the issue's "word fields as the
-corpus names them" is not transcribable. Bare `-F --header` returns whatever attributes the
-firmware defines, which is not a stable set; naming an unevidenced attribute fails the whole
-command. The three evidenced names, with `parse_hmc_delimited_rows` failing closed on a header
-mismatch, is the only option that is both evidenced and stable; #879 confirms it against hardware.
+**The parsed field set** is `-F lpar_name,time_stamp,refcode --header` — IBM's own documented
+example for this exact invocation, identical on both corpus pages at
+`docs/refs/hmc-commands-p11/commands/lsrefcode.md:54-55`. Bare `-F` with no attribute names
+"displays values for all of the reference code attributes" (`:34`), an unenumerated,
+firmware-dependent set, so the stable-fields criterion rules it out. `parse_hmc_delimited_rows`
+fails closed on a header mismatch; #879 confirms the set against hardware.
 
 **The bound** is `count: int = 1`, refused outside `1..MAX_REFCODE_COUNT` (100) and refused for a
 non-`int` (`bool` included) before any interpolation. The default matches the HMC's own — `-n`
@@ -41,10 +40,12 @@ omitted lists only the current code — while the command always passes `-n` so 
 - **Invariants at stake** — the read stays read-only and never holds a virtual terminal; a
   caller-supplied selector must not alter the command's structure; returned rows must not silently
   shift columns; a new public tool and CLI contract.
-- **Accepted failure classes** — an HMC naming these three attributes differently raises rather
-  than returning wrong rows (fails closed; no live evidence yet); a partition with no reference
-  codes is indistinguishable from empty output and returns `[]`; `-n` above 100 is refused rather
-  than streamed.
+- **Accepted failure classes** — an HMC naming these three attributes differently raises
+  `HMCCLIError` rather than returning wrong rows (fails closed; no live evidence yet). An empty
+  read arrives as the exit-0 literal `No results were found.` (`docs/HMC_HINTS.md:170-181`) or as
+  blank stdout, and both return `[]`. An unknown partition is assumed to reach that same empty
+  path and return `[]` rather than a distinct error — unverified here, disclosed in the tool
+  docstring, and confirmed live by #879. `-n` above 100 is refused rather than streamed.
 - **Covered elsewhere** — `lsrefcode -r sys`, `-s p|s`, FRU and LED inventory: #691.
   Multi-partition `lpar_names=p1,p2`: `build_filter` refuses an embedded comma; follow-up if #876
   needs it. Live observation and promotion to `current` maturity: #879. SSH transport, timeout and
@@ -77,11 +78,13 @@ omitted lists only the current code — while the command always passes `-n` so 
 
 ## Validation
 
-Every entry is `Mode: focused-test`. Six live in the new `tests/unit/test_ssh_refcodes.py`: `count`
-outside `1..100` or not an `int` is refused before any SSH traffic; the command string is exactly
-Success 1's with every interpolated value quoted; shell metacharacters in a selector stay inside
-one quoted word; a comma-, `=`- or quote-bearing selector raises `HMCCLIError`; blank and
-header-only stdout both return `[]`; a non-zero `lsrefcode` exit surfaces as `HMCCLIError`. Three
-more pin registration: `tests/unit/test_server_module_boundaries.py` on the handler's module, `just
-capability-inventory` on the ledger record, `tests/app/test_application_boundaries.py` on the
-default deployment exposing one more tool.
+Every entry is `Mode: focused-test`. Seven live in the new `tests/unit/test_ssh_refcodes.py`:
+`count` outside `1..100` is refused before any SSH traffic, and so is a non-`int`; the command
+string is exactly Success 1's with every interpolated value quoted; shell metacharacters in a
+selector stay inside one quoted word; a comma-, `=`- or quote-bearing selector raises
+`HMCCLIError`; blank stdout, header-only stdout and the `No results were found.` sentinel each
+return `[]`; a header that does not match the three fields raises `HMCCLIError`; and a transport
+failure propagates rather than being swallowed. Three more pin registration:
+`tests/unit/test_server_module_boundaries.py` on the handler's module, `just capability-inventory`
+on the ledger record, `tests/app/test_application_boundaries.py` on the default deployment
+exposing one more tool.
