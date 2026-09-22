@@ -474,15 +474,6 @@ def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:
     )
 
 
-def _is_admitted_environment(version: str, model: str) -> bool:
-    normalized = " ".join(version.split()).lower()
-    admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
-        marker in normalized
-        for marker in ("version: 10", "release: 3", "service pack: 1060")
-    )
-    return admitted and model == _ADMITTED_SYSTEM_MODEL
-
-
 _ADMITTED_RELEASE_FIELDS = {"version": "10", "release": "3", "service pack": "1060"}
 
 
@@ -508,7 +499,13 @@ async def require_dedicated_pcie_environment(config: HMCConfig, system_name: str
 
 
 async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:
-    if not _is_admitted_environment(*await read_sriov_environment(config, system_name)):
+    version, model = await read_sriov_environment(config, system_name)
+    normalized = " ".join(version.split()).lower()
+    admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
+        marker in normalized
+        for marker in ("version: 10", "release: 3", "service pack: 1060")
+    )
+    if not admitted or model != _ADMITTED_SYSTEM_MODEL:
         raise SriovLogicalPortCapabilityError(
             "SR-IOV operations are admitted only for HMC V10R3 M1060 "
             "with managed-system model 8375-42A"
