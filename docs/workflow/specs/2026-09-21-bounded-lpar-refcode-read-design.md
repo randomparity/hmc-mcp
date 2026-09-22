@@ -65,14 +65,18 @@ while the command always passes `-n` so its shape is fixed.
   authorized to run HMC commands. Trust sits in `ssh/transport.py` and the HMC's own
   authorization, as in every sibling SSH read.
 - **Control per boundary** — both selectors: `validate_hmc_name` (`ssh/install.py:109`) plus a
-  blank check, so neither is empty, blank, or control-bearing; then `shlex.quote`, so each is one
-  shell word. `lpar_name` additionally passes `build_filter`'s record-grammar check — two parsers,
-  two guards, neither substituting for the other. `count`: type and range check before
-  interpolation, so no non-numeric text reaches the string. The HMC's own narrowing is verified
-  rather than trusted: a row naming another partition raises. Refusals name the argument and the
-  offending value and carry no credential.
-- **Out of scope** — HMC-side authorization; SSH host-key policy; anything the
-  `arbitrary-command` tool already permits an operator to do directly.
+  blank check, so neither is empty, blank, or control-bearing; then `shlex.quote`, which makes each
+  one shell word but does not stop a leading-dash value reaching `lsrefcode` in option position —
+  bounded here because `lsrefcode` is read-only, and refusing it belongs in the shared name guard
+  rather than in this one caller. `lpar_name` additionally passes `build_filter`'s record-grammar
+  check — two parsers, two guards, neither substituting for the other. `count`: type and range
+  check before interpolation, so no non-numeric text reaches the string. The HMC's own narrowing is
+  verified rather than trusted: a row naming another partition raises. Refusals name the argument
+  and the offending value and carry no credential.
+- **Out of scope** — HMC-side authorization, which is what bounds what the configured SSH
+  account may do; SSH host-key policy. Not "anything the `arbitrary-command` tool permits": that
+  tool is withheld by default (`tests/app/test_capabilities.py:175`), so it is not a bound either
+  named actor has.
 
 ## Success
 
