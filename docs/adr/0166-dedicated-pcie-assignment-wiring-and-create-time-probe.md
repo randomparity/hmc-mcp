@@ -54,7 +54,10 @@ an empty pool position, an empty value, a malformed triple or a repeated DRC as 
 **3. The envelope is `require_admitted_environment`'s pair, checked after ADR 0011
 authorization and before any profile read or write.** Outside it both operations and create-time
 prevalidation raise `PcieAssignmentUnavailableError`, which is kept with that one meaning; its
-reason string, which ADR 0165 showed to be false, is rewritten to name the envelope.
+reason string, which ADR 0165 showed to be false, is rewritten to name the envelope. Inside it
+the LPAR must be `Not Activated`, the one state the PCIe state matrix admits profile-only
+mutation for, and assign refuses a slot that a profile of another LPAR already lists, since two
+partitions contending for one slot at activation is a state no evidence characterizes.
 
 **4. The live arm's create-time probe becomes an asserted create-time assignment, cleaned up
 before the fixture exists.** Neither SKIP declaration survives. ST30 requests create-time

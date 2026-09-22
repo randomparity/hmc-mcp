@@ -51,6 +51,7 @@ class _FakeHmc:
         rows: list[tuple[str, str, str]] | None = None,
         after_write: Callable[[str], str] | None = None,
         fail_reads_after_write: bool = False,
+        state: str = "Not Activated",
     ) -> None:
         self.rows = rows if rows is not None else [("lpar", "prof", io_slots)]
         self.model = model
@@ -59,6 +60,7 @@ class _FakeHmc:
         self.chsyscfg_error = chsyscfg_error
         self.after_write = after_write
         self.fail_reads_after_write = fail_reads_after_write
+        self.state = state
         self.written = False
         self.commands: list[str] = []
 
@@ -68,6 +70,8 @@ class _FakeHmc:
             return self.version
         if command.startswith("lssyscfg -r sys"):
             return self.model
+        if command.startswith("lssyscfg -r lpar"):
+            return f"name,lpar_id,state,rmc_state\nlpar,3,{self.state},inactive\n"
         if command.startswith("lssyscfg -r prof"):
             if self.written and self.fail_reads_after_write:
                 raise HMCCLIError("connection lost")
@@ -261,6 +265,46 @@ def test_outside_the_envelope_is_capability_unavailable_before_any_profile_comma
 
     assert fake.profile_reads() == []
     assert fake.mutations() == []
+
+
+@pytest.mark.parametrize("state", ["Running", "Open Firmware", "Not Available"])
+@pytest.mark.parametrize("operation", [_assign, _unassign])
+def test_an_lpar_that_is_not_activated_is_required_before_any_profile_command(
+    monkeypatch, hmc, operation, state
+):
+    fake = _install(monkeypatch, _FakeHmc(f"{_DRC}/none/0", state=state))
+
+    with pytest.raises(ValueError, match="requires a Not Activated LPAR"):
+        operation(hmc)
+
+    assert fake.profile_reads() == []
+    assert fake.mutations() == []
+
+
+def test_assign_refuses_a_slot_another_lpars_profile_lists(monkeypatch, hmc):
+    fake = _install(
+        monkeypatch,
+        _FakeHmc(rows=[("lpar", "prof", "none"), ("other", "p2", f"21020013/none/1,{_DRC}/none/0")]),
+    )
+
+    with pytest.raises(ValueError, match="already listed by a profile of LPAR other"):
+        _assign(hmc)
+
+    assert fake.mutations() == []
+
+
+def test_assign_ignores_the_same_lpars_other_profiles_and_unrelated_rows(monkeypatch, hmc):
+    rows = [
+        ("lpar", "prof", "none"),
+        ("lpar", "backup", f"{_DRC}/none/0"),
+        ("other", "p2", "not-an-admitted-rendering"),
+    ]
+    fake = _install(monkeypatch, _FakeHmc(rows=rows))
+
+    _assign(hmc)
+
+    assert len(fake.mutations()) == 1
+    assert fake.value() == f"{_DRC}/none/0"
 
 
 def test_assign_writes_the_documented_grammar_and_verifies(monkeypatch, hmc):

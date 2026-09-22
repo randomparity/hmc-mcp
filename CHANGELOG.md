@@ -175,8 +175,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   change the profile on HMC V10R3 M1060 with managed-system model 8375-42A. They write the
   documented `io_slots+=<drc>//0` / `io_slots-=<drc>//0` grammar without `--force`, then verify
   the result with the ADR 0165 readback. They never write back a value they read, and they refuse
-  a slot the profile lists in any other form. `drc_index` must be eight uppercase hexadecimal
-  digits. Outside that envelope they still raise `PcieAssignmentUnavailableError`, whose reason
+  a slot the profile lists in any other form. The LPAR must be `Not Activated`, and assign
+  refuses a slot another LPAR's profile already lists. `drc_index` must be eight uppercase
+  hexadecimal digits. Outside that envelope they still raise `PcieAssignmentUnavailableError`, whose reason
   now names the envelope. A dispatched change that the readback does not confirm raises the new
   `PcieAssignmentPartialError`. The admitted read and its parser are
   `ssh.profiles.read_profile_io_slot_rows` and `parse_profile_io_slots` (ADR 0166, #882).

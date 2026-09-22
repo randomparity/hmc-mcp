@@ -202,6 +202,7 @@ class _DedicatedProfileTarget:
     profile_name: str
     drc_index: str
     io_slots: str
+    profile_rows: list[dict[str, str]]
 
 
 def require_drc_index(value: str) -> str:
@@ -276,7 +277,7 @@ async def _authorize_pcie_profile_request(
     *,
     ownership_override: bool,
 ) -> _DedicatedProfileTarget:
-    """Validate, authorize, confine to the envelope, then read the profile."""
+    """Validate, authorize, confine to the envelope and LPAR state, then read the profile."""
     require_command_safe_text(profile_name, "profile_name")
     require_drc_index(drc_index)
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
@@ -287,18 +288,34 @@ async def _authorize_pcie_profile_request(
     )
     config = hmc.config
     await require_dedicated_pcie_environment(config, system_name)
-    io_slots = await _read_profile_io_slots(config, system_name, lpar_name, profile_name)
+    # The state matrix admits profile-only mutation for a Not Activated LPAR alone;
+    # on a running one the change would report success and not take effect.
+    state = (await read_sriov_lpar_state(config, system_name, lpar_name))["state"]
+    if state != "Not Activated":
+        raise ValueError(
+            "dedicated PCIe profile assignment requires a Not Activated LPAR; "
+            f"{lpar_name!r} is {state!r}"
+        )
+    profile_rows = await read_profile_io_slot_rows(config, system_name)
+    io_slots = _select_profile_io_slots(profile_rows, lpar_name, profile_name)
     return _DedicatedProfileTarget(
-        config, system_name, lpar_name, profile_name, drc_index, io_slots
+        config, system_name, lpar_name, profile_name, drc_index, io_slots, profile_rows
     )
 
 
 async def _read_profile_io_slots(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> str:
+    rows = await read_profile_io_slot_rows(config, system_name)
+    return _select_profile_io_slots(rows, lpar_name, profile_name)
+
+
+def _select_profile_io_slots(
+    profile_rows: list[dict[str, str]], lpar_name: str, profile_name: str
+) -> str:
     rows = [
         row
-        for row in await read_profile_io_slot_rows(config, system_name)
+        for row in profile_rows
         if row["lpar_name"] == lpar_name and row["name"] == profile_name
     ]
     if not rows:
@@ -325,6 +342,8 @@ async def _change_dedicated_slot(target: _DedicatedProfileTarget, *, add: bool) 
         )
     if (present is not None) == add:
         return
+    if add:
+        _refuse_slot_listed_by_another_lpar(target)
     expected = dict(before)
     if add:
         expected[drc_index] = written
@@ -339,6 +358,29 @@ async def _change_dedicated_slot(target: _DedicatedProfileTarget, *, add: bool) 
     except Exception as caught:  # noqa: BLE001 - classified by the readback below
         error = caught
     await _verify_dedicated_change(target, before, expected, error, add=add)
+
+
+def _refuse_slot_listed_by_another_lpar(target: _DedicatedProfileTarget) -> None:
+    """Refuse to list a slot another LPAR's profile already lists (ADR 0166).
+
+    Two partitions whose profiles both list a slot contend for it at activation, a
+    state no evidence characterizes. Only rows that mention the DRC are parsed, so an
+    unrelated row cannot block the operation.
+    """
+    holders = sorted(
+        {
+            row["lpar_name"]
+            for row in target.profile_rows
+            if row["lpar_name"] != target.lpar_name
+            and target.drc_index in row["io_slots"]
+            and target.drc_index in _slots_by_drc(row["io_slots"])
+        }
+    )
+    if holders:
+        raise ValueError(
+            f"slot {target.drc_index} is already listed by a profile of LPAR "
+            f"{', '.join(holders)}; remove it there first"
+        )
 
 
 async def _verify_dedicated_change(
