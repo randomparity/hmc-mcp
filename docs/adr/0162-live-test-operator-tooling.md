@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed on 2026-09-21.
+Accepted on 2026-09-21. Implemented on the same branch; no live run against
+hardware has exercised the scripts yet, and the runbook's operator walkthrough
+(spec Validation 1) is outstanding.
 
 ## Context
 
@@ -73,7 +75,9 @@ arm's own guards exist to prevent.
 **Recovery reads a structured record, not prose.** Its inputs — run marker, fixture LPAR
 name, DRC index, captured baseline — exist today only inside a formatted `data` string on
 one result row, and the marker is per-run random (`pcie-{uuid4().hex[:8]}`). `LiveTestArtifacts`
-therefore gains four additive fields the arm populates at ST29. Recording what a run created
+therefore gains four additive fields the arm populates at ST29, and again after
+the ST30 baseline read — the ST29 write is what covers a run that ends between
+the two, which is precisely the run an outside check exists for. Recording what a run created
 is not arm behaviour: no guard, dispatch path or cleanup decision changes. The operator
 narrowed the arm-logic non-goal to permit exactly this on 2026-09-21.
 
@@ -107,8 +111,13 @@ AGENTS.md states one test module per `scripts/` file, but nothing enforced it �
 `check_test_layout.py` only rejects stray `conftest.py` files, and the coverage gate is
 `--cov=hmc_mcp`, which never measures `scripts/`. Adding seven scripts under an unenforced
 convention would be adding seven untested files, so `check_test_layout.py` is extended to
-enforce the mapping it was assumed to. This is an in-place strengthening of an existing
-`static` member, so it needs no new recipe and no new prek hook.
+enforce the mapping it was assumed to. It governs the top-level `scripts/*.py` entry points
+an operator can run — exactly the set carrying a `__main__` block — and leaves the
+`scripts/live_test/` package, which is library code the runner imports and which existing
+modules cover in behaviour groups rather than one apiece. Scoped that way the rule is green
+on the tree that adds it, which a rule reaching into the package would not be. This is an
+in-place strengthening of an existing `static` member, so it needs no new recipe and no new
+prek hook.
 
 Preflight imports the arms' admission predicates rather than restating them. A new arm that
 adds a precondition and does not export one is invisible to preflight, which will then
@@ -163,5 +172,16 @@ Nothing here runs in CI; the scripts' unit tests run in CI like any other.
   fixed; nothing is left to retrofit.
 - **Transcribing the matrix by hand, as today.** verified: that produced #869's matrix, which
   survived two weeks and a merge that broke the arm's imports with nothing marking it stale.
+- **A preflight that predicts without contacting the HMC at all.** verified: the envelope is
+  half of what an operator needs to know before starting, and `require_admitted_environment`
+  (`src/hmc_mcp/operations/virtualization/pcie.py:295`) answers it from an `HMCConfig` alone,
+  with no MCP client to build. `--skip-hardware` keeps the offline mode for a host with no
+  reach yet, rather than making it the only mode.
+- **Leaving recovery's read-only property to review rather than enforcing it.** verified:
+  `hmc_run_command` carries both `lssyscfg` and `chsyscfg`, so a tool-name allowlist alone
+  does not bound it; the guard is on the call path and checks the command prefix too.
+- **A wrapper that ignores its argv.** verified: without a parser, `live_dedicated.py --help`
+  falls through to the dispatch and starts mutating a managed system, which is the opposite
+  of what the operator asked for.
 - **Do nothing and document the existing runner.** judgment: documentation supplies neither the
   commit stamp, the envelope prediction, nor the outside teardown witness.
