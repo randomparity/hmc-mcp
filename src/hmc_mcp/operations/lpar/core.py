@@ -35,10 +35,12 @@ from ...jobs import (
     DEFAULT_JOB_TIMEOUT_SECONDS,
     SUCCESSFUL_JOB_STATUSES,
     BootMode,
+    PowerOffOperation,
     PowerOnOperationType,
     job_outcome,
     power_off_lpar_job,
     power_on_lpar_job,
+    validate_power_off_operation,
     validate_power_on_activation,
     validate_wait_timing,
     wait_for_submitted_job,
@@ -535,6 +537,9 @@ async def power_lpar(
     boot_mode: BootMode = "norm",
     partition_profile_uuid: str | None = None,
     operation_type: PowerOnOperationType | None = None,
+    restart: bool = False,
+    operation: PowerOffOperation = "shutdown",
+    allow_dump_restart: bool = False,
 ) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait.
 
@@ -543,6 +548,14 @@ async def power_lpar(
     different document and ignores them. ``partition_profile_uuid`` is the UUID
     of a partition profile, not the connection profile the tool and CLI call
     ``profile``. Their defaults emit the document this call has always emitted.
+
+    ``restart``, ``operation`` and ``allow_dump_restart`` mirror them on the other
+    arm: they apply to PowerOff only, and the PowerOn arm ignores them. ``operation`` is the
+    job's closed vocabulary — ``shutdown``, ``osshutdown`` (needs an active RMC
+    connection to the partition's operating system), and ``dumprestart``, which
+    crashes the partition and takes a platform dump and is refused unless
+    ``allow_dump_restart`` is set (ADR 0164). Their defaults likewise emit the
+    document this call has always emitted.
 
     ADR 0011 ownership is advisory here by default. Powering a partition another
     agent owns is only rejected when the operator sets
@@ -571,6 +584,9 @@ async def power_lpar(
         # Ahead of every side effect: the ownership leg below can write an
         # audited override, and the already-running branch never reaches a builder.
         validate_power_on_activation(boot_mode, operation_type)
+    else:
+        # Same reason on this arm: the ownership leg runs before the builder does.
+        validate_power_off_operation(operation, allow_dump_restart)
     if hmc.config.authorize_power_operations:
         lpar_uuid = await resolve_and_authorize_lpar_mutation(
             hmc,
@@ -604,8 +620,10 @@ async def power_lpar(
         partition_profile_uuid = await _require_contained_partition_profile(
             hmc, lpar_uuid, partition_profile_uuid
         )
-    operation = "PowerOn" if power_on else "PowerOff"
-    if operation not in _LPAR_POWER_OPERATIONS:
+    # Named for the ``/do/{operation}`` path segment ADR 0158 governs, and kept
+    # distinct from the PowerOff job parameter that now owns the name ``operation``.
+    path_operation = "PowerOn" if power_on else "PowerOff"
+    if path_operation not in _LPAR_POWER_OPERATIONS:
         allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))
         raise ValueError(f"LPAR power job operation must be one of: {allowed}")
     document = (
@@ -615,10 +633,15 @@ async def power_lpar(
             operation_type=operation_type,
         )
         if power_on
-        else power_off_lpar_job(immediate=immediate)
+        else power_off_lpar_job(
+            immediate=immediate,
+            restart=restart,
+            operation=operation,
+            allow_dump_restart=allow_dump_restart,
+        )
     )
     job = await hmc.submit_job(
-        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", document
+        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{path_operation}", document
     )
     selected_job = await wait_for_submitted_job(
         hmc, job, wait, timeout_seconds, poll_interval

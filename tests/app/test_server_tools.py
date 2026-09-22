@@ -336,6 +336,36 @@ def test_power_off_lpar_submits_job(monkeypatch, mock_hmc):
     assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' in body
 
 
+def test_power_off_lpar_tool_forwards_shutdown_parameters(monkeypatch, mock_hmc):
+    """restart and operation reach the PowerOff job document."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    hmc_power_off_lpar(LPAR_UUID, restart=True, operation="osshutdown")
+
+    body = route.calls.last.request.content.decode()
+    assert '<ParameterName kb="ROR" kxe="false">restart</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' in body
+    assert '<ParameterName kb="ROR" kxe="false">operation</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">osshutdown</ParameterValue>' in body
+
+
+def test_power_off_lpar_tool_refuses_dumprestart_without_opt_in(monkeypatch, mock_hmc):
+    """ADR 0164: the force-crash variant needs an explicit opt-in on the tool."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    with pytest.raises(ValueError) as refused:
+        hmc_power_off_lpar(LPAR_UUID, operation="dumprestart")
+
+    assert "allow_dump_restart" in str(refused.value)
+    assert route.called is False
+
+
 # ---------------------------------------------------------------------- #
 # hmc_create_lpar / hmc_modify_lpar (argument mapping -> XML)
 # ---------------------------------------------------------------------- #

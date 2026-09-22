@@ -1017,6 +1017,43 @@ def test_lpars_power_off_resolves_name_then_submits(fake_hmc):
     assert LPAR_UUID in path
 
 
+def test_lpars_power_off_forwards_shutdown_parameters(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "power-off", LPAR_NAME, "--operation", "osshutdown", "--restart", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    assert "Job submitted" in result.stdout
+    document = fake_hmc.calls[1][1][1]
+    assert '<ParameterName kb="ROR" kxe="false">restart</ParameterName>' in document
+    assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' in document
+    assert '<ParameterValue kb="CUR" kxe="false">osshutdown</ParameterValue>' in document
+
+
+def test_lpars_power_off_prompt_names_restart_and_operation(fake_hmc):
+    """The prompt is the only place a human is asked, so it says what will happen."""
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "power-off",
+            LPAR_UUID,
+            "--restart",
+            "--operation",
+            "dumprestart",
+            "--allow-dump-restart",
+        ],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "with restart" in result.stdout
+    assert "operation=dumprestart" in result.stdout
+    assert "Aborted" in result.stderr
+    assert fake_hmc.calls == []
+
+
 def test_lpars_power_off_declined_confirm_aborts(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "power-off", LPAR_UUID], input="n\n")
 

@@ -10,6 +10,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_power_off_lpar`, `power_lpar` and `hmc-mcp lpars power-off` accept the PowerOff job's
+  `restart` and `operation` parameters. `operation` is a closed set — `shutdown`, `osshutdown`,
+  `dumprestart` — refused before any XML is built; the vendor's fourth value `dumpretry` is
+  documented but not accepted. `dumprestart` crashes the partition and takes a platform dump, so
+  it is refused unless the caller passes `allow_dump_restart` / `--allow-dump-restart`
+  (ADR 0164, #872).
+
 - `hmc_read_lpar_refcodes` and `hmc-mcp lpars refcodes` read a partition's most recent reference
   codes over SSH, bounded to 1-100 and projected onto `lpar_name`, `time_stamp` and `refcode`.
   Read-only and needing no virtual terminal, so an activation can be followed by polling alone

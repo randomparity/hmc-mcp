@@ -15,11 +15,13 @@ DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
 BootMode = Literal["norm", "dd", "ds", "of", "sms"]
 PowerOnOperationType = Literal["activate"]
+PowerOffOperation = Literal["shutdown", "osshutdown", "dumprestart"]
 REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
 BOOT_MODES = frozenset(get_args(BootMode))
 POWER_ON_OPERATION_TYPES = frozenset(get_args(PowerOnOperationType))
+POWER_OFF_OPERATIONS = frozenset(get_args(PowerOffOperation))
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
@@ -104,14 +106,50 @@ def power_on_lpar_job(
     return build_job_request("PowerOn", "LogicalPartition", parameters)
 
 
-def power_off_lpar_job(immediate: bool = False) -> str:
+def validate_power_off_operation(
+    operation: PowerOffOperation, allow_dump_restart: bool
+) -> None:
+    """Validate the PowerOff shutdown vocabulary and its one gated member.
+
+    Exposed the way ``validate_power_on_activation`` is: ``power_lpar`` reaches the
+    ADR 0092 ownership leg — which can write an audited override record — before it
+    reaches a builder, so it calls this first. ``dumprestart`` crashes the partition
+    and takes a platform dump, and no layer below the CLI asks for confirmation, so
+    it is refused unless the caller opts in by name.
+    """
+    if operation not in POWER_OFF_OPERATIONS:
+        allowed = ", ".join(sorted(POWER_OFF_OPERATIONS))
+        raise ValueError(f"PowerOff operation must be one of: {allowed}")
+    if operation == "dumprestart" and not allow_dump_restart:
+        raise ValueError(
+            "PowerOff operation 'dumprestart' crashes the partition and takes a "
+            "platform dump; pass allow_dump_restart=True (CLI: --allow-dump-restart) "
+            "to request it."
+        )
+
+
+def power_off_lpar_job(
+    immediate: bool = False,
+    restart: bool = False,
+    operation: PowerOffOperation = "shutdown",
+    allow_dump_restart: bool = False,
+) -> str:
+    """Build a PowerOff request for one logical partition.
+
+    ``operation`` is the job's own closed vocabulary and is refused here, before any
+    XML is built; the vendor's fourth member ``dumpretry`` is documented but not
+    admitted (ADR 0164). ``restart`` turns the power off into a restart, which is
+    what kdive's ``cycle`` and ``reset`` map to. A call passing none of the three
+    emits the document this builder has always emitted.
+    """
+    validate_power_off_operation(operation, allow_dump_restart)
     return build_job_request(
         "PowerOff",
         "LogicalPartition",
         {
             "immediate": "true" if immediate else "false",
-            "restart": "false",
-            "operation": "shutdown",
+            "restart": "true" if restart else "false",
+            "operation": operation,
         },
     )
 

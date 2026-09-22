@@ -9,7 +9,7 @@ from ..._app import (
 )
 from ...client.core import HMCClient
 from ...documents import LparResources
-from ...jobs import BootMode, PowerOnOperationType
+from ...jobs import BootMode, PowerOffOperation, PowerOnOperationType
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import (
     LparPcieAssignments,
@@ -402,8 +402,11 @@ def hmc_power_off_lpar(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
+    restart: bool = False,
+    operation: PowerOffOperation = "shutdown",
+    allow_dump_restart: bool = False,
 ) -> dict[str, Any] | None:
-    """Submit a PowerOff job for a logical partition.
+    """Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
     system_name_or_uuid disambiguates duplicate partition names; it is otherwise
@@ -414,6 +417,15 @@ def hmc_power_off_lpar(
     Returns the submitted job. This changes the state of a real partition.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    kdive's PowerAction maps onto this job's own parameters: `off` is
+    operation=shutdown with immediate=true; `cycle` and `reset` are the same with
+    restart=true; a graceful shutdown is operation=osshutdown, which needs an active
+    RMC connection to the partition's operating system.
+
+    operation=dumprestart crashes the partition and takes a platform dump. It is
+    refused unless allow_dump_restart is true (ADR 0164) — nothing else in this call
+    asks for confirmation. The vendor's fourth value, dumpretry, is not accepted.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition to power off.
@@ -427,6 +439,14 @@ def hmc_power_off_lpar(
             guard a fleet-wide search for the partition's owning system.
         ownership_override: Bypass ADR 0011 ownership rejection only after operator
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
+        restart: Restart the partition instead of leaving it off; this is what
+            kdive's cycle and reset map to.
+        operation: PowerOff shutdown operation — shutdown, osshutdown, or
+            dumprestart. osshutdown asks the operating system to shut down and
+            needs an active RMC connection to it.
+        allow_dump_restart: Confirm operation=dumprestart, which crashes the
+            partition and takes a platform dump; without it that operation is
+            refused.
     """
 
     async def power_off_job(hmc: HMCClient) -> dict[str, Any] | None:
@@ -440,6 +460,9 @@ def hmc_power_off_lpar(
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,
             ownership_override=ownership_override,
+            restart=restart,
+            operation=operation,
+            allow_dump_restart=allow_dump_restart,
         )
         return result.job
 

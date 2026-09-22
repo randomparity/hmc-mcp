@@ -1,5 +1,6 @@
 """Tests for managed-system, VIOS, and LPAR power jobs."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -10,13 +11,16 @@ from hmc_mcp.client.core import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.jobs import (
     BOOT_MODES,
+    POWER_OFF_OPERATIONS,
     POWER_ON_OPERATION_TYPES,
+    power_off_lpar_job,
     power_off_system_job,
     power_off_vios_job,
     power_on_lpar_job,
     power_on_system_job,
     power_on_vios_job,
 )
+from hmc_mcp.operations.lpar import decommission
 from hmc_mcp.operations.lpar.core import (
     LparPowerResult,
     _unapplied_activation_clause,
@@ -58,6 +62,41 @@ POWER_ON_LPAR_DEFAULT_DOCUMENT = (
     "      <Metadata><Atom/></Metadata>\n"
     '      <ParameterName kb="ROR" kxe="false">bootmode</ParameterName>\n'
     '      <ParameterValue kb="CUR" kxe="false">norm</ParameterValue>\n'
+    "    </JobParameter>\n"
+    "  </JobParameters>\n"
+    "</JobRequest>\n"
+)
+
+# Captured from the builder before this change, so ADR 0164's byte-identity
+# promise is pinned against a recorded value rather than the current code.
+POWER_OFF_LPAR_DEFAULT_DOCUMENT = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<JobRequest xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"'
+    ' xmlns:JobRequest="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"'
+    ' schemaVersion="V1_0">\n'
+    "  <Metadata><Atom/></Metadata>\n"
+    '  <RequestedOperation kb="CUR" kxe="false" schemaVersion="V1_0">\n'
+    "    <Metadata><Atom/></Metadata>\n"
+    '    <OperationName kb="ROR" kxe="false">PowerOff</OperationName>\n'
+    '    <GroupName kb="ROR" kxe="false">LogicalPartition</GroupName>\n'
+    '    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>\n'
+    "  </RequestedOperation>\n"
+    '  <JobParameters kb="CUR" kxe="false" schemaVersion="V1_0">\n'
+    "    <Metadata><Atom/></Metadata>\n"
+    '    <JobParameter schemaVersion="V1_0">\n'
+    "      <Metadata><Atom/></Metadata>\n"
+    '      <ParameterName kb="ROR" kxe="false">immediate</ParameterName>\n'
+    '      <ParameterValue kb="CUR" kxe="false">false</ParameterValue>\n'
+    "    </JobParameter>\n"
+    '    <JobParameter schemaVersion="V1_0">\n'
+    "      <Metadata><Atom/></Metadata>\n"
+    '      <ParameterName kb="ROR" kxe="false">restart</ParameterName>\n'
+    '      <ParameterValue kb="CUR" kxe="false">false</ParameterValue>\n'
+    "    </JobParameter>\n"
+    '    <JobParameter schemaVersion="V1_0">\n'
+    "      <Metadata><Atom/></Metadata>\n"
+    '      <ParameterName kb="ROR" kxe="false">operation</ParameterName>\n'
+    '      <ParameterValue kb="CUR" kxe="false">shutdown</ParameterValue>\n'
     "    </JobParameter>\n"
     "  </JobParameters>\n"
     "</JobRequest>\n"
@@ -130,6 +169,44 @@ def test_power_on_lpar_job_rejects_unknown_vocabulary(kwargs, permitted):
     with pytest.raises(ValueError) as rejected:
         power_on_lpar_job(**kwargs)
     assert ", ".join(sorted(permitted)) in str(rejected.value)
+
+
+def test_power_off_lpar_job_default_document_is_unchanged():
+    """A call passing no new argument emits today's document exactly."""
+    assert power_off_lpar_job() == POWER_OFF_LPAR_DEFAULT_DOCUMENT
+
+
+@pytest.mark.parametrize(
+    ("immediate", "restart"),
+    [(False, False), (True, False), (False, True)],
+)
+def test_power_off_lpar_job_emits_restart_and_operation(immediate, restart):
+    """All three parameters are emitted on every call, in the document's order."""
+    document = power_off_lpar_job(immediate=immediate, restart=restart)
+    assert _parameter_values(document, "immediate") == ["true" if immediate else "false"]
+    assert _parameter_values(document, "restart") == ["true" if restart else "false"]
+    assert _parameter_values(document, "operation") == ["shutdown"]
+    assert _parameter_values(
+        power_off_lpar_job(operation="osshutdown"), "operation"
+    ) == ["osshutdown"]
+
+
+@pytest.mark.parametrize("operation", ["dumpretry", "", "reboot", "SHUTDOWN"])
+def test_power_off_lpar_job_rejects_unknown_vocabulary(operation):
+    """A non-member is refused before XML exists, naming the sorted permitted set."""
+    with pytest.raises(ValueError) as rejected:
+        power_off_lpar_job(operation=operation)
+    assert ", ".join(sorted(POWER_OFF_OPERATIONS)) in str(rejected.value)
+
+
+def test_power_off_lpar_job_gates_dumprestart_behind_the_opt_in():
+    """dumprestart crashes the partition, so it is refused without the opt-in."""
+    with pytest.raises(ValueError) as refused:
+        power_off_lpar_job(operation="dumprestart")
+    assert "allow_dump_restart" in str(refused.value)
+
+    permitted = power_off_lpar_job(operation="dumprestart", allow_dump_restart=True)
+    assert _parameter_values(permitted, "operation") == ["dumprestart"]
 
 
 @pytest.mark.asyncio
@@ -222,6 +299,123 @@ async def test_power_lpar_forwards_activation_parameters():
     assert _parameter_values(document, "bootmode") == ["sms"]
     assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
     assert _parameter_values(document, "OperationType") == ["activate"]
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_forwards_power_off_parameters():
+    """PowerOff carries the caller's restart flag and shutdown operation."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=False,
+            restart=True,
+            operation="osshutdown",
+        )
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOff")
+    assert _parameter_values(document, "restart") == ["true"]
+    assert _parameter_values(document, "operation") == ["osshutdown"]
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_power_on_document_ignores_power_off_parameters():
+    """The PowerOn arm builds a different document and takes none of the three."""
+    hmc = _power_client()
+
+    with patch(
+        "hmc_mcp.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=True,
+            force=True,
+            restart=True,
+            operation="dumprestart",
+            allow_dump_restart=True,
+        )
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOn")
+    assert _parameter_values(document, "restart") == []
+    assert _parameter_values(document, "operation") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"operation": "dumpretry"}, "dumprestart, osshutdown, shutdown"),
+        ({"operation": "dumprestart"}, "allow_dump_restart"),
+    ],
+)
+async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected):
+    """A refused PowerOff reads nothing, submits nothing and audits nothing."""
+    hmc = _power_client()
+    resolver = AsyncMock(return_value=LPAR_UUID)
+
+    with (
+        patch("hmc_mcp.operations.lpar.core.resolve_lpar_uuid", new=resolver),
+        pytest.raises(ValueError) as refused,
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=False, **kwargs)
+
+    assert expected in str(refused.value)
+    resolver.assert_not_awaited()
+    hmc.submit_job.assert_not_awaited()
+    hmc.get_quick_property.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_decommission_power_off_document_is_unchanged(immediate):
+    """The decommission path shares the builder, so its defaults must not move.
+
+    #872 widened power_off_lpar_job with restart and operation. This workflow
+    passes neither, so it must keep emitting restart=false and
+    operation=shutdown; epic #871 freezes this document. The private
+    ``_power_off`` is called deliberately: the contract is exactly which
+    document that call site builds.
+    """
+    hmc = _power_client()
+    inventory = SimpleNamespace(
+        state="running", lpar_uuid=LPAR_UUID, lpar_name="lpar-a"
+    )
+
+    with patch(
+        "hmc_mcp.operations.lpar.decommission.wait_for_submitted_job",
+        new=AsyncMock(
+            return_value={
+                "UUID": "job-uuid",
+                "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
+            }
+        ),
+    ):
+        await decommission._power_off(
+            hmc,
+            inventory,
+            immediate=immediate,
+            timeout_seconds=30,
+            poll_interval=1,
+        )
+
+    path, document = hmc.submit_job.await_args.args
+    assert path.endswith("/do/PowerOff")
+    assert _parameter_values(document, "immediate") == [
+        "true" if immediate else "false"
+    ]
+    assert _parameter_values(document, "restart") == ["false"]
+    assert _parameter_values(document, "operation") == ["shutdown"]
 
 
 @pytest.mark.asyncio
