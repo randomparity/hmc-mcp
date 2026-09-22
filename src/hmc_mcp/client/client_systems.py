@@ -31,21 +31,34 @@ class SystemsMixin:
     async def get_console_info(self: SystemsClient) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
         # Some HMC firmware builds return HTTP 500 on the unfiltered
-        # ManagementConsole feed due to a null SessionId in the response XML.
-        # Translate that known response into an actionable error rather than
-        # making a firmware failure indistinguishable from an empty feed.
+        # ManagementConsole feed over a null nested property (observed:
+        # Session/SessionId/Value). Translate that known response into an
+        # actionable error rather than making a firmware failure
+        # indistinguishable from an empty feed. The marker is the
+        # live-confirmed text the two managed-system guards below also match
+        # (ADR 0138), but it is tested against the body rather than their
+        # str(exc): the rendered detail carries only the first
+        # Message/msg/error element of an XML body, or its first 500
+        # characters when the body is not XML (errors.py), while the body is
+        # the response text as received, truncated to MAX_ERROR_BODY_BYTES --
+        # a wider window either way. No raw body for this endpoint has been
+        # captured, and no observed body needs the wider window: every error
+        # recorded for this defect class puts the marker in the first 500
+        # characters. The wider surface is here so that whatever shape a live
+        # capture shows, the guard already covers it; the XML case its test
+        # carries is hypothetical. The message names no particular property
+        # because the marker does not establish one; the HMC's own detail
+        # still reaches the operator through the body.
         try:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
         except HMCError as exc:
-            if (
-                exc.status_code == 500
-                and exc.body is not None
-                and "null SessionId" in exc.body
+            if exc.status_code == 500 and (
+                "Nested path contains null property" in (exc.body or "")
             ):
                 raise HMCError(
                     "Management-console inventory is unavailable because this HMC "
-                    "firmware could not serialize a null SessionId; update the HMC "
+                    "firmware could not serialize a null property; update the HMC "
                     "firmware and retry",
                     status_code=500,
                     body=exc.body,
