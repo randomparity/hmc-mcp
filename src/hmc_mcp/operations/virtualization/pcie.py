@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Generic, Literal, TypeVar
@@ -14,6 +15,14 @@ from hmc_mcp.operations.virtualization.validation import (
     validate_capacity_percent,
 )
 from hmc_mcp.ssh.io_inventory import list_dedicated_pcie_slot_rows
+from hmc_mcp.ssh.profiles import (
+    DRC_INDEX_PATTERN,
+    ProfileIoSlot,
+    assign_profile_io_slot,
+    parse_profile_io_slots,
+    read_profile_io_slot_rows,
+    unassign_profile_io_slot,
+)
 from hmc_mcp.ssh.selectors import resolve_ssh_names
 from hmc_mcp.ssh.sriov import (
     SriovMode,
@@ -41,8 +50,8 @@ SRIOV_UNAVAILABLE_REASON = "ADR 0053 admits selectors but no SR-IOV read project
 _ADMITTED_HMC_RELEASE = "V10R3 M1060"
 _ADMITTED_SYSTEM_MODEL = "8375-42A"
 PCIE_ASSIGNMENT_UNAVAILABLE_REASON = (
-    "ADR 0053 admits no exact dedicated PCIe profile readback; "
-    "assignment cannot be safely verified"
+    "dedicated PCIe profile assignment is admitted only for HMC V10R3 M1060 "
+    "with managed-system model 8375-42A (ADR 0165)"
 )
 
 _T = TypeVar("_T")
@@ -179,7 +188,32 @@ class SriovLogicalPortPartialError(RuntimeError):
 
 
 class PcieAssignmentUnavailableError(RuntimeError):
-    """Raised when the evidence-backed capability matrix forbids mutation."""
+    """Raised outside the ADR 0165 envelope for dedicated profile assignment."""
+
+
+class PcieAssignmentPartialError(RuntimeError):
+    """Raised when a dispatched dedicated-slot change cannot be verified by readback."""
+
+
+@dataclass(frozen=True)
+class _DedicatedProfileTarget:
+    config: HMCConfig
+    system_name: str
+    lpar_name: str
+    profile_name: str
+    drc_index: str
+    io_slots: str
+    profile_rows: list[dict[str, str]]
+
+
+def require_drc_index(value: str) -> str:
+    """Require a DRC index in the form every admitted `io_slots` index takes."""
+    if not DRC_INDEX_PATTERN.fullmatch(value):
+        raise ValueError(
+            "drc_index must be exactly eight uppercase hexadecimal digits, "
+            f"got {value!r}"
+        )
+    return value
 
 
 async def assign_dedicated_pcie_slot(
@@ -191,8 +225,16 @@ async def assign_dedicated_pcie_slot(
     *,
     ownership_override: bool = False,
 ) -> None:
-    """Authorize a dedicated-slot profile assignment and fail closed."""
-    await _authorize_pcie_profile_request(
+    """Add a dedicated slot to an LPAR profile and verify it by exact readback.
+
+    Raises:
+        ValueError: If a selector is invalid, the profile is missing, or the profile
+            lists the slot in a form other than the one this operation writes.
+        PermissionError: If ADR 0011 ownership authorization refuses the LPAR.
+        PcieAssignmentUnavailableError: Outside the ADR 0165 envelope.
+        PcieAssignmentPartialError: If a dispatched change cannot be verified.
+    """
+    target = await _authorize_pcie_profile_request(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -200,6 +242,7 @@ async def assign_dedicated_pcie_slot(
         drc_index,
         ownership_override=ownership_override,
     )
+    await _change_dedicated_slot(target, add=True)
 
 
 async def unassign_dedicated_pcie_slot(
@@ -211,8 +254,11 @@ async def unassign_dedicated_pcie_slot(
     *,
     ownership_override: bool = False,
 ) -> None:
-    """Authorize a dedicated-slot profile unassignment and fail closed."""
-    await _authorize_pcie_profile_request(
+    """Remove a dedicated slot from an LPAR profile and verify it by exact readback.
+
+    Raises the same errors as :func:`assign_dedicated_pcie_slot`.
+    """
+    target = await _authorize_pcie_profile_request(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -220,6 +266,7 @@ async def unassign_dedicated_pcie_slot(
         drc_index,
         ownership_override=ownership_override,
     )
+    await _change_dedicated_slot(target, add=False)
 
 
 async def _authorize_pcie_profile_request(
@@ -230,18 +277,153 @@ async def _authorize_pcie_profile_request(
     drc_index: str,
     *,
     ownership_override: bool,
-) -> None:
-    if not profile_name.strip():
-        raise ValueError("profile_name must not be blank")
-    if not drc_index.strip():
-        raise ValueError("drc_index must not be blank")
-    _system_name, _lpar_name = await resolve_and_authorize_lpar_names(
+) -> _DedicatedProfileTarget:
+    """Validate, authorize, confine to the envelope and LPAR state, then read the profile."""
+    require_command_safe_text(profile_name, "profile_name")
+    require_drc_index(drc_index)
+    system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
+    config = hmc.config
+    await require_dedicated_pcie_environment(config, system_name)
+    # The state matrix admits profile-only mutation for a Not Activated LPAR alone;
+    # on a running one the change would report success and not take effect.
+    state = (await read_sriov_lpar_state(config, system_name, lpar_name))["state"]
+    if state != "Not Activated":
+        raise ValueError(
+            "dedicated PCIe profile assignment requires a Not Activated LPAR; "
+            f"{lpar_name!r} is {state!r}"
+        )
+    profile_rows = await read_profile_io_slot_rows(config, system_name)
+    io_slots = _select_profile_io_slots(profile_rows, lpar_name, profile_name)
+    return _DedicatedProfileTarget(
+        config, system_name, lpar_name, profile_name, drc_index, io_slots, profile_rows
+    )
+
+
+def _select_profile_io_slots(
+    profile_rows: list[dict[str, str]], lpar_name: str, profile_name: str
+) -> str:
+    rows = [
+        row
+        for row in profile_rows
+        if row["lpar_name"] == lpar_name and row["name"] == profile_name
+    ]
+    if not rows:
+        raise ValueError(f"profile {profile_name!r} not found on LPAR {lpar_name!r}")
+    if len(rows) > 1:
+        raise HMCCLIError("profile io_slots readback returned more than one matching row")
+    return rows[0]["io_slots"]
+
+
+def _slots_by_drc(io_slots: str) -> dict[str, ProfileIoSlot]:
+    return {slot.drc_index: slot for slot in parse_profile_io_slots(io_slots)}
+
+
+async def _change_dedicated_slot(target: _DedicatedProfileTarget, *, add: bool) -> None:
+    """Apply the one triple form this operation owns and verify it by readback (ADR 0166)."""
+    drc_index = target.drc_index
+    written = ProfileIoSlot(drc_index, None, False)
+    before = _slots_by_drc(target.io_slots)
+    present = before.get(drc_index)
+    if present is not None and present != written:
+        raise ValueError(
+            f"profile lists slot {drc_index} as {present}; only {drc_index}/none/0, "
+            "the form this operation writes, is changed"
+        )
+    if add:
+        _refuse_slot_listed_by_another_lpar(target)
+    if (present is not None) == add:
+        return
+    expected = dict(before)
+    if add:
+        expected[drc_index] = written
+    else:
+        del expected[drc_index]
+    builder = assign_profile_io_slot if add else unassign_profile_io_slot
+    error: Exception | None = None
+    try:
+        await builder(
+            target.config, target.system_name, target.lpar_name, target.profile_name, drc_index
+        )
+    except Exception as caught:  # noqa: BLE001 - classified by the readback below
+        error = caught
+    await _verify_dedicated_change(target, before, expected, error, add=add)
+
+
+def _refuse_slot_listed_by_another_lpar(target: _DedicatedProfileTarget) -> None:
+    """Refuse to list a slot another LPAR's profile already lists (ADR 0166).
+
+    Two partitions whose profiles both list a slot contend for it at activation, a
+    state no evidence characterizes. Only rows that mention the DRC are parsed, so an
+    unrelated row cannot block the operation.
+    """
+    holders = _other_holders(target, target.profile_rows)
+    if holders:
+        raise ValueError(
+            f"slot {target.drc_index} is already listed by a profile of LPAR "
+            f"{', '.join(holders)}; remove it there first"
+        )
+
+
+def _other_holders(
+    target: _DedicatedProfileTarget, profile_rows: list[dict[str, str]]
+) -> list[str]:
+    return sorted(
+        {
+            row["lpar_name"]
+            for row in profile_rows
+            if row["lpar_name"] != target.lpar_name
+            and target.drc_index in row["io_slots"]
+            and target.drc_index in _slots_by_drc(row["io_slots"])
+        }
+    )
+
+
+async def _verify_dedicated_change(
+    target: _DedicatedProfileTarget,
+    before: dict[str, ProfileIoSlot],
+    expected: dict[str, ProfileIoSlot],
+    error: Exception | None,
+    *,
+    add: bool,
+) -> None:
+    """Classify a dispatched change by what the profile reads back as.
+
+    An assign is also re-checked for another LPAR listing the slot, since a
+    concurrent assign elsewhere passes the pre-write holder check too.
+    """
+    after_text: str | None = None
+    read_error: Exception | None = None
+    holders: list[str] = []
+    try:
+        rows = await read_profile_io_slot_rows(target.config, target.system_name)
+        after_text = _select_profile_io_slots(rows, target.lpar_name, target.profile_name)
+        after = _slots_by_drc(after_text)
+        holders = _other_holders(target, rows) if add else []
+    except Exception as caught:  # noqa: BLE001 - reported through the partial error
+        read_error = caught
+    else:
+        if after == expected and not holders:
+            return
+        if error is not None and after == before:
+            raise error
+    cause = error or read_error
+    if cause is not None:
+        reason = str(cause)
+    elif holders:
+        reason = f"slot is also listed by a profile of LPAR {', '.join(holders)}"
+    else:
+        reason = "readback mismatch"
+    operation = "assignment" if add else "unassignment"
+    raise PcieAssignmentPartialError(
+        f"dedicated slot {operation} could not be verified: "
+        f"{reason}; io_slots before={target.io_slots!r} "
+        f"after={after_text!r}"
+    ) from cause
 
 
 async def _system_name(config: HMCConfig, system: str) -> str:
@@ -290,6 +472,30 @@ def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:
         Decimal(row["capacity"]),
         row["functional_state"],
     )
+
+
+_ADMITTED_RELEASE_FIELDS = {"version": "10", "release": "3", "service pack": "1060"}
+
+
+def _is_exact_admitted_environment(version: str, model: str) -> bool:
+    """Match `lshmc -V`'s own Version/Release/Service Pack fields exactly.
+
+    Stricter than the SR-IOV predicate, which also accepts ``V10R3 M1060`` anywhere in
+    the text: an HMC at a later service pack may still list an M1060 fix line.
+    """
+    pairs = re.findall(r"\b(Version|Release|Service Pack):[ \t]*(\S+)", version)
+    fields = {name.lower(): value for name, value in pairs}
+    return (
+        len(pairs) == len(_ADMITTED_RELEASE_FIELDS)
+        and fields == _ADMITTED_RELEASE_FIELDS
+        and model == _ADMITTED_SYSTEM_MODEL
+    )
+
+
+async def require_dedicated_pcie_environment(config: HMCConfig, system_name: str) -> None:
+    """Refuse dedicated profile assignment outside the ADR 0165 envelope."""
+    if not _is_exact_admitted_environment(*await read_sriov_environment(config, system_name)):
+        raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
 
 
 async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:

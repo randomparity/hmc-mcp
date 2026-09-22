@@ -24,8 +24,9 @@ SR-IOV test structure (ST23–ST28):
 
 Dedicated-slot test structure (ST29–ST34, subtask 24):
   ST29 — Baseline: read HMC release/model, list dedicated slots, select one unassigned
-  ST30 — Probe create-time assignment refusal; create run-unique fixture LPAR
-  ST31 — Assign selected slot via documented profile grammar (chsyscfg io_slots+)
+  ST30 — Create-time assignment on a probe partition, cleaned up before the
+         run-unique fixture LPAR is created (ADR 0166)
+  ST31 — Assign selected slot through hmc_assign_dedicated_pcie_slot
   ST32 — Verify profile readback after assign
   ST33 — Unassign (io_slots-), verify exact baseline restored, reassign (io_slots+)
   ST34 — Cleanup: slot removal then LPAR delete, each only on an exact match
@@ -62,10 +63,8 @@ from hmc_mcp.operations.lpar.ownership import parse_lpar_ownership_caller_token
 from hmc_mcp.operations.virtualization.pcie import (
     _ADMITTED_HMC_RELEASE,
     _ADMITTED_SYSTEM_MODEL,
-    PCIE_ASSIGNMENT_UNAVAILABLE_REASON,
 )
 from hmc_mcp.ssh.commands import build_attribute_record, build_filter
-from live_test.observation import ExpectedOutcome
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -754,36 +753,6 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
 
 _DEFAULT_DEDICATED_PROFILE = "default_profile"
 
-# ADR 0055 fails the admitted operations closed until ADR 0053 admits an exact
-# dedicated-slot readback. Both refusals are declared so the run records them as
-# SKIP rather than FAIL; the arm then gathers that readback via the documented
-# io_slots grammar, which is the precondition for lifting the gate.
-_DEDICATED_CREATE_TIME_UNAVAILABLE = ExpectedOutcome(
-    operation="lpar.create",
-    variant="dedicated-create-time-assignment",
-    reason=(
-        "create-time dedicated assignment is capability-unavailable "
-        "(ADR 0055 fails closed before any mutating command, pending "
-        "exact io_slots readback under ADR 0053) — SKIP this path; the "
-        "refusal happens in prevalidation, ahead of partition creation"
-    ),
-    error_codes=frozenset(
-        {"PcieAssignmentUnavailableError", PCIE_ASSIGNMENT_UNAVAILABLE_REASON}
-    ),
-)
-_DEDICATED_ASSIGN_UNAVAILABLE = ExpectedOutcome(
-    operation="pcie.assign_dedicated_slot",
-    variant="dedicated-slot-assignment",
-    reason=(
-        "the admitted dedicated assignment operation is "
-        "capability-unavailable (ADR 0055); this run gathers the exact "
-        "io_slots evidence ADR 0053 names as the precondition for lifting "
-        "it, through the documented profile grammar below"
-    ),
-    error_codes=_DEDICATED_CREATE_TIME_UNAVAILABLE.error_codes,
-)
-
-
 @dataclass(frozen=True)
 class _DedicatedConfig:
     system_name: str
@@ -1212,25 +1181,19 @@ async def _created_despite_failure(
     return uuid_match.group(1) if uuid_match else ""
 
 
-async def create_dedicated_fixture(
+async def _probe_create_time_assignment(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> bool:
-    """Create the run-unique owner-stamped fixture LPAR.
+    """Exercise create-time dedicated assignment, then remove the probe partition.
 
-    Returns True when the fixture exists and its UUID was resolved, which is
-    the only state in which the arm may mutate hardware.
+    Returns False only when a probe partition exists and its cleanup did not
+    complete; the fixture must not be created then, because the fixture's
+    assign would ask for a slot another profile may still list.
     """
     arm = fixture.config
-    print("\n=== ST30: Dedicated PCIe Fixture Create (issue #217) ===")
-
-    # Create-time assignment: `prevalidate_lpar_pcie_assignments` refuses this
-    # before `create_and_stamp_lpar` runs, so today nothing is created. That
-    # refusal is the only reason, and it is exactly the gate this arm's
-    # evidence exists to lift — so the probe does not assume it holds.
     st, data = await state.call(
         client,
         "hmc_create_lpar",
-        expected=[_DEDICATED_CREATE_TIME_UNAVAILABLE],
         system_name_or_uuid=arm.system_name,
         name=fixture.probe_lpar_name,
         caller_token=fixture.run_marker,
@@ -1243,49 +1206,72 @@ async def create_dedicated_fixture(
             ]
         },
     )
-    state.record_with_expected(
-        30,
-        "hmc_create_lpar (create-time dedicated assignment)",
-        st,
-        data,
-        [_DEDICATED_CREATE_TIME_UNAVAILABLE],
-    )
+    state.record(30, "hmc_create_lpar (create-time dedicated assignment)", st, data)
     if st == "PASS":
-        # The gate has been lifted since this arm was written. A partition now
-        # exists that nothing else in this run tracks.
         fixture.probe_created = True
         if isinstance(data, dict) and isinstance(data.get("lpar"), dict):
             fixture.probe_lpar_uuid = data["lpar"].get("UUID") or data["lpar"].get("uuid")
-        state.record(
-            30,
-            "create-time dedicated assignment unexpectedly succeeded",
-            "FAIL",
-            "MANUAL RECOVERY REQUIRED (if cleanup below does not clear it): "
-            f"the create-time probe created partition "
-            f"{fixture.probe_lpar_name!r} on {arm.system_name!r} with "
-            f"dedicated slot {fixture.drc_index!r} assigned. ADR 0055's gate "
-            "no longer refuses, so this arm's probe and ADR 0163 both need "
-            "revisiting alongside the ADR 0053 capability update.",
-        )
     else:
-        # The refusal is expected, but a lost response is not a refusal: read
-        # back before believing nothing was created.
+        # A lost response is not a refusal: read back before believing
+        # nothing was created.
         probe_uuid = await _created_despite_failure(
             client, state, fixture, fixture.probe_lpar_name
         )
-        if probe_uuid is not None:
-            fixture.probe_created = True
-            fixture.probe_lpar_uuid = probe_uuid or None
-            state.record(
-                30,
-                "create-time probe created a partition despite reporting failure",
-                "FAIL",
-                "MANUAL RECOVERY REQUIRED (if cleanup below does not clear it): "
-                f"the create-time probe reported {st} but partition "
-                f"{fixture.probe_lpar_name!r} exists on {arm.system_name!r} "
-                f"carrying this run's marker {fixture.run_marker!r}. Cleanup "
-                "will attempt to remove it.",
-            )
+        if probe_uuid is None:
+            return True
+        fixture.probe_created = True
+        fixture.probe_lpar_uuid = probe_uuid or None
+        state.record(
+            30,
+            "create-time probe created a partition despite reporting failure",
+            "FAIL",
+            "MANUAL RECOVERY REQUIRED (if cleanup below does not clear it): "
+            f"the create-time probe reported {st} but partition "
+            f"{fixture.probe_lpar_name!r} exists on {arm.system_name!r} "
+            f"carrying this run's marker {fixture.run_marker!r}. Cleanup "
+            "will attempt to remove it.",
+        )
+
+    probe = replace(fixture, lpar_name=fixture.probe_lpar_name)
+    io_slots = await _read_profile_io_slots(client, state, probe)
+    landed = io_slots is not None and _io_slots_contains(io_slots, str(fixture.drc_index))
+    state.record(
+        30,
+        "create-time assignment profile readback",
+        "PASS" if st == "PASS" and landed else "FAIL",
+        f"probe io_slots={io_slots!r} expected to contain drc_index="
+        f"{fixture.drc_index!r} (create status {st})",
+    )
+    if await _cleanup_probe_partition(client, state, fixture):
+        fixture.probe_created = False
+        return True
+    return False
+
+
+async def create_dedicated_fixture(
+    client: Client, state: RunState, fixture: _DedicatedFixture
+) -> bool:
+    """Create the run-unique owner-stamped fixture LPAR.
+
+    Returns True when the fixture exists and its UUID was resolved, which is
+    the only state in which the arm may mutate hardware.
+    """
+    arm = fixture.config
+    print("\n=== ST30: Dedicated PCIe Fixture Create (issue #217) ===")
+
+    # Create-time assignment on its own probe partition (ADR 0166). With ADR
+    # 0055's gate lifted inside the envelope this creates a second partition
+    # holding the slot, so it is cleaned up before the fixture exists: the slot
+    # is never listed by two profiles at once.
+    if not await _probe_create_time_assignment(client, state, fixture):
+        state.skip(
+            30,
+            "dedicated fixture create",
+            "the create-time probe partition could not be cleaned up, so the "
+            "slot may still be listed by it — the fixture is not created and "
+            "the slot is not assigned again; cleanup retries the probe",
+        )
+        return False
 
     st, data = await state.call(
         client,
@@ -1442,31 +1428,20 @@ async def assign_dedicated_slot(
     arm = fixture.config
     print("\n=== ST31: Dedicated PCIe Assign (issue #217) ===")
 
+    # The operation, not the raw grammar: inside the envelope it now mutates and
+    # verifies (ADR 0166), so issuing `io_slots+` after it would add the slot a
+    # second time.
     st, data = await state.call(
         client,
         "hmc_assign_dedicated_pcie_slot",
-        expected=[_DEDICATED_ASSIGN_UNAVAILABLE],
         system_name_or_uuid=arm.system_name,
         lpar_name_or_uuid=fixture.lpar_name,
         profile_name=arm.profile_name,
         drc_index=fixture.drc_index,
     )
-    state.record_with_expected(
-        31,
-        "hmc_assign_dedicated_pcie_slot",
-        st,
-        data,
-        [_DEDICATED_ASSIGN_UNAVAILABLE],
-    )
+    state.record(31, "hmc_assign_dedicated_pcie_slot", st, data)
 
-    st, data = await state.call(
-        client,
-        "hmc_run_command",
-        cmd=_change_io_slots_command(fixture, add=True),
-    )
-    state.record(31, "chsyscfg io_slots+ (assign)", st, data)
-
-    # Read back whichever way the command reported. `RunState.call` returns
+    # Read back whichever way the operation reported. `RunState.call` returns
     # FAIL for any raised exception, and the SSH transport raises when its
     # timeout expires — after the HMC has already executed chsyscfg. Returning
     # early on a FAIL would leave the run believing it had not written
@@ -1572,13 +1547,14 @@ async def reassign_dedicated_slot(
 
 async def _cleanup_probe_partition(
     client: Client, state: RunState, fixture: _DedicatedFixture
-) -> None:
+) -> bool:
     """Delete the create-time probe partition, on its own caller token.
 
-    Independent of the fixture's own guards: a refusal here records recovery
-    evidence and returns, and must not stop the fixture from being cleaned up.
-    The probe was created with `caller_token=fixture.run_marker`, so a
-    partition of that name carrying a different token is not this run's.
+    Returns True only when the probe was deleted. Independent of the fixture's
+    own guards: a refusal here records recovery evidence and returns, and must
+    not stop the fixture from being cleaned up. The probe was created with
+    `caller_token=fixture.run_marker`, so a partition of that name carrying a
+    different token is not this run's.
     """
     arm = fixture.config
     st_desc, data_desc = await state.call(
@@ -1603,40 +1579,49 @@ async def _cleanup_probe_partition(
             f"{fixture.run_marker!r}); it was NOT deleted. Inspect it and "
             "remove it by hand once identified.",
         )
-        return
+        return False
 
-    # Hardware before the partition, here too. This is the ONE partition in
-    # the arm that provably holds the dedicated slot at cleanup time — the
-    # probe succeeded only because it was allowed to apply the assignment —
-    # so deleting it without removing the slot is precisely the stranding
-    # ADR 0163 forbids. The probe carries its own profile, so it gets its
-    # own removal command and its own confirming read.
+    # Hardware before the partition, decided on the probe's LIVE profile: a
+    # create-time assignment that landed holds the slot, and one that did not
+    # has nothing to remove — issuing `io_slots-` then would fail and strand
+    # the partition instead. An unreadable profile proves neither, so it
+    # refuses both the removal and the delete.
     probe = replace(
         fixture, lpar_name=fixture.probe_lpar_name, lpar_uuid=fixture.probe_lpar_uuid
     )
-    st_rm, data_rm = await state.call(
-        client, "hmc_run_command", cmd=_change_io_slots_command(probe, add=False)
-    )
-    state.record(34, "chsyscfg io_slots- (probe partition)", st_rm, data_rm)
-    after = await _read_profile_io_slots(client, state, probe)
-    if (
-        st_rm != "PASS"
-        or after is None
-        or _io_slots_contains(after, str(fixture.drc_index))
-    ):
+    removal = f"`{_change_io_slots_command(probe, add=False)}`"
+    before = await _read_profile_io_slots(client, state, probe)
+    if before is None:
         state.record(
             34,
-            "dedicated cleanup: probe slot removal failed",
+            "dedicated cleanup: probe profile unreadable",
             "FAIL",
-            "MANUAL RECOVERY REQUIRED: dedicated slot "
-            f"{fixture.drc_index!r} could not be confirmed removed from the "
-            f"create-time probe partition {fixture.probe_lpar_name!r} on "
-            f"{arm.system_name!r} (io_slots={after!r}); the partition was "
-            "NOT deleted, because deleting it would strand the slot. Run "
-            f"`{_change_io_slots_command(probe, add=False)}` and then delete "
-            f"{fixture.probe_lpar_name!r}.",
+            "MANUAL RECOVERY REQUIRED: the create-time probe partition "
+            f"{fixture.probe_lpar_name!r} on {arm.system_name!r} could not have "
+            "its io_slots read, so this run cannot tell whether it holds slot "
+            f"{fixture.drc_index!r}; it was NOT deleted. If it lists the slot, "
+            f"run {removal}, then delete {fixture.probe_lpar_name!r}.",
         )
-        return
+        return False
+    if _io_slots_contains(before, str(fixture.drc_index)):
+        st_rm, data_rm = await state.call(
+            client, "hmc_run_command", cmd=_change_io_slots_command(probe, add=False)
+        )
+        state.record(34, "chsyscfg io_slots- (probe partition)", st_rm, data_rm)
+        after = await _read_profile_io_slots(client, state, probe)
+        if after is None or _io_slots_contains(after, str(fixture.drc_index)):
+            state.record(
+                34,
+                "dedicated cleanup: probe slot removal failed",
+                "FAIL",
+                "MANUAL RECOVERY REQUIRED: dedicated slot "
+                f"{fixture.drc_index!r} could not be confirmed removed from the "
+                f"create-time probe partition {fixture.probe_lpar_name!r} on "
+                f"{arm.system_name!r} (io_slots={after!r}); the partition was "
+                "NOT deleted, because deleting it would strand the slot. Run "
+                f"{removal} and then delete {fixture.probe_lpar_name!r}.",
+            )
+            return False
 
     # Act on the identity, not the name, for the same reason Guard C does.
     st, data = await state.call(
@@ -1655,6 +1640,8 @@ async def _cleanup_probe_partition(
             f"{fixture.probe_lpar_name!r} on {arm.system_name!r} still "
             f"exists and must be removed by hand. Error: {str(data)[:400]}",
         )
+        return False
+    return True
 
 
 async def cleanup_dedicated(
@@ -1664,11 +1651,12 @@ async def cleanup_dedicated(
     arm = fixture.config
     print("\n=== ST34: Dedicated PCIe Cleanup (issue #217) ===")
 
-    # Hardware before partitions, and the probe holds hardware on a
-    # gate-lifted HMC. It is a different partition with its own identity, so
-    # its outcome never gates the fixture's.
-    if fixture.probe_created:
-        await _cleanup_probe_partition(client, state, fixture)
+    # Reached with the probe still present only when ST30's own cleanup of it
+    # did not complete (or the arm raised before it ran), so this is the one
+    # retry. It is a different partition with its own identity, so its outcome
+    # never gates the fixture's.
+    if fixture.probe_created and await _cleanup_probe_partition(client, state, fixture):
+        fixture.probe_created = False
     if not fixture.created:
         return
 
@@ -1859,9 +1847,9 @@ async def exercise_dedicated_pcie_assignment(
             f"{type(exc).__name__}: {exc}",
         )
     finally:
-        # `created` covers the fixture; `probe_created` covers the create-time
-        # probe partition, which on a gate-lifted HMC holds hardware and which
-        # the fixture create can fail *after*. A create that never happened has
+        # `created` covers the fixture; `probe_created` covers a create-time
+        # probe partition that ST30 could not clean up, or that the arm raised
+        # before cleaning up — it may hold the slot. A create that never happened has
         # nothing to clean up, and calling cleanup then would emit a
         # manual-recovery row for a partition that does not exist.
         if fixture.created or fixture.probe_created:

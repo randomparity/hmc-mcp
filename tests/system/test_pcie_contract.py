@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations.virtualization.pcie import _is_exact_admitted_environment
 from hmc_mcp.ssh.commands import parse_hmc_delimited_rows
+from hmc_mcp.ssh.profiles import ProfileIoSlot, parse_profile_io_slots
 from hmc_mcp.ssh.sriov import list_sriov_physical_port_rows
 
 ROOT = Path(__file__).parents[2]
@@ -339,6 +341,30 @@ def test_dedicated_profile_io_slots_capture_is_pinned() -> None:
         assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
 
 
+def test_captured_io_slots_parse_with_a_none_pool() -> None:
+    record = json.loads((FIXTURES / "power9-v10r3m1060-live-ioslots.json").read_text())
+    readback = {probe["name"]: probe for probe in record["probes"]}["io-slots-readback"]
+    rows = parse_hmc_delimited_rows(readback["stdout"], readback["fields"])
+
+    parsed = [parse_profile_io_slots(row["io_slots"]) for row in rows]
+
+    assert parsed[1] == (
+        ProfileIoSlot("21020013", None, True),
+        ProfileIoSlot("21040015", None, True),
+    )
+    assert parsed[0][-1] == ProfileIoSlot("21010020", None, False)
+    assert {slot.pool_id for slots in parsed for slot in slots} == {None}
+
+
+def test_captured_hmc_version_is_the_exact_dedicated_envelope() -> None:
+    record = json.loads((FIXTURES / "power9-v10r3m1060-live-ioslots.json").read_text())
+    probes = {probe["name"]: probe for probe in record["probes"]}
+
+    assert _is_exact_admitted_environment(
+        probes["hmc-version"]["stdout"], record["system_model"]
+    )
+
+
 def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
     spec = (
         ROOT
@@ -363,19 +389,17 @@ def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
         "do not compose Power10/11 mutation evidence with Power9 read evidence"
         in rows["Assign/unassign dedicated slot"][2]
     )
-    # The dedicated row's profile cells no longer fail closed for want of a
-    # readback: ADR 0165 admits one. They fail closed because nothing selects it.
+    # The dedicated row's profile cells mutate inside ADR 0165's envelope under
+    # ADR 0166 and nowhere else; its dynamic cell still does not mutate at all.
     for outcome in rows["Assign/unassign dedicated slot"][:2]:
         assert "admitted by ADR 0165" in outcome
-        assert "#882" in outcome
+        assert "ADR 0166" in outcome
+        assert "unavailable unconditionally outside it" in outcome
         # The envelope is the whole of what ADR 0165 confines, so widening it in
         # the spec must redden here rather than pass unremarked.
         assert "V10R3 M1060" in outcome
         assert "8375-42A" in outcome
-    assert all(
-        "do not mutate" in outcome
-        for outcome in rows["Assign/unassign dedicated slot"][:3]
-    )
+    assert "do not mutate" in rows["Assign/unassign dedicated slot"][2]
     assert all(
         "do not mutate" in outcome
         for outcome in rows["Assign/unassign SR-IOV logical port"]

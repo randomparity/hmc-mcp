@@ -20,6 +20,7 @@ from hmc_mcp.operations.lpar.assignments import (
 from hmc_mcp.operations.virtualization.pcie import (
     InventoryResult,
     InventorySelector,
+    PcieAssignmentPartialError,
     PcieAssignmentUnavailableError,
     SriovAdapter,
     SriovLogicalPortCapabilityError,
@@ -103,13 +104,100 @@ def test_request_analysis_returns_capacity_and_unique_vios_requirements() -> Non
     assert vios_identities == {("vios-a", "100")}
 
 
-@pytest.mark.asyncio
-async def test_dedicated_request_fails_before_inventory_or_mutation() -> None:
-    assignments = LparPcieAssignments(
-        dedicated=(DedicatedPcieAssignment("default_profile", "21010020"),)
+def _dedicated(drc: str = "21010020") -> LparPcieAssignments:
+    return LparPcieAssignments(
+        dedicated=(DedicatedPcieAssignment("default_profile", drc),)
     )
-    with pytest.raises(PcieAssignmentUnavailableError, match="profile readback"):
-        await prevalidate_lpar_pcie_assignments(AsyncMock(), "sys", assignments)
+
+
+def _environment(model: str) -> AsyncMock:
+    return AsyncMock(
+        return_value=("version= Version: 10\n Release: 3\n Service Pack: 1060\n", model)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["9009-42A", "9105-22A"])
+async def test_dedicated_request_outside_the_envelope_fails_before_creation(
+    model: str,
+) -> None:
+    config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.assignments.resolve_ssh_names",
+            AsyncMock(return_value=("sys", None)),
+        ),
+        patch(
+            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
+            _environment(model),
+        ),
+        pytest.raises(PcieAssignmentUnavailableError, match="V10R3 M1060"),
+    ):
+        await prevalidate_lpar_pcie_assignments(
+            SimpleNamespace(config=config), "sys", _dedicated()
+        )
+
+
+@pytest.mark.asyncio
+async def test_dedicated_request_inside_the_envelope_prevalidates() -> None:
+    config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    environment = _environment("8375-42A")
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.assignments.resolve_ssh_names",
+            AsyncMock(return_value=("sys-resolved", None)),
+        ),
+        patch("hmc_mcp.operations.virtualization.pcie.read_sriov_environment", environment),
+    ):
+        await prevalidate_lpar_pcie_assignments(
+            SimpleNamespace(config=config), "sys", _dedicated()
+        )
+    environment.assert_awaited_once_with(config, "sys-resolved")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drc", ["2101002a", "553713664", "2101/020", " "])
+async def test_malformed_dedicated_slot_fails_before_any_hmc_call(drc: str) -> None:
+    hmc = AsyncMock()
+    with pytest.raises(ValueError, match="drc_index"):
+        await prevalidate_lpar_pcie_assignments(hmc, "sys", _dedicated(drc))
+    assert hmc.mock_calls == []
+
+
+@pytest.mark.asyncio
+async def test_duplicate_dedicated_request_fails_before_any_hmc_call() -> None:
+    hmc = AsyncMock()
+    request = DedicatedPcieAssignment("default_profile", "21010020")
+    with pytest.raises(ValueError, match="duplicate dedicated"):
+        await prevalidate_lpar_pcie_assignments(
+            hmc, "sys", LparPcieAssignments(dedicated=(request, request))
+        )
+    assert hmc.mock_calls == []
+
+
+@pytest.mark.asyncio
+async def test_unverified_dedicated_change_is_an_error_step_that_skips_the_rest() -> None:
+    assignments = LparPcieAssignments(
+        dedicated=(DedicatedPcieAssignment("default_profile", "21010020"),),
+        sriov=(_sriov(),),
+    )
+    sriov = AsyncMock()
+    with (
+        patch(
+            "hmc_mcp.operations.lpar.assignments.assign_dedicated_pcie_slot",
+            AsyncMock(side_effect=PcieAssignmentPartialError("readback mismatch")),
+        ),
+        patch("hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port", sriov),
+    ):
+        result = await apply_validated_lpar_pcie_assignments(
+            AsyncMock(), "sys", "lpar", assignments
+        )
+    assert [(step.step, step.status) for step in result.steps] == [
+        ("dedicated[0]", "error"),
+        ("sriov[0]", "skipped"),
+    ]
+    assert result.steps[0].result == "readback mismatch"
+    sriov.assert_not_awaited()
 
 
 @pytest.mark.asyncio

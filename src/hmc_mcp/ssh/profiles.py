@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import csv
+import re
 import shlex
+from dataclasses import dataclass
 
 from ..config import HMCConfig
-from .commands import build_attribute_record, build_filter
+from .commands import build_attribute_record, build_filter, parse_hmc_delimited_rows
 from .description_validation import validate_lpar_description
 from .transport import HMCCLIError, run_hmc_command
 
@@ -325,6 +327,74 @@ async def _change_profile_io_slot(
     )
     command = f"chsyscfg -r prof -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, command)
+
+
+PROFILE_IO_SLOT_FIELDS = ("lpar_name", "name", "io_slots")
+
+#: The DRC-index form every captured and documented `io_slots` index takes (ADR 0166).
+DRC_INDEX_PATTERN = re.compile(r"[0-9A-F]{8}")
+
+
+@dataclass(frozen=True)
+class ProfileIoSlot:
+    """One `io_slots` entry in the ADR 0165-admitted read rendering."""
+
+    drc_index: str
+    pool_id: str | None
+    is_required: bool
+
+
+async def read_profile_io_slot_rows(
+    config: HMCConfig, system_name: str
+) -> list[dict[str, str]]:
+    """Read every profile's `io_slots` with the exact command ADR 0165 admits.
+
+    The captured form is issued verbatim: all three fields, ``--header``, and no
+    ``--filter``. ADR 0165 admits no narrower form.
+    """
+    command = (
+        f"lssyscfg -r prof -m {shlex.quote(system_name)} "
+        f"-F {','.join(PROFILE_IO_SLOT_FIELDS)} --header"
+    )
+    output = await run_hmc_command(config, command)
+    try:
+        return parse_hmc_delimited_rows(output, PROFILE_IO_SLOT_FIELDS)
+    except ValueError as error:
+        raise HMCCLIError(f"unadmitted profile io_slots readback: {error}") from error
+
+
+def parse_profile_io_slots(value: str) -> tuple[ProfileIoSlot, ...]:
+    """Parse an admitted `io_slots` value into `drc/pool/is_required` triples.
+
+    The HMC renders an unset pool as the literal ``none`` where the documented input
+    grammar leaves it empty, so an empty pool position is refused rather than read as
+    unset. The whole value ``none`` is a profile with no slots.
+
+    Raises:
+        HMCCLIError: If any entry is not in the admitted rendering, or a DRC index
+            appears twice.
+    """
+    if value == "none":
+        return ()
+    slots: list[ProfileIoSlot] = []
+    for entry in value.split(","):
+        parts = entry.split("/")
+        if (
+            len(parts) != 3
+            or not DRC_INDEX_PATTERN.fullmatch(parts[0])
+            or not parts[1].strip()
+            or parts[2] not in {"0", "1"}
+        ):
+            raise HMCCLIError(f"unadmitted io_slots rendering: {entry!r}")
+        drc_index, pool_id, is_required = parts
+        slots.append(
+            ProfileIoSlot(
+                drc_index, None if pool_id == "none" else pool_id, is_required == "1"
+            )
+        )
+    if len({slot.drc_index for slot in slots}) != len(slots):
+        raise HMCCLIError(f"unadmitted io_slots rendering: repeated DRC index in {value!r}")
+    return tuple(slots)
 
 
 async def read_lpar_profile_record(
