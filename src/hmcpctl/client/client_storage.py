@@ -11,7 +11,7 @@ import re as _re
 # ElementTree is retained for element construction, traversal, typing, and
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 from urllib.parse import urlparse
 
@@ -28,6 +28,7 @@ from ..documents import (
     build_vscsi_mapping_document,
 )
 from ..errors import HMCError
+from ..xmlutil import element_to_dict
 from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
@@ -109,6 +110,51 @@ def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]
     return optical_media
 
 
+def lpar_uuid_from_href(href: object) -> str | None:
+    """Return the LPAR UUID ending an HMC ``.../LogicalPartition/<uuid>`` link, or None.
+
+    The HMC links a mapping's client LPAR absolutely and system-scoped
+    (``https://<hmc>/rest/api/uom/ManagedSystem/<sys>/LogicalPartition/<uuid>``), so
+    only the final path segment after the marker identifies the partition (ADR 0168).
+    """
+    if not isinstance(href, str):
+        return None
+    _, marker, tail = urlparse(href).path.rpartition("/LogicalPartition/")
+    return tail if marker and tail and "/" not in tail else None
+
+
+def _device_name(value: object) -> str | None:
+    # element_to_dict yields {"@attrs": ..., "text": ...} for a leaf carrying
+    # attributes it does not ignore; the name is its text either way.
+    text = value.get("text") if isinstance(value, Mapping) else value
+    return text if isinstance(text, str) and text and "/" not in text else None
+
+
+def storage_mapping_id(mapping: Mapping[str, Any]) -> str | None:
+    """Return a VirtualSCSIMapping's ``<server adapter>/<target device>`` identity.
+
+    The HMC sends no mapping UUID; the VIOS device names ``vhost0/vtscsi0`` identify
+    it (ADR 0168). Returns None unless both names exist and ``TargetDevice`` holds
+    exactly one device element.
+    """
+    adapter = mapping.get("ServerAdapter")
+    target = mapping.get("TargetDevice")
+    devices = (
+        [value for key, value in target.items() if not key.startswith("@")]
+        if isinstance(target, Mapping)
+        else []
+    )
+    if (
+        not isinstance(adapter, Mapping)
+        or len(devices) != 1
+        or not isinstance(devices[0], Mapping)
+    ):
+        return None
+    adapter_name = _device_name(adapter.get("AdapterName"))
+    target_name = _device_name(devices[0].get("TargetName"))
+    return f"{adapter_name}/{target_name}" if adapter_name and target_name else None
+
+
 def _filter_optical_mappings(
     mappings: list[dict[str, Any]], lpar_uuid: str | None
 ) -> list[dict[str, Any]]:
@@ -121,18 +167,19 @@ def _filter_optical_mappings(
     ]
     if lpar_uuid is None:
         return optical
-    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-    return [
-        mapping
-        for mapping in optical
-        if _mapping_targets_lpar(mapping, expected_link)
-    ]
+    return [mapping for mapping in optical if _mapping_targets_lpar(mapping, lpar_uuid)]
 
 
-def _mapping_targets_lpar(mapping: dict[str, Any], expected_link: str) -> bool:
+def mapping_lpar_uuid(mapping: Mapping[str, Any]) -> str | None:
+    """Return the client-LPAR UUID a parsed VirtualSCSIMapping links to, or None."""
     partition = mapping.get("AssociatedLogicalPartition")
-    href = partition.get("href") if isinstance(partition, dict) else None
-    return isinstance(href, str) and urlparse(href).path == expected_link
+    return lpar_uuid_from_href(
+        partition.get("href") if isinstance(partition, Mapping) else None
+    )
+
+
+def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
+    return mapping_lpar_uuid(mapping) == lpar_uuid
 
 
 class StorageMixin:
@@ -445,22 +492,26 @@ class StorageMixin:
             mappings = [mappings] if mappings else []
 
         if lpar_uuid:
-            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             mappings = [
                 m
                 for m in mappings
-                if isinstance(m, dict)
-                and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
+                if isinstance(m, dict) and _mapping_targets_lpar(m, lpar_uuid)
             ]
 
         return mappings if isinstance(mappings, list) else [mappings]
 
     async def delete_storage_mapping(
-        self: StorageClient, vios_uuid: str, mapping_uuid: str
+        self: StorageClient, vios_uuid: str, mapping_id: str, lpar_uuid: str
     ) -> None:
-        """Detach one mapping through its parent VirtualIOServer document."""
-        if not mapping_uuid:
-            raise ValueError("Storage mapping UUID must not be empty")
+        """Detach one mapping through its parent VirtualIOServer document.
+
+        ``mapping_id`` is the ``<server adapter>/<target device>`` identity from
+        :func:`storage_mapping_id`. Exactly one mapping in the fetched document must
+        carry it, and its client-LPAR link must name ``lpar_uuid``, the partition the
+        caller authorized; otherwise nothing is posted (ADR 0168).
+        """
+        if not mapping_id:
+            raise ValueError("Storage mapping ID must not be empty")
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
@@ -482,26 +533,27 @@ class StorageMixin:
 
         vios_elem = _find_vios_element(root, vios_uuid)
         mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
+        not_found = f"Storage mapping {mapping_id!r} not found on VIOS {vios_uuid!r}"
         if mappings is None:
+            raise HMCError(not_found)
+        matches = [
+            (mapping, parsed)
+            for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
+            if isinstance(parsed := element_to_dict(mapping), dict)
+            and storage_mapping_id(parsed) == mapping_id
+        ]
+        if not matches:
+            raise HMCError(not_found)
+        if len(matches) > 1:
             raise HMCError(
-                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+                f"VirtualSCSIMapping {mapping_id!r} is duplicated; "
+                "refusing an ambiguous detach"
             )
-        identities: dict[str, ET.Element] = {}
-        for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping"):
-            uuid_elements = mapping.findall(f"{{{_UOM_NS}}}UUID")
-            if len(uuid_elements) != 1 or not (uuid_elements[0].text or "").strip():
-                raise HMCError("VirtualSCSIMapping has an invalid UUID identity")
-            identity = (uuid_elements[0].text or "").strip()
-            if identity in identities:
-                raise HMCError(
-                    f"VirtualSCSIMapping UUID {identity!r} is duplicated; "
-                    "refusing an ambiguous detach"
-                )
-            identities[identity] = mapping
-        target = identities.get(mapping_uuid)
-        if target is None:
+        target, parsed = matches[0]
+        if not _mapping_targets_lpar(parsed, lpar_uuid):
             raise HMCError(
-                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+                f"Storage mapping {mapping_id!r} does not belong to LPAR {lpar_uuid!r}; "
+                "refusing to detach a mapping that was not authorized"
             )
 
         mappings.remove(target)

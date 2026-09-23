@@ -146,41 +146,53 @@ def test_invalid_adapter_type_fails_before_resource_request(monkeypatch, mock_hm
     assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
-def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
-    _hmc_env(monkeypatch)
-    parent = f"""<VirtualIOServer
-      xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+_UOM = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+_LPAR_LINK = (
+    "https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/"
+    f"{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}"
+)
+
+
+def _mapping(target: str, lpar_link: str = _LPAR_LINK) -> str:
+    """A VirtualSCSIMapping in the observed V10R3 shape (#940): no UUID."""
+    return f"""<VirtualSCSIMapping>
+      <AssociatedLogicalPartition href="{lpar_link}" rel="related"/>
+      <ServerAdapter><AdapterName>vhost0</AdapterName></ServerAdapter>
+      <TargetDevice><LogicalVolumeVirtualTargetDevice>
+        <TargetName>{target}</TargetName>
+      </LogicalVolumeVirtualTargetDevice></TargetDevice>
+    </VirtualSCSIMapping>"""
+
+
+def _mock_detach_reads(mock_hmc, mappings: str):
+    parent = f"""<VirtualIOServer xmlns="{_UOM}">
       <UUID>{VIOS_UUID}</UUID>
       <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
-      <VirtualSCSIMappings>
-        <VirtualSCSIMapping><UUID>map-1</UUID></VirtualSCSIMapping>
-        <VirtualSCSIMapping><UUID>map-2</UUID></VirtualSCSIMapping>
-      </VirtualSCSIMappings>
+      <VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>
     </VirtualIOServer>"""
-    inventory = f"""<feed xmlns="http://www.w3.org/2005/Atom"
-      xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <entry><content><VirtualIOServer><VirtualSCSIMappings>
-        <VirtualSCSIMapping><UUID>map-1</UUID>
-          <AssociatedLogicalPartition
-            href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
-        </VirtualSCSIMapping>
-      </VirtualSCSIMappings></VirtualIOServer></content></entry>
-    </feed>"""
+    inventory = f"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>
+      <VirtualIOServer xmlns="{_UOM}"><VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>
+      </VirtualIOServer></content></entry></feed>"""
     mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
     ).mock(return_value=httpx.Response(200, text=inventory))
     mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
         return_value=httpx.Response(200, text=parent)
     )
-    posted = mock_hmc.post(
+    return mock_hmc.post(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
     ).mock(return_value=httpx.Response(200, text=""))
+
+
+def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    posted = _mock_detach_reads(mock_hmc, _mapping("vtscsi0") + _mapping("vtscsi1"))
 
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
         "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
     ):
-        assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
+        assert hmc_detach_storage_mapping(VIOS_UUID, "vhost0/vtscsi0") == "vhost0/vtscsi0"
 
     guard.assert_awaited_once_with(
         ANY,
@@ -189,8 +201,38 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
         ownership_override=False,
     )
     assert posted.called
-    assert "map-1" not in posted.calls.last.request.content.decode()
-    assert "map-2" in posted.calls.last.request.content.decode()
+    body = posted.calls.last.request.content.decode()
+    assert "vtscsi0<" not in body
+    assert "vtscsi1<" in body
+
+
+@pytest.mark.parametrize(
+    ("mappings", "message"),
+    [
+        (_mapping("vtscsi0") + _mapping("vtscsi0"), "ambiguous"),
+        (_mapping("vtscsi0", _LPAR_LINK + "/"), "does not identify its client LPAR"),
+        (_mapping("vtscsi1"), "was not found"),
+    ],
+    ids=["ambiguous", "unparseable-lpar-link", "missing"],
+)
+def test_detach_storage_mapping_fails_closed_before_authorizing(
+    monkeypatch, mock_hmc, mappings, message
+):
+    _hmc_env(monkeypatch)
+    posted = _mock_detach_reads(mock_hmc, mappings)
+
+    guard = AsyncMock(return_value=LPAR_UUID)
+    with (
+        patch(
+            "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
+            new=guard,
+        ),
+        pytest.raises(ValueError, match=message),
+    ):
+        hmc_detach_storage_mapping(VIOS_UUID, "vhost0/vtscsi0")
+
+    guard.assert_not_awaited()
+    assert not posted.called
 
 
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):

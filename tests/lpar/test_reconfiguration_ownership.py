@@ -178,7 +178,8 @@ def _real_guard_hmc() -> AsyncMock:
     hmc.list_logical_partitions.return_value = [{"UUID": LPAR}]
     hmc.list_optical_mappings.return_value = [
         {
-            "UUID": "mapping-uuid",
+            "ServerAdapter": {"AdapterName": "vhost0"},
+            "TargetDevice": {"VirtualOpticalTargetDevice": {"TargetName": "vtopt0"}},
             "Storage": {"VirtualOpticalMedia": {"MediaName": "aix.iso"}},
         }
     ]

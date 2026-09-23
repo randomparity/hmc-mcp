@@ -1,0 +1,67 @@
+<!-- Observed V10R3 VirtualSCSIMappings (read-only probe, #940), redacted: synthetic UUIDs,
+     hmc.example.invalid, REDACTED-* location/device tokens, disk name vd-R1. -->
+<VirtualSCSIMappings group="ViosSCSIMapping" kb="CUD" kxe="false" schemaVersion="V1_0">
+        <Metadata>
+            <Atom/>
+        </Metadata>
+        <VirtualSCSIMapping schemaVersion="V1_0">
+            <Metadata>
+                <Atom/>
+            </Metadata>
+            <AssociatedLogicalPartition kxe="false" kb="CUR" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/00000000-0000-4000-8000-0000000000AA" rel="related"/>
+            <ClientAdapter kb="CUR" kxe="false" schemaVersion="V1_0">
+                <Metadata>
+                    <Atom/>
+                </Metadata>
+                <AdapterType kxe="false" kb="ROR">Client</AdapterType>
+                <DynamicReconfigurationConnectorName kxe="false" kb="CUD">REDACTED-LOC-CLIENT</DynamicReconfigurationConnectorName>
+                <LocationCode kxe="false" kb="ROR">REDACTED-LOC-CLIENT</LocationCode>
+                <LocalPartitionID kxe="false" kb="CUR">1</LocalPartitionID>
+                <RequiredAdapter kxe="false" kb="CUD">false</RequiredAdapter>
+                <VariedOn kxe="true" kb="CUD">false</VariedOn>
+                <VirtualSlotNumber kb="COD" kxe="false">2</VirtualSlotNumber>
+                <RemoteLogicalPartitionID kb="CUR" kxe="false">100</RemoteLogicalPartitionID>
+                <RemoteSlotNumber kb="CUA" kxe="false">3</RemoteSlotNumber>
+                <ServerLocationCode kxe="false" kb="CUR">REDACTED-LOC-SERVER</ServerLocationCode>
+            </ClientAdapter>
+            <ServerAdapter kxe="false" kb="CUR" schemaVersion="V1_0">
+                <Metadata>
+                    <Atom/>
+                </Metadata>
+                <AdapterType kxe="false" kb="ROR">Server</AdapterType>
+                <DynamicReconfigurationConnectorName kxe="false" kb="CUD">REDACTED-LOC-SERVER</DynamicReconfigurationConnectorName>
+                <LocationCode kxe="false" kb="ROR">REDACTED-LOC-SERVER</LocationCode>
+                <LocalPartitionID kxe="false" kb="CUR">100</LocalPartitionID>
+                <RequiredAdapter kxe="false" kb="CUD">false</RequiredAdapter>
+                <VariedOn kxe="true" kb="CUD">true</VariedOn>
+                <VirtualSlotNumber kb="COD" kxe="false">3</VirtualSlotNumber>
+                <AdapterName kxe="false" kb="CUR">vhost0</AdapterName>
+                <BackingDeviceName kxe="false" kb="CUR">vd-R1</BackingDeviceName>
+                <RemoteLogicalPartitionID kb="CUR" kxe="false">1</RemoteLogicalPartitionID>
+                <RemoteSlotNumber kb="CUA" kxe="false">2</RemoteSlotNumber>
+                <ServerLocationCode kxe="false" kb="CUR">REDACTED-LOC-CLIENT</ServerLocationCode>
+                <UniqueDeviceID kb="ROR" kxe="false">1eREDACTED-LOC-SERVER</UniqueDeviceID>
+            </ServerAdapter>
+            <Storage kxe="false" kb="CUR">
+                <VirtualDisk schemaVersion="V1_0">
+                    <Metadata>
+                        <Atom/>
+                    </Metadata>
+                    <DiskCapacity kb="CUR" kxe="false">128</DiskCapacity>
+                    <DiskLabel kxe="false" kb="CUR">None</DiskLabel>
+                    <DiskName kb="CUR" kxe="false">vd-R1</DiskName>
+                    <UniqueDeviceID kxe="false" kb="ROR">REDACTED-UDID-DISK</UniqueDeviceID>
+                </VirtualDisk>
+            </Storage>
+            <TargetDevice kb="CUR" kxe="false">
+                <LogicalVolumeVirtualTargetDevice schemaVersion="V1_0">
+                    <Metadata>
+                        <Atom/>
+                    </Metadata>
+                    <LogicalUnitAddress kxe="false" kb="CUR">0x8100000000000000</LogicalUnitAddress>
+                    <TargetName kb="CUR" kxe="false">vtscsi0</TargetName>
+                    <UniqueDeviceID kxe="false" kb="ROR">REDACTED-UDID-VTD</UniqueDeviceID>
+                </LogicalVolumeVirtualTargetDevice>
+            </TargetDevice>
+        </VirtualSCSIMapping>
+    </VirtualSCSIMappings>
