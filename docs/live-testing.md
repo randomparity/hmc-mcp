@@ -141,9 +141,11 @@ with both `LIVE_TEST_ENV_*` keys set, writes them to
 (`docs/capabilities/README.md`, "Recording an observation").
 
 An SR-IOV call that changed nothing records no observation. From a profile
-that reads `none`, the unassign and the reassign are no-ops, so only the
-assign is observed. To observe the unassign, start with the profile already
-listing the test port; the baseline check admits that state.
+that reads `none`, only the assign is observed. To observe the unassign as
+well, start with the profile already listing the test port; the baseline check
+admits that state. The reassign is never observed: the profile-only unassign
+leaves the effective port assigned, so the reassign finds it assigned as asked
+and changes nothing.
 
 ## 3. Produce the evidence
 

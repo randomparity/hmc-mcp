@@ -23,7 +23,10 @@ cleanup, with cleanup `passed` only when that cleanup restored the baseline,
 else `failed`, as `bare_cec._record_create_and_assign` does. Removal and
 cleanup steps record where they run. An SR-IOV call whose result reports
 `changed=False` (the operations' idempotent no-op) dispatched nothing and backs
-no observation, and an unreadable profile never counts as cleared.
+no observation, and an unreadable profile never counts as cleared. On this arm
+that leaves row 27 unobservable live (the profile-only unassign keeps the
+effective port, so the reassign is always a no-op) and row 28 observable only
+when ST26 did not clear a pre-populated profile; both records stay as guards.
 
 **Observation ids.** `_observation_id` keeps the label up to the first ` (`,
 so every verified label either is a tool name or is a hyphenated slug, and the
