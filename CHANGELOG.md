@@ -116,6 +116,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   as ADR 0094 already read it on guarded mutations. `adapters list`, `storage attach-disk`, LPAR
   and VIOS listing, `hmc_list_lpar_ownership`, and PCM LogicalPartition targets used to look up a
   managed system named `''` and fail; PCM ManagedSystem targets refused `''` as a stray scope.
+  Unguarded VIOS and LPAR mutations given a blank selector (VIOS delete, power, update and
+  upgrade; LPM; storage mappings; LPAR power when `HMC_AUTHORIZE_POWER_OPERATIONS` is off) now
+  resolve the partition across all systems, as if the selector were omitted, instead of failing
+  on a system named `''`.
   A selector that is required refuses a blank one as missing before any HMC call: VIOS backup and
   restore, the boot-order read, and a PowerOn with an affinity assessment. A non-blank selector
   loses its surrounding whitespace on these paths, so an affinity assessment whose captured
