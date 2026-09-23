@@ -1337,6 +1337,23 @@ def test_live_config_rejects_unusable_scratch_processing_units(
         runner.LiveTestConfig.from_env_file(config_path)
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        "LIVE_TEST_VMEDIA_REPOSITORY_SIZE_MIB",
+        "LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB",
+    ],
+)
+def test_live_config_rejects_a_media_repository_size_that_is_not_whole_gib(
+    tmp_path, key
+) -> None:
+    """#963: the HMC takes whole GiB, so a stale 1536 fails at load, not mid-arm."""
+    config_path = _example_env_with(tmp_path, key, "1536")
+
+    with pytest.raises(ValueError, match=f"{key} must be a multiple of 1024"):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+
 def test_live_config_rejects_negative_sriov_physical_port_id(tmp_path) -> None:
     config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID", "-1")
 
