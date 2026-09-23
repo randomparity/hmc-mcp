@@ -268,3 +268,129 @@ async def test_assign_wraps_post_dispatch_read_failure(monkeypatch):
     assert caught.value.result.effective_after is None
     assert isinstance(caught.value.__cause__, RuntimeError)
     assert str(caught.value.__cause__) == "read failed"
+
+
+@pytest.mark.asyncio
+async def test_assign_reports_hmc_refusal_when_readback_is_unchanged(monkeypatch):
+    _common(monkeypatch)
+    refusal = RuntimeError(
+        "HSCL127D ... HSCL1294 The capacity specified for the logical port with "
+        "configuration ID 0 is 7.5. This is not a multiple of the capacity granularity "
+        "of the specified protocol of this physical port which is 1.0."
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.assign_sriov_logical_port_dynamic",
+        AsyncMock(side_effect=refusal),
+    )
+    with pytest.raises(SriovLogicalPortPartialError) as caught:
+        await assign_sriov_logical_port(
+            _hmc(),
+            "sys",
+            "lpar",
+            InventorySelector("1", "0", "3"),
+            Decimal("2.0"),
+            profile_name="prof",
+        )
+    message = str(caught.value)
+    assert "could not be verified" not in message
+    assert "refused by HMC" in message
+    assert "HSCL1294" in message
+    assert caught.value.__cause__ is refusal
+    assert caught.value.result.effective_before is None
+    assert caught.value.result.effective_after is None
+    assert caught.value.result.profile_before == caught.value.result.profile_after == "none"
+
+
+@pytest.mark.asyncio
+async def test_assign_keeps_unverified_wording_when_readback_also_changed(monkeypatch):
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.assign_sriov_logical_port_dynamic",
+        AsyncMock(side_effect=RuntimeError("HSCL0000E command failed unexpectedly")),
+    )
+    after = {
+        "config_id": "0",
+        "lpar_name": "lpar",
+        "lpar_id": "2",
+        "lpar_state": "Not Activated",
+        "adapter_id": "1",
+        "logical_port_id": "3",
+        "phys_port_id": "0",
+        "functional_state": "1",
+        "capacity": "2.0",
+        "max_capacity": "100.0",
+    }
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",
+        AsyncMock(side_effect=[[], [after]]),
+    )
+    with pytest.raises(SriovLogicalPortPartialError) as caught:
+        await assign_sriov_logical_port(
+            _hmc(),
+            "sys",
+            "lpar",
+            InventorySelector("1", "0", "3"),
+            Decimal("2.0"),
+            profile_name="prof",
+        )
+    message = str(caught.value)
+    assert "could not be verified" in message
+    assert "refused by HMC" not in message
+    assert caught.value.result.effective_after is not None
+
+
+@pytest.mark.asyncio
+async def test_unassign_reports_hmc_refusal_when_readback_is_unchanged(monkeypatch):
+    _common(monkeypatch)
+    record = "0:1:0:3:0:0:0:all::all:0:0:2.0:100.0:none:0::::"
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.read_sriov_profile_ports",
+        AsyncMock(
+            side_effect=[
+                {"name": "prof", "sriov_eth_logical_ports": record},
+                {"name": "prof", "sriov_eth_logical_ports": record},
+            ]
+        ),
+    )
+    refusal = RuntimeError("HSCL1500E the profile record is currently in use")
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.unassign_sriov_logical_port_profile",
+        AsyncMock(side_effect=refusal),
+    )
+    with pytest.raises(SriovLogicalPortPartialError) as caught:
+        await unassign_sriov_logical_port(
+            _hmc(), "sys", "lpar", InventorySelector("1", "0", "3"), profile_name="prof"
+        )
+    message = str(caught.value)
+    assert "could not be verified" not in message
+    assert "refused by HMC" in message
+    assert "HSCL1500E" in message
+    assert caught.value.__cause__ is refusal
+    assert caught.value.result.profile_before == caught.value.result.profile_after == record
+
+
+@pytest.mark.asyncio
+async def test_unassign_keeps_unverified_wording_when_readback_also_changed(monkeypatch):
+    _common(monkeypatch)
+    record = "0:1:0:3:0:0:0:all::all:0:0:2.0:100.0:none:0::::"
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.read_sriov_profile_ports",
+        AsyncMock(
+            side_effect=[
+                {"name": "prof", "sriov_eth_logical_ports": record},
+                {"name": "prof", "sriov_eth_logical_ports": "none"},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.unassign_sriov_logical_port_profile",
+        AsyncMock(side_effect=RuntimeError("HSCL0000E command failed unexpectedly")),
+    )
+    with pytest.raises(SriovLogicalPortPartialError) as caught:
+        await unassign_sriov_logical_port(
+            _hmc(), "sys", "lpar", InventorySelector("1", "0", "3"), profile_name="prof"
+        )
+    message = str(caught.value)
+    assert "could not be verified" in message
+    assert "refused by HMC" not in message
+    assert caught.value.result.profile_after == "none"
