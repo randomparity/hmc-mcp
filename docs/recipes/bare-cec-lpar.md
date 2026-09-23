@@ -102,7 +102,8 @@ profile UUID. `power-on` prints `Job submitted for <lpar-uuid>` and the finished
 its status is `COMPLETED_OK`. Copy the job's `JobID` into `JOB_ID`.
 
 A PowerOn that names no profile is not a substitute. The arm records it expecting an `HSCL3680`
-refusal on a partition that has never been activated; #879 confirms that outcome.
+refusal, an expectation written before `lpars create` applied the profile (#939). On an applied
+partition the outcome is unconfirmed; #879 records it.
 
 ## 5. Observe the partition
 
