@@ -17,7 +17,7 @@ MCP tool `hmc_capture_lpar_console`, so the bare-CEC recipe documents a gap.
 - Before any file or connection is opened, the command refuses (exit 2): a bound outside its
   limits, an existing `--output`, and, without `--output`, a terminal stdout.
 - Raw bytes go to stdout, or to `--output`, opened with exclusive create (`xb`). If the capture
-  raises, is interrupted, or the write fails, the file this command created is removed.
+  raises (Ctrl-C included) or the write fails, the file this command created is removed.
 - When the capture returns, one stderr line reports stop reason, byte count, `released`, and any
   error; when it raises, stderr carries the `Error:` line only.
 - Exit codes follow [ADR 0175](../../adr/0175-capture-console-exit-codes.md); the command help
@@ -31,8 +31,8 @@ MCP tool `hmc_capture_lpar_console`, so the bare-CEC recipe documents a gap.
 2. Invariants: no operator file is overwritten; an unproven release is never exit 0; stdin
    stays sealed (owned by `ssh/console.py`).
 3. Accepted: console bytes are partition-controlled; they reach a file or pipe verbatim and a
-   later consumer owns how it renders them. An interrupt exits through Python's
-   `KeyboardInterrupt` status, outside ADR 0175; `released` is then logged, not an exit code.
+   later consumer owns how it renders them. Ctrl-C exits with Python's interrupt status, outside
+   ADR 0175; SIGTERM, which Python does not raise, can leave an empty `--output` file.
 4. Elsewhere: contention, release proof, vterm release on cancel (ADR 0170, #975); the SSH
    UUID-to-name lookup's attribute names (#776/PR #777).
 
