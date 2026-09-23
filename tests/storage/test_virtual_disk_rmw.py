@@ -237,3 +237,13 @@ async def test_create_on_a_bare_group_document_posts_the_whole_group(mock_hmc):
         _named(fetched, "PhysicalVolume")
     )
     assert len(_named(posted, "VirtualDisk")) == 3
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_an_overlong_name_before_any_request(mock_hmc):
+    _routes(mock_hmc)
+
+    with pytest.raises(ValueError, match="15 characters"):
+        await _create("lv_sixteen_chars")
+
+    assert not any(call.request.url.path == VG_PATH for call in mock_hmc.calls)
