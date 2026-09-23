@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted (2026-09-23). Extends ADR 0170 and stays within ADR 0172. ADR 0170 rule 1 (one hold
-per session, `close()` terminal) gains the two suspension modes below. Rule 4 (release belongs to
-`close()`) gains one exception: `suspend()` also releases, with the same proof.
+Accepted (2026-09-23). Extends ADR 0170 and amends its rules 1 and 4 in part, within ADR 0172.
+Rule 1 (one hold per session, `close()` terminal) gains the two suspension modes below, and
+`close()` is accepted during `suspend()` and `resume()`. Rule 4 (release belongs to `close()`)
+gains one exception: `suspend()` also releases, with the same proof.
 
 ## Context
 
