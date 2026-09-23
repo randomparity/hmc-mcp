@@ -11,6 +11,14 @@ from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
 from .transport import HMCCLIError, run_hmc_command
 
+# mksyscfg's dedicated-processor sharing_mode values (hmc-commands-p10 mksyscfg).
+_DEDICATED_SHARING_MODES = (
+    "keep_idle_procs",
+    "share_idle_procs",
+    "share_idle_procs_active",
+    "share_idle_procs_always",
+)
+
 
 def validate_caller_token(token: str) -> None:
     """Raise ``ValueError`` if *token* cannot be embedded as ``[caller <token>]``.
@@ -129,7 +137,9 @@ async def create_lpar_via_cli(
 
     Returns the raw ``mksyscfg`` stdout (typically empty on success).
     Raises :class:`HMCCLIError` on non-zero exit, and before any command when
-    more than one virtual processor is requested without processing units.
+    more than one virtual processor is requested without processing units, or
+    a dedicated request carries a fractional count or a shared-only
+    ``sharing_mode``.
     """
     config_pairs: list[tuple[str, object]] = [
         ("name", name),
@@ -196,6 +206,63 @@ def _explicit_lpar_resource_pairs(
     _min_mem = resources.min_memory or 256
     _des_mem = resources.desired_memory or 4096
     _max_mem = resources.max_memory or max(_des_mem, 8192)
+    pairs: list[tuple[str, object]] = [
+        ("min_mem", _min_mem),
+        ("desired_mem", _des_mem),
+        ("max_mem", _max_mem),
+    ]
+    if resources.dedicated:
+        pairs.extend(_dedicated_processor_pairs(resources))
+    else:
+        pairs.extend(_shared_processor_pairs(resources))
+    if max_virtual_slots is not None:
+        pairs.append(("max_virtual_slots", max_virtual_slots))
+    return pairs
+
+
+def _dedicated_processor_pairs(resources: LparResources) -> list[tuple[str, object]]:
+    """Build the whole-processor ``proc_mode=ded`` fields of a create record.
+
+    Virtual-processor fields are shared-mode only and are ignored here, as in
+    the REST dedicated body. An explicit ``sharing_mode`` must be one of the
+    dedicated ``*_idle_procs`` values; without one the HMC applies its default.
+    """
+    _min = _whole_processors(resources.min_procs, "min_procs", "--min-procs") or 1
+    _des = _whole_processors(resources.desired_procs, "desired_procs", "--procs") or 1
+    _max = _whole_processors(resources.max_procs, "max_procs", "--max-procs") or max(
+        _des, 2
+    )
+    pairs: list[tuple[str, object]] = [
+        ("proc_mode", "ded"),
+        ("min_procs", _min),
+        ("desired_procs", _des),
+        ("max_procs", _max),
+    ]
+    mode = resources.sharing_mode
+    if mode is not None:
+        if mode not in _DEDICATED_SHARING_MODES:
+            raise HMCCLIError(
+                f"sharing_mode={mode!r} applies to shared processors only; with "
+                f"dedicated processors use one of: {', '.join(_DEDICATED_SHARING_MODES)}."
+            )
+        pairs.append(("sharing_mode", mode))
+    return pairs
+
+
+def _whole_processors(value: float | None, field: str, option: str) -> int | None:
+    """Return a dedicated processor count as an ``int``, refusing a fraction."""
+    if value is None:
+        return None
+    if not float(value).is_integer():
+        raise HMCCLIError(
+            f"dedicated processors are whole CPUs: {field}={value} is fractional "
+            f"(pass a whole number to {option} on the CLI)."
+        )
+    return int(value)
+
+
+def _shared_processor_pairs(resources: LparResources) -> list[tuple[str, object]]:
+    """Build the processing-unit ``proc_mode=shared`` fields of a create record."""
     _min_pu = resources.min_procs or 0.1
     _des_pu = resources.desired_procs or 0.1
     _max_pu = resources.max_procs or max(_des_pu, 2.0)
@@ -207,10 +274,7 @@ def _explicit_lpar_resource_pairs(
         resources.desired_procs, _des_vp, "desired_procs", "--procs"
     )
 
-    pairs: list[tuple[str, object]] = [
-        ("min_mem", _min_mem),
-        ("desired_mem", _des_mem),
-        ("max_mem", _max_mem),
+    return [
         ("proc_mode", "shared"),
         ("sharing_mode", "uncap"),
         ("min_proc_units", _min_pu),
@@ -220,9 +284,6 @@ def _explicit_lpar_resource_pairs(
         ("desired_procs", _des_vp),
         ("max_procs", _max_vp),
     ]
-    if max_virtual_slots is not None:
-        pairs.append(("max_virtual_slots", max_virtual_slots))
-    return pairs
 
 
 def _require_units_for_vcpus(
