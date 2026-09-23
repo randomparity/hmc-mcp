@@ -4,6 +4,8 @@
 
 Accepted
 
+> **Superseded by [0168](0168-vscsi-mapping-adapter-target-identity.md)** (2026-09-23)
+
 ## Context
 
 `VirtualSCSIMapping` is a detailed object in the HMC UOM API, not a directly
