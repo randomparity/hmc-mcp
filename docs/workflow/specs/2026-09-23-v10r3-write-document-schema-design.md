@@ -32,11 +32,13 @@ values.
 | `DiskCapacity` / `DiskName` | `DiskCapacity` first | F, I |
 | `TargetDevice` | `kb="CUR" kxe="false"`, wrapping `<LogicalVolume\|PhysicalVolume>VirtualTargetDevice` or `VirtualOpticalTargetDevice` with `Metadata` and `TargetName kb="CUR"`. It no longer carries the name as text | F for the LogicalVolume case; the PhysicalVolume and optical element names are inferred from F's shape and the names used in the repo's test feeds |
 | `AssociatedLogicalPartition` | UOM namespace (not Atom), `kb="CUR" kxe="false"`, first child of the mapping | F |
-| `Partition{Memory,Processor}Configuration`, `{Shared,Dedicated}ProcessorConfiguration` | add `schemaVersion="V1_0"` | I (memory); invariant below (processor) |
+| `PartitionMemoryConfiguration` | add `schemaVersion="V1_0"` | I |
 
 **Invariant (F):** every element in F that has a `Metadata` child carries `schemaVersion`, and
 `Storage`/`TargetDevice`, which have no `Metadata`, do not. The memory 400 is this rule broken.
-The processor wrappers follow the rule.
+The three processor-configuration wrappers break it too, but no evidence records their
+requirement, so they stay unchanged. They are listed as unverified, and the invariant test
+exempts them by name.
 
 ## Design
 
@@ -52,7 +54,9 @@ The processor wrappers follow the rule.
 - `build_virtual_disk_delete_document`'s `VirtualDisk` gets the same attribute correction.
 - Elements with no recorded live value keep their current attributes. Examples:
   `IsTaggedVLAN`, `GroupName`, `NetworkName`, the vFC `Connecting*` fields, the LPAR resource
-  fields, and `AssociatedSwitch`. They are listed in the PR as unverified.
+  fields, the processor-configuration wrappers, and `AssociatedSwitch`. They are listed in the
+  PR as unverified. An element written today without `kb`, such as `MediaName` and `GroupName`
+  in the delete documents, stays without it.
 - The 400 path already works: `_write_uom` raises `HMCError(..., resp.text)`, and `HMCError`
   reports the `<Message>` text. A test pins that behavior. No `src` change is needed.
 
@@ -68,9 +72,8 @@ for the V10R3 values.
    value the caller supplies is dropped or reinterpreted. The existing escaping decorator and
    the `storage_kind` allowlist still guard every element name and value.
 3. Accepted:
-   - Values evidenced only by I, the processor `schemaVersion` inferred from the invariant,
-     and the PhysicalVolume/optical target-device element names inferred from F, are
-     unproven by a 200 until #879 runs. The cost is bounded: the result is a 400 with the
+   - Values evidenced only by I, and the PhysicalVolume/optical target-device element names
+     inferred from F, are unproven by a 200 until #879 runs. The cost is bounded: the result is a 400 with the
      HMC's message, as today after #935.
    - Elements with no recorded value stay unchanged and may still draw a 400. The PR lists
      them.
@@ -85,7 +88,8 @@ for the V10R3 values.
    order. Unit tests read F directly for every element F contains, and use a
    table transcribed from I for the rest.
 2. Every element that has a `Metadata` child carries `schemaVersion`, for each builder call in
-   the invariant test's parametrization (every public builder in the four files, at least once).
+   the invariant test's parametrization (every public builder in the four files, at least once),
+   except the three named processor-configuration wrappers.
 3. A PUT answered with 400 `REST0001` raises an `HMCError` whose text contains the HMC
    `<Message>`.
 4. Existing tests that asserted the old `CUD` literals are updated. `just verify` passes.
