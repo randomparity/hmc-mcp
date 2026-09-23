@@ -417,7 +417,8 @@ async def _no_profile_activation(
     if observed not in _FIRMWARE_STATES:
         return False
     st, data, failure = await _power_off(client, state, fixture, immediate=True)
-    if not _record_power(state, "hmc_power_off_lpar (after no-profile activation)", st, data, failure):
+    off_label = "hmc_power_off_lpar (after no-profile activation)"
+    if not _record_power(state, off_label, st, data, failure):
         return False
     observed = await _read_state(client, state, fixture, _NOT_ACTIVATED)
     return _record_state(state, "state after no-profile power off", observed, _NOT_ACTIVATED)
@@ -630,7 +631,9 @@ async def _osshutdown_refusal(
 async def _dump_restart(
     client: Client, state: RunState, fixture: pcie._DedicatedFixture
 ) -> bool:
-    st, data, failure = await _power_off(client, state, fixture, immediate=False, operation="dumprestart")
+    st, data, failure = await _power_off(
+        client, state, fixture, immediate=False, operation="dumprestart"
+    )
     if not _record_power(state, "hmc_power_off_lpar (dumprestart)", st, data, failure):
         return False
     observed = await _read_state(client, state, fixture, _FIRMWARE_STATES)

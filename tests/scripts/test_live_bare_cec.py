@@ -496,7 +496,8 @@ def test_an_exception_mid_arm_still_powers_off_unassigns_and_deletes(schemas, mo
 
     _run(world, state)
 
-    assert "RuntimeError: scenario bug" in _row(state, "bare-cec arm raised before teardown")["data"]
+    raised = _row(state, "bare-cec arm raised before teardown")
+    assert "RuntimeError: scenario bug" in raised["data"]
     tools = world.tools()
     teardown_off = max(i for i, t in enumerate(tools) if t == "hmc_power_off_lpar")
     assert teardown_off < tools.index("hmc_unassign_dedicated_pcie_slot") < tools.index(
