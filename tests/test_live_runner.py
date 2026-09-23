@@ -4041,6 +4041,8 @@ async def test_lpar_property_workflow_refuses_an_unrestorable_description(monkey
         if tool == "hmc_set_lpar_description"
     ]
     assert descriptions == ["MCP live-test probe R2 safe to clear"]
+    restore = [row for row in state.results if row["tool"].endswith("(restore)")]
+    assert [row["status"] for row in restore if "description" in row["tool"]] == ["FAIL"]
 
 
 @pytest.mark.asyncio

@@ -192,11 +192,12 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
             scenario,
             "hmc_set_lpar_description (restore)",
             "FAIL",
-            f"MANUAL RECOVERY REQUIRED: partition {config.lp3_name!r} keeps the ST{scenario} "
-            f"probe description; the original {description!r} cannot be written back via "
-            f"CLI ({blocked}). Restore it by hand: chsyscfg -r lpar -m {config.system_name} "
-            f'-i "name={config.lp3_name},description=<original>", or through the HMC GUI '
-            "where the CLI record cannot carry it",
+            f"MANUAL RECOVERY REQUIRED: chsyscfg -r lpar -m {config.system_name} "
+            f'-i "name={config.lp3_name},description=<original>" (or the HMC GUI where '
+            "the CLI record cannot carry it); the unredacted original is "
+            "artifacts.lp3_baseline.description in the results file. "
+            f"ST{scenario} left its probe description because the original cannot be "
+            f"written back via CLI: {blocked}",
         )
         return
     status, data = await state.call(
