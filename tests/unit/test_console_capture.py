@@ -1463,6 +1463,43 @@ async def test_close_during_resume_releases_new_hold():
     assert second.closed
 
 
+
+@pytest.mark.asyncio
+async def test_close_during_suspend_waits_and_reports_its_proof():
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls: list[tuple] = []
+
+    async def slow_release(*args) -> bool:
+        calls.append(args)
+        started.set()
+        await finish.wait()
+        return True
+
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    with (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=stream)
+        ),
+        patch("hmcpctl.ssh.console._release_and_verify", slow_release),
+    ):
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        waiting = asyncio.create_task(session.read())
+        suspending = asyncio.create_task(session.suspend())
+        await asyncio.wait_for(started.wait(), timeout=5)
+        closing = asyncio.create_task(session.close())
+        await asyncio.sleep(0)
+        assert not closing.done()
+        finish.set()
+        assert await suspending is True
+        assert await closing is True
+        assert await asyncio.wait_for(waiting, timeout=5) == b""
+
+    assert calls == [(make_config(), "sys1", "lp1")]
+    assert stream.closed
+
 def test_handover_has_no_write_surface():
     assert not any(
         name.startswith(("write", "send"))
