@@ -35,6 +35,10 @@ def test_virtual_disk_document_accepts_15_character_name() -> None:
     assert "lv_fifteen_char" in build_virtual_disk_document("lv_fifteen_char", 1024)
 
 
+def test_virtual_disk_document_counts_the_unescaped_name() -> None:
+    assert "a&amp;b_fifteen_cha" in build_virtual_disk_document("a&b_fifteen_cha", 1024)
+
+
 def test_virtual_disk_document_rejects_16_character_name() -> None:
     with pytest.raises(ValueError, match="15 characters"):
         build_virtual_disk_document("lv_sixteen_chars", 1024)
