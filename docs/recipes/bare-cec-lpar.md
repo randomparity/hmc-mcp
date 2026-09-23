@@ -22,8 +22,9 @@ creates and the one slot you select.
 - One dedicated PCIe slot that no partition owns. You pick it in step 1.
 - `HMC_AUTHORIZE_POWER_OPERATIONS=true`. This is optional for the CLI but the live window runs
   under it. It turns on the ownership guard for power commands, so `power-on` and `power-off`
-  refuse a partition another owner stamped. The guard needs `--system`, which every power
-  command below passes. Never add `--ownership-override` to these commands.
+  refuse a partition another owner stamped. Every power command below passes `--system`, so
+  the guard checks that system instead of searching the fleet. Never add
+  `--ownership-override` to these commands.
 
 ```bash
 export HMC_PROFILE=<profile-name>
