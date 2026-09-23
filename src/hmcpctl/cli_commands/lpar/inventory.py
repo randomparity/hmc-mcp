@@ -25,11 +25,14 @@ from ..runtime import run_cli_coroutine, ssh_config, with_client
 def lpars_summary(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
 
     summary = asdict(
-        with_client(lambda hmc: fetch_lpar_summary(hmc, None, name_or_uuid))
+        with_client(lambda hmc: fetch_lpar_summary(hmc, system, name_or_uuid))
     )
 
     if as_json:
