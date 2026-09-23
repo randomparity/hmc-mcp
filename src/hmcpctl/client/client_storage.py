@@ -660,10 +660,12 @@ class StorageMixin:
         # the root or an Atom content child is the group: each VirtualDisk carries a
         # nested VolumeGroup link element that an unanchored search would select.
         ns = {"atom": _ATOM_NS, "uom": _UOM_NS}
-        vg_elem = root if localname(root.tag) == "VolumeGroup" else None
-        for pattern in (".//atom:content/uom:VolumeGroup", ".//atom:content/VolumeGroup"):
+        if localname(root.tag) == "VolumeGroup":
+            vg_elem = root
+        else:
+            vg_elem = root.find(".//atom:content/uom:VolumeGroup", ns)
             if vg_elem is None:
-                vg_elem = root.find(pattern, ns)
+                vg_elem = root.find(".//atom:content/VolumeGroup", ns)
         if vg_elem is None:
             raise HMCError(
                 f"GET {path} response contains no VolumeGroup element",
