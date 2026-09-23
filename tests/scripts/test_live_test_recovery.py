@@ -21,8 +21,23 @@ from live_test.observation import CallFailure  # noqa: E402
 _MARKER = "pcie-deadbeef"
 _SYSTEM = "sys-R1"
 _LPAR = f"live-pcie-{_MARKER}"
-_DRC = "553713664"
+_DRC = "21010020"
 _BASELINE = "none"
+#: The one profile read ADR 0165 Decision 1 admits, as a literal.
+_PROFILE_READ = f"lssyscfg -r prof -m {_SYSTEM} -F lpar_name,name,io_slots --header"
+
+
+def _readback(io_slots: str, profile: str = "default") -> str:
+    """The admitted table: the fixture profile's row among rows it must not read.
+
+    The foreign rows list the slot, so selecting one of them reads as drift.
+    """
+    return (
+        "lpar_name,name,io_slots\n"
+        f'{_LPAR},{profile},"{io_slots}"\n'
+        f'{_LPAR},other_profile,"{_DRC}/none/1"\n'
+        f'vios-1,{profile},"{_DRC}/none/1,21030030/none/0"\n'
+    )
 
 
 def _stamped(token: str) -> str:
@@ -76,7 +91,7 @@ _CLEAN = {
     "hmc_list_dedicated_pcie_slots": {
         "items": [{"drc_index": _DRC, "owner_lpar": None}]
     },
-    "hmc_run_command": f"{_BASELINE}\n",
+    "hmc_run_command": _readback(_BASELINE),
 }
 
 
@@ -165,7 +180,7 @@ async def test_profile_drift_from_the_baseline_is_reported():
     """Drift is only reachable while the fixture survives: see `_surviving`."""
     responses = _responses(
         hmc_get_lpar_description=_stamped(_MARKER),
-        hmc_run_command=f"{_DRC}//0\n",
+        hmc_run_command=_readback(f"{_DRC}/none/0"),
     )
 
     findings = await recovery.check(_caller(responses), _INPUTS)
@@ -181,7 +196,7 @@ async def test_profile_drift_to_an_unrelated_value_is_still_reported():
     """Drift is drift; the arm's own Guard B refuses on any mismatch."""
     responses = _responses(
         hmc_get_lpar_description=_stamped(_MARKER),
-        hmc_run_command="21010020//0\n",
+        hmc_run_command=_readback("21030030/none/0"),
     )
 
     findings = await recovery.check(_caller(responses), _INPUTS)
@@ -213,7 +228,7 @@ async def test_every_condition_at_once_is_reported_together():
         hmc_list_dedicated_pcie_slots={
             "items": [{"drc_index": _DRC, "owner_lpar": _LPAR}]
         },
-        hmc_run_command=f"{_DRC}//0\n",
+        hmc_run_command=_readback(f"{_DRC}/none/0"),
     )
 
     findings = await recovery.check(_caller(responses), _INPUTS)
@@ -236,14 +251,31 @@ async def test_an_unreadable_profile_is_not_clean():
         await recovery.check(_caller(responses), _INPUTS)
 
 
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        pytest.param(
+            "lpar_name,name,io_slots\n"
+            f"{_LPAR},default,none\n{_LPAR},default,none\n",
+            "2 rows",
+            id="two-rows-for-the-profile",
+        ),
+        pytest.param(
+            f"lpar_name,name,io_slots\n{_LPAR},other_profile,none\n",
+            "0 rows",
+            id="no-row-for-the-profile",
+        ),
+        pytest.param("none\n", "header", id="headerless"),
+        pytest.param(_readback(f"{_DRC}//0"), "unadmitted io_slots", id="empty-pool"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_a_multi_record_profile_answer_is_treated_as_unreadable():
+async def test_a_profile_answer_outside_the_admitted_form_is_unreadable(answer, reason):
     responses = _responses(
-        hmc_get_lpar_description=_stamped(_MARKER),
-        hmc_run_command="none\n21010020//0\n",
+        hmc_get_lpar_description=_stamped(_MARKER), hmc_run_command=answer
     )
 
-    with pytest.raises(recovery.StateUnreadable, match="2 records"):
+    with pytest.raises(recovery.StateUnreadable, match=reason):
         await recovery.check(_caller(responses), _INPUTS)
 
 
@@ -353,7 +385,7 @@ def test_run_command_is_refused_for_anything_but_lssyscfg(command):
 
 
 def test_run_command_is_allowed_for_lssyscfg():
-    recovery.guard_read_only("hmc_run_command", {"cmd": "lssyscfg -r prof -F io_slots"})
+    recovery.guard_read_only("hmc_run_command", {"cmd": _PROFILE_READ})
 
 
 @pytest.mark.asyncio
@@ -374,12 +406,12 @@ async def test_the_guard_is_on_the_call_path_not_only_in_review():
 
 
 @pytest.mark.asyncio
-async def test_the_profile_read_filters_on_the_profile_name_too():
-    """A partition may carry several profiles.
+async def test_the_profile_read_is_the_admitted_form_selected_by_profile_name():
+    """ADR 0165 Decision 1: three fields, `--header`, no `--filter`.
 
-    Filtering on `lpar_names` alone answers one record per profile, which the
-    "exactly one record" rule then calls an unreadable system. A real VIOS
-    partition with two profiles is where this surfaced.
+    A partition may carry several profiles, so the fixture's row is chosen by
+    `lpar_name` and `name` both. A real VIOS partition with two profiles is
+    where selecting on the partition alone surfaced.
     """
     sent: list[str] = []
 
@@ -387,23 +419,23 @@ async def test_the_profile_read_filters_on_the_profile_name_too():
         recovery.guard_read_only(tool, arguments)
         if tool == "hmc_run_command":
             sent.append(arguments["cmd"])
-            return "PASS", f"{_BASELINE}\n"
+            return "PASS", _readback(_BASELINE, profile="fixture-profile")
         return "PASS", _CLEAN[tool]
 
     inputs = recovery.RecoveryInputs(
         _SYSTEM, _MARKER, _LPAR, _DRC, _BASELINE, "fixture-profile"
     )
-    await recovery._profile_drift(call, inputs)
 
-    assert "profile_names=fixture-profile" in sent[0]
-    assert f"lpar_names={_LPAR}" in sent[0]
+    assert await recovery._profile_drift(call, inputs) is None
+    assert sent == [_PROFILE_READ]
 
 
-def test_recovery_reads_the_profile_with_the_arms_own_command_builder():
+def test_recovery_reads_the_profile_with_the_arms_own_builders():
     """One definition of the admitted read, so the two cannot drift apart."""
     from live_test import pcie
 
-    assert recovery.profile_io_slots_command is pcie.profile_io_slots_command
+    assert recovery.profile_io_slot_rows_command is pcie.profile_io_slot_rows_command
+    assert recovery.select_profile_io_slots is pcie.select_profile_io_slots
 
 
 def test_an_unset_profile_name_falls_back_to_the_arms_default():
