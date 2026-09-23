@@ -20,15 +20,15 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp import tool_registry
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools import command as server_command
-from hmc_mcp.server_tools import permissions as server_permissions
-from hmc_mcp.server_tools.vios import core as server_vios
-from hmc_mcp.tool_registry import (
+from hmcpctl import tool_registry
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools import command as server_command
+from hmcpctl.server_tools import permissions as server_permissions
+from hmcpctl.server_tools.vios import core as server_vios
+from hmcpctl.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,
     UNBOUNDED_ARGUMENTS,
@@ -526,7 +526,7 @@ def test_no_classification_regresses_against_the_pre_adr_sets():
 
 def test_the_derivation_tables_are_read_only():
     """The two tables producing every hint and every selector must not be edited."""
-    from hmc_mcp import tool_registry
+    from hmcpctl import tool_registry
 
     with pytest.raises(TypeError):
         tool_registry.REQUIRED_TARGET_ARGUMENTS["lpar_name_or_uuid"] = "vios"
@@ -556,7 +556,7 @@ def test_the_classification_index_is_read_only():
 
 def test_legacy_classification_sets_are_gone():
     """G9: replace, don't deprecate."""
-    from hmc_mcp import _app, server
+    from hmcpctl import _app, server
 
     for module in (_app, server):
         for removed in (
@@ -1730,7 +1730,7 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
-        "hmc_mcp.ssh.transport.asyncssh.connect",
+        "hmcpctl.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         for escape in escapes:
@@ -1742,3 +1742,38 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
                     backup_type="ssp",
                     restart_if_required=False,
                 )
+
+
+def test_power_on_partition_profile_is_bounded_by_a_containment_guard():
+    """ADR 0039: `hmc_power_on_lpar` declares exhaustive targets, so every
+    resource it acts on must be a declared selector's value or derived by the
+    server through the HMC's own containment from one.
+
+    `partition_profile_uuid` names a second HMC-side resource and is in neither
+    REQUIRED_TARGET_ARGUMENTS nor UNBOUNDED_ARGUMENTS, so `_unbounded_identities`
+    — which matches argument *names* — cannot see it, exactly as ADR 0044 records
+    for `backup_name`. The declaration and the guard are therefore pinned
+    together here: remove either and this fails on the other.
+    """
+    import inspect
+
+    from hmcpctl.operations.lpar import core as lpar_core
+    from hmcpctl.server_tools.lpar.lifecycle import hmc_power_on_lpar
+    from hmcpctl.tool_registry import (
+        REQUIRED_TARGET_ARGUMENTS,
+        UNBOUNDED_ARGUMENTS,
+    )
+
+    parameters = inspect.signature(hmc_power_on_lpar).parameters
+    assert "partition_profile_uuid" in parameters
+    # The premise: no target selector is minted for it, and it is not declared
+    # unbounded, so dispatch-time authorization cannot bound it.
+    assert "partition_profile_uuid" not in REQUIRED_TARGET_ARGUMENTS
+    assert "partition_profile_uuid" not in UNBOUNDED_ARGUMENTS
+
+    # The guard that makes it a contained identity instead.
+    guard = lpar_core._require_contained_partition_profile
+    assert inspect.iscoroutinefunction(guard)
+    source = inspect.getsource(lpar_core.power_lpar)
+    assert "_require_contained_partition_profile" in source
+    assert "LogicalPartitionProfile" in inspect.getsource(guard)

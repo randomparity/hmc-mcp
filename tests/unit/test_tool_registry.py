@@ -9,8 +9,8 @@ from dataclasses import dataclass
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp._app import create_mcp
-from hmc_mcp.tool_registry import (
+from hmcpctl._app import create_mcp
+from hmcpctl.tool_registry import (
     EFFECTS,
     TargetSelector,
     ToolSecurity,
@@ -145,7 +145,7 @@ def test_extra_targets_supply_a_kind_the_table_cannot_name():
 
 
 def test_affinity_operations_bind_only_the_managed_system_selector():
-    from hmc_mcp.server import TOOL_SECURITY
+    from hmcpctl.server import TOOL_SECURITY
 
     names = (
         "hmc_get_system_memopt_score",

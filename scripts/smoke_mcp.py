@@ -11,9 +11,9 @@ import asyncio
 
 from fastmcp import Client
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.server import TOOL_SECURITY, create_mcp
 
 
 async def _run_smoke(verbose: bool) -> None:

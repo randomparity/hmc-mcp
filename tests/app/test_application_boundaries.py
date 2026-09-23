@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from hmc_mcp.cli import app
-from hmc_mcp.operations.inventory.composite import _lpar_summary, _system_summary
+from hmcpctl.cli import app
+from hmcpctl.operations.inventory.composite import _lpar_summary, _system_summary
 
 
 class _ClientContext:
@@ -28,10 +28,10 @@ class _ClientContext:
 def test_cli_import_does_not_register_mcp_tools():
     script = """
 import asyncio
-from hmc_mcp._app import create_mcp
+from hmcpctl._app import create_mcp
 before = create_mcp()
-import hmc_mcp.cli_commands.lpar.lifecycle
-import hmc_mcp.cli_commands.systems.core
+import hmcpctl.cli_commands.lpar.lifecycle
+import hmcpctl.cli_commands.systems.core
 after = create_mcp()
 counts = (len(asyncio.run(before.list_tools())), len(asyncio.run(after.list_tools())))
 raise SystemExit(0 if before is not after and counts == (0, 0) else 1)
@@ -41,13 +41,13 @@ raise SystemExit(0 if before is not after and counts == (0, 0) else 1)
 
 def test_cli_domain_import_does_not_mutate_shared_command_groups():
     script = """
-from hmc_mcp.cli_commands.app import lpars_app
+from hmcpctl.cli_commands.app import lpars_app
 before = len(lpars_app.registered_commands)
-import hmc_mcp.cli_commands.lpar.config
-import hmc_mcp.cli_commands.lpar.create
-import hmc_mcp.cli_commands.lpar.decommission
-import hmc_mcp.cli_commands.lpar.lifecycle
-import hmc_mcp.cli_commands.lpar.modify
+import hmcpctl.cli_commands.lpar.config
+import hmcpctl.cli_commands.lpar.create
+import hmcpctl.cli_commands.lpar.decommission
+import hmcpctl.cli_commands.lpar.lifecycle
+import hmcpctl.cli_commands.lpar.modify
 after = len(lpars_app.registered_commands)
 raise SystemExit(0 if before == after == 0 else 1)
 """
@@ -57,9 +57,9 @@ raise SystemExit(0 if before == after == 0 else 1)
 def test_domain_import_does_not_register_tools_on_base_application():
     script = """
 import asyncio
-from hmc_mcp._app import create_mcp
+from hmcpctl._app import create_mcp
 application = create_mcp()
-import hmc_mcp.server_tools.lpar.lifecycle
+import hmcpctl.server_tools.lpar.lifecycle
 raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
 """
     subprocess.run([sys.executable, "-c", script], check=True)
@@ -68,12 +68,12 @@ raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
 def test_operation_modules_import_before_their_server_tool_consumers():
     """Keep operation modules independent of the application-facing tool layer."""
     script = """
-import hmc_mcp.operations.lpar
-import hmc_mcp.operations.systems.core
-import hmc_mcp.operations.vios.core
-import hmc_mcp.server_tools.lpar.lifecycle
-import hmc_mcp.server_tools.systems.core
-import hmc_mcp.server_tools.vios.core
+import hmcpctl.operations.lpar
+import hmcpctl.operations.systems.core
+import hmcpctl.operations.vios.core
+import hmcpctl.server_tools.lpar.lifecycle
+import hmcpctl.server_tools.systems.core
+import hmcpctl.server_tools.vios.core
 """
     subprocess.run([sys.executable, "-c", script], check=True)
 
@@ -81,9 +81,9 @@ import hmc_mcp.server_tools.vios.core
 def test_create_mcp_returns_independent_complete_applications():
     import asyncio
 
-    from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-    from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-    from hmc_mcp.server import TOOL_SECURITY, create_mcp
+    from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+    from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+    from hmcpctl.server import TOOL_SECURITY, create_mcp
 
     # ADR 0041 made the policy mandatory. The legacy-equivalent one registers exactly
     # the surface the no-argument call used to. ADR 0054 adds four read-only normalized
@@ -99,20 +99,21 @@ def test_create_mcp_returns_independent_complete_applications():
     # local read-only affinity assessment; #320 adds one affinity-aware LPM
     # operation; #362 removes hmc_detach_optical_mapping, which duplicated
     # hmc_unmount_optical_media, for 147 total. ADR 0103 splits VIOS updates and
-    # upgrades into separate tools, for 148 total.
+    # upgrades into separate tools, for 148 total. Issue #874 adds the read-only
+    # hmc_read_lpar_refcodes, the bounded LPAR reference-code read.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 155
-    assert len(asyncio.run(second.list_tools())) == 155
+    assert len(asyncio.run(first.list_tools())) == 156
+    assert len(asyncio.run(second.list_tools())) == 156
 
 
 def test_operations_do_not_import_application_modules():
-    package = Path(__file__).parents[2] / "src" / "hmc_mcp"
-    forbidden = {"_app", "server", "hmc_mcp._app", "hmc_mcp.server"}
+    package = Path(__file__).parents[2] / "src" / "hmcpctl"
+    forbidden = {"_app", "server", "hmcpctl._app", "hmcpctl.server"}
     operation_modules = sorted((package / "operations").rglob("*.py"))
     assert operation_modules, "operation boundary guard discovered no modules"
 
@@ -127,13 +128,13 @@ def test_operations_do_not_import_application_modules():
 
 
 def test_client_does_not_import_operations_package():
-    package = Path(__file__).parents[2] / "src" / "hmc_mcp"
+    package = Path(__file__).parents[2] / "src" / "hmcpctl"
     client_modules = sorted((package / "client").rglob("*.py"))
     assert client_modules, "client boundary guard discovered no modules"
 
     for path in client_modules:
         tree = ast.parse(path.read_text(), filename=str(path))
-        module_parts = ["hmc_mcp", *path.relative_to(package).with_suffix("").parts]
+        module_parts = ["hmcpctl", *path.relative_to(package).with_suffix("").parts]
         imports: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -145,14 +146,14 @@ def test_client_does_not_import_operations_package():
                 target = [*base, *(node.module or "").split(".")]
                 imports.add(".".join(part for part in target if part))
         assert not any(
-            imported == "hmc_mcp.operations"
-            or imported.startswith("hmc_mcp.operations.")
+            imported == "hmcpctl.operations"
+            or imported.startswith("hmcpctl.operations.")
             for imported in imports
         ), path
 
 
 def test_config_commands_do_not_import_the_server_composition_root():
-    path = Path(__file__).parents[2] / "src" / "hmc_mcp" / "cli_commands" / "config.py"
+    path = Path(__file__).parents[2] / "src" / "hmcpctl" / "cli_commands" / "config.py"
     tree = ast.parse(path.read_text(), filename=str(path))
     imports = {
         node.module
@@ -161,7 +162,7 @@ def test_config_commands_do_not_import_the_server_composition_root():
     }
 
     assert "server" not in imports
-    assert "hmc_mcp.server" not in imports
+    assert "hmcpctl.server" not in imports
 
 
 def test_tool_registry_does_not_import_the_policy_modules():
@@ -172,12 +173,12 @@ def test_tool_registry_does_not_import_the_policy_modules():
     cycle — and the reason ``permits`` (ADR 0037) and ``authorize`` (ADR 0038) are
     parameters rather than the policy object.
     """
-    package = Path(__file__).parents[2] / "src" / "hmc_mcp"
+    package = Path(__file__).parents[2] / "src" / "hmcpctl"
     forbidden = {
         "access_policy",
         "connection_scope",
-        "hmc_mcp.authorization.access_policy",
-        "hmc_mcp.authorization.connection_scope",
+        "hmcpctl.authorization.access_policy",
+        "hmcpctl.authorization.connection_scope",
     }
 
     path = package / "tool_registry.py"
@@ -201,9 +202,9 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
         return_value=_lpar_summary({"Resource": {"PartitionName": "aix1"}}, [])
     )
     with (
-        patch("hmc_mcp.cli_commands.lpar.inventory.fetch_lpar_summary", summary),
+        patch("hmcpctl.cli_commands.lpar.inventory.fetch_lpar_summary", summary),
         patch(
-                "hmc_mcp.cli_commands.runtime.client",
+                "hmcpctl.cli_commands.runtime.client",
             return_value=_ClientContext(client),
         ),
     ):
@@ -218,9 +219,9 @@ def test_system_summary_cli_delegates_to_neutral_operation():
         return_value=_system_summary({"Resource": {"SystemName": "system1"}}, [], [])
     )
     with (
-        patch("hmc_mcp.cli_commands.systems.core.fetch_system_summary", summary),
+        patch("hmcpctl.cli_commands.systems.core.fetch_system_summary", summary),
         patch(
-                "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
+                "hmcpctl.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
     ):
         result = CliRunner().invoke(app, ["systems", "summary", "system1", "--json"])
@@ -229,14 +230,14 @@ def test_system_summary_cli_delegates_to_neutral_operation():
 
 
 def test_fleet_health_cli_delegates_to_neutral_operation():
-    from hmc_mcp.operations.systems.health import FleetHealthResult
+    from hmcpctl.operations.systems.health import FleetHealthResult
 
     client = object()
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
     with (
-        patch("hmc_mcp.cli_commands.systems.core.fetch_fleet_health", health),
+        patch("hmcpctl.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
-                "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
+                "hmcpctl.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
     ):
         result = CliRunner().invoke(app, ["systems", "health", "--json"])
@@ -246,15 +247,15 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
 
 
 def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable():
-    from hmc_mcp.operations.systems.health import FleetHealthResult
+    from hmcpctl.operations.systems.health import FleetHealthResult
 
     client = object()
     warning = "Recent job health is unavailable"
     health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
     with (
-        patch("hmc_mcp.cli_commands.systems.core.fetch_fleet_health", health),
+        patch("hmcpctl.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
-                "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
+                "hmcpctl.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
     ):
         result = CliRunner().invoke(app, ["systems", "health"])
@@ -268,10 +269,10 @@ def test_capacity_clis_delegate_to_neutral_operations():
     report = AsyncMock(return_value=[])
     placement = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.cli_commands.systems.core.fetch_capacity_report", report),
-        patch("hmc_mcp.cli_commands.systems.core.find_placement", placement),
+        patch("hmcpctl.cli_commands.systems.core.fetch_capacity_report", report),
+        patch("hmcpctl.cli_commands.systems.core.find_placement", placement),
         patch(
-                "hmc_mcp.cli_commands.runtime.client", return_value=_ClientContext(client)
+                "hmcpctl.cli_commands.runtime.client", return_value=_ClientContext(client)
         ),
     ):
         capacity_result = CliRunner().invoke(app, ["systems", "capacity", "--json"])
@@ -288,9 +289,9 @@ def test_capacity_cli_preserves_connection_overrides():
     client = object()
     report = AsyncMock(return_value=[])
     with (
-        patch("hmc_mcp.cli_commands.systems.core.fetch_capacity_report", report),
+        patch("hmcpctl.cli_commands.systems.core.fetch_capacity_report", report),
         patch(
-            "hmc_mcp.cli_commands.runtime.HMCClient",
+            "hmcpctl.cli_commands.runtime.HMCClient",
             return_value=_ClientContext(client),
         ) as client_factory,
     ):
@@ -324,7 +325,7 @@ def test_capacity_cli_preserves_connection_overrides():
 
 def test_provision_cli_delegates_to_neutral_operation():
     client = object()
-    from hmc_mcp.operations.lpar.provision import ProvisionResult
+    from hmcpctl.operations.lpar.provision import ProvisionResult
 
     provision = AsyncMock(
         return_value=ProvisionResult(False, False, None, True, None, (), ())
@@ -350,9 +351,9 @@ def test_provision_cli_delegates_to_neutral_operation():
         "--json",
     ]
     with (
-        patch("hmc_mcp.cli_commands.lpar.provision.provision_lpar", provision),
+        patch("hmcpctl.cli_commands.lpar.provision.provision_lpar", provision),
         patch(
-            "hmc_mcp.cli_commands.runtime.client",
+            "hmcpctl.cli_commands.runtime.client",
             return_value=_ClientContext(client),
         ),
     ):

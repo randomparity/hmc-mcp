@@ -99,21 +99,21 @@ def test_built_artifacts_ship_the_pep_561_marker(
     wheel = validator._read_wheel(next(artifacts.glob("*.whl")))
     _, sdist = validator._read_sdist(next(artifacts.glob("*.tar.gz")))
 
-    assert wheel["hmc_mcp/py.typed"] == b""
-    assert sdist["src/hmc_mcp/py.typed"] == b""
+    assert wheel["hmcpctl/py.typed"] == b""
+    assert sdist["src/hmcpctl/py.typed"] == b""
 
 
 def test_built_artifacts_ship_the_operation_maturity_projection(
     built_project: tuple[Path, Path],
 ) -> None:
     artifacts, project = built_project
-    resource = (project / "src" / "hmc_mcp" / "_operation_maturity.json").read_bytes()
+    resource = (project / "src" / "hmcpctl" / "_operation_maturity.json").read_bytes()
 
     wheel = validator._read_wheel(next(artifacts.glob("*.whl")))
     _, sdist = validator._read_sdist(next(artifacts.glob("*.tar.gz")))
 
-    assert wheel["hmc_mcp/_operation_maturity.json"] == resource
-    assert sdist["src/hmc_mcp/_operation_maturity.json"] == resource
+    assert wheel["hmcpctl/_operation_maturity.json"] == resource
+    assert sdist["src/hmcpctl/_operation_maturity.json"] == resource
 
 
 def _artifact_copy(
@@ -545,7 +545,7 @@ def test_rejects_hidden_pax_payload_before_tarfile_member_reads(
         format=tarfile.PAX_FORMAT,
         pax_headers={"comment": "x" * 1024},
     ) as archive:
-        member = tarfile.TarInfo("hmc_mcp-1.0/README.md")
+        member = tarfile.TarInfo("hmcpctl-1.0/README.md")
         member.size = 1
         archive.addfile(member, io.BytesIO(b"x"))
     monkeypatch.setattr(validator, "MAX_MEMBER_BYTES", 100)
@@ -719,7 +719,7 @@ def test_rejects_each_independent_version_location_mutation(
 
         def change_sdist_root(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
             for member, _ in entries:
-                member.name = f"hmc_mcp-9.9.9{member.name.removeprefix(old_root)}"
+                member.name = f"hmcpctl-9.9.9{member.name.removeprefix(old_root)}"
 
         _rewrite_sdist(sdist, change_sdist_root)
     else:
@@ -748,7 +748,7 @@ def test_rejects_synchronized_invalid_version_across_all_six_locations(
 
     def change_wheel(members: dict[str, bytes]) -> None:
         for name in list(members):
-            changed_name = re.sub(r"(?<=hmc_mcp-)[^/]+(?=\.dist-info/)", "1..0", name)
+            changed_name = re.sub(r"(?<=hmcpctl-)[^/]+(?=\.dist-info/)", "1..0", name)
             data = members.pop(name)
             if changed_name.endswith(".dist-info/METADATA"):
                 data = re.sub(rb"(?m)^Version: .+$", b"Version: 1..0", data)
@@ -759,7 +759,7 @@ def test_rejects_synchronized_invalid_version_across_all_six_locations(
 
     sdist = next(artifacts.glob("*.tar.gz"))
     old_root = sdist.name.removesuffix(".tar.gz")
-    new_root = "hmc_mcp-1..0"
+    new_root = "hmcpctl-1..0"
 
     def change_sdist(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
         for index, (member, data) in enumerate(entries):
@@ -840,7 +840,7 @@ def test_rejects_byte_divergent_wheel_package_with_valid_record(
     wheel = next(artifacts.glob("*.whl"))
 
     def change_package(members: dict[str, bytes]) -> None:
-        members["hmc_mcp/__init__.py"] += b"\n# changed\n"
+        members["hmcpctl/__init__.py"] += b"\n# changed\n"
 
     _rewrite_wheel(wheel, change_package)
     _assert_invalid(artifacts, project, capsys, "package bytes differ")
@@ -870,7 +870,7 @@ def test_rejects_wheel_that_drops_the_pep_561_marker(
     artifacts, project = _artifact_copy(tmp_path, built_project)
     wheel = next(artifacts.glob("*.whl"))
 
-    _rewrite_wheel(wheel, lambda members: members.pop("hmc_mcp/py.typed"))
+    _rewrite_wheel(wheel, lambda members: members.pop("hmcpctl/py.typed"))
 
     _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
 
@@ -883,10 +883,10 @@ def test_rejects_checkout_without_the_pep_561_marker(
     artifacts, project = _artifact_copy(tmp_path, built_project)
     stripped = tmp_path / "stripped"
     shutil.copytree(project, stripped, ignore=shutil.ignore_patterns("dist"))
-    (stripped / "src" / "hmc_mcp" / "py.typed").unlink()
+    (stripped / "src" / "hmcpctl" / "py.typed").unlink()
 
     _assert_invalid(
-        artifacts, stripped, capsys, "missing package sentinel: hmc_mcp/py.typed"
+        artifacts, stripped, capsys, "missing package sentinel: hmcpctl/py.typed"
     )
 
 
@@ -917,7 +917,7 @@ def test_rejects_noncanonical_wheel_path(
 @pytest.mark.parametrize(
     ("suffix", "mode"),
     [
-        ("hmc_mcp/__init__.py", stat.S_IFLNK | 0o777),
+        ("hmcpctl/__init__.py", stat.S_IFLNK | 0o777),
         (".dist-info/WHEEL", stat.S_IFIFO | 0o644),
     ],
 )
@@ -1079,7 +1079,7 @@ def test_rejects_unsupported_core_metadata_version(
 @pytest.mark.parametrize(
     ("field", "old", "new", "invariant"),
     [
-        ("Name", b"Name: hmc-mcp", b"Name: other", "project name is inconsistent"),
+        ("Name", b"Name: hmcpctl", b"Name: other", "project name is inconsistent"),
         (
             "Requires-Python",
             b"Requires-Python: >=3.11",
@@ -1139,7 +1139,7 @@ def test_rejects_wheel_entry_point_mismatch_with_valid_record(
         name = next(
             item for item in members if item.endswith(".dist-info/entry_points.txt")
         )
-        members[name] = members[name].replace(b"hmc_mcp:main", b"hmc_mcp:missing")
+        members[name] = members[name].replace(b"hmcpctl:main", b"hmcpctl:missing")
 
     _rewrite_wheel(wheel, change_entry_point)
     _assert_invalid(artifacts, project, capsys, "console scripts differ")
@@ -1160,9 +1160,9 @@ def test_rejects_nonexact_wheel_entry_points_with_valid_record(
             item for item in members if item.endswith(".dist-info/entry_points.txt")
         )
         if mutation == "case":
-            members[name] = members[name].replace(b"hmc-mcp =", b"HMC-MCP =")
+            members[name] = members[name].replace(b"hmcpctl =", b"HMC-MCP =")
         else:
-            members[name] += b"\n[other]\ncommand = hmc_mcp:main\n"
+            members[name] += b"\n[other]\ncommand = hmcpctl:main\n"
 
     _rewrite_wheel(wheel, change_entry_points)
     expected = "console scripts differ" if mutation == "case" else "undeclared groups"
@@ -1239,7 +1239,7 @@ def test_rejects_byte_divergent_sdist_package(
 
     def change_package(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
         for index, (member, data) in enumerate(entries):
-            if member.name.endswith("/src/hmc_mcp/__init__.py"):
+            if member.name.endswith("/src/hmcpctl/__init__.py"):
                 changed = data + b"\n# changed\n"
                 member.size = len(changed)
                 entries[index] = (member, changed)
@@ -1297,7 +1297,7 @@ def test_rejects_sdist_entry_point_mismatch(
         for index, (member, data) in enumerate(entries):
             if member.name.endswith("/pyproject.toml"):
                 changed = data.replace(
-                    b'hmc-mcp = "hmc_mcp:main"', b'hmc-mcp = "hmc_mcp:missing"'
+                    b'hmcpctl = "hmcpctl:main"', b'hmcpctl = "hmcpctl:missing"'
                 )
                 member.size = len(changed)
                 entries[index] = (member, changed)
@@ -1408,9 +1408,9 @@ def test_rejects_malformed_project_configuration_actionably(
     pyproject = malformed / "pyproject.toml"
     content = pyproject.read_text()
     if mutation == "missing-name":
-        content = content.replace('name = "hmc-mcp"', 'renamed = "hmc-mcp"')
+        content = content.replace('name = "hmcpctl"', 'renamed = "hmcpctl"')
     elif mutation == "missing-scripts":
-        content = content.replace('[project.scripts]\nhmc-mcp = "hmc_mcp:main"\n', "")
+        content = content.replace('[project.scripts]\nhmcpctl = "hmcpctl:main"\n', "")
     elif mutation == "dependencies-type":
         content = re.sub(
             r"dependencies = \[\n.*?\n\]",

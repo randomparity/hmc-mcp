@@ -47,11 +47,11 @@ inspect and resume from the first incomplete step.
 
 - **Put capture under `console`.** verified: `uv run --no-sync hmc-mcp console --help` at commit
   `1dde19996ec35213ac03191f4a4cdc2354c41c4c` describes that group as “The HMC itself,” while
-  `src/hmc_mcp/server_tools/console.py` declares the capture target as an LPAR.
-- **Call the MCP wrapper from the CLI.** verified: `src/hmc_mcp/cli_commands/runtime.py` builds from
-  all active root connection options, while `src/hmc_mcp/server_tools/console.py` accepts only a
+  `src/hmcpctl/server_tools/console.py` declares the capture target as an LPAR.
+- **Call the MCP wrapper from the CLI.** verified: `src/hmcpctl/cli_commands/runtime.py` builds from
+  all active root connection options, while `src/hmcpctl/server_tools/console.py` accepts only a
   profile; direct reuse would silently ignore CLI `--host`, `--user`, and TLS selections.
-- **Print captured bytes directly.** verified: `src/hmc_mcp/ssh/console.py` documents binary data,
+- **Print captured bytes directly.** verified: `src/hmcpctl/ssh/console.py` documents binary data,
   ANSI escapes, and partial UTF-8 as valid capture content; direct terminal writes would give the
   partition control of terminal rendering.
 - **Add one composite install command.** judgment: the requested copy-and-adapt recipe must expose

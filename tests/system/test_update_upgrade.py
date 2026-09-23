@@ -5,11 +5,11 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 from pydantic import ValidationError
 
-from hmc_mcp.client.client_updates import _normalize_platform_update_response
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import build_job_request, job_outcome
-from hmc_mcp.operations.updates.models import (
+from hmcpctl.client.client_updates import _normalize_platform_update_response
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
+from hmcpctl.jobs import build_job_request, job_outcome
+from hmcpctl.operations.updates.models import (
     IOAdapterUpdateModel,
     PlatformUpdateParameter,
     SriovAdapterUpdate,
@@ -537,6 +537,25 @@ def test_platform_update_normalizes_native_singular_result(
     assert job_outcome("job", normalized).error == expected_error
 
 
+@pytest.mark.parametrize(
+    "results",
+    [
+        42,
+        {},
+        {"JobParameter": 42},
+        {"JobParameter": [{"ParameterName": "result", "ParameterValue": 42}]},
+    ],
+)
+def test_platform_update_rejects_malformed_plural_results(results):
+    with pytest.raises(HMCError, match="Malformed PlatformUpdate response"):
+        _normalize_platform_update_response(
+            {
+                "id": "job",
+                "content": {"JobResponse": {"Status": "COMPLETED", "Results": results}},
+            }
+        )
+
+
 @pytest.mark.asyncio
 async def test_submit_platform_update_rejects_non_uuid_path_input(mock_hmc):
     route = mock_hmc.put(
@@ -588,6 +607,32 @@ async def test_submit_platform_update_reports_path_for_invalid_json(mock_hmc):
     assert private_sentinel not in str(raised.value)
     assert raised.value.body is None
     assert isinstance(raised.value.__cause__, ValueError)
+
+
+@pytest.mark.asyncio
+async def test_submit_platform_update_reports_path_for_recursion_error(
+    mock_hmc, monkeypatch
+):
+    """A deeply nested body raises RecursionError, not a ValueError subclass,
+
+    so it needs its own clause to reach HMCError instead of escaping the guard.
+    """
+    path = f"/rest/api/uom/ManagedSystem/{SYS_UUID}/do/PlatformUpdate"
+    mock_hmc.put(path).mock(return_value=httpx.Response(202, text="{}"))
+
+    def raise_recursion_error(_response):
+        raise RecursionError
+
+    monkeypatch.setattr(httpx.Response, "json", raise_recursion_error)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.submit_platform_update(SYS_UUID, {"JobRequest": {}})
+
+    assert str(raised.value) == (
+        f"PUT {path}: Malformed PlatformUpdate response: document nesting is too deep"
+    )
+    assert isinstance(raised.value.__cause__, RecursionError)
 
 
 @pytest.mark.asyncio

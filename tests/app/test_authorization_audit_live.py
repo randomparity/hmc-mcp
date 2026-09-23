@@ -1,4 +1,4 @@
-"""The audit record proven against a real ``hmc-mcp serve`` stdio subprocess.
+"""The audit record proven against a real ``hmcpctl serve`` stdio subprocess.
 
 ADR 0040's contract is a *sink*, so a unit test against a mock logger proves the
 payload and almost nothing about delivery. This drives the real console script
@@ -23,7 +23,7 @@ which on win32 resolves from ``APPDATA`` while ``Path.home()`` reads
 ``config.toml`` over the developer's real one.
 
 L5 additionally needs an interpreter it can exec directly, so it alone launches
-``[sys.executable, "-P", "-m", "hmc_mcp"]`` instead of the console script. Past
+``[sys.executable, "-P", "-m", "hmcpctl"]`` instead of the console script. Past
 ``uv``'s shebang threshold that script is a ``/bin/sh`` trampoline. The shell opens
 it to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
 ``exec`` — landing the script file on fd 2, which ``2>&-`` had just freed — so the
@@ -63,7 +63,7 @@ targets = { lpar = ["db-01"], managed_system = ["sys-a"] }
 
 #: Every frame read waits at most this long. Without it a child that never answers
 #: waits until `scripts/run_tests.py` caps pytest at 1020s with exit 124, or CI caps
-#: the job at 20 minutes — and this is the suite's only long-lived `hmc-mcp serve`
+#: the job at 20 minutes — and this is the suite's only long-lived `hmcpctl serve`
 #: child.
 DEADLINE = 30.0
 
@@ -91,7 +91,7 @@ def fixture_home(tmp_path, monkeypatch):
     expected allow would come back ``connection-not-granted``, a plausible-looking
     wrong answer, which is the worst outcome for a proof meant to be re-run.
     """
-    from hmc_mcp.config import config_dir
+    from hmcpctl.config import config_dir
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
@@ -109,7 +109,7 @@ def child_env(fixture_home):
     """``os.environ`` copied with the four steering variables removed.
 
     A copy, not a from-scratch mapping: an explicitly built environment carries no
-    ``PATH``, and L1-L4 launch the child through the ``hmc-mcp`` console script, so
+    ``PATH``, and L1-L4 launch the child through the ``hmcpctl`` console script, so
     it would not be found at all. L5 instead uses ``server_module_command``.
 
     ``HMC_HOST`` matters as much as the config path and is easier to miss:
@@ -140,20 +140,20 @@ def child_env(fixture_home):
 
 @pytest.fixture
 def server_binary():
-    """The ``hmc-mcp`` console script — and specifically *this* checkout's.
+    """The ``hmcpctl`` console script — and specifically *this* checkout's.
 
     "On PATH" and "the code on this branch" are different claims. A pipx- or
-    uv-tool-installed `hmc-mcp` earlier on PATH, or a bare `pytest` outside the
+    uv-tool-installed `hmcpctl` earlier on PATH, or a bare `pytest` outside the
     project venv, would otherwise give this proof a green run against foreign
     code — the plausible-looking wrong answer the fixture above exists to avoid.
     """
-    path = shutil.which("hmc-mcp")
-    assert path is not None, "the hmc-mcp console script must be on PATH"
+    path = shutil.which("hmcpctl")
+    assert path is not None, "the hmcpctl console script must be on PATH"
     prefix = Path(sys.prefix).resolve()
     resolved = Path(path).resolve()
     assert resolved.is_relative_to(prefix), (
         f"{resolved} is not inside this interpreter's environment ({prefix}); "
-        "the live proof would run against a different build of hmc-mcp"
+        "the live proof would run against a different build of hmcpctl"
     )
     return path
 
@@ -168,7 +168,7 @@ def server_module_command():
 
     ``-P`` keeps the child's working directory off ``sys.path``, which ``-m``
     would otherwise prepend. That is what lets the check below bind the child:
-    with no cwd entry it resolves ``hmc_mcp`` exactly as this subprocess does.
+    with no cwd entry it resolves ``hmcpctl`` exactly as this subprocess does.
 
     The check is ``server_binary``'s guarantee in the form this route admits.
     ``shutil.which`` cannot go wrong here — there is no PATH lookup — but a
@@ -176,14 +176,14 @@ def server_module_command():
     asked where the package it would import actually lives.
     """
     # The probe and the launch share this prefix on purpose: the guard binds the
-    # child only while both resolve `hmc_mcp` the same way.
+    # child only while both resolve `hmcpctl` the same way.
     interpreter = [sys.executable, "-P"]
     probe = subprocess.run(
-        [*interpreter, "-c", "import hmc_mcp; print(hmc_mcp.__file__)"],
+        [*interpreter, "-c", "import hmcpctl; print(hmcpctl.__file__)"],
         capture_output=True,
         text=True,
         check=False,
-        # Bounded like every other wait here. Nothing at `hmc_mcp` import time
+        # Bounded like every other wait here. Nothing at `hmcpctl` import time
         # blocks today, so this is a bound against a future import that does:
         # TimeoutExpired names the interpreter and the command. Unbounded, the
         # probe is not stuck forever — `scripts/run_tests.py` caps the pytest
@@ -195,7 +195,7 @@ def server_module_command():
     # leaves the child's traceback in an attribute nobody prints, so a venv without
     # the project installed would abort here with no cause named.
     assert probe.returncode == 0, (
-        f"{sys.executable} cannot import hmc_mcp, so the live proof has no server "
+        f"{sys.executable} cannot import hmcpctl, so the live proof has no server "
         f"to launch:\n{probe.stderr}"
     )
     origin = probe.stdout.strip()
@@ -205,9 +205,9 @@ def server_module_command():
     source = Path(__file__).resolve().parents[2] / "src"
     assert Path(origin).resolve().is_relative_to(source), (
         f"{origin} is not this branch's source tree ({source}); the live proof "
-        "would run against a different or stale build of hmc_mcp"
+        "would run against a different or stale build of hmcpctl"
     )
-    return [*interpreter, "-m", "hmc_mcp"]
+    return [*interpreter, "-m", "hmcpctl"]
 
 
 class _Server:
@@ -507,7 +507,7 @@ def _assert_interpreter_launch(command: list[str]) -> None:
 
     ADR 0128's invariant is *no intermediate process may leave a descriptor open
     on fd 2 across the exec of the interpreter*. Past ``uv``'s shebang threshold
-    the ``hmc-mcp`` console script is a ``/bin/sh`` trampoline: the shell opens it
+    the ``hmcpctl`` console script is a ``/bin/sh`` trampoline: the shell opens it
     to read it, and where ``/bin/sh`` is **bash** that descriptor survives the
     ``exec`` and lands on the fd 2 ``2>&-`` had just freed, so the interpreter
     inherits an unwritable stderr and exits 120 before answering.
@@ -569,7 +569,7 @@ def test_the_l5_import_probe_waits_no_longer_than_the_deadline(request, monkeypa
 
     Asserted on the call's shape rather than on a hang, for the reason
     ``_assert_interpreter_launch`` gives about behavioural assertions here: nothing
-    at ``hmc_mcp`` import time blocks, so there is no hang to construct and a
+    at ``hmcpctl`` import time blocks, so there is no hang to construct and a
     behavioural check would pass by doing nothing. What an unbounded probe costs is
     not an endless hang but an uninformative one: the enclosing caps — 1020s in
     ``scripts/run_tests.py``, 20 minutes on CI's ``ci`` job — report themselves and

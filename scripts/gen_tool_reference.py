@@ -27,13 +27,13 @@ from dataclasses import dataclass
 from operator import attrgetter
 from pathlib import Path
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operation_maturity import OperationMaturityError, operation_maturity
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
-from hmc_mcp.tool_registry import ToolSecurity
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operation_maturity import OperationMaturityError, operation_maturity
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.tool_registry import ToolSecurity
 
 # Resolve the repo root relative to this script so the generator can be run from
 # any working directory, exactly as scripts/check_env_vars.py does.
@@ -57,6 +57,19 @@ _MAX_DIFFS = 3
 SCOPE_NOTE = (
     "This reference covers every tool the server registers, including the ones a "
     "default deployment does not expose."
+)
+
+# The reference is a summary index by design (ADR 0097, #929): refusal conditions
+# and argument detail live in the handler docstring. FastMCP does not send that
+# docstring verbatim -- it moves `Args:` into the input schema and drops `Returns:`
+# and `Raises:` -- so the note names the docstring as the complete text.
+SUMMARY_NOTE = (
+    "The Summary column on each domain page is the first line of the tool's MCP "
+    "description. The complete text, including the conditions under which a tool "
+    "refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. "
+    "An MCP client's `tools/list` carries that docstring's prose as the "
+    "description and its argument detail in the input schema; `Returns:` and "
+    "`Raises:` sections are not sent."
 )
 
 _ENABLEMENT_NOTE = (
@@ -257,6 +270,8 @@ def _render_group(group: str, members: list[ToolRecord]) -> str:
         (f"{len(members)} tool{plural} in the `{group}` operation domain. "
          f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."),
         "",
+        SUMMARY_NOTE,
+        "",
         (
             "| Tool | Effect | Operation | Target | Implementation | Verification | "
             "Runtime eligibility | Summary |"
@@ -303,6 +318,8 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
         "",
         (f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
          "cannot drift from what the code registers."),
+        "",
+        SUMMARY_NOTE,
         "",
         f"- **{len(records)}** tools are registered.",
         f"- **{len(records) - len(withheld)}** are exposed by a default deployment.",
@@ -485,7 +502,7 @@ def main(argv: list[str] | None = None) -> int:
             print(problem, file=sys.stderr)
         print(
             "\nRun `just tool-docs` and commit the result. Do not edit these pages "
-            "by hand -- they are generated from src/hmc_mcp.",
+            "by hand -- they are generated from src/hmcpctl.",
             file=sys.stderr,
         )
         return 1

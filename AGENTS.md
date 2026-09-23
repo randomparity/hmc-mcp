@@ -103,7 +103,7 @@ Preferred approach:
    (conflict markers included) with the resolved text — or use `apply_diff` /
    `search_and_replace` with the conflict markers escaped.
 3. Verify syntax before staging:
-   `uv run --no-sync python -c "import hmc_mcp.server"` (or the relevant
+   `uv run --no-sync python -c "import hmcpctl.server"` (or the relevant
    module) must succeed **before** `git add`.
 
 Never call `git add <file>` and `git rebase --continue` in the same step unless
@@ -115,7 +115,8 @@ you have already confirmed the file is syntax-clean.
 repo's only sync recipe (`justfile`):
 
 ```sh
-just setup   # uv sync --locked --extra app --link-mode copy; then prek install
+just setup   # uv sync --locked --extra app --link-mode copy; prek install;
+             # then link the local reference corpus into the worktree
 ```
 
 **Never run a bare `uv sync`.** `pyproject.toml` declares no `[tool.uv]` table
@@ -125,7 +126,7 @@ fastmcp's server-extra transitive dependencies (`cyclopts`, `openapi-pydantic`,
 `websockets`, `watchfiles`, `shellingham`, and more). `uv sync --dry-run` prints
 the exact list for the current lock and writes nothing, so check there rather
 than trusting a list in this file. Losing `typer` alone breaks `just typecheck`,
-which covers every `src/hmc_mcp/cli_*.py` module, in a way whose cause is
+which covers every `src/hmcpctl/cli_*.py` module, in a way whose cause is
 nowhere near the error. A bare `uv sync` also drops `--locked` and can silently
 rewrite `uv.lock`.
 
@@ -160,15 +161,23 @@ bare `uv run` may re-sync and undo the extras state `just setup` established —
 the same breakage as above, arrived at sideways.
 
 Package code in an older worktree is **not** stale: the project is installed
-editable (`.venv/lib/python3.11/site-packages/_editable_impl_hmc_mcp.pth`), so
+editable (`.venv/lib/python3.11/site-packages/_editable_impl_hmcpctl.pth`), so
 `src/` is what imports. Only dependency and extra state drifts, and only
 `just setup` restores it.
 
-**Reading a `SyntaxError`.** Under an editable install, a `hmc_mcp` syntax
+**Reading a `SyntaxError`.** Under an editable install, a `hmcpctl` syntax
 error surfaces at a `src/` path — that one is yours to fix in source. A
 `SyntaxError` at a `.venv/lib/…/site-packages/` path is third-party code, so it
 means the extras or lock state is wrong, or the interpreter does not match what
 the environment was built for; `just setup` is the fix for that one.
+
+**A local-only reference corpus may exist beside this repo.** A companion file
+this repository does not track can name a vendored API reference corpus kept
+on one operator host only; `just setup` symlinks it into a linked worktree
+when the main checkout has it, and otherwise prints that it is unavailable —
+so its absence is discoverable rather than silent. When it is present, cite
+it as `docs/refs/<path>:<line>` and report what a search over it returns;
+never reproduce its prose into a tracked file.
 
 ## Pre-existing test failures
 
@@ -282,7 +291,7 @@ just smoke-verbose  # list every exposed MCP tool
 ```
 
 Before pushing, run `just verify` inside the branch worktree. If pytest fails
-during collection, run `just smoke`; it imports `hmc_mcp.server` directly and
+during collection, run `just smoke`; it imports `hmcpctl.server` directly and
 can expose an import-time syntax error that collection obscures.
 
 `just verify` is `static test smoke build verify-artifacts` plus a CLI-group
@@ -338,6 +347,12 @@ the git hook script, not a `prek` on `PATH`.
 
 ## Repository conventions
 
+**Implementation plans are local and transient.** Never commit files under
+`docs/workflow/plans/`; the directory is gitignored. Use a plan only as a
+sequencing aid during implementation, delete it when the implementation is
+complete, and record durable decisions and contracts in tracked ADRs or specs
+instead.
+
 **A new `static` sub-recipe needs a matching prek hook.** `tests/test_ci_pipeline.py`
 asserts a 1:1 correspondence between `static`'s dependency list and the hook ids
 in `.pre-commit-config.yaml`: the sets must be equal, each hook's `id` must equal
@@ -347,7 +362,7 @@ the recipe its `entry: just <recipe>` names, and each block must carry
 without its hook and a test in a file about CI shape goes red for a reason that
 looks unrelated.
 
-**`hmc_mcp.api` is the six-name stable facade in ADR 0118.** Keep its exact
+**`hmcpctl.api` is the six-name stable facade in ADR 0118.** Keep its exact
 exports in `tests/unit/test_public_api.py`. Domain operations and models are
 pre-release module APIs, not facade exports; add no compatibility re-exports.
 
@@ -360,12 +375,30 @@ Number **gaps are deliberately legal** and several exist (0032, 0085, 0095); do
 not renumber to close one. There is **no ADR index**: navigation is by filename,
 so give a new record a slug that reads as its subject.
 
-**One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`.
-Two predate the convention and are exceptions to know about rather than a
-pattern to copy: `scripts/check_env_vars.py` is tested by
-`tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
-`tests/test_live_runner.py`. Every other script follows it, and a new script
-gets the convention.
+**One test module per `scripts/` file**, named `tests/scripts/test_<name>.py`,
+enforced by `just test-layout`. Two predate the convention and are exceptions to
+know about rather than a pattern to copy: `scripts/check_env_vars.py` is tested
+by `tests/test_env_var_guard.py`, and `scripts/live_test_runner.py` by
+`tests/test_live_runner.py`; both are named in the guard, so deleting one of
+those modules fails it. Every other script follows the convention, and a new
+script gets it. The rule covers the entry points an operator can run — top-level
+`scripts/*.py`. Modules under `scripts/live_test/` are library code the runner
+imports and are tested in behaviour-grouped modules instead.
+
+**Live testing follows [docs/live-testing.md](docs/live-testing.md), always.**
+A live run creates, mutates and deletes real partitions on a managed system.
+Do not invent an invocation: run `scripts/live_test_preflight.py` first,
+dispatch one arm through its named script, and run `scripts/live_test_recovery.py`
+afterwards — including after a run that looked fine. Nothing in CI or in any
+`just` recipe reaches an HMC, and nothing should be added that does.
+
+**A live matrix is evidence only for the commit it ran on.** Generate it with
+`scripts/live_test_evidence.py`, which stamps that commit and filters the
+HMC-derived fields; never transcribe one from a terminal. Before citing an
+existing matrix — in an ADR, a PR body, or an issue — check whether the branch
+has moved since, because a matrix nothing can falsify is not evidence. Never
+paste a `test-results-*.json` into a public location: its rows carry hostnames,
+account names and location codes, and the runner redacts only FAIL rows.
 
 **Diff a worktree against the merge base, not against `main`.** Local `main`
 advances under merges while a branch is open, so `git diff main` shows other

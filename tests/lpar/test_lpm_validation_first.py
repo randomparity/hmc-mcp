@@ -6,20 +6,20 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.operations.lpar.migration import LpmMigrationRequest, migrate_lpar
+from hmcpctl.errors import HMCError
+from hmcpctl.jobs import JobOutcome
+from hmcpctl.operations.lpar.migration import LpmMigrationRequest, migrate_lpar
 
 
 @pytest.fixture(autouse=True)
 def _authorize_lpar_mutations(monkeypatch):
     async def authorize(hmc, system, lpar, **_kwargs):
-        from hmc_mcp.resource_identity import resolve_lpar_uuid
+        from hmcpctl.resource_identity import resolve_lpar_uuid
 
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
     )
 
 

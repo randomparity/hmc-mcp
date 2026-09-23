@@ -26,13 +26,13 @@ from test_connection_authorization import (  # noqa: F401 - imported for autouse
     lab_profile,
 )
 
-from hmc_mcp.authorization.access_policy import AccessPolicyError
-from hmc_mcp.authorization.connection_scope import ConnectionScopeError
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.authorization.target_scope import TargetScopeError
-from hmc_mcp.config import config_dir
-from hmc_mcp.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmcpctl.authorization.access_policy import AccessPolicyError
+from hmcpctl.authorization.connection_scope import ConnectionScopeError
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.authorization.target_scope import TargetScopeError
+from hmcpctl.config import config_dir
+from hmcpctl.operations.lpar.provision import ProvisionAdapters, ProvisionStorage
+from hmcpctl.server import TOOL_SECURITY, create_mcp
 
 # Two grants that are individually narrow and, combined, would authorize a
 # deletion neither of them describes. This is the fail-open ADR 0036 named and
@@ -630,7 +630,7 @@ def test_the_decision_modules_never_mention_dry_run():
     """
     from pathlib import Path
 
-    from hmc_mcp.authorization import connection_scope, dispatch_scope, target_scope
+    from hmcpctl.authorization import connection_scope, dispatch_scope, target_scope
 
     for module in (dispatch_scope, target_scope, connection_scope):
         source = Path(module.__file__).read_text(encoding="utf-8")

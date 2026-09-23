@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import cli
+from hmcpctl import cli
 
 RUNNER = CliRunner()
 

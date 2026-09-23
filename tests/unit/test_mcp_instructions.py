@@ -5,7 +5,7 @@ its end-to-end arm — the string a client actually receives at ``initialize``, 
 the ``tools/list`` from the same application — is in tests/app/test_capability_ceiling.py.
 """
 
-from hmc_mcp._app import (
+from hmcpctl._app import (
     CEILING_HEADING,
     INSTRUCTIONS,
     ceiling_aware_instructions,

@@ -21,10 +21,14 @@ _TEST_USER_PASSWORD = f"Aa1!{secrets.token_hex(8)}"
 # ---------------------------------------------------------------------------
 
 _HMCUSER_UNSUPPORTED = ExpectedOutcome(
+    operation="user.create",
+    variant="hmc-user-rest",
     reason="HmcUser REST not supported on this HMC",
     error_codes=frozenset({"REST000E"}),
 )
 _HMCUSER_ENDPOINT_UNSUPPORTED = ExpectedOutcome(
+    operation="user.list",
+    variant="hmc-user-rest",
     reason="HmcUser REST endpoint not supported on this HMC (expected)",
     error_codes=frozenset({"REST000E"}),
 )
@@ -66,6 +70,7 @@ async def administer_test_user(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client,
         "hmc_create_user",
+        expected=[_HMCUSER_UNSUPPORTED],
         console_uuid=artifacts.console_uuid,
         user_id=config.test_user,
         password=_TEST_USER_PASSWORD,
@@ -78,10 +83,18 @@ async def administer_test_user(client: Client, state: RunState) -> None:
     user_created = st == "PASS"
 
     st, data = await state.call(
-        client, "hmc_list_users", console_uuid=artifacts.console_uuid
+        client,
+        "hmc_list_users",
+        console_uuid=artifacts.console_uuid,
+        expected=[_HMCUSER_ENDPOINT_UNSUPPORTED],
+        reuse_gaps=False,
     )
     state.record_with_expected(
-        11, "hmc_list_users (confirm created)", st, data, [_HMCUSER_UNSUPPORTED]
+        11,
+        "hmc_list_users (confirm created)",
+        st,
+        data,
+        [_HMCUSER_ENDPOINT_UNSUPPORTED],
     )
     if user_created and st == "PASS":
         artifacts.test_user_uuid = _profile_uuid(data, config.test_user)
@@ -114,10 +127,18 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         state.skip(11, "hmc_delete_user", _skip_reason(user_created))
 
     st, data = await state.call(
-        client, "hmc_list_users", console_uuid=artifacts.console_uuid
+        client,
+        "hmc_list_users",
+        console_uuid=artifacts.console_uuid,
+        expected=[_HMCUSER_ENDPOINT_UNSUPPORTED],
+        reuse_gaps=False,
     )
     state.record_with_expected(
-        11, "hmc_list_users (confirm deleted)", st, data, [_HMCUSER_UNSUPPORTED]
+        11,
+        "hmc_list_users (confirm deleted)",
+        st,
+        data,
+        [_HMCUSER_ENDPOINT_UNSUPPORTED],
     )
 
 
@@ -137,7 +158,10 @@ async def inventory_users(client: Client, state: RunState) -> None:
         return
 
     st, data = await state.call(
-        client, "hmc_list_users", console_uuid=artifacts.console_uuid
+        client,
+        "hmc_list_users",
+        console_uuid=artifacts.console_uuid,
+        expected=[_HMCUSER_ENDPOINT_UNSUPPORTED],
     )
     state.record_with_expected(
         6, "hmc_list_users", st, data, [_HMCUSER_ENDPOINT_UNSUPPORTED]

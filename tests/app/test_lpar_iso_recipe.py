@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 from typer.main import get_command
 
-from hmc_mcp import cli
+from hmcpctl import cli
 
 ROOT = Path(__file__).resolve().parents[2]
 RECIPE = ROOT / "docs" / "recipes" / "lpar-iso-install.md"

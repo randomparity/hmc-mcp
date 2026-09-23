@@ -6,19 +6,22 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.documents import build_virtual_network_document
-from hmc_mcp.operations.virtualization.network import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.documents import build_virtual_network_document
+from hmcpctl.operations.virtualization.network import (
     VirtualNetworkResult,
     create_virtual_network,
 )
-from hmc_mcp.server_tools.virtualization.network import (
+from hmcpctl.server_tools.virtualization.network import (
     hmc_create_virtual_network,
     hmc_delete_virtual_network,
     hmc_list_network_bridges,
     hmc_list_virtual_networks,
     hmc_list_virtual_switches,
 )
+
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+VNETWORK_UUID = "00000000-0000-0000-0000-000000000002"
 
 VSWITCH_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -90,8 +93,8 @@ def _hmc_env(monkeypatch):
 
 def _call_tool_with_resolved_system(monkeypatch, tool, *args, **kwargs):
     _hmc_env(monkeypatch)
-    resolver = AsyncMock(return_value="sys-uuid")
-    with patch("hmc_mcp.operations.virtualization.network.resolve_system_uuid", new=resolver):
+    resolver = AsyncMock(return_value=SYSTEM_UUID)
+    with patch("hmcpctl.operations.virtualization.network.resolve_system_uuid", new=resolver):
         result = tool("system-name", *args, **kwargs)
     resolver.assert_awaited_once_with(ANY, "system-name")
     return result
@@ -105,7 +108,7 @@ async def test_create_virtual_network_operation_returns_parent_and_resource(
     hmc = AsyncMock()
     hmc.create_virtual_network.return_value = resource
     resolver = AsyncMock(return_value="sys-uuid")
-    monkeypatch.setattr("hmc_mcp.operations.virtualization.network.resolve_system_uuid", resolver)
+    monkeypatch.setattr("hmcpctl.operations.virtualization.network.resolve_system_uuid", resolver)
 
     result = await create_virtual_network(hmc, "system-name", "prod", 100, 3)
 
@@ -134,11 +137,11 @@ def test_virtual_network_document_tagged():
 
 @pytest.mark.asyncio
 async def test_list_virtual_switches(mock_hmc):
-    mock_hmc.get("/rest/api/uom/ManagedSystem/sys-uuid/VirtualSwitch").mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualSwitch").mock(
         return_value=httpx.Response(200, text=VSWITCH_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        switches = await hmc.list_virtual_switches("sys-uuid")
+        switches = await hmc.list_virtual_switches(SYSTEM_UUID)
     assert len(switches) == 1
     assert switches[0]["Resource"]["SwitchName"] == "ETHERNET0"
     assert switches[0]["Resource"]["SwitchID"] == "3"
@@ -146,23 +149,23 @@ async def test_list_virtual_switches(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_virtual_networks(mock_hmc):
-    mock_hmc.get("/rest/api/uom/ManagedSystem/sys-uuid/VirtualNetwork").mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(200, text=VNETWORK_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        nets = await hmc.list_virtual_networks("sys-uuid")
+        nets = await hmc.list_virtual_networks(SYSTEM_UUID)
     assert len(nets) == 1
     assert nets[0]["Resource"]["NetworkVLANID"] == "100"
 
 
 @pytest.mark.asyncio
 async def test_create_virtual_network(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/VirtualNetwork").mock(
+    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(201, text=VNETWORK_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         net = await hmc.create_virtual_network(
-            "sys-uuid", "VLAN100-ETHERNET0", 100, 3, switch_uuid="vswitch-uuid-1"
+            SYSTEM_UUID, "VLAN100-ETHERNET0", 100, 3, switch_uuid="vswitch-uuid-1"
         )
     body = route.calls.last.request.content.decode()
     assert "VLAN100-ETHERNET0" in body and ">100<" in body and ">3<" in body
@@ -173,20 +176,20 @@ async def test_create_virtual_network(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_virtual_network(mock_hmc):
     route = mock_hmc.delete(
-        "/rest/api/uom/ManagedSystem/sys-uuid/VirtualNetwork/vnet-uuid-1"
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork/{VNETWORK_UUID}"
     ).mock(return_value=httpx.Response(204))
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_virtual_network("sys-uuid", "vnet-uuid-1")
+        await hmc.delete_virtual_network(SYSTEM_UUID, VNETWORK_UUID)
     assert route.called
 
 
 @pytest.mark.asyncio
 async def test_list_network_bridges(mock_hmc):
-    mock_hmc.get("/rest/api/uom/ManagedSystem/sys-uuid/NetworkBridge").mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/NetworkBridge").mock(
         return_value=httpx.Response(200, text=NETWORKBRIDGE_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        bridges = await hmc.list_network_bridges("sys-uuid")
+        bridges = await hmc.list_network_bridges(SYSTEM_UUID)
     assert len(bridges) == 1
     assert bridges[0]["ResourceType"] == "NetworkBridge"
 
@@ -202,7 +205,7 @@ async def test_list_network_bridges(mock_hmc):
 def test_network_list_tools_resolve_public_system_selector(
     monkeypatch, mock_hmc, tool, suffix, feed, resource_type
 ):
-    route = mock_hmc.get(f"/rest/api/uom/ManagedSystem/sys-uuid/{suffix}").mock(
+    route = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/{suffix}").mock(
         return_value=httpx.Response(200, text=feed)
     )
 
@@ -213,7 +216,7 @@ def test_network_list_tools_resolve_public_system_selector(
 
 
 def test_create_virtual_network_tool_maps_public_arguments(monkeypatch, mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/VirtualNetwork").mock(
+    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(201, text=VNETWORK_ENTRY)
     )
 
@@ -234,12 +237,12 @@ def test_create_virtual_network_tool_maps_public_arguments(monkeypatch, mock_hmc
 
 def test_delete_virtual_network_tool_maps_public_arguments(monkeypatch, mock_hmc):
     route = mock_hmc.delete(
-        "/rest/api/uom/ManagedSystem/sys-uuid/VirtualNetwork/vnet-uuid-1"
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork/{VNETWORK_UUID}"
     ).mock(return_value=httpx.Response(204))
 
     result = _call_tool_with_resolved_system(
-        monkeypatch, hmc_delete_virtual_network, "vnet-uuid-1"
+        monkeypatch, hmc_delete_virtual_network, VNETWORK_UUID
     )
 
     assert route.called
-    assert result == "Deleted VirtualNetwork vnet-uuid-1 from system-name"
+    assert result == f"Deleted VirtualNetwork {VNETWORK_UUID} from system-name"

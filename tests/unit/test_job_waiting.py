@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import (
+from hmcpctl.errors import HMCError
+from hmcpctl.jobs import (
     FAILED_JOB_STATUSES,
     SUCCESSFUL_JOB_STATUSES,
     TERMINAL_JOB_STATUSES,

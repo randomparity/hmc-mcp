@@ -1,4 +1,4 @@
-# Example hmc-mcp config used by the nicknames guardrail.
+# Example hmcpctl config used by the nicknames guardrail.
 # Kept secret-free: credentials come from the environment via password_env.
 # The password_env lines carry a pragma so the detect-secrets guard stays green.
 default_profile = "prod"

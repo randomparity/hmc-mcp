@@ -8,14 +8,14 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import cli
-from hmc_mcp.cli_commands.snapshot import _publish
-from hmc_mcp.operations.affinity.rest import (
+from hmcpctl import cli
+from hmcpctl.cli_commands.snapshot import _publish
+from hmcpctl.operations.affinity.rest import (
     AffinityAssessmentInput,
     assess_affinity,
 )
-from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.server_tools.snapshot import (
+from hmcpctl.server import TOOL_SECURITY
+from hmcpctl.server_tools.snapshot import (
     hmc_snapshot_assess_affinity,
     hmc_snapshot_inspect,
 )
@@ -34,8 +34,8 @@ def test_snapshot_tools_have_read_only_security_contracts() -> None:
 
 
 def test_mcp_inspect_accepts_newer_version_without_validation() -> None:
-    assert hmc_snapshot_inspect('{"format":"hmc-mcp.lpar-snapshot","version":2}') == {
-        "format": "hmc-mcp.lpar-snapshot",
+    assert hmc_snapshot_inspect('{"format":"hmcpctl.lpar-snapshot","version":2}') == {
+        "format": "hmcpctl.lpar-snapshot",
         "version": 2,
         "supported": False,
     }
@@ -63,7 +63,7 @@ def test_mcp_affinity_assessment_delegates_and_serializes(monkeypatch) -> None:
         return expected
 
     monkeypatch.setattr(
-        "hmc_mcp.server_tools.snapshot.assess_snapshot_affinity", fake_assessment
+        "hmcpctl.server_tools.snapshot.assess_snapshot_affinity", fake_assessment
     )
     result = hmc_snapshot_assess_affinity(
         "{}", 90, 94, regression_threshold=5, optimization_threshold=5
@@ -109,7 +109,7 @@ def test_cli_affinity_assessment_prints_shared_result(
         return result_value
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.snapshot.assess_snapshot_affinity", fake_assessment
+        "hmcpctl.cli_commands.snapshot.assess_snapshot_affinity", fake_assessment
     )
     result = RUNNER.invoke(
         cli.app,
@@ -142,12 +142,12 @@ def test_publish_refuses_existing_destination(tmp_path: Path) -> None:
     else:
         raise AssertionError("existing destination was replaced")
     assert destination.read_text(encoding="utf-8") == "original"
-    assert list(tmp_path.glob(".hmc-mcp-snapshot-*")) == []
+    assert list(tmp_path.glob(".hmcpctl-snapshot-*")) == []
 
 
 def test_cli_inspect_reads_local_file(tmp_path: Path) -> None:
     path = tmp_path / "snapshot.json"
-    path.write_text('{"format":"hmc-mcp.lpar-snapshot","version":2}', encoding="utf-8")
+    path.write_text('{"format":"hmcpctl.lpar-snapshot","version":2}', encoding="utf-8")
     result = RUNNER.invoke(cli.app, ["snapshot", "inspect", str(path)])
     assert result.exit_code == 0
     assert json.loads(result.stdout)["supported"] is False
@@ -187,10 +187,10 @@ def test_cli_capture_existing_destination_is_concise(
     destination = tmp_path / "snapshot.json"
     destination.write_text("original", encoding="utf-8")
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.snapshot.run_cli_coroutine",
-        lambda operation: SimpleNamespace(format="hmc-mcp.lpar-snapshot", version=1),
+        "hmcpctl.cli_commands.snapshot.run_cli_coroutine",
+        lambda operation: SimpleNamespace(format="hmcpctl.lpar-snapshot", version=1),
     )
-    monkeypatch.setattr("hmc_mcp.cli_commands.snapshot.serialize_snapshot", lambda value: "{}")
+    monkeypatch.setattr("hmcpctl.cli_commands.snapshot.serialize_snapshot", lambda value: "{}")
     result = RUNNER.invoke(
         cli.app,
         ["snapshot", "capture", "sys", "aix", "default", "--output", str(destination)],

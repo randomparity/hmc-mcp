@@ -1,25 +1,54 @@
-"""Live integration test runner for a configured HMC test plan — Round 2.
+"""Live integration test runner: HMC MCP tools against real hardware.
 
-Calls HMC MCP tools via the in-process FastMCP client against the real HMC
-configured in .env.  Results are printed to stdout as they complete and
-written to test-results-round2.json on exit.
+Calls the tools through the in-process FastMCP client against the HMC named by
+the configuration. Results print to stdout as they complete and are written to
+a JSON document on exit.
+
+This mutates a managed system. The procedure is docs/live-testing.md: run
+`scripts/live_test_preflight.py` to see what a selection will touch,
+`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec}.py` to dispatch one arm,
+`scripts/live_test_evidence.py` to produce a citable matrix, and
+`scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
 Usage:
-    uv run python scripts/live_test_runner.py [SUBTASK_NUMBER]
+    uv run --no-sync python scripts/live_test_runner.py [SUBTASK] [options]
 
-If SUBTASK_NUMBER is omitted, all sub-tasks (ST0–ST15) are run in order.
-If a specific number is given (0-15), only that sub-task runs.
+`--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
+stops importing (AGENTS.md).
 
-Pre-run requirement: HMC_SCHEMA_VERSION=V1_0 must be available from the
-environment or an existing local .env file. The preflight never creates or
-patches .env: when the value is absent, it exits with manual configuration
-instructions.
+With no selection every subtask runs, 0 through 25. A bare number runs that one
+subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
+or `test-results-round2.json` for a bare or whole-suite run, unless
+`--results-file` names another path. That path must be git-ignored.
+
+Pre-run requirement: HMC credentials, from the environment, a `config.toml`
+profile in the platform config directory, or a local .env file. That directory
+is `~/.config/hmcpctl` on Linux and `~/Library/Application Support/hmcpctl` on
+macOS. The runner never creates or patches .env: when credentials are absent,
+it exits with manual configuration instructions.
+
+HMC_SCHEMA_VERSION is not among them. It is opt-in and unset by default
+(`src/hmcpctl/config.py`), and where it lands is per call site rather than per
+HTTP method: UOM requests carry `X-HMC-Schema-Version` unless their own call
+site passes `include_schema_version=False` (issue #96 — grep that flag under
+`src/hmcpctl/client/` for the current set, which no list here can track), every
+`/rest/api/web/` request carries it (issue #99), and requests that build their
+own headers never carry it — including `submit_job`, so the job path every
+power operation takes is unaffected either way. A run therefore starts with or
+without it. `docs/compatibility.md` is the full account.
+
+The run header prints the resolved value, including `(not set)`, to stdout. The
+results and observations documents do not record it, so a matrix cited as
+evidence for a run does not by itself name the request environment it was
+gathered in.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
+import inspect
 import json
 import os
 import re
@@ -33,6 +62,7 @@ from typing import Any, ClassVar
 
 import check_capability_inventory
 from fastmcp import Client
+from live_test.bare_cec import exercise_bare_cec
 from live_test.connectivity import inventory_connectivity
 from live_test.escape_hatch import exercise_cli_escape_hatch
 from live_test.inventory import capture_lpar_baseline
@@ -49,9 +79,10 @@ from live_test.observation import (
     Assertion,
     CallFailure,
     ExpectedOutcome,
+    KnownGap,
     classify_failure,
 )
-from live_test.pcie import exercise_sriov_assignment
+from live_test.pcie import exercise_dedicated_pcie_assignment, exercise_sriov_assignment
 from live_test.profiles import inventory_lpar_profiles
 from live_test.provisioning import (
     exercise_storage_provisioning,
@@ -70,14 +101,14 @@ from live_test.vmedia import (
     vmedia_upload_iso,
 )
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.config import HMCConfig, env_var_value
-from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.config import HMCConfig, env_var_value
+from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
+from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
-# Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path
+# Pre-run guard: HMC credentials must resolve before the first dispatch
 # ---------------------------------------------------------------------------
 
 _ENV_FILE = Path(".env")
@@ -94,17 +125,33 @@ _SECRET_VALUE_RE = re.compile(
     r"(?P=quote)"
 )
 _URL_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s@]+@")
+#: Labels admit `_` (#927). It is a word character, so without it `\b` cannot fire
+#: inside an underscore label: the match began at the next dot-separated label and
+#: left every label up to the underscore one readable, or missed a two-label name.
 _HOSTNAME_RE = re.compile(
-    r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b"
+    r"(?i)\b(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63}\b"
+)
+#: A single-dot `name.ext` with one of these extensions is a filename, not a
+#: host (#914). None is an IANA TLD — `.py`, `.md`, `.sh` and `.zip` are, so
+#: they stay out; a multi-label name is redacted whatever its last label.
+_FILENAME_EXTENSIONS = frozenset(
+    {"cfg", "conf", "csv", "ini", "iso", "json", "log", "toml", "txt", "xml", "yaml", "yml"}
 )
 _ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
+
+
+def _redact_hostname(match: re.Match[str]) -> str:
+    stem, _, extension = match.group().rpartition(".")
+    if "." not in stem and extension.lower() in _FILENAME_EXTENSIONS:
+        return match.group()
+    return "<REDACTED-HOST>"
 
 
 def _redact_failure_text(value: str) -> str:
     """Replace sensitive values in runner failure diagnostics."""
     value = _SECRET_VALUE_RE.sub(r"\g<name>\g<separator><REDACTED-SECRET>", value)
     value = _URL_USERINFO_RE.sub(r"\g<scheme><REDACTED-URL-USERINFO>@", value)
-    value = _HOSTNAME_RE.sub("<REDACTED-HOST>", value)
+    value = _HOSTNAME_RE.sub(_redact_hostname, value)
     return _ABSOLUTE_PATH_RE.sub("<REDACTED-PATH>", value)
 
 
@@ -163,12 +210,12 @@ def _bootstrap_config() -> bool:
 
     Priority (highest first):
       1. Already-set HMC_* environment variables
-      2. ~/.config/hmc-mcp/config.toml default profile
+      2. The default profile in the platform config directory's config.toml
       3. Local .env file (legacy key=value pairs)
 
     Exits with a clear message when no usable credentials are found.
     """
-    from hmc_mcp.config import ConfigError, load_profile
+    from hmcpctl.config import ConfigError, config_dir, load_profile
 
     # Try the TOML config first.
     try:
@@ -188,7 +235,10 @@ def _bootstrap_config() -> bool:
         print("  Credentials loaded from configured profile")
         return True
     except ConfigError as exc:
-        print(f"  ⚠️  config.toml: {exc} — falling back to .env")
+        print(
+            "  ⚠️  config.toml: "
+            f"{_redact_failure_text(str(exc))} — falling back to .env"
+        )
 
     # Fallback: local .env
     _load_dotenv()
@@ -199,21 +249,11 @@ def _bootstrap_config() -> bool:
     # would have connected (#543).
     if not env_var_value("HMC_PASSWORD"):
         print("❌  No HMC credentials found.")
-        print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
+        # The resolved path, not a Linux literal: this same message sent a
+        # macOS operator to a directory their platform never reads.
+        print(f"   Configure {config_dir() / 'config.toml'} or a local .env file.")
         return False
     return True
-
-
-def _ensure_schema_version() -> bool:
-    """Warn when HMC_SCHEMA_VERSION is absent; the operator must set it explicitly."""
-    _load_dotenv()
-    if env_var_value("HMC_SCHEMA_VERSION"):
-        return True
-    print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
-    print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
-    print("   Note: this variable only affects GET requests; it does NOT fix")
-    print("   HTTP 406 on write paths (LPAR create, adapter PUT, etc.).")
-    return False
 
 
 @dataclass(frozen=True)
@@ -252,6 +292,15 @@ class LiveTestConfig:
     sriov_logical_port_id: int = 917003
     sriov_capacity_percent: float = 7.5
     sriov_profile_name: str = "example-lt-609-profile"
+    # The dedicated PCIe arm creates and deletes a partition on the system it
+    # names, so it refuses to run on a default: an empty system name or LPAR
+    # prefix SKIPs the arm rather than selecting one (issue #217).
+    dedicated_pcie_system_name: str = ""
+    dedicated_pcie_lpar_prefix: str = ""
+    dedicated_pcie_profile_name: str = ""
+    dedicated_pcie_drc_index: str = ""
+    # The bare-cec arm's platform-dump opt-in: only "true" runs dumprestart.
+    accept_platform_dump: str = ""
     iso_path: str = "/srv/example-lt-609/example-lt-609.iso"
     iso_media_name: str = "example-lt-609.iso"
     iso_http_media_name: str = "example-lt-609-http.iso"
@@ -322,6 +371,21 @@ class LiveTestConfig:
         "LIVE_TEST_VLAN_RANGE_END": "vlan_range_end",
     }
 
+    #: Settings read from the same authoritative ``.env`` as ``_CONFIG_FIELDS``
+    #: but not required, because they configure one opt-in arm rather than the
+    #: run as a whole. An absent key leaves the field at its declared default,
+    #: and the arm that owns it decides what that means — the dedicated PCIe
+    #: arm SKIPs. They are read here, not from ``os.environ``, so an ambient
+    #: export cannot redirect an arm that creates and deletes partitions
+    #: (ADR 0115).
+    _OPTIONAL_CONFIG_FIELDS: ClassVar[dict[str, str]] = {
+        "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME": "dedicated_pcie_system_name",
+        "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX": "dedicated_pcie_lpar_prefix",
+        "LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME": "dedicated_pcie_profile_name",
+        "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX": "dedicated_pcie_drc_index",
+        "LIVE_TEST_ACCEPT_PLATFORM_DUMP": "accept_platform_dump",
+    }
+
     @classmethod
     def from_env_file(cls, path: Path | None = None) -> LiveTestConfig:
         """Load required live-test identifiers from one authoritative local file."""
@@ -343,7 +407,7 @@ class LiveTestConfig:
             if key.startswith(_ENVIRONMENT_PREFIX):
                 # Read separately by `_read_environment`; not a config field.
                 continue
-            if key not in cls._CONFIG_FIELDS:
+            if key not in cls._CONFIG_FIELDS and key not in cls._OPTIONAL_CONFIG_FIELDS:
                 duplicates.append(f"unknown setting {key} (line {line_number})")
                 continue
             if key in values:
@@ -356,6 +420,13 @@ class LiveTestConfig:
             parsed: dict[str, Any] = {
                 field: values[key] for key, field in cls._CONFIG_FIELDS.items()
             }
+            parsed.update(
+                {
+                    field: values[key]
+                    for key, field in cls._OPTIONAL_CONFIG_FIELDS.items()
+                    if key in values
+                }
+            )
             for key in cls._CONFIG_FIELDS:
                 if key.endswith(
                     (
@@ -466,6 +537,13 @@ class LiveTestArtifacts:
     vmedia_iso_name: str | None = None
     vmedia_mapping_uuid: str | None = None
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
+    # What the dedicated PCIe arm created, so `live_test_recovery.py` can check
+    # teardown from outside the run that attempted it. The marker is per-run
+    # random, so nothing outside the document can reconstruct these.
+    pcie_run_marker: str | None = None
+    pcie_fixture_lpar: str | None = None
+    pcie_drc_index: str | None = None
+    pcie_baseline_io_slots: str | None = None
 
 
 #: Stand-in for an argument whose value is not knowable without running the
@@ -612,14 +690,25 @@ class RunState:
     artifacts: LiveTestArtifacts = field(default_factory=LiveTestArtifacts)
     results: list[dict[str, Any]] = field(default_factory=list)
     observations: list[dict[str, Any]] = field(default_factory=list)
+    gaps: list[dict[str, Any]] = field(default_factory=list)
+    known_gaps: set[tuple[str, str]] = field(default_factory=set)
     schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
 
-    async def call(self, client: Client, tool: str, **kwargs: Any) -> tuple[str, Any]:
+    async def call(
+        self,
+        client: Client,
+        tool: str,
+        *,
+        expected: Sequence[ExpectedOutcome] = (),
+        reuse_gaps: bool = True,
+        **kwargs: Any,
+    ) -> tuple[str, Any]:
         """Call a tool and return a PASS or FAIL result without raising."""
         # FastMCP would reject an invalid dispatch anyway; checking here is what
         # gives the failure a stable reason instead of a pydantic rendering, and
         # keeps a harness defect from ever reaching the real HMC.
+        _validate_expected_dispatch(tool, expected)
         problems = (
             _dispatch_problems(tool, kwargs, self.schemas) if self.schemas else ()
         )
@@ -627,6 +716,13 @@ class RunState:
             return "FAIL", CallFailure(
                 "InvalidDispatch", "; ".join(problems), "", None, False
             )
+        if reuse_gaps:
+            for outcome in expected:
+                if (
+                    not outcome.transient
+                    and (outcome.operation, outcome.variant) in self.known_gaps
+                ):
+                    return "SKIP", KnownGap(outcome)
         try:
             result = await client.call_tool(tool, kwargs)
             if hasattr(result, "data") and result.data is not None:
@@ -709,6 +805,9 @@ class RunState:
         recorded before any declaration is consulted — that is the substitution
         the old substring match allowed.
         """
+        if status == "SKIP" and isinstance(data, KnownGap):
+            self.skip(subtask, tool, f"known gap: {data.outcome.reason}")
+            return
         if (
             status == "FAIL"
             and isinstance(data, CallFailure)
@@ -717,6 +816,25 @@ class RunState:
             for outcome in expected:
                 if outcome.matches(data):
                     self.skip(subtask, tool, outcome.reason)
+                    if not outcome.transient and not any(
+                        row["operation"] == outcome.operation
+                        and row["missing_scope"]["variant"] == outcome.variant
+                        for row in self.gaps
+                    ):
+                        self.gaps.append(
+                            {
+                                "operation": outcome.operation,
+                                "missing_scope": {
+                                    "variant": outcome.variant,
+                                    "parameters": [],
+                                    "confirmation": {
+                                        "observed_at": datetime.now(UTC).strftime(
+                                            "%Y-%m-%dT%H:%M:%SZ"
+                                        )
+                                    },
+                                },
+                            }
+                        )
                     return
         self.record(subtask, tool, status, data)
 
@@ -803,13 +921,190 @@ SUBTASKS = {
     21: vmedia_mapping_crossvalidation,
     22: vmedia_teardown,
     23: exercise_sriov_assignment,
+    24: exercise_dedicated_pcie_assignment,
+    25: exercise_bare_cec,
 }
+_SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
+
+
+def _validate_expected_dispatch(tool: str, expected: Sequence[ExpectedOutcome]) -> None:
+    for outcome in expected:
+        security = TOOL_SECURITY.get(tool)
+        if security is None or outcome.operation != security.operation:
+            raise ValueError(f"expected outcome operation does not match tool {tool}")
+
+
+def _declared_names(
+    node: ast.expr, declarations: Mapping[str, ExpectedOutcome]
+) -> list[str]:
+    if not isinstance(node, ast.List) or not all(
+        isinstance(item, ast.Name) and item.id in declarations for item in node.elts
+    ):
+        raise ValueError(
+            "expected outcomes must be a literal list of module declarations"
+        )
+    return [item.id for item in node.elts if isinstance(item, ast.Name)]
+
+
+def _result_names(nodes: Sequence[ast.expr]) -> tuple[str, str]:
+    if len(nodes) != 2 or not all(isinstance(node, ast.Name) for node in nodes):
+        raise ValueError("declared results require a named status/data pair")
+    names = tuple(node.id for node in nodes if isinstance(node, ast.Name))
+    if names[0] == names[1]:
+        raise ValueError("declared status and data names must differ")
+    return names[0], names[1]
+
+
+def _call_result_names(
+    node: ast.Call, parents: Mapping[ast.AST, ast.AST]
+) -> tuple[str, str]:
+    awaiter = parents.get(node)
+    assignment = parents.get(awaiter) if awaiter else None
+    if (
+        not isinstance(awaiter, ast.Await)
+        or not isinstance(assignment, ast.Assign)
+        or len(assignment.targets) != 1
+        or not isinstance(assignment.targets[0], ast.Tuple)
+    ):
+        raise ValueError("declared calls require an assigned awaited status/data pair")
+    return _result_names(assignment.targets[0].elts)
+
+
+def _validate_declared_function(
+    function: ast.AsyncFunctionDef,
+    declarations: Mapping[str, ExpectedOutcome],
+) -> None:
+    parents = {
+        child: node
+        for node in ast.walk(function)
+        for child in ast.iter_child_nodes(node)
+    }
+    events = sorted(
+        (
+            node
+            for node in ast.walk(function)
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute))
+            or (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
+        ),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    pending: dict[tuple[str, str], list[str]] = {}
+    for node in events:
+        if isinstance(node, ast.Name):
+            if any(node.id in binding for binding in pending):
+                raise ValueError(
+                    f"unrecorded declared result overwritten in {function.name}"
+                )
+            continue
+        if node.func.attr == "record_with_expected":
+            if len(node.args) != 5:
+                raise ValueError(
+                    "expected-outcome recording must use five positional arguments"
+                )
+            names = _declared_names(node.args[4], declarations)
+            if pending.pop(_result_names(node.args[2:4]), None) != names:
+                raise ValueError(
+                    f"expected-outcome result pairing mismatch in {function.name}"
+                )
+        if node.func.attr != "call":
+            continue
+        expected = next(
+            (kw.value for kw in node.keywords if kw.arg == "expected"), None
+        )
+        if expected is None:
+            continue
+        binding = _call_result_names(node, parents)
+        names = _declared_names(expected, declarations)
+        tool = node.args[1] if len(node.args) > 1 else None
+        if not isinstance(tool, ast.Constant) or not isinstance(tool.value, str):
+            raise ValueError(  # noqa: TRY004 - invalid scenario source is a startup configuration error
+                "declared dispatch requires a literal tool name"
+            )
+        _validate_expected_dispatch(tool.value, [declarations[name] for name in names])
+        pending[binding] = names
+    if pending:
+        raise ValueError(f"unrecorded declared results in {function.name}")
+
+
+def _validate_declared_outcomes() -> None:
+    """Validate every registered scenario before any client can reach hardware."""
+    registered = {security.operation for security in TOOL_SECURITY.values()}
+    for module in _SCENARIO_MODULES:
+        if module is None:
+            raise ValueError("cannot resolve a live scenario module")
+        declarations = {
+            name: value
+            for name, value in vars(module).items()
+            if isinstance(value, ExpectedOutcome)
+        }
+        if any(
+            outcome.operation not in registered for outcome in declarations.values()
+        ):
+            raise ValueError(
+                f"unregistered expected outcome operation in {module.__name__}"
+            )
+        for function in ast.walk(ast.parse(inspect.getsource(module))):
+            if isinstance(function, ast.AsyncFunctionDef):
+                _validate_declared_function(function, declarations)
+
+
+def _load_known_gaps(
+    environment: tuple[str, str] | None,
+    repo_root: Path,
+    catalog_path: Path | None = None,
+) -> set[tuple[str, str]]:
+    document = check_capability_inventory.load_json(
+        catalog_path or repo_root / "docs/capabilities/maturity.json"
+    )
+    errors: list[str] = []
+    check_capability_inventory._exact_keys(
+        document,
+        {"format_version", "admission_policy", "operations"},
+        "maturity.json",
+        errors,
+    )
+    if (
+        type(document.get("format_version")) is not int
+        or document.get("format_version")
+        != check_capability_inventory.MATURITY_FORMAT_VERSION
+        or document.get("admission_policy") != "existing-runtime-guards"
+    ):
+        errors.append("maturity.json: invalid format version or admission policy")
+    records = check_capability_inventory._objects(
+        check_capability_inventory._array(document, "operations", errors),
+        "maturity operations",
+        errors,
+    )
+    handlers = {
+        tool.operation: tool.handler
+        for tool in check_capability_inventory.discover_registry()
+    }
+    check_capability_inventory._validate_maturity(records, set(handlers), errors)
+    if errors:
+        raise ValueError("invalid gap catalog: " + "; ".join(errors))
+    known: set[tuple[str, str]] = set()
+    if environment is not None:
+        for record in records:
+            for scope in record["implementation"]["missing_scope"]:
+                if "confirmation" not in scope:
+                    continue
+                fingerprint = check_capability_inventory.closure_fingerprint(
+                    repo_root, handlers[record["operation"]].rsplit(".", 1)[0]
+                )
+                if check_capability_inventory.gap_is_current(
+                    scope["confirmation"], environment, fingerprint
+                ):
+                    known.add((record["operation"], scope["variant"]))
+    return known
+
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(16)),
     "vmedia": list(range(16, 23)),
     "sriov": [23],
-    "all": list(range(24)),
+    "dedicated": [24],
+    "bare-cec": [25],
+    "all": list(range(26)),
 }
 
 
@@ -824,7 +1119,12 @@ class RunnerArguments:
 
 def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
     """Parse the live-run selection without performing configuration or HMC work."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    # RawDescriptionHelpFormatter: the default re-wraps the docstring into one
+    # paragraph, collapsing the usage line and the `--no-sync` requirement into
+    # prose an operator skims past.
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
         "subtask",
@@ -885,8 +1185,13 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             "path matching an ignored pattern (see .gitignore)"
         )
         return 1
-    if not _bootstrap_config() or not _ensure_schema_version():
+    if not _bootstrap_config():
         return 1
+    # `_bootstrap_config` reads `.env` only when the TOML profile fails, so a
+    # resolved profile would otherwise leave every `.env`-only `HMC_*` value
+    # unread — including the HMC_SCHEMA_VERSION the run header reports below.
+    # Loading it here and not earlier keeps the profile's priority over `.env`.
+    _load_dotenv()
     return asyncio.run(
         main(
             subtask_filter=arguments.subtask,
@@ -1004,7 +1309,10 @@ def _restore_artifacts_from_results(
         saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
-        if set(saved) != {"config", "hmc", "artifacts", "results"}:
+        # `run` is provenance about the writing run, not state to restore, so it
+        # is tolerated rather than required: a document written before the block
+        # existed still resumes.
+        if set(saved) - {"run"} != {"config", "hmc", "artifacts", "results"}:
             raise ValueError("results document has an unsupported shape")
         if _decode_saved_config(saved["config"]) != state.config:
             raise ValueError("results configuration does not match this run")
@@ -1117,7 +1425,37 @@ def _repository_root() -> Path | None:
     if result.returncode != 0:
         return None
     root = Path(result.stdout.strip())
-    return root if (root / "src" / "hmc_mcp").is_dir() else None
+    return root if (root / "src" / "hmcpctl").is_dir() else None
+
+
+def _run_provenance(
+    tasks: Sequence[int], group: str | None, repo_root: Path | None
+) -> dict[str, Any]:
+    """What this run was, so a matrix taken from it can be dated.
+
+    Written unconditionally, unlike the sibling observations document, which is
+    skipped when nothing resolves or the runner is outside the repository — the
+    run that fails early is the one whose provenance matters most. Outside a
+    repository the commit is `None`, which is a reportable state; a missing
+    block is not.
+
+    `tree_clean` qualifies `commit`: with `src` or `scripts` dirty the sha names
+    a tree that was not the one exercised, so evidence cannot cite it.
+    """
+    commit: str | None = None
+    tree_clean: bool | None = None
+    if repo_root is not None:
+        head = _git(repo_root, "rev-parse", "HEAD")
+        if head.returncode == 0:
+            commit = head.stdout.strip()
+        tree_clean = _tree_is_clean(repo_root)
+    return {
+        "tested_commit": commit,
+        "tree_clean": tree_clean,
+        "group": group,
+        "subtasks": list(tasks),
+        "finished": datetime.now(UTC).isoformat(),
+    }
 
 
 def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
@@ -1154,8 +1492,8 @@ def _emit_observations(
     if environment is None:
         print("no LIVE_TEST_ENV_* settings — observations not written")
         return False
-    if not state.observations:
-        print("no verified observations — nothing to write")
+    if not state.observations and not state.gaps:
+        print("no verified observations or confirmed gaps — nothing to write")
         return False
     if not _tree_is_clean(repo_root):
         print("src/ or scripts/ is modified — observations not written")
@@ -1205,6 +1543,22 @@ def _emit_observations(
         document.append(
             {"operation": recorded["operation"], "observation": observation}
         )
+    for recorded in state.gaps:
+        handler = handlers.get(recorded["operation"])
+        if handler is None:
+            print(f"unknown operation {recorded['operation']} — gap skipped")
+            continue
+        scope = dict(recorded["missing_scope"])
+        scope["confirmation"] = {
+            **scope["confirmation"],
+            "tested_commit": head.stdout.strip(),
+            "hmc_release": environment[0],
+            "hardware_family": environment[1],
+            "closure_fingerprint": check_capability_inventory.closure_fingerprint(
+                repo_root, handler.rsplit(".", 1)[0]
+            ),
+        }
+        document.append({"operation": recorded["operation"], "missing_scope": scope})
     if not document:
         print("no resolvable observations — nothing written")
         return False
@@ -1227,7 +1581,14 @@ async def main(
         except ValueError as exc:
             print(f"❌ {_redact_failure_text(str(exc))}")
             return 1
-    state = RunState(config=config)
+    try:
+        _validate_declared_outcomes()
+        repo_root = _repository_root()
+        known_gaps = _load_known_gaps(environment, repo_root) if repo_root else set()
+    except (OSError, ValueError) as exc:
+        print(f"❌ {_redact_failure_text(str(exc))}")
+        return 1
+    state = RunState(config=config, known_gaps=known_gaps)
     hmc_config = hmc_config or HMCConfig()
     print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
@@ -1283,6 +1644,7 @@ async def main(
         Path(results_path),
         json.dumps(
             {
+                "run": _run_provenance(tasks, group, repo_root),
                 "config": asdict(state.config),
                 "hmc": _hmc_identity(hmc_config),
                 "artifacts": asdict(state.artifacts),
@@ -1293,9 +1655,8 @@ async def main(
         ),
     )
 
-    repo_root = _repository_root()
     if repo_root is None:
-        print("not inside the hmc-mcp repository — observations not written")
+        print("not inside the hmcpctl repository — observations not written")
     else:
         _emit_observations(
             state, _observations_path(results_path), environment, repo_root

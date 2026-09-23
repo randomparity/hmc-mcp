@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.vios import labels as label_operations
-from hmc_mcp.server_tools.vios import labels as label_tools
-from hmc_mcp.ssh.transport import HMCCLIError
-from hmc_mcp.ssh.vios_labels import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.vios import labels as label_operations
+from hmcpctl.server_tools.vios import labels as label_tools
+from hmcpctl.ssh.transport import HMCCLIError
+from hmcpctl.ssh.vios_labels import (
     create_vios_vfc_group_label,
     list_vios_fc_port_labels,
     list_vios_vfc_group_labels,
@@ -126,7 +126,7 @@ async def test_exact_commands(
     monkeypatch, call: Callable[[], Awaitable[object]], command: str
 ):
     run = AsyncMock(return_value="ok\n")
-    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
     await call()
     run.assert_awaited_once_with(CONFIG, command)
 
@@ -143,7 +143,7 @@ async def test_exact_commands(
 async def test_live_survey_fc_port_projection(monkeypatch, fixture: str, case: str):
     del case
     run = AsyncMock(return_value=(FIXTURES / fixture).read_text())
-    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
     rows = await list_vios_fc_port_labels(CONFIG, "system-a")
     assert tuple(rows[0]) == (
         "name",
@@ -159,7 +159,7 @@ async def test_live_survey_fc_port_projection(monkeypatch, fixture: str, case: s
 @pytest.mark.parametrize("output", ["", "\n\n", "No results were found.\n"])
 async def test_empty_list_results(monkeypatch, output: str):
     monkeypatch.setattr(
-        "hmc_mcp.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
+        "hmcpctl.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
     )
     assert await list_vios_vfc_group_labels(CONFIG, "system-a") == []
 
@@ -168,7 +168,7 @@ async def test_empty_list_results(monkeypatch, output: str):
 async def test_dynamic_headers_and_quoted_values(monkeypatch):
     output = 'name,vios_names,future\nfabric-a,"vios-a,vios-b",kept\n'
     monkeypatch.setattr(
-        "hmc_mcp.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
+        "hmcpctl.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
     )
     assert await list_vios_vfc_group_labels(CONFIG, "system-a") == [
         {"name": "fabric-a", "vios_names": "vios-a,vios-b", "future": "kept"}
@@ -187,7 +187,7 @@ async def test_dynamic_headers_and_quoted_values(monkeypatch):
 )
 async def test_malformed_list_output(monkeypatch, output: str, condition: str):
     monkeypatch.setattr(
-        "hmc_mcp.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
+        "hmcpctl.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
     )
     with pytest.raises(HMCCLIError, match=rf"list VIOS vFC group labels.*{condition}"):
         await list_vios_vfc_group_labels(CONFIG, "system-a")
@@ -197,7 +197,7 @@ async def test_malformed_list_output(monkeypatch, output: str, condition: str):
 async def test_header_names_are_preserved_byte_for_byte(monkeypatch):
     output = "UPPER,Mixed-Case, padded \na,b,c\n"
     monkeypatch.setattr(
-        "hmc_mcp.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
+        "hmcpctl.ssh.vios_labels.run_hmc_command", AsyncMock(return_value=output)
     )
     assert await list_vios_vfc_group_labels(CONFIG, "system-a") == [
         {"UPPER": "a", "Mixed-Case": "b", " padded ": "c"}
@@ -259,7 +259,7 @@ async def test_header_names_are_preserved_byte_for_byte(monkeypatch):
 )
 async def test_invalid_input_does_not_dispatch(monkeypatch, call):
     run = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
     with pytest.raises((ValueError, HMCCLIError)):
         await call()
     run.assert_not_awaited()
@@ -278,7 +278,7 @@ async def test_invalid_input_does_not_dispatch(monkeypatch, call):
 )
 async def test_group_member_payload_is_bounded(monkeypatch, members, message: str):
     run = AsyncMock()
-    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
     with pytest.raises(ValueError, match=message):
         await create_vios_vfc_group_label(
             CONFIG, "system-a", "label", vios_names=members
@@ -289,7 +289,7 @@ async def test_group_member_payload_is_bounded(monkeypatch, members, message: st
 @pytest.mark.asyncio
 async def test_group_member_payload_accepts_exact_byte_limit(monkeypatch):
     run = AsyncMock(return_value="accepted")
-    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
     result = await create_vios_vfc_group_label(
         CONFIG, "system-a", "label", vios_names=["x" * 16384]
     )
@@ -300,7 +300,7 @@ async def test_group_member_payload_accepts_exact_byte_limit(monkeypatch):
 @pytest.mark.asyncio
 async def test_nonblank_standalone_values_preserve_spaces_and_shell_quote(monkeypatch):
     run = AsyncMock(return_value="done\n")
-    monkeypatch.setattr("hmc_mcp.ssh.vios_labels.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
     result = await remove_vios_vfc_group_label(CONFIG, " system;$x ", " group label ")
     run.assert_awaited_once_with(
         CONFIG, "labelvios -m ' system;$x ' -o r -l ' group label '"
@@ -385,7 +385,7 @@ async def test_nonblank_standalone_values_preserve_spaces_and_shell_quote(monkey
 )
 async def test_mutation_receipts(monkeypatch, call, expected):
     monkeypatch.setattr(
-        "hmc_mcp.ssh.vios_labels.run_hmc_command",
+        "hmcpctl.ssh.vios_labels.run_hmc_command",
         AsyncMock(return_value=" accepted \n"),
     )
     assert await call() == expected

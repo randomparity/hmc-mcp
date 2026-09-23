@@ -4,14 +4,16 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.jobs import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.jobs import (
     migrate_abort_lpar_job,
     migrate_lpar_job,
     migrate_recover_lpar_job,
     migrate_validate_lpar_job,
     remote_restart_lpar_job,
 )
+
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
 # -- job XML builders ---------------------------------------------------- #
 
@@ -101,11 +103,11 @@ def test_remote_restart_rejects_unknown_runtime_operation():
 
 @pytest.mark.asyncio
 async def test_lpar_migrate(mock_hmc):
-    route = mock_hmc.put("/rest/api/uom/LogicalPartition/lpar-uuid/do/Migrate").mock(
+    route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        job = await hmc.lpar_migrate("lpar-uuid", "vrml12-fsp")
+        job = await hmc.lpar_migrate(LPAR_UUID, "vrml12-fsp")
     body = route.calls.last.request.content.decode()
     assert "Migrate" in body and "vrml12-fsp" in body
     assert job is not None and job["Resource"]["JobID"] == "job-uuid-999"
@@ -114,41 +116,41 @@ async def test_lpar_migrate(mock_hmc):
 @pytest.mark.asyncio
 async def test_lpar_migrate_validate(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/do/MigrateValidate"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/MigrateValidate"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.lpar_migrate_validate("lpar-uuid", "tgt")
+        await hmc.lpar_migrate_validate(LPAR_UUID, "tgt")
     assert "MigrateValidate" in route.calls.last.request.content.decode()
 
 
 @pytest.mark.asyncio
 async def test_lpar_migrate_abort(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/do/MigrateAbort"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/MigrateAbort"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.lpar_migrate_abort("lpar-uuid")
+        await hmc.lpar_migrate_abort(LPAR_UUID)
     assert "MigrateAbort" in route.calls.last.request.content.decode()
 
 
 @pytest.mark.asyncio
 async def test_lpar_migrate_recover(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/do/MigrateRecover"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/MigrateRecover"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.lpar_migrate_recover("lpar-uuid")
+        await hmc.lpar_migrate_recover(LPAR_UUID)
     assert "MigrateRecover" in route.calls.last.request.content.decode()
 
 
 @pytest.mark.asyncio
 async def test_lpar_remote_restart(mock_hmc):
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/do/RemoteRestart"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/RemoteRestart"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
         await hmc.lpar_remote_restart(
-            "lpar-uuid", "restart", "src", target_managed_system="tgt"
+            LPAR_UUID, "restart", "src", target_managed_system="tgt"
         )
     body = route.calls.last.request.content.decode()
     assert "RemoteRestart" in body and "tgt" in body

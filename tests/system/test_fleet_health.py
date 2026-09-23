@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.systems import health as operations_health
-from hmc_mcp.operations.systems.health import FleetHealthResult
-from hmc_mcp.operations.systems.health import fetch_fleet_health as fleet_health
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems import health as operations_health
+from hmcpctl.operations.systems.health import FleetHealthResult
+from hmcpctl.operations.systems.health import fetch_fleet_health as fleet_health
 
 _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_BEFORE_START",

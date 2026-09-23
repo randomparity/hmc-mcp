@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import typer
 
-from hmc_mcp.cli import app
+from hmcpctl.cli import app
 
 ROOT = Path(__file__).parents[2]
 MODULE_PATH = ROOT / "scripts" / "smoke_cli_groups.py"

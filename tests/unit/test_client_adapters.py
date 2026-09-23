@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.client.client_adapters import AdaptersMixin
-from hmc_mcp.client.client_contracts import ADAPTER_TYPES, validate_adapter_type
+from hmcpctl.client.client_adapters import AdaptersMixin
+from hmcpctl.client.client_contracts import ADAPTER_TYPES, validate_adapter_type
 
 
 def test_adapter_type_validation_accepts_only_the_published_vocabulary():

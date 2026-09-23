@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hmc_mcp.server_tools.systems.core import hmc_list_configured_hosts
+from hmcpctl.server_tools.systems.core import hmc_list_configured_hosts
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -26,9 +26,9 @@ def _write_toml(path: Path, content: str) -> Path:
 def _patch_config_path(tmp_path, content: str | None):
     """Return a context manager patching the systems handler config lookup."""
     if content is None:
-        return patch("hmc_mcp.config.resolve_config_path", return_value=None)
+        return patch("hmcpctl.config.resolve_config_path", return_value=None)
     cfg = _write_toml(tmp_path / "config.toml", content)
-    return patch("hmc_mcp.config.resolve_config_path", return_value=cfg)
+    return patch("hmcpctl.config.resolve_config_path", return_value=cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ def _patch_config_path(tmp_path, content: str | None):
 
 def test_no_config_file(tmp_path):
     """Returns empty profiles list when no config file exists."""
-    with patch("hmc_mcp.config.resolve_config_path", return_value=None):
+    with patch("hmcpctl.config.resolve_config_path", return_value=None):
         result = hmc_list_configured_hosts()
     assert result == {"profiles": [], "config_file": None}
 
@@ -202,7 +202,7 @@ def test_toml_parse_error(tmp_path):
     cfg = tmp_path / "config.toml"
     cfg.write_text("this is [[not valid toml]]\n", encoding="utf-8")
     with (
-        patch("hmc_mcp.config.resolve_config_path", return_value=cfg),
+        patch("hmcpctl.config.resolve_config_path", return_value=cfg),
         pytest.raises(ValueError, match="TOML parse error"),
     ):
         hmc_list_configured_hosts()
@@ -217,7 +217,7 @@ def test_permission_error_reading_config(tmp_path):
     cfg = tmp_path / "config.toml"
     cfg.write_text("[profiles.x]\nhost = 'h'\nuser = 'u'\n", encoding="utf-8")
     with (
-        patch("hmc_mcp.config.resolve_config_path", return_value=cfg),
+        patch("hmcpctl.config.resolve_config_path", return_value=cfg),
         patch.object(Path, "read_text", side_effect=PermissionError("Permission denied")),
         pytest.raises(ValueError, match="cannot be read"),
     ):
@@ -229,7 +229,7 @@ def test_non_utf8_config(tmp_path):
     cfg = tmp_path / "config.toml"
     cfg.write_bytes(b'[profiles.x]\nhost = "caf\xe9"\n')
     with (
-        patch("hmc_mcp.config.resolve_config_path", return_value=cfg),
+        patch("hmcpctl.config.resolve_config_path", return_value=cfg),
         pytest.raises(ValueError, match="is not valid UTF-8"),
     ):
         hmc_list_configured_hosts()
@@ -240,7 +240,7 @@ def test_non_table_profiles_key(tmp_path):
     cfg = tmp_path / "config.toml"
     cfg.write_text("profiles = 'not-a-table'\n", encoding="utf-8")
     with (
-        patch("hmc_mcp.config.resolve_config_path", return_value=cfg),
+        patch("hmcpctl.config.resolve_config_path", return_value=cfg),
         pytest.raises(ValueError, match="'profiles' must be a table"),
     ):
         hmc_list_configured_hosts()
@@ -278,7 +278,7 @@ def test_port_verify_ssl_explicit_values(tmp_path):
 
 def test_port_verify_ssl_defaults_from_hmcconfig(tmp_path):
     """When port and verify_ssl are absent, defaults come from HMCConfig.model_fields."""
-    from hmc_mcp.config import HMCConfig
+    from hmcpctl.config import HMCConfig
     expected_port = int(HMCConfig.model_fields["port"].default)
     expected_verify_ssl = bool(HMCConfig.model_fields["verify_ssl"].default)
 
@@ -407,14 +407,14 @@ def test_reads_config_document_exactly_once(tmp_path):
     """hmc_list_configured_hosts parses config.toml once, not twice (#295).
 
     Patches the shared choke point `_read_config_document` in both the module
-    that owns it (`hmc_mcp.config`, where `list_nicknames` resolves the name as
-    a module global at call time) and `hmc_mcp.server_tools.systems.core`'s own imported
+    that owns it (`hmcpctl.config`, where `list_nicknames` resolves the name as
+    a module global at call time) and `hmcpctl.server_tools.systems.core`'s own imported
     name (its direct call site), so every read reaches the same counter
     regardless of which call site makes it.
     """
     from unittest.mock import MagicMock
 
-    import hmc_mcp.config as config_mod
+    import hmcpctl.config as config_mod
     cfg = _write_toml(tmp_path / "config.toml", READ_COUNT_TOML)
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (

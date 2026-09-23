@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from live_test_runner import RunState
 
 _REST_CREATE_UNSUPPORTED = ExpectedOutcome(
+    operation="network.create_network",
+    variant="rest-virtual-network-creation",
     reason="HMC firmware returns HTTP 406 for REST VirtualNetwork create "
     "(same PUT limitation as LPAR create)",
     error_codes=frozenset({"406", "not acceptable"}),
@@ -62,6 +64,7 @@ async def _create_network_and_nettest_lpar(
     st, data = await state.call(
         client,
         "hmc_create_virtual_network",
+        expected=[_REST_CREATE_UNSUPPORTED],
         system_name_or_uuid=config.system_name,
         name=f"mcp-test-vlan{artifacts.test_vlan_id}",
         vlan_id=artifacts.test_vlan_id,

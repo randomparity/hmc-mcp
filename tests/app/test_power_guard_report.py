@@ -18,15 +18,15 @@ import sys
 import pytest
 from fastmcp import Client
 
-import hmc_mcp.config as config_module
-import hmc_mcp.server_tools.permissions as permissions_module
-from hmc_mcp.authorization.access_policy import (
+import hmcpctl.config as config_module
+import hmcpctl.server_tools.permissions as permissions_module
+from hmcpctl.authorization.access_policy import (
     DEFAULT_CONNECTION_TOKEN,
     compile_access_policy,
 )
-from hmc_mcp.authorization.connection_scope import selected_connection
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools.permissions import (
+from hmcpctl.authorization.connection_scope import selected_connection
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools.permissions import (
     build_effective_permissions,
     resolve_power_guards,
 )
@@ -71,9 +71,9 @@ def _write_config(tmp_path, body: str) -> None:
 
     ``no_native_config`` sets ``XDG_CONFIG_HOME`` to ``tmp_path / "xdg"`` and
     patches ``sys.platform`` to ``"linux"``, so ``resolve_config_path`` resolves
-    to ``tmp_path / "xdg" / "hmc-mcp" / "config.toml"`` on every OS.
+    to ``tmp_path / "xdg" / "hmcpctl" / "config.toml"`` on every OS.
     """
-    directory = tmp_path / "xdg" / "hmc-mcp"
+    directory = tmp_path / "xdg" / "hmcpctl"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "config.toml").write_text(body, encoding="utf-8")
 
@@ -86,7 +86,7 @@ def test_the_value_is_readable_with_no_config_file_present():
     """#470's acceptance: the env-var-only shape `config show` cannot answer for.
 
     `config_show` exits 1 before it builds any config when the platform-native
-    path is absent (`src/hmc_mcp/cli_commands/config.py:159-161`), which is exactly the
+    path is absent (`src/hmcpctl/cli_commands/config.py:159-161`), which is exactly the
     deployment `docs/environment-variables.md` opens by describing.
     """
     guards = resolve_power_guards(None)
@@ -104,7 +104,7 @@ def test_a_malformed_config_file_is_reported_as_unresolved(
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)
 
-    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.server_tools.permissions"):
+    with caplog.at_level(logging.DEBUG, logger="hmcpctl.server_tools.permissions"):
         (guard,) = resolve_power_guards(policy)
 
     assert guard.connection == DEFAULT_CONNECTION_TOKEN
@@ -137,7 +137,7 @@ def test_one_malformed_document_is_classified_for_every_connection(
 
     monkeypatch.setattr(config_module, "_read_config_document", counting_reader)
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
         guards = resolve_power_guards(policy)
 
     assert [(guard.connection, guard.detail) for guard in guards] == [
@@ -504,7 +504,7 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(tmp_path, c
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
         guards = _by_connection(resolve_power_guards(policy))
 
     assert guards["absent"].authorize_power_operations is None
@@ -558,7 +558,7 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(tmp_path, caplog)
         {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
     ])
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
         reported: set[tuple[str, str]] = set()
         for _ in range(3):
             resolve_power_guards(policy, reported)
@@ -586,7 +586,7 @@ async def test_each_application_has_its_own_unresolved_warning_history(
     ])
     applications = (create_mcp(policy), create_mcp(policy))
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.server_tools.permissions"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
         for application in applications:
             async with Client(application) as client:
                 await client.call_tool("hmc_effective_permissions", {})

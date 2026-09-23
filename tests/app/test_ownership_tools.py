@@ -10,12 +10,12 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp.operations.lpar.assignments import (
+from hmcpctl.operations.lpar.assignments import (
     LparPcieAssignments,
     SriovLogicalPortAssignment,
 )
-from hmc_mcp.operations.virtualization.pcie import InventorySelector
-from hmc_mcp.server_tools.lpar.lifecycle_create import hmc_create_lpar
+from hmcpctl.operations.virtualization.pcie import InventorySelector
+from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
 BASE = "https://hmc.test"
 SYSTEM_UUID = "aaaa0000-0000-0000-0000-000000000001"
@@ -94,8 +94,8 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
-            new=AsyncMock(return_value="[hmc-mcp owner:test-agent created:2026-08-13]"),
+            "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
+            new=AsyncMock(return_value="[hmcpctl owner:test-agent created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
@@ -126,27 +126,27 @@ def test_create_lpar_applies_validated_sriov_assignment(monkeypatch):
         _setup_mock(router)
         with (
             patch(
-                "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
+                "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
                 new=AsyncMock(return_value="stamp"),
             ),
             patch(
-                "hmc_mcp.operations.lpar.assignments.list_sriov_adapters",
+                "hmcpctl.operations.lpar.assignments.list_sriov_adapters",
                 AsyncMock(return_value=adapter),
             ),
             patch(
-                "hmc_mcp.operations.lpar.assignments.list_sriov_physical_ports",
+                "hmcpctl.operations.lpar.assignments.list_sriov_physical_ports",
                 AsyncMock(return_value=port),
             ),
             patch(
-                "hmc_mcp.operations.lpar.assignments.list_sriov_logical_ports",
+                "hmcpctl.operations.lpar.assignments.list_sriov_logical_ports",
                 AsyncMock(return_value=logical),
             ),
             patch(
-                "hmc_mcp.operations.lpar.assignments._existing_capacity",
+                "hmcpctl.operations.lpar.assignments._existing_capacity",
                 AsyncMock(return_value=Decimal()),
             ),
             patch(
-                "hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port",
+                "hmcpctl.operations.lpar.assignments.assign_sriov_logical_port",
                 assigned,
             ),
         ):
@@ -184,7 +184,7 @@ def test_create_lpar_ownership_stamped_false_on_stamp_failure(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
+            "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value=None),
         ):
             result = hmc_create_lpar(
@@ -210,8 +210,8 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
-            new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
+            "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
+            new=AsyncMock(return_value="[hmcpctl owner:hmcpctl created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
@@ -243,7 +243,7 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
         config, system_name, lpar_name, *, agent_id=None, caller_token=None
     ):
         captured["description"] = (
-            f"[hmc-mcp owner:hmc-mcp created:2026-08-21] [caller {caller_token}]"
+            f"[hmcpctl owner:hmcpctl created:2026-08-21] [caller {caller_token}]"
         )
         return captured["description"]
 
@@ -251,7 +251,7 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership", new=capture_stamp
+            "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership", new=capture_stamp
         ):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,

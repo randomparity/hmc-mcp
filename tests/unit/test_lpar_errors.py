@@ -1,7 +1,7 @@
 """Direct contracts for LPAR write-error translation."""
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar.errors import translate_lpar_write_error
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.errors import translate_lpar_write_error
 
 
 def test_lpar_write_error_translation_preserves_406_response_body():

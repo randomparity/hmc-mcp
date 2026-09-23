@@ -9,9 +9,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh.commands import parse_hmc_delimited_rows
-from hmc_mcp.ssh.sriov import list_sriov_physical_port_rows
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.virtualization.pcie import _is_exact_admitted_environment
+from hmcpctl.ssh.commands import parse_hmc_delimited_rows
+from hmcpctl.ssh.profiles import ProfileIoSlot, parse_profile_io_slots
+from hmcpctl.ssh.sriov import list_sriov_physical_port_rows
 
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "pcie"
@@ -24,6 +26,7 @@ EXPECTED_FIXTURES = {
     "power9-sriov-physport.json",
     "power10-sriov-contract.json",
     "power11-sriov-contract.json",
+    "power9-v10r3m1060-live-ioslots.json",
     "power9-v10r3m1060-live-sriov.json",
     "power9-v10r3m1060-live-vnic.json",
 }
@@ -121,17 +124,18 @@ def _evidence_records() -> list[dict[str, object]]:
 async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    capture = next(
-        record
-        for record in _evidence_records()
-        if record["record_kind"] == "live-capture"
-        and record["system_model"] == "8375-42A"
-    )
+    # Name the record rather than taking the first live capture: three fixtures
+    # now match that description, and the SR-IOV one is the only one carrying a
+    # `physical-ports` probe.
+    records = dict(zip(sorted(EXPECTED_FIXTURES), _evidence_records(), strict=True))
+    capture = records["power9-v10r3m1060-live-sriov.json"]
+    assert capture["record_kind"] == "live-capture"
+    assert capture["system_model"] == "8375-42A"
     roce_probe = next(
         probe for probe in capture["probes"] if probe["name"] == "physical-ports"
     )
     run = AsyncMock(side_effect=[roce_probe["stdout"], "No results were found."])
-    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     rows = await list_sriov_physical_port_rows(
         HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"}),
@@ -152,7 +156,7 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
          "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
          "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header"),
     ]
-    fixture_sha256 = "8c13d5e53c44183a0ade3e26f654aab24593d5f84945902f758186cfee74f597"  # pragma: allowlist secret -- pinned fixture checksum
+    fixture_sha256 = "67910d8a6d60bf4bb6bc5e64c890d3486789beaca547742706dce09fe2a42965"  # pragma: allowlist secret -- pinned fixture checksum
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
     assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
     with pytest.raises(AssertionError):
@@ -283,7 +287,90 @@ def test_evidence_pins_identity_and_capacity_semantics() -> None:
         assert Decimal("10.25").as_tuple().exponent == -2
 
 
-def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
+def test_dedicated_profile_io_slots_capture_is_pinned() -> None:
+    fixture = FIXTURES / "power9-v10r3m1060-live-ioslots.json"
+    record = json.loads(fixture.read_text())
+    assert record["source_url"] == (
+        "https://github.com/randomparity/hmc-mcp/issues/881#issuecomment-5779662835"
+    )
+    assert record["support"] == "captured"
+    assert [probe["name"] for probe in record["probes"]] == [
+        "hmc-version",
+        "system-model",
+        "profile-names",
+        "io-slots-readback",
+        "invalid-attribute-control",
+    ]
+    probes = {probe["name"]: probe for probe in record["probes"]}
+    assert {name: probe["exit_status"] for name, probe in probes.items()} == {
+        "hmc-version": 0,
+        "system-model": 0,
+        "profile-names": 0,
+        "io-slots-readback": 0,
+        "invalid-attribute-control": 1,
+    }
+    assert {probe["stderr"] for probe in record["probes"]} == {""}
+    # These two probes print no identifier, so their lengths are the ones the
+    # capture comment's own byte-count table can check against the published
+    # (post-redaction) transcript. The other three are shorter than the table by
+    # exactly the identifiers that were redacted out of them.
+    assert len(probes["hmc-version"]["stdout"].encode()) == 236
+    assert len(probes["invalid-attribute-control"]["stdout"].encode()) == 126
+    readback = probes["io-slots-readback"]
+    assert readback["command"] == (
+        "lssyscfg -r prof -m sys-R1 -F lpar_name,name,io_slots --header"
+    )
+    assert readback["fields"] == ["lpar_name", "name", "io_slots"]
+    assert [
+        row["io_slots"]
+        for row in parse_hmc_delimited_rows(readback["stdout"], readback["fields"])
+    ] == [
+        "21020013/none/1,21040015/none/1,21010020/none/0",
+        "21020013/none/1,21040015/none/1",
+    ]
+    # The negative control is what makes the readback positive evidence rather
+    # than a silent no-op: the HMC rejects an unknown -F attribute by name.
+    assert probes["invalid-attribute-control"]["stdout"] == (
+        "An invalid attribute was entered.  The invalid attribute is "
+        "bogus_attr_xyz.  Please correct your entry and retry the command.\n"
+    )
+    fixture_sha256 = "07673ea2272fe9f1d5be3f37bebe8fe91d5fbebdb60c40cd641250895932d75b"  # pragma: allowlist secret -- pinned fixture checksum
+    fixture_bytes = fixture.read_bytes()
+    assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
+    with pytest.raises(AssertionError):
+        assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
+
+
+def test_captured_io_slots_parse_with_a_none_pool() -> None:
+    record = json.loads((FIXTURES / "power9-v10r3m1060-live-ioslots.json").read_text())
+    readback = {probe["name"]: probe for probe in record["probes"]}["io-slots-readback"]
+    rows = parse_hmc_delimited_rows(readback["stdout"], readback["fields"])
+
+    parsed = [parse_profile_io_slots(row["io_slots"]) for row in rows]
+
+    assert parsed[1] == (
+        ProfileIoSlot("21020013", None, True),
+        ProfileIoSlot("21040015", None, True),
+    )
+    assert parsed[0][-1] == ProfileIoSlot("21010020", None, False)
+    assert {slot.pool_id for slots in parsed for slot in slots} == {None}
+
+
+# The vnic capture carries no `hmc-version` probe, so it has nothing to check here.
+@pytest.mark.parametrize(
+    "fixture",
+    ["power9-v10r3m1060-live-ioslots.json", "power9-v10r3m1060-live-sriov.json"],
+)
+def test_captured_hmc_version_is_the_exact_admitted_envelope(fixture: str) -> None:
+    record = json.loads((FIXTURES / fixture).read_text())
+    probes = {probe["name"]: probe for probe in record["probes"]}
+
+    assert _is_exact_admitted_environment(
+        probes["hmc-version"]["stdout"], record["system_model"]
+    )
+
+
+def test_operation_matrix_fails_closed_for_every_mutation_row() -> None:
     spec = (
         ROOT
         / "docs"
@@ -307,6 +394,17 @@ def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
         "do not compose Power10/11 mutation evidence with Power9 read evidence"
         in rows["Assign/unassign dedicated slot"][2]
     )
+    # The dedicated row's profile cells mutate inside ADR 0165's envelope under
+    # ADR 0166 and nowhere else; its dynamic cell still does not mutate at all.
+    for outcome in rows["Assign/unassign dedicated slot"][:2]:
+        assert "admitted by ADR 0165" in outcome
+        assert "ADR 0166" in outcome
+        assert "unavailable unconditionally outside it" in outcome
+        # The envelope is the whole of what ADR 0165 confines, so widening it in
+        # the spec must redden here rather than pass unremarked.
+        assert "V10R3 M1060" in outcome
+        assert "8375-42A" in outcome
+    assert "do not mutate" in rows["Assign/unassign dedicated slot"][2]
     assert all(
         "do not mutate" in outcome
         for outcome in rows["Assign/unassign SR-IOV logical port"]
@@ -350,7 +448,7 @@ def _canonical_ast(value: object) -> object:
 
 
 def test_sriov_mutation_surface_replaces_legacy_mode_and_never_forces() -> None:
-    source = (ROOT / "src" / "hmc_mcp" / "ssh" / "sriov.py").read_text()
+    source = (ROOT / "src" / "hmcpctl" / "ssh" / "sriov.py").read_text()
     current = ast.parse(source)
     functions = {
         node.name: node

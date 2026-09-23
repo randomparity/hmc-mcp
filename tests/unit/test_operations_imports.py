@@ -11,10 +11,10 @@ import pytest
 @pytest.mark.parametrize(
     "modules",
     [
-        ("hmc_mcp.operations.lpar", "hmc_mcp.operations.virtualization.vnic"),
-        ("hmc_mcp.operations.virtualization.vnic", "hmc_mcp.operations.lpar"),
-        ("hmc_mcp.ssh.lpar", "hmc_mcp.ssh.profiles"),
-        ("hmc_mcp.ssh.profiles", "hmc_mcp.ssh.lpar"),
+        ("hmcpctl.operations.lpar", "hmcpctl.operations.virtualization.vnic"),
+        ("hmcpctl.operations.virtualization.vnic", "hmcpctl.operations.lpar"),
+        ("hmcpctl.ssh.lpar", "hmcpctl.ssh.profiles"),
+        ("hmcpctl.ssh.profiles", "hmcpctl.ssh.lpar"),
     ],
 )
 def test_sibling_modules_import_in_either_order(

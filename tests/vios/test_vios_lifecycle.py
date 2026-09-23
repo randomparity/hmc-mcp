@@ -5,9 +5,9 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from hmc_mcp.documents import LparResources, build_vios_document
-from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh.install import (
+from hmcpctl.documents import LparResources, build_vios_document
+from hmcpctl.errors import HMCError
+from hmcpctl.ssh.install import (
     INSTALLIOS_PID_PREFIX,
     build_installios_command,
 )
@@ -83,7 +83,7 @@ def test_build_installios_command_exact_line_for_vios():
         profile_name="default",
         vlan_id="100",
     )
-    assert log_path == "/tmp/hmc-mcp-installios-vios1.log"
+    assert log_path == "/tmp/hmcpctl-installios-vios1.log"
     assert command == (
         "nohup installios -d /extra/viosimages/VIOS_4.1/dvdimage.v1.iso "
         "-i 192.168.1.20 -S 255.255.255.0 -g 192.168.1.1 -s sys1 -p vios1 "
@@ -140,7 +140,7 @@ def _mock_resolution(mock_hmc) -> None:
 
 def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
     """The public VIOS target is resolved before the install submission."""
-    from hmc_mcp.server_tools.vios.core import hmc_install_vios
+    from hmcpctl.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -152,12 +152,12 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with patch("hmc_mcp.ssh.install.run_hmc_command", new=fake_run_hmc_command):
+    with patch("hmcpctl.ssh.install.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
 
     assert result["partition"] == "vios1"
     assert result["pid"] == 4242
-    assert result["log_path"] == "/tmp/hmc-mcp-installios-vios1.log"
+    assert result["log_path"] == "/tmp/hmcpctl-installios-vios1.log"
     assert "no HMC job exists on this path" in result["message"]
     expected, _ = build_installios_command(
         install_source="/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
@@ -174,7 +174,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
 
 def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
     """Validator failures raise before an SSH session is opened."""
-    from hmc_mcp.server_tools.vios.core import hmc_install_vios
+    from hmcpctl.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -192,7 +192,7 @@ def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
 
 
 def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
-    from hmc_mcp.server_tools.vios.core import hmc_install_vios
+    from hmcpctl.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -208,7 +208,7 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
         raise AssertionError("run_installios must not be called")
 
     with (
-        patch("hmc_mcp.operations.vios.install.run_installios", new=fail),
+        patch("hmcpctl.operations.vios.install.run_installios", new=fail),
         pytest.raises(ValueError, match="No VIOS named"),
     ):
         hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
@@ -216,7 +216,7 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
 
 def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     """A failed installios submission raises HMCError out of the tool."""
-    from hmc_mcp.server_tools.vios.core import hmc_install_vios
+    from hmcpctl.server_tools.vios.core import hmc_install_vios
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -227,7 +227,7 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
         raise HMCError("SSH command timed out after 30s")
 
     with (
-        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCError, match="timed out"),
     ):
         hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)

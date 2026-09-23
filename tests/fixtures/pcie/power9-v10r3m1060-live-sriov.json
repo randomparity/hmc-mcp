@@ -14,7 +14,7 @@
       "command": "lshmc -V",
       "fields": [],
       "exit_status": 0,
-      "stdout": "Version: 10\nRelease: 3\nService Pack: 1060\nBuild level: 2408210051\n",
+      "stdout": "\"version= Version: 10\n Release: 3\n Service Pack: 1060\nHMC Build level 2408210051\nMF71689 - HMC V10R3 M1060\nMF71697 - iFix for HMC V10R3 M1060\nMF71699 - iFix for HMC V10R3 M1060\nMF71703 - iFix for HMC V10R3 M1060\n\",\"base_version=V10R3\n\"\n",
       "stderr": ""
     },
     {

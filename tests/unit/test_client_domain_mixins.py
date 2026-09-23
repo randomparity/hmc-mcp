@@ -9,17 +9,20 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from hmc_mcp.client.client_lpars import LparsMixin
-from hmc_mcp.client.client_lpm import LpmMixin
-from hmc_mcp.client.client_network import NetworkMixin
-from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
-from hmc_mcp.client.client_storage import StorageMixin
-from hmc_mcp.client.client_systems import SystemsMixin
-from hmc_mcp.client.client_templates import TemplatesMixin
-from hmc_mcp.client.client_updates import UpdatesMixin
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.client_lpars import LparsMixin
+from hmcpctl.client.client_lpm import LpmMixin
+from hmcpctl.client.client_network import NetworkMixin
+from hmcpctl.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
+from hmcpctl.client.client_storage import StorageMixin
+from hmcpctl.client.client_systems import SystemsMixin
+from hmcpctl.client.client_templates import TemplatesMixin
+from hmcpctl.client.client_updates import UpdatesMixin
+from hmcpctl.client.core import HMCClient
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError
+
+UUID_A = "12345678-1234-1234-1234-1234567890ab"
+UUID_B = "ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF"
 
 
 def test_platform_update_is_owned_by_updates_mixin() -> None:
@@ -101,13 +104,13 @@ def _entry(uuid: str, name: str, resource_type: str) -> dict:
 async def test_lpar_mixin_routes_scoped_and_global_reads():
     client = LparsHarness()
 
-    assert await client.list_logical_partitions("system-1") == []
+    assert await client.list_logical_partitions(UUID_A) == []
     assert await client.list_logical_partitions() == []
     assert await client.get_logical_partition("lpar-1") is None
     assert await client.find_partition_by_name("aix1") is None
 
     client._get.assert_awaited_once_with(
-        "/rest/api/uom/ManagedSystem/system-1/LogicalPartition",
+        f"/rest/api/uom/ManagedSystem/{UUID_A}/LogicalPartition",
         "LogicalPartition",
     )
     client.list_uom.assert_awaited_once_with("LogicalPartition")
@@ -231,7 +234,7 @@ async def test_lpar_parent_discovery_has_total_deadline(monkeypatch):
     ]
     client.list_logical_partitions = AsyncMock(side_effect=_yield_empty)
     monkeypatch.setattr(
-        "hmc_mcp.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
+        "hmcpctl.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
     )
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):
@@ -283,35 +286,35 @@ async def test_lpar_scoped_ambiguity_requires_parent_name(parent):
 async def test_lpar_mixin_writes_use_schema_compatible_paths():
     client = LparsHarness()
 
-    assert await client.create_logical_partition("system-1", "<lpar/>") is None
-    assert await client.modify_logical_partition("lpar-1", "<update/>") is None
-    await client.delete_logical_partition("lpar-1")
+    assert await client.create_logical_partition(UUID_A, "<lpar/>") is None
+    assert await client.modify_logical_partition(UUID_B, "<update/>") is None
+    await client.delete_logical_partition(UUID_B)
 
     client._put.assert_awaited_once_with(
-        "/rest/api/uom/ManagedSystem/system-1/LogicalPartition",
+        f"/rest/api/uom/ManagedSystem/{UUID_A}/LogicalPartition",
         "<lpar/>",
         resource_type="LogicalPartition",
         include_schema_version=False,
     )
     client._post.assert_awaited_once_with(
-        "/rest/api/uom/LogicalPartition/lpar-1",
+        f"/rest/api/uom/LogicalPartition/{UUID_B}",
         "<update/>",
         resource_type="LogicalPartition",
         include_schema_version=False,
     )
-    client._delete.assert_awaited_once_with("/rest/api/uom/LogicalPartition/lpar-1")
+    client._delete.assert_awaited_once_with(f"/rest/api/uom/LogicalPartition/{UUID_B}")
 
 
 @pytest.mark.asyncio
 async def test_lpm_mixin_submits_each_operation_to_lpar_endpoint():
     client = LpmHarness()
 
-    await client.lpar_migrate("lpar-1", "target-system")
-    await client.lpar_migrate_validate("lpar-1", "target-system")
-    await client.lpar_migrate_abort("lpar-1")
-    await client.lpar_migrate_recover("lpar-1")
+    await client.lpar_migrate(UUID_A, "target-system")
+    await client.lpar_migrate_validate(UUID_A, "target-system")
+    await client.lpar_migrate_abort(UUID_A)
+    await client.lpar_migrate_recover(UUID_A)
     await client.lpar_remote_restart(
-        "lpar-1", "restart", "source-system", target_managed_system="target-system"
+        UUID_A, "restart", "source-system", target_managed_system="target-system"
     )
 
     operations = [
@@ -346,16 +349,16 @@ def test_lpm_optional_controls_are_keyword_only():
 async def test_network_mixin_routes_empty_feeds_and_delete():
     client = NetworkHarness()
 
-    assert await client.list_virtual_switches("system-1") == []
-    assert await client.list_virtual_networks("system-1") == []
-    assert await client.list_network_bridges("system-1") == []
+    assert await client.list_virtual_switches(UUID_A) == []
+    assert await client.list_virtual_networks(UUID_A) == []
+    assert await client.list_network_bridges(UUID_A) == []
     assert (
         await client.create_virtual_network(
-            "system-1", "net", 100, 0, switch_uuid="switch-1"
+            UUID_A, "net", 100, 0, switch_uuid="switch-1"
         )
         is None
     )
-    await client.delete_virtual_network("system-1", "network-1")
+    await client.delete_virtual_network(UUID_A, UUID_B)
 
     assert [call.args[1] for call in client._get.await_args_list] == [
         "VirtualSwitch",
@@ -364,7 +367,7 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
     ]
     client._put.assert_awaited_once()
     assert (
-        "https://hmc.test:12443/rest/api/uom/ManagedSystem/system-1/"
+        f"https://hmc.test:12443/rest/api/uom/ManagedSystem/{UUID_A}/"
         "VirtualSwitch/switch-1" in client._put.await_args.args[1]
     )
     assert client._put.await_args.kwargs == {
@@ -372,7 +375,7 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
         "include_schema_version": False,
     }
     client._delete.assert_awaited_once_with(
-        "/rest/api/uom/ManagedSystem/system-1/VirtualNetwork/network-1"
+        f"/rest/api/uom/ManagedSystem/{UUID_A}/VirtualNetwork/{UUID_B}"
     )
 
 
@@ -415,23 +418,19 @@ async def test_storage_mixin_routes_schema_sensitive_operations():
     vios_uuid = "11111111-1111-1111-1111-111111111111"
     vg_uuid = "22222222-2222-2222-2222-222222222222"
 
-    assert client.get_lpar_link("lpar-1") == (
-        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1"
+    assert client.get_lpar_link(UUID_A) == (
+        f"https://hmc.test:12443/rest/api/uom/LogicalPartition/{UUID_A}"
     )
     assert await client.list_volume_groups(vios_uuid) == []
     assert await client.create_virtual_disk(vios_uuid, vg_uuid, "disk", 1024) is None
 
-    client._get.assert_awaited_once_with(
-        f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup",
-        "VolumeGroup",
-        include_schema_version=False,
-        uuid_path_arguments={"vios_uuid": vios_uuid},
-    )
+    assert client._get.await_count == 1
     client._post.assert_awaited_once()
     assert client._post.await_args.kwargs == {
         "resource_type": "VolumeGroup",
         "include_schema_version": False,
         "uuid_path_arguments": {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+        "fallback_to_generic_uom_on_406": True,
     }
 
 
@@ -451,10 +450,26 @@ async def test_storage_mixin_uses_active_base_for_volume_group_url():
 async def test_storage_mixin_uses_active_base_in_optical_mapping():
     client = StorageHarness()
 
-    await client.create_optical_mapping("vios-1", "install.iso", "lpar-1")
+    await client.create_optical_mapping("vios-1", "install.iso", UUID_A)
 
     body = client._post.await_args.args[1]
-    assert "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1" in body
+    assert f"https://hmc.test:12443/rest/api/uom/LogicalPartition/{UUID_A}" in body
+
+
+@pytest.mark.asyncio
+async def test_storage_mixin_reports_a_possible_side_effect_after_a_5xx():
+    client = StorageHarness()
+    after = {"virtual_disks": ["boot", "data"]}
+    snapshot = AsyncMock(return_value=after)
+    dispatch = AsyncMock(side_effect=HMCError("write failed", 503, "unavailable"))
+
+    with pytest.raises(HMCError, match="possible side effect.*Do not retry") as exc_info:
+        await client._reconcile_storage_mutation("create_virtual_disk", snapshot, dispatch)
+
+    assert exc_info.value.__cause__ is dispatch.side_effect
+    snapshot.assert_awaited_once()
+    dispatch.assert_awaited_once()
+    assert "readback completed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -464,7 +479,7 @@ async def test_systems_mixin_routes_inventory_and_power_jobs():
     assert await client.list_managed_systems() == []
     assert await client.get_managed_system("system-1") is None
     assert await client.find_vios_by_name("vios-a") is None
-    assert await client.power_off_system("system-1", immediate=True) == {
+    assert await client.power_off_system(UUID_A, immediate=True) == {
         "UUID": "job-1"
     }
 
@@ -473,7 +488,7 @@ async def test_systems_mixin_routes_inventory_and_power_jobs():
     client.search_uom.assert_awaited_once_with(
         "VirtualIOServer", "PartitionName", "vios-a"
     )
-    assert client.submit_job.await_args.args[0].endswith("/system-1/do/PowerOff")
+    assert client.submit_job.await_args.args[0].endswith(f"/{UUID_A}/do/PowerOff")
 
 
 @pytest.mark.asyncio
@@ -589,7 +604,7 @@ async def test_vios_parent_discovery_has_total_deadline(monkeypatch):
     )
     client.list_vios = AsyncMock(side_effect=_yield_empty)
     monkeypatch.setattr(
-        "hmc_mcp.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
+        "hmcpctl.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
     )
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):

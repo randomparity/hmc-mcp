@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hmc_mcp.server_tools.users import core as server_users
+from hmcpctl.server_tools.users import core as server_users
 
 
 def _client_context(client: MagicMock) -> MagicMock:
@@ -36,7 +36,7 @@ def test_create_user_tool_forwards_identifiers_and_optional_fields() -> None:
     resource_roles = ["/roles/operators", "/roles/storage"]
 
     with (
-        patch("hmc_mcp._app.client_from_env", return_value=context) as factory,
+        patch("hmcpctl._app.client_from_env", return_value=context) as factory,
         patch.object(server_users, "create_user", operation),
     ):
         result = server_users.hmc_create_user(
@@ -91,7 +91,7 @@ def test_modify_user_tool_preserves_explicit_clear_values() -> None:
     operation = AsyncMock(return_value=None)
 
     with (
-        patch("hmc_mcp._app.client_from_env", return_value=context),
+        patch("hmcpctl._app.client_from_env", return_value=context),
         patch.object(server_users, "modify_user", operation),
     ):
         result = server_users.hmc_modify_user(
@@ -143,7 +143,7 @@ def test_delete_user_tool_returns_identified_confirmation() -> None:
     client.delete_hmc_user = AsyncMock(return_value=None)
     context = _client_context(client)
 
-    with patch("hmc_mcp._app.client_from_env", return_value=context):
+    with patch("hmcpctl._app.client_from_env", return_value=context):
         result = server_users.hmc_delete_user(
             "console-1", "profile-1", profile="lab"
         )
@@ -171,7 +171,7 @@ def test_remote_access_tool_preserves_value_and_clear_semantics(
     )
     context = _client_context(client)
 
-    with patch("hmc_mcp._app.client_from_env", return_value=context) as factory:
+    with patch("hmcpctl._app.client_from_env", return_value=context) as factory:
         result = server_users.hmc_configure_remote_access(
             "console-1", values, clear_fields, profile="security"
         )

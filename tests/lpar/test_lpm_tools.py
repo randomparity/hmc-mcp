@@ -13,14 +13,14 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar.migration import (
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.migration import (
     RemoteRestartRequest,
     abort_lpar_migration,
     recover_lpar_migration,
     remote_restart_lpar,
 )
-from hmc_mcp.server_tools.lpar.migration import (
+from hmcpctl.server_tools.lpar.migration import (
     hmc_migrate_abort_lpar,
     hmc_migrate_lpar,
     hmc_migrate_recover_lpar,
@@ -44,12 +44,12 @@ JOB_OUTCOME_KEYS = {
 @pytest.fixture(autouse=True)
 def _authorize_lpar_mutations(monkeypatch):
     async def authorize(hmc, system, lpar, **_kwargs):
-        from hmc_mcp.resource_identity import resolve_lpar_uuid
+        from hmcpctl.resource_identity import resolve_lpar_uuid
 
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
     )
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
@@ -107,7 +107,7 @@ def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
     route = _job_route(mock_hmc, "Migrate")
     resolver = AsyncMock(return_value="vrml12-fsp")
 
-    with patch("hmc_mcp.operations.lpar.migration.resolve_system_name", new=resolver):
+    with patch("hmcpctl.operations.lpar.migration.resolve_system_name", new=resolver):
         hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID, validate_first=False)
 
     resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)

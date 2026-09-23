@@ -135,7 +135,7 @@ def test_library_dependency_set_is_exhaustive() -> None:
 def test_direct_third_party_imports_are_declared() -> None:
     """Every imported third-party distribution is a direct project dependency."""
     imported_modules: set[str] = set()
-    for path in (ROOT / "src" / "hmc_mcp").rglob("*.py"):
+    for path in (ROOT / "src" / "hmcpctl").rglob("*.py"):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -145,7 +145,7 @@ def test_direct_third_party_imports_are_declared() -> None:
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 imported_modules.add(node.module.partition(".")[0])
 
-    third_party = imported_modules - sys.stdlib_module_names - {"hmc_mcp"}
+    third_party = imported_modules - sys.stdlib_module_names - {"hmcpctl"}
     distribution_names = importlib.metadata.packages_distributions()
     imported_distributions = {
         distribution.lower().replace("_", "-")

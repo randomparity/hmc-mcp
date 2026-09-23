@@ -4,7 +4,7 @@ Every nickname target must be an existing profile key, no nickname key may
 collide with a profile key, and no target may itself be a nickname key (which
 would imply a chain, forbidden: resolution is one level deep). A malformed
 table (not string -> string) fails too. This mirrors the runtime contract in
-``hmc_mcp.config`` so the guardrail and the loader cannot drift.
+``hmcpctl.config`` so the guardrail and the loader cannot drift.
 
 Usage:
     python scripts/check_nicknames.py [--config <path>]
@@ -23,7 +23,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from hmc_mcp.config import ConfigError, _coerce_nicknames
+from hmcpctl.config import ConfigError, _coerce_nicknames
 
 # Resolve the repo root relative to this script so the guard can be run from
 # any working directory.

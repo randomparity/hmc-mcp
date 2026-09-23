@@ -19,28 +19,28 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.documents import LparResources
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.updates.models import (
+from hmcpctl.documents import LparResources
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.updates.models import (
     PlatformUpdateParameter,
     SystemFirmwareUpdateModel,
 )
-from hmc_mcp.server_tools.command import hmc_run_command
-from hmc_mcp.server_tools.jobs import (
+from hmcpctl.server_tools.command import hmc_run_command
+from hmcpctl.server_tools.jobs import (
     hmc_get_job,
     hmc_list_recent_jobs,
     hmc_wait_for_job,
 )
-from hmc_mcp.server_tools.lpar.lifecycle import (
-    hmc_create_lpar,
+from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_delete_lpar,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
     hmc_rename_lpar,
 )
-from hmc_mcp.server_tools.systems.core import hmc_get_lpar
-from hmc_mcp.server_tools.updates import (
+from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
+from hmcpctl.server_tools.systems.core import hmc_get_lpar
+from hmcpctl.server_tools.updates import (
     hmc_submit_available_hmc_ptfs_query,
     hmc_update_console_software,
     hmc_update_firmware,
@@ -50,6 +50,22 @@ from hmc_mcp.server_tools.updates import (
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+PARTITION_PROFILE_UUID = "00000000-0000-0000-0000-0000000000aa"
+
+# One-profile Atom feed for the partition's LogicalPartitionProfile children.
+PARTITION_PROFILE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <title>LogicalPartitionProfile:default</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartitionProfile xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <ProfileName>default</ProfileName>
+      </LogicalPartitionProfile>
+    </content>
+  </entry>
+</feed>
+"""
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 MC_UUID = "mc-uuid-0001"
 CONSOLE_SOURCE = {
@@ -141,7 +157,7 @@ def test_run_command_passes_cmd_through(monkeypatch):
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("lpar1  running\n")
 
-    with patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock):
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_run_command("lssyscfg -r lpar -m server1")
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -265,6 +281,48 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
     assert result.message is None
 
 
+def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc):
+    """The three activation parameters reach the PowerOn job document."""
+    import inspect
+
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
+    ).mock(return_value=httpx.Response(200, text="not activated"))
+    # ADR 0039 containment: the tool reads the partition's own profile feed
+    # before it will carry a caller-supplied LogicalPartitionProfile.
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/LogicalPartitionProfile"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=PARTITION_PROFILE_FEED.format(uuid=PARTITION_PROFILE_UUID)
+        )
+    )
+    route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+
+    hmc_power_on_lpar(
+        LPAR_UUID,
+        boot_mode="sms",
+        partition_profile_uuid=PARTITION_PROFILE_UUID,
+        operation_type="activate",
+    )
+
+    body = route.calls.last.request.content.decode()
+    assert ">bootmode</ParameterName>" in body
+    assert '<ParameterValue kb="CUR" kxe="false">sms</ParameterValue>' in body
+    assert ">LogicalPartitionProfile</ParameterName>" in body
+    assert PARTITION_PROFILE_UUID in body
+    assert ">OperationType</ParameterName>" in body
+
+    # ADR 0161: the partition profile is never named `profile`, which is the
+    # connection profile and stays exactly what it was.
+    parameters = inspect.signature(hmc_power_on_lpar).parameters
+    assert {"boot_mode", "partition_profile_uuid", "operation_type"} <= set(parameters)
+    assert parameters["profile"].default is None
+
+
 def test_power_off_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_power_off_lpar PUTs a PowerOff job with the immediate flag."""
     _hmc_env(monkeypatch)
@@ -276,6 +334,36 @@ def test_power_off_lpar_submits_job(monkeypatch, mock_hmc):
     assert "PowerOff</OperationName>" in body
     assert '<ParameterName kb="ROR" kxe="false">immediate</ParameterName>' in body
     assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' in body
+
+
+def test_power_off_lpar_tool_forwards_shutdown_parameters(monkeypatch, mock_hmc):
+    """restart and operation reach the PowerOff job document."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    hmc_power_off_lpar(LPAR_UUID, restart=True, operation="osshutdown")
+
+    body = route.calls.last.request.content.decode()
+    assert '<ParameterName kb="ROR" kxe="false">restart</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' in body
+    assert '<ParameterName kb="ROR" kxe="false">operation</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">osshutdown</ParameterValue>' in body
+
+
+def test_power_off_lpar_tool_refuses_dumprestart_without_opt_in(monkeypatch, mock_hmc):
+    """ADR 0164: the force-crash variant needs an explicit opt-in on the tool."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    with pytest.raises(ValueError) as refused:
+        hmc_power_off_lpar(LPAR_UUID, operation="dumprestart")
+
+    assert "allow_dump_restart" in str(refused.value)
+    assert route.called is False
 
 
 # ---------------------------------------------------------------------- #
@@ -311,8 +399,8 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(
-        "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
-        new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
+        "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
+        new=AsyncMock(return_value="[hmcpctl owner:hmcpctl created:2026-01-01]"),
     ):
         result = hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
@@ -356,11 +444,11 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
     with (
         patch(
-            "hmc_mcp.operations.lpar.ownership.stamp_lpar_ownership",
+            "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
         patch(
-            "hmc_mcp.operations.lpar.ownership._resolve_system_name",
+            "hmcpctl.operations.lpar.ownership._resolve_system_name",
             new=AsyncMock(return_value="sys1"),
         ),
     ):
@@ -385,7 +473,7 @@ def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
     )
     with patch(
-        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
         new=AsyncMock(return_value=LPAR_UUID),
     ):
         result = hmc_modify_lpar(
@@ -408,7 +496,7 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
     )
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
-        "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
+        "hmcpctl.operations.lpar.core.resolve_and_authorize_lpar_mutation",
         new=guard,
     ):
         result = hmc_rename_lpar(
@@ -432,7 +520,7 @@ def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
+            "hmcpctl.operations.lpar.core.resolve_and_authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -449,7 +537,7 @@ def test_foreign_owned_delete_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.operations.lpar.core.resolve_and_authorize_lpar_mutation",
+            "hmcpctl.operations.lpar.core.resolve_and_authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -528,7 +616,7 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     hostile_uuid = "allowed/do/Shutdown?ignored="
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.service.resolve_vios_uuid",
+        "hmcpctl.operations.updates.service.resolve_vios_uuid",
         AsyncMock(return_value=hostile_uuid),
     )
     route = mock_hmc.put(
@@ -592,7 +680,7 @@ def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
     _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout()
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.service.wait_for_submitted_job",
+        "hmcpctl.operations.updates.service.wait_for_submitted_job",
         AsyncMock(return_value=raw),
     )
 
@@ -617,7 +705,7 @@ def test_vios_stdout_is_not_projected_without_terminal_wait(
     _hmc_env(monkeypatch)
     _mock_vios_submission(mock_hmc)
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.service.wait_for_submitted_job",
+        "hmcpctl.operations.updates.service.wait_for_submitted_job",
         AsyncMock(return_value=job),
     )
 
@@ -632,7 +720,7 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
     _mock_vios_submission(mock_hmc)
     raw = _vios_job_with_stdout(top_level="raw value")
     monkeypatch.setattr(
-        "hmc_mcp.operations.updates.service.wait_for_submitted_job",
+        "hmcpctl.operations.updates.service.wait_for_submitted_job",
         AsyncMock(return_value=raw),
     )
 
@@ -1045,7 +1133,7 @@ JOB_RESPONSE_ERROR_DATA = """<?xml version="1.0" encoding="UTF-8" standalone="ye
       <Results>
         <JobParameter>
           <ParameterName>ErrorData</ParameterName>
-          <ParameterValue>HSCL3205 The partition entered an error state</ParameterValue>
+          <ParameterValue>Activation reported error data</ParameterValue>
         </JobParameter>
       </Results>
     </JobResponse>
@@ -1098,7 +1186,7 @@ def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
         (
             JOB_RESPONSE_ERROR_DATA,
             "COMPLETED_WITH_ERROR",
-            "HSCL3205 The partition entered an error state",
+            "Activation reported error data",
         ),
     ],
 )
@@ -1257,7 +1345,7 @@ def test_job_tools_reject_parser_deleted_job_href_controls(
     forged = f"{_JOB_OP_HREF}{control}{payload}"
 
     with (
-        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"),
+        caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"),
         pytest.raises( ValueError, match="job_href must not contain TAB, CR, or LF" ) as exc_info,
     ):
         tool("job-uuid-999", job_href=forged)

@@ -10,9 +10,9 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.jobs import get_job, wait_for_job
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.jobs import get_job, wait_for_job
 
 _JOB_ID = "job-uuid-999"
 _GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"
@@ -85,7 +85,7 @@ async def test_get_job_warns_when_the_hmc_answers_about_a_different_job(
     other_entry = _job_entry("COMPLETED_OK").replace(_JOB_ID, "some-other-job")
     mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(200, text=other_entry))
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
 
@@ -107,7 +107,7 @@ async def test_get_job_does_not_warn_when_the_identifier_matches(
         return_value=httpx.Response(200, text=_job_entry("RUNNING"))
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             assert (await get_job(hmc, _JOB_ID)).job_id == _JOB_ID
 
@@ -127,7 +127,7 @@ async def test_get_job_does_not_warn_about_a_relabelled_job_without_a_link(
     )
     mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(200, text=relabelled))
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             assert (await get_job(hmc, _JOB_ID)).job_id == "the-uuid-form"
 
@@ -148,7 +148,7 @@ async def test_wait_for_job_warns_about_a_substituted_job_once_not_per_poll(
         ]
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             outcome = await wait_for_job(
                 hmc,
@@ -175,7 +175,7 @@ async def test_wait_for_job_logs_the_last_status_when_a_job_vanishes_mid_wait(
         ]
     )
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             outcome = await wait_for_job(
                 hmc, _JOB_ID, timeout_seconds=3600, poll_interval=1
@@ -425,7 +425,7 @@ async def test_wait_for_job_warns_about_a_substituted_job_on_the_first_poll(
     other = _job_entry("RUNNING").replace(_JOB_ID, "some-other-job")
     mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(200, text=other))
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations.jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
             waiter = asyncio.create_task(
                 wait_for_job(

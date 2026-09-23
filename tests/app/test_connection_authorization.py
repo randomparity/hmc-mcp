@@ -17,17 +17,17 @@ from conftest import make_config
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.authorization.access_policy import (
+from hmcpctl.audit import sink as audit_sink
+from hmcpctl.authorization.access_policy import (
     DEFAULT_CONNECTION_TOKEN,
     compile_access_policy,
 )
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools import command as server_command
-from hmc_mcp.server_tools.lpar import lifecycle as server_lpars
-from hmc_mcp.tool_registry import ToolSecurity, authorized
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools import command as server_command
+from hmcpctl.server_tools.lpar import lifecycle as server_lpars
+from hmcpctl.tool_registry import ToolSecurity, authorized
 
 SOURCE = "test-access-policy.toml"
 
@@ -58,7 +58,7 @@ def lab_profile(tmp_path, monkeypatch):
     Autouse so no test in this module can accidentally read the developer's own
     configuration, and so ``lab`` normalizes to itself rather than denying.
     """
-    from hmc_mcp.config import config_dir
+    from hmcpctl.config import config_dir
 
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
@@ -130,7 +130,7 @@ def _registered(application) -> dict:
 
 
 # Every name a handler could reach an HMC through, patched at *every* module
-# that rebound it at import. Patching only `hmc_mcp.config.build_config` proves
+# that rebound it at import. Patching only `hmcpctl.config.build_config` proves
 # nothing: `server_tools.vios.core`, `server_command`, and `_app` each hold their own
 # reference, so a call through one of those would sail past an unpatched source
 # module and the test would still be green.
@@ -142,8 +142,8 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     import importlib
     import pkgutil
 
-    import hmc_mcp
-    from hmc_mcp.client import core as client_module
+    import hmcpctl
+    from hmcpctl.client import core as client_module
 
     def _forbidden(label):
         def _refuse(*args, **kwargs):
@@ -156,9 +156,9 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     monkeypatch.setattr("httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient"))
 
     sealed = 0
-    for info in pkgutil.walk_packages(hmc_mcp.__path__, prefix="hmc_mcp."):
+    for info in pkgutil.walk_packages(hmcpctl.__path__, prefix="hmcpctl."):
         module = importlib.import_module(info.name)
-        label = info.name.removeprefix("hmc_mcp.")
+        label = info.name.removeprefix("hmcpctl.")
         for name in _OUTBOUND_NAMES:
             if callable(getattr(module, name, None)):
                 monkeypatch.setattr(module, name, _forbidden(f"{label}.{name}"))
@@ -226,7 +226,7 @@ def test_a_permitted_call_reaches_the_handler(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _capture)
 
     application = create_mcp(_policy(LAB_ONLY))
     with pytest.raises(ToolError):
@@ -409,7 +409,7 @@ def test_compositions_authorize_independently(monkeypatch):
         reached.append(profile)
         raise RuntimeError("stop before any HMC request")
 
-    monkeypatch.setattr("hmc_mcp._app.client_from_env", _capture)
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _capture)
 
     restricted = create_mcp(_policy(LAB_ONLY))
     # A policy granting the connection the call selects, standing in for the
@@ -458,8 +458,8 @@ def _legacy(*, include_arbitrary_command: bool = False):
 
 
 def _serve(policy, *, enable_arbitrary_command=True):
-    """Compose exactly as `hmc-mcp serve --access-policy NAME` composes."""
-    from hmc_mcp import server
+    """Compose exactly as `hmcpctl serve --access-policy NAME` composes."""
+    from hmcpctl import server
 
     return server._serve_application(enable_arbitrary_command, policy)
 
@@ -570,7 +570,7 @@ def test_the_permissions_site_routes_through_the_shared_helper(monkeypatch):
     that this site honours the same contract as the other two rather than
     deciding for itself.
     """
-    from hmc_mcp.server_tools import permissions as server_permissions
+    from hmcpctl.server_tools import permissions as server_permissions
 
     calls: list[tuple] = []
     real = server_permissions.authorized
@@ -631,7 +631,7 @@ def denial_filter():
     It lives on a process-global logger that belongs to fastmcp, so a test that
     left it there would decide what every later test sees on stderr.
     """
-    from hmc_mcp.server import install_denial_log_filter
+    from hmcpctl.server import install_denial_log_filter
 
     logger = logging.getLogger("fastmcp.server.server")
     saved = list(logger.filters)
@@ -778,7 +778,7 @@ SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp", "py.warnings")
 
 def test_installing_the_sink_twice_leaves_one_handler_per_logger():
     """Idempotence, which the remove-then-add shape gives rather than a type check."""
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     install_third_party_stderr_sinks()
     install_third_party_stderr_sinks()
@@ -862,7 +862,7 @@ def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
     """
     import fastmcp
 
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     monkeypatch.setattr(fastmcp.settings, "log_enabled", False)
     FASTMCP_LOGGER.handlers[:] = []
@@ -908,7 +908,7 @@ def test_the_uvicorn_pair_matches_its_own_configuration_levels_and_propagation()
     log would vanish below root's WARNING, then double-render once raised. Both
     loggers start here from their pristine NOTSET/propagating state.
     """
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     uv = logging.getLogger("uvicorn")
     access = logging.getLogger("uvicorn.access")
@@ -929,7 +929,7 @@ def test_the_uvicorn_pair_matches_its_own_configuration_levels_and_propagation()
 
 def test_the_install_leaves_fastmcp_and_mcp_levels_and_propagation_alone():
     """ADR 0051's only-the-handlers rule still holds where nothing requires more."""
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     fastmcp_logger = logging.getLogger("fastmcp")
     mcp_logger = logging.getLogger("mcp")
@@ -986,7 +986,7 @@ def test_the_http_serve_path_constructs_uvicorn_without_its_default_logging(
     this asserts happens before it."""
     import uvicorn
 
-    from hmc_mcp import server
+    from hmcpctl import server
 
     async def _stop_immediately(self, sockets=None):
         return
@@ -1019,7 +1019,7 @@ def test_a_denial_is_one_line_through_the_sink(denial_filter, capsys):
     different problems and #323 keeps both, so the pinned behaviour is the one an
     operator of a served process actually gets.
     """
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     install_third_party_stderr_sinks()
 
@@ -1040,7 +1040,7 @@ def test_a_handler_bug_keeps_its_traceback_through_the_sink(denial_filter, capsy
     """
     from fastmcp import FastMCP
 
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     install_third_party_stderr_sinks()
     application = FastMCP("fastmcp-sink-probe")
@@ -1073,7 +1073,7 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
 
     from fastmcp import FastMCP
 
-    from hmc_mcp.server import install_third_party_stderr_sinks
+    from hmcpctl.server import install_third_party_stderr_sinks
 
     forged = '{"time": "2026-01-01T00:00:00+00:00", "event": "authorization"}'
     install_third_party_stderr_sinks()
@@ -1101,7 +1101,7 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     assert "hmc said" in err, "the text must still reach the operator"
 
 
-PACKAGE_LOGGER = logging.getLogger("hmc_mcp")
+PACKAGE_LOGGER = logging.getLogger("hmcpctl")
 
 
 def _handlers_the_walk_finds(name: str) -> list[logging.Handler]:
@@ -1120,7 +1120,7 @@ def _handlers_the_walk_finds(name: str) -> list[logging.Handler]:
 
 
 def test_the_served_path_binds_the_package_namespace_to_the_sink():
-    """#534: ``hmc_mcp.*`` is a producer on ADR 0043's queue like the rest.
+    """#534: ``hmcpctl.*`` is a producer on ADR 0043's queue like the rest.
 
     One handler, none of it on fd 2 directly, rendering under this package's own
     producer prefix — the same three properties #330 pins for the third-party set.
@@ -1130,14 +1130,14 @@ def test_the_served_path_binds_the_package_namespace_to_the_sink():
     assert len(PACKAGE_LOGGER.handlers) == 1
     handler = PACKAGE_LOGGER.handlers[0]
     assert not _targets_stderr(handler)
-    assert _formatter_prefix(handler) == "hmc_mcp: "
+    assert _formatter_prefix(handler) == "hmcpctl: "
 
 
 def test_last_resort_is_unreachable_for_a_non_audit_package_logger(capsys):
     """#534's acceptance, on the mechanism rather than on a symptom.
 
-    ``hmc_mcp.server_permissions`` is the producer #470 added, and before this
-    change its walk found nothing: no handler on itself, none on ``hmc_mcp``, none
+    ``hmcpctl.server_permissions`` is the producer #470 added, and before this
+    change its walk found nothing: no handler on itself, none on ``hmcpctl``, none
     on root, so the record went to ``logging.lastResort`` — synchronous, unbounded,
     and unprefixed. Root is cleared first so a stray handler cannot make the walk
     succeed for a reason this change did not supply.
@@ -1146,14 +1146,14 @@ def test_last_resort_is_unreachable_for_a_non_audit_package_logger(capsys):
 
     _serve(_policy(LAB_ONLY))
 
-    found = _handlers_the_walk_finds("hmc_mcp.server_permissions")
+    found = _handlers_the_walk_finds("hmcpctl.server_permissions")
     assert found, "the walk must find a handler, or lastResort writes the record"
     assert logging.lastResort not in found
     assert not any(_targets_stderr(each) for each in found)
 
-    logging.getLogger("hmc_mcp.server_permissions").warning("an unresolved profile")
+    logging.getLogger("hmcpctl.server_permissions").warning("an unresolved profile")
 
-    assert "hmc_mcp: WARNING: an unresolved profile" in _stderr(capsys)
+    assert "hmcpctl: WARNING: an unresolved profile" in _stderr(capsys)
 
 
 def test_a_config_warning_reaches_stderr_only_through_the_sink(capsys):
@@ -1169,11 +1169,11 @@ def test_a_config_warning_reaches_stderr_only_through_the_sink(capsys):
         make_config(agent_id="agent-1", audit_memento="custom")
 
     captured = _stderr(capsys)
-    assert "hmc_mcp: WARNING: HMC_AGENT_ID is set" in captured
+    assert "hmcpctl: WARNING: HMC_AGENT_ID is set" in captured
 
 
 def test_the_package_binding_leaves_the_audit_stream_unprefixed(capsys):
-    """#534's one carve-out: ``hmc_mcp.audit`` keeps its own contract.
+    """#534's one carve-out: ``hmcpctl.audit`` keeps its own contract.
 
     Its ``propagate = False`` is what keeps the parent handler off the audit
     stream, so the record stays bare one-line JSON and arrives exactly once.
@@ -1188,13 +1188,13 @@ def test_the_package_binding_leaves_the_audit_stream_unprefixed(capsys):
     audit_logger.warning('{"event": "authorization", "outcome": "denied"}')
 
     captured = _stderr(capsys)
-    assert "hmc_mcp: " not in captured
+    assert "hmcpctl: " not in captured
     assert captured.count('"event": "authorization"') == 1
 
 
 def test_installing_the_package_sink_twice_leaves_one_handler():
     """Idempotence, from the same defer-to-what-is-there rule the audit sink uses."""
-    from hmc_mcp.server import install_package_stderr_sink
+    from hmcpctl.server import install_package_stderr_sink
 
     install_package_stderr_sink()
     install_package_stderr_sink()
@@ -1206,7 +1206,7 @@ def test_the_package_binding_leaves_an_ancestor_handler_receiving(capsys):
     """The binding adds a destination; it does not take one away.
 
     Unlike ``install_audit_sink`` this leaves ``propagate`` alone, so an operator
-    who routes `hmc_mcp.*` into their own centralized logging still gets these
+    who routes `hmcpctl.*` into their own centralized logging still gets these
     records after a serve — the alternative loses them silently, including under
     `--http`, where the stdout hazard ADR 0040 names does not even exist. Pinned
     against a root handler because that is the shape an operator's `basicConfig`
@@ -1218,11 +1218,11 @@ def test_the_package_binding_leaves_an_ancestor_handler_receiving(capsys):
     logging.root.handlers[:] = [catcher]
 
     _serve(_policy(LAB_ONLY))
-    logging.getLogger("hmc_mcp.config").warning("a package warning")
+    logging.getLogger("hmcpctl.config").warning("a package warning")
 
     assert received == ["a package warning"]
-    assert "hmc_mcp: WARNING: a package warning" in _stderr(capsys)
-    assert logging.getLogger("hmc_mcp").propagate is True
+    assert "hmcpctl: WARNING: a package warning" in _stderr(capsys)
+    assert logging.getLogger("hmcpctl").propagate is True
 
 
 def test_an_unexpected_handler_error_still_renders_its_traceback(denial_filter, capsys):

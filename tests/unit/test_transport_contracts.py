@@ -18,7 +18,8 @@ import pytest
 import respx
 from conftest import LOGON_RESPONSE, make_config
 
-from hmc_mcp.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
+from hmcpctl.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
+from hmcpctl.errors import HMCError
 
 _LOGON_PATH = "/rest/api/web/Logon"
 _LP_PATH = "/rest/api/uom/LogicalPartition"
@@ -181,6 +182,46 @@ async def test_uom_put_mirrors_accept_as_content_type(mock_hmc):
     )
 
 
+@pytest.mark.asyncio
+async def test_uom_post_retries_a_406_with_generic_accept_only(mock_hmc):
+    route = mock_hmc.post(_LP_PATH).mock(
+        side_effect=[
+            httpx.Response(406, text="not acceptable"),
+            httpx.Response(201, text=_EMPTY_FEED),
+        ]
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc._post(
+            _LP_PATH,
+            b"<xml/>",
+            resource_type="LogicalPartition",
+            fallback_to_generic_uom_on_406=True,
+        )
+
+    assert route.call_count == 2
+    first, second = (call.request for call in route.calls)
+    assert first.headers["accept"] == f"{MEDIA_UOM}; type=LogicalPartition"
+    assert second.headers["accept"] == MEDIA_UOM
+    assert second.headers["content-type"] == first.headers["content-type"]
+
+
+@pytest.mark.asyncio
+async def test_uom_put_never_retries_a_5xx_with_generic_accept(mock_hmc):
+    route = mock_hmc.put(f"{_LP_PATH}/uuid1").mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="PUT"):
+            await hmc._put(
+                f"{_LP_PATH}/uuid1",
+                b"<xml/>",
+                resource_type="LogicalPartition",
+                fallback_to_generic_uom_on_406=True,
+            )
+
+    assert route.call_count == 1
+
+
 # ── rest:job-status — complete terminal-status vocabulary ────────────────────
 
 
@@ -202,7 +243,7 @@ async def test_wait_for_job_treats_remaining_terminal_statuses_as_terminal(
     A wait that did not recognise them would loop until the deadline; this test
     confirms they stop the poll immediately.
     """
-    from hmc_mcp.jobs import TERMINAL_JOB_STATUSES
+    from hmcpctl.jobs import TERMINAL_JOB_STATUSES
 
     assert status in TERMINAL_JOB_STATUSES, (
         f"{status!r} is not in TERMINAL_JOB_STATUSES — reference row contract broken"
@@ -238,7 +279,7 @@ async def test_terminal_status_set_matches_reference_row(mock_hmc):
     The reference (rows.json row 'rest:job-status') names eleven terminal states.
     This test pins the set so that a future edit is visible here.
     """
-    from hmc_mcp.jobs import TERMINAL_JOB_STATUSES
+    from hmcpctl.jobs import TERMINAL_JOB_STATUSES
 
     expected = {
         "CANCELED_BEFORE_START",

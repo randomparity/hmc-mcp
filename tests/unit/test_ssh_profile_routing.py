@@ -18,9 +18,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCTransportError
-from hmc_mcp.ssh.transport import run_hmc_cli
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCTransportError
+from hmcpctl.ssh.transport import run_hmc_cli
 
 # ---------------------------------------------------------------------------
 # Shared test constants
@@ -88,7 +88,7 @@ async def test_run_hmc_cli_uses_supplied_config():
     """run_hmc_cli(cmd, config=...) passes the supplied config to run_hmc_command."""
     conn = _make_ssh_mock("output")
     with patch(
-        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
     ) as mock_connect:
         await run_hmc_cli("lshmc -v", DEV_CONFIG)
 
@@ -104,7 +104,7 @@ async def test_run_hmc_cli_no_config_uses_hmcconfig(monkeypatch):
     _set_env(monkeypatch, PROD_HOST, PROD_USER, PROD_PASSWORD)
     conn = _make_ssh_mock("output")
     with patch(
-        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
     ) as mock_connect:
         await run_hmc_cli("lshmc -v")
 
@@ -123,13 +123,13 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     # Stub config-only resolution for the selected profile.
-    with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
+    with patch("hmcpctl._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
         with patch(
-            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+            "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
         ) as mock_connect:
-            from hmc_mcp._app import ssh_with_client
-            from hmc_mcp.ssh.memory import list_memory_pools
+            from hmcpctl._app import ssh_with_client
+            from hmcpctl.ssh.memory import list_memory_pools
 
             ssh_with_client(
                 lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -149,10 +149,10 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
 
     conn = _make_ssh_mock("")
     with patch(
-        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
     ) as mock_connect:
-        from hmc_mcp._app import ssh_with_client
-        from hmc_mcp.ssh.memory import list_memory_pools
+        from hmcpctl._app import ssh_with_client
+        from hmcpctl.ssh.memory import list_memory_pools
 
         ssh_with_client(
             lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -172,7 +172,7 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
 @pytest.mark.asyncio
 async def test_resolve_system_name_uses_supplied_config():
     """System resolution builds its REST client from the supplied config."""
-    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
+    with patch("hmcpctl.ssh.selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -181,7 +181,7 @@ async def test_resolve_system_name_uses_supplied_config():
         )
         mock_client_type.return_value = mock_client
 
-        from hmc_mcp.ssh.selectors import resolve_system_name
+        from hmcpctl.ssh.selectors import resolve_system_name
 
         result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
@@ -192,7 +192,7 @@ async def test_resolve_system_name_uses_supplied_config():
 @pytest.mark.asyncio
 async def test_resolve_system_name_uses_one_rest_client():
     """System resolution opens exactly one REST client."""
-    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
+    with patch("hmcpctl.ssh.selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -201,7 +201,7 @@ async def test_resolve_system_name_uses_one_rest_client():
         )
         mock_client_type.return_value = mock_client
 
-        from hmc_mcp.ssh.selectors import resolve_system_name
+        from hmcpctl.ssh.selectors import resolve_system_name
 
         await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
@@ -211,7 +211,7 @@ async def test_resolve_system_name_uses_one_rest_client():
 @pytest.mark.asyncio
 async def test_resolve_lpar_name_uses_supplied_config():
     """LPAR resolution builds its REST client from the supplied config."""
-    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
+    with patch("hmcpctl.ssh.selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -220,7 +220,7 @@ async def test_resolve_lpar_name_uses_supplied_config():
         )
         mock_client_type.return_value = mock_client
 
-        from hmc_mcp.ssh.selectors import resolve_lpar_name
+        from hmcpctl.ssh.selectors import resolve_lpar_name
 
         result = await resolve_lpar_name(DEV_CONFIG, LPAR_UUID)
 
@@ -240,11 +240,11 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
     The config passed to the fallback is the same one given to the resolver, so
     both transports use the same profile-selected credentials.
     """
-    from hmc_mcp.ssh.selectors import resolve_system_name
+    from hmcpctl.ssh.selectors import resolve_system_name
 
     fallback_output = f"{SYSTEM_UUID},{SYSTEM_NAME}\n"
 
-    with patch("hmc_mcp.ssh.selectors.HMCClient") as mock_client_type:
+    with patch("hmcpctl.ssh.selectors.HMCClient") as mock_client_type:
         # REST leg raises a transport error → SSH fallback runs
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -256,7 +256,7 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
 
         conn = _make_ssh_mock(fallback_output)
         with patch(
-            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+            "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
         ) as mock_connect:
             result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
@@ -272,14 +272,14 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
 
 def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     """hmc_run_command(cmd, profile=...) routes SSH to the profile's HMC host."""
-    from hmc_mcp.server_tools.command import hmc_run_command
+    from hmcpctl.server_tools.command import hmc_run_command
 
     with patch(
-        "hmc_mcp.server_tools.command.build_config", return_value=DEV_CONFIG
+        "hmcpctl.server_tools.command.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("output")
         with patch(
-            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+            "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
         ) as mock_connect:
             hmc_run_command("lshmc -v", profile="dev")
 
@@ -289,13 +289,13 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
-    from hmc_mcp.server_tools.vios.core import hmc_restore_vios
+    from hmcpctl.server_tools.vios.core import hmc_restore_vios
 
     client_factory = MagicMock(side_effect=_vios_client_factory())
-    monkeypatch.setattr("hmc_mcp._app.client_from_env", client_factory)
+    monkeypatch.setattr("hmcpctl._app.client_from_env", client_factory)
     conn = _make_ssh_mock("")
     with patch(
-        "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
     ) as mock_connect:
         hmc_restore_vios(
             SYSTEM_NAME,
@@ -311,16 +311,16 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
 
 def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
     """hmc_list_memory_pools with profile threads profile through ssh_with_client."""
-    from hmc_mcp.server_tools.systems.resources import (
+    from hmcpctl.server_tools.systems.resources import (
         hmc_list_memory_pools,
     )
 
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
-    with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
+    with patch("hmcpctl._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
         with patch(
-            "hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn
+            "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn
         ) as mock_connect:
             hmc_list_memory_pools(SYSTEM_NAME, profile="dev")
 
@@ -339,15 +339,15 @@ def test_different_profiles_produce_independent_configs():
         configs_seen.append(kwargs["host"])
         raise RuntimeError("abort after capture")  # abort the SSH connection attempt
 
-    with patch("hmc_mcp._app.build_config") as mock_config:
+    with patch("hmcpctl._app.build_config") as mock_config:
         # First call: profile="dev" → DEV_CONFIG
         mock_config.return_value = DEV_CONFIG
         with patch(
-            "hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect
+            "hmcpctl.ssh.transport.asyncssh.connect", side_effect=capture_connect
         ):
             try:
-                from hmc_mcp._app import ssh_with_client
-                from hmc_mcp.ssh.memory import list_memory_pools
+                from hmcpctl._app import ssh_with_client
+                from hmcpctl.ssh.memory import list_memory_pools
 
                 ssh_with_client(
                     lambda config, system_name, _: list_memory_pools(
@@ -362,7 +362,7 @@ def test_different_profiles_produce_independent_configs():
         # Second call: profile="prod" → PROD_CONFIG
         mock_config.return_value = PROD_CONFIG
         with patch(
-            "hmc_mcp.ssh.transport.asyncssh.connect", side_effect=capture_connect
+            "hmcpctl.ssh.transport.asyncssh.connect", side_effect=capture_connect
         ):
             try:
                 ssh_with_client(

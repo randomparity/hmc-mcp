@@ -4,11 +4,11 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-LPAR_UUID = "lpar-uuid-001"
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
 OPTICAL_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">

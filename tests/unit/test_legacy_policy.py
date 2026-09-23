@@ -34,14 +34,14 @@ from pathlib import Path
 
 import pytest
 
-from hmc_mcp.authorization.access_policy import (
+from hmcpctl.authorization.access_policy import (
     ALL_TARGETS_TOKEN,
     DEFAULT_CONNECTION_TOKEN,
     AccessPolicyError,
     AllTargets,
     compile_access_policy,
 )
-from hmc_mcp.cli_commands.legacy_policy import (
+from hmcpctl.cli_commands.legacy_policy import (
     GENERATED_SOURCE,
     LEGACY_POLICY_NAME,
     compile_legacy_policy,
@@ -51,8 +51,8 @@ from hmc_mcp.cli_commands.legacy_policy import (
     legacy_tools,
     render_legacy_policy,
 )
-from hmc_mcp.config import ConfigError
-from hmc_mcp.server import TOOL_SECURITY
+from hmcpctl.config import ConfigError
+from hmcpctl.server import TOOL_SECURITY
 
 DEL = "\x7f"
 C1_NEL = "\x85"
@@ -72,7 +72,7 @@ def steered_config(tmp_path, monkeypatch):
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
-    from hmc_mcp.config import config_dir
+    from hmcpctl.config import config_dir
 
     directory = config_dir()
     directory.mkdir(parents=True, exist_ok=True)

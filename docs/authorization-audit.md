@@ -18,13 +18,13 @@ applies to every deployment rather than only to those that opted in.
 **`ownership-override` and `ownership-denied` records are not policy-gated.** They come
 from the ADR 0011 ownership check inside the handler, which runs whether or not a policy
 is selected — and on the CLI and Python API paths, which have no policy at all. So an
-unpolicied server can still produce those. For an `hmc_mcp.api` consumer that check is the
+unpolicied server can still produce those. For an `hmcpctl.api` consumer that check is the
 only authorization boundary that applies, which is why its refusals are recorded here
 rather than left to the `authorization` event ([ADR 0100](adr/0100-ownership-denial-audit-record.md)).
 
 **`install-attempted` records are not policy-gated either**, and for a stronger reason:
 the detached `installios` path has no ownership check to gate and no HMC job to poll, so
-for an `hmc_mcp.api` consumer this record is the only trace an irreversible install
+for an `hmcpctl.api` consumer this record is the only trace an irreversible install
 leaves in this process ([ADR 0102](adr/0102-install-submission-audit-record.md)).
 
 Other things produce no record, by design:
@@ -176,7 +176,7 @@ transport is MCP, join on the `authorization` record for the same call.
 `denial` names which of the guard's two rules refused. `foreign-owner` is a
 well-formed token naming another agent, and the record carries *both* halves of the
 comparison that failed: `owner` is the claimed owner, `attribution.claim` the agent
-that was refused. `malformed-token` is a description carrying `[hmc-mcp` that no
+that was refused. `malformed-token` is a description carrying `[hmcpctl` that no
 token could be parsed from, and there `owner` is `null` — nothing parsed, so the
 record carries the actor alone.
 
@@ -206,7 +206,7 @@ down: with `HMC_AUTHORIZE_POWER_OPERATIONS` off — the default — the power pa
 runs the guard, so no denial is possible there and none is recorded.
 
 A denied caller can drive these at attempt rate, bounded in practice by the HMC round
-trip each denial costs. Under `hmc-mcp serve` they land on the bounded sink, which
+trip each denial costs. Under `hmcpctl serve` they land on the bounded sink, which
 drops and says so with a `records-dropped` count; on the CLI and Python API paths
 nothing installs a sink, so the line goes synchronously to stderr through
 `logging.lastResort` with no bound and no drop count — exactly as the
@@ -226,17 +226,17 @@ Emitted immediately **before** `install_vios_by_lpar_selector` or `install_vios`
 decision is [ADR 0102](adr/0102-install-submission-audit-record.md).
 
 ```json
-{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+{"time":"2026-08-26T18:00:00+00:00","event":"install-attempted","system":"sys-a","partition":"vios-01","log_path":"/tmp/hmcpctl-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```
 
 `system` and `partition` are the resolved HMC CLI names the submission was composed
 with; `host` is the `HMCConfig.host` of the client that submitted, and an unset
 `HMC_HOST` renders as an empty string. `attribution.claim` is the acting agent —
-`HMC_AGENT_ID`, or `hmc-mcp` when unset — the same claim the ownership records carry,
+`HMC_AGENT_ID`, or `hmcpctl` when unset — the same claim the ownership records carry,
 so an unconfigured deployment's records name one actor and can be joined.
 
 `log_path` is the HMC-side path the install writes to, and the field to read when a
-submission raises. It is `/tmp/hmc-mcp-installios-<slug>.log`, where `<slug>` is the
+submission raises. It is `/tmp/hmcpctl-installios-<slug>.log`, where `<slug>` is the
 partition name with every character outside `[A-Za-z0-9._-]` replaced by `_`
 ([ADR 0070](adr/0070-installios-cli-bridge-for-install-tools.md)). Two things follow, and
 both are why `system` and `host` sit beside it here. The managed system is not part of the
@@ -251,7 +251,7 @@ enough one yields a path the bound then cuts — leaving a value that does not e
 looks well-formed. Whether the record still tells you the real path depends on where the
 name falls: `partition` takes the same bound, so a name past 128 characters is cut too and
 the path is gone from both fields, while a name of 101 to 128 characters leaves `partition`
-whole and the path recoverable as `/tmp/hmc-mcp-installios-<partition>.log` — after applying
+whole and the path recoverable as `/tmp/hmcpctl-installios-<partition>.log` — after applying
 the slug substitution yourself. Such a name is one `installios` would refuse anyway, but the
 record is written before the submit, so it exists.
 
@@ -272,18 +272,18 @@ each declare a partition and a managed-system selector — so that permit's `tar
 carry both, and at the default audit level the streams can be joined on them. What the
 permit cannot give you: it records the selector the caller passed, not the resolved name, so
 a UUID selector never names the partition; it has no `log_path`; and `--audit-level WARNING`
-drops it, because it is a permit. An `hmc_mcp.api` consumer gets no `authorization` record
+drops it, because it is a permit. An `hmcpctl.api` consumer gets no `authorization` record
 at all.
 
 **Absence of this record is not proof that no install was submitted**, for the reasons the
-lead section gives generally and these, which apply here specifically. Under `hmc-mcp serve`
+lead section gives generally and these, which apply here specifically. Under `hmcpctl serve`
 it lands on the bounded sink, which drops under load and reports only a `records-dropped`
 count — a number, not an identity, so a reader cannot tell whether a dropped line was an
 install; `--audit-level ERROR` or `CRITICAL` silences the reserved logger outright; and a
 record that fails to build or write is swallowed rather than failing the call, because a
 diagnostic must not abort an operation. Off the serve path the reserved logger is left at
 `NOTSET`, and level resolution walks the parent chain whatever `propagate` says — so an
-embedder that quiets the package the ordinary way, `logging.getLogger("hmc_mcp").setLevel`,
+embedder that quiets the package the ordinary way, `logging.getLogger("hmcpctl").setLevel`,
 suppresses the record before `logging.lastResort` is ever consulted. Alert on the records
 you have, not on their absence.
 
@@ -299,7 +299,7 @@ when the served audit threshold is `WARNING`. The decision is
 [ADR 0109](adr/0109-install-submitted-audit-correlation.md).
 
 ```json
-{"time":"2026-08-29T18:00:01+00:00","event":"install-submitted","system":"sys-a","partition":"vios-01","pid":4321,"log_path":"/tmp/hmc-mcp-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+{"time":"2026-08-29T18:00:01+00:00","event":"install-submitted","system":"sys-a","partition":"vios-01","pid":4321,"log_path":"/tmp/hmcpctl-installios-vios-01.log","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```
 
 `pid` is the remote HMC process identifier needed to abort the detached install. The other
@@ -379,7 +379,7 @@ such marker. It appears immediately **before** the next line that lands, so it r
 ```
 
 It carries no `policy`, `attribution`, or anything a caller supplied — it describes the
-sink's queue. Because it comes from the sink rather than the `hmc_mcp.audit` logger, it is
+sink's queue. Because it comes from the sink rather than the `hmcpctl.audit` logger, it is
 not affected by the level you set on that logger, and it is not produced at all when you
 attach your own handler: your handler has no such queue. See
 [ADR 0043](adr/0043-non-blocking-stderr-diagnostics.md).
@@ -415,7 +415,7 @@ from the server process's environment at emission.
 records. This is `HMCConfig.agent_id`, the effective value the ADR 0011 check compared,
 and it differs from the other in three ways worth knowing: it may come from a
 `config.toml` profile rather than the environment, it *is* validated by
-`validate_agent_id`, and it renders the literal `hmc-mcp` when no identity is configured
+`validate_agent_id`, and it renders the literal `hmcpctl` when no identity is configured
 at all rather than `null`. The last of those is what lets an unconfigured deployment's
 ownership records be joined on the actor: the guard compares that literal, so the record
 names it too.
@@ -439,15 +439,15 @@ than the value's authority everywhere.
 
 ## Routing, levels, and silencing
 
-Records go to the `hmc_mcp.audit` logger. A permit is `INFO`; everything else the
+Records go to the `hmcpctl.audit` logger. A permit is `INFO`; everything else the
 logger emits is `WARNING`.
 
-Importing `hmc_mcp.audit` sets `propagate = False`, so no ancestor handler receives
+Importing `hmcpctl.audit` sets `propagate = False`, so no ancestor handler receives
 audit records — including on the in-process path, where an embedder composes an
-application itself and never calls the installer. `hmc-mcp serve` additionally attaches
+application itself and never calls the installer. `hmcpctl serve` additionally attaches
 a handler writing to **stderr**. With neither a handler nor propagation, a `WARNING`
 record still reaches `logging.lastResort` on stderr, which is what a CLI user sees. To route them elsewhere, attach your own
-handler to `hmc_mcp.audit` **before** calling `main_stdio` / `main_http` — the server
+handler to `hmcpctl.audit` **before** calling `main_stdio` / `main_http` — the server
 defers to a handler that is already there and will not add a second.
 
 > The non-blocking guarantee is the **shipped sink's**, not the logger's. Your handler is
@@ -455,7 +455,7 @@ defers to a handler that is already there and will not add a second.
 > `logging.lastResort` — what a CLI process with no sink installed uses — is synchronous
 > for the same reason.
 
-> To set the level from the command line, pass `--audit-level LEVEL` to `hmc-mcp serve`:
+> To set the level from the command line, pass `--audit-level LEVEL` to `hmcpctl serve`:
 > `DEBUG` and `INFO` keep everything the logger emits, `WARNING` drops permits and keeps
 > the rest, and `ERROR` or `CRITICAL` silences the stream. Read `WARNING` as a volume floor
 > rather than a quiet
@@ -473,24 +473,24 @@ Three things to know if you consume this stream:
 - **A launcher that merges the descriptors does the same thing.** `serve 2>&1`, or a
   unit file or wrapper doing it, makes stderr the JSON-RPC channel. Nothing inside the
   process can detect that. The same caveat applies to the startup warnings.
-- **Skip a line that does not parse rather than failing on it.** `hmc_mcp.audit` is
+- **Skip a line that does not parse rather than failing on it.** `hmcpctl.audit` is
   reserved for these records and that is checked inside this package, but a dependency
   or your own code can still log there, and other writers share stderr. Since
   [ADR 0051](adr/0051-fastmcp-logging-through-the-bounded-sink.md) FastMCP's own records
   arrive on the same queue as these — one concise line for a denial, a plain traceback for
   a genuine handler bug — and its startup banner is written straight to the stream by
   `rich` before serving begins. Since #534 this package's own non-audit diagnostics arrive
-  there too, each physical line prefixed `hmc_mcp: `, which is a marker chosen so it cannot
-  begin a JSON object. `hmc_mcp` is a second attachment point on the same terms as
-  `hmc_mcp.audit` above — attach a handler to it and the server leaves yours in place instead
+  there too, each physical line prefixed `hmcpctl: `, which is a marker chosen so it cannot
+  begin a JSON object. `hmcpctl` is a second attachment point on the same terms as
+  `hmcpctl.audit` above — attach a handler to it and the server leaves yours in place instead
   of installing its own — with one difference, and it is the difference that matters here:
-  `propagate` is left alone on `hmc_mcp`, where `hmc_mcp.audit` clears it. So a handler you
-  already have *above* `hmc_mcp` keeps receiving these records after a serve, and if it writes
+  `propagate` is left alone on `hmcpctl`, where `hmcpctl.audit` clears it. So a handler you
+  already have *above* `hmcpctl` keeps receiving these records after a serve, and if it writes
   to stderr it puts a **second, unmarked and unescaped** copy of each on this stream. That copy
   is the one that can carry a newline out of an interpolated value and place text at column 0.
   It is not new — the same record reached the same handler the same way before #534 — but the
   marker is a property of this package's own handler, not of the stream, and a consumer
-  hardening on it must know that. Do not attach a stderr handler above `hmc_mcp` in a
+  hardening on it must know that. Do not attach a stderr handler above `hmcpctl` in a
   deployment whose stderr is parsed. One writer is unmarked with no operator handler
   involved: `warnings.warn`, which this package uses beside the log record for the
   `HMC_AGENT_ID` / `HMC_AUDIT_MEMENTO` override and which `logging` never sees, so it reaches
@@ -548,5 +548,5 @@ on the insecure `HMC_VERIFY_SSL` default a permitted call also puts a TLS record
 queue, per the rate noted with that record above. That caller can therefore make records
 drop — bounded to the queue, visible as a `records-dropped` count, and never able to stall
 a call.
-`hmc-mcp serve --audit-level WARNING` halves what that caller can produce — permits are gone —
+`hmcpctl serve --audit-level WARNING` halves what that caller can produce — permits are gone —
 but the denials themselves stay, because an unrecorded probe is worse than a recorded one.

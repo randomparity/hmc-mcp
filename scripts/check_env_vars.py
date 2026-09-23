@@ -17,7 +17,7 @@ import re
 import sys
 from pathlib import Path
 
-from hmc_mcp.config import HMCConfig
+from hmcpctl.config import HMCConfig
 
 # Resolve the repo root relative to this script so the guard can be run from
 # any working directory.

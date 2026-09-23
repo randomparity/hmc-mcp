@@ -16,10 +16,12 @@ from types import MappingProxyType
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
-from hmc_mcp import config as config_module
-from hmc_mcp.config import (
+from hmcpctl import config as config_module
+from hmcpctl.config import (
     ConfigError,
+    ConfigFileNotFoundError,
     HMCConfig,
     build_config,
     config_dir,
@@ -143,7 +145,7 @@ def _write_toml(path: Path, content: str) -> Path:
 def test_resolve_linux_xdg(tmp_path, monkeypatch):
     """XDG_CONFIG_HOME set → uses it."""
     xdg = tmp_path / "xdg"
-    cfg = xdg / "hmc-mcp" / "config.toml"
+    cfg = xdg / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     with patch.object(sys, "platform", "linux"):
@@ -152,10 +154,10 @@ def test_resolve_linux_xdg(tmp_path, monkeypatch):
 
 
 def test_resolve_linux_fallback(tmp_path, monkeypatch):
-    """XDG_CONFIG_HOME unset on Linux → ~/.config/hmc-mcp/config.toml."""
+    """XDG_CONFIG_HOME unset on Linux → ~/.config/hmcpctl/config.toml."""
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     fake_home = tmp_path / "home"
-    cfg = fake_home / ".config" / "hmc-mcp" / "config.toml"
+    cfg = fake_home / ".config" / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     with patch.object(sys, "platform", "linux"), \
          patch("pathlib.Path.home", return_value=fake_home):
@@ -164,9 +166,9 @@ def test_resolve_linux_fallback(tmp_path, monkeypatch):
 
 
 def test_resolve_macos(tmp_path, monkeypatch):
-    """sys.platform=darwin → ~/Library/Application Support/hmc-mcp/config.toml."""
+    """sys.platform=darwin → ~/Library/Application Support/hmcpctl/config.toml."""
     fake_home = tmp_path / "home"
-    cfg = fake_home / "Library" / "Application Support" / "hmc-mcp" / "config.toml"
+    cfg = fake_home / "Library" / "Application Support" / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     with patch.object(sys, "platform", "darwin"), \
          patch("pathlib.Path.home", return_value=fake_home):
@@ -175,9 +177,9 @@ def test_resolve_macos(tmp_path, monkeypatch):
 
 
 def test_resolve_windows(tmp_path, monkeypatch):
-    """sys.platform=win32, APPDATA set → %APPDATA%/hmc-mcp/config.toml."""
+    """sys.platform=win32, APPDATA set → %APPDATA%/hmcpctl/config.toml."""
     appdata = tmp_path / "appdata"
-    cfg = appdata / "hmc-mcp" / "config.toml"
+    cfg = appdata / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
     monkeypatch.setenv("APPDATA", str(appdata))
     with patch.object(sys, "platform", "win32"):
@@ -188,6 +190,15 @@ def test_resolve_windows(tmp_path, monkeypatch):
 def test_resolve_returns_none_when_absent(tmp_path, monkeypatch):
     """Returns None when file does not exist."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    with patch.object(sys, "platform", "linux"):
+        result = resolve_config_path()
+    assert result is None
+
+
+def test_resolve_ignores_old_only_directory(tmp_path, monkeypatch):
+    old_config = tmp_path / "hmc-mcp" / "config.toml"
+    _write_toml(old_config, MINIMAL_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = resolve_config_path()
     assert result is None
@@ -349,6 +360,22 @@ password = "p"
         load_profile(config_path=cfg)
 
 
+def test_load_profile_explicit_path_missing(tmp_path, monkeypatch):
+    """An explicit config_path that does not exist names the path, not a profile problem (#915)."""
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    missing = tmp_path / "absent.toml"
+    with pytest.raises(ConfigFileNotFoundError, match=r"absent\.toml: config file not found"):
+        load_profile(config_path=missing)
+
+
+def test_load_profile_explicit_path_missing_even_with_profile_requested(tmp_path, monkeypatch):
+    """An explicit missing path is reported regardless of a requested profile (#915)."""
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    missing = tmp_path / "absent.toml"
+    with pytest.raises(ConfigFileNotFoundError, match=r"absent\.toml: config file not found"):
+        load_profile("prod", config_path=missing)
+
+
 def test_load_profile_unknown_profile(tmp_path, monkeypatch):
     """Named profile not in TOML → ConfigError listing available profiles."""
     monkeypatch.delenv("HMC_PROFILE", raising=False)
@@ -421,16 +448,16 @@ def test_config_dir_linux_xdg(monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     with patch.object(sys, "platform", "linux"):
         result = config_dir()
-    assert result == xdg / "hmc-mcp"
+    assert result == xdg / "hmcpctl"
 
 
 def test_config_dir_macos(monkeypatch):
-    """config_dir() returns ~/Library/Application Support/hmc-mcp on macOS."""
+    """config_dir() returns ~/Library/Application Support/hmcpctl on macOS."""
     fake_home = Path("/tmp/fake_home")
     with patch.object(sys, "platform", "darwin"), \
          patch("pathlib.Path.home", return_value=fake_home):
         result = config_dir()
-    assert result == fake_home / "Library" / "Application Support" / "hmc-mcp"
+    assert result == fake_home / "Library" / "Application Support" / "hmcpctl"
 
 
 def test_config_dir_returns_path_even_when_absent(tmp_path, monkeypatch):
@@ -439,7 +466,7 @@ def test_config_dir_returns_path_even_when_absent(tmp_path, monkeypatch):
     with patch.object(sys, "platform", "linux"):
         result = config_dir()
     assert not result.exists()
-    assert result.name == "hmc-mcp"
+    assert result.name == "hmcpctl"
 
 
 # ---------------------------------------------------------------------------
@@ -489,31 +516,31 @@ def test_list_profiles_with_default_absent(tmp_path):
 def test_agent_id_unset_uses_audit_memento_default():
     cfg = HMCConfig.from_mapping({})
     assert cfg.agent_id is None
-    assert cfg.effective_audit_memento == "hmc-mcp"
+    assert cfg.effective_audit_memento == "hmcpctl"
 
 
 def test_agent_id_set_prefixes_audit_memento():
     cfg = HMCConfig.from_mapping({"agent_id": "alice"})
-    assert cfg.effective_audit_memento == "hmc-mcp:alice"
+    assert cfg.effective_audit_memento == "hmcpctl:alice"
 
 
 def test_agent_id_overrides_audit_memento_field():
-    # When agent_id is set, effective_audit_memento uses hmc-mcp:<agent_id>
+    # When agent_id is set, effective_audit_memento uses hmcpctl:<agent_id>
     # regardless of the audit_memento field.
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         cfg = HMCConfig.from_mapping({"agent_id": "bob", "audit_memento": "custom"})
-    assert cfg.effective_audit_memento == "hmc-mcp:bob"
+    assert cfg.effective_audit_memento == "hmcpctl:bob"
 
 
 def test_agent_id_no_warning_when_audit_memento_is_default():
-    # When audit_memento is default ('hmc-mcp'), no warning is emitted even
+    # When audit_memento is default ('hmcpctl'), no warning is emitted even
     # when agent_id is set, because there is no custom value being silently discarded.
     import warnings as _warnings
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
         cfg = HMCConfig.from_mapping({"agent_id": "alice"})
-    assert cfg.effective_audit_memento == "hmc-mcp:alice"
+    assert cfg.effective_audit_memento == "hmcpctl:alice"
 
 
 def test_audit_memento_without_agent_id():
@@ -530,7 +557,48 @@ def test_agent_id_from_env(monkeypatch):
     monkeypatch.setenv("HMC_AGENT_ID", "env-agent")
     cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
-    assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+    assert cfg.effective_audit_memento == "hmcpctl:env-agent"
+
+
+# ---------------------------------------------------------------------------
+# Printable-ASCII header configuration (issue #839, ADR 0153)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\r", "\n", "\t", "\x1f", "\x7f", "V1_\u00e9"])
+@pytest.mark.parametrize("field", ["schema_version", "audit_memento"])
+@pytest.mark.parametrize("source", ["constructor", "mapping"])
+def test_header_config_rejects_non_printable_ascii(field, bad, source):
+    """Controls, DEL and non-ASCII are refused at construction.
+
+    The constructor path starts from the isolated defaults of
+    ``from_mapping({})`` so no ambient ``HMC_*`` variable supplies any other
+    field; the mapping path is isolated by construction (ADR 0096).
+    """
+    base = HMCConfig.from_mapping({}).model_dump()
+    with pytest.raises(ValidationError) as caught:
+        if source == "mapping":
+            HMCConfig.from_mapping({field: bad})
+        else:
+            HMCConfig(**{**base, field: bad})
+    errors = caught.value.errors()
+    assert [error["loc"] for error in errors] == [(field,)]
+    assert "printable ASCII" in errors[0]["msg"]
+
+
+def test_header_config_accepts_printable_ascii_and_empty():
+    accepted = "".join(chr(codepoint) for codepoint in range(0x20, 0x7F))
+    for field in ("schema_version", "audit_memento"):
+        assert HMCConfig.from_mapping({field: accepted}) is not None
+        assert HMCConfig.from_mapping({field: ""}) is not None
+
+
+def test_header_config_rejects_overridden_audit_memento():
+    # agent_id overrides the effective header value, but the stored field is
+    # still validated at construction: the defect is refused where introduced.
+    with pytest.raises(ValidationError) as caught:
+        HMCConfig.from_mapping({"agent_id": "alice", "audit_memento": "bad\rvalue"})
+    assert [error["loc"] for error in caught.value.errors()] == [("audit_memento",)]
 
 
 # ---------------------------------------------------------------------------
@@ -550,20 +618,20 @@ def test_audit_memento_override_does_not_use_python_warnings():
 
 def test_audit_memento_override_logs_once_per_process(caplog):
     """The bounded log record is emitted once for an unchanged state."""
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         for _ in range(5):
             HMCConfig.from_mapping(
                 {"agent_id": "log-agent", "audit_memento": "mine"}
             )
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
     assert "HMC_AGENT_ID is set" in records[0].getMessage()
 
 
 def test_audit_memento_override_logs_once_across_changed_values(caplog):
     """The process-level diagnostic does not grow with caller-controlled values."""
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
         HMCConfig.from_mapping({"agent_id": "agent-one", "audit_memento": "mine"})
         HMCConfig.from_mapping({"agent_id": "agent-two", "audit_memento": "mine"})
@@ -613,14 +681,14 @@ def test_audit_memento_override_warns_once_across_concurrent_threads(
         ready.wait()
         HMCConfig.from_mapping({"agent_id": "race-agent", "audit_memento": "mine"})
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         threads = [threading.Thread(target=build) for _ in range(workers)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
 
 
@@ -628,18 +696,18 @@ def test_audit_memento_override_repeat_is_recoverable_at_debug(caplog):
     """The suppressed repeat stays reachable by raising the log level.
 
     Dropping it at every level leaves an operator no local way to confirm the
-    override is still discarding their configured memento — ``hmc-mcp config
+    override is still discarding their configured memento — ``hmcpctl config
     show`` prints the raw field, not the effective one, so the only other
     evidence is the HMC's own audit log across the wire. ``_log_unresolved`` in
     ``server_permissions`` demotes its repeat for the same reason.
     """
-    with caplog.at_level(logging.DEBUG, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.DEBUG, logger="hmcpctl.config"):
         for _ in range(3):
             HMCConfig.from_mapping(
                 {"agent_id": "debug-agent", "audit_memento": "mine"}
             )
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert [record.levelno for record in records] == [
         logging.WARNING,
         logging.DEBUG,
@@ -668,12 +736,12 @@ def test_audit_memento_override_throttles_across_every_profile_in_the_file(
     _write_toml(config_dir() / "config.toml", f'default_profile = "p0"\n{body}')
     monkeypatch.setenv("HMC_AGENT_ID", "fleet-agent")
 
-    with caplog.at_level(logging.WARNING, logger="hmc_mcp.config"):
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         for _ in range(3):
             for index in range(profiles):
                 build_config(profile=f"p{index}")
 
-    records = [record for record in caplog.records if record.name == "hmc_mcp.config"]
+    records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
 
 
@@ -1073,6 +1141,47 @@ def test_load_profile_with_no_platform_config_file(tmp_path, monkeypatch):
         _READERS["load_profile"](None)
 
 
+def test_load_profile_platform_file_missing_no_profile_requested(tmp_path, monkeypatch):
+    """No platform file and nothing requesting a profile names the path it looked in (#915)."""
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with (
+        patch.object(sys, "platform", "linux"),
+        pytest.raises(ConfigFileNotFoundError, match=r"config\.toml: config file not found"),
+    ):
+        load_profile(config_path=None)
+
+
+def test_load_profile_platform_file_missing_hmc_profile_requested(tmp_path, monkeypatch):
+    """A missing platform file with HMC_PROFILE set still reports the profile problem,
+    not the file (unaffected by #915: something did ask for a profile)."""
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    monkeypatch.setenv("HMC_PROFILE", "prod")
+    with (
+        patch.object(sys, "platform", "linux"),
+        pytest.raises(ConfigError, match="not found") as exc_info,
+    ):
+        load_profile(config_path=None)
+    assert not isinstance(exc_info.value, ConfigFileNotFoundError)
+
+
+def test_load_profile_platform_file_vanishes_before_read(tmp_path, monkeypatch):
+    """A platform file resolve_config_path() saw but that is gone by read time is
+    reported as missing, not as no default_profile (#915 gauntlet finding)."""
+
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    # resolve_config_path() would have reported this path as present; it never
+    # existed on disk here, standing in for the race window between that
+    # existence check and load_profile's later read.
+    vanished = tmp_path / "config.toml"
+    monkeypatch.setattr(config_module, "resolve_config_path", lambda: vanished)
+    with pytest.raises(ConfigFileNotFoundError, match="config file not found") as exc_info:
+        load_profile(config_path=None)
+    assert str(vanished) in str(exc_info.value)
+
+
 def test_profile_reader_rejects_a_non_table_profiles_key(profile_reader, tmp_path):
     """`profiles = "x"` used to reach `.keys()` on a str, or a substring test."""
 
@@ -1208,7 +1317,7 @@ def test_from_mapping_applies_every_supplied_key():
         "timeout": 15.0,
         "max_response_bytes": 67108864,
         "ssh_timeout": 30.0,
-        "audit_memento": "hmc-mcp",
+        "audit_memento": "hmcpctl",
         "schema_version": "V1_0",
         "agent_id": "row-agent",
         "authorize_power_operations": True,
@@ -1247,7 +1356,7 @@ def test_from_mapping_runs_model_validators_once(monkeypatch):
         cfg = HMCConfig.from_mapping({"agent_id": "row-agent", "audit_memento": "mine"})
 
     warning.assert_called_once()
-    assert cfg.effective_audit_memento == "hmc-mcp:row-agent"
+    assert cfg.effective_audit_memento == "hmcpctl:row-agent"
 
 
 def test_from_mapping_reports_only_the_supplied_keys_as_set():
@@ -1277,7 +1386,7 @@ def test_from_mapping_keeps_the_tls_audit_provenance_accurate(monkeypatch):
     ``explicit-argument`` for a value nobody supplied, pointing an operator at
     an argument that does not exist.
     """
-    from hmc_mcp.client.core import _verify_ssl_source
+    from hmcpctl.client.core import _verify_ssl_source
 
     monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
 
@@ -1671,7 +1780,7 @@ def test_env_var_value_survives_a_concurrent_environment_mutation():
     them, so a key deleted in between raises ``KeyError`` — out of
     ``selected_connection`` and ``connection_denial``, which sit on the ADR 0038
     dispatch-time authorization path and would surface it as a bare ``KeyError``
-    past the machinery that exists to explain a refused call. ``hmc_mcp`` is a
+    past the machinery that exists to explain a refused call. ``hmcpctl`` is a
     supported reusable API (ADR 0029), so an embedding host mutating the
     environment from another thread is reachable.
     """

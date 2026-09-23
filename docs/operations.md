@@ -15,9 +15,12 @@ unbounded when `limit` is omitted.
 
 ### Public parameter units and selectors
 
-Storage quantities use binary-unit suffixes: `capacity_mib` for virtual disks,
-`size_mib` for media repositories and optical media, and `lu_size_gib` for
-Shared Storage Pool logical units. Numeric virtual-switch selectors are named
+Storage quantities use binary-unit suffixes: virtual-disk create and attach inputs use
+`capacity_mib`, while VolumeGroup inventory returns `capacity_gib` and `free_space_gib`.
+An impossible VolumeGroup free-space reading is returned as null with
+`free_space_diagnostic="free_space_exceeds_capacity"`. `size_mib` names media-repository
+and optical-media quantities, and `lu_size_gib` names Shared Storage Pool logical units.
+Numeric virtual-switch selectors are named
 `virtual_switch_id`. Verified vNIC mutations instead select the backing VIOS,
 SR-IOV adapter, and physical port; they do not accept a virtual-switch selector.
 
@@ -165,7 +168,7 @@ ADR 0053 admits selectors and percentage capacity semantics but no SR-IOV read p
 three collections currently return `capability-unavailable` with no items and perform no inventory
 command. Percentage fields use decimal percentages, never bytes, bandwidth, or integer weights.
 
-The CLI equivalents are `hmc-mcp network list-dedicated-pcie-slots`, `list-sriov-adapters`,
+The CLI equivalents are `hmcpctl network list-dedicated-pcie-slots`, `list-sriov-adapters`,
 `list-sriov-physical-ports`, and `list-sriov-logical-ports`. All accept `--json`; the SR-IOV
 commands accept the applicable `--adapter-id`, `--physical-port-id`, and `--logical-port-id`
 selectors. The older `hmc_list_io_slots` / `network list-io-slots` surface remains raw and is not

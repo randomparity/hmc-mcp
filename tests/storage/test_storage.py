@@ -2,7 +2,7 @@
 
 import pytest
 
-from hmc_mcp.documents import (
+from hmcpctl.documents import (
     build_virtual_disk_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
@@ -22,7 +22,13 @@ def test_virtual_disk_document():
     assert "VolumeGroup" in xml
     assert "VirtualDisks" in xml
     assert "<DiskName" in xml and "lv_boot" in xml
-    assert "<DiskCapacity" in xml and "51200" in xml
+    assert "<DiskCapacity" in xml and "50" in xml
+
+
+@pytest.mark.parametrize("capacity_mib", [0, -1024, 1, 1025])
+def test_virtual_disk_document_rejects_non_integral_gib(capacity_mib: int) -> None:
+    with pytest.raises(ValueError, match="positive multiple of 1024"):
+        build_virtual_disk_document("lv_boot", capacity_mib)
 
 
 def test_vscsi_mapping_virtual_disk():

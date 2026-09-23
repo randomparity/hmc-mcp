@@ -9,7 +9,7 @@ import tomllib
 
 import pytest
 
-from hmc_mcp.authorization.access_policy import (
+from hmcpctl.authorization.access_policy import (
     ACCESS_POLICY_FILENAME,
     ALL_TARGETS,
     GRANT_EFFECTS,
@@ -21,8 +21,8 @@ from hmc_mcp.authorization.access_policy import (
     resolve_access_policy_path,
     unboundable_effect_tools,
 )
-from hmc_mcp.server import TOOL_SECURITY
-from hmc_mcp.tool_registry import TargetSelector, ToolSecurity
+from hmcpctl.server import TOOL_SECURITY
+from hmcpctl.tool_registry import TargetSelector, ToolSecurity
 
 
 def _document(**grant: object) -> dict[str, object]:
@@ -799,7 +799,7 @@ def test_load_round_trips_a_written_file(tmp_path) -> None:
 def test_module_exposes_no_mutator() -> None:
     import inspect
 
-    from hmc_mcp.authorization import access_policy
+    from hmcpctl.authorization import access_policy
 
     # Filter to functions this module *defines*. `vars()` also carries what it
     # imported — `dataclass`, `field_validator`, `config_dir` are all public
@@ -835,7 +835,7 @@ def test_resolve_path_sits_beside_config_toml(monkeypatch, tmp_path) -> None:
     duplicates ``resolve_config_path()``'s platform branching rather than sharing
     it, so the two can drift apart silently.
     """
-    from hmc_mcp.config import config_dir, resolve_config_path
+    from hmcpctl.config import config_dir, resolve_config_path
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
@@ -855,7 +855,7 @@ def test_load_uses_the_resolved_path_when_none_is_given(monkeypatch, tmp_path) -
     target = tmp_path / ACCESS_POLICY_FILENAME
     target.write_text(POLICY_FILE, encoding="utf-8")
     monkeypatch.setattr(
-        "hmc_mcp.authorization.access_policy.resolve_access_policy_path", lambda: target
+        "hmcpctl.authorization.access_policy.resolve_access_policy_path", lambda: target
     )
 
     policy = load_access_policy("lab", TOOL_SECURITY)
@@ -910,9 +910,9 @@ def test_directory_in_place_of_the_file_is_an_access_policy_error(tmp_path) -> N
 def test_module_does_not_import_server() -> None:
     script = (
         "import sys\n"
-        "from hmc_mcp.authorization.access_policy import load_access_policy\n"
+        "from hmcpctl.authorization.access_policy import load_access_policy\n"
         "assert load_access_policy is not None\n"
-        "assert 'hmc_mcp.server' not in sys.modules, sorted(sys.modules)\n"
+        "assert 'hmcpctl.server' not in sys.modules, sorted(sys.modules)\n"
     )
 
     subprocess.run(
@@ -928,7 +928,7 @@ def test_module_imports_only_the_declared_first_party_modules() -> None:
     import ast
     from pathlib import Path as _Path
 
-    from hmc_mcp.authorization import access_policy as module
+    from hmcpctl.authorization import access_policy as module
 
     assert module.__file__ is not None
     tree = ast.parse(_Path(module.__file__).read_text(encoding="utf-8"))
@@ -939,7 +939,7 @@ def test_module_imports_only_the_declared_first_party_modules() -> None:
             isinstance(node, ast.ImportFrom)
             and node.level == 0
             and node.module
-            and node.module.startswith("hmc_mcp.")
+            and node.module.startswith("hmcpctl.")
         )
     }
     third_party = {
@@ -953,7 +953,7 @@ def test_module_imports_only_the_declared_first_party_modules() -> None:
         if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module
     }
 
-    assert first_party == {"hmc_mcp.config", "hmc_mcp.tool_registry"}
+    assert first_party == {"hmcpctl.config", "hmcpctl.tool_registry"}
     assert third_party & {"fastmcp", "mcp", "rich", "typer"} == set()
     assert "pydantic" in third_party
 
@@ -966,7 +966,7 @@ def test_grant_effects_track_the_registry_vocabulary() -> None:
     ``arbitrary-command``. A test converts silent drift into a red build without
     that risk.
     """
-    from hmc_mcp.tool_registry import EFFECTS
+    from hmcpctl.tool_registry import EFFECTS
 
     assert GRANT_EFFECTS | {"arbitrary-command"} == EFFECTS
 
@@ -975,7 +975,7 @@ def test_unresolvable_default_path_is_an_access_policy_error(monkeypatch) -> Non
     def _explode() -> object:
         raise RuntimeError("Could not determine home directory.")
 
-    monkeypatch.setattr("hmc_mcp.authorization.access_policy.resolve_access_policy_path", _explode)
+    monkeypatch.setattr("hmcpctl.authorization.access_policy.resolve_access_policy_path", _explode)
 
     with pytest.raises(AccessPolicyError, match="cannot resolve the access-policy"):
         load_access_policy("lab", TOOL_SECURITY)
@@ -987,6 +987,6 @@ def test_unusable_path_string_is_an_access_policy_error() -> None:
 
 
 def test_api_surface_is_unchanged() -> None:
-    from hmc_mcp import api
+    from hmcpctl import api
 
     assert not any("access_policy" in name for name in api.__all__)

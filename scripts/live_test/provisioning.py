@@ -13,12 +13,17 @@ if TYPE_CHECKING:
     from live_test_runner import RunState
 
 _TEST_DISK_ABSENT = ExpectedOutcome(
+    operation="command.run",
+    variant="test-disk-removal",
+    transient=True,
     reason="test disk is not present on VIOS (already cleaned up or never existed)",
     error_codes=frozenset(
         {"does not exist", "not found", "No such", "0516-306", "0516-404"}
     ),
 )
 _VOLUME_GROUP_POST_UNSUPPORTED = ExpectedOutcome(
+    operation="storage.create_disk",
+    variant="rest-volume-group-post",
     reason="REST VolumeGroup POST not supported on this HMC firmware — "
     "pre-existing test disk must be recreated manually on the VIOS",
     error_codes=frozenset({"406", "not acceptable"}),
@@ -128,7 +133,9 @@ async def _recreate_test_disk(
         f"viosvrcmd -m {config.system_name} -p {artifacts.vios_uuid}"
         f' -c "rmvlog -vg {vg_name} -lv {config.vdisk_name}"'
     )
-    status, data = await state.call(client, "hmc_run_command", cmd=command)
+    status, data = await state.call(
+        client, "hmc_run_command", expected=[_TEST_DISK_ABSENT], cmd=command
+    )
     state.record_with_expected(
         14,
         "hmc_run_command rmvlog (delete old test disk)",
@@ -140,6 +147,7 @@ async def _recreate_test_disk(
     status, data = await state.call(
         client,
         "hmc_create_virtual_disk",
+        expected=[_VOLUME_GROUP_POST_UNSUPPORTED],
         vios_name_or_uuid=vios_uuid,
         vg_uuid=vg_uuid,
         disk_name=config.vdisk_name,

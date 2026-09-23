@@ -20,6 +20,14 @@ wheels/
 # Local HMC credentials
 .env
 
+# Implementation plans are transient: a plan is a sequencing aid for one build,
+# and it is stale the moment that build lands. The durable record of a change is
+# its ADR (the decision) and its spec (the contract), both of which are tracked.
+# A committed plan outlives what it described and then misleads — 77 of them were
+# removed on 2026-09-21 for exactly that reason. Write one if it helps you build;
+# keep it out of the repository.
+docs/workflow/plans/
+
 # desloppify local state
 .desloppify/
 scorecard.png
@@ -28,5 +36,9 @@ scorecard.png
 .claude/settings.local.json
 
 # More resources
-docs/refs/
+# No trailing slash: a trailing-slash pattern only matches a real directory,
+# not a symlink of the same name, so a worktree-linked docs/refs (see
+# scripts/link_reference_corpus.py) would show as untracked. No file named
+# docs/refs exists, so the widened match is harmless.
+docs/refs
 AGENTS.local.md

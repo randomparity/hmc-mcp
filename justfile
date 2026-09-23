@@ -1,4 +1,4 @@
-# hmc-mcp — canonical commands
+# hmcpctl — canonical commands
 #
 # These give the workspace a single entry point for "suite green":
 #   just verify   # full ad-hoc verification (tests + MCP handshake + CLI)
@@ -14,6 +14,7 @@
 setup:
     uv sync --locked --extra app --link-mode copy
     uv run --no-sync prek install
+    uv run --no-sync python scripts/link_reference_corpus.py
 
 # Python lint
 lint:
@@ -51,7 +52,7 @@ capability-inventory:
 # regenerate the packaged operation-maturity projection
 capability-metadata:
     uv run --no-sync python scripts/check_capability_inventory.py \
-        --write-runtime-projection src/hmc_mcp/_operation_maturity.json
+        --write-runtime-projection src/hmcpctl/_operation_maturity.json
 
 # report each operation's derived live-verification state (ADR 0127)
 verification-report *ARGS:
@@ -105,6 +106,6 @@ verify-artifacts:
 # The root help goes through the installed console script, so the entry point is
 # covered; the group helps are derived from the Typer app rather than listed here.
 verify: static test smoke build verify-artifacts
-    uv run --no-sync hmc-mcp --help >/dev/null
+    uv run --no-sync hmcpctl --help >/dev/null
     uv run --no-sync python scripts/smoke_cli_groups.py
     @echo "verify: all groups load OK"

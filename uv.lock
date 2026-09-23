@@ -693,7 +693,7 @@ wheels = [
 ]
 
 [[package]]
-name = "hmc-mcp"
+name = "hmcpctl"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

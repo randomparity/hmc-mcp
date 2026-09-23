@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.operations.affinity.rest import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.operations.affinity.rest import (
     AffinityAssessmentResult,
     AffinityClassification,
     AffinityEvidence,
@@ -17,11 +17,11 @@ from hmc_mcp.operations.affinity.rest import (
     assess_post_activation_affinity,
     classify_affinity_outcome,
 )
-from hmc_mcp.operations.lpar.core import (
+from hmcpctl.operations.lpar.core import (
     LparPowerResult,
     activation_allows_assessment,
 )
-from hmc_mcp.server_tools.lpar.lifecycle import hmc_power_on_lpar
+from hmcpctl.server_tools.lpar.lifecycle import hmc_power_on_lpar
 
 
 class _ClientContext:
@@ -119,17 +119,17 @@ async def test_measurement_runs_current_prediction_and_policy_reads_after_succes
     hmc = cast(HMCClient, SimpleNamespace(config=object()))
     with (
         patch(
-                "hmc_mcp.operations.affinity.rest.get_lpar_memopt_score",
+                "hmcpctl.operations.affinity.rest.get_lpar_memopt_score",
             new=AsyncMock(return_value={"curr_lpar_score": "82"}),
         ) as current,
         patch(
-                "hmc_mcp.operations.affinity.rest.plan_lpar_memopt_scores",
+                "hmcpctl.operations.affinity.rest.plan_lpar_memopt_scores",
             new=AsyncMock(
                 return_value=[{"lpar_name": "lpar-1", "predicted_lpar_score": "84"}]
             ),
         ) as predicted,
         patch(
-                "hmc_mcp.operations.affinity.rest.get_minimum_affinity_policy",
+                "hmcpctl.operations.affinity.rest.get_minimum_affinity_policy",
             new=AsyncMock(return_value=policy),
         ) as policy_read,
     ):
@@ -147,17 +147,17 @@ async def test_malformed_measured_score_is_a_validation_failure() -> None:
     hmc = cast(HMCClient, SimpleNamespace(config=object()))
     with (
         patch(
-                "hmc_mcp.operations.affinity.rest.get_lpar_memopt_score",
+                "hmcpctl.operations.affinity.rest.get_lpar_memopt_score",
             new=AsyncMock(return_value={"curr_lpar_score": "101"}),
         ),
         patch(
-                "hmc_mcp.operations.affinity.rest.plan_lpar_memopt_scores",
+                "hmcpctl.operations.affinity.rest.plan_lpar_memopt_scores",
             new=AsyncMock(
                 return_value=[{"lpar_name": "lpar-1", "predicted_lpar_score": "84"}]
             ),
         ),
         patch(
-                "hmc_mcp.operations.affinity.rest.get_minimum_affinity_policy",
+                "hmcpctl.operations.affinity.rest.get_minimum_affinity_policy",
             new=AsyncMock(return_value=policy),
         ),
         pytest.raises(ValueError, match="current_score"),
@@ -173,15 +173,15 @@ def test_completed_activation_runs_and_returns_assessment() -> None:
     assessment = AsyncMock(return_value=_assessment("none", "passed reason"))
     with (
         patch(
-            "hmc_mcp._app.client_from_env",
+            "hmcpctl._app.client_from_env",
             return_value=_ClientContext(),
         ),
         patch(
-            "hmc_mcp.operations.lpar.core.power_lpar",
+            "hmcpctl.operations.lpar.core.power_lpar",
             new=AsyncMock(return_value=_power_result("COMPLETED")),
         ),
         patch(
-            "hmc_mcp.operations.lpar.core.assess_post_activation_affinity",
+            "hmcpctl.operations.lpar.core.assess_post_activation_affinity",
             new=assessment,
         ),
     ):
@@ -203,15 +203,15 @@ def test_unconfirmed_activation_never_runs_assessment(status: str) -> None:
     assessment = AsyncMock()
     with (
         patch(
-            "hmc_mcp._app.client_from_env",
+            "hmcpctl._app.client_from_env",
             return_value=_ClientContext(),
         ),
         patch(
-            "hmc_mcp.operations.lpar.core.power_lpar",
+            "hmcpctl.operations.lpar.core.power_lpar",
             new=AsyncMock(return_value=_power_result(status)),
         ),
         patch(
-            "hmc_mcp.operations.lpar.core.assess_post_activation_affinity",
+            "hmcpctl.operations.lpar.core.assess_post_activation_affinity",
             new=assessment,
         ),
     ):
@@ -235,15 +235,15 @@ def test_malformed_measurement_preserves_job_and_applies_intent(
 ) -> None:
     with (
         patch(
-            "hmc_mcp._app.client_from_env",
+            "hmcpctl._app.client_from_env",
             return_value=_ClientContext(),
         ),
         patch(
-            "hmc_mcp.operations.lpar.core.power_lpar",
+            "hmcpctl.operations.lpar.core.power_lpar",
             new=AsyncMock(return_value=_power_result("COMPLETED_OK")),
         ),
         patch(
-            "hmc_mcp.operations.lpar.core.assess_post_activation_affinity",
+            "hmcpctl.operations.lpar.core.assess_post_activation_affinity",
             new=AsyncMock(
                 side_effect=ValueError("current_score must be 0 through 100")
             ),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hmc_mcp.errors import HMCError
+from hmcpctl.errors import HMCError
 
 
 def test_hmc_error_extracts_message_from_xml_body() -> None:
@@ -33,7 +33,7 @@ def test_hmc_error_does_not_mask_unexpected_formatter_failure(monkeypatch) -> No
     def fail_unexpectedly(*_args: object) -> None:
         raise RuntimeError("formatter defect")
 
-    monkeypatch.setattr("hmc_mcp.errors.find_text", fail_unexpectedly)
+    monkeypatch.setattr("hmcpctl.errors.find_text", fail_unexpectedly)
 
     with pytest.raises(RuntimeError, match="formatter defect"):
         HMCError("request failed", 500, "<Error />")
