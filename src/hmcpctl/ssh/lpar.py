@@ -201,13 +201,10 @@ def _explicit_lpar_resource_pairs(
     _min_vp = resources.min_vcpus or 1
     _des_vp = resources.desired_vcpus or 1
     _max_vp = resources.max_vcpus or max(_des_vp, 2)
-    if resources.dedicated is not True:
-        _require_units_for_vcpus(
-            resources.min_procs, _min_vp, "min_procs", "--min-procs"
-        )
-        _require_units_for_vcpus(
-            resources.desired_procs, _des_vp, "desired_procs", "--procs"
-        )
+    _require_units_for_vcpus(resources.min_procs, _min_vp, "min_procs", "--min-procs")
+    _require_units_for_vcpus(
+        resources.desired_procs, _des_vp, "desired_procs", "--procs"
+    )
 
     pairs: list[tuple[str, object]] = [
         ("min_mem", _min_mem),

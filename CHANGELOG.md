@@ -103,9 +103,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 - The `mksyscfg` create path used by `hmcpctl lpars create` and by `hmc_create_lpar`'s HTTP 406
   fallback no longer sends its 0.1 processing-unit default with more than one virtual processor.
-  The HMC rejected that profile with HSCL0622. A shared-processor create with `--vcpus` or
-  `--min-vcpus` above 1 now requires `--procs` or `--min-procs` (`desired_procs` / `min_procs`)
-  and is refused before any HMC command runs (#938).
+  The HMC rejected that profile with HSCL0622. On that path, a create with `--vcpus` or
+  `--min-vcpus` above 1 now needs `--procs` or `--min-procs` (`desired_procs` / `min_procs`),
+  and without them it is refused before `mksyscfg` runs. The refusal includes two virtual
+  processors, a count some platforms may accept at 0.1 units, because the per-processor minimum
+  is not recorded here (#938).
 
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The

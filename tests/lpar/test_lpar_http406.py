@@ -101,9 +101,9 @@ def _mock_dlpar_authorization(router) -> None:
 def _partition_feed(*entries: str) -> str:
     """Wrap rendered LPAR entries in the Atom feed envelope the client parses."""
     inner = "".join(
-        entry.split("?>", 1)[1]
-        .strip()
-        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
+        entry.split("?>", 1)[1].strip().replace(
+            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
+        )
         for entry in entries
     )
     return (
@@ -293,6 +293,8 @@ def _cli_create(resources: LparResources) -> AsyncMock:
     [
         (LparResources(desired_vcpus=3, max_vcpus=6), "--procs"),
         (LparResources(min_vcpus=2, desired_vcpus=2, desired_procs=0.4), "--min-procs"),
+        # The mksyscfg record is always shared, so --dedicated gets no exemption.
+        (LparResources(dedicated=True, desired_vcpus=3), "--procs"),
     ],
 )
 def test_cli_create_refuses_default_units_for_several_vcpus(resources, option):
@@ -326,11 +328,6 @@ def test_cli_create_sends_explicit_units_with_several_vcpus():
     assert "min_procs=1,desired_procs=3,max_procs=6" in command
 
 
-@pytest.mark.parametrize(
-    "resources",
-    [LparResources(desired_vcpus=1), LparResources(dedicated=True, desired_vcpus=3)],
-)
-def test_cli_create_keeps_unit_defaults_outside_the_refusal(resources):
-    """One virtual processor, and dedicated mode, keep the legacy unit defaults."""
-    command = _cli_create(resources).await_args.args[1]
+def test_cli_create_keeps_unit_defaults_for_one_vcpu():
+    command = _cli_create(LparResources(desired_vcpus=1)).await_args.args[1]
     assert "min_proc_units=0.1,desired_proc_units=0.1,max_proc_units=2.0" in command
