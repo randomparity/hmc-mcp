@@ -333,6 +333,37 @@ def test_cli_create_keeps_unit_defaults_for_one_vcpu():
 
 
 # ---------------------------------------------------------------------- #
+# create_lpar_via_cli — max_proc_units default vs. --max-vcpus (#949)
+# ---------------------------------------------------------------------- #
+
+
+def test_cli_create_refuses_max_default_exceeding_max_vcpus():
+    """A single max vCPU cannot use the max(desired, 2.0) processing-unit default."""
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match="--max-procs"),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"),
+                "sys1",
+                "lp1",
+                resources=LparResources(max_vcpus=1),
+            )
+        )
+    run.assert_not_awaited()
+
+
+def test_cli_create_keeps_max_default_for_large_max_vcpus():
+    """A large --max-vcpus keeps the 2.0-unit default; no minimum is derived (#949)."""
+    command = _cli_create(LparResources(max_vcpus=100)).await_args.args[1]
+    assert "max_proc_units=2.0" in command
+    assert "max_procs=100" in command
+
+
+# ---------------------------------------------------------------------- #
 # create_lpar_via_cli — processor mode of the mksyscfg record (#948)
 # ---------------------------------------------------------------------- #
 

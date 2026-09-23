@@ -137,9 +137,10 @@ async def create_lpar_via_cli(
 
     Returns the raw ``mksyscfg`` stdout (typically empty on success).
     Raises :class:`HMCCLIError` on non-zero exit, and before any command when
-    more than one virtual processor is requested without processing units, or
-    a dedicated request carries a fractional count or a shared-only
-    ``sharing_mode``.
+    more than one virtual processor is requested without processing units,
+    when the guessed ``max_proc_units`` default would exceed the requested
+    max vCPUs, or a dedicated request carries a fractional count or a
+    shared-only ``sharing_mode``.
     """
     config_pairs: list[tuple[str, object]] = [
         ("name", name),
@@ -273,6 +274,7 @@ def _shared_processor_pairs(resources: LparResources) -> list[tuple[str, object]
     _require_units_for_vcpus(
         resources.desired_procs, _des_vp, "desired_procs", "--procs"
     )
+    _require_max_units_fit_vcpus(resources.max_procs, _max_pu, _max_vp)
 
     return [
         ("proc_mode", "shared"),
@@ -300,6 +302,28 @@ def _require_units_for_vcpus(
             f"{vcpus} virtual processors need explicit processing units: pass "
             f"{field} ({option} on the CLI). The 0.1-unit default covers one "
             "virtual processor only."
+        )
+
+
+def _require_max_units_fit_vcpus(
+    max_units: float | None, computed_max: float, max_vcpus: int
+) -> None:
+    """Refuse a guessed ``max_proc_units`` default a virtual processor cannot use.
+
+    A virtual processor can use at most 1.0 processing unit, so
+    ``max(desired, 2.0)`` is only a safe guess when ``max_vcpus`` covers it.
+    Mirrors :func:`_require_units_for_vcpus`'s refuse-rather-than-guess stance
+    for #938, applied to the opposite (upper) bound (#949). A large
+    ``max_vcpus`` is not refused here: the per-processor *minimum* ratio is
+    platform-specific and not recorded in this repository (#938), so no
+    default is derived from it.
+    """
+    if max_units is None and computed_max > max_vcpus:
+        raise HMCCLIError(
+            f"{max_vcpus} maximum virtual processors cannot use "
+            f"{computed_max} maximum processing units: pass max_procs "
+            "(--max-procs on the CLI). A virtual processor uses at most 1.0 "
+            "processing unit."
         )
 
 

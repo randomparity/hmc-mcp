@@ -159,6 +159,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   processors, a count some platforms may accept at 0.1 units, because the per-processor minimum
   is not recorded here (#938).
 
+- The same `mksyscfg` create path also refuses its `max_proc_units` default
+  (`max(desired_proc_units, 2.0)`) when `--max-procs` is omitted and it would exceed
+  `--max-vcpus`: a virtual processor can use at most 1.0 processing unit, so `--max-vcpus 1`
+  cannot cover the 2.0-unit default. The refusal names `--max-procs`, mirroring #938's
+  min/desired guard for the opposite bound. A large `--max-vcpus` still keeps the default; no
+  per-processor minimum is derived from it, for the same reason as #938 (#949).
+
 - The same `mksyscfg` create path now honours `--dedicated` (`dedicated=True`). It always sent a
   shared-processor record, so the partition was created with shared processors and no error.
   A dedicated create now sends `proc_mode=ded` with whole `min_procs` / `desired_procs` /
