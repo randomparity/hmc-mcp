@@ -30,7 +30,7 @@ values.
 | `VirtualDisk`, `PhysicalVolume`, `VirtualOpticalMedia`, `VirtualSCSIMapping` | only `schemaVersion="V1_0"` (no `kb`/`kxe`) | F, I |
 | `Storage` | `kb="CUR" kxe="false"`; no `schemaVersion`, no `Metadata` child | F, I |
 | `DiskCapacity` / `DiskName` | `DiskCapacity` first | F, I |
-| `TargetDevice` | `kb="CUR" kxe="false"`, wrapping `<LogicalVolume\|PhysicalVolume>VirtualTargetDevice` or `VirtualOpticalTargetDevice` with `Metadata` and `TargetName kb="CUR"`. It no longer carries the name as text | F; the element name per storage kind matches the repo's own mapping parser (`client_storage.py`, `TargetDevice.<X>.TargetName`) |
+| `TargetDevice` | `kb="CUR" kxe="false"`, wrapping `<LogicalVolume\|PhysicalVolume>VirtualTargetDevice` or `VirtualOpticalTargetDevice` with `Metadata` and `TargetName kb="CUR"`. It no longer carries the name as text | F for the LogicalVolume case; the PhysicalVolume and optical element names are inferred from F's shape and the names used in the repo's test feeds |
 | `AssociatedLogicalPartition` | UOM namespace (not Atom), `kb="CUR" kxe="false"`, first child of the mapping | F |
 | `Partition{Memory,Processor}Configuration`, `{Shared,Dedicated}ProcessorConfiguration` | add `schemaVersion="V1_0"` | I (memory); invariant below (processor) |
 
@@ -68,9 +68,10 @@ for the V10R3 values.
    value the caller supplies is dropped or reinterpreted. The existing escaping decorator and
    the `storage_kind` allowlist still guard every element name and value.
 3. Accepted:
-   - Values evidenced only by I, and the processor `schemaVersion` inferred from the
-     invariant, are unproven by a 200 until #879 runs. The cost is bounded: the result is a
-     400 with the HMC's message, as today after #935.
+   - Values evidenced only by I, the processor `schemaVersion` inferred from the invariant,
+     and the PhysicalVolume/optical target-device element names inferred from F, are
+     unproven by a 200 until #879 runs. The cost is bounded: the result is a 400 with the
+     HMC's message, as today after #935.
    - Elements with no recorded value stay unchanged and may still draw a 400. The PR lists
      them.
    - Whether V10R3 puts the schema detail in `<Message>` is unobserved. The test uses the
@@ -83,8 +84,8 @@ for the V10R3 values.
 1. Each builder element in the Evidence table carries exactly the listed attributes and
    order. Unit tests read F directly for every element F contains, and use a
    table transcribed from I for the rest.
-2. Every element that has a `Metadata` child, in every output of the builders in the four
-   files, carries `schemaVersion`. A parametrized test over those builders checks this.
+2. Every element that has a `Metadata` child carries `schemaVersion`, for each builder call in
+   the invariant test's parametrization (every public builder in the four files, at least once).
 3. A PUT answered with 400 `REST0001` raises an `HMCError` whose text contains the HMC
    `<Message>`.
 4. Existing tests that asserted the old `CUD` literals are updated. `just verify` passes.
