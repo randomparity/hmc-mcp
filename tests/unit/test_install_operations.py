@@ -194,7 +194,7 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
 
     assert result["system"] == "sys1"
     assert result["partition"] == "target1"
-    assert ssh.commands[0] == "lssyscfg -r lpar -m sys1 -F UUID,PartitionName"
+    assert ssh.commands[0] == "lssyscfg -r lpar -m sys1 -F uuid,name"
     hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
 
 
@@ -282,7 +282,7 @@ async def test_unresolvable_uuid_target_raises_before_submitting(operation):
             hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
         )
 
-    assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F UUID,PartitionName"]
+    assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F uuid,name"]
 
 
 def _install_records(text: str) -> list[dict]:
