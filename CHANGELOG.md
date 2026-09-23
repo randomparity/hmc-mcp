@@ -131,6 +131,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
   parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
 
+- `hmcpctl lpars summary`, the LPM commands `lpars migrate`, `migrate-affinity`,
+  `migrate-validate`, `migrate-abort` and `migrate-recover`, and `hmcpctl vios power-on` /
+  `power-off` accept `--system/-s` and pass it to the operation as the managed system (the
+  migration source for the LPM commands). They hard-coded no scope, so a name lookup on a large
+  HMC could hit the 30 s parent-discovery bound with no way to narrow it (#946).
+
 - The `mksyscfg` create path used by `hmcpctl lpars create` and by `hmc_create_lpar`'s HTTP 406
   fallback no longer sends its 0.1 processing-unit default with more than one virtual processor.
   The HMC rejected that profile with HSCL0622. On that path, a create with `--vcpus` or
@@ -138,6 +144,21 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and without them it is refused before `mksyscfg` runs. The refusal includes two virtual
   processors, a count some platforms may accept at 0.1 units, because the per-processor minimum
   is not recorded here (#938).
+
+- The same `mksyscfg` create path now honours `--dedicated` (`dedicated=True`). It always sent a
+  shared-processor record, so the partition was created with shared processors and no error.
+  A dedicated create now sends `proc_mode=ded` with whole `min_procs` / `desired_procs` /
+  `max_procs` counts from `--min-procs` / `--procs` / `--max-procs`, and no processing units or
+  virtual-processor counts. An explicit `sharing_mode` is sent when it is a dedicated value
+  (`keep_idle_procs`, `share_idle_procs`, `share_idle_procs_active`, `share_idle_procs_always`).
+  A fractional count, or a shared-only `sharing_mode` (`capped`, `uncapped`), is refused before
+  `mksyscfg` runs (#948).
+
+- The live-test scratch LPAR create (ST8) passes explicit processing units, so its multi-vCPU
+  create is no longer refused on the `mksyscfg` fallback. `.env` now requires
+  `LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS` and `LIVE_TEST_SCRATCH_CREATE_MAX_PROCS`: finite,
+  positive, desired no greater than max. A results document written before these keys existed
+  no longer restores artifacts into a later run; the runner warns and continues (#947).
 
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The

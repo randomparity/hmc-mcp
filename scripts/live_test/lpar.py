@@ -60,6 +60,10 @@ async def _create_and_confirm_scratch_lpar(client: Client, state: RunState) -> N
             "max_memory": config.scratch_create_max_memory_mib,
             "desired_vcpus": config.scratch_create_desired_vcpus,
             "max_vcpus": config.scratch_create_max_vcpus,
+            # Explicit units: the SSH fallback's 0.1 default covers one virtual
+            # processor only (#938).
+            "desired_procs": config.scratch_create_desired_procs,
+            "max_procs": config.scratch_create_max_procs,
         },
     )
     state.record(8, "hmc_create_lpar", status, data)
