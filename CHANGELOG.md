@@ -102,9 +102,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 ### Fixed
 
 - `hmcpctl storage attach-disk` and every `hmcpctl adapters` subcommand (`list`, `add-network`,
-  `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They used
-  to always search every managed system for the LPAR's parent, which on a large HMC can hit the
-  30 s parent-discovery bound with no way to supply the scope (#937).
+  `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
+  way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
+  parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
 
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The
