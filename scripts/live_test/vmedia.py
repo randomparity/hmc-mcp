@@ -17,6 +17,7 @@ from hmcpctl.config import env_var_value
 from .observation import ExpectedOutcome
 from .results import entries
 from .results import resource as get_resource
+from .storage import configured_vg_uuid, resolve_configured_volume_group
 
 _ALREADY_POWERED_OFF = ExpectedOutcome(
     operation="lpar.power_off",
@@ -39,6 +40,14 @@ _REPOSITORY_ALREADY_GONE = ExpectedOutcome(
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
+
+
+_NOT_OWNED = "no repository created by this run in the configured volume group"
+
+
+def _owns_repository(state: RunState) -> bool:
+    """Whether this run created the media repository in the configured volume group."""
+    return state.artifacts.vmedia_repo_created and configured_vg_uuid(state) is not None
 
 
 async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> bool:
@@ -88,51 +97,27 @@ async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> boo
 async def _select_vmedia_volume_group(
     client: Client, state: RunState, repo_size_mib: int
 ) -> bool:
-    """Select a VIOS volume group with enough space for the repository."""
-    artifacts = state.artifacts
-
-    # Step 2 — VG discovery + free-space check
+    """Select the configured volume group when it has space for the repository."""
+    dependents = ("hmc_create_media_repository", "hmc_get_media_repository")
     st, data = await state.call(
-        client, "hmc_list_volume_groups", vios_name_or_uuid=artifacts.vios_uuid
+        client, "hmc_list_volume_groups", vios_name_or_uuid=state.artifacts.vios_uuid
     )
     state.record(16, "hmc_list_volume_groups", st, data)
-    if st == "PASS":
-        for vg in entries(data):
-            resource = get_resource(vg)
-            uuid = vg.get("UUID") or vg.get("uuid")
-            if not artifacts.vg_uuid and uuid:
-                artifacts.vg_uuid = uuid
-            # Always read free space from the selected VG
-            if uuid == artifacts.vg_uuid or not artifacts.vg_uuid:
-                free_raw = (
-                    resource.get("FreeSpace")
-                    or resource.get("FreeSpaceInMBytes")
-                    or resource.get("free_space")
-                    or resource.get("FreeSpaceInMegabytes")
-                )
-                try:
-                    free_mib = int(float(free_raw)) if free_raw is not None else None
-                except (TypeError, ValueError):
-                    free_mib = None
-                print(f"  VG UUID: {artifacts.vg_uuid}  free space: {free_mib} MiB")
-                if free_mib is not None and free_mib < repo_size_mib:
-                    for name in [
-                        "hmc_create_media_repository",
-                        "hmc_get_media_repository",
-                    ]:
-                        state.skip(
-                            16,
-                            name,
-                            f"insufficient free space: {free_mib} MiB < {repo_size_mib} MiB",
-                        )
-                    return False
-                break
-
-    if not artifacts.vg_uuid:
-        for name in ["hmc_create_media_repository", "hmc_get_media_repository"]:
-            state.skip(16, name, "no VG UUID resolved")
+    if st != "PASS":
+        for name in dependents:
+            state.skip(16, name, "volume group listing failed")
         return False
-
+    group = resolve_configured_volume_group(state, 16, data, dependents)
+    if group is None:
+        return False
+    free_mib = group.free_space_mib
+    print(f"  VG UUID: {group.uuid}  free space: {free_mib} MiB")
+    if free_mib is not None and free_mib < repo_size_mib:
+        for name in dependents:
+            state.skip(
+                16, name, f"insufficient free space: {free_mib} MiB < {repo_size_mib} MiB"
+            )
+        return False
     return True
 
 
@@ -154,6 +139,7 @@ async def _create_and_confirm_vmedia_repository(
     if st != "PASS":
         state.skip(16, "hmc_get_media_repository", "repository creation failed")
         return
+    artifacts.vmedia_repo_created = True
 
     # Step 5 — Confirm repository exists
     st, data = await state.call(
@@ -164,7 +150,6 @@ async def _create_and_confirm_vmedia_repository(
     )
     state.record(16, "hmc_get_media_repository", st, data)
     if st == "PASS" and data:
-        artifacts.vmedia_repo_created = True
         print("  ✅ Repository created — vmedia_repo_created=True")
 
 
@@ -189,7 +174,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
     print("\n=== ST17: Short Repository Lifecycle (no ISO) ===")
 
-    if not artifacts.vmedia_repo_created:
+    if not _owns_repository(state):
         for name in [
             "hmc_delete_media_repository (main)",
             "hmc_create_media_repository (small)",
@@ -199,7 +184,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
             "hmc_get_media_repository (confirm gone)",
             "hmc_create_media_repository (restore main)",
         ]:
-            state.skip(17, name, "vmedia_repo_created=False (ST16 failed)")
+            state.skip(17, name, _NOT_OWNED)
         return
 
     vios = artifacts.vios_uuid
@@ -346,10 +331,9 @@ def _allow_iso_host(config: LiveTestConfig) -> None:
 def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
     """Validate ST18 prerequisites and start its invocation-owned HTTP server."""
     config = state.config
-    artifacts = state.artifacts
-    if not artifacts.vmedia_repo_created:
+    if not _owns_repository(state):
         for name in skip_names:
-            state.skip(18, name, "vmedia_repo_created=False (ST16/ST17 failed)")
+            state.skip(18, name, _NOT_OWNED)
         return False
 
     if not Path(config.iso_path).is_file():
@@ -655,9 +639,9 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
         "hmc_delete_optical_media (post-unmount)",
         "hmc_list_optical_media (confirm empty)",
     ]
-    if not artifacts.vmedia_iso_name:
+    if not artifacts.vmedia_iso_name or not _owns_repository(state):
         for name in skip_names:
-            state.skip(19, name, "vmedia_iso_name not set (ST18 failed)")
+            state.skip(19, name, f"vmedia_iso_name not set (ST18 failed) or {_NOT_OWNED}")
         return
 
     await _mount_vmedia_and_confirm(client, state)
@@ -876,9 +860,9 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         "hmc_read_lpar_boot_order (verify restore)",
     ]
 
-    if not artifacts.vmedia_repo_created:
+    if not _owns_repository(state):
         for name in _skip_names:
-            state.skip(20, name, "vmedia_repo_created=False (ST16 failed)")
+            state.skip(20, name, _NOT_OWNED)
         return
 
     # Safety belt — never touch protected LPARs, even under ``python -O``.
@@ -1040,12 +1024,9 @@ async def _remove_orphan_mappings(client: Client, state: RunState, vios: str) ->
 
 
 async def _remove_optical_media(
-    client: Client, state: RunState, vios: str, vg: str | None
+    client: Client, state: RunState, vios: str, vg: str
 ) -> None:
-    """Delete all optical media from the test repository when it exists."""
-    if not vg:
-        state.skip(22, "hmc_list_optical_media (media cleanup)", "no VG UUID")
-        return
+    """Delete all optical media from the repository this run created."""
     st, data = await state.call(
         client,
         "hmc_list_optical_media",
@@ -1069,44 +1050,33 @@ async def _remove_optical_media(
         state.record(22, f"hmc_delete_optical_media ({media_name})", st_d, data_d)
 
 
-async def _remove_repository_and_audit(
-    client: Client, state: RunState, vios: str, vg: str | None
+async def _remove_repository(
+    client: Client, state: RunState, vios: str, vg: str
 ) -> None:
-    """Remove the repository, confirm its absence, and capture final VG state."""
-    if vg:
-        st, data = await state.call(
-            client,
-            "hmc_delete_media_repository",
-            vios_name_or_uuid=vios,
-            vg_uuid=vg,
-            expected=[_REPOSITORY_ALREADY_GONE],
-        )
-        state.record_with_expected(
-            22,
-            "hmc_delete_media_repository",
-            st,
-            data,
-            [_REPOSITORY_ALREADY_GONE],
-        )
-        if st == "PASS":
-            state.artifacts.vmedia_repo_created = False
-        st, data = await state.call(
-            client,
-            "hmc_get_media_repository",
-            vios_name_or_uuid=vios,
-            vg_uuid=vg,
-        )
-        state.record(22, "hmc_get_media_repository (confirm gone)", st, data)
-    else:
-        state.skip(22, "hmc_delete_media_repository", "no VG UUID")
-        state.skip(22, "hmc_get_media_repository (confirm gone)", "no VG UUID")
-
+    """Remove the repository this run created and confirm its absence."""
     st, data = await state.call(
         client,
-        "hmc_list_volume_groups",
+        "hmc_delete_media_repository",
         vios_name_or_uuid=vios,
+        vg_uuid=vg,
+        expected=[_REPOSITORY_ALREADY_GONE],
     )
-    state.record(22, "hmc_list_volume_groups (final audit)", st, data)
+    state.record_with_expected(
+        22,
+        "hmc_delete_media_repository",
+        st,
+        data,
+        [_REPOSITORY_ALREADY_GONE],
+    )
+    if st == "PASS":
+        state.artifacts.vmedia_repo_created = False
+    st, data = await state.call(
+        client,
+        "hmc_get_media_repository",
+        vios_name_or_uuid=vios,
+        vg_uuid=vg,
+    )
+    state.record(22, "hmc_get_media_repository (confirm gone)", st, data)
 
 
 async def vmedia_teardown(client: Client, state: RunState) -> None:
@@ -1126,8 +1096,21 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
             state.skip(22, name, "no VIOS UUID in context")
         return
 
-    await _remove_orphan_mappings(client, state, artifacts.vios_uuid)
-    await _remove_optical_media(client, state, artifacts.vios_uuid, artifacts.vg_uuid)
-    await _remove_repository_and_audit(
-        client, state, artifacts.vios_uuid, artifacts.vg_uuid
+    vg = configured_vg_uuid(state)
+    if not artifacts.vmedia_repo_created or vg is None:
+        for name in [
+            "hmc_list_optical_mappings (orphan cleanup)",
+            "hmc_list_optical_media (media cleanup)",
+            "hmc_delete_media_repository",
+            "hmc_get_media_repository (confirm gone)",
+        ]:
+            state.skip(22, name, _NOT_OWNED)
+    else:
+        await _remove_orphan_mappings(client, state, artifacts.vios_uuid)
+        await _remove_optical_media(client, state, artifacts.vios_uuid, vg)
+        await _remove_repository(client, state, artifacts.vios_uuid, vg)
+
+    st, data = await state.call(
+        client, "hmc_list_volume_groups", vios_name_or_uuid=artifacts.vios_uuid
     )
+    state.record(22, "hmc_list_volume_groups (final audit)", st, data)

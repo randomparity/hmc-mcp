@@ -604,6 +604,8 @@ async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() ->
     )
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+    state.artifacts.vmedia_repo_created = True
     state.artifacts.vmedia_iso_name = "boot.iso"
 
     await vmedia.vmedia_mount_unmount(object(), state)
@@ -644,6 +646,7 @@ async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() ->
     state.artifacts.lp3_uuid = "lp3-uuid"
     state.artifacts.vmedia_orig_boot_order = ["disk", "network"]
     state.artifacts.vmedia_repo_created = True
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
 
     await vmedia.vmedia_teardown(object(), state)
 
@@ -2916,6 +2919,7 @@ def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
 
 
 def _configure_vmedia_artifacts(state, values):
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     for name, value in values.items():
         setattr(state.artifacts, name, value)
 
@@ -2964,6 +2968,7 @@ def _configure_vmedia_artifacts(state, values):
         (
             runner.vmedia_mount_unmount,
             {
+                "vmedia_repo_created": True,
                 "vmedia_iso_name": "test.iso",
                 "vios_uuid": "vios",
                 "vg_uuid": "vg",
@@ -3046,7 +3051,10 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         if tool == "hmc_get_lpar":
             return "PASS", {"uuid": "lp3"}
         if tool == "hmc_list_volume_groups":
-            return "PASS", [{"UUID": "vg", "Resource": {"FreeSpace": "8000"}}]
+            return "PASS", [
+                {"uuid": "other", "name": "rootvg", "free_space_gib": 900},
+                {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 8},
+            ]
         if tool == "hmc_get_media_repository":
             return "PASS", {"UUID": "repo"}
         if tool == "hmc_list_optical_media":
@@ -3076,7 +3084,84 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
     await workflow(None, state)
 
     assert [tool for tool, _ in calls] == expected_tools
+    assert {kwargs["vg_uuid"] for _, kwargs in calls if "vg_uuid" in kwargs} <= {"vg"}
     assert not [result for result in state.results if result["status"] == "FAIL"]
+
+
+@pytest.mark.asyncio
+async def test_vmedia_repository_skips_when_configured_group_too_small(monkeypatch):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_volume_groups":
+            return "PASS", [{"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 5}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "lp3_uuid": "lp3"})
+
+    await runner.vmedia_bootstrap_and_create_repo(None, state)
+
+    assert "hmc_create_media_repository" not in calls
+    skips = [r for r in state.results if r["status"] == "SKIP"]
+    assert {r["tool"] for r in skips} == {
+        "hmc_create_media_repository",
+        "hmc_get_media_repository",
+    }
+    assert all("5120 MiB < 6144 MiB" in str(r) for r in skips)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("workflow", "artifacts"),
+    [
+        (
+            runner.vmedia_teardown,
+            {"vmedia_repo_created": False, "vios_uuid": "vios", "vg_uuid": "vg"},
+        ),
+        (
+            runner.vmedia_short_repo_lifecycle,
+            {
+                "vmedia_repo_created": True,
+                "vios_uuid": "vios",
+                "vg_uuid": "first-listed-vg",
+                "vdisk_vg_name": "",
+            },
+        ),
+        (
+            runner.vmedia_teardown,
+            {
+                "vmedia_repo_created": True,
+                "vios_uuid": "vios",
+                "vg_uuid": "first-listed-vg",
+                "vdisk_vg_name": "",
+            },
+        ),
+    ],
+)
+async def test_vmedia_writes_nothing_in_a_repository_it_does_not_own(
+    monkeypatch, workflow, artifacts
+):
+    """Teardown and ST17 leave alone what this run did not create in the configured group."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_optical_mappings":
+            return "PASS", [_optical_mapping("other.iso")]
+        if tool == "hmc_list_optical_media":
+            return "PASS", [{"MediaName": "other.iso"}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    _configure_vmedia_artifacts(state, artifacts)
+
+    await workflow(None, state)
+
+    assert calls in ([], ["hmc_list_volume_groups"])
 
 
 def test_vmedia_behavioral_inventory_covers_every_registered_stage():
