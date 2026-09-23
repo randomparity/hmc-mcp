@@ -1121,6 +1121,23 @@ def test_lpars_create(fake_hmc):
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
+    assert "apply_profile" not in result.stdout  # REST create: no mksyscfg apply
+
+
+@pytest.mark.parametrize(("flags", "expected"), [((), True), (("--no-apply",), False)])
+def test_lpars_create_passes_the_apply_choice(monkeypatch, fake_hmc, flags, expected):
+    create = AsyncMock(
+        return_value=LparPcieWorkflowResult(True, True, {}, True, (), ())
+    )
+    monkeypatch.setattr("hmcpctl.cli_commands.lpar.create.create_lpar", create)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "create", "newlpar", "--system", SYSTEM_UUID, *flags, "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert create.await_args.args[2].apply_profile is expected
 
 
 def test_lpars_create_declined_confirm_aborts(fake_hmc):

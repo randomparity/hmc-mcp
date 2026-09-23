@@ -333,6 +333,22 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
+  type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
+  and then acquires with proven acquisition. The default is `False`, and neither the capture nor
+  the MCP tool sets it. `capture_lpar_console` no longer leaks its own proven hold when console
+  output quotes the contention sentence: it releases the hold, then raises `ConsoleHeldError`
+  as before. A contention sentence that follows the acquisition banner in the same read now
+  counts as console content, both at open and in the release probe (#975, ADR 0172).
+
+- `hmcpctl lpars create` and `hmc_create_lpar` apply the new partition profile, `default_profile`,
+  when the HMC creates the partition through `mksyscfg` (its REST create returned HTTP 406). The
+  apply is `chsyscfg -r lpar -o apply` and leaves the partition not activated. Before this, such a
+  partition had no current configuration: REST adapter writes failed with `REST0269` and the
+  create result showed zero memory and processors. The result reports an `apply_profile` step; a
+  failed apply stops the remaining steps and leaves the partition in place. `--no-apply` /
+  `apply_partition_profile=false` skips it and returns a warning instead (#939).
+
 - The distribution, console script, Python package and configuration directory are renamed
   from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now
   `hmcpctl.api`, `import hmc_mcp` fails, and the former configuration directory is not read.
