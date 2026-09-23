@@ -554,8 +554,9 @@ _ADMITTED_RELEASE_FIELDS = {"version": "10", "release": "3", "service pack": "10
 def _is_exact_admitted_environment(version: str, model: str) -> bool:
     """Match `lshmc -V`'s own Version/Release/Service Pack fields exactly.
 
-    Stricter than the SR-IOV predicate, which also accepts ``V10R3 M1060`` anywhere in
-    the text: an HMC at a later service pack may still list an M1060 fix line.
+    The one envelope predicate both admission gates share. Never a substring test: an HMC
+    at a later service pack may still list an ``M1060`` fix line, and ``1060`` is a prefix
+    of ``10600``.
     """
     pairs = re.findall(r"\b(Version|Release|Service Pack):[ \t]*(\S+)", version)
     fields = {name.lower(): value for name, value in pairs}
@@ -573,13 +574,7 @@ async def require_dedicated_pcie_environment(config: HMCConfig, system_name: str
 
 
 async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:
-    version, model = await read_sriov_environment(config, system_name)
-    normalized = " ".join(version.split()).lower()
-    admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
-        marker in normalized
-        for marker in ("version: 10", "release: 3", "service pack: 1060")
-    )
-    if not admitted or model != _ADMITTED_SYSTEM_MODEL:
+    if not _is_exact_admitted_environment(*await read_sriov_environment(config, system_name)):
         raise SriovLogicalPortCapabilityError(
             "SR-IOV operations are admitted only for HMC V10R3 M1060 "
             "with managed-system model 8375-42A"
