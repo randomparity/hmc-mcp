@@ -18,6 +18,8 @@ All changes are in `src/hmcpctl/ssh/console.py`:
   where `report = " ".join(bytes(data).decode("ascii", "replace").split())` cut to
   `_ERROR_DETAIL_MAX_CHARS`. `data` holds the chunks read through the one containing the
   sentence; P1 puts the sentence first, so the cut keeps it.
+- `_acquisition_outcome(data)` classifies by whichever sentinel comes first, for both acquisition
+  and the release probe: a sentence after `Open in progress` is console content (ADR 0172 rule 3).
 - `_rmvterm(config, system_name, lpar_name) -> None`: issues `rmvterm` and logs an
   `HMCCLIError` as a warning. `_release_and_verify` calls it in place of its inline copy.
 - `ConsoleSession.__init__(..., *, take_over: bool = False)`. In `open()`, inside the existing

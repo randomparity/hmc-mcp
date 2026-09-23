@@ -315,7 +315,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and then acquires with proven acquisition. The default is `False`, and neither the capture nor
   the MCP tool sets it. `capture_lpar_console` no longer leaks its own proven hold when console
   output quotes the contention sentence: it releases the hold, then raises `ConsoleHeldError`
-  as before (#975, ADR 0172).
+  as before. A contention sentence that follows the acquisition banner in the same read now
+  counts as console content, both at open and in the release probe (#975, ADR 0172).
 
 - The distribution, console script, Python package and configuration directory are renamed
   from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now
