@@ -176,7 +176,8 @@ async def _surviving_fixture(call, inputs: RecoveryInputs) -> Finding | None:
     `partition_not_found`). Any other failure -- an authentication refusal, a
     lost connection, a different HSCL code -- or an answer that is not a
     description says nothing about whether the partition survives, so it raises
-    rather than reporting the system clean.
+    rather than reporting the system clean. So does a description carrying this
+    run's marker in a stamp this code cannot parse.
     """
     status, data = await call(
         "hmc_get_lpar_description",
@@ -191,6 +192,15 @@ async def _surviving_fixture(call, inputs: RecoveryInputs) -> Finding | None:
             f"({status}): {getattr(data, 'message', data)!s}"
         )
     if parse_lpar_ownership_caller_token(data) != inputs.run_marker:
+        # The marker is per-run random, so a description that names it came
+        # from this run even when its stamp does not parse — typically a run on
+        # pre-rename code, whose `[hmc-mcp ...]` stamp this code reads as unowned.
+        if f"[caller {inputs.run_marker}]" in data:
+            raise StateUnreadable(
+                f"{inputs.fixture_lpar} on {inputs.system_name} carries this run's "
+                f"marker {inputs.run_marker} in a stamp this checkout cannot read; "
+                "re-run the check from the run's tested commit"
+            )
         return None
     return Finding(
         "surviving partition",

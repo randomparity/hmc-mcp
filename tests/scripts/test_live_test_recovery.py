@@ -118,6 +118,22 @@ async def test_a_partition_of_the_same_name_from_another_run_is_not_claimed():
 
 
 @pytest.mark.asyncio
+async def test_this_runs_marker_in_a_stamp_this_checkout_cannot_read_is_not_clean():
+    """A run on pre-rename code stamped `[hmc-mcp ...]`, which this code reads as
+    unowned. Returning "not ours" there reported CLEAN while the partition survived
+    (#899 review). The marker is per-run random, so seeing it is enough to refuse.
+    """
+    old_stamp = (
+        "[hmc-mcp owner:hmc-mcp created:2026-09-21] "
+        f"[caller {_MARKER}]"
+    )
+    responses = _responses(hmc_get_lpar_description=old_stamp)
+
+    with pytest.raises(recovery.StateUnreadable, match="tested commit"):
+        await recovery.check(_caller(responses), _INPUTS)
+
+
+@pytest.mark.asyncio
 async def test_a_stranded_slot_is_reported():
     responses = _responses(
         hmc_list_dedicated_pcie_slots={

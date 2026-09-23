@@ -134,6 +134,9 @@ ends on exit 2 has not been shown clean by anything — check the system yoursel
 It identifies this run's leftovers by the run marker recorded in the results
 document. A partition sharing the fixture's name but carrying a different
 marker is never attributed to your run, and never reported for you to delete.
+Run the check from the run's tested commit. A partition that carries your marker
+in an ownership stamp this checkout cannot parse, such as one written before the
+`hmcpctl` rename, exits 2 rather than being reported clean.
 
 ## If something goes wrong mid-run
 
