@@ -106,14 +106,22 @@ OPTICAL_MAPPINGS_FEED = vios_feed(
 VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
 VIOS_PARENT_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
 VIOS_POST_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
+DISK_ID = "vhost0/vtscsi0"
+UNIDENTIFIABLE_MAPPING = f"""<VirtualSCSIMapping>
+      <AssociatedLogicalPartition href="{lpar_href(LPAR_A)}" rel="related"/>
+      <ServerAdapter><VirtualSlotNumber>9</VirtualSlotNumber></ServerAdapter>
+    </VirtualSCSIMapping>"""
 VIOS_PARENT = f"""<VirtualIOServer
-  xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+  xmlns="{UOM_NS}">
   <UUID>{VIOS_UUID}</UUID>
   <UnrelatedLink href="/rest/api/uom/ManagedSystem/11111111-1111-1111-1111-111111111111"/>
   <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
   <VirtualSCSIMappings>
-    <VirtualSCSIMapping><UUID>mapping-1</UUID></VirtualSCSIMapping>
-    <VirtualSCSIMapping><UUID>mapping-10</UUID></VirtualSCSIMapping>
+    {mapping_xml(LPAR_A, "vhost0", "<VirtualDisk><DiskName>lv_boot</DiskName></VirtualDisk>",
+                 "LogicalVolumeVirtualTargetDevice", "vtscsi0")}
+    {mapping_xml(LPAR_A, "vhost0", "<VirtualDisk><DiskName>lv_data</DiskName></VirtualDisk>",
+                 "LogicalVolumeVirtualTargetDevice", "vtscsi10")}
+    {UNIDENTIFIABLE_MAPPING}
   </VirtualSCSIMappings>
   <ResourceMonitoringControlState>active</ResourceMonitoringControlState>
 </VirtualIOServer>"""
@@ -292,16 +300,16 @@ async def test_delete_storage_mapping_posts_parent_without_exact_mapping(mock_hm
     posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+        await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
     request = posted.calls[0].request
     assert request.headers["content-type"].endswith("type=VirtualIOServer")
     root = ET.fromstring(request.content)
-    ns = {"uom": "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"}
+    ns = {"uom": UOM_NS}
+    remaining = root.findall(".//uom:VirtualSCSIMapping", ns)
     assert [
-        node.text
-        for node in root.findall(".//uom:VirtualSCSIMapping/uom:UUID", ns)
-    ] == ["mapping-10"]
+        node.findtext(".//uom:TargetName", namespaces=ns) for node in remaining
+    ] == ["vtscsi10", None]
     assert root.findtext("uom:ResourceMonitoringControlState", namespaces=ns) == "active"
 
 
@@ -328,7 +336,7 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
                 return await self._request(*args, **kwargs)
 
         asyncio.run(
-            FakeClient().delete_storage_mapping({VIOS_UUID!r}, "mapping-1")
+            FakeClient().delete_storage_mapping({VIOS_UUID!r}, {DISK_ID!r}, {LPAR_A!r})
         )
         """
     )
@@ -350,21 +358,30 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("mapping_uuid", "document", "message"),
+    ("mapping_id", "document", "lpar_uuid", "message"),
     [
-        ("missing", VIOS_PARENT, "not found"),
-        ("mapping-1", VIOS_PARENT.replace("mapping-10", "mapping-1"), "duplicated"),
+        ("vhost9/vtscsi9", VIOS_PARENT, LPAR_A, "not found"),
+        ("vhost0/vtscsi1", VIOS_PARENT, LPAR_A, "not found"),
+        (DISK_ID, VIOS_PARENT.replace("vtscsi10", "vtscsi0"), LPAR_A, "duplicated"),
+        (DISK_ID, VIOS_PARENT, LPAR_B, "does not belong"),
+        (
+            DISK_ID,
+            VIOS_PARENT.replace(lpar_href(LPAR_A), lpar_href(LPAR_A) + "/", 1),
+            LPAR_A,
+            "does not belong",
+        ),
     ],
+    ids=["missing", "prefix", "duplicated", "other-lpar", "unparseable-lpar-link"],
 )
 async def test_delete_storage_mapping_fails_closed_without_post(
-    mock_hmc, mapping_uuid, document, message
+    mock_hmc, mapping_id, document, lpar_uuid, message
 ):
     mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
     posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match=message):
-            await hmc.delete_storage_mapping(VIOS_UUID, mapping_uuid)
+            await hmc.delete_storage_mapping(VIOS_UUID, mapping_id, lpar_uuid)
     assert not posted.called
 
 
@@ -373,7 +390,7 @@ async def test_delete_storage_mapping_rejects_malformed_parent(mock_hmc):
     mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text="<broken>"))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not valid XML"):
-            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
 
 @pytest.mark.asyncio
@@ -385,7 +402,7 @@ async def test_delete_storage_mapping_rejects_xml_entities(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(EntitiesForbidden):
-            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
 
 @pytest.mark.asyncio
@@ -394,7 +411,7 @@ async def test_delete_storage_mapping_propagates_parent_post_failure(mock_hmc):
     mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(409, text="parent changed"))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as raised:
-            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
     assert raised.value.status_code == 409
     assert "parent changed" in str(raised.value)
 
@@ -404,7 +421,7 @@ async def test_delete_storage_mapping_rejects_empty_selector(mock_hmc):
     fetched = mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=VIOS_PARENT))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="must not be empty"):
-            await hmc.delete_storage_mapping(VIOS_UUID, "")
+            await hmc.delete_storage_mapping(VIOS_UUID, "", LPAR_A)
     assert not fetched.called
 
 
@@ -429,7 +446,7 @@ async def test_delete_storage_mapping_rejects_untrusted_system_link(
     mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="AssociatedManagedSystem"):
-            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
 
 @pytest.mark.asyncio
@@ -449,28 +466,5 @@ async def test_delete_storage_mapping_rejects_ambiguous_vios_document(
     posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="VIOS resources|identity does not match"):
-            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
-    assert not posted.called
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "document",
-    [
-        VIOS_PARENT.replace(
-            "<UUID>mapping-1</UUID>",
-            "<UUID>mapping-1</UUID><UUID>different</UUID>",
-        ),
-        VIOS_PARENT.replace("<UUID>mapping-10</UUID>", ""),
-        VIOS_PARENT.replace("mapping-10", "mapping-1"),
-    ],
-)
-async def test_delete_storage_mapping_rejects_malformed_mapping_identity(
-    mock_hmc, document
-):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
-    posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="invalid UUID|duplicated"):
-            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
     assert not posted.called

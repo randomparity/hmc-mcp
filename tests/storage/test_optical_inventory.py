@@ -18,34 +18,34 @@ OPTICAL_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"
         <VirtualSCSIMappings>
           <VirtualSCSIMapping>
             <Metadata><Atom/></Metadata>
-            <UUID>mapping-uuid-optical-001</UUID>
+            <ServerAdapter><AdapterName>vhost0</AdapterName></ServerAdapter>
             <Storage>
               <VirtualOpticalMedia>
                 <MediaName>aix72.iso</MediaName>
               </VirtualOpticalMedia>
             </Storage>
-            <TargetDevice>cd0</TargetDevice>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-001"/>
+            <TargetDevice><VirtualOpticalTargetDevice><TargetName>vtopt0</TargetName></VirtualOpticalTargetDevice></TargetDevice>
+            <AssociatedLogicalPartition rel="related" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/lpar-uuid-001"/>
           </VirtualSCSIMapping>
           <VirtualSCSIMapping>
             <Metadata><Atom/></Metadata>
-            <UUID>mapping-uuid-disk-001</UUID>
+            <ServerAdapter><AdapterName>vhost1</AdapterName></ServerAdapter>
             <Storage>
               <VirtualDisk>
                 <DiskName>lv_boot</DiskName>
               </VirtualDisk>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-002"/>
+            <AssociatedLogicalPartition rel="related" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/lpar-uuid-002"/>
           </VirtualSCSIMapping>
           <VirtualSCSIMapping>
             <Metadata><Atom/></Metadata>
-            <UUID>mapping-uuid-optical-002</UUID>
+            <ServerAdapter><AdapterName>vhost2</AdapterName></ServerAdapter>
             <Storage>
               <VirtualOpticalMedia>
                 <MediaName>rhel8.iso</MediaName>
               </VirtualOpticalMedia>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-001"/>
+            <AssociatedLogicalPartition rel="related" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/lpar-uuid-001"/>
           </VirtualSCSIMapping>
         </VirtualSCSIMappings>
       </VirtualIOServer>
@@ -78,7 +78,7 @@ CREATE_MAPPING_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="ye
           </VirtualOpticalMedia>
         </Storage>
         <TargetDevice>cd1</TargetDevice>
-        <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-uuid-001"/>
+        <AssociatedLogicalPartition rel="related" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/lpar-uuid-001"/>
       </VirtualSCSIMapping>
     </content>
   </entry>

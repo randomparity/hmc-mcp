@@ -2029,10 +2029,10 @@ def _storage_app() -> typer.Typer:
         (
             ["list-mappings", VIOS_UUID],
             "list_storage_mappings",
-            [StorageMapping("map-1", None, None, None)],
+            [StorageMapping("vhost0/vtscsi0", None, None, None)],
         ),
         (
-            ["detach-mapping", VIOS_UUID, "map-1", "--confirm"],
+            ["detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"],
             "detach_storage_mapping",
             None,
         ),
@@ -2395,7 +2395,7 @@ def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, None)
-        return [StorageMapping("map-1", "lpar1", "VirtualDisk", "bootvol")]
+        return [StorageMapping("vhost0/vtscsi0", "lpar1", "VirtualDisk", "bootvol")]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
@@ -2404,7 +2404,7 @@ def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
 
     assert result.exit_code == 0
-    assert "map-1" in result.stdout
+    assert "vhost0/vtscsi0" in result.stdout
     assert "bootvol" in result.stdout
     assert "VirtualDisk" in result.stdout
 
@@ -2413,7 +2413,7 @@ def test_storage_list_mappings_renders_physical_volume(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
-        return [StorageMapping("map-2", "lpar1", "PhysicalVolume", "hdisk9")]
+        return [StorageMapping("vhost1/vtscsi1", "lpar1", "PhysicalVolume", "hdisk9")]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
@@ -2430,7 +2430,10 @@ def test_storage_list_mappings_renders_physical_volume(fake_hmc, monkeypatch):
 
 def test_storage_list_mappings_json(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
-        return [StorageMapping("map-1", None, None, None)]
+        return [
+            StorageMapping("vhost0/vtscsi0", None, None, None),
+            StorageMapping(None, None, None, None),
+        ]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
@@ -2440,7 +2443,8 @@ def test_storage_list_mappings_json(fake_hmc, monkeypatch):
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == [
-        {"uuid": "map-1", "lpar_uuid": None, "backing_kind": None, "backing_name": None}
+        {"id": "vhost0/vtscsi0", "lpar_uuid": None, "backing_kind": None, "backing_name": None},
+        {"id": None, "lpar_uuid": None, "backing_kind": None, "backing_name": None},
     ]
 
 
@@ -2448,13 +2452,13 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
     async def fake_detach(
-        _hmc, vios, mapping_uuid, *, system_name_or_uuid=None, ownership_override
+        _hmc, vios, mapping_id, *, system_name_or_uuid=None, ownership_override
     ):
         system = system_name_or_uuid
         seen.update(
             system=system,
             vios=vios,
-            mapping_uuid=mapping_uuid,
+            mapping_id=mapping_id,
             ownership_override=ownership_override,
         )
 
@@ -2463,15 +2467,15 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"]
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"]
     )
 
     assert result.exit_code == 0
-    assert "Deleted storage mapping map-1" in result.stdout
+    assert "Deleted storage mapping vhost0/vtscsi0" in result.stdout
     assert seen == {
         "system": None,
         "vios": VIOS_UUID,
-        "mapping_uuid": "map-1",
+        "mapping_id": "vhost0/vtscsi0",
         "ownership_override": False,
     }
 
@@ -2487,7 +2491,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkey
     async def fake_detach(
         _hmc,
         _vios,
-        _mapping_uuid,
+        _mapping_id,
         *,
         system_name_or_uuid=None,
         ownership_override: bool,
@@ -2500,7 +2504,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkey
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"]
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"]
     )
 
     assert result.exit_code == 1

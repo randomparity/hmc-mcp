@@ -28,6 +28,7 @@ from ..documents import (
     build_vscsi_mapping_document,
 )
 from ..errors import HMCError
+from ..xmlutil import element_to_dict
 from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
@@ -494,11 +495,17 @@ class StorageMixin:
         return mappings if isinstance(mappings, list) else [mappings]
 
     async def delete_storage_mapping(
-        self: StorageClient, vios_uuid: str, mapping_uuid: str
+        self: StorageClient, vios_uuid: str, mapping_id: str, lpar_uuid: str
     ) -> None:
-        """Detach one mapping through its parent VirtualIOServer document."""
-        if not mapping_uuid:
-            raise ValueError("Storage mapping UUID must not be empty")
+        """Detach one mapping through its parent VirtualIOServer document.
+
+        ``mapping_id`` is the ``<server adapter>/<target device>`` identity from
+        :func:`storage_mapping_id`. Exactly one mapping in the fetched document must
+        carry it, and its client-LPAR link must name ``lpar_uuid``, the partition the
+        caller authorized; otherwise nothing is posted (ADR 0168).
+        """
+        if not mapping_id:
+            raise ValueError("Storage mapping ID must not be empty")
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
@@ -520,26 +527,27 @@ class StorageMixin:
 
         vios_elem = _find_vios_element(root, vios_uuid)
         mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
+        not_found = f"Storage mapping {mapping_id!r} not found on VIOS {vios_uuid!r}"
         if mappings is None:
+            raise HMCError(not_found)
+        matches = [
+            (mapping, parsed)
+            for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
+            if isinstance(parsed := element_to_dict(mapping), dict)
+            and storage_mapping_id(parsed) == mapping_id
+        ]
+        if not matches:
+            raise HMCError(not_found)
+        if len(matches) > 1:
             raise HMCError(
-                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+                f"VirtualSCSIMapping {mapping_id!r} is duplicated; "
+                "refusing an ambiguous detach"
             )
-        identities: dict[str, ET.Element] = {}
-        for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping"):
-            uuid_elements = mapping.findall(f"{{{_UOM_NS}}}UUID")
-            if len(uuid_elements) != 1 or not (uuid_elements[0].text or "").strip():
-                raise HMCError("VirtualSCSIMapping has an invalid UUID identity")
-            identity = (uuid_elements[0].text or "").strip()
-            if identity in identities:
-                raise HMCError(
-                    f"VirtualSCSIMapping UUID {identity!r} is duplicated; "
-                    "refusing an ambiguous detach"
-                )
-            identities[identity] = mapping
-        target = identities.get(mapping_uuid)
-        if target is None:
+        target, parsed = matches[0]
+        if not _mapping_targets_lpar(parsed, lpar_uuid):
             raise HMCError(
-                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+                f"Storage mapping {mapping_id!r} does not belong to LPAR {lpar_uuid!r}; "
+                "refusing to detach a mapping that was not authorized"
             )
 
         mappings.remove(target)

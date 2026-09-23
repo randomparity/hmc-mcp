@@ -1,10 +1,12 @@
 """Operation-boundary projections for VIOS storage inventory."""
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import cast
 
 import pytest
 
+from hmcpctl.client.client_parse import _parse_feed
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.storage.resources import (
@@ -14,6 +16,18 @@ from hmcpctl.operations.storage.resources import (
 )
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000001"
+_OBSERVED_FEED = (
+    '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
+    '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
+    + Path(__file__).with_name("vscsi_mapping_v10r3.xml").read_text(encoding="utf-8")
+    + "</VirtualIOServer></content></entry></feed>"
+)
+
+
+def _observed_mappings() -> list[dict]:
+    """The observed V10R3 mapping (#940): no UUID, absolute system-scoped LPAR link."""
+    resource = _parse_feed(_OBSERVED_FEED, "observed")[0]["Resource"]
+    return [resource["VirtualSCSIMappings"]["VirtualSCSIMapping"]]
 
 
 class _StorageClient:
@@ -24,7 +38,7 @@ class _StorageClient:
         return [{"MediaName": "install.iso", "MediaSize": "1024", "MediaType": "ISO"}]
 
     async def list_storage_mappings(self, _vios_uuid: str, _lpar_uuid=None):
-        return [{"UUID": "mapping-1", "AssociatedLogicalPartition": {"href": "/rest/api/uom/LogicalPartition/lpar-1"}, "Storage": {"VirtualDisk": {"DiskName": "boot"}}}]
+        return _observed_mappings()
 
 
 @pytest.mark.asyncio
@@ -46,7 +60,10 @@ async def test_storage_inventory_translates_hmc_resources() -> None:
         "name": "install.iso", "size_mib": 1024, "media_type": "ISO"
     }
     assert asdict(mappings[0]) == {
-        "uuid": "mapping-1", "lpar_uuid": "lpar-1", "backing_kind": "VirtualDisk", "backing_name": "boot"
+        "id": "vhost0/vtscsi0",
+        "lpar_uuid": "00000000-0000-4000-8000-0000000000AA",
+        "backing_kind": "VirtualDisk",
+        "backing_name": "vd-R1",
     }
 
 
@@ -178,3 +195,16 @@ async def test_optical_media_accepts_fractional_size() -> None:
     media = await list_optical_media(cast(HMCClient, _Client()), VIOS_UUID, "vg-1")
 
     assert media[0].size_mib == pytest.approx(1024.5)
+
+
+@pytest.mark.asyncio
+async def test_storage_mapping_without_adapter_name_is_listed_with_null_id() -> None:
+    class Unidentified:
+        async def list_storage_mappings(self, _vios_uuid: str, _lpar_uuid=None):
+            mapping = _observed_mappings()[0]
+            del mapping["ServerAdapter"]["AdapterName"]
+            return [mapping]
+
+    mappings = await list_storage_mappings(cast(HMCClient, Unidentified()), VIOS_UUID)
+
+    assert [(m.id, m.backing_name) for m in mappings] == [(None, "vd-R1")]

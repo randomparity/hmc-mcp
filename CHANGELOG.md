@@ -116,6 +116,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
+  UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
+  adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not
+  report both), replacing the `uuid` field. `storage detach-mapping` and
+  `hmc_detach_storage_mapping` take that value as `mapping_id` (was `mapping_uuid`), with no
+  alias, and detach and `unmount_optical_media` refuse a mapping whose LPAR is not the one
+  authorized. Client-LPAR links are read from the HMC's absolute
+  `.../ManagedSystem/<system>/LogicalPartition/<uuid>` href, so `--lpar` filters, the listed
+  `lpar_uuid`, and detach authorization now work against a real HMC (ADR 0168, #940).
+
 - `hmcpctl storage attach-disk` and every `hmcpctl adapters` subcommand (`list`, `add-network`,
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
