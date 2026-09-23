@@ -11,7 +11,7 @@ import re as _re
 # ElementTree is retained for element construction, traversal, typing, and
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 from urllib.parse import urlparse
 
@@ -109,6 +109,51 @@ def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]
     return optical_media
 
 
+def lpar_uuid_from_href(href: object) -> str | None:
+    """Return the LPAR UUID ending an HMC ``.../LogicalPartition/<uuid>`` link, or None.
+
+    The HMC links a mapping's client LPAR absolutely and system-scoped
+    (``https://<hmc>/rest/api/uom/ManagedSystem/<sys>/LogicalPartition/<uuid>``), so
+    only the final path segment after the marker identifies the partition (ADR 0168).
+    """
+    if not isinstance(href, str):
+        return None
+    _, marker, tail = urlparse(href).path.rpartition("/LogicalPartition/")
+    return tail if marker and tail and "/" not in tail else None
+
+
+def _device_name(value: object) -> str | None:
+    # element_to_dict yields {"@attrs": ..., "text": ...} for a leaf carrying
+    # attributes it does not ignore; the name is its text either way.
+    text = value.get("text") if isinstance(value, Mapping) else value
+    return text if isinstance(text, str) and text and "/" not in text else None
+
+
+def storage_mapping_id(mapping: Mapping[str, Any]) -> str | None:
+    """Return a VirtualSCSIMapping's ``<server adapter>/<target device>`` identity.
+
+    The HMC sends no mapping UUID; the VIOS device names ``vhost0/vtscsi0`` identify
+    it (ADR 0168). Returns None unless both names exist and ``TargetDevice`` holds
+    exactly one device element.
+    """
+    adapter = mapping.get("ServerAdapter")
+    target = mapping.get("TargetDevice")
+    devices = (
+        [value for key, value in target.items() if not key.startswith("@")]
+        if isinstance(target, Mapping)
+        else []
+    )
+    if (
+        not isinstance(adapter, Mapping)
+        or len(devices) != 1
+        or not isinstance(devices[0], Mapping)
+    ):
+        return None
+    adapter_name = _device_name(adapter.get("AdapterName"))
+    target_name = _device_name(devices[0].get("TargetName"))
+    return f"{adapter_name}/{target_name}" if adapter_name and target_name else None
+
+
 def _filter_optical_mappings(
     mappings: list[dict[str, Any]], lpar_uuid: str | None
 ) -> list[dict[str, Any]]:
@@ -121,18 +166,13 @@ def _filter_optical_mappings(
     ]
     if lpar_uuid is None:
         return optical
-    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-    return [
-        mapping
-        for mapping in optical
-        if _mapping_targets_lpar(mapping, expected_link)
-    ]
+    return [mapping for mapping in optical if _mapping_targets_lpar(mapping, lpar_uuid)]
 
 
-def _mapping_targets_lpar(mapping: dict[str, Any], expected_link: str) -> bool:
+def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
     partition = mapping.get("AssociatedLogicalPartition")
-    href = partition.get("href") if isinstance(partition, dict) else None
-    return isinstance(href, str) and urlparse(href).path == expected_link
+    href = partition.get("href") if isinstance(partition, Mapping) else None
+    return lpar_uuid_from_href(href) == lpar_uuid
 
 
 class StorageMixin:
@@ -445,12 +485,10 @@ class StorageMixin:
             mappings = [mappings] if mappings else []
 
         if lpar_uuid:
-            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             mappings = [
                 m
                 for m in mappings
-                if isinstance(m, dict)
-                and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
+                if isinstance(m, dict) and _mapping_targets_lpar(m, lpar_uuid)
             ]
 
         return mappings if isinstance(mappings, list) else [mappings]
