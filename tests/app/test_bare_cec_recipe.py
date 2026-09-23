@@ -1,8 +1,4 @@
-"""Structural checks for the bare-CEC LPAR recipe.
-
-The parser follows PR #777's ISO recipe test; it is copied rather than imported
-because that test is not on main.
-"""
+"""Structural checks for the bare-CEC LPAR recipe."""
 
 from __future__ import annotations
 
@@ -25,6 +21,7 @@ DESTRUCTIVE = {("network", "unassign-dedicated-pcie-slot"), ("lpars", "delete")}
 EXPECTED_COMMANDS = {
     ("config", "show"),
     ("jobs", "show"),
+    ("lpars", "capture-console"),
     ("lpars", "create"),
     ("lpars", "delete"),
     ("lpars", "get-description"),

@@ -110,15 +110,18 @@ JOB_ID=<job-id-from-power-on-output>
 hmcpctl jobs show "$JOB_ID"
 hmcpctl lpars state "$LPAR"
 hmcpctl lpars refcodes "$SYSTEM_NAME" "$LPAR_NAME" --count 5 --json
+hmcpctl lpars capture-console "$LPAR" "$SYSTEM" --duration 30 --max-bytes 65536 \
+  --idle-timeout 10 --json
 ```
 
 Expected: `jobs show` prints the same job, found, with a successful status. `lpars state`
 prints `open firmware` while the partition sits at the SMS menu, or `running`. `lpars refcodes`
 prints up to five recent reference codes for the partition.
 
-**Console capture has no installed CLI command.** The CLI form arrives with PR #777, which is
-not merged. Until then, capture the console through the MCP tool `hmc_capture_lpar_console`
-from an MCP client connected to `hmcpctl serve`, or skip this observation.
+`capture-console` records the SMS menu for at most 30 seconds or 64 KiB, stopping after 10
+seconds without output. It never sends input. The console bytes are base64 in `data_base64`;
+decode them only in a log viewer, never straight into a terminal. If `released` is `false`,
+the console may still be held: release it from the HMC before another capture.
 
 ## 6. Power off
 
