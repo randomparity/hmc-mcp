@@ -110,8 +110,11 @@ def _capture_volume_group(state: RunState, data: Any) -> None:
     group = resolve_configured_volume_group(
         state, 3, data, ("select configured volume group",)
     )
-    if group is not None:
-        any(_capture_disk_capacity(state, disk) for disk in _virtual_disks(group.resource))
+    if group is None:
+        return
+    for disk in _virtual_disks(group.resource):
+        if _capture_disk_capacity(state, disk):
+            break
 
 
 async def _discover_volume_group(client: Client, state: RunState) -> None:
