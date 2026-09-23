@@ -66,6 +66,14 @@ RECORDED = [
         documents.build_virtual_network_document("n1", 10, 0, tagged=True),
         {"NetworkVLANID": "COD", "VswitchID": "ROR", "TaggedNetwork": "COD"},
     ),
+    (documents.build_lpar_document("p1", os_type="linux"), {"OperatingSystemType": "ROR"}),
+    (documents.build_boot_order_document(["cd"]), {"PendingBootString": "UOO"}),
+    (documents.build_clear_boot_order_document(), {"PendingBootString": "UOO"}),
+    (
+        documents.build_vfc_adapter_document(1, 2, 3),
+        {"AdapterType": "ROR", "VirtualSlotNumber": "COD", "ConnectingPartitionID": "CUD",
+         "ConnectingVirtualSlotNumber": "CUD"},
+    ),
 ]
 
 
@@ -148,3 +156,54 @@ def test_volume_group_physical_volume_attributes() -> None:
 def test_virtual_disk_delete_virtual_disk_attributes() -> None:
     root = _tree(documents.build_virtual_disk_delete_document("lv1"))
     assert _first(root, "VirtualDisk").attrib == {"schemaVersion": "V1_0"}
+
+
+RESOURCES = documents.LparResources(
+    min_memory=512, desired_memory=1024, max_memory=2048, desired_procs=0.5, desired_vcpus=1
+)
+DEDICATED = documents.LparResources(desired_procs=1, dedicated=True)
+BUILT = {
+    "vscsi-adapter": documents.build_vscsi_adapter_document(1, 2, 3),
+    "vfc-adapter": documents.build_vfc_adapter_document(1, 2, 3),
+    "network-adapter": documents.build_client_network_adapter_document(
+        1, 2, 0, True, "02:00:00:00:00:01"
+    ),
+    "volume-group": documents.build_volume_group_document("vg1", ["hdisk1"]),
+    "virtual-disk": documents.build_virtual_disk_document("lv1", 1024),
+    "vscsi-mapping": documents.build_vscsi_mapping_document(
+        "PhysicalVolume", "hdisk1", LINK, "vt1"
+    ),
+    "optical-mapping": documents.build_virtual_optical_mapping_document("a.iso", LINK, "vt2"),
+    "virtual-network": documents.build_virtual_network_document("n1", 10, 0, LINK),
+    "media-repository-delete": documents.build_media_repository_delete_document("vg1"),
+    "optical-media-delete": documents.build_virtual_optical_media_delete_document(
+        "a.iso", "vg1"
+    ),
+    "virtual-disk-delete": documents.build_virtual_disk_delete_document("lv1"),
+    "brokered-file": documents.build_brokered_file_document("a.iso"),
+    "linked-optical-media": documents.build_linked_optical_media_document("a.iso", LINK),
+    "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),
+    "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
+    "vios": documents.build_vios_document("v1"),
+    "dlpar-mem": documents.build_dlpar_mem_document(RESOURCES),
+    "dlpar-proc": documents.build_dlpar_proc_document(RESOURCES),
+    "boot-order": documents.build_boot_order_document(["cd"]),
+    "clear-boot-order": documents.build_clear_boot_order_document(),
+}
+# No live evidence records whether V10R3 requires schemaVersion on these; left unchanged (#961).
+PROCESSOR_WRAPPERS_UNVERIFIED = frozenset(
+    {"PartitionProcessorConfiguration", "SharedProcessorConfiguration",
+     "DedicatedProcessorConfiguration"}
+)
+
+
+@pytest.mark.parametrize("xml", BUILT.values(), ids=BUILT.keys())
+def test_metadata_elements_carry_schema_version(xml: str) -> None:
+    missing = [
+        localname(el.tag)
+        for el in _tree(xml).iter()
+        if "Metadata" in _children(el)
+        and "schemaVersion" not in el.attrib
+        and localname(el.tag) not in PROCESSOR_WRAPPERS_UNVERIFIED
+    ]
+    assert missing == []
