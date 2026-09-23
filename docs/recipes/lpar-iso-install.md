@@ -20,18 +20,21 @@ Run it only against an HMC, managed system, and VIOS you own.
   start again from the top.
 - **VolumeGroup and VIOS writes can fail after they take effect.** HMC V10R3 has returned
   HTTP 500 after a VolumeGroup write had already changed storage (#779). On a 5xx from a
-  volume-group, virtual-disk, media-repository, ISO-import, or mapping write, the CLI reads
-  the state back and reports a possible side effect (ADR 0136). **Do not retry.** Read the
-  reported state, compare it with `storage list-vgs` and `storage list-mappings`, and reconcile
-  by hand first.
-- **VIOS mapping writes rewrite the whole VIOS document.** `storage map`,
-  `mount-optical-media`, `unmount-optical-media`, and `detach-mapping` read the VIOS, change
-  it, and write it back. A concurrent writer's change in that window is lost. Serialize every
+  volume-group, virtual-disk, media-repository, ISO-import, or mapping write, the error says
+  the write may have changed state and whether a read-back succeeded (ADR 0136). It does not
+  print that state. **Do not retry.** Run `storage list-vgs`, `storage list-mappings`, and
+  `storage list-optical-media` to see what changed, and reconcile by hand first.
+- **Mapping removals rewrite the whole VIOS document.** `unmount-optical-media` and
+  `detach-mapping` read the VIOS, remove one mapping, and write the whole document back. A
+  concurrent writer's change in that window is lost. `storage map` and `mount-optical-media`
+  add a mapping without that rewrite, but they still change shared VIOS state. Serialize every
   mapping writer on the chosen VIOS for the length of this run, and take a fresh
   `storage list-mappings` before and after each mapping write.
-- **Confirmations.** Every mutating command prompts unless you pass `--yes` (or `--confirm` for
+- **Confirmations.** Most mutating commands prompt unless you pass `--yes` (or `--confirm` for
   `unmount-optical-media` and `detach-mapping`). The examples pass it so they copy cleanly. Remove
-  it when you run the recipe by hand. `--yes` is not a dry run.
+  it when you run the recipe by hand. `--yes` is not a dry run. `storage upload-iso`,
+  `lpars set-boot-order`, and `lpars clear-boot-order` never prompt: they write as soon as you
+  run them, so check the listing before each one.
 - **Dry runs.** No global dry-run mode exists. Only commands that advertise `--dry-run` support
   one, such as the composite `storage attach-disk`. The commands below do not. Run the listing
   commands shown before each mutation instead.
@@ -223,9 +226,10 @@ after `--idle-timeout` seconds without output. It never sends input to the parti
 `--json` the console bytes are base64 in `data_base64`. Without it, control bytes are printed
 escaped. Decode `data_base64` only in a log viewer, never straight into a terminal. The capture
 holds the partition's single console session while it runs. If another session already holds
-the console, the command fails and leaves that session alone. If `released` is `false`, the
-console may still be held: release it deliberately from the HMC before another capture. Repeat
-the capture to follow the installer's progress.
+the console, the command fails and leaves that session alone. The command exits 0 even when
+`stop_reason` is `error`, so read the result. If `released` is `false`, it also prints a warning
+on stderr: the console may still be held, so release it deliberately from the HMC before
+another capture. Repeat the capture to follow the installer's progress.
 
 ## 6. After installation: unmount the ISO and boot from disk
 
@@ -304,7 +308,7 @@ If a step fails, stop and keep the transcript and any job ID. Then:
 1. Read the current state: `lpars state`, `jobs show`, `adapters list`, `storage list-vgs`,
    `storage list-mappings`, `storage list-optical-media`, and `lpars read-boot-order`.
 2. On a storage or VIOS error that reports a possible side effect, do not retry. Compare the
-   reported readback with the listings above and reconcile by hand.
+   listings above with the state you expected and reconcile by hand.
 3. Resume at the first step whose expected result you cannot see. Do not repeat a step whose
    resource already exists. Its create command either refuses the duplicate or makes a second
    one.
