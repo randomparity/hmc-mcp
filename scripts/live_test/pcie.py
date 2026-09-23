@@ -65,7 +65,13 @@ from hmcpctl.operations.virtualization.pcie import (
     _ADMITTED_HMC_RELEASE,
     _ADMITTED_SYSTEM_MODEL,
 )
-from hmcpctl.ssh.commands import build_attribute_record, build_filter
+from hmcpctl.ssh.commands import build_attribute_record
+from hmcpctl.ssh.profiles import (
+    parse_profile_io_slot_rows,
+    parse_profile_io_slots,
+    profile_io_slot_rows_command,
+)
+from hmcpctl.ssh.transport import HMCCLIError
 
 from .observation import CallFailure
 
@@ -860,33 +866,33 @@ def _environment_admitted(version: str, model: str) -> bool:
     return admitted and model == _ADMITTED_SYSTEM_MODEL
 
 
-def profile_io_slots_command(
-    system_name: str, lpar_name: str, profile_name: str
-) -> str:
-    """Return the exact `io_slots` profile read admitted by ADR 0053.
+def select_profile_io_slots(output: str, lpar_name: str, profile_name: str) -> str:
+    """Return one profile's exact `io_slots` from the ADR 0165-admitted readback.
 
-    The `--filter` expression goes through `build_filter` for the same reason
-    the record goes through `build_attribute_record`: a delimiter inside
-    `profile_name` — which arrives from the environment with only `.strip()`
-    applied — would otherwise rewrite the filter and answer about a profile
-    the arm did not name, while Guard B's exact-match comparisons still
-    reported success. `shlex.quote` protects the remote shell, not the HMC's
-    own record parser, and does not substitute for it.
+    The admitted read answers for every profile on the system, so the arm's
+    profile is chosen here by exact `lpar_name` and `name` rather than by a
+    `--filter` ADR 0165 does not admit. A partition may carry several profiles,
+    so `lpar_name` alone is not a selection. The value is returned as read, for
+    the guards' exact comparisons, once `parse_profile_io_slots` accepts it.
+    Public so the recovery check selects and validates exactly as the arm does.
 
-    `profile_names` is half the filter, not decoration: a partition may carry
-    several profiles, and filtering on `lpar_names` alone answers with one
-    record per profile. The recovery check read it that way and saw two
-    records from a real VIOS partition, which its "exactly one record" rule
-    then reported as an unreadable system. Public so that check builds the
-    same command this arm does, rather than a second one that drifts from it.
+    Raises:
+        HMCCLIError: If *output* is not the admitted table, holds other than
+            exactly one row for the profile, or renders `io_slots` in a form
+            ADR 0165 does not admit.
     """
-    filters = build_filter(
-        [("lpar_names", lpar_name), ("profile_names", profile_name)]
-    )
-    return (
-        f"lssyscfg -r prof -m {shlex.quote(system_name)} "
-        f"--filter {shlex.quote(filters)} -F io_slots"
-    )
+    values = [
+        row["io_slots"]
+        for row in parse_profile_io_slot_rows(output)
+        if row["lpar_name"] == lpar_name and row["name"] == profile_name
+    ]
+    if len(values) != 1:
+        raise HMCCLIError(
+            f"profile io_slots readback holds {len(values)} rows for profile "
+            f"{profile_name!r} of {lpar_name!r}; expected exactly 1"
+        )
+    parse_profile_io_slots(values[0])
+    return values[0]
 
 
 def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str:
@@ -908,17 +914,18 @@ def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str:
 def _io_slots_contains(io_slots: str, drc_index: str) -> bool:
     """Whether `io_slots` lists *drc_index* as a slot, by entry not by substring.
 
-    `io_slots` renders as comma-separated `<drc>/<bus>/<slot>` entries, or the
-    literal `none` when the profile holds no slot. A plain `drc in io_slots`
-    also matches a DRC index that is merely a substring of a longer one, or a
-    run of characters spanning the `/` and `,` separators — so on a system
-    carrying DRC indices of unequal length a failed `io_slots+` could still be
-    recorded as a PASS against an unchanged profile, corrupting the ADR 0053
-    evidence this arm exists to produce.
+    `io_slots` renders as comma-separated `drc_index/pool_id/is_required`
+    triples, with the literal `none` as `pool_id` for a slot in no pool, or as
+    the whole value `none` when the profile holds no slot (ADR 0165). A plain
+    `drc in io_slots` also matches a substring of a listed DRC index, or a run
+    of characters spanning the `/` and `,` separators — so a failed `io_slots+`
+    could still be recorded as a PASS against an unchanged profile, corrupting
+    the ADR 0053 evidence this arm exists to produce.
+
+    Raises:
+        HMCCLIError: If *io_slots* is not in the admitted rendering.
     """
-    return any(
-        entry.strip().split("/")[0] == drc_index for entry in io_slots.split(",")
-    )
+    return any(slot.drc_index == drc_index for slot in parse_profile_io_slots(io_slots))
 
 
 async def _read_profile_io_slots(
@@ -926,27 +933,23 @@ async def _read_profile_io_slots(
 ) -> str | None:
     """Return the profile's exact `io_slots` value, or None when unreadable.
 
-    A response that is not exactly one non-empty line is refused, matching
-    `ssh/profiles.py:read_lpar_profile_record`: the guards compare exact
-    strings, so a multi-record answer — the filter selected more than the arm
-    named — must read as unreadable rather than as its first line.
+    Anything `select_profile_io_slots` refuses reads as unreadable, the empty
+    answer included: a profile with no slots reads `none`, so reading an empty
+    response as "no slots" would hand the guards a baseline nothing established.
     """
     st, data = await state.call(
         client,
         "hmc_run_command",
-        cmd=profile_io_slots_command(
-            fixture.config.system_name, fixture.lpar_name, fixture.config.profile_name
-        ),
+        cmd=profile_io_slot_rows_command(fixture.config.system_name),
     )
     if st != "PASS" or not isinstance(data, str):
         return None
-    records = [line for line in data.splitlines() if line.strip()]
-    if len(records) != 1:
-        # Includes the empty answer. A profile with no slots prints `none`,
-        # so an empty response is a failed read, and reading it as "no
-        # slots" would hand the guards a baseline nothing established.
+    try:
+        return select_profile_io_slots(
+            data, fixture.lpar_name, fixture.config.profile_name
+        )
+    except HMCCLIError:
         return None
-    return records[0].strip()
 
 
 async def _read_dedicated_state(
