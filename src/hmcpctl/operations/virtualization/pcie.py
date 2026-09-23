@@ -411,13 +411,13 @@ async def _verify_dedicated_change(
         read_error = caught
     else:
         if add:
-            holders, holder_error = _holders_for_advice(target, rows)
+            holders, holder_error = _holders_or_error(target, rows)
         if after == expected and not holders and holder_error is None:
             return
         if error is not None and after == before and holder_error is None:
             raise error
         if not add:
-            holders, holder_error = _holders_for_advice(target, rows)
+            holders, holder_error = _holders_or_error(target, rows)
     contended = add and (bool(holders) or holder_error is not None)
     cause = error or read_error or (holder_error if add else None)
     reasons = [str(cause)] if cause is not None else []
@@ -436,10 +436,10 @@ async def _verify_dedicated_change(
     ) from cause
 
 
-def _holders_for_advice(
+def _holders_or_error(
     target: _DedicatedProfileTarget, profile_rows: list[dict[str, str]]
 ) -> tuple[list[str], HMCCLIError | None]:
-    """Name other holders for the advice without letting a bad row replace the error."""
+    """Return other holders, or the parse error of a row naming the slot, without raising."""
     try:
         return _other_holders(target, profile_rows), None
     except HMCCLIError as caught:
