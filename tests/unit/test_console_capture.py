@@ -271,7 +271,7 @@ async def test_contention_sentinel_raises_distinct_error_and_never_releases():
         await capture_lpar_console(
             _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
         )
-    assert "already holds" in str(excinfo.value)
+    assert HELD_SENTINEL.decode() in str(excinfo.value)
     # Exit code was 0 on the real HMC; only the sentinel detects this. And
     # since we never held the vterm, releasing would close the other holder.
     release_mock.assert_not_awaited()
@@ -283,27 +283,25 @@ def test_sentinel_matches_the_recorded_p1_bytes():
 
 
 @pytest.mark.asyncio
-async def test_contention_is_detected_when_it_arrives_midstream():
-    # The sentinel may only show up after other bytes; detection must not
-    # depend on it being the first chunk.
-    connection = FakeConnection([FakeProcess(BANNER, CONTENTION)])
+async def test_late_contention_sentence_releases_own_hold_then_raises():
+    # ADR 0172 rule 4: after proven acquisition the hold is the capture's own,
+    # so the sentence in console output still raises, but only after release.
+    stream = FakeConnection([FakeProcess(BANNER, CONTENTION)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
     with (
-        patch(
-            "hmcpctl.ssh.console.open_hmc_connection",
-            AsyncMock(return_value=connection),
-        ),
-        patch("hmcpctl.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
-        pytest.raises(ConsoleHeldError),
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError) as excinfo,
     ):
         await capture_lpar_console(
-            _client(),
-            "sys1",
-            "lp1",
-            **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.2)
         )
-    # ADR 0170 rule 7: the capture keeps ADR 0072's no-rmvterm contention path.
-    release_mock.assert_not_awaited()
-    assert connection.closed
+    assert "after acquisition" in str(excinfo.value)
+    assert "released=True" in str(excinfo.value)
+    assert release.await_count == 2  # ours plus the probe's teardown
+    assert stream.closed
 
 
 # ---------------------------------------------------------------------------
@@ -871,7 +869,7 @@ async def test_session_contention_at_open_never_releases():
     connect, run_command, probe_seconds = _session_patches(stream)
     with connect, run_command as release, probe_seconds:
         session = ConsoleSession(_client(), "sys1", "lp1")
-        with pytest.raises(ConsoleHeldError):
+        with pytest.raises(ConsoleHeldError) as excinfo:
             await session.open()
         assert await session.close() is False
         never_opened = ConsoleSession(_client(), "sys1", "lp1")
@@ -879,6 +877,107 @@ async def test_session_contention_at_open_never_releases():
 
     release.assert_not_awaited()
     assert stream.closed
+    assert "mkvterm -m sys1 -p lp1" in str(excinfo.value)
+    assert "Only one open session is allowed" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_sentence_after_banner_in_one_read_is_acquisition():
+    # ADR 0172 rule 3: the banner proves the hold, so a sentence after it in
+    # the same read is console content and the capture releases its own hold.
+    stream = FakeConnection([FakeProcess(BANNER + CONTENTION)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError, match="after acquisition"),
+    ):
+        await capture_lpar_console(
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.2)
+        )
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_sentence_before_banner_in_one_read_is_contention():
+    stream = FakeConnection([FakeProcess(CONTENTION + BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream)
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError),
+    ):
+        await ConsoleSession(_client(), "sys1", "lp1").open()
+
+    release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_probe_sentence_after_banner_is_acquisition_and_torn_down():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER + CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+
+    assert session.released is True
+    assert release.await_count == 2  # ours plus the probe's teardown
+
+
+@pytest.mark.asyncio
+async def test_session_take_over_rmvterms_then_acquires():
+    events: list[str] = []
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+
+    async def connect(config):
+        events.append("connect")
+        return [stream, probe][events.count("connect") - 1]
+
+    async def rmvterm(config, command):
+        events.append(command)
+        return "Close command sent"
+
+    with (
+        patch("hmcpctl.ssh.console.open_hmc_connection", connect),
+        patch("hmcpctl.ssh.console.run_hmc_command", rmvterm),
+        patch("hmcpctl.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    ):
+        async with ConsoleSession(_client(), "sys1", "lp1", take_over=True) as session:
+            assert await session.read() == BANNER
+
+    assert events[:2] == ["rmvterm -m sys1 -p lp1", "connect"]
+    assert session.released is True
+
+
+@pytest.mark.asyncio
+async def test_session_take_over_contended_raises_after_one_rmvterm():
+    stream = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1", take_over=True)
+        with pytest.raises(ConsoleHeldError):
+            await session.open()
+        assert await session.close() is False
+
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_session_take_over_survives_failed_rmvterm():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    release = AsyncMock(side_effect=[HMCCLIError("rc 1"), "Close command sent", "ok"])
+    connect, run_command, probe_seconds = _session_patches(stream, probe, release=release)
+    with connect, run_command, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1", take_over=True) as session:
+            assert await session.read() == BANNER
+
+    assert session.released is True
 
 
 @pytest.mark.asyncio

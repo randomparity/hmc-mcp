@@ -322,6 +322,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
+  type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
+  and then acquires with proven acquisition. The default is `False`, and neither the capture nor
+  the MCP tool sets it. `capture_lpar_console` no longer leaks its own proven hold when console
+  output quotes the contention sentence: it releases the hold, then raises `ConsoleHeldError`
+  as before. A contention sentence that follows the acquisition banner in the same read now
+  counts as console content, both at open and in the release probe (#975, ADR 0172).
+
 - The distribution, console script, Python package and configuration directory are renamed
   from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now
   `hmcpctl.api`, `import hmc_mcp` fails, and the former configuration directory is not read.
