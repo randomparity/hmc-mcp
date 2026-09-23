@@ -10,6 +10,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmcpctl lpars capture-console LPAR --system SYSTEM` takes the same bounded, input-free console
+  capture as the MCP tool `hmc_capture_lpar_console`, with the same `--duration`, `--max-bytes`
+  and `--idle-timeout` defaults and limits. It writes raw bytes to stdout or to a new `--output`
+  file, reports the stop reason and `released` on stderr, and exits 0, 1, 2 or 3 as ADR 0175
+  states; 3 means the console may still be held. The bare-CEC recipe now captures the console
+  with it. The MCP tool and the command share one selector resolver (#959).
+
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
   the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.

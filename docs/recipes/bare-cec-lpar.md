@@ -110,15 +110,22 @@ JOB_ID=<job-id-from-power-on-output>
 hmcpctl jobs show "$JOB_ID"
 hmcpctl lpars state "$LPAR"
 hmcpctl lpars refcodes "$SYSTEM_NAME" "$LPAR_NAME" --count 5 --json
+CONSOLE_LOG=<new-file-for-the-console-bytes>
+hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30 \
+  --max-bytes 65536 --idle-timeout 10 --output "$CONSOLE_LOG"
 ```
 
 Expected: `jobs show` prints the same job, found, with a successful status. `lpars state`
 prints `open firmware` while the partition sits at the SMS menu, or `running`. `lpars refcodes`
 prints up to five recent reference codes for the partition.
 
-**Console capture has no installed CLI command.** The CLI form arrives with PR #777, which is
-not merged. Until then, capture the console through the MCP tool `hmc_capture_lpar_console`
-from an MCP client connected to `hmcpctl serve`, or skip this observation.
+`lpars capture-console` records the console for at most 30 seconds or 64 KiB, stopping after 10
+seconds without output, and never sends input. It writes the raw bytes to `CONSOLE_LOG`, which
+must not exist yet, and prints one line to stderr, for example
+`stop reason: idle; bytes: 2048; released: true`. The bytes carry terminal escape sequences:
+read them with `less -R` or a log viewer. Exit status 3 means `released: false`: the console
+may still be held, so run the `rmvterm` command the line names on the HMC before another capture.
+Exit status 1 with a message that the console is held means another session has it open.
 
 ## 6. Power off
 
