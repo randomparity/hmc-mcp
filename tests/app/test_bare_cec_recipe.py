@@ -18,7 +18,7 @@ from hmcpctl import cli
 ROOT = Path(__file__).resolve().parents[2]
 RECIPE = ROOT / "docs" / "recipes" / "bare-cec-lpar.md"
 RECIPE_LINK = "(recipes/bare-cec-lpar.md)"
-SHELL_BLOCK = re.compile(r"```bash\n(.*?)```", re.DOTALL)
+SHELL_BLOCK = re.compile(r"```(?:bash|sh)\n(.*?)```", re.DOTALL)
 SHELL_OPERATORS = ("|", ";", "&", "<", ">", "`", "$(")
 IDENTITY_READBACK = ("lpars", "get-description")
 DESTRUCTIVE = {("network", "unassign-dedicated-pcie-slot"), ("lpars", "delete")}
