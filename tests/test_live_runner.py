@@ -213,8 +213,8 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
         ]
     )
 
-    assert await pcie.assign_sriov_to_lp3(object(), state)
     evidence = pcie._SriovEvidence()
+    assert await pcie.assign_sriov_to_lp3(object(), state, evidence)
     assert await pcie.verify_sriov_assigned(object(), state, True, evidence)
     assert await pcie.unassign_sriov_from_lp3(object(), state)
     assert await pcie.reassign_sriov_to_lp3(object(), state, evidence)
@@ -346,23 +346,39 @@ async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
 
 
 def _sriov_arm_transcript(
-    state: _ScriptedSriovState, *, assign_status: str = "PASS", chhwres_status: str = "PASS"
+    state: _ScriptedSriovState,
+    *,
+    assign_status: str = "PASS",
+    chhwres_status: str = "PASS",
+    profile_prepopulated: bool = True,
+    unassign_profile_read: tuple[str, str, object] | None = None,
 ) -> list[tuple[str, str, object]]:
-    """Every call `exercise_sriov_assignment` makes after its baseline, in order."""
+    """Every call `exercise_sriov_assignment` makes after its baseline, in order.
+
+    *profile_prepopulated* is baseline (b): the profile already lists the port,
+    so each unassign and the reassign really dispatch. Without it the profile
+    reads `none` and both operations answer their idempotent `changed=False`.
+    """
     owned = _logical_port_state(state, owner=state.config.lp3_name)
     free = _logical_port_state(state)
+    listed = _profile_state("configured-port" if profile_prepopulated else "none")
+    changed = {"changed": profile_prepopulated}
     assign = [("hmc_assign_sriov_logical_port", assign_status, {"changed": True})]
-    verify = [("hmc_list_sriov_logical_ports", "PASS", owned), _profile_state()]
+    verify = [("hmc_list_sriov_logical_ports", "PASS", owned), listed]
+    after_unassign = [
+        ("hmc_list_sriov_logical_ports", "PASS", owned),
+        unassign_profile_read or _profile_state(),
+    ]
     round_trip = (
-        [("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}), *verify]
-        + [("hmc_assign_sriov_logical_port", "PASS", {"changed": True}), *verify]
+        [("hmc_unassign_sriov_logical_port", "PASS", changed), *after_unassign]
+        + [("hmc_assign_sriov_logical_port", "PASS", changed), *verify]
         if assign_status == "PASS"
         else []
     )
     cleanup = [
         ("hmc_list_sriov_logical_ports", "PASS", owned),
-        _profile_state("configured-port"),
-        ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+        listed,
+        ("hmc_unassign_sriov_logical_port", "PASS", changed),
         ("hmc_run_command", chhwres_status, "removed"),
     ]
     if chhwres_status == "PASS":
@@ -448,6 +464,25 @@ async def test_sriov_failed_cleanup_fails_the_assign_observations(monkeypatch) -
         assert emitted[key]["observation"]["cleanup"] == "failed"
         assert emitted[key]["observation"]["result"] == "failed"
     assert "st28-hmc-unassign-sriov-logical-port" not in emitted
+
+
+@pytest.mark.asyncio
+async def test_sriov_idempotent_calls_back_no_observation(monkeypatch) -> None:
+    """From a `none` profile the unassigns and the reassign dispatch nothing."""
+    state = await _run_sriov_arm(monkeypatch, profile_prepopulated=False)
+
+    assert set(_sriov_observations(state)) == {"st25-hmc-assign-sriov-logical-port"}
+
+
+@pytest.mark.asyncio
+async def test_sriov_unreadable_profile_is_not_a_cleared_profile(monkeypatch) -> None:
+    state = await _run_sriov_arm(
+        monkeypatch, unassign_profile_read=("hmc_run_command", "FAIL", "ssh lost")
+    )
+
+    unassign = _sriov_observations(state)["st26-hmc-unassign-sriov-logical-port"]
+    assert unassign["observation"]["result"] == "failed"
+    assert "profile-ports-cleared" not in unassign["observation"]["assertions"]
 
 
 @pytest.mark.asyncio

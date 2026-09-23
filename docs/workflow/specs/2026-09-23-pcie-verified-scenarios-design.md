@@ -21,7 +21,9 @@ adds none. A step that adds something the teardown must undo (rows 25, 27, 31,
 33-add, 36-add) stores its assertion values and is recorded after the arm's
 cleanup, with cleanup `passed` only when that cleanup restored the baseline,
 else `failed`, as `bare_cec._record_create_and_assign` does. Removal and
-cleanup steps record where they run.
+cleanup steps record where they run. An SR-IOV call whose result reports
+`changed=False` (the operations' idempotent no-op) dispatched nothing and backs
+no observation, and an unreadable profile never counts as cleared.
 
 **Observation ids.** `_observation_id` keeps the label up to the first ` (`,
 so every verified label either is a tool name or is a hyphenated slug, and the

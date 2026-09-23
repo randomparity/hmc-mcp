@@ -140,6 +140,11 @@ with both `LIVE_TEST_ENV_*` keys set, writes them to
 `test-results-<arm>-observations.json`. Promote them by hand
 (`docs/capabilities/README.md`, "Recording an observation").
 
+An SR-IOV call that changed nothing records no observation. From a profile
+that reads `none`, the unassign and the reassign are no-ops, so only the
+assign is observed. To observe the unassign, start with the profile already
+listing the test port; the baseline check admits that state.
+
 ## 3. Produce the evidence
 
 ```sh
