@@ -550,6 +550,8 @@ async def test_lpar_lifecycle_captures_jobs_and_clears_scratch_identity() -> Non
         "max_memory": state.config.scratch_create_max_memory_mib,
         "desired_vcpus": state.config.scratch_create_desired_vcpus,
         "max_vcpus": state.config.scratch_create_max_vcpus,
+        "desired_procs": state.config.scratch_create_desired_procs,
+        "max_procs": state.config.scratch_create_max_procs,
     }
     assert [entry["subtask"] for entry in state.results] == [8] * 8
 
@@ -1064,6 +1066,8 @@ def test_live_config_reads_the_complete_example_and_ignores_exports(
 
     assert config.system_name == "example-lt-609-system"
     assert config.sriov_logical_port_id == 917003
+    assert config.scratch_create_desired_procs == 0.3
+    assert config.scratch_create_max_procs == 0.6
     assert config.iso_url == "http://iso.example.test:18090/example-lt-609.iso"
     assert config.protected_lpar_names == (
         "example-lt-609-protected-a",
@@ -1108,6 +1112,29 @@ def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
     config = runner.LiveTestConfig.from_env_file(config_path)
 
     assert config.sriov_physical_port_id == 0
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "match"),
+    [
+        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "", "SCRATCH_CREATE_DESIRED_PROCS"),
+        ("LIVE_TEST_SCRATCH_CREATE_MAX_PROCS", "", "SCRATCH_CREATE_MAX_PROCS"),
+        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "half", "could not convert"),
+        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "0", "scratch_create_desired_procs"),
+        ("LIVE_TEST_SCRATCH_CREATE_MAX_PROCS", "-0.5", "scratch_create_max_procs"),
+        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "nan", "scratch_create_desired_procs"),
+        ("LIVE_TEST_SCRATCH_CREATE_MAX_PROCS", "inf", "scratch_create_max_procs"),
+        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "0.7", "inconsistent resource limits"),
+    ],
+)
+def test_live_config_rejects_unusable_scratch_processing_units(
+    tmp_path, key, value, match
+) -> None:
+    """#947: units are required, finite, positive, and desired <= max."""
+    config_path = _example_env_with(tmp_path, key, value)
+
+    with pytest.raises(ValueError, match=match):
+        runner.LiveTestConfig.from_env_file(config_path)
 
 
 def test_live_config_rejects_negative_sriov_physical_port_id(tmp_path) -> None:

@@ -489,7 +489,9 @@ def hmc_list_storage_mappings(
     """List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR.
 
     Returns storage mappings with backing storage details (PhysicalVolume or
-    VirtualDisk) and client LPAR information.
+    VirtualDisk) and client LPAR information. Each mapping's ``id`` is its
+    ``<server adapter>/<target device>`` identity (for example ``vhost0/vtscsi0``),
+    or null when the HMC reports too little to identify it.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
@@ -514,12 +516,12 @@ def hmc_list_storage_mappings(
 @tool(effect="destructive", operation="storage.detach_mapping", target_kind="vios")
 def hmc_detach_storage_mapping(
     vios_name_or_uuid: str,
-    mapping_uuid: str,
+    mapping_id: str,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> str:
-    """Detach a VirtualSCSIMapping by its inventory UUID.
+    """Detach a VirtualSCSIMapping by its inventory ID.
 
     Removes the mapping only; the backing storage (PhysicalVolume or
     VirtualDisk) is preserved.
@@ -528,7 +530,8 @@ def hmc_detach_storage_mapping(
         system_name_or_uuid: Optional managed-system selector used to authorize the
             client LPAR; omit it to discover the owning system.
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: Exact UUID returned by ``hmc_list_storage_mappings``.
+        mapping_id: Exact ``id`` returned by ``hmc_list_storage_mappings``, for
+            example ``vhost0/vtscsi0``.
         ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
@@ -537,11 +540,11 @@ def hmc_detach_storage_mapping(
         await detach_storage_mapping(
             hmc,
             vios_name_or_uuid,
-            mapping_uuid,
+            mapping_id,
             system_name_or_uuid=system_name_or_uuid,
             ownership_override=ownership_override,
         )
-        return mapping_uuid
+        return mapping_id
 
     return with_client(detach_mapping, profile=profile)
 

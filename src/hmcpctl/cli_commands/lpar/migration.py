@@ -68,6 +68,9 @@ def lpars_migrate(
     interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Source managed system name or UUID"
+    ),
 ) -> None:
     """Live-migrate (LPM) an LPAR to another managed system."""
 
@@ -76,7 +79,7 @@ def lpars_migrate(
     async def _fn(hmc):
         return await migrate_lpar(
             hmc,
-            None,
+            system,
             name_or_uuid,
             LpmMigrationRequest(target, profile, wait_time),
             validate_first=validate_first,
@@ -106,6 +109,9 @@ def lpars_migrate_affinity(
     interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Source managed system name or UUID"
+    ),
 ) -> None:
     """Run explicit affinity preflight before validation-first LPM."""
     validate_wait_timing(True, timeout, interval)
@@ -123,7 +129,7 @@ def lpars_migrate_affinity(
     async def _fn(hmc):
         return await migrate_lpar_with_affinity_preflight(
             hmc,
-            None,
+            system,
             name_or_uuid,
             LpmMigrationRequest(target),
             request,
@@ -142,12 +148,15 @@ def lpars_migrate_validate(
     profile: str | None = typer.Option(None, "--profile", help="Target profile name"),
     wait_time: int | None = typer.Option(None, "--wait-time"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Source managed system name or UUID"
+    ),
 ) -> None:
     """Validate whether an LPM migration would succeed."""
 
     async def _fn(hmc):
         return await validate_lpar_migration(
-            hmc, None, name_or_uuid, LpmMigrationRequest(target, profile, wait_time)
+            hmc, system, name_or_uuid, LpmMigrationRequest(target, profile, wait_time)
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
@@ -164,6 +173,9 @@ def lpars_migrate_abort(
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Source managed system name or UUID"
+    ),
 ) -> None:
     """Abort an in-progress LPM migration."""
     validate_wait_timing(wait, timeout, interval)
@@ -171,7 +183,7 @@ def lpars_migrate_abort(
     async def _fn(hmc):
         return await abort_lpar_migration(
             hmc,
-            None,
+            system,
             name_or_uuid,
             wait=wait,
             timeout_seconds=timeout,
@@ -193,6 +205,9 @@ def lpars_migrate_recover(
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Source managed system name or UUID"
+    ),
 ) -> None:
     """Recover an LPAR after a failed LPM migration."""
     validate_wait_timing(wait, timeout, interval)
@@ -200,7 +215,7 @@ def lpars_migrate_recover(
     async def _fn(hmc):
         return await recover_lpar_migration(
             hmc,
-            None,
+            system,
             name_or_uuid,
             wait=wait,
             timeout_seconds=timeout,

@@ -46,8 +46,10 @@ from hmcpctl.cli_commands.virtualization import pcie as cli_pcie
 from hmcpctl.cli_commands.virtualization import vnic as cli_vnic
 from hmcpctl.config import HMCConfig
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.inventory.composite import _lpar_summary
 from hmcpctl.operations.lpar import ownership as lpar_ownership
 from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
+from hmcpctl.operations.lpar.migration import LpmResult
 from hmcpctl.operations.lpar.provision import ProvisionResult
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.storage.resources import (
@@ -1748,6 +1750,42 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
             ],
             None,
         ),
+        (
+            "lpar.inventory",
+            "fetch_lpar_summary",
+            ["lpars", "summary", "--json"],
+            _lpar_summary({"Resource": {}}, []),
+        ),
+        (
+            "lpar.migration",
+            "migrate_lpar",
+            ["lpars", "migrate", "--target", "sys2", "--no-validate-first", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "migrate_lpar_with_affinity_preflight",
+            ["lpars", "migrate-affinity", "--target", "sys2", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "validate_lpar_migration",
+            ["lpars", "migrate-validate", "--target", "sys2", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "abort_lpar_migration",
+            ["lpars", "migrate-abort", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "recover_lpar_migration",
+            ["lpars", "migrate-recover", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -2029,10 +2067,10 @@ def _storage_app() -> typer.Typer:
         (
             ["list-mappings", VIOS_UUID],
             "list_storage_mappings",
-            [StorageMapping("map-1", None, None, None)],
+            [StorageMapping("vhost0/vtscsi0", None, None, None)],
         ),
         (
-            ["detach-mapping", VIOS_UUID, "map-1", "--confirm"],
+            ["detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"],
             "detach_storage_mapping",
             None,
         ),
@@ -2395,7 +2433,7 @@ def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, None)
-        return [StorageMapping("map-1", "lpar1", "VirtualDisk", "bootvol")]
+        return [StorageMapping("vhost0/vtscsi0", "lpar1", "VirtualDisk", "bootvol")]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
@@ -2404,7 +2442,7 @@ def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
 
     assert result.exit_code == 0
-    assert "map-1" in result.stdout
+    assert "vhost0/vtscsi0" in result.stdout
     assert "bootvol" in result.stdout
     assert "VirtualDisk" in result.stdout
 
@@ -2413,7 +2451,7 @@ def test_storage_list_mappings_renders_physical_volume(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, vios, lpar, *, system_name_or_uuid=None):
         system = system_name_or_uuid
         assert (system, vios, lpar) == (None, VIOS_UUID, LPAR_UUID)
-        return [StorageMapping("map-2", "lpar1", "PhysicalVolume", "hdisk9")]
+        return [StorageMapping("vhost1/vtscsi1", "lpar1", "PhysicalVolume", "hdisk9")]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
@@ -2430,7 +2468,10 @@ def test_storage_list_mappings_renders_physical_volume(fake_hmc, monkeypatch):
 
 def test_storage_list_mappings_json(fake_hmc, monkeypatch):
     async def fake_mappings(_hmc, _vios, _lpar, *, system_name_or_uuid=None):
-        return [StorageMapping("map-1", None, None, None)]
+        return [
+            StorageMapping("vhost0/vtscsi0", None, None, None),
+            StorageMapping(None, None, None, None),
+        ]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
@@ -2440,7 +2481,8 @@ def test_storage_list_mappings_json(fake_hmc, monkeypatch):
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == [
-        {"uuid": "map-1", "lpar_uuid": None, "backing_kind": None, "backing_name": None}
+        {"id": "vhost0/vtscsi0", "lpar_uuid": None, "backing_kind": None, "backing_name": None},
+        {"id": None, "lpar_uuid": None, "backing_kind": None, "backing_name": None},
     ]
 
 
@@ -2448,13 +2490,13 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     seen = {}
 
     async def fake_detach(
-        _hmc, vios, mapping_uuid, *, system_name_or_uuid=None, ownership_override
+        _hmc, vios, mapping_id, *, system_name_or_uuid=None, ownership_override
     ):
         system = system_name_or_uuid
         seen.update(
             system=system,
             vios=vios,
-            mapping_uuid=mapping_uuid,
+            mapping_id=mapping_id,
             ownership_override=ownership_override,
         )
 
@@ -2463,15 +2505,15 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"]
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"]
     )
 
     assert result.exit_code == 0
-    assert "Deleted storage mapping map-1" in result.stdout
+    assert "Deleted storage mapping vhost0/vtscsi0" in result.stdout
     assert seen == {
         "system": None,
         "vios": VIOS_UUID,
-        "mapping_uuid": "map-1",
+        "mapping_id": "vhost0/vtscsi0",
         "ownership_override": False,
     }
 
@@ -2487,7 +2529,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkey
     async def fake_detach(
         _hmc,
         _vios,
-        _mapping_uuid,
+        _mapping_id,
         *,
         system_name_or_uuid=None,
         ownership_override: bool,
@@ -2500,7 +2542,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkey
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"]
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"]
     )
 
     assert result.exit_code == 1
@@ -3673,6 +3715,28 @@ def test_vios_power_on(fake_hmc):
     assert result.exit_code == 0
     assert "Submitted PowerOn" in result.stdout
     assert fake_hmc.calls == [("power_on_vios", (VIOS_UUID,), {})]
+
+
+@pytest.mark.parametrize("command", ["power-on", "power-off"])
+@pytest.mark.parametrize(
+    ("scope_args", "expected_system"),
+    [(["--system", SYSTEM_UUID], SYSTEM_UUID), (["-s", SYSTEM_UUID], SYSTEM_UUID), ([], None)],
+)
+def test_vios_power_commands_pass_system_scope(
+    fake_hmc, monkeypatch, command, scope_args, expected_system
+):
+    seen = []
+
+    async def fake_power_vios(_hmc, vios, *, system_name_or_uuid, **_kwargs):
+        seen.append((system_name_or_uuid, vios))
+        return {}
+
+    monkeypatch.setattr(cli_vios_core, "power_vios", fake_power_vios)
+
+    result = RUNNER.invoke(cli.app, ["vios", command, VIOS_UUID, "--yes", *scope_args])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [(expected_system, VIOS_UUID)]
 
 
 def test_vios_power_on_declined_confirm_aborts(fake_hmc):
