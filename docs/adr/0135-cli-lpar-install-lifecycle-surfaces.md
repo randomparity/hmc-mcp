@@ -7,7 +7,7 @@ Accepted
 ## Context
 
 Issue #776 requires an operator to complete an LPAR installation lifecycle using only the
-installed `hmc-mcp` CLI. Most steps already have commands, but optical-media mount and unmount
+installed `hmcpctl` CLI. Most steps already have commands, but optical-media mount and unmount
 exist only as storage operations, and bounded LPAR console capture exists only as an MCP tool.
 The `console` CLI group describes the management console itself, while capture targets one LPAR.
 
@@ -45,8 +45,8 @@ inspect and resume from the first incomplete step.
 
 ## Considered & rejected
 
-- **Put capture under `console`.** verified: `uv run --no-sync hmc-mcp console --help` at commit
-  `1dde19996ec35213ac03191f4a4cdc2354c41c4c` describes that group as “The HMC itself,” while
+- **Put capture under `console`.** verified: `uv run --no-sync hmcpctl --help` describes the
+  `console` group as “The HMC itself,” while
   `src/hmcpctl/server_tools/console.py` declares the capture target as an LPAR.
 - **Call the MCP wrapper from the CLI.** verified: `src/hmcpctl/cli_commands/runtime.py` builds from
   all active root connection options, while `src/hmcpctl/server_tools/console.py` accepts only a
@@ -58,5 +58,5 @@ inspect and resume from the first incomplete step.
   identifiers, confirmation points, partial completion, and optional cleanup, which a new orchestration
   API would conceal while duplicating existing commands.
 - **Document an out-of-band `mkvterm` command.** verified: issue #776 requires every published recipe
-  command to exist in the installable CLI, and `hmc-mcp lpars --help` at the recorded commit has no
+  command to exist in the installable CLI, and before this change `hmcpctl lpars --help` listed no
   console-capture command.

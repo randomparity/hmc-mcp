@@ -25,7 +25,7 @@ HMC and VIOS are available.
 
 ### Optical media
 
-`hmc-mcp storage mount-optical-media VIOS LPAR MEDIA` accepts:
+`hmcpctl storage mount-optical-media VIOS LPAR MEDIA` accepts:
 
 - `--system/-s SYSTEM`, an optional managed-system name or UUID used for selector disambiguation;
 - `--target-device DEVICE`, an optional vtscsi device name;
@@ -35,7 +35,7 @@ HMC and VIOS are available.
 It calls `mount_optical_media` once and prints an identified success plus the returned mapping as
 JSON. Declining confirmation exits without calling the operation.
 
-`hmc-mcp storage unmount-optical-media VIOS LPAR MEDIA` accepts:
+`hmcpctl storage unmount-optical-media VIOS LPAR MEDIA` accepts:
 
 - `--system/-s SYSTEM` and `--ownership-override` with the same meaning;
 - `--confirm/-y`, which skips a prompt that identifies the mapping and states that the backing ISO is
@@ -47,7 +47,7 @@ without mutation.
 
 ### Bounded console capture
 
-`hmc-mcp lpars capture-console LPAR SYSTEM` accepts `--duration`, `--max-bytes`,
+`hmcpctl lpars capture-console LPAR SYSTEM` accepts `--duration`, `--max-bytes`,
 `--idle-timeout`, and `--json`. Defaults and bounds remain the existing capture contract: 30 seconds,
 65,536 bytes, 10 seconds idle, with maximums enforced below the adapter.
 
@@ -92,7 +92,7 @@ deletion.
 
 ## Command verification
 
-A focused test reads shell blocks from the recipe. For every line whose executable is `hmc-mcp`, it
+A focused test reads shell blocks from the recipe. For every line whose executable is `hmcpctl`, it
 resolves the group and command from the Typer/Click tree, validates option names and positional arity
 against the leaf command without invoking HMC I/O, and substitutes documented numeric placeholder
 values where Click type parsing requires them. This is structural command-contract coverage, not a
