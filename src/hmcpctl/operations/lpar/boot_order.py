@@ -14,7 +14,7 @@ from ...documents import (
     build_clear_boot_order_document,
 )
 from ...errors import HMCError
-from ...resource_identity import resolve_lpar_uuid
+from ...resource_identity import optional_system_selector, resolve_lpar_uuid
 from .errors import translate_lpar_write_error
 
 _logger = logging.getLogger(__name__)
@@ -25,8 +25,11 @@ async def read_lpar_boot_order(
     lpar_name_or_uuid: str,
 ) -> dict[str, Any]:
     """Read current, pending, and last-used boot-device state for an LPAR."""
+    selector = optional_system_selector(system_name_or_uuid)
+    if selector is None:
+        raise ValueError("system_name_or_uuid is required to read a boot order")
     lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        hmc, lpar_name_or_uuid, system_name_or_uuid=selector
     )
     lpar = await hmc.get_logical_partition(lpar_uuid)
     if not lpar:
