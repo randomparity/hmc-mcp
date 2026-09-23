@@ -281,6 +281,7 @@ async def test_delete_optical_media_refusal_is_repr_quoted(mock_hmc):
 
 V10R3_MAPPINGS = (Path(__file__).with_name("vscsi_mapping_v10r3.xml")).read_text(encoding="utf-8")
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+GROUP_LINK = f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
 
 
 @pytest.mark.asyncio
@@ -309,10 +310,11 @@ async def test_delete_virtual_disk_refuses_disk_mapped_inline_by_name(mock_hmc):
     ("group_link", "refused"),
     [
         (None, True),
-        (f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}", True),
-        (f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/other-vg", False),
+        (f"{GROUP_LINK}/{VG_UUID}", True),
+        (f"{GROUP_LINK}/{VG_UUID.upper()}", True),
+        (f"{GROUP_LINK}/other-vg", False),
     ],
-    ids=["no-group-link", "same-group", "other-group"],
+    ids=["no-group-link", "same-group", "same-group-other-case", "other-group"],
 )
 async def test_delete_virtual_disk_inline_match_honours_the_group_link(
     mock_hmc, group_link, refused
