@@ -24,6 +24,11 @@ per platform; when it finds nothing it prints the path it looked in.
 Scenario settings — every `LIVE_TEST_*` key — come **only** from `.env`. That
 file is git-ignored and must stay that way; it names the managed system a run
 will create and delete partitions on.
+`.env.example` lists every required key. Size the scratch partition's
+processing units, `LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS` and
+`LIVE_TEST_SCRATCH_CREATE_MAX_PROCS`, for its vCPU counts on your platform:
+the create sends them explicitly, and the HMC refuses too few units per
+virtual processor.
 
 ## 1. Ask whether the run would start
 

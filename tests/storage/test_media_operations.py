@@ -145,6 +145,15 @@ SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
 OTHER_LPAR_UUID = "22222222-2222-2222-2222-222222222222"
 
+
+def _lpar_link(lpar_uuid: str) -> str:
+    """The absolute, system-scoped client-LPAR link the HMC returns (#940)."""
+    return (
+        f"https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
+        f"/LogicalPartition/{lpar_uuid}"
+    )
+
+
 VIOS_DOC_WITH_OPTICAL_MAPPINGS = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:{VIOS_UUID}</id>
@@ -156,28 +165,32 @@ VIOS_DOC_WITH_OPTICAL_MAPPINGS = f"""<?xml version="1.0" encoding="UTF-8" standa
         href="https://hmc/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
       <VirtualSCSIMappings>
         <VirtualSCSIMapping>
-          <UUID>mapping-disk-001</UUID>
+          <AssociatedLogicalPartition rel="related" href="{_lpar_link(LPAR_UUID)}"/>
+          <ServerAdapter><AdapterName>vhost0</AdapterName></ServerAdapter>
           <Storage><VirtualDisk><DiskName>lv_boot</DiskName></VirtualDisk></Storage>
-          <AssociatedLogicalPartition rel="related"
-            href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+          <TargetDevice><LogicalVolumeVirtualTargetDevice>
+            <TargetName>vtscsi0</TargetName>
+          </LogicalVolumeVirtualTargetDevice></TargetDevice>
         </VirtualSCSIMapping>
         <VirtualSCSIMapping>
-          <UUID>mapping-optical-target</UUID>
+          <AssociatedLogicalPartition rel="related" href="{_lpar_link(LPAR_UUID)}"/>
+          <ServerAdapter><AdapterName>vhost0</AdapterName></ServerAdapter>
           <Storage>
             <VirtualOpticalMedia><MediaName>rhel9.iso</MediaName></VirtualOpticalMedia>
           </Storage>
-          <TargetDevice>vtopt0</TargetDevice>
-          <AssociatedLogicalPartition rel="related"
-            href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+          <TargetDevice><VirtualOpticalTargetDevice>
+            <TargetName>vtopt0</TargetName>
+          </VirtualOpticalTargetDevice></TargetDevice>
         </VirtualSCSIMapping>
         <VirtualSCSIMapping>
-          <UUID>mapping-optical-other-lpar</UUID>
+          <AssociatedLogicalPartition rel="related" href="{_lpar_link(OTHER_LPAR_UUID)}"/>
+          <ServerAdapter><AdapterName>vhost1</AdapterName></ServerAdapter>
           <Storage>
             <VirtualOpticalMedia><MediaName>rhel9.iso</MediaName></VirtualOpticalMedia>
           </Storage>
-          <TargetDevice>vtopt1</TargetDevice>
-          <AssociatedLogicalPartition rel="related"
-            href="/rest/api/uom/LogicalPartition/{OTHER_LPAR_UUID}"/>
+          <TargetDevice><VirtualOpticalTargetDevice>
+            <TargetName>vtopt1</TargetName>
+          </VirtualOpticalTargetDevice></TargetDevice>
         </VirtualSCSIMapping>
       </VirtualSCSIMappings>
     </VirtualIOServer>
@@ -212,20 +225,22 @@ async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
     hmc = AsyncMock()
     hmc.list_optical_mappings.return_value = [
         {
-            "UUID": "mapping-prefix",
+            "ServerAdapter": {"AdapterName": "vhost0"},
+            "TargetDevice": {"VirtualOpticalTargetDevice": {"TargetName": "vtopt1"}},
             "Storage": {
                 "VirtualOpticalMedia": {"MediaName": "rhel9.iso.bak"},
             },
         },
         {
-            "UUID": "mapping-incidental",
+            "ServerAdapter": {"AdapterName": "vhost0"},
             "Storage": {
                 "VirtualOpticalMedia": {"MediaName": "other.iso"},
             },
-            "TargetDevice": "rhel9.iso",
+            "TargetDevice": {"VirtualOpticalTargetDevice": {"TargetName": "rhel9.iso"}},
         },
         {
-            "UUID": "mapping-exact",
+            "ServerAdapter": {"AdapterName": "vhost0"},
+            "TargetDevice": {"VirtualOpticalTargetDevice": {"TargetName": "vtopt3"}},
             "Storage": {
                 "VirtualOpticalMedia": {"MediaName": "rhel9.iso"},
             },
@@ -237,7 +252,9 @@ async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
     )
 
     hmc.list_optical_mappings.assert_awaited_once_with(VIOS_UUID, LPAR_UUID)
-    hmc.delete_storage_mapping.assert_awaited_once_with(VIOS_UUID, "mapping-exact")
+    hmc.delete_storage_mapping.assert_awaited_once_with(
+        VIOS_UUID, "vhost0/vtopt3", LPAR_UUID
+    )
 
 
 @pytest.mark.asyncio
@@ -256,12 +273,13 @@ async def test_unmount_optical_media_rejects_ambiguous_exact_identity():
     hmc = AsyncMock()
     hmc.list_optical_mappings.return_value = [
         {
-            "UUID": mapping_uuid,
+            "ServerAdapter": {"AdapterName": "vhost0"},
+            "TargetDevice": {"VirtualOpticalTargetDevice": {"TargetName": target}},
             "Storage": {
                 "VirtualOpticalMedia": {"MediaName": "rhel9.iso"},
             },
         }
-        for mapping_uuid in ("mapping-a", "mapping-b")
+        for target in ("vtopt0", "vtopt1")
     ]
 
     with pytest.raises(HMCError, match="ambiguous"):
@@ -277,11 +295,11 @@ async def test_unmount_optical_media_fails_closed_when_exact_mapping_is_absent()
     hmc = AsyncMock()
     hmc.list_optical_mappings.return_value = [
         {
-            "UUID": "mapping-prefix",
+            "ServerAdapter": {"AdapterName": "vhost0"},
             "Storage": {
                 "VirtualOpticalMedia": {"MediaName": "rhel9.iso.bak"},
             },
-            "TargetDevice": "rhel9.iso",
+            "TargetDevice": {"VirtualOpticalTargetDevice": {"TargetName": "rhel9.iso"}},
         }
     ]
 
@@ -294,7 +312,7 @@ async def test_unmount_optical_media_fails_closed_when_exact_mapping_is_absent()
 
 
 @pytest.mark.asyncio
-async def test_unmount_optical_media_rejects_missing_mapping_uuid():
+async def test_unmount_optical_media_rejects_a_mapping_without_identity():
     hmc = AsyncMock()
     hmc.list_optical_mappings.return_value = [
         {
@@ -304,7 +322,7 @@ async def test_unmount_optical_media_rejects_missing_mapping_uuid():
         }
     ]
 
-    with pytest.raises(HMCError, match="invalid UUID identity"):
+    with pytest.raises(HMCError, match="no adapter/target identity"):
         await unmount_optical_media(
             hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
@@ -316,7 +334,7 @@ async def test_unmount_optical_media_rejects_missing_mapping_uuid():
 async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(mock_hmc):
     """Unmount drops the addressed mapping and rewrites nothing else.
 
-    The HMC has no UUID-addressable VirtualSCSIMapping sub-resource, so the
+    The HMC has no addressable VirtualSCSIMapping sub-resource, so the
     operation is a read-modify-write of the whole VirtualIOServer document.
     This asserts what that document says afterwards, not that a call happened.
 
@@ -333,10 +351,9 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
 
     assert result is None
     body = _posted_document(post)
-    assert "mapping-optical-target" not in body
     assert "vtopt0" not in body
-    assert "mapping-disk-001" in body
-    assert "mapping-optical-other-lpar" in body
+    assert "vtscsi0" in body
+    assert "vtopt1" in body
 
 
 @pytest.mark.asyncio
@@ -390,8 +407,6 @@ async def test_unmount_optical_media_preserves_a_sibling_with_a_prefix_name(
 ):
     """A strict prefix sibling survives while the exact mapping is removed."""
     doc = VIOS_DOC_WITH_OPTICAL_MAPPINGS.replace(
-        "<UUID>mapping-disk-001</UUID>", "<UUID>mapping-optical-backup</UUID>"
-    ).replace(
         "<Storage><VirtualDisk><DiskName>lv_boot</DiskName></VirtualDisk></Storage>",
         "<Storage><VirtualOpticalMedia><MediaName>rhel9.iso.bak</MediaName>"
         "</VirtualOpticalMedia></Storage>",
@@ -405,8 +420,8 @@ async def test_unmount_optical_media_preserves_a_sibling_with_a_prefix_name(
         )
 
     body = _posted_document(post)
-    assert "mapping-optical-backup" in body
-    assert "mapping-optical-target" not in body
+    assert "rhel9.iso.bak" in body
+    assert "vtopt0" not in body
 
 
 @pytest.mark.asyncio
@@ -442,7 +457,7 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
                 hmc, "vios1", "lpar1", media_name="rhel9.iso"
         )
 
-    assert "mapping-optical-target" not in _posted_document(post)
+    assert "vtopt0" not in _posted_document(post)
 
 
 def test_detach_optical_mapping_alias_is_gone():

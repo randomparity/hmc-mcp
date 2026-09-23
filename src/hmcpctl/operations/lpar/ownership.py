@@ -15,7 +15,12 @@ from hmcpctl.discovery_limits import (
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
 from hmcpctl.errors import HMCError
-from hmcpctl.resource_identity import is_uuid, resolve_lpar_uuid, resolve_system_uuid
+from hmcpctl.resource_identity import (
+    is_uuid,
+    optional_system_selector,
+    resolve_lpar_uuid,
+    resolve_system_uuid,
+)
 from hmcpctl.ssh.description_validation import validate_lpar_description
 from hmcpctl.ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
 from hmcpctl.ssh.profiles import get_lpar_description, set_lpar_description
@@ -261,7 +266,7 @@ async def resolve_and_authorize_lpar_mutation(
     clients that serialise an unset optional string as ``""`` sent it before
     this operation existed, and it was ignored.
     """
-    selector = (system_name_or_uuid or "").strip() or None
+    selector = optional_system_selector(system_name_or_uuid)
     if ownership_override:
         return await _authorize_override(hmc, lpar_name_or_uuid, selector)
     if selector is None:
@@ -373,8 +378,9 @@ async def list_lpar_ownership(
     system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read parsed ownership for every LPAR on one system or across the fleet."""
-    if system_name_or_uuid is not None:
-        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    selector = optional_system_selector(system_name_or_uuid)
+    if selector is not None:
+        system_uuid = await resolve_system_uuid(hmc, selector)
         entries = await hmc.list_logical_partitions(system_uuid)
     else:
         entries = await hmc.list_uom("LogicalPartition")

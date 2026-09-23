@@ -123,6 +123,30 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
+  UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
+  adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not
+  report both), replacing the `uuid` field. `storage detach-mapping` and
+  `hmc_detach_storage_mapping` take that value as `mapping_id` (was `mapping_uuid`), with no
+  alias, and detach and `unmount_optical_media` refuse a mapping whose LPAR is not the one
+  authorized. Client-LPAR links are read from the HMC's absolute
+  `.../ManagedSystem/<system>/LogicalPartition/<uuid>` href, so `--lpar` filters, the listed
+  `lpar_uuid`, and detach authorization now work against a real HMC (ADR 0168, #940).
+
+- A blank or whitespace-only optional managed-system selector (`--system ""`, or
+  `system_name_or_uuid: ""` from an MCP client) now reads as omitted on the read and resolve paths,
+  as ADR 0094 already read it on guarded mutations. `adapters list`, `storage attach-disk`, LPAR
+  and VIOS listing, `hmc_list_lpar_ownership`, and PCM LogicalPartition targets used to look up a
+  managed system named `''` and fail; PCM ManagedSystem targets refused `''` as a stray scope.
+  Unguarded VIOS and LPAR mutations given a blank selector (VIOS delete, power, update and
+  upgrade; LPM; storage mappings; LPAR power when `HMC_AUTHORIZE_POWER_OPERATIONS` is off) now
+  resolve the partition across all systems, as if the selector were omitted, instead of failing
+  on a system named `''`.
+  A selector that is required refuses a blank one as missing before any HMC call: VIOS backup and
+  restore, the boot-order read, and a PowerOn with an affinity assessment. A non-blank selector
+  loses its surrounding whitespace on these paths, so an affinity assessment whose captured
+  identity is padded no longer matches (#945).
+
 - `hmcpctl storage attach-disk` and every `hmcpctl adapters` subcommand (`list`, `add-network`,
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
@@ -150,6 +174,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   (`keep_idle_procs`, `share_idle_procs`, `share_idle_procs_active`, `share_idle_procs_always`).
   A fractional count, or a shared-only `sharing_mode` (`capped`, `uncapped`), is refused before
   `mksyscfg` runs (#948).
+
+- The live-test scratch LPAR create (ST8) passes explicit processing units, so its multi-vCPU
+  create is no longer refused on the `mksyscfg` fallback. `.env` now requires
+  `LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS` and `LIVE_TEST_SCRATCH_CREATE_MAX_PROCS`: finite,
+  positive, desired no greater than max. A results document written before these keys existed
+  no longer restores artifacts into a later run; the runner warns and continues (#947).
 
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The

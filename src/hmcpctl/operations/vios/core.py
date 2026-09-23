@@ -19,7 +19,12 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from ...resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
+from ...resource_identity import (
+    is_uuid,
+    optional_system_selector,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from ...ssh.commands import build_filter
 from ...ssh.transport import run_hmc_cli
 
@@ -33,10 +38,9 @@ async def list_vios(
     if state is not None and state not in PARTITION_STATES:
         allowed = ", ".join(sorted(PARTITION_STATES))
         raise ValueError(f"state must be one of: {allowed}")
+    selector = optional_system_selector(system_name_or_uuid)
     system_uuid = (
-        await resolve_system_uuid(hmc, system_name_or_uuid)
-        if system_name_or_uuid is not None
-        else None
+        await resolve_system_uuid(hmc, selector) if selector is not None else None
     )
     vios = (
         await hmc.search_uom("VirtualIOServer", "PartitionState", state)
@@ -198,7 +202,15 @@ async def _resolve_vios_backup_selectors(
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
 ) -> tuple[str, str]:
-    """Resolve backup selectors to the identities required by the HMC CLI."""
+    """Resolve backup selectors to the identities required by the HMC CLI.
+
+    The selector is required: ``resolve_vios_uuid`` reads a blank one as absent
+    and would resolve the VIOS fleet-wide while ``-m`` carried the blank.
+    """
+    selector = optional_system_selector(system_name_or_uuid)
+    if selector is None:
+        raise ValueError("system_name_or_uuid is required for VIOS backup and restore")
+    system_name_or_uuid = selector
     system_name = system_name_or_uuid
     vios_uuid = vios_name_or_uuid
     if is_uuid(system_name_or_uuid) or not is_uuid(vios_name_or_uuid):

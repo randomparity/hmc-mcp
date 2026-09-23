@@ -500,13 +500,13 @@ def storage_list_mappings(
         print_json([asdict(mapping) for mapping in mappings])
     else:
         table = Table(title=f"Storage Mappings on {vios}")
-        table.add_column("Mapping UUID", style="cyan")
+        table.add_column("Mapping ID", style="cyan")
         table.add_column("Client LPAR", style="green")
         table.add_column("Backing Storage", style="yellow")
         table.add_column("Type", style="magenta")
         for m in mappings:
             table.add_row(
-                m.uuid,
+                m.id or "",
                 m.lpar_uuid or "",
                 m.backing_name or "",
                 m.backing_kind or "",
@@ -516,8 +516,8 @@ def storage_list_mappings(
 
 def storage_detach_mapping(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    mapping_uuid: str = typer.Argument(
-        ..., help="Exact UUID shown by storage list-mappings"
+    mapping_id: str = typer.Argument(
+        ..., help="Exact mapping ID (e.g. vhost0/vtscsi0) shown by storage list-mappings"
     ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -534,7 +534,7 @@ def storage_detach_mapping(
     """Detach a VirtualSCSIMapping while preserving its backing storage."""
     if not confirm:
         typer.confirm(
-            f"Delete storage mapping {mapping_uuid} on VIOS {vios}? "
+            f"Delete storage mapping {mapping_id} on VIOS {vios}? "
             "The backing storage (PhysicalVolume or VirtualDisk) will be preserved.",
             abort=True,
         )
@@ -543,13 +543,13 @@ def storage_detach_mapping(
         await detach_storage_mapping(
             hmc,
             vios,
-            mapping_uuid,
+            mapping_id,
             system_name_or_uuid=system,
             ownership_override=ownership_override,
         )
 
     with_client(_go)
-    console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
+    console.print(f"[green]Deleted storage mapping {mapping_id}[/green]")
 
 
 def storage_upload_iso(

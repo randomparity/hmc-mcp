@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
@@ -57,9 +58,13 @@ class OpticalMedia:
 
 @dataclass(frozen=True)
 class StorageMapping:
-    """Stable inventory projection for one virtual SCSI mapping."""
+    """Stable inventory projection for one virtual SCSI mapping.
 
-    uuid: str
+    ``id`` is the ``<server adapter>/<target device>`` identity (ADR 0168), or None
+    when the HMC reports too little to identify the mapping.
+    """
+
+    id: str | None
     lpar_uuid: str | None
     backing_kind: str | None
     backing_name: str | None
@@ -158,19 +163,18 @@ def _optical_media(entry: Mapping[str, Any]) -> OpticalMedia:
 def _storage_mapping(entry: Mapping[str, Any]) -> StorageMapping:
     operation = "list_storage_mappings"
     resource = _resource(entry, operation)
-    uuid = _required_text(resource, "UUID", operation)
-    associated = resource.get("AssociatedLogicalPartition")
-    href = associated.get("href") if isinstance(associated, Mapping) else None
-    marker = "/rest/api/uom/LogicalPartition/"
-    lpar_uuid = href[len(marker) :] if isinstance(href, str) and href.startswith(marker) else None
+    mapping_id = storage_mapping_id(resource)
+    lpar_uuid = mapping_lpar_uuid(resource)
     storage = resource.get("Storage")
     backing = storage if isinstance(storage, Mapping) else {}
     for kind in ("VirtualDisk", "PhysicalVolume", "VirtualOpticalMedia"):
         candidate = backing.get(kind)
         if isinstance(candidate, Mapping):
             name = candidate.get("DiskName") or candidate.get("VolumeName") or candidate.get("MediaName")
-            return StorageMapping(uuid, lpar_uuid, kind, name if isinstance(name, str) else None)
-    return StorageMapping(uuid, lpar_uuid, None, None)
+            return StorageMapping(
+                mapping_id, lpar_uuid, kind, name if isinstance(name, str) else None
+            )
+    return StorageMapping(mapping_id, lpar_uuid, None, None)
 
 
 # HTTP download configuration
@@ -408,14 +412,15 @@ async def list_storage_mappings(
 async def detach_storage_mapping(
     hmc: HMCClient,
     vios_name_or_uuid: str,
-    mapping_uuid: str,
+    mapping_id: str,
     *,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
 ) -> None:
     """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
 
-    ``mapping_uuid`` is the exact UUID returned by ``list_storage_mappings``.
+    ``mapping_id`` is the exact ``<server adapter>/<target device>`` identity
+    (for example ``vhost0/vtscsi0``) returned by ``list_storage_mappings``.
 
     Raises:
         ResourceNotFoundError: If the VIOS or optional managed-system selector cannot
@@ -428,25 +433,23 @@ async def detach_storage_mapping(
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    mappings = await hmc.list_storage_mappings(vios_uuid)
-    mapping = next(
-        (item for item in mappings if item.get("UUID") == mapping_uuid), None
-    )
-    if mapping is None:
+    matches = [
+        item
+        for item in await hmc.list_storage_mappings(vios_uuid)
+        if storage_mapping_id(item) == mapping_id
+    ]
+    if not matches:
         raise ValueError(
-            f"Storage mapping {mapping_uuid!r} was not found on VIOS {vios_name_or_uuid!r}"
+            f"Storage mapping {mapping_id!r} was not found on VIOS {vios_name_or_uuid!r}"
         )
-    href = (mapping.get("AssociatedLogicalPartition") or {}).get("href")
-    path = urlparse(href).path if isinstance(href, str) else ""
-    marker = "/rest/api/uom/LogicalPartition/"
-    if not path.startswith(marker) or not path[len(marker) :]:
+    if len(matches) > 1:
         raise ValueError(
-            f"Storage mapping {mapping_uuid!r} does not identify its client LPAR"
+            f"Storage mapping {mapping_id!r} is ambiguous on VIOS {vios_name_or_uuid!r}"
         )
-    lpar_uuid = path[len(marker) :]
-    if "/" in lpar_uuid:
+    lpar_uuid = mapping_lpar_uuid(matches[0])
+    if lpar_uuid is None:
         raise ValueError(
-            f"Storage mapping {mapping_uuid!r} has an invalid client LPAR link"
+            f"Storage mapping {mapping_id!r} does not identify its client LPAR"
         )
     await resolve_and_authorize_lpar_mutation(
         hmc,
@@ -454,7 +457,7 @@ async def detach_storage_mapping(
         lpar_uuid,
         ownership_override=ownership_override,
     )
-    await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
+    await hmc.delete_storage_mapping(vios_uuid, mapping_id, lpar_uuid)
 
 
 async def delete_media_repository(
@@ -983,8 +986,9 @@ async def unmount_optical_media(
     """Remove the VirtualSCSIMapping for an optical device (unmount).
 
     Resolves the LPAR-scoped optical inventory entry whose ``MediaName`` equals
-    ``media_name``, requires one exact mapping UUID, and removes it through the
-    shared VirtualIOServer read-modify-write path. The backing
+    ``media_name``, requires its ``<server adapter>/<target device>`` identity
+    (ADR 0168), and removes it through the shared VirtualIOServer
+    read-modify-write path. The backing
     VirtualOpticalMedia (ISO container) is preserved and can be remounted later.
 
     Removing the mapping is the whole unmount as this client implements it:
@@ -1045,7 +1049,7 @@ async def unmount_optical_media(
             f"{lpar_name_or_uuid!r} is ambiguous"
         )
 
-    mapping_uuid = matches[0].get("UUID")
-    if not isinstance(mapping_uuid, str) or not mapping_uuid.strip():
-        raise HMCError("VirtualSCSIMapping has an invalid UUID identity")
-    await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
+    mapping_id = storage_mapping_id(matches[0])
+    if mapping_id is None:
+        raise HMCError("VirtualSCSIMapping has no adapter/target identity")
+    await hmc.delete_storage_mapping(vios_uuid, mapping_id, lpar_uuid)

@@ -89,13 +89,13 @@ MOUNTED_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8"?>
       <VirtualIOServer>
         <VirtualSCSIMappings>
           <VirtualSCSIMapping>
-            <UUID>mapping-001</UUID>
+            <ServerAdapter><AdapterName>vhost0</AdapterName></ServerAdapter>
             <Storage>
               <VirtualOpticalMedia>
                 <MediaName>test-image.iso</MediaName>
               </VirtualOpticalMedia>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-001"/>
+            <AssociatedLogicalPartition rel="related" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/lpar-001"/>
           </VirtualSCSIMapping>
         </VirtualSCSIMappings>
       </VirtualIOServer>
@@ -130,13 +130,13 @@ HOSTILE_MOUNTED_FEED = """<?xml version="1.0" encoding="UTF-8"?>
       <VirtualIOServer>
         <VirtualSCSIMappings>
           <VirtualSCSIMapping>
-            <UUID>mapping-001</UUID>
+            <ServerAdapter><AdapterName>vhost1</AdapterName></ServerAdapter>
             <Storage>
               <VirtualOpticalMedia>
                 <MediaName>evil'name.iso</MediaName>
               </VirtualOpticalMedia>
             </Storage>
-            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-001"/>
+            <AssociatedLogicalPartition rel="related" href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-4000-8000-000000000001/LogicalPartition/lpar-001"/>
           </VirtualSCSIMapping>
         </VirtualSCSIMappings>
       </VirtualIOServer>

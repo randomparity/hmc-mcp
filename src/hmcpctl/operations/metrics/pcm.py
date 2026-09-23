@@ -9,7 +9,11 @@ from hmcpctl.client.core import HMCClient
 
 from ...client.pcm_payloads import newest_metric_link
 from ...errors import HMCError
-from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ...resource_identity import (
+    optional_system_selector,
+    resolve_lpar_uuid,
+    resolve_system_uuid,
+)
 from ..error_translation import translate_pcm_error
 
 MetricKind = Literal["processed", "aggregated"]
@@ -37,6 +41,7 @@ async def resolve_pcm_resource(
         ValueError: If system scope is missing or invalid for the category.
     """
     _validate_category(category)
+    system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if category == "ManagedSystem":
         if system_name_or_uuid is not None:
             raise ValueError(
@@ -79,6 +84,7 @@ def validate_pcm_metric_target(
     category: PcmCategory, system_name_or_uuid: str | None
 ) -> None:
     _validate_category(category)
+    system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if category == "LogicalPartition" and system_name_or_uuid is None:
         raise ValueError(
             "LogicalPartition metrics require the owning system_name_or_uuid."
