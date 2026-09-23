@@ -293,8 +293,7 @@ def _cli_create(resources: LparResources) -> AsyncMock:
     [
         (LparResources(desired_vcpus=3, max_vcpus=6), "--procs"),
         (LparResources(min_vcpus=2, desired_vcpus=2, desired_procs=0.4), "--min-procs"),
-        # The mksyscfg record is always shared, so --dedicated gets no exemption.
-        (LparResources(dedicated=True, desired_vcpus=3), "--procs"),
+        (LparResources(dedicated=False, desired_vcpus=3), "--procs"),
     ],
 )
 def test_cli_create_refuses_default_units_for_several_vcpus(resources, option):
@@ -331,3 +330,112 @@ def test_cli_create_sends_explicit_units_with_several_vcpus():
 def test_cli_create_keeps_unit_defaults_for_one_vcpu():
     command = _cli_create(LparResources(desired_vcpus=1)).await_args.args[1]
     assert "min_proc_units=0.1,desired_proc_units=0.1,max_proc_units=2.0" in command
+
+
+# ---------------------------------------------------------------------- #
+# create_lpar_via_cli — processor mode of the mksyscfg record (#948)
+# ---------------------------------------------------------------------- #
+
+
+def _record(command: str) -> dict[str, str]:
+    """Parse the ``-i`` record of a mksyscfg *command* into attribute pairs."""
+    record = command.rsplit(" -i ", 1)[1].strip("'")
+    return dict(pair.split("=", 1) for pair in record.split(","))
+
+
+PROC_FIELDS = (
+    "proc_mode",
+    "sharing_mode",
+    "min_proc_units",
+    "desired_proc_units",
+    "max_proc_units",
+    "min_procs",
+    "desired_procs",
+    "max_procs",
+)
+
+
+def _proc_fields(resources: LparResources) -> dict[str, str]:
+    record = _record(_cli_create(resources).await_args.args[1])
+    return {key: value for key, value in record.items() if key in PROC_FIELDS}
+
+
+def test_cli_create_sends_dedicated_record_for_dedicated_request():
+    """CLI floats and default vcpus never leak units or vcpus into a ded record."""
+    fields = _proc_fields(
+        LparResources(
+            desired_memory=4096,
+            dedicated=True,
+            min_procs=1.0,
+            desired_procs=2.0,
+            max_procs=4.0,
+            desired_vcpus=1,
+            max_vcpus=2,
+        )
+    )
+    assert fields == {
+        "proc_mode": "ded",
+        "min_procs": "1",
+        "desired_procs": "2",
+        "max_procs": "4",
+    }
+
+
+def test_cli_create_defaults_omitted_dedicated_counts():
+    fields = _proc_fields(
+        LparResources(desired_memory=4096, dedicated=True, desired_procs=3.0)
+    )
+    assert fields == {
+        "proc_mode": "ded",
+        "min_procs": "1",
+        "desired_procs": "3",
+        "max_procs": "3",
+    }
+
+
+@pytest.mark.parametrize("dedicated", [None, False])
+def test_cli_create_sends_shared_record_otherwise(dedicated):
+    fields = _proc_fields(
+        LparResources(
+            dedicated=dedicated,
+            min_procs=0.1,
+            desired_procs=0.5,
+            max_procs=2.0,
+            desired_vcpus=2,
+            max_vcpus=4,
+        )
+    )
+    assert fields == {
+        "proc_mode": "shared",
+        "sharing_mode": "uncap",
+        "min_proc_units": "0.1",
+        "desired_proc_units": "0.5",
+        "max_proc_units": "2.0",
+        "min_procs": "1",
+        "desired_procs": "2",
+        "max_procs": "4",
+    }
+
+
+@pytest.mark.parametrize(
+    ("resources", "option"),
+    [
+        (LparResources(dedicated=True, min_procs=0.5, desired_procs=1.0), "--min-procs"),
+        (LparResources(dedicated=True, desired_procs=1.5), "--procs"),
+        (LparResources(dedicated=True, desired_procs=1.0, max_procs=2.5), "--max-procs"),
+    ],
+)
+def test_cli_create_refuses_fractional_dedicated_counts(resources, option):
+    """A fractional count is refused before mksyscfg, naming the option."""
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match=option),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"), "sys1", "lp1", resources=resources
+            )
+        )
+    run.assert_not_awaited()
