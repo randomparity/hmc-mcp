@@ -45,7 +45,7 @@ predicted arms — the run decides; a RUNNABLE arm may still SKIP
     will mutate: managed system sys-R1
     will mutate: partitions named live-pcie-* (created, then deleted)
     will mutate: profile default io_slots (assigned, then restored)
-    will mutate: dedicated slot 553713664
+    will mutate: dedicated slot 21010020
     envelope:    admitted (ADR 0053 envelope)
 ```
 
