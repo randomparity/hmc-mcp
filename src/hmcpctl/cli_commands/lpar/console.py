@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
+import os
+import shlex
 from pathlib import Path
 from typing import BinaryIO
 
@@ -46,11 +49,16 @@ def _open_sink(output: Path | None) -> BinaryIO:
             )
         return typer.get_binary_stream("stdout")
     try:
-        return output.open("xb")
+        return _create_exclusive(output)
     except FileExistsError:
         usage_error(f"--output {output} already exists; choose a new path")
     except OSError as exc:
         fail(exc)
+
+
+def _create_exclusive(path: Path) -> BinaryIO:
+    """Create *path* owner-only, refusing an existing file, as the snapshot writer does."""
+    return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb")
 
 
 def _write_all(sink: BinaryIO, data: bytes) -> None:
@@ -67,8 +75,9 @@ def _report(capture: ConsoleCapture) -> None:
         line += f"; error: {capture.error}"
     if not capture.released:
         line += (
-            f"; the console may still be held: run 'rmvterm -m {capture.system} "
-            f"-p {capture.lpar}' on the HMC before another capture"
+            "; the console may still be held: run 'rmvterm -m "
+            f"{shlex.quote(capture.system)} -p {shlex.quote(capture.lpar)}' "
+            "on the HMC before another capture"
         )
     err_console.print(line, markup=False, highlight=False, soft_wrap=True)
 
@@ -147,8 +156,11 @@ def lpars_capture_console(
 def _discard(sink: BinaryIO, output: Path | None) -> None:
     if output is None:
         return
-    sink.close()
-    output.unlink(missing_ok=True)
+    try:
+        with contextlib.suppress(OSError):
+            sink.close()
+    finally:
+        output.unlink(missing_ok=True)
 
 
 def register_commands(group: typer.Typer) -> None:

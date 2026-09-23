@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import errno
 import inspect
+import io
 from typing import Self
 from unittest.mock import AsyncMock
 
@@ -219,23 +221,53 @@ def test_exit_code_follows_the_capture_outcome_and_bytes_are_written(
         assert "rmvterm" in result.stderr
 
 
+class _FullDisk(io.RawIOBase):
+    def writable(self) -> bool:
+        return True
+
+    def write(self, _data) -> int:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+
 @pytest.mark.parametrize(("released", "code"), [(True, 1), (False, 3)])
 def test_failed_write_removes_the_output_file(
     capture, tmp_path, monkeypatch, released, code
 ):
     capture.return_value = _capture(released=released)
     target = tmp_path / "console.log"
+    create = cli_console._create_exclusive
 
-    def fail_write(_sink, _data: bytes) -> None:
-        raise OSError(28, "No space left on device")
+    def full_disk(path):
+        create(path).close()
+        return io.BufferedWriter(_FullDisk())
 
-    monkeypatch.setattr(cli_console, "_write_all", fail_write)
+    monkeypatch.setattr(cli_console, "_create_exclusive", full_disk)
 
     result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
 
     assert result.exit_code == code
     assert "No space left on device" in result.stderr
     assert not target.exists()
+
+
+def test_output_file_is_owner_only(capture, tmp_path):
+    target = tmp_path / "console.log"
+
+    result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
+
+    assert result.exit_code == 0, result.stderr
+    assert target.stat().st_mode & 0o777 == 0o600
+
+
+def test_rmvterm_hint_quotes_names(capture):
+    capture.return_value = ConsoleCapture(
+        system="system a", lpar="db;x", data=b"", stop_reason="idle", released=False
+    )
+
+    result = RUNNER.invoke(cli.app, COMMAND)
+
+    assert result.exit_code == 3
+    assert "rmvterm -m 'system a' -p 'db;x'" in result.stderr
 
 
 def test_help_lists_every_option():
