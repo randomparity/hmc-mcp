@@ -7,6 +7,7 @@ from conftest import make_config
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
@@ -136,7 +137,15 @@ async def test_list_optical_mappings_propagates_bad_request(mock_hmc):
 @pytest.mark.asyncio
 async def test_create_optical_mapping_submits_document(mock_hmc):
     """create_optical_mapping submits a focused document to the VIOS endpoint."""
-    post_route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+    mock_hmc.get(VIOS_PATH).mock(
+        return_value=httpx.Response(
+            200,
+            text=f'<VirtualIOServer xmlns="{UOM_NS}"><UUID>{VIOS_UUID}</UUID>'
+            "<VirtualSCSIMappings/></VirtualIOServer>",
+            headers={"ETag": "etag-1"},
+        )
+    )
+    post_route = mock_hmc.post(VIOS_PATH).mock(
         return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE)
     )
 

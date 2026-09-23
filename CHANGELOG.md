@@ -10,6 +10,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
+  duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
+  the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.
+  The session runs the release to completion when cancelled. ADR 0170 states which process
+  exits leave the console held. `capture_lpar_console` is now built on the session with the same
+  signature and results. One exception: if its task is cancelled during the final release, the
+  capture now raises `CancelledError` after the release, as ADR 0072 documents. It is a
+  pre-release domain-module API, not a `hmcpctl.api` export (#974).
+
 - A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
@@ -127,6 +136,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_delete_virtual_disk` also refuses a disk that backs a vSCSI mapping named inline by
   `DiskName`, the shape V10R3 returns; the mapped-disk check previously matched only an `href`
   the HMC does not send.
+- `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
+  disk name longer than 15 characters before the create request, with a message that states the
+  VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
+  reported as a possible side effect (#964).
 
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
@@ -266,6 +279,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   Accepted widths are bounded at 20 integer and 10 fractional digits, beyond any real
   storage quantity, so a digit string long enough to exhaust `int()` or saturate
   `float()` to `inf` is rejected as malformed rather than parsed (#762).
+
+- The live-test runner restores the test partition's description, and with it the ownership
+  stamp, after ST10 and ST15. The baseline kept the CLI read's trailing newline, which the
+  restore refused as non-printable, so the partition lost its stamp and every
+  ownership-guarded command then refused it. The baseline now drops one trailing line
+  terminator. A description that cannot be written back through the CLI now fails the run
+  with a `MANUAL RECOVERY REQUIRED` row naming the `chsyscfg` restore, not a SKIP (#968).
 
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most

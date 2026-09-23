@@ -1399,16 +1399,18 @@ async def test_create_volume_group(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_map_storage_to_lpar(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"
-    ).mock(return_value=httpx.Response(200, text=VG_FEED))
-    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111").mock(
-        return_value=httpx.Response(200, text=VIOS_ENTRY)
+    path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"
+    vios = (
+        '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
+        "<UUID>11111111-1111-1111-1111-111111111111</UUID><VirtualSCSIMappings/></VirtualIOServer>"
     )
+    mock_hmc.get(path).mock(return_value=httpx.Response(200, text=vios, headers={"ETag": "e1"}))
+    route = mock_hmc.post(path).mock(return_value=httpx.Response(200, text=VIOS_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.map_storage_to_lpar(
+        result = await hmc.map_storage_to_lpar(
             "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", _PARENT_UUID
         )
+    assert result is not None and result["Resource"]["PartitionName"] == "vios1"
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body

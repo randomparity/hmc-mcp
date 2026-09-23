@@ -55,6 +55,7 @@ def _authorize_lpar_mutations(monkeypatch):
 
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "22222222-2222-2222-2222-222222220001"
 ADAPTER_UUID = "44444444-4444-4444-4444-444444440001"
@@ -379,12 +380,26 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
     assert '<DiskCapacity kb="CUR" kxe="false">50</DiskCapacity>' in body
 
 
+def _mapping_routes(mock_hmc):
+    """Grouped VIOS GET (empty mapping set, with ETag) and the POST back to it."""
+    path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200,
+            text=f'<VirtualIOServer xmlns="{UOM_NS}"><UUID>{VIOS_UUID}</UUID>'
+            "<VirtualSCSIMappings/></VirtualIOServer>",
+            headers={"ETag": "etag-1"},
+        )
+    )
+    return mock_hmc.post(path).mock(
+        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
+    )
+
+
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     """hmc_map_storage_to_lpar maps the default VirtualDisk storage_kind."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
-    )
+    route = _mapping_routes(mock_hmc)
     hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID)
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIMapping" in body
@@ -397,9 +412,7 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
 def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
     """PhysicalVolume storage_kind uses VolumeName and emits TargetDevice."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
-    )
+    route = _mapping_routes(mock_hmc)
     hmc_map_storage_to_lpar(
         VIOS_UUID,
         "hdisk5",

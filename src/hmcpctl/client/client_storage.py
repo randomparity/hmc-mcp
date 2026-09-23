@@ -218,6 +218,82 @@ def _disks_named(disks: ET.Element, disk_name: str) -> list[ET.Element]:
     ]
 
 
+async def _append_vios_mapping(
+    client: StorageClient,
+    operation: str,
+    path: str,
+    uuid_path_arguments: Mapping[str, str],
+    mapping_document: str,
+) -> str:
+    """Add one mapping by read-modify-write of the VIOS ``ViosSCSIMapping`` group.
+
+    The fetched mappings are posted back unchanged beside the new one, under the
+    GET's ETag, so the create never replaces the VIOS's mapping set (ADR 0169).
+    """
+    vios_uuid = uuid_path_arguments["vios_uuid"]
+    got = await client._request_with_uuid_path_arguments(
+        "GET",
+        path,
+        uuid_path_arguments=uuid_path_arguments,
+        headers={"Accept": f"{_MEDIA_UOM}; type=VirtualIOServer"},
+    )
+    if got.status_code != 200:
+        raise HMCError(f"GET {path} failed", got.status_code, got.text)
+    etag = got.headers.get("ETag")
+    if not etag:
+        raise HMCError(
+            f"GET {path} returned no ETag; refusing {operation} without If-Match",
+            200,
+            got.text[:500],
+        )
+    ET.register_namespace("", _UOM_NS)
+    ET.register_namespace("atom", _ATOM_NS)
+    try:
+        vios_elem = _find_vios_element(DET.fromstring(got.text), vios_uuid)
+    except DET.ParseError as exc:
+        raise HMCError(f"GET {path} response is not valid XML", 200, got.text) from exc
+    mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
+    if mappings is None:
+        raise HMCError(
+            f"GET {path} returned no VirtualSCSIMappings; refusing {operation} "
+            "because the post could replace the VIOS mapping set. If the VIOS has "
+            "no mappings yet, create the first one on the VIOS (mkvdev) or in the "
+            "HMC GUI, then retry",
+            200,
+            got.text[:500],
+        )
+    mappings.append(
+        DET.fromstring(mapping_document).find(f".//{{{_UOM_NS}}}VirtualSCSIMapping")
+    )
+
+    async def dispatch() -> str:
+        response = await client._request_with_uuid_path_arguments(
+            "POST",
+            path,
+            uuid_path_arguments=uuid_path_arguments,
+            content=ET.tostring(vios_elem, encoding="unicode"),
+            headers={
+                "Accept": "*/*",
+                "Content-Type": f"{_MEDIA_UOM}; type=VirtualIOServer",
+                "If-Match": etag,
+            },
+        )
+        if response.status_code == 412:
+            raise HMCError(
+                f"{operation}: VIOS {vios_uuid} mappings changed since they were "
+                "read; nothing was written, re-run to retry",
+                412,
+                response.text,
+            )
+        if response.status_code not in (200, 201, 202):
+            raise HMCError(f"POST {path} failed", response.status_code, response.text)
+        return response.text
+
+    return await client._reconcile_storage_mutation(
+        operation, lambda: client.list_storage_mappings(vios_uuid), dispatch
+    )
+
+
 class StorageMixin:
     async def _broker_file_create(
         self: StorageClient, vios_uuid: str, vg_uuid: str, filename: str
@@ -470,27 +546,18 @@ class StorageMixin:
         storage_kind is "PhysicalVolume" (whole hdisk) or "VirtualDisk" (a
         logical volume created with create_virtual_disk). storage_name is the
         device or disk name. lpar_uuid is the client partition to attach to.
-
-        Omits X-HMC-Schema-Version for the same reason as the VolumeGroup
-        endpoints — the schema-version header causes HTTP 406 on some firmware.
+        The HMC creates the client/server adapter pair for the mapping, and the
+        VIOS's existing mappings are preserved (ADR 0169).
         """
 
         lpar_link = self.get_lpar_link(lpar_uuid)
         xml = build_vscsi_mapping_document(
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        resp = await self._reconcile_storage_mutation(
-            "map_storage_to_lpar",
-            lambda: self.list_storage_mappings(vios_uuid),
-            lambda: self._post(
-                path,
-                xml,
-                resource_type="VirtualIOServer",
-                include_schema_version=False,
-                uuid_path_arguments={"vios_uuid": vios_uuid},
-                fallback_to_generic_uom_on_406=True,
-            ),
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
+        resp = await _append_vios_mapping(
+            self, "map_storage_to_lpar", path, {"vios_uuid": vios_uuid}, xml
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -1086,18 +1153,10 @@ class StorageMixin:
             lpar_link,
             target_device=target_device,
         )
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        response = await self._reconcile_storage_mutation(
-            "create_optical_mapping",
-            lambda: self.list_storage_mappings(vios_uuid),
-            lambda: self._post(
-                path,
-                document,
-                resource_type="VirtualIOServer",
-                include_schema_version=False,
-                uuid_path_arguments={"vios_uuid": vios_uuid},
-                fallback_to_generic_uom_on_406=True,
-            ),
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
+        response = await _append_vios_mapping(
+            self, "create_optical_mapping", path, {"vios_uuid": vios_uuid}, document
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

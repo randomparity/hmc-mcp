@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from typing import Literal, get_args
 
 from ..xmlutil import ATOM_NS, escapes_string_arguments
@@ -7,6 +8,7 @@ from .common import UOM_NS, document_envelope
 
 StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
 STORAGE_KINDS = frozenset(get_args(StorageKind))
+VIRTUAL_DISK_NAME_MAX = 15
 
 
 @escapes_string_arguments
@@ -34,6 +36,12 @@ def build_virtual_disk_element(disk_name: str, capacity_mib: int) -> str:
 
     V10R3 rejects ``kb`` on VirtualDisk and requires DiskCapacity (GiB) before DiskName.
     """
+    name_length = len(html.unescape(disk_name))  # the decorator escaped disk_name
+    if name_length > VIRTUAL_DISK_NAME_MAX:
+        raise ValueError(
+            f"disk_name is {name_length} characters; the VIOS limits "
+            f"backing-device names to {VIRTUAL_DISK_NAME_MAX} characters"
+        )
     if capacity_mib <= 0 or capacity_mib % 1024:
         raise ValueError("capacity_mib must be a positive multiple of 1024")
     capacity_gib = capacity_mib // 1024
@@ -93,7 +101,10 @@ def build_vscsi_mapping_document(
     lpar_link: str,
     target_device: str | None = None,
 ) -> str:
-    """A VirtualIOServer document carrying a VirtualSCSIMapping (for POST).
+    """A VirtualIOServer document carrying the one new VirtualSCSIMapping.
+
+    The client appends that mapping to the VIOS's fetched mapping group before
+    posting, never this sparse document itself (ADR 0169).
 
     storage_kind is "PhysicalVolume" (whole disk) or "VirtualDisk" (a logical
     volume from a VG). storage_name is the device/disk name (e.g. hdisk5 or
@@ -123,7 +134,10 @@ def build_virtual_optical_mapping_document(
     lpar_link: str,
     target_device: str | None = None,
 ) -> str:
-    """A VirtualIOServer document carrying a VirtualSCSIMapping for optical media (for POST).
+    """A VirtualIOServer document carrying one new optical-media VirtualSCSIMapping.
+
+    Like build_vscsi_mapping_document, the client appends the mapping to the
+    VIOS's fetched mapping group rather than posting this document (ADR 0169).
 
     media_name is the MediaName of the VirtualOpticalMedia (ISO container) to mount.
     lpar_link is the Atom SELF href of the client LPAR the optical media is mapped to.
