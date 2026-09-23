@@ -87,24 +87,23 @@ never part of the replayable profile configuration.
 # 1. create the partition
 hmcpctl lpars create web01 --system <sys-uuid> --mem 8192 --vcpus 2 --procs 0.2
 
-# 2. give it a vSCSI adapter paired to the VIOS (find IDs via `vios list`)
-hmcpctl adapters add-vscsi web01 --vios-id 1 --vios-slot 5
-
-# 3. carve a virtual disk out of a VIOS volume group
+# 2. carve a virtual disk out of a VIOS volume group
 hmcpctl storage list-vgs <vios-uuid>                       # find the VG + free space
 hmcpctl storage create-disk <vios-uuid> --vg <vg-uuid> --name web01_root --capacity-mib 51200
 
-# 4. map the disk to the partition
+# 3. map the disk to the partition (the HMC creates the vSCSI adapter pair)
 hmcpctl storage map <vios-uuid> --lpar web01 --disk web01_root
 
-# 5. (optionally) network + power on
+# 4. (optionally) network + power on
 hmcpctl adapters add-network web01 --vlan 100
 hmcpctl lpars power-on web01
 ```
 
-> **Note on the storage model**: an LPAR's vSCSI/vFC *adapter* (added with
-> `adapters add-vscsi` / `add-vfc`) is just plumbing — it pairs the partition
-> with a VIOS server slot. The actual *disk* lives on the VIOS or in a Shared
+> **Note on the storage model**: an LPAR's vSCSI/vFC *adapter* is just
+> plumbing — it pairs the partition with a VIOS server slot. `storage map`
+> creates its own vSCSI client/server adapter pair, so do not run
+> `adapters add-vscsi` first; an adapter added that way is left unpaired. The
+> actual *disk* lives on the VIOS or in a Shared
 > Storage Pool: carve it out of a Volume Group (`storage create-disk`) or a
 > Cluster/SSP (`cluster create-lu`), then connect it with a mapping
 > (`storage map`). Both the VIOS **Volume Group / Virtual Disk** model and the
