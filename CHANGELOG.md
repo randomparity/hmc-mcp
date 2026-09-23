@@ -180,6 +180,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   readable; every multi-label name, and any name ending in a real TLD such as `.py` or `.md`,
   is still redacted (#914).
 
+- The live-test runner's failure redactor now replaces a hostname whose labels contain an
+  underscore in full. `lab_hmc01.example.com` was printed as `lab_hmc01.<REDACTED-HOST>`,
+  leaving the label that names the machine readable (#927). Dotted identifiers containing an
+  underscore, such as a module path or `test_live_runner.py`, are now redacted too.
+
 - The live-test dedicated PCIe arm no longer takes a single HSCL8012 ("partition not found")
   after a failed create as proof that nothing was created. It re-reads once after a short delay
   and confirms absence only on a second HSCL8012, so a partition whose create was still in
@@ -200,6 +205,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   unowned in inventory and listed by no profile, read with the admitted profile table, and
   SKIPs with the reason when none qualifies or the table cannot be read. Preflight predicts the
   same rule (#916).
+
+- The live-test dedicated PCIe arm's admitted-environment gate (ST29) no longer matches the
+  HMC release by substring. It now uses the product's exact `lshmc -V` Version, Release and
+  Service Pack comparison (ADR 0166), so a later service pack such as `10600`, or one whose
+  output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
+  on an environment the repository does not admit (#928).
 
 ### Changed
 
