@@ -251,7 +251,7 @@ async def _append_vios_mapping(
             )
         if response.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", response.status_code, response.text)
-        return str(response.text)
+        return response.text
 
     return await client._reconcile_storage_mutation(
         operation, lambda: client.list_storage_mappings(vios_uuid), dispatch
