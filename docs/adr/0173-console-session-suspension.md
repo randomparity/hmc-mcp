@@ -39,9 +39,12 @@ released.
    issues no `rmvterm`, because the slot may now belong to the external holder (ADR 0172 rule
    3), and returns the proof from `suspend()`. `suspend()` runs to completion when its caller
    is cancelled, as `close()` does. Cancellation during `resume()` after acquisition releases
-   the new hold before `CancelledError` propagates, as `open()` does. `close()` raises
-   `RuntimeError` while `open()`, `suspend()` or `resume()` is in flight. A collector that
-   waits through a pause when `close()` starts gets `b""`.
+   the new hold before `CancelledError` propagates, as `open()` does. The preempting holder
+   usually runs in a different task from the session's owner, so `close()` during `suspend()`
+   or `resume()` is not refused. It waits for the transition and then tears down: it releases
+   a hold that `resume()` acquired, and `resume()` then raises `RuntimeError`. `close()` still
+   raises `RuntimeError` during `open()` (ADR 0170 rule 1). A collector that waits through a
+   pause when `close()` starts gets `b""`.
 4. **Bounded capture does not change.** `capture_lpar_console` uses neither mode.
 
 ## Consequences
@@ -67,5 +70,11 @@ released.
   rebuild its iterator and state, and #976 asks for resume on the same session.
 - **The collector's `read()` raises while paused.** judgment: complexity. Every collector would
   need a retry loop, and its own read timeout already bounds the wait.
+- **Do nothing: the caller closes the session and opens a new one, and #958 builds its own
+  session.** judgment: fit. The close-to-open gap is the one mode (a) exists to remove (P3),
+  and #976 asks for resume on the same session.
+- **A cooperative handover that waits for the collector's pending read to return.**
+  judgment: a silent console never returns that read (P8), so the preempting hold would wait
+  for an unbounded time. Cancelling the pending read is what makes the handover immediate.
 - **`resume()` honours `take_over`.** judgment: it would end the holder the session made way
   for, and ADR 0172 rule 3 limits `rmvterm` of an unproven hold to an explicit request at open.

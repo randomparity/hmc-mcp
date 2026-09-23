@@ -20,14 +20,17 @@ All code changes are in `src/hmcpctl/ssh/console.py`:
 - Channel ownership. `_owner` is the session itself (collecting), a `ConsoleHandover`, or
   `None`. `_collecting` is an `asyncio.Event` that is set only while the session owns the
   channel. `_read_for(owner)` makes every stream read a tracked task. `_give_channel(owner)`
-  cancels an in-flight read that belongs to someone else. A read cancelled this way returns
-  `None` to its reader, which then waits (collector) or raises (handover). A read cancelled
-  because its own task was cancelled (`Task.cancelling() > 0`) re-raises `CancelledError`.
+  cancels the in-flight read. A cancelled read re-raises `CancelledError` only when its own
+  task is being cancelled (`Task.cancelling() > 0`). Otherwise it returns `None`, and the
+  reader re-checks ownership: the collector waits or reads again, and a handover raises once it
+  has ended.
 - States gain `"suspending"`, `"suspended"` and `"resuming"`. `open()` and `resume()` share one
   `_acquire(fallback, take_over)` helper. `suspend()` and `close()` share `_release_hold()` and
   `_await_uninterrupted(task)`, which is the shield loop taken out of `close()`.
 - `close()` of a suspended session returns the stored `suspend()` proof and issues no `rmvterm`.
-  `close()` raises `RuntimeError` while opening, suspending or resuming. `close()` sets
+  `close()` during `suspend()` or `resume()` waits on a `_settled` event, which the transition
+  sets when it ends, and then tears down whatever state the transition left. `resume()` raises
+  `RuntimeError` if `close()` began while it ran. `close()` still refuses `"opening"`. It sets
   `_collecting` so that a waiting collector returns `b""`.
 - Docstrings for the module, the session and the new methods, plus a `CHANGELOG.md` "Added"
   entry.
@@ -52,6 +55,9 @@ All code changes are in `src/hmcpctl/ssh/console.py`:
    - A task that swallowed its own cancellation without `uncancel()` keeps `cancelling() > 0`,
      so a preempted read in that task re-raises `CancelledError`. The misuse is the caller's.
    - Multi-threaded use is outside the model, because the session is single-loop asyncio.
+   - "No byte dropped" rests on asyncssh 2.x `SSHStreamSession.read`, which blocks only before
+     consuming data (verified in 2.24.0). The fakes cannot model that, so a bump of the
+     `asyncssh>=2.24,<3` range is checked against the source.
 4. Covered elsewhere: reconnect while paused (#977), writes and raw mode (#958), live proof
    (#879), and lost-hold detection in a held session (ADR 0172 Consequences, #879).
 
@@ -70,20 +76,24 @@ Threat model: no new boundary. `suspend()` and `resume()` reuse the existing `rm
    and `suspend()` need a held session with no active pause, and `resume()` needs a suspended
    session.
 3. Mode (b): `suspend()` returns `True` after `rmvterm` and a clean probe. `resume()` then
-   acquires on a new connection, and the collector continues with the new banner.
+   acquires on a new connection. A collector `read()` that was pending across both calls returns
+   the new banner.
 4. `resume()` against a held slot raises `ConsoleHeldError`, issues no `rmvterm`, and leaves
-   the session suspended. A later `close()` issues no `rmvterm` and returns the `suspend()`
-   proof.
+   the session suspended. A later `close()` issues no `rmvterm`, returns the `suspend()` proof,
+   and makes a waiting collector `read()` return `b""`.
 5. Cancellation while paused: cancelling the owner inside a handover releases on `close()`.
    Cancelling a `suspend()` caller still completes the release. `CancelledError` then
-   propagates, and `close()` issues no second `rmvterm`.
-6. Bounded capture tests pass unchanged.
+   propagates, and `close()` issues no second `rmvterm`. A `close()` from another task during
+   `resume()` releases the hold that `resume()` acquired.
+6. A handover that exits without yielding leaves the collector's pending read to return the next
+   chunk, not `CancelledError`.
+7. Bounded capture tests pass unchanged.
 
 ## Validation
 
-Items 1-5 each have a `focused-test` in the session section of
+Items 1-6 each have a `focused-test` in the session section of
 `tests/unit/test_console_capture.py`, using its `FakeConnection`, `FakeProcess` and
-`_session_patches` fakes. Item 6 is the existing capture tests. The command is
+`_session_patches` fakes. Item 7 is the existing capture tests. The command is
 `uv run --no-sync pytest tests/unit/test_console_capture.py`.
 The CHANGELOG and docstrings are `task-test-not-applicable`: they are prose, and no executable
 consumer reads them.
