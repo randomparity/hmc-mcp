@@ -170,6 +170,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- The distribution, console script, Python package and configuration directory are renamed
+  from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now
+  `hmcpctl.api`, `import hmc_mcp` fails, and the former configuration directory is not read.
+  Data the former tool wrote keeps its old name and is no longer recognised: a
+  `[hmc-mcp owner:…]` stamp reads as unowned, an `hmc-mcp.lpar-snapshot` is refused, and
+  `X-Audit-Memento` is now `hmcpctl:<agent_id>`. The
+  [cutover guide](docs/configuration.md#clean-cutover-from-the-former-name) moves the
+  configuration and lists what to do about each (ADR 0167, #898).
+
 - `assign_dedicated_pcie_slot`, `unassign_dedicated_pcie_slot` (`hmc_assign_dedicated_pcie_slot`,
   `hmc_unassign_dedicated_pcie_slot`) and create-time or modify-time `assignments.dedicated` now
   change the profile on HMC V10R3 M1060 with managed-system model 8375-42A. They write the
@@ -971,19 +980,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [0.1.0] - 2026-08-22
 
-Initial supported Python API surface per ADR 0029: the reusable facade at `hmcpctl.api`, its
+Initial supported Python API surface per ADR 0029: the reusable facade at `hmc_mcp.api`, its
 frozen export set (`tests/unit/test_public_api.py::test_public_api_manifest_is_frozen`) and its
 frozen signature digest
 (`tests/unit/test_public_api.py::test_public_operations_are_async_and_signatures_are_frozen`).
 
 ### Added
 
-- MCP server and CLI for the IBM HMC REST API, the `hmcpctl.api` supported facade, and the
+- MCP server and CLI for the IBM HMC REST API, the `hmc_mcp.api` supported facade, and the
   ownership-stamp workflow operations.
 
 ### Facade manifest
 
-Initial manifest of `hmcpctl.api.__all__` (127 exports). This enumeration is the boundary the
+Initial manifest of `hmc_mcp.api.__all__` (127 exports). This enumeration is the boundary the
 `[Unreleased]` manifest's delta is derived against, so it names the 0.1.0 export set and nothing
 added afterwards; every later addition is recorded above.
 

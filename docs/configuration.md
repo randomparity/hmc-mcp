@@ -11,24 +11,40 @@ Configuration priority (highest to lowest): **CLI flags > `HMC_*` env vars > TOM
 This pre-release changes the distribution, command, Python package, and configuration
 directory from `hmc-mcp`/`hmc_mcp` to `hmcpctl`. There is no compatibility alias or
 configuration fallback. Stop every old CLI or MCP server process before moving the directory.
-Each transaction below refuses to merge into an existing destination.
+Each transaction below refuses to merge into an existing destination. The shell snippets run in
+a subshell, so a refusal stops the snippet without closing your terminal.
+
+The cutover also drops the old names from data the former tool wrote (ADR 0167):
+
+- **Ownership stamps.** A partition whose description begins `[hmc-mcp owner:` reads as
+  unowned, so ownership no longer protects it from another agent. Before upgrading, find these
+  partitions with `hmc_list_lpar_ownership` (they appear as `owned: false, unparsed: true`)
+  and delete them or restamp them by hand.
+- **Snapshots.** A saved snapshot of format `hmc-mcp.lpar-snapshot` is refused. Recapture it
+  with `hmc_snapshot_capture`.
+- **Audit records.** `X-Audit-Memento` changes from `hmc-mcp:<agent_id>` to
+  `hmcpctl:<agent_id>`; an HMC-side audit query spanning the upgrade must match both prefixes.
 
 On Linux (including a custom `XDG_CONFIG_HOME`):
 
 ```bash
+(
 old_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hmc-mcp"
 new_dir="${XDG_CONFIG_HOME:-$HOME/.config}/hmcpctl"
 if [ -e "$new_dir" ]; then echo "refusing existing destination: $new_dir" >&2; exit 1; fi
 if [ -d "$old_dir" ]; then mv -- "$old_dir" "$new_dir"; fi
+)
 ```
 
 On macOS:
 
 ```bash
+(
 old_dir="$HOME/Library/Application Support/hmc-mcp"
 new_dir="$HOME/Library/Application Support/hmcpctl"
 if [ -e "$new_dir" ]; then echo "refusing existing destination: $new_dir" >&2; exit 1; fi
 if [ -d "$old_dir" ]; then mv -- "$old_dir" "$new_dir"; fi
+)
 ```
 
 On Windows PowerShell:
@@ -45,6 +61,7 @@ if (Test-Path -LiteralPath $oldDir -PathType Container) {
 Then remove the former tool and install this checkout explicitly:
 
 ```bash
+(
 uv tool uninstall hmc-mcp
 cd /absolute/path/to/hmcpctl-checkout
 uv tool install --python 3.11 '.[app]'
@@ -52,6 +69,7 @@ hmcpctl --help
 hmcpctl config show
 test -f "${XDG_CONFIG_HOME:-$HOME/.config}/hmcpctl/access-policy.toml"  # Linux
 if command -v hmc-mcp >/dev/null 2>&1; then echo "old command remains on PATH" >&2; exit 1; fi
+)
 ```
 
 For macOS, check `$HOME/Library/Application Support/hmcpctl/access-policy.toml` instead.
