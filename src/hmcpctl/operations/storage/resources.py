@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from hmcpctl.client.client_storage import lpar_uuid_from_href, storage_mapping_id
+from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
@@ -164,7 +164,7 @@ def _storage_mapping(entry: Mapping[str, Any]) -> StorageMapping:
     operation = "list_storage_mappings"
     resource = _resource(entry, operation)
     mapping_id = storage_mapping_id(resource)
-    lpar_uuid = _mapping_lpar_uuid(resource)
+    lpar_uuid = mapping_lpar_uuid(resource)
     storage = resource.get("Storage")
     backing = storage if isinstance(storage, Mapping) else {}
     for kind in ("VirtualDisk", "PhysicalVolume", "VirtualOpticalMedia"):
@@ -175,13 +175,6 @@ def _storage_mapping(entry: Mapping[str, Any]) -> StorageMapping:
                 mapping_id, lpar_uuid, kind, name if isinstance(name, str) else None
             )
     return StorageMapping(mapping_id, lpar_uuid, None, None)
-
-
-def _mapping_lpar_uuid(mapping: Mapping[str, Any]) -> str | None:
-    associated = mapping.get("AssociatedLogicalPartition")
-    return lpar_uuid_from_href(
-        associated.get("href") if isinstance(associated, Mapping) else None
-    )
 
 
 # HTTP download configuration
@@ -453,7 +446,7 @@ async def detach_storage_mapping(
         raise ValueError(
             f"Storage mapping {mapping_id!r} is ambiguous on VIOS {vios_name_or_uuid!r}"
         )
-    lpar_uuid = _mapping_lpar_uuid(matches[0])
+    lpar_uuid = mapping_lpar_uuid(matches[0])
     if lpar_uuid is None:
         raise ValueError(
             f"Storage mapping {mapping_id!r} does not identify its client LPAR"

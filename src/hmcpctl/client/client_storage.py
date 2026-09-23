@@ -170,10 +170,16 @@ def _filter_optical_mappings(
     return [mapping for mapping in optical if _mapping_targets_lpar(mapping, lpar_uuid)]
 
 
-def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
+def mapping_lpar_uuid(mapping: Mapping[str, Any]) -> str | None:
+    """Return the client-LPAR UUID a parsed VirtualSCSIMapping links to, or None."""
     partition = mapping.get("AssociatedLogicalPartition")
-    href = partition.get("href") if isinstance(partition, Mapping) else None
-    return lpar_uuid_from_href(href) == lpar_uuid
+    return lpar_uuid_from_href(
+        partition.get("href") if isinstance(partition, Mapping) else None
+    )
+
+
+def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
+    return mapping_lpar_uuid(mapping) == lpar_uuid
 
 
 class StorageMixin:
