@@ -305,7 +305,9 @@ def _require_units_for_vcpus(
         )
 
 
-def _require_max_units_fit_vcpus(max_units: float | None, computed_max: float, max_vcpus: int) -> None:
+def _require_max_units_fit_vcpus(
+    max_units: float | None, computed_max: float, max_vcpus: int
+) -> None:
     """Refuse a guessed ``max_proc_units`` default a virtual processor cannot use.
 
     A virtual processor can use at most 1.0 processing unit, so
