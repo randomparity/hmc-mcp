@@ -221,8 +221,9 @@ hmcpctl storage get-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
 **Creating a repository is blocked by #963.** The HMC's `RepositorySize` is in GiB, but
 `create-media-repo` sends the `--size-mib` value unconverted, so the command below asks for a
 20 TiB repository today. Its confirmation prompt still says MiB. Until #963 lands, use a VIOS
-that already has a repository, or create one outside `hmcpctl`. The command shows the value that
-is correct once #963 lands. It carries no `--yes`, so it prompts: do not confirm it until
+that already has a repository, or create one outside `hmcpctl`. The command below means a
+20 GiB repository (20480 MiB). #963 decides whether the option stays in MiB or changes unit;
+use the unit it ships. The command carries no `--yes`, so it prompts: do not confirm it until
 #963 lands.
 
 ```bash

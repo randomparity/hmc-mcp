@@ -188,9 +188,10 @@ capture resolver to match that run. Product fixes stay with their issues.
   `lpars get-description` prints a blank line (#965).
 - Constraints seen live are stated where they apply: virtual-disk names of at most 15 characters
   (#964) and media names matching `[A-Za-z0-9_.]`.
-- `create-media-repo` is marked blocked by #963 and keeps the value that is correct once #963
-  lands. The recipe states what the command does today but documents no workaround value as
-  correct: a value that is right today would be 1024 times too small after the fix.
+- `create-media-repo` is marked blocked by #963. The recipe states what the command does today
+  and the size it means (20 GiB), and documents no workaround value as correct: a value that
+  is right today would be wrong once #963 converts or renames the option. The command carries no
+  `--yes`, so it prompts.
 - Cleanup records the observation that `lpars delete` removed the partition and its VIOS server
   adapter.
 
