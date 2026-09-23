@@ -109,17 +109,24 @@ reassign, cleanup and every read keep the ADR 0163 escape-hatch grammar.
   that changes the profile. Its advice follows what the readback shows for this operation's
   DRC. A readback that could not be read or parsed gets "inspect it and make any reversal
   through the HMC UI". A DRC that reads back in its before state gets "no reversal is
-  needed". Anything else gets "compare the read value with the before value and make any
-  reversal through the HMC UI". No `<drc>//0` reversal is offered because concurrent writers
+  needed". A DRC that reads back in the requested state (absent after an unassign,
+  `drc/none/0` after an assign) gets "the difference is elsewhere in the profile: compare,
+  make any reversal of the other slots through the HMC UI, and do not undo this slot" (#905),
+  unless another LPAR's profile also lists the slot after an assign. That case, and anything
+  else, gets "compare the read value with the before value and make any reversal through the
+  HMC UI". No `<drc>//0` reversal is offered because concurrent writers
   can change the profile between the readback and the operator's action: #882's first two
   review rounds each found a state in which the offered command was unsafe (an add-back
   beside a slot never removed, and an add-back after another LPAR listed the slot), and the
   UI is where the operator sees the state they act on. The error never tells the operator to
-  paste the read rendering back as `io_slots=` input. The post-write holder check runs only
-  after an assign, so only an assign's error can name another LPAR whose profile lists the
-  slot; when it does, it says not to edit that profile without its owner, because the tool
-  did not write it and ADR 0011 does not authorize it. The tool cannot undo a change it
-  cannot verify. ADR 0165's VIOS-only and populated-profile byte-stability limits also stand. Decision 2 tolerates reordering and refuses re-rendering.
+  paste the read rendering back as `io_slots=` input. The post-write holder check gates
+  success only after an assign. After an unverified unassign the same lookup runs for the
+  advice alone, so a landed unassign never fails on what another profile lists, and a
+  profile the lookup cannot parse is reported rather than replacing the error. When either
+  error names another LPAR whose profile lists the slot, it says not to edit that profile
+  without its owner, because the tool did not write it and ADR 0011 does not authorize it.
+  The tool cannot undo a change it cannot verify. ADR 0165's VIOS-only and populated-profile
+  byte-stability limits also stand. Decision 2 tolerates reordering and refuses re-rendering.
 - **Some refusals come after earlier workflow legs commit.** Create, provision and modify
   prevalidate only the selectors and the envelope. The LPAR-state, holder, profile and
   other-form refusals run in the dedicated step, after the partition is created or the earlier

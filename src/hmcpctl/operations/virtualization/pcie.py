@@ -395,12 +395,14 @@ async def _verify_dedicated_change(
     """Classify a dispatched change by what the profile reads back as.
 
     An assign is also re-checked for another LPAR listing the slot, since a
-    concurrent assign elsewhere passes the pre-write holder check too.
+    concurrent assign elsewhere passes the pre-write holder check too. An
+    unverified unassign looks holders up for its advice only (#905).
     """
     after_text: str | None = None
     after: dict[str, ProfileIoSlot] | None = None
     read_error: Exception | None = None
     holders: list[str] = []
+    holder_error: HMCCLIError | None = None
     try:
         rows = await read_profile_io_slot_rows(target.config, target.system_name)
         after_text = _select_profile_io_slots(rows, target.lpar_name, target.profile_name)
@@ -413,9 +415,11 @@ async def _verify_dedicated_change(
             return
         if error is not None and after == before:
             raise error
+        if not add:
+            holders, holder_error = _holders_for_advice(target, rows)
     cause = error or read_error
     reasons = [str(cause)] if cause is not None else []
-    if holders:
+    if add and holders:
         reasons.append(f"slot is also listed by a profile of LPAR {', '.join(holders)}")
     operation = "assignment" if add else "unassignment"
     raise PcieAssignmentPartialError(
@@ -424,19 +428,35 @@ async def _verify_dedicated_change(
         f"after={after_text!r}. The write may have run, so the profile may hold the change, "
         "none of it, or a form this operation refuses. Read it with `lssyscfg -r prof -m "
         f"{shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header`. "
-        f"{_recovery_advice(target, after, add=add)} Never write the read value back as "
-        "`io_slots=` input: that rendering is not established as valid input (ADR 0166)."
-        f"{_holder_advice(holders)}"
+        f"{_recovery_advice(target, after, holders, add=add)} Never write the read value "
+        "back as `io_slots=` input: that rendering is not established as valid input "
+        f"(ADR 0166).{_holder_advice(holders, holder_error)}"
     ) from cause
 
 
+def _holders_for_advice(
+    target: _DedicatedProfileTarget, profile_rows: list[dict[str, str]]
+) -> tuple[list[str], HMCCLIError | None]:
+    """Name other holders for the advice without letting a bad row replace the error."""
+    try:
+        return _other_holders(target, profile_rows), None
+    except HMCCLIError as caught:
+        return [], caught
+
+
 def _recovery_advice(
-    target: _DedicatedProfileTarget, after: dict[str, ProfileIoSlot] | None, *, add: bool
+    target: _DedicatedProfileTarget,
+    after: dict[str, ProfileIoSlot] | None,
+    holders: list[str],
+    *,
+    add: bool,
 ) -> str:
     """Advise from what the readback shows, naming no command that changes the profile.
 
     A named reversal was wrong in some concurrent state each time one was offered
-    (#882 review rounds 1 and 2), so every reversal goes through the HMC UI.
+    (#882 review rounds 1 and 2), so every reversal goes through the HMC UI. A slot
+    read as requested is not to be undone (#905), except beside another holder after
+    an assign, where the two profiles now contend for it.
     """
     drc_index = target.drc_index
     where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
@@ -449,14 +469,26 @@ def _recovery_advice(
     if after.get(drc_index) == (None if add else written):
         rendering = "absent" if add else f"{drc_index}/none/0"
         return f"The readback lists {where} as before ({rendering}), so no reversal is needed."
+    if after.get(drc_index) == (written if add else None) and not (add and holders):
+        rendering = f"{drc_index}/none/0" if add else "absent"
+        return (
+            f"The readback lists {where} as requested ({rendering}), so the difference is "
+            "elsewhere in the profile: compare the read value with the before value, make any "
+            f"reversal of the other slots through the HMC UI, and do not undo slot {drc_index}."
+        )
     return (
         "Compare the read value with the before value, and make any reversal of "
         f"{where} through the HMC UI."
     )
 
 
-def _holder_advice(holders: list[str]) -> str:
+def _holder_advice(holders: list[str], holder_error: HMCCLIError | None) -> str:
     """Name another LPAR listing the slot, whose profile ADR 0011 does not authorize."""
+    if holder_error is not None:
+        return (
+            " Whether another LPAR's profile lists the slot could not be read "
+            f"({holder_error}); check that in the HMC UI."
+        )
     if not holders:
         return ""
     return (
