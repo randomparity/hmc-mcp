@@ -48,6 +48,7 @@ cleanup (does not attempt additional mutations on an unknown state).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import shlex
 import sys
@@ -1096,20 +1097,23 @@ async def _auto_select_slot(
         "hmc_run_command",
         cmd=profile_io_slot_rows_command(arm.system_name),
     )
-    try:
-        if st != "PASS" or not isinstance(data, str):
-            # The message only: a CallFailure's repr carries its traceback,
-            # whose host paths a note would write into the results file unredacted.
-            detail = data.message if isinstance(data, CallFailure) else repr(data)[:400]
-            raise HMCCLIError(f"profile io_slots read returned {st}: {detail}")
-        profile_rows = parse_profile_io_slot_rows(data)
-    except HMCCLIError as error:
-        state.skip(
+    profile_rows = None
+    if st == "PASS" and isinstance(data, str):
+        with contextlib.suppress(HMCCLIError):
+            profile_rows = parse_profile_io_slot_rows(data)
+    if profile_rows is None:
+        # The failure rides as `data`, never in the note: `record` redacts the
+        # data it persists and writes the note verbatim, and a transport error
+        # names the HMC host.
+        state.record(
             29,
             "dedicated slot selection",
-            f"could not read the partition profiles on {arm.system_name!r} ({error}); "
-            "without them no unowned slot can be shown to be listed by no profile, "
-            "and assigning a listed one is refused — SKIP dedicated arm",
+            "SKIP",
+            data,
+            f"could not read the partition profiles on {arm.system_name!r} in the "
+            "ADR 0165-admitted form; without them no unowned slot can be shown to "
+            "be listed by no profile, and assigning a listed one is refused — "
+            "SKIP dedicated arm",
         )
         return None
     eligible = [
