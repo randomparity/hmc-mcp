@@ -29,8 +29,8 @@ without a UUID, it clears both fields, SKIPs each name in `dependents`, and retu
 Free space is `int(gib * 1024)`, or `None` when the field is absent or unparsable.
 
 **Trust.** `storage.configured_vg_uuid(state)` returns `vg_uuid` only when `vdisk_vg_name`
-equals the configured name, and `None` otherwise. Only the resolver writes that pair, so a
-restored document from before this change is never trusted.
+equals the configured name, and `None` otherwise. A restored document is trusted only when
+its recorded name equals the configured name.
 
 **Call sites.**
 
