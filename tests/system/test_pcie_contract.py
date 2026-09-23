@@ -356,8 +356,13 @@ def test_captured_io_slots_parse_with_a_none_pool() -> None:
     assert {slot.pool_id for slots in parsed for slot in slots} == {None}
 
 
-def test_captured_hmc_version_is_the_exact_dedicated_envelope() -> None:
-    record = json.loads((FIXTURES / "power9-v10r3m1060-live-ioslots.json").read_text())
+# The vnic capture carries no `hmc-version` probe, so it has nothing to check here.
+@pytest.mark.parametrize(
+    "fixture",
+    ["power9-v10r3m1060-live-ioslots.json", "power9-v10r3m1060-live-sriov.json"],
+)
+def test_captured_hmc_version_is_the_exact_admitted_envelope(fixture: str) -> None:
+    record = json.loads((FIXTURES / fixture).read_text())
     probes = {probe["name"]: probe for probe in record["probes"]}
 
     assert _is_exact_admitted_environment(
