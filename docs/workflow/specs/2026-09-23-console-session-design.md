@@ -27,11 +27,12 @@ In `src/hmcpctl/ssh/console.py`:
   terminal, and `close()` during an in-flight `open()` raises `RuntimeError` (rule 1).
 - Rebuild `capture_lpar_console` as `async with ConsoleSession(...)` around
   `_collect_output(session, ...)`. `_collect_output` reads through `session.read()` and
-  keeps its outcomes. After the block, the existing whole-buffer `HELD_SENTINEL` check raises
-  `ConsoleHeldError` with today's message. `released` comes from `session.released is True`.
-  The signature, `ConsoleCapture`, error types and messages, and the MCP tool are unchanged.
-- Intentional capture differences, both ADR 0170 consequences: a late sentinel now releases
-  the proven hold (`rmvterm` plus probe) before `ConsoleHeldError`; cancellation during the
+  keeps its outcomes. Inside the block, the existing whole-buffer `HELD_SENTINEL` check calls
+  the private `session._disown()` (the session then owes no release) and raises
+  `ConsoleHeldError` with today's message, so no `rmvterm` runs, as today. `released` comes
+  from `session.released is True`. The signature, `ConsoleCapture`, error types and
+  messages, and the MCP tool are unchanged.
+- One capture difference conforms to ADR 0072's documented rule: cancellation during the
   final release raises `CancelledError` after the release instead of returning a result.
 - Update the module docstring's opening paragraph to name the session as the hold owner.
 - ADR 0170, and one `CHANGELOG.md` "Added" entry (repository convention for a new domain API).
@@ -55,8 +56,8 @@ No change to `hmcpctl.api`, the MCP or CLI surfaces, the transport, or the bound
      stopped loop, an unclosed session). They cannot be handled in-process, and the next
      `open()` reports them as `ConsoleHeldError`.
    - Console text that quotes the contention sentence makes a bounded capture raise
-     `ConsoleHeldError` after releasing (ADR 0072 assumption 2, kept by #974's criterion 6).
-     A session treats it as data.
+     `ConsoleHeldError` without release, leaking its own hold (ADR 0072 assumption 2, kept by
+     #974's criterion 6; #975 owns the rule). A session treats it as data.
    - Loop-wide shutdown or a second SIGINT during a release (ADR 0170 rule 6). No in-process
      remedy exists; rule 6 tells applications to close sessions before the loop ends.
    - Acquisition timeout without a sentinel leaves ownership unknown and issues no `rmvterm`.
@@ -90,7 +91,7 @@ No change to `hmcpctl.api`, the MCP or CLI surfaces, the transport, or the bound
    complete the release before `CancelledError` propagates. A repeated `close()` does not
    repeat the release.
 4. Contention at open raises `ConsoleHeldError` with no `rmvterm`. A session yields a later
-   sentinel as data. A capture that sees one raises `ConsoleHeldError` after its release.
+   sentinel as data. A capture that sees one raises `ConsoleHeldError` with no `rmvterm`.
 5. Every existing capture test passes. Seams are retargeted where a private helper was
    removed, and the `_release_uncancellable` cancellation test is replaced by a close test.
 6. The session exposes no public attribute named `write*` or `send*`.
@@ -105,8 +106,8 @@ command is `uv run --no-sync pytest tests/unit/test_console_capture.py -q`.
 | Uncapped stream, timed-out read keeps session (S1) | focused-test | `test_session_streams_past_capture_ceiling_and_releases` |
 | Unproven/contended/unopened close (S2) | focused-test | `test_session_close_reports_unproven_release`, `test_session_contention_at_open_never_releases` |
 | Cancellation and idempotent close (S3) | focused-test | `test_session_cancellation_releases_before_propagating`, `test_session_close_survives_cancellation_and_is_idempotent`, `test_session_close_propagates_cancelled_release` |
-| Late sentinel is data; capture releases then raises (S4) | focused-test | `test_session_yields_late_sentinel_as_data`, `test_contention_is_detected_when_it_arrives_midstream` (now asserts the release) |
-| Capture cancelled in final release (S3, difference 2) | focused-test | `test_capture_cancelled_during_release_raises_after_release` |
+| Late sentinel is data; capture releases then raises (S4) | focused-test | `test_session_yields_late_sentinel_as_data`, `test_contention_is_detected_when_it_arrives_midstream` (now also asserts no `rmvterm`) |
+| Capture cancelled in final release (S3, the one difference) | focused-test | `test_capture_cancelled_during_release_raises_after_release` |
 | Transport error leaves release owed (rule 3) | focused-test | `test_session_read_error_propagates_and_close_still_releases` |
 | Terminal close and misuse (rule 1, S2) | focused-test | `test_session_rejects_reopen_and_read_when_not_open`, `test_session_close_during_open_is_refused` |
 | Capture unchanged (S5) | focused-test | existing capture tests; `_release_uncancellable` seams retargeted to `_release_and_verify` |

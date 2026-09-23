@@ -70,9 +70,9 @@ iterator of raw `bytes` chunks. Its core rules:
 7. **Bounded capture is a consumer.** `capture_lpar_console` opens a session, reads until its
    three ADR 0072 bounds fire, and closes it. The module keeps one release path, and the
    capture's signature, result, error types, and MCP tool are unchanged. The capture keeps
-   its own whole-buffer check for the contention sentence and still raises
-   `ConsoleHeldError` for it (#974 keeps contention's error unchanged), now after the
-   session has released its proven hold.
+   its own whole-buffer check for the contention sentence. On a match it disowns the hold
+   through a module-private session hook, so `close()` issues no `rmvterm`, and raises
+   `ConsoleHeldError` exactly as before (#974 keeps contention's behavior unchanged).
 8. **Not a facade export.** The session is a pre-release domain-module API under ADR 0118.
    `hmcpctl.api` keeps its six names. #975-#977 and #958 still reshape the session, and a
    facade export would freeze it first.
@@ -83,11 +83,13 @@ iterator of raw `bytes` chunks. Its core rules:
   release path, so a later release fix reaches both.
 - A consumer that forgets `close()` leaks the vterm with no warning. The context manager is
   the documented use.
-- Two capture side effects change. When console text quotes the contention sentence, the
-  capture now releases its proven hold before raising `ConsoleHeldError`; before, it raised
-  without `rmvterm` and leaked that hold. Cancelling the capture during its final release
-  now raises `CancelledError` after the release instead of returning a result, which is ADR
-  0072's stated rule, "runs to completion before cancellation propagates".
+- The capture still skips `rmvterm` when console text quotes the contention sentence after
+  a proven acquisition, which leaks its own hold (ADR 0072 assumption 2). The session does
+  not inherit this; changing the capture's contention rule belongs to #975.
+- Cancelling the capture during its final release now raises `CancelledError` after the
+  release instead of returning a result. The old code swallowed that cancellation, against
+  ADR 0072's documented rule that the release "runs to completion before cancellation
+  propagates"; the session implements the documented rule.
 
 ## Considered & rejected
 
@@ -110,3 +112,5 @@ iterator of raw `bytes` chunks. Its core rules:
   (`src/hmcpctl/ssh/console.py:493-499` at main 80b8bb1d), and ADR 0072's P1 record shows the
   contention text in place of the banner. A later match is console content, so skipping
   release would leak the session's own hold and report it as another holder.
+- **Release first, then raise, in the capture's late-contention path.** judgment: it fixes
+  the capture's leak but changes a contention side effect #974 must keep; #975 owns it.
