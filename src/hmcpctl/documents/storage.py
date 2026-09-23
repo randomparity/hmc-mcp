@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from typing import Literal, get_args
 
 from ..xmlutil import ATOM_NS, escapes_string_arguments
@@ -7,6 +8,7 @@ from .common import UOM_NS, document_envelope
 
 StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
 STORAGE_KINDS = frozenset(get_args(StorageKind))
+VIRTUAL_DISK_NAME_MAX = 15
 
 
 @escapes_string_arguments
@@ -31,6 +33,12 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
 @escapes_string_arguments
 def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
+    name_length = len(html.unescape(disk_name))  # the decorator escaped disk_name
+    if name_length > VIRTUAL_DISK_NAME_MAX:
+        raise ValueError(
+            f"disk_name is {name_length} characters; the VIOS limits "
+            f"backing-device names to {VIRTUAL_DISK_NAME_MAX} characters"
+        )
     if capacity_mib <= 0 or capacity_mib % 1024:
         raise ValueError("capacity_mib must be a positive multiple of 1024")
     capacity_gib = capacity_mib // 1024
