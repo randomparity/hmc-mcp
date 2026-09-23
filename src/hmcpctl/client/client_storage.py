@@ -656,31 +656,20 @@ class StorageMixin:
         ET.register_namespace("atom", _ATOM_NS)
 
         root = DET.fromstring(raw)
-        # Firmware returns either an Atom-wrapped or bare VolumeGroup document.
+        # Firmware returns either an Atom-wrapped or bare VolumeGroup document. Only
+        # the root or an Atom content child is the group: each VirtualDisk carries a
+        # nested VolumeGroup link element that an unanchored search would select.
         ns = {"atom": _ATOM_NS, "uom": _UOM_NS}
-        # Explicit None checks: an Element with no children is falsy.
-        vg_elem = next(
-            (
-                found
-                for pattern in (
-                    ".//atom:entry/atom:content/uom:VolumeGroup",
-                    ".//uom:VolumeGroup",
-                    ".//VolumeGroup",
-                )
-                if (found := root.find(pattern, ns)) is not None
-            ),
-            None,
-        )
+        vg_elem = root if localname(root.tag) == "VolumeGroup" else None
+        for pattern in (".//atom:content/uom:VolumeGroup", ".//atom:content/VolumeGroup"):
+            if vg_elem is None:
+                vg_elem = root.find(pattern, ns)
         if vg_elem is None:
-            local = root.tag.split("}")[-1] if "}" in root.tag else root.tag
-            if local == "VolumeGroup":
-                vg_elem = root
-            else:
-                raise HMCError(
-                    f"GET {path} response contains no VolumeGroup element",
-                    200,
-                    raw[:500],
-                )
+            raise HMCError(
+                f"GET {path} response contains no VolumeGroup element",
+                200,
+                raw[:500],
+            )
         return resp.headers.get("ETag"), vg_elem
 
     async def _post_vg_xml(

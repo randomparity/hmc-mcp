@@ -220,3 +220,20 @@ async def test_create_reports_stale_etag(mock_hmc):
 
     assert exc_info.value.status_code == 412
     assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_on_a_bare_group_document_posts_the_whole_group(mock_hmc):
+    """A bare VolumeGroup root is the group, not the nested VolumeGroup link in a disk."""
+    fetched = _fetched().find(".//{http://www.w3.org/2005/Atom}content")[0]
+    bare = ET.tostring(fetched, encoding="unicode")
+    route = _routes(mock_hmc, feed=bare)
+
+    await _create()
+
+    posted = _posted(route)
+    assert localname(posted.tag) == "VolumeGroup" and "href" not in posted.attrib
+    assert _canonical(_named(posted, "PhysicalVolume")) == _canonical(
+        _named(fetched, "PhysicalVolume")
+    )
+    assert len(_named(posted, "VirtualDisk")) == 3
