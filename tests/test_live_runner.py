@@ -584,6 +584,58 @@ async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -
     assert state.calls[-1][1]["force"] is True
 
 
+class TestDescriptionBaselineRestore:
+    """#968: the ownership stamp survives ST10, or its loss fails the run."""
+
+    _STAMP = "[hmcpctl owner:hmcpctl created:2026-09-23]"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("terminator", ["\n", "\r\n"])
+    async def test_a_cli_line_terminator_is_not_part_of_the_restored_baseline(
+        self, terminator: str
+    ) -> None:
+        state = _ScriptedSriovState(
+            [
+                ("hmc_get_lpar", "PASS", {"uuid": "lp3-uuid"}),
+                ("hmc_lpar_summary", "PASS", {}),
+                ("hmc_get_lpar_description", "PASS", self._STAMP + terminator),
+                ("hmc_get_lpar_msp", "PASS", {}),
+                ("hmc_get_lpar_proc_compat", "PASS", {}),
+                ("hmc_set_lpar_description", "PASS", {}),
+            ]
+        )
+
+        await inventory._capture_lpar_properties(object(), state)
+        await lpar._restore_description(object(), state, 10)
+
+        assert state.artifacts.lp3_baseline["description"] == self._STAMP
+        assert state.calls[-1] == (
+            "hmc_set_lpar_description",
+            {
+                "system_name_or_uuid": state.config.system_name,
+                "lpar_name_or_uuid": state.config.lp3_name,
+                "description": self._STAMP,
+            },
+        )
+        assert state.results[-1]["status"] == "PASS"
+
+    @pytest.mark.asyncio
+    async def test_an_unrestorable_baseline_fails_with_a_manual_recovery_row(self) -> None:
+        state = _ScriptedSriovState([])
+        state.artifacts.lp3_baseline["description"] = "café stamp"
+
+        await lpar._restore_description(object(), state, 10)
+
+        assert state.calls == []
+        row = state.results[-1]
+        assert (row["tool"], row["status"]) == (
+            "hmc_set_lpar_description (restore)",
+            "FAIL",
+        )
+        assert "MANUAL RECOVERY REQUIRED" in row["data"]
+        assert "chsyscfg -r lpar" in row["data"]
+
+
 @pytest.mark.asyncio
 async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() -> None:
     missing = _ScriptedSriovState([])
@@ -3954,7 +4006,7 @@ def test_unrestorable_description_names_the_reason(baseline):
     """A baseline the CLI cannot round-trip is reported, not silently retried.
 
     The runner defers to the server's validator, so the ``-i`` record grammar
-    of ADR 0045 skips the restore instead of failing it.
+    of ADR 0045 refuses the restore before any write is attempted.
     """
     reason = lpar._unrestorable_description(baseline)
     assert isinstance(reason, str) and reason
@@ -3962,13 +4014,13 @@ def test_unrestorable_description_names_the_reason(baseline):
 
 @pytest.mark.parametrize("baseline", ["", "plain text", "[hmcpctl owner:a created:x]"])
 def test_restorable_description_is_not_blocked(baseline):
-    """An ordinary baseline description is restored, not skipped."""
+    """An ordinary baseline description is restored, not refused."""
     assert lpar._unrestorable_description(baseline) is None
 
 
 @pytest.mark.asyncio
-async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypatch):
-    """A baseline carrying a record delimiter is skipped rather than rewritten."""
+async def test_lpar_property_workflow_refuses_an_unrestorable_description(monkeypatch):
+    """A baseline carrying a record delimiter is refused rather than rewritten."""
     calls = []
 
     async def scripted_call(_state, _client, tool, **kwargs):
@@ -3989,6 +4041,8 @@ async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypa
         if tool == "hmc_set_lpar_description"
     ]
     assert descriptions == ["MCP live-test probe R2 safe to clear"]
+    restore = [row for row in state.results if row["tool"].endswith("(restore)")]
+    assert [row["status"] for row in restore if "description" in row["tool"]] == ["FAIL"]
 
 
 @pytest.mark.asyncio

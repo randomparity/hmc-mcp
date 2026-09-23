@@ -269,6 +269,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   storage quantity, so a digit string long enough to exhaust `int()` or saturate
   `float()` to `inf` is rejected as malformed rather than parsed (#762).
 
+- The live-test runner restores the test partition's description, and with it the ownership
+  stamp, after ST10 and ST15. The baseline kept the CLI read's trailing newline, which the
+  restore refused as non-printable, so the partition lost its stamp and every
+  ownership-guarded command then refused it. The baseline now drops one trailing line
+  terminator. A description that cannot be written back through the CLI now fails the run
+  with a `MANUAL RECOVERY REQUIRED` row naming the `chsyscfg` restore, not a SKIP (#968).
+
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
   common port, but it was covered by a strictly-positive check that aborted the run
