@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
@@ -37,9 +38,9 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
     vswitch_id = (
         artifacts.test_vswitch_id if artifacts.test_vswitch_id is not None else 0
     )
-    await _create_network_and_nettest_lpar(client, state, vswitch_id)
+    nettest_created = await _create_network_and_nettest_lpar(client, state, vswitch_id)
     await _attach_network_adapter(client, state, vswitch_id)
-    await _cleanup_network_mutation(client, state)
+    await _cleanup_network_mutation(client, state, nettest_created)
 
 
 def _skip_network_mutation(state: RunState, reason: str) -> None:
@@ -57,7 +58,8 @@ def _skip_network_mutation(state: RunState, reason: str) -> None:
 
 async def _create_network_and_nettest_lpar(
     client: Client, state: RunState, vswitch_id: int
-) -> None:
+) -> bool:
+    """Create the test network and nettest LPAR; return whether the LPAR create PASSed."""
     config = state.config
     artifacts = state.artifacts
 
@@ -102,8 +104,14 @@ async def _create_network_and_nettest_lpar(
         name=config.nettest_name,
     )
     state.record(9, "hmc_create_lpar (nettest)", st, data)
-    if st == "PASS" and isinstance(data, dict):
+    nettest_created = st == "PASS"
+    if nettest_created and isinstance(data, dict):
         artifacts.nettest_uuid = data.get("uuid") or data.get("UUID")
+        if not artifacts.nettest_uuid:
+            nested = data.get("lpar")
+            if isinstance(nested, dict):
+                artifacts.nettest_uuid = nested.get("uuid") or nested.get("UUID")
+    return nettest_created
 
 
 async def _attach_network_adapter(
@@ -145,7 +153,9 @@ async def _attach_network_adapter(
         )
 
 
-async def _cleanup_network_mutation(client: Client, state: RunState) -> None:
+async def _cleanup_network_mutation(
+    client: Client, state: RunState, nettest_created: bool
+) -> None:
     config = state.config
     artifacts = state.artifacts
     if artifacts.test_adapter_uuid:
@@ -173,16 +183,31 @@ async def _cleanup_network_mutation(client: Client, state: RunState) -> None:
     else:
         state.skip(9, "hmc_delete_virtual_network", "no network UUID captured")
 
-    if artifacts.nettest_uuid:
+    if nettest_created:
+        # The delete call already addresses the LPAR by name, so an unresolved
+        # UUID (issue #969) is not a reason to skip: attempt the delete either
+        # way, and only a failed delete needs manual recovery.
         st, data = await state.call(
             client,
             "hmc_delete_lpar",
             system_name_or_uuid=config.system_name,
             lpar_name_or_uuid=config.nettest_name,
         )
-        state.record(9, "hmc_delete_lpar (nettest)", st, data)
         if st == "PASS":
+            state.record(9, "hmc_delete_lpar (nettest)", st, data)
             artifacts.nettest_uuid = None
+        else:
+            system = shlex.quote(config.system_name)
+            name = shlex.quote(config.nettest_name)
+            state.record(
+                9,
+                "hmc_delete_lpar (nettest)",
+                "FAIL",
+                "MANUAL RECOVERY REQUIRED: partition "
+                f"{config.nettest_name!r} on {config.system_name!r} was created "
+                f"(PASS) but could not be deleted ({data!r}); it was NOT removed. "
+                f"Run `rmsyscfg -r lpar -m {system} -n {name}` by hand.",
+            )
     else:
         state.skip(9, "hmc_delete_lpar (nettest)", "nettest LPAR not created")
 
