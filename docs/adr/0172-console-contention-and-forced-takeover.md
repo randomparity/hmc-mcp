@@ -19,8 +19,9 @@ Consequences).
 ## Decision
 
 1. **Detail.** `ConsoleHeldError` from acquisition names the `mkvterm` command and quotes the
-   HMC output read up to the contention sentence, whitespace-collapsed, as a `repr` of at most
-   `_ERROR_DETAIL_MAX_CHARS` (256) characters. The type is unchanged.
+   HMC output read up to the contention sentence. The output is whitespace-collapsed, cut to
+   `_ERROR_DETAIL_MAX_CHARS` (256) characters, and then quoted with `repr`, which escapes
+   control bytes, so the quote can run longer than 256 characters. The type is unchanged.
 2. **Takeover is explicit.** `ConsoleSession(hmc, system, lpar, *, take_over=False)`. With
    `take_over=True`, `open()` issues `rmvterm` and then acquires as usual. `open()` returns
    only after `Open in progress`. A failed `rmvterm` is logged, because its exit code proves
