@@ -480,13 +480,15 @@ async def _acquire_capture_stream(
                         "mkvterm exited before confirming console acquisition"
                     )
                 data += chunk
-                if HELD_SENTINEL in data:
+                acquired = data.find(ACQUIRED_SENTINEL)
+                held = data.find(HELD_SENTINEL)
+                if held != -1 and (acquired == -1 or held < acquired):
                     report = " ".join(bytes(data).decode("ascii", "replace").split())
                     raise ConsoleHeldError(
                         f"{command} found the console held by another session; "
                         f"the HMC reported: {report[:_ERROR_DETAIL_MAX_CHARS]!r}"
                     )
-                if ACQUIRED_SENTINEL in data:
+                if acquired != -1:  # a later sentence is console content (ADR 0172)
                     return connection, process, bytes(data)
     except TimeoutError as exc:
         connection.close()

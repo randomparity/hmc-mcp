@@ -882,6 +882,25 @@ async def test_session_contention_at_open_never_releases():
 
 
 @pytest.mark.asyncio
+async def test_sentence_after_banner_in_one_read_is_acquisition():
+    # ADR 0172 rule 3: the banner proves the hold, so a sentence after it in
+    # the same read is console content and the capture releases its own hold.
+    stream = FakeConnection([FakeProcess(BANNER + CONTENTION)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError, match="after acquisition"),
+    ):
+        await capture_lpar_console(
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.2)
+        )
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_session_take_over_rmvterms_then_acquires():
     events: list[str] = []
     stream = FakeConnection([FakeProcess(BANNER, None)])
