@@ -66,12 +66,20 @@ def lpars_create(
         "as '\\[caller <token>]' (ADR 0064); 1–64 printable ASCII characters, "
         'no whitespace or , = " [ ] \\',
     ),
+    no_apply: bool = typer.Option(
+        False,
+        "--no-apply",
+        help="Leave the new partition profile unapplied when the HMC creates the "
+        "partition through mksyscfg (the partition then has no current configuration)",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Create a new LPAR on a managed system.
 
     Creates the partition powered off with a default profile; storage/network
-    and boot settings are configured afterwards via the HMC.
+    and boot settings are configured afterwards via the HMC. When the HMC
+    creates it through mksyscfg, the profile is then applied (an
+    ``apply_profile`` step) unless --no-apply is given.
     """
     if caller_token is not None:
         validate_caller_token(caller_token)
@@ -109,6 +117,7 @@ def lpars_create(
                 resources,
                 partition_id=partition_id,
                 caller_token=caller_token,
+                apply_profile=not no_apply,
             ),
             assignments,
         )
