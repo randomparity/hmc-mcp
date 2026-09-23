@@ -4,6 +4,8 @@
 
 1 tool in the `io_slot` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
+The Summary column on each domain page is the first line of the tool's MCP description. The full description, including the conditions under which a tool refuses, is what an MCP client receives from `tools/list`; it is the tool handler's docstring under `src/hmcpctl/server_tools/`.
+
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_list_io_slots` | `read` | `io_slot.list` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List physical I/O slots, optionally filtered by PCI class. |

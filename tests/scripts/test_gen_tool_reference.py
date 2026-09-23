@@ -243,6 +243,19 @@ def test_every_page_carries_the_banner_and_the_registered_set_decision() -> None
         assert text.endswith("\n"), name
 
 
+def test_every_page_says_the_summary_is_a_first_line_and_where_the_rest_lives() -> None:
+    pages = gen_tool_reference.render_pages(_records())
+
+    note = gen_tool_reference.SUMMARY_NOTE
+    assert "first line of the tool's MCP description" in note
+    assert "refuses" in note
+    assert "`tools/list`" in note
+    assert "`src/hmcpctl/server_tools/`" in note
+    for name, text in pages.items():
+        intro = text.split("\n| ", 1)[0]
+        assert note in intro, name
+
+
 def test_a_tool_a_default_deployment_withholds_is_named_on_its_page() -> None:
     pages = gen_tool_reference.render_pages(
         _records(exposed=lambda name: name != "hmc_beta")

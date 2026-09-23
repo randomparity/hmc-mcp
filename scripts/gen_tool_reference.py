@@ -59,6 +59,15 @@ SCOPE_NOTE = (
     "default deployment does not expose."
 )
 
+# The reference is a summary index by design (ADR 0097, #929): refusal conditions
+# and argument detail live in the full description MCP clients receive.
+SUMMARY_NOTE = (
+    "The Summary column on each domain page is the first line of the tool's MCP "
+    "description. The full description, including the conditions under which a "
+    "tool refuses, is what an MCP client receives from `tools/list`; it is the "
+    "tool handler's docstring under `src/hmcpctl/server_tools/`."
+)
+
 _ENABLEMENT_NOTE = (
     "> Registered but not exposed by a default deployment: {tools}. The server must "
     "be started with `--enable-arbitrary-command` and the selected access policy "
@@ -257,6 +266,8 @@ def _render_group(group: str, members: list[ToolRecord]) -> str:
         (f"{len(members)} tool{plural} in the `{group}` operation domain. "
          f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."),
         "",
+        SUMMARY_NOTE,
+        "",
         (
             "| Tool | Effect | Operation | Target | Implementation | Verification | "
             "Runtime eligibility | Summary |"
@@ -303,6 +314,8 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
         "",
         (f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
          "cannot drift from what the code registers."),
+        "",
+        SUMMARY_NOTE,
         "",
         f"- **{len(records)}** tools are registered.",
         f"- **{len(records) - len(withheld)}** are exposed by a default deployment.",

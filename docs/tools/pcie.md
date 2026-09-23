@@ -4,6 +4,8 @@
 
 6 tools in the `pcie` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
+The Summary column on each domain page is the first line of the tool's MCP description. The full description, including the conditions under which a tool refuses, is what an MCP client receives from `tools/list`; it is the tool handler's docstring under `src/hmcpctl/server_tools/`.
+
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_assign_dedicated_pcie_slot` | `mutate` | `pcie.assign_dedicated_slot` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Assign a dedicated PCIe slot when safe profile readback is available. |

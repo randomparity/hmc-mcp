@@ -4,6 +4,8 @@
 
 1 tool in the `config` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
+The Summary column on each domain page is the first line of the tool's MCP description. The full description, including the conditions under which a tool refuses, is what an MCP client receives from `tools/list`; it is the tool handler's docstring under `src/hmcpctl/server_tools/`.
+
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_list_configured_hosts` | `read` | `config.list_hosts` | `none` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List all configured HMC profiles from the platform-native TOML config. |

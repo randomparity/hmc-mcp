@@ -4,6 +4,8 @@
 
 7 tools in the `vios_label` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
+The Summary column on each domain page is the first line of the tool's MCP description. The full description, including the conditions under which a tool refuses, is what an MCP client receives from `tools/list`; it is the tool handler's docstring under `src/hmcpctl/server_tools/`.
+
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_create_vios_vfc_group_label` | `mutate` | `vios_label.create_vfc_group` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create one vFC placement group without adding or deleting adapters. |

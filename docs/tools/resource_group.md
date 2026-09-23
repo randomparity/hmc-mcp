@@ -4,6 +4,8 @@
 
 2 tools in the `resource_group` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
+The Summary column on each domain page is the first line of the tool's MCP description. The full description, including the conditions under which a tool refuses, is what an MCP client receives from `tools/list`; it is the tool handler's docstring under `src/hmcpctl/server_tools/`.
+
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_list_resource_group_memopt_scores` | `read` | `resource_group.list_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return current resource-group affinity scores when supported. |

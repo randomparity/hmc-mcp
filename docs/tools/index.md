@@ -4,6 +4,8 @@
 
 This reference covers every tool the server registers, including the ones a default deployment does not expose. It is generated from the server's tool registry, so it cannot drift from what the code registers.
 
+The Summary column on each domain page is the first line of the tool's MCP description. The full description, including the conditions under which a tool refuses, is what an MCP client receives from `tools/list`; it is the tool handler's docstring under `src/hmcpctl/server_tools/`.
+
 - **157** tools are registered.
 - **156** are exposed by a default deployment.
 
