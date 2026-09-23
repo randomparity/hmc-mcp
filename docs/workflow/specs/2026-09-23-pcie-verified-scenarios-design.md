@@ -129,7 +129,8 @@ baseline, so cleanup deletes the fixture without a removal.
   command naming another DRC.
 - `test_scenarios_declare_their_expected_assertion_ids` lists the three new
   scenarios, and `test_verified_scenarios_name_registered_operations` passes.
-- Existing SKIP/FAIL/manual-recovery tests pass unchanged: no existing row
+- Existing SKIP/FAIL/manual-recovery tests keep their assertions (three SR-IOV
+  call sites gain the evidence argument): no existing row
   is renamed or removed.
 
 ## Validation
