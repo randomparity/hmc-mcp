@@ -108,6 +108,13 @@ def test_recipe_commands_match_the_installed_cli_contract() -> None:
     assert {_parse_command(command) for command in commands} == EXPECTED_COMMANDS
 
 
+def test_every_hmcpctl_line_is_a_bare_command_the_parser_sees() -> None:
+    for block in SHELL_BLOCK.findall(RECIPE.read_text(encoding="utf-8")):
+        for line in _logical_shell_lines(block):
+            if "hmcpctl" in line:
+                assert line.startswith("hmcpctl "), line
+
+
 def test_recipe_never_overrides_ownership() -> None:
     for command in _recipe_commands(RECIPE.read_text(encoding="utf-8")):
         assert "--ownership-override" not in command, command
