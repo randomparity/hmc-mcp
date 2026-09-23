@@ -95,7 +95,10 @@ def build_vscsi_mapping_document(
     lpar_link: str,
     target_device: str | None = None,
 ) -> str:
-    """A VirtualIOServer document carrying a VirtualSCSIMapping (for POST).
+    """A VirtualIOServer document carrying the one new VirtualSCSIMapping.
+
+    The client appends that mapping to the VIOS's fetched mapping group before
+    posting, never this sparse document itself (ADR 0169).
 
     storage_kind is "PhysicalVolume" (whole disk) or "VirtualDisk" (a logical
     volume from a VG). storage_name is the device/disk name (e.g. hdisk5 or
@@ -125,7 +128,10 @@ def build_virtual_optical_mapping_document(
     lpar_link: str,
     target_device: str | None = None,
 ) -> str:
-    """A VirtualIOServer document carrying a VirtualSCSIMapping for optical media (for POST).
+    """A VirtualIOServer document carrying one new optical-media VirtualSCSIMapping.
+
+    Like build_vscsi_mapping_document, the client appends the mapping to the
+    VIOS's fetched mapping group rather than posting this document (ADR 0169).
 
     media_name is the MediaName of the VirtualOpticalMedia (ISO container) to mount.
     lpar_link is the Atom SELF href of the client LPAR the optical media is mapped to.
