@@ -119,8 +119,6 @@ class _Run:
     partition_created: bool = False
     assign_holds: tuple[bool, bool] | None = None
     slot_assigned: bool = False
-    unassign_recorded: bool = False
-    delete_recorded: bool = False
 
 
 def _power_operations_authorized() -> bool:
@@ -688,7 +686,6 @@ async def _unassign(client: Client, state: RunState, run: _Run) -> bool:
     # A lost response has still written, so the readback decides.
     after = await pcie._read_profile_io_slots(client, state, fixture)
     restored = after is not None and after == fixture.baseline_io_slots
-    run.unassign_recorded = True
     state.record_verified(
         _ROW,
         "hmc_unassign_dedicated_pcie_slot",
@@ -770,7 +767,6 @@ async def _delete(client: Client, state: RunState, run: _Run) -> bool:
     # Gone, whatever the call reported: a lost response has still deleted.
     fixture.created = False
     released = await _slot_released(client, state, fixture)
-    run.delete_recorded = True
     state.record_verified(
         _ROW,
         "hmc_delete_lpar",
@@ -829,12 +825,11 @@ async def _teardown_fixture(client: Client, state: RunState, run: _Run) -> bool:
     return await _delete(client, state, run)
 
 
-def _record_unreached(state: RunState, run: _Run, clean: bool) -> None:
-    """Record every promoting operation the teardown decides, reached or not.
+def _record_create_and_assign(state: RunState, run: _Run, clean: bool) -> None:
+    """Record create and assign once the teardown has decided their cleanup.
 
-    Create and assign are judged here because their cleanup is the teardown.
-    Unassign and delete are recorded as failed when the teardown never reached
-    them, so an absent observation always means the arm never got that far.
+    Unassign and delete record where they run; one the teardown never reached
+    has no observation, as in every other arm — its FAIL rows say why.
     """
     fixture = run.fixture
     cleanup = "passed" if clean else "failed"
@@ -865,33 +860,6 @@ def _record_unreached(state: RunState, run: _Run, clean: bool) -> None:
             cleanup=cleanup,
             data=f"drc_index={fixture.drc_index!r} applied={fixture.applied_io_slots!r}",
         )
-    if run.slot_assigned and not run.unassign_recorded:
-        state.record_verified(
-            _ROW,
-            "hmc_unassign_dedicated_pcie_slot",
-            operation="pcie.unassign_dedicated_slot",
-            scenario=_SCENARIO,
-            assertions=[
-                Assertion("unassign-call-succeeded", False),
-                Assertion("profile-restored-to-baseline", False),
-            ],
-            cleanup="failed",
-            data="the teardown did not reach the unassign",
-        )
-    if run.partition_created and not run.delete_recorded:
-        state.record_verified(
-            _ROW,
-            "hmc_delete_lpar",
-            operation="lpar.delete",
-            scenario=_SCENARIO,
-            assertions=[
-                Assertion("delete-call-succeeded", False),
-                Assertion("lpar-name-absent", False),
-                Assertion("slot-released", False),
-            ],
-            cleanup="failed",
-            data="the teardown did not reach a confirmed delete",
-        )
 
 
 async def _teardown(client: Client, state: RunState, run: _Run) -> None:
@@ -909,7 +877,7 @@ async def _teardown(client: Client, state: RunState, run: _Run) -> None:
             "scripts/live_test_recovery.py against this run's results",
         )
     finally:
-        _record_unreached(state, run, clean)
+        _record_create_and_assign(state, run, clean)
 
 
 async def exercise_bare_cec(client: Client, state: RunState) -> None:

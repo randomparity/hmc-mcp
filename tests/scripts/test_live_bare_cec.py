@@ -526,8 +526,10 @@ def test_a_partition_that_will_not_power_off_is_left_with_recovery_commands(
     assert "hmc_unassign_dedicated_pcie_slot" not in world.tools()
     assert "hmc_delete_lpar" not in world.tools()
     observations = _observations(state)
-    for operation in ("pcie.unassign_dedicated_slot", "lpar.delete", "lpar.create"):
-        assert observations[operation]["result"] == "failed"
+    assert observations["lpar.create"]["result"] == "failed"
+    assert observations["lpar.create"]["cleanup"] == "failed"
+    assert "pcie.unassign_dedicated_slot" not in observations
+    assert "lpar.delete" not in observations
     assert world.created
 
 

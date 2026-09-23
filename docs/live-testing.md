@@ -100,8 +100,7 @@ the PowerOff variants, including an `osshutdown` it expects the HMC to refuse.
 Last, it unassigns the slot and deletes the partition.
 
 - It reads the same four `LIVE_TEST_DEDICATED_PCIE_*` keys as the dedicated arm.
-  Configure the slot's DRC index to a NIC's: the arm's optional network-boot step
-  (#868) needs one.
+  With no DRC index configured it takes the first free slot, whatever its kind.
 - It SKIPs unless `HMC_AUTHORIZE_POWER_OPERATIONS=true`, so its evidence covers
   the ownership-guarded power path.
 - `LIVE_TEST_ACCEPT_PLATFORM_DUMP=true` lets it run `dumprestart`, which crashes

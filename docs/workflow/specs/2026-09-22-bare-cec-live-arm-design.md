@@ -89,9 +89,8 @@ coming from the reused dedicated helpers with their wording unchanged); dispatch
    to `cleanup_dedicated`, which re-decides on live state.
 5. `lpar.create` and `pcie.assign_dedicated_slot` are recorded last, with `cleanup: passed`
    only when step 4's three assertions held, else `failed` — their cleanup *is* the teardown.
-   On every teardown exit that did not reach step 3's or step 4's promoting row after the
-   slot was assigned, that operation is recorded as failed (`cleanup: failed`), so a missing
-   observation always means the arm never got that far, not that it was lost.
+   Unassign and delete are recorded only where they run; one the teardown never reached has
+   no observation, as in every other arm, and its FAIL or manual-recovery row says why.
 
 **Expected refusals.** A PowerOn/PowerOff refusal arrives either raised (FAIL) or as a
 terminal failed job returned by `wait=true` (PASS). Two module `ExpectedOutcome`s, both
