@@ -133,7 +133,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   The existing-repository check compares in GiB, `get-media-repo` labels the size GiB, and
   `list-optical-media` reads the medium's `Size` element, which the HMC reports in GiB, instead
   of the absent `MediaSize`, and returns it as `size_mib`. The short live-test repository default
-  (`LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB`) is now 1024 (#963).
+  (`LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB`) is now 1024, and the live-test runner refuses
+  either repository size at config load when it is not a multiple of 1024 (#963).
 
 - `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
   disk name longer than 15 characters before the create request, with a message that states the
