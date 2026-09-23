@@ -9,6 +9,7 @@ from typing import Self
 from unittest.mock import AsyncMock
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from hmcpctl import cli
@@ -281,4 +282,4 @@ def test_help_lists_every_option():
         "--idle-timeout",
         "--output",
     ):
-        assert option in result.stdout
+        assert option in unstyle(result.stdout)
