@@ -471,6 +471,33 @@ async def test_environment_outside_envelope_skips_arm(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hmc_version", "admitted"),
+    [
+        pytest.param(_ADMITTED_VERSION, True, id="admitted"),
+        pytest.param(
+            "Version: 10\nRelease: 3\nService Pack: 10600", False, id="service-pack-10600"
+        ),
+        pytest.param(
+            "Version: 10\nRelease: 3\nService Pack: 1061\nMH01999 - HMC V10R3 M1060 iFix",
+            False,
+            id="later-pack-listing-m1060-ifix",
+        ),
+    ],
+)
+async def test_environment_gate_matches_release_fields_exactly(
+    monkeypatch: pytest.MonkeyPatch, hmc_version: str, admitted: bool
+) -> None:
+    """ADR 0166 §3: the arm admits only what the product's exact predicate admits."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, hmc_version=hmc_version)
+    state = await _run_arm(monkeypatch, responses, holder)
+    assert ("hmc_list_dedicated_pcie_slots" in state.tools()) is admitted
+    envelope = [r for r in state.results if r[1] == "dedicated admitted environment"]
+    assert [r[2] for r in envelope] == ["PASS" if admitted else "SKIP"]
+
+
+@pytest.mark.asyncio
 async def test_no_unassigned_slot_skips_arm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
