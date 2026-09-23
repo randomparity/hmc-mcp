@@ -1167,6 +1167,21 @@ def test_load_profile_platform_file_missing_hmc_profile_requested(tmp_path, monk
     assert not isinstance(exc_info.value, ConfigFileNotFoundError)
 
 
+def test_load_profile_platform_file_vanishes_before_read(tmp_path, monkeypatch):
+    """A platform file resolve_config_path() saw but that is gone by read time is
+    reported as missing, not as no default_profile (#915 gauntlet finding)."""
+
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    # resolve_config_path() would have reported this path as present; it never
+    # existed on disk here, standing in for the race window between that
+    # existence check and load_profile's later read.
+    vanished = tmp_path / "config.toml"
+    monkeypatch.setattr(config_module, "resolve_config_path", lambda: vanished)
+    with pytest.raises(ConfigFileNotFoundError, match="config file not found") as exc_info:
+        load_profile(config_path=None)
+    assert str(vanished) in str(exc_info.value)
+
+
 def test_profile_reader_rejects_a_non_table_profiles_key(profile_reader, tmp_path):
     """`profiles = "x"` used to reach `.keys()` on a str, or a substring test."""
 
