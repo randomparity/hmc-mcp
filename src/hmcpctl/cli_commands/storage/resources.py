@@ -91,7 +91,9 @@ def storage_create_vg(
 def storage_create_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
-    name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
+    name: str = typer.Option(
+        ..., "--name", "-n", help="Virtual disk name (at most 15 characters)"
+    ),
     capacity_mib: int = typer.Option(
         ..., "--capacity-mib", help="Virtual disk capacity in MiB"
     ),
@@ -144,7 +146,9 @@ def storage_attach_disk(
     lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
     vios: str = typer.Option(..., "--vios", help="VIOS UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
-    name: str = typer.Option(..., "--name", "-n", help="New virtual disk name"),
+    name: str = typer.Option(
+        ..., "--name", "-n", help="New virtual disk name (at most 15 characters)"
+    ),
     capacity_mib: int = typer.Option(
         ..., "--capacity-mib", help="Disk capacity in MiB"
     ),

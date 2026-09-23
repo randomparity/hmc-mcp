@@ -50,7 +50,10 @@ async def _capture_lpar_properties(client: Client, state: RunState) -> None:
         desc_val = data
         if isinstance(desc_val, dict):
             desc_val = desc_val.get("description") or desc_val.get("value") or ""
-        artifacts.lp3_baseline["description"] = str(desc_val) if desc_val else ""
+        # The CLI read ends in a line terminator that is not part of the value;
+        # kept, it makes the restore refuse the description as non-printable.
+        text = str(desc_val) if desc_val else ""
+        artifacts.lp3_baseline["description"] = text.removesuffix("\n").removesuffix("\r")
 
     # 4. MSP flag
     st, data = await state.call(

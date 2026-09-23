@@ -256,8 +256,9 @@ def hmc_map_storage_to_lpar(
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
-    The LPAR must already have a vSCSI adapter
-    paired to this VIOS — see hmc_add_vscsi_adapter.
+    The HMC creates the vSCSI client/server adapter pair for the mapping, so
+    do not add one first with hmc_add_vscsi_adapter; that adapter stays
+    unpaired. The VIOS's existing mappings are preserved.
     ``storage_kind`` is 'VirtualDisk' (a logical volume created with
     hmc_create_virtual_disk) or 'PhysicalVolume' (a whole hdisk). storage_name
     is the DiskName / device name. target_device optionally pins the vtscsi

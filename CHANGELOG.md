@@ -10,6 +10,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
+  duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
+  the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.
+  The session runs the release to completion when cancelled. ADR 0170 states which process
+  exits leave the console held. `capture_lpar_console` is now built on the session with the same
+  signature and results. One exception: if its task is cancelled during the final release, the
+  capture now raises `CancelledError` after the release, as ADR 0072 documents. It is a
+  pre-release domain-module API, not a `hmcpctl.api` export (#974).
+
 - A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
@@ -116,6 +125,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
+  disk name longer than 15 characters before the create request, with a message that states the
+  VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
+  reported as a possible side effect (#964).
+
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
   adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not
@@ -144,6 +158,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
   parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
+
+- SR-IOV logical-port assign and unassign no longer report an HMC refusal as "could not be
+  verified". When the dispatched `chhwres`/`chsyscfg` command errors and the immediate readback
+  matches the pre-mutation state exactly, `SriovLogicalPortPartialError` now reports the HMC's own
+  failure text as a refusal; a missing, mismatched, or unreadable readback (or a command error
+  whose readback also changed) keeps the existing "could not be verified" wording, since the
+  state there is genuinely uncertain (ADR 0056, #966).
 
 - `hmcpctl lpars summary`, the LPM commands `lpars migrate`, `migrate-affinity`,
   `migrate-validate`, `migrate-abort` and `migrate-recover`, and `hmcpctl vios power-on` /
@@ -248,6 +269,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   storage quantity, so a digit string long enough to exhaust `int()` or saturate
   `float()` to `inf` is rejected as malformed rather than parsed (#762).
 
+- The live-test runner restores the test partition's description, and with it the ownership
+  stamp, after ST10 and ST15. The baseline kept the CLI read's trailing newline, which the
+  restore refused as non-printable, so the partition lost its stamp and every
+  ownership-guarded command then refused it. The baseline now drops one trailing line
+  terminator. A description that cannot be written back through the CLI now fails the run
+  with a `MANUAL RECOVERY REQUIRED` row naming the `chsyscfg` restore, not a SKIP (#968).
+
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
   common port, but it was covered by a strictly-positive check that aborted the run
@@ -293,6 +321,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   on an environment the repository does not admit (#928).
 
 ### Changed
+
+- Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
+  type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
+  and then acquires with proven acquisition. The default is `False`, and neither the capture nor
+  the MCP tool sets it. `capture_lpar_console` no longer leaks its own proven hold when console
+  output quotes the contention sentence: it releases the hold, then raises `ConsoleHeldError`
+  as before. A contention sentence that follows the acquisition banner in the same read now
+  counts as console content, both at open and in the release probe (#975, ADR 0172).
 
 - The distribution, console script, Python package and configuration directory are renamed
   from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now
