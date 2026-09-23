@@ -1098,7 +1098,10 @@ async def _auto_select_slot(
     )
     try:
         if st != "PASS" or not isinstance(data, str):
-            raise HMCCLIError(f"profile io_slots read returned {st}: {str(data)[:400]}")
+            # The message only: a CallFailure's repr carries its traceback,
+            # whose host paths a note would write into the results file unredacted.
+            detail = data.message if isinstance(data, CallFailure) else repr(data)[:400]
+            raise HMCCLIError(f"profile io_slots read returned {st}: {detail}")
         profile_rows = parse_profile_io_slot_rows(data)
     except HMCCLIError as error:
         state.skip(

@@ -584,6 +584,7 @@ async def test_unreadable_profiles_skip_auto_selection(
     # from a refused command without a re-run.
     if statuses is not None:
         assert "connection lost" in str(row[3])
+        assert "CallFailure(" not in str(row[3])
 
 
 @pytest.mark.asyncio
