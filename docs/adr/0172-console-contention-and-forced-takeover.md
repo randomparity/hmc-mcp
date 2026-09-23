@@ -2,8 +2,10 @@
 
 ## Status
 
-Accepted (2026-09-23). Extends ADR 0170. It changes one rule ADR 0072 set: `rmvterm` is
-withheld on contention only while hmcpctl cannot prove the hold is its own.
+Accepted (2026-09-23). Extends ADR 0170, amends ADR 0170 rule 7 in part (the capture's
+disown hook), and amends ADR 0072 in part (the clause "no `rmvterm` is ever issued on a
+contention path"). `rmvterm` is withheld on contention only while hmcpctl cannot prove the
+hold is its own.
 
 ## Context
 
@@ -16,9 +18,9 @@ Consequences).
 
 ## Decision
 
-1. **Detail.** `ConsoleHeldError` from acquisition names the `mkvterm` command and quotes what
-   the HMC printed, whitespace-collapsed, as a `repr` of at most 256 characters. The type is
-   unchanged.
+1. **Detail.** `ConsoleHeldError` from acquisition names the `mkvterm` command and quotes the
+   HMC output read up to the contention sentence, whitespace-collapsed, as a `repr` of at most
+   `_ERROR_DETAIL_MAX_CHARS` (256) characters. The type is unchanged.
 2. **Takeover is explicit.** `ConsoleSession(hmc, system, lpar, *, take_over=False)`. With
    `take_over=True`, `open()` issues `rmvterm` and then acquires as usual. `open()` returns
    only after `Open in progress`. A failed `rmvterm` is logged, because its exit code proves
@@ -27,16 +29,21 @@ Consequences).
    `False`. `capture_lpar_console` and the MCP tool never set it.
 3. **`rmvterm` rule.** hmcpctl issues `rmvterm` against a hold it cannot prove is its own
    only when the caller passed `take_over=True`. A hold proven by `Open in progress` is its
-   own, because the HMC allows one session per partition (P1), so `close()` always releases it.
+   own, because the HMC allows one session per partition (P1), until another client's
+   `rmvterm` ends it. `close()` always issues `rmvterm` for a session that proved its hold.
 4. **Late sentence in the capture.** The capture still raises `ConsoleHeldError` when its
    collected bytes contain the sentence, but it now does so after the session's normal
-   `close()`, so it releases its own proven hold first. The message says the sentence came
-   after acquisition and gives `released`.
+   `close()`, so it issues `rmvterm` for its own proven hold first. The message says the
+   sentence came after acquisition and gives `released`.
 
 ## Consequences
 
 - A consumer can recover a leaked or unwanted hold without shelling out to `rmvterm`. Doing so
   ends whatever session held the console, and that holder gets no warning from hmcpctl.
+- Taking over a vterm that a live hmcpctl session holds is undone when that session closes:
+  its `close()` issues `rmvterm`, which ends the taker's hold. Takeover is meant for leaked or
+  foreign holds. A session that could detect that it lost its hold needs live evidence of how
+  `mkvterm` ends under `rmvterm` (#879).
 - Takeover races another client. If a third client acquires between the `rmvterm` and the
   `mkvterm`, `open()` reports contention and does not try again.
 - The capture no longer leaks its hold on a late sentence, but it still raises contention for
@@ -44,6 +51,8 @@ Consequences).
 
 ## Considered & rejected
 
+- **Do nothing and keep manual `rmvterm` recovery (ADR 0170 rule 6).** judgment: fit. #975
+  and #957 ask for takeover inside the library, so consumers do not have to shell out.
 - **Try to attach first, and `rmvterm` only on contention.** judgment: complexity. The
   caller has already chosen takeover, and this adds a second acquisition path.
 - **Retry acquisition after a failed takeover.** judgment: an unbounded fight against another

@@ -15,15 +15,18 @@ All changes are in `src/hmcpctl/ssh/console.py`:
 
 - `_acquire_capture_stream`: the contention message becomes
   `f"{command} found the console held by another session; the HMC reported: {report!r}"`,
-  where `report = " ".join(bytes(data).decode("ascii", "replace").split())[:256]`.
+  where `report = " ".join(bytes(data).decode("ascii", "replace").split())` cut to
+  `_ERROR_DETAIL_MAX_CHARS`. `data` is the output read up to the sentence.
 - `_rmvterm(config, system_name, lpar_name) -> None`: issues `rmvterm` and logs an
   `HMCCLIError` as a warning. `_release_and_verify` calls it in place of its inline copy.
 - `ConsoleSession.__init__(..., *, take_over: bool = False)`. In `open()`, inside the existing
   `try`, `take_over=True` logs a warning, awaits `_rmvterm`, and then acquires as today.
 - `capture_lpar_console`: move the `HELD_SENTINEL` check after the `async with` block, so
   the session's normal `close()` runs first. Delete `ConsoleSession._disown`. The late
-  message names the sentence, says it arrived after acquisition, and gives `released`.
-- Update the docstrings for the class, `open()`, the capture and the module, plus a
+  message names the sentence, says it arrived after acquisition and that `rmvterm` was
+  issued for the capture's own hold, and gives `released`.
+- Update the docstrings for `ConsoleHeldError`, `ConsoleSession`, `open()`, the capture and
+  the module, plus a
   `CHANGELOG.md` "Changed" entry.
 
 The capture's signature, `ConsoleCapture`, the MCP tool, the CLI and `hmcpctl.api` do not
@@ -33,9 +36,11 @@ change.
 
 1. Actors and deployments: a library caller in a local Python process (kdive's collector,
    hmcpctl's own capture), and the MCP server, which runs only the capture.
-2. Invariants: another client's hold is released only when the caller passed
-   `take_over=True`. Every proven hold is released on `close()`. The capture's API and error
-   type stay the same.
+2. Invariants: at open, hmcpctl issues `rmvterm` against an unproven hold only when the
+   caller passed `take_over=True`. `close()` issues `rmvterm` for every session that proved its
+   hold. The capture's API and error type stay the same.
+   Taking over a live hmcpctl session's vterm is undone by that session's `close()` (ADR 0172
+   Consequences). This is accepted: takeover targets leaked or foreign holds.
 3. Accepted: a takeover that loses a race to a third client raises `ConsoleHeldError` with no
    retry (bounded, stated in ADR 0172). Console text that quotes the sentence still turns a
    capture into a raise (ADR 0072 assumption 2).
@@ -51,7 +56,8 @@ caller's decision.
 ## Success
 
 1. With the default `take_over=False`, contention at open raises a `ConsoleHeldError` whose
-   message contains `Only one open session is allowed`, and no `rmvterm` runs.
+   message contains the HMC's sentence `A terminal session is already open for this
+   partition.`, and no `rmvterm` runs.
 2. `take_over=True` runs `rmvterm` before `mkvterm` and then holds the vterm. If contention
    follows, `open()` raises `ConsoleHeldError` and `rmvterm` has run exactly once.
 3. A failed takeover `rmvterm` still acquires when the slot is free.
