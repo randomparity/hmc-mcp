@@ -154,6 +154,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
   parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
 
+- SR-IOV logical-port assign and unassign no longer report an HMC refusal as "could not be
+  verified". When the dispatched `chhwres`/`chsyscfg` command errors and the immediate readback
+  matches the pre-mutation state exactly, `SriovLogicalPortPartialError` now reports the HMC's own
+  failure text as a refusal; a missing, mismatched, or unreadable readback (or a command error
+  whose readback also changed) keeps the existing "could not be verified" wording, since the
+  state there is genuinely uncertain (ADR 0056, #966).
+
 - `hmcpctl lpars summary`, the LPM commands `lpars migrate`, `migrate-affinity`,
   `migrate-validate`, `migrate-abort` and `migrate-recover`, and `hmcpctl vios power-on` /
   `power-off` accept `--system/-s` and pass it to the operation as the managed system (the

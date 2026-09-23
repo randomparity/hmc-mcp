@@ -27,6 +27,7 @@ class ScenarioState:
             vlan_range_start=3000,
             vlan_range_end=3099,
             vdisk_name="disk-one",
+            vdisk_volume_group_name="rootvg",
         )
         self.artifacts = SimpleNamespace(
             lp3_uuid=None,
@@ -158,3 +159,39 @@ async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
         "hmc_list_io_slots",
         "hmc_list_memory_pools",
     ]
+
+
+def test_resolver_selects_configured_group_listed_last() -> None:
+    state = ScenarioState({})
+    listing = [
+        {"uuid": "vg-a", "name": "datavg", "free_space_gib": 900},
+        {"uuid": "vg-b", "name": "rootvg", "free_space_gib": 1.5},
+    ]
+
+    group = storage.resolve_configured_volume_group(state, 16, listing, ("create",))
+
+    assert group is not None
+    assert group.uuid == "vg-b"
+    assert group.free_space_mib == 1536
+    assert state.artifacts.vg_uuid == "vg-b"
+    assert state.artifacts.vdisk_vg_name == "rootvg"
+    assert state.results == []
+
+
+def test_resolver_miss_skips_dependents_and_clears_stale_uuid() -> None:
+    state = ScenarioState({})
+    state.artifacts.vg_uuid = "stale"
+    state.artifacts.vdisk_vg_name = "rootvg"
+
+    group = storage.resolve_configured_volume_group(
+        state, 16, [{"uuid": "vg-a", "name": "datavg"}], ("create", "get")
+    )
+
+    assert group is None
+    assert state.artifacts.vg_uuid is None
+    assert state.artifacts.vdisk_vg_name is None
+    assert [(stage, tool, status) for stage, tool, status, _ in state.results] == [
+        (16, "create", "SKIP"),
+        (16, "get", "SKIP"),
+    ]
+    assert "'rootvg' not listed" in state.results[0][3]

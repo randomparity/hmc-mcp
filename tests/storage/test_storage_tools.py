@@ -256,11 +256,11 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "<ClientNetworkAdapter" in body
-    assert '<PortVLANID kb="CUD" kxe="false">42</PortVLANID>' in body
-    assert '<VirtualSlotNumber kb="CUD" kxe="false">3</VirtualSlotNumber>' in body
-    assert '<VirtualSwitchID kb="CUD" kxe="false">1</VirtualSwitchID>' in body
+    assert '<PortVLANID kb="CUR" kxe="false">42</PortVLANID>' in body
+    assert '<VirtualSlotNumber kb="COD" kxe="false">3</VirtualSlotNumber>' in body
+    assert '<VirtualSwitchID kb="ROR" kxe="false">1</VirtualSwitchID>' in body
     assert '<IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>' in body
-    assert '<MACAddress kb="CUD" kxe="false">00:11:22:33:44:55</MACAddress>' in body
+    assert '<MACAddress kb="CUR" kxe="false">00:11:22:33:44:55</MACAddress>' in body
     assert result["UUID"] == ADAPTER_UUID
 
 
@@ -278,11 +278,11 @@ def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIClientAdapter" in body
     assert (
-        '<RemoteLogicalPartitionID kb="CUD" kxe="false">7</RemoteLogicalPartitionID>'
+        '<RemoteLogicalPartitionID kb="CUR" kxe="false">7</RemoteLogicalPartitionID>'
         in body
     )
-    assert '<RemoteSlotNumber kb="CUD" kxe="false">11</RemoteSlotNumber>' in body
-    assert '<VirtualSlotNumber kb="CUD" kxe="false">4</VirtualSlotNumber>' in body
+    assert '<RemoteSlotNumber kb="CUA" kxe="false">11</RemoteSlotNumber>' in body
+    assert '<VirtualSlotNumber kb="COD" kxe="false">4</VirtualSlotNumber>' in body
 
 
 def test_add_vfc_adapter_builds_xml(monkeypatch, mock_hmc):
@@ -369,8 +369,8 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
     hmc_create_virtual_disk(VIOS_UUID, VG_UUID, "lv_boot", 51200)
     body = route.calls.last.request.content.decode()
     assert "<VirtualDisks" in body
-    assert '<DiskName kb="CUD" kxe="false">lv_boot</DiskName>' in body
-    assert '<DiskCapacity kb="CUD" kxe="false">50</DiskCapacity>' in body
+    assert '<DiskName kb="CUR" kxe="false">lv_boot</DiskName>' in body
+    assert '<DiskCapacity kb="CUR" kxe="false">50</DiskCapacity>' in body
 
 
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
@@ -383,8 +383,8 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIMapping" in body
     # storage_kind lands as the element name; storage_name is DiskName.
-    assert "<VirtualDisk kb=" in body
-    assert '<DiskName kb="CUD" kxe="false">lv_boot</DiskName>' in body
+    assert '<VirtualDisk schemaVersion="V1_0">' in body
+    assert '<DiskName kb="CUR" kxe="false">lv_boot</DiskName>' in body
     assert f"/rest/api/uom/LogicalPartition/{LPAR_UUID}" in body
 
 
@@ -402,9 +402,9 @@ def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
         target_device="vtscsi0",
     )
     body = route.calls.last.request.content.decode()
-    assert "<PhysicalVolume kb=" in body
-    assert '<VolumeName kb="CUD" kxe="false">hdisk5</VolumeName>' in body
-    assert '<TargetDevice kb="CUD" kxe="false">vtscsi0</TargetDevice>' in body
+    assert '<PhysicalVolume schemaVersion="V1_0">' in body
+    assert '<VolumeName kb="CUR" kxe="false">hdisk5</VolumeName>' in body
+    assert '<TargetName kb="CUR" kxe="false">vtscsi0</TargetName>' in body
     assert f"/rest/api/uom/LogicalPartition/{LPAR_UUID}" in body
 
 
