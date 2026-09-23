@@ -180,6 +180,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   readable; every multi-label name, and any name ending in a real TLD such as `.py` or `.md`,
   is still redacted (#914).
 
+- The live-test runner's failure redactor now replaces a hostname whose labels contain an
+  underscore in full. `lab_hmc01.example.com` was printed as `lab_hmc01.<REDACTED-HOST>`,
+  leaving the label that names the machine readable (#927).
+
 - The live-test dedicated PCIe arm no longer takes a single HSCL8012 ("partition not found")
   after a failed create as proof that nothing was created. It re-reads once after a short delay
   and confirms absence only on a second HSCL8012, so a partition whose create was still in
