@@ -31,6 +31,10 @@ Run it only against an HMC, managed system, and VIOS you own.
   add a mapping without that rewrite, but they still change shared VIOS state. Serialize every
   mapping writer on the chosen VIOS for the length of this run, and take a fresh
   `storage list-mappings` before and after each mapping write.
+- **Media-repository writes rewrite the whole volume-group document.** `create-media-repo`,
+  `delete-media`, and `delete-media-repo` read the volume group, change it, and write it back,
+  so a concurrent change to that group is lost. Serialize every writer on `MEDIA_VG` for the
+  run, and compare `storage list-vgs` and `storage list-optical-media` before and after each.
 - **Confirmations.** Most mutating commands prompt unless you pass `--yes` (or `--confirm` for
   `unmount-optical-media` and `detach-mapping`). The examples pass it so they copy cleanly. Remove
   it when you run the recipe by hand. `--yes` is not a dry run. `storage upload-iso`,
@@ -72,8 +76,10 @@ shows.
 
 ## Prerequisites
 
-- A connection profile for the HMC, with SSH access for the SSH-backed commands
-  (`get-description`, boot order, `capture-console`). SSH access needs a trusted host key, see
+- A connection profile for the HMC, with SSH access for the whole run. Ownership stamping at
+  create and the ownership guard on every adapter, mapping, optical, boot-order, power, and
+  delete command read the partition description over SSH, as do `get-description`, the boot
+  order commands, and `capture-console`. SSH needs a trusted host key, see
   [SSH trust setup](../HMC_HINTS.md#ssh-host-key-trust).
 - `HMC_AUTHORIZE_POWER_OPERATIONS=true`. It turns on the ownership guard for `power-on` and
   `power-off`, so they refuse a partition another owner stamped. With `--system` the guard
@@ -137,7 +143,9 @@ No `hmcpctl` command lists free VIOS virtual slots. Pick an unused slot number f
 ## 2. Create the powered-off partition
 
 A shared-processor partition with more than one virtual processor needs explicit processing
-units; `lpars create` refuses otherwise. Pass all three resource axes explicitly.
+units. The HMC rejects the 0.1-unit default spread over several virtual processors (HSCL0622),
+and the `mksyscfg` fallback `lpars create` uses on some firmware refuses before it submits.
+Pass all three resource axes explicitly.
 
 ```bash
 hmcpctl lpars create "$LPAR_NAME" --system "$SYSTEM" \
