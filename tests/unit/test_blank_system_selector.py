@@ -9,13 +9,16 @@ instead of resolving a managed system named ``""``.
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
 
 from hmcpctl.documents import LparResources
+from hmcpctl.operations.affinity.rest import ProvisionAffinityAssessment
 from hmcpctl.operations.lpar.assignments import LparPcieAssignments
-from hmcpctl.operations.lpar.core import get_lpar, list_lpars
+from hmcpctl.operations.lpar.core import get_lpar, list_lpars, power_on_lpar
 from hmcpctl.operations.lpar.dlpar import modify_lpar
 from hmcpctl.operations.lpar.ownership import list_lpar_ownership
 from hmcpctl.operations.metrics.pcm import (
@@ -150,3 +153,49 @@ async def test_pcm_targets_read_a_blank_system_as_absent(blank):
         await resolve_pcm_resource(
             hmc, "LogicalPartition", "lp1", system_name_or_uuid=blank
         )
+
+
+def _affinity(system: str) -> ProvisionAffinityAssessment:
+    return ProvisionAffinityAssessment(
+        system_name_or_uuid=system,
+        lpar_name="lp1",
+        captured_score=80,
+        captured_policy_state="absent",
+        captured_minimum=None,
+        captured_at=datetime.now(UTC),
+        stale_after_seconds=300,
+        response="warn",
+        regression_threshold=5,
+        optimization_threshold=5,
+    )
+
+
+@BLANKS
+@pytest.mark.asyncio
+async def test_an_affinity_power_on_with_a_blank_system_submits_nothing(blank):
+    """Affinity assessment needs a named system; a blank one is a missing one."""
+    hmc = _hmc()
+    hmc.config.authorize_power_operations = False
+
+    with pytest.raises(ValueError, match="required for post-activation affinity"):
+        await power_on_lpar(
+            hmc, "lp1", system_name_or_uuid=blank, affinity_assessment=_affinity(blank)
+        )
+
+    hmc.submit_job.assert_not_awaited()
+    hmc.find_partition_by_name.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_affinity_power_on_compares_normalised_system_selectors():
+    hmc = _hmc()
+    hmc.config.authorize_power_operations = False
+    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.get_quick_property.return_value = "running"
+    assessment = replace(_affinity("frame-1"), system_name_or_uuid=" frame-1 ")
+
+    await power_on_lpar(
+        hmc, "lp1", system_name_or_uuid="frame-1  ", affinity_assessment=assessment
+    )
+
+    hmc.find_system_by_name.assert_awaited_once_with("frame-1")

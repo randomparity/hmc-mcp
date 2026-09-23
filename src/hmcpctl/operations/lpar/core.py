@@ -252,12 +252,14 @@ async def power_on_lpar(
     ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are passed
     through to the PowerOn job document; their defaults leave it unchanged.
     """
+    system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if affinity_assessment is not None:
         if system_name_or_uuid is None:
             raise ValueError(
                 "system_name_or_uuid is required for post-activation affinity assessment"
             )
-        if affinity_assessment.system_name_or_uuid != system_name_or_uuid:
+        captured = optional_system_selector(affinity_assessment.system_name_or_uuid)
+        if captured != system_name_or_uuid:
             raise ValueError(
                 "affinity assessment managed-system identity must match target"
             )
