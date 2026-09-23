@@ -28,7 +28,7 @@ def test_build_boot_order_document_single_device():
     assert "PendingBootString" in xml
     assert "cd" in xml
     assert "LogicalPartition" in xml
-    assert 'PendingBootString kb="CUR" kxe="false">cd</PendingBootString>' in xml
+    assert 'PendingBootString kb="UOO" kxe="false">cd</PendingBootString>' in xml
 
 
 def test_build_boot_order_document_multiple_devices():
@@ -83,13 +83,13 @@ def test_build_clear_boot_order_document():
     xml = build_clear_boot_order_document()
     assert "PendingBootString" in xml
     assert "LogicalPartition" in xml
-    assert 'PendingBootString kb="CUR" kxe="false"></PendingBootString>' in xml
+    assert 'PendingBootString kb="UOO" kxe="false"></PendingBootString>' in xml
 
 
 def test_build_clear_boot_order_document_empty_string():
     """Clear boot order document contains empty PendingBootString."""
     xml = build_clear_boot_order_document()
-    assert 'PendingBootString kb="CUR" kxe="false"></PendingBootString>' in xml
+    assert 'PendingBootString kb="UOO" kxe="false"></PendingBootString>' in xml
 
 
 def test_build_clear_boot_order_document_uses_correct_namespace():

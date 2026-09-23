@@ -2499,6 +2499,40 @@ async def test_list_operations_unknown_type_raises_hmc_error_with_status(mock_hm
 
 
 @pytest.mark.asyncio
+async def test_create_child_400_surfaces_hmc_schema_message(mock_hmc):
+    """A 400 REST0001 schema rejection reports the HMC's message, not a generic failure (#961).
+
+    The body uses the HttpErrorResponse shape of the INVALID_URL test above. The message text
+    is the one #961 recorded; whether V10R3 puts the schema detail in <Message> is unobserved.
+    """
+    lpar = "00000000-0000-4000-8000-000000000001"
+    path = f"/rest/api/uom/LogicalPartition/{lpar}/VirtualSCSIClientAdapter"
+    mock_hmc.put(path).mock(
+        return_value=httpx.Response(
+            400,
+            text=(
+                '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+                '/firmware/web/mc/2012_10/">'
+                "<HTTPStatus>400</HTTPStatus>"
+                f"<RequestURI>{path}</RequestURI>"
+                "<ReasonCode>Unknown internal error.</ReasonCode>"
+                "<Message>REST0001 Failed to unmarshal input payload. Value 'CUD' is not "
+                "facet-valid with respect to enumeration '[ROR]'.</Message>"
+                "</HttpErrorResponse>"
+            ),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.create_child("LogicalPartition", lpar, "VirtualSCSIClientAdapter", "<x/>")
+
+    assert raised.value.status_code == 400
+    assert "enumeration '[ROR]'" in str(raised.value)
+    assert "<Message>" not in str(raised.value)
+
+
+@pytest.mark.asyncio
 async def test_list_operations_204_returns_no_entries(mock_hmc):
     mock_hmc.get("/rest/api/uom/ManagedSystem/operations").mock(
         return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
