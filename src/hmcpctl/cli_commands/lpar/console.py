@@ -61,11 +61,6 @@ def _create_exclusive(path: Path) -> BinaryIO:
     return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb")
 
 
-def _write_all(sink: BinaryIO, data: bytes) -> None:
-    sink.write(data)
-    sink.flush()
-
-
 def _report(capture: ConsoleCapture) -> None:
     line = (
         f"stop reason: {capture.stop_reason}; bytes: {len(capture.data)}; "
@@ -139,7 +134,8 @@ def lpars_capture_console(
         raise
     _report(capture)
     try:
-        _write_all(sink, capture.data)
+        sink.write(capture.data)
+        sink.flush()
         if output is not None:
             sink.close()
     except BaseException as exc:
