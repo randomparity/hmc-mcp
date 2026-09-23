@@ -174,6 +174,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   readable; every multi-label name, and any name ending in a real TLD such as `.py` or `.md`,
   is still redacted (#914).
 
+- `load_profile` no longer reports a missing config file as "no default_profile set". An
+  explicit `config_path` that does not exist, or an absent platform config file when nothing
+  requests a profile (no `--profile`/`HMC_PROFILE`), now raises `ConfigFileNotFoundError`
+  naming the path it looked for. A file that exists but has no `default_profile` and no
+  requested profile keeps its existing message, and a request for a specific profile against
+  an absent file still reports the profile as not found (#915).
+
 ### Changed
 
 - The distribution, console script, Python package and configuration directory are renamed

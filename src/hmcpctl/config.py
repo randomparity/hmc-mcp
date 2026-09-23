@@ -400,6 +400,16 @@ class NoProfileSelectedError(ConfigError):
     """Raised when no argument, environment variable, or default selects a profile."""
 
 
+class ConfigFileNotFoundError(ConfigError):
+    """Raised when the config file :func:`load_profile` was told to read is absent.
+
+    Distinct from :class:`NoProfileSelectedError`: a missing ``default_profile``
+    key is a fact about a file that was actually read, and reporting it for a
+    file that was never there sends the operator looking for the wrong problem
+    (#915).
+    """
+
+
 @dataclass(frozen=True)
 class ConfigDocument:
     """Package-internal snapshot of a resolved path and parsed config document."""
@@ -466,13 +476,19 @@ def _selected_config_path(config_path: Path | None) -> Path | None:
         raise ConfigError(f"cannot resolve the config path: {exc}") from exc
 
 
-def _read_config_document(path: Path) -> dict[str, Any]:
+def _read_config_document(path: Path, *, missing_ok: bool = True) -> dict[str, Any]:
     """Read and parse *path*, converting every failure into a ConfigError.
 
-    Returns ``{}`` when the file is absent: an absent config file is an empty
-    configuration everywhere it is read. There is deliberately no ``exists()``
-    pre-check — that is a TOCTOU, and the absent case is the FileNotFoundError
-    arm below.
+    Returns ``{}`` when the file is absent and *missing_ok* is true (the
+    default): an absent config file is an empty configuration everywhere it is
+    read. There is deliberately no ``exists()`` pre-check — that is a TOCTOU,
+    and the absent case is the FileNotFoundError arm below.
+
+    When *missing_ok* is false, a missing file raises
+    :class:`ConfigFileNotFoundError` naming *path* instead — for a caller that
+    already knows there is nothing to select a profile from and would
+    otherwise report a missing ``default_profile`` in a file that was never
+    there (#915).
 
     Every other failure is a ConfigError naming *path*, so the callers that
     document ConfigError as their failure type tell the truth and a
@@ -483,8 +499,10 @@ def _read_config_document(path: Path) -> dict[str, Any]:
     """
     try:
         text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {}
+    except FileNotFoundError as exc:
+        if missing_ok:
+            return {}
+        raise ConfigFileNotFoundError(f"{path}: config file not found") from exc
     except UnicodeDecodeError as exc:
         raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
     except (OSError, ValueError) as exc:
@@ -880,12 +898,31 @@ def load_profile(
         HMCConfig populated from the selected profile with env-var overrides.
 
     Raises:
+        ConfigFileNotFoundError: When *config_path* is given and does not
+            exist, or when the platform-native config file is absent and no
+            profile is requested (no explicit ``profile`` and no
+            ``HMC_PROFILE``) to select from it.
         ConfigError: When the file cannot be read, decoded, or parsed, when a
             table it needs is malformed, when no profile is selected, when the
             selected profile is absent, or when secret config is invalid.
     """
-    path = _selected_config_path(config_path)
-    doc: dict[str, Any] = {} if path is None else _read_config_document(path)
+    if config_path is not None:
+        doc = _read_config_document(config_path, missing_ok=False)
+        return _load_profile_from_document(doc, config_path, profile)
+
+    path = _selected_config_path(None)
+    doc: dict[str, Any]
+    if path is None:
+        if profile is None and os.environ.get("HMC_PROFILE") is None:
+            # Nothing would select a profile even if the file existed, so name
+            # the platform path that was looked in rather than reporting a
+            # missing default_profile the operator cannot fix by adding one.
+            raise ConfigFileNotFoundError(
+                f"{config_dir() / 'config.toml'}: config file not found"
+            )
+        doc = {}
+    else:
+        doc = _read_config_document(path)
     return _load_profile_from_document(doc, path, profile)
 
 
