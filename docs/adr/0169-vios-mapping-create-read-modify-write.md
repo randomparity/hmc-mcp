@@ -27,8 +27,9 @@ Every create costs one extra GET and fails on a concurrent VIOS change instead o
 it. A VIOS whose grouped GET omits an empty collection cannot receive its first mapping until
 #879 shows what the HMC returns there. `delete_storage_mapping` keeps its own RMW (full GET, a
 system-scoped POST without `If-Match`), so the two paths differ until a follow-up aligns them.
-The HMC creates a new client/server adapter pair for each mapping. A vSCSI adapter added
-beforehand is left without a server adapter, so the recipes no longer add one.
+The HMC creates a new client/server adapter pair for each mapping, and a vSCSI adapter added
+beforehand is left without a server adapter. The `docs/cli.md` bootable-disk recipe no longer
+adds one. The provision and attach-disk workflows still do, which is left to a follow-up.
 
 ## Considered & rejected
 
@@ -42,3 +43,7 @@ beforehand is left without a server adapter, so the recipes no longer add one.
   write this record removes.
 - **POST without `If-Match` when the GET has no `ETag`.** judgment: a lost update would silently
   drop a mapping added concurrently, which is the harm this record prevents.
+- **Share one RMW helper with the VolumeGroup path.** judgment: this is left to #936, which
+  owns that path.
+- **Pass a pre-added `ClientAdapter` into the mapping.** judgment: it is not live-proven, and
+  the recipe no longer creates such an adapter.

@@ -10,22 +10,20 @@ safe form: GET `?group=ViosSCSIMapping`, append one mapping, then POST it to the
 
 ## Scope
 
-- One private `StorageMixin._append_vios_mapping(operation, vios_uuid, mapping_document)` in
-  `client_storage.py`, called by both create methods:
-  1. GET `/rest/api/uom/VirtualIOServer/<vios>?group=ViosSCSIMapping` with a typed `Accept`
-     and no schema-version header. A non-200 raises `HMCError`.
+- A module-private `_append_vios_mapping(client, operation, vios_uuid, mapping_document)` in
+  `client_storage.py`, called by both creates:
+  1. GET `VirtualIOServer/<vios>?group=ViosSCSIMapping` (typed `Accept`); non-200 raises.
   2. A missing `ETag`, a mismatched VIOS identity (`_find_vios_element`), or an absent
      `VirtualSCSIMappings` raises `HMCError` before any POST.
-  3. Append the builder document's one `VirtualSCSIMapping` to the fetched collection. Every
-     fetched element is left untouched.
+  3. Append the builder's one `VirtualSCSIMapping`; fetched elements stay untouched.
   4. POST the serialized `VirtualIOServer` element to the GET path with `If-Match`, `Accept: */*`
      and `Content-Type: ...; type=VirtualIOServer`. A 412 raises an `HMCError` saying the VIOS
      changed. The POST stays inside `_reconcile_storage_mutation`.
-- The builders keep their signatures and child order (`AssociatedLogicalPartition`, `Storage`,
-  `TargetDevice`). Only their docstrings change.
-- Docs: the bootable-disk recipe in `docs/cli.md` drops `adapters add-vscsi`, and the
-  `hmc_map_storage_to_lpar` docstring (regenerated into `docs/tools/storage.md`) says the
-  mapping creates its own adapter pair.
+- Builders keep signatures and child order (`AssociatedLogicalPartition`, `Storage`,
+  `TargetDevice`); only docstrings change.
+- Docs: the `docs/cli.md` bootable-disk recipe and its storage-model note drop
+  `adapters add-vscsi`; the `hmc_map_storage_to_lpar` docstring (regenerated into
+  `docs/tools/storage.md`) says the mapping creates its own adapter pair.
 - This is a clean extension with no ownership transition. `delete_storage_mapping` is unchanged.
 
 ### Failure model
@@ -34,18 +32,20 @@ safe form: GET `?group=ViosSCSIMapping`, append one mapping, then POST it to the
 2. Invariants: a create never removes or alters a mapping the GET returned. Other partitions'
    storage is the asset at stake. No POST is sent without that GET's `If-Match`.
 3. Accepted:
-   - A grouped GET missing `VirtualSCSIMappings`, `UUID` or `ETag` cannot be mapped. The run
-     fails closed before any write, and the error names the missing part.
+   - A grouped GET missing `VirtualSCSIMappings`, `UUID` or `ETag` fails closed before any
+     write; the error names the missing part.
    - A concurrent writer between the GET and the POST gets a 412, which is not retried.
-4. Covered elsewhere: the shared VolumeGroup RMW (#936); live proof (#879); the provisioning
-   `add_vscsi` step and the partition href scope (follow-up candidates).
+   - A POST transport failure (no status) leaves the outcome unknown; as today it skips the
+     5xx readback, and a blind re-run may add a second mapping. Check the inventory first.
+4. Covered elsewhere: the shared VolumeGroup RMW (#936); live proof (#879); the provision and
+   attach-disk `add_vscsi` steps and the partition href scope (follow-up candidates).
 
 ## Success
 
 1. Each create method issues one GET and one POST to the grouped VIOS URL, and the POST's
    `If-Match` equals the GET's `ETag`.
-2. Every `VirtualSCSIMapping` from the GET appears byte-identical in the POST body, and the
-   new mapping follows them.
+2. Each `VirtualSCSIMapping` from the GET equals, by C14N against the parsed fixture text,
+   its POST counterpart in order; the new mapping is last.
 3. A missing `ETag` or collection sends no POST, and a 412 raises `HMCError`.
 4. Neither the recipe nor the docstring tells the operator to add a vSCSI adapter first.
 
@@ -56,5 +56,4 @@ safe form: GET `?group=ViosSCSIMapping`, append one mapping, then POST it to the
   sent. Red on main: no GET. Green: `uv run --no-sync pytest tests/storage/test_mapping_rmw.py`.
 - S4 · Mode: task-test-not-applicable · the change is prose in `docs/cli.md` and a docstring.
   `just tool-docs-check` asserts only that the page matches the regenerated output.
-- The existing create tests in `tests/unit/` and `tests/storage/` now serve a grouped GET with
-  an `ETag`.
+- Existing create tests (unit, storage, lpar) now serve a grouped GET with `ETag`.
