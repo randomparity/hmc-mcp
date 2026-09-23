@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from hmcpctl import config as config_module
 from hmcpctl.config import (
     ConfigError,
+    ConfigFileNotFoundError,
     HMCConfig,
     build_config,
     config_dir,
@@ -357,6 +358,22 @@ password = "p"
     cfg = _write_toml(tmp_path / "config.toml", toml)
     with pytest.raises(ConfigError, match="no default_profile"):
         load_profile(config_path=cfg)
+
+
+def test_load_profile_explicit_path_missing(tmp_path, monkeypatch):
+    """An explicit config_path that does not exist names the path, not a profile problem (#915)."""
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    missing = tmp_path / "absent.toml"
+    with pytest.raises(ConfigFileNotFoundError, match=r"absent\.toml: config file not found"):
+        load_profile(config_path=missing)
+
+
+def test_load_profile_explicit_path_missing_even_with_profile_requested(tmp_path, monkeypatch):
+    """An explicit missing path is reported regardless of a requested profile (#915)."""
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    missing = tmp_path / "absent.toml"
+    with pytest.raises(ConfigFileNotFoundError, match=r"absent\.toml: config file not found"):
+        load_profile("prod", config_path=missing)
 
 
 def test_load_profile_unknown_profile(tmp_path, monkeypatch):
@@ -1122,6 +1139,47 @@ def test_load_profile_with_no_platform_config_file(tmp_path, monkeypatch):
         pytest.raises(ConfigError, match="not found"),
     ):
         _READERS["load_profile"](None)
+
+
+def test_load_profile_platform_file_missing_no_profile_requested(tmp_path, monkeypatch):
+    """No platform file and nothing requesting a profile names the path it looked in (#915)."""
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with (
+        patch.object(sys, "platform", "linux"),
+        pytest.raises(ConfigFileNotFoundError, match=r"config\.toml: config file not found"),
+    ):
+        load_profile(config_path=None)
+
+
+def test_load_profile_platform_file_missing_hmc_profile_requested(tmp_path, monkeypatch):
+    """A missing platform file with HMC_PROFILE set still reports the profile problem,
+    not the file (unaffected by #915: something did ask for a profile)."""
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    monkeypatch.setenv("HMC_PROFILE", "prod")
+    with (
+        patch.object(sys, "platform", "linux"),
+        pytest.raises(ConfigError, match="not found") as exc_info,
+    ):
+        load_profile(config_path=None)
+    assert not isinstance(exc_info.value, ConfigFileNotFoundError)
+
+
+def test_load_profile_platform_file_vanishes_before_read(tmp_path, monkeypatch):
+    """A platform file resolve_config_path() saw but that is gone by read time is
+    reported as missing, not as no default_profile (#915 gauntlet finding)."""
+
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    # resolve_config_path() would have reported this path as present; it never
+    # existed on disk here, standing in for the race window between that
+    # existence check and load_profile's later read.
+    vanished = tmp_path / "config.toml"
+    monkeypatch.setattr(config_module, "resolve_config_path", lambda: vanished)
+    with pytest.raises(ConfigFileNotFoundError, match="config file not found") as exc_info:
+        load_profile(config_path=None)
+    assert str(vanished) in str(exc_info.value)
 
 
 def test_profile_reader_rejects_a_non_table_profiles_key(profile_reader, tmp_path):

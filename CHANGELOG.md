@@ -101,6 +101,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
+  Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The
+  check used to pass on `V10R3 M1060` anywhere in the output — a later service pack that still
+  lists an M1060 fix line — and on field prefixes such as `Service Pack: 10600`; both are now
+  refused (#911).
+
 - `console info` reports the actionable firmware error on the HMC levels that 500 on the
   unfiltered `ManagementConsole` feed. `get_console_info`'s guard required the literal
   `null SessionId`, which no firmware level has been observed to send: the error reads
@@ -180,6 +186,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   flight is found and cleaned up rather than left holding the slot. A create-time probe whose
   absence cannot be confirmed now says in its manual-recovery row that the run will not retry
   its cleanup (#906).
+
+- `load_profile` no longer reports a missing config file as "no default_profile set". An
+  explicit `config_path` that does not exist, or an absent platform config file when nothing
+  requests a profile (no `--profile`/`HMC_PROFILE`), now raises `ConfigFileNotFoundError`
+  naming the path it looked for. A file that exists but has no `default_profile` and no
+  requested profile keeps its existing message, and a request for a specific profile against
+  an absent file still reports the profile as not found (#915).
 
 - When no slot is pinned, the live-test dedicated PCIe arm no longer auto-selects a slot that a
   partition profile lists but no partition owns. The assignment refuses such a slot, so the arm
