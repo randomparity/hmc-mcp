@@ -775,7 +775,10 @@ class ConsoleSession:
         Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
         does, and closes the connection. Cancelling the caller never interrupts
         the release; the cancellation is re-raised after it completes.
-        :meth:`read` waits until :meth:`resume`.
+        :meth:`read` waits until :meth:`resume`. The external holder should
+        acquire only after this returns: the probe holds the slot briefly, and
+        a holder that acquires before the probe makes this return ``False``
+        although the slot was handed over.
 
         Raises:
 

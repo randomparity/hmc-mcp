@@ -54,7 +54,10 @@ released.
 - Reconnect while paused belongs to #977, which lands after this record. Neither mode detects a
   dropped channel.
 - A suspended session whose `suspend()` could not prove release reports `released=False` from
-  `close()` and issues no second `rmvterm`. The operator recovers as ADR 0170 rule 6 describes.
+  `close()` and issues no second `rmvterm`. `False` can also mean the external holder acquired
+  before the release probe ran, so the external holder should start only after `suspend()`
+  returns. Before recovering with `rmvterm` as ADR 0170 rule 6 describes, the operator checks
+  who holds the vterm.
 - `resume()` and the external holder race for the slot. The loser sees contention and does not
   retry.
 - A held session whose vterm another client took with `rmvterm` still issues `rmvterm` on
