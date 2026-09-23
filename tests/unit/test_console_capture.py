@@ -901,6 +901,21 @@ async def test_sentence_after_banner_in_one_read_is_acquisition():
 
 
 @pytest.mark.asyncio
+async def test_sentence_before_banner_in_one_read_is_contention():
+    stream = FakeConnection([FakeProcess(CONTENTION + BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream)
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError),
+    ):
+        await ConsoleSession(_client(), "sys1", "lp1").open()
+
+    release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_probe_sentence_after_banner_is_acquisition_and_torn_down():
     stream = FakeConnection([FakeProcess(BANNER, None)])
     probe = FakeConnection([FakeProcess(BANNER + CONTENTION)])
