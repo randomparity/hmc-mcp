@@ -13,6 +13,7 @@ import pytest
 from defusedxml import ElementTree as DET
 
 from hmcpctl import documents
+from hmcpctl.documents.common import UOM_NS
 from hmcpctl.xmlutil import localname
 
 FIXTURE = DET.parse(Path(__file__).parents[1] / "storage" / "vscsi_mapping_v10r3.xml").getroot()
@@ -55,10 +56,95 @@ RECORDED = [
         {"VirtualSlotNumber": "COD", "VirtualSwitchID": "ROR", "PortVLANID": "CUR",
          "MACAddress": "CUR"},
     ),
+    (documents.build_volume_group_document("vg1", ["hdisk1"]), {"VolumeName": "CUR"}),
+    (
+        documents.build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK),
+        {"VolumeName": "CUR"},
+    ),
+    (documents.build_virtual_optical_mapping_document("a.iso", LINK), {"MediaName": "CUR"}),
+    (
+        documents.build_virtual_network_document("n1", 10, 0, tagged=True),
+        {"NetworkVLANID": "COD", "VswitchID": "ROR", "TaggedNetwork": "COD"},
+    ),
 ]
 
 
-@pytest.mark.parametrize(("xml", "expected"), RECORDED)
+@pytest.mark.parametrize(
+    ("xml", "expected"), RECORDED, ids=["-".join(expected) for _, expected in RECORDED]
+)
 def test_recorded_kb_values(xml: str, expected: dict[str, str]) -> None:
     root = _tree(xml)
     assert {name: _first(root, name).attrib.get("kb") for name in expected} == expected
+
+
+def test_virtual_disk_create_matches_fixture() -> None:
+    built = _first(_tree(documents.build_virtual_disk_document("lv1", 2048)), "VirtualDisk")
+    live = _first(FIXTURE, "VirtualDisk")
+    assert _kbx(built) == _kbx(live)
+    names = [n for n in _children(built) if n != "Metadata"]
+    assert names == ["DiskCapacity", "DiskName"]
+    assert _is_subsequence(names, _children(live))
+    for name in names:
+        assert _kbx(_first(built, name)) == _kbx(_first(live, name)), name
+
+
+def test_vscsi_mapping_matches_fixture() -> None:
+    xml = documents.build_vscsi_mapping_document("VirtualDisk", "vd1", LINK, "vtscsi9")
+    built = _first(_tree(xml), "VirtualSCSIMapping")
+    live = _first(FIXTURE, "VirtualSCSIMapping")
+    assert _kbx(built) == _kbx(live)
+    assert _children(built) == [
+        "Metadata", "AssociatedLogicalPartition", "Storage", "TargetDevice"
+    ]
+    assert _is_subsequence(_children(built), _children(live))
+    link = _first(built, "AssociatedLogicalPartition")
+    assert link.tag == f"{{{UOM_NS}}}AssociatedLogicalPartition"
+    assert link.attrib["href"] == LINK
+    assert link.attrib["rel"] == "related"
+    for name in ("AssociatedLogicalPartition", "Storage", "VirtualDisk", "DiskName",
+                 "TargetDevice", "LogicalVolumeVirtualTargetDevice", "TargetName"):
+        assert _kbx(_first(built, name)) == _kbx(_first(live, name)), name
+    assert _children(_first(built, "Storage")) == ["VirtualDisk"]
+    assert _first(built, "TargetName").text == "vtscsi9"
+
+
+@pytest.mark.parametrize(
+    ("xml", "storage", "target"),
+    [
+        (
+            documents.build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK, "vt1"),
+            "PhysicalVolume",
+            "PhysicalVolumeVirtualTargetDevice",
+        ),
+        (
+            documents.build_virtual_optical_mapping_document("a.iso", LINK, "vtopt1"),
+            "VirtualOpticalMedia",
+            "VirtualOpticalTargetDevice",
+        ),
+    ],
+    ids=["physical-volume", "optical"],
+)
+def test_mapping_wrappers_and_target_device(xml: str, storage: str, target: str) -> None:
+    root = _tree(xml)
+    target_device = _first(root, "TargetDevice")
+    assert _first(root, storage).attrib == {"schemaVersion": "V1_0"}
+    assert _children(target_device) == [target]
+    assert _first(root, target).attrib == {"schemaVersion": "V1_0"}
+    assert not (target_device.text or "").strip()
+
+
+def test_mapping_without_target_device_omits_it() -> None:
+    root = _tree(documents.build_vscsi_mapping_document("VirtualDisk", "vd1", LINK))
+    assert _children(_first(root, "VirtualSCSIMapping")) == [
+        "Metadata", "AssociatedLogicalPartition", "Storage"
+    ]
+
+
+def test_volume_group_physical_volume_attributes() -> None:
+    root = _tree(documents.build_volume_group_document("vg1", ["hdisk1"]))
+    assert _first(root, "PhysicalVolume").attrib == {"schemaVersion": "V1_0"}
+
+
+def test_virtual_disk_delete_virtual_disk_attributes() -> None:
+    root = _tree(documents.build_virtual_disk_delete_document("lv1"))
+    assert _first(root, "VirtualDisk").attrib == {"schemaVersion": "V1_0"}

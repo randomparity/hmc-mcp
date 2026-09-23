@@ -369,8 +369,8 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
     hmc_create_virtual_disk(VIOS_UUID, VG_UUID, "lv_boot", 51200)
     body = route.calls.last.request.content.decode()
     assert "<VirtualDisks" in body
-    assert '<DiskName kb="CUD" kxe="false">lv_boot</DiskName>' in body
-    assert '<DiskCapacity kb="CUD" kxe="false">50</DiskCapacity>' in body
+    assert '<DiskName kb="CUR" kxe="false">lv_boot</DiskName>' in body
+    assert '<DiskCapacity kb="CUR" kxe="false">50</DiskCapacity>' in body
 
 
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
@@ -383,8 +383,8 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIMapping" in body
     # storage_kind lands as the element name; storage_name is DiskName.
-    assert "<VirtualDisk kb=" in body
-    assert '<DiskName kb="CUD" kxe="false">lv_boot</DiskName>' in body
+    assert '<VirtualDisk schemaVersion="V1_0">' in body
+    assert '<DiskName kb="CUR" kxe="false">lv_boot</DiskName>' in body
     assert f"/rest/api/uom/LogicalPartition/{LPAR_UUID}" in body
 
 
@@ -402,9 +402,9 @@ def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
         target_device="vtscsi0",
     )
     body = route.calls.last.request.content.decode()
-    assert "<PhysicalVolume kb=" in body
-    assert '<VolumeName kb="CUD" kxe="false">hdisk5</VolumeName>' in body
-    assert '<TargetDevice kb="CUD" kxe="false">vtscsi0</TargetDevice>' in body
+    assert '<PhysicalVolume schemaVersion="V1_0">' in body
+    assert '<VolumeName kb="CUR" kxe="false">hdisk5</VolumeName>' in body
+    assert '<TargetName kb="CUR" kxe="false">vtscsi0</TargetName>' in body
     assert f"/rest/api/uom/LogicalPartition/{LPAR_UUID}" in body
 
 

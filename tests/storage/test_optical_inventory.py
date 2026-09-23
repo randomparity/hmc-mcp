@@ -155,7 +155,7 @@ async def test_create_optical_mapping_submits_document(mock_hmc):
     assert "test.iso" in req_body
     assert LPAR_UUID in req_body
     assert "<TargetDevice" in req_body
-    assert ">cd1</TargetDevice>" in req_body
+    assert '<TargetName kb="CUR" kxe="false">cd1</TargetName>' in req_body
     assert result is not None
     assert result["UUID"] == "mapping-uuid-new-001"
     assert result["Storage"]["VirtualOpticalMedia"]["MediaName"] == "test.iso"
