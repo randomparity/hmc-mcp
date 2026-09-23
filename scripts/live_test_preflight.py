@@ -88,7 +88,7 @@ def _dedicated_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
             f"managed system {resolved.system_name}",
             f"partitions named {resolved.lpar_prefix}* (created, then deleted)",
             f"profile {resolved.profile_name} io_slots (assigned, then restored)",
-            f"dedicated slot {resolved.drc_index or '(first unassigned)'}",
+            f"dedicated slot {resolved.drc_index or pcie.AUTO_SELECTED_SLOT}",
         ),
         resolved.system_name,
     )

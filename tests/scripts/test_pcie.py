@@ -353,15 +353,29 @@ def _admitted_readback(io_slots: str, lpar_name: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+#: The system's profiles when ST29 selects a slot, before any fixture exists:
+#: another partition's profile lists a slot, but not the one the inventory offers.
+_SELECTION_READBACK = 'lpar_name,name,io_slots\nvios-1,default_profile,"21030030/none/0"\n'
+
+
 def _rendering_profile_reads(
-    responses: dict[str, Any], marker_holder: dict[str, str], prefix: str
+    responses: dict[str, Any],
+    marker_holder: dict[str, str],
+    prefix: str,
+    selection_readback: Any,
 ) -> dict[str, Any]:
-    """Answer each admitted profile read with the table around the modelled value."""
+    """Answer each admitted profile read with the table around the modelled value.
+
+    A read before the run marker exists is ST29's slot selection, which sees the
+    system as it stands rather than the fixture's modelled profile.
+    """
     command_model = responses.get("hmc_run_command")
     if not callable(command_model):
         return responses
 
     def run_command(kwargs: dict[str, Any], index: int) -> Any:
+        if kwargs["cmd"] == _PROFILE_READ and "marker" not in marker_holder:
+            return selection_readback
         value = command_model(kwargs, index)
         if kwargs["cmd"] != _PROFILE_READ or not isinstance(value, str):
             return value
@@ -376,10 +390,11 @@ async def _run_arm(
     marker_holder: dict[str, str],
     statuses: dict[str, Any] | None = None,
     config: dict[str, str] | None = None,
+    selection_readback: Any = _SELECTION_READBACK,
 ) -> ScenarioState:
     live = LiveTestConfig(**(config if config is not None else _CONFIG))
     responses = _rendering_profile_reads(
-        responses, marker_holder, live.dedicated_pcie_lpar_prefix
+        responses, marker_holder, live.dedicated_pcie_lpar_prefix, selection_readback
     )
 
     real_marker = pcie._new_run_marker
@@ -465,6 +480,133 @@ async def test_no_unassigned_slot_skips_arm(
     assert state.cleanup_start is None
     skip_rows = [r for r in state.results if r[2] == "SKIP"]
     assert any("slot" in r[1].lower() or "slot" in str(r[3]).lower() for r in skip_rows)
+
+
+_LISTED_DRC = "21010021"
+
+
+def _two_slot_inventory(_kwargs: dict[str, Any], _index: int) -> dict[str, Any]:
+    """Two unowned slots; the first is the one a profile lists in the tests below."""
+    return {
+        "capability": "available",
+        "items": [
+            {"drc_index": _LISTED_DRC, "description": "listed", "owner_lpar": "null"},
+            {"drc_index": _DRC, "description": "PCIe adapter", "owner_lpar": ""},
+        ],
+    }
+
+
+def _selection_table(io_slots: str) -> str:
+    return f'lpar_name,name,io_slots\nvios-1,default_profile,"{io_slots}"\n'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "vios_io_slots",
+    [
+        pytest.param(f"{_LISTED_DRC}/none/0", id="listed"),
+        pytest.param(f"21030030/none/0,{_LISTED_DRC}/none/1", id="listed-required"),
+        # The #882 holder check refuses a slot a row it cannot parse mentions,
+        # so selection must not pick that slot either.
+        pytest.param(f"{_LISTED_DRC}//0", id="unparseable-mention"),
+    ],
+)
+async def test_auto_selection_skips_a_slot_a_profile_lists(
+    monkeypatch: pytest.MonkeyPatch, vios_io_slots: str
+) -> None:
+    """Unowned in inventory is not free: a profile can still list the slot (#916)."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    responses["hmc_list_dedicated_pcie_slots"] = _two_slot_inventory
+    state = await _run_arm(
+        monkeypatch, responses, holder, selection_readback=_selection_table(vios_io_slots)
+    )
+    row = state.row("dedicated slot selection")
+    assert row is not None and row[2] == "PASS"
+    assert f"selected drc_index={_DRC!r}" in str(row[3])
+    assert not any(_LISTED_DRC in cmd for cmd in state.commands())
+
+
+@pytest.mark.asyncio
+async def test_unrelated_unparseable_profile_does_not_block_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only rows naming a slot decide it, as the holder check reads them."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    state = await _run_arm(
+        monkeypatch, responses, holder, selection_readback=_selection_table("21030030//0")
+    )
+    row = state.row("dedicated slot selection")
+    assert row is not None and row[2] == "PASS"
+
+
+@pytest.mark.asyncio
+async def test_every_unowned_slot_listed_by_a_profile_skips_arm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    state = await _run_arm(
+        monkeypatch, responses, holder, selection_readback=_selection_table(_ASSIGNED)
+    )
+    assert state.cleanup_start is None
+    assert "hmc_create_lpar" not in state.tools()
+    row = state.row("dedicated slot selection")
+    assert row is not None and row[2] == "SKIP"
+    assert "listed by a partition profile" in str(row[3])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("statuses", "readback"),
+    [
+        pytest.param(
+            {"hmc_run_command": _command_fails("-r prof")}, _CONNECTION_LOST, id="failed"
+        ),
+        pytest.param(None, "not the admitted table\n", id="unadmitted"),
+    ],
+)
+async def test_unreadable_profiles_skip_auto_selection(
+    monkeypatch: pytest.MonkeyPatch, statuses: Any, readback: Any
+) -> None:
+    """Without the profile table, no slot can be shown to be listed by none."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses=statuses, selection_readback=readback
+    )
+    assert "hmc_create_lpar" not in state.tools()
+    row = state.row("dedicated slot selection")
+    assert row is not None and row[2] == "SKIP"
+    # The failure is a `CallFailure`, whose message alone `RunState.record`
+    # persists, redacted: a lost connection reads apart from an unadmitted table
+    # without a re-run, and raw HMC output never reaches the results file.
+    failure = row[3]
+    assert isinstance(failure, CallFailure)
+    if isinstance(readback, CallFailure):
+        assert failure is readback
+    else:
+        assert "unadmitted profile io_slots readback" in failure.message
+        assert readback.strip() not in failure.message
+
+
+@pytest.mark.asyncio
+async def test_pinned_slot_is_not_checked_against_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pinned slot keeps ADR 0166's contract: a profile listing it fails ST30/ST31."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    state = await _run_arm(
+        monkeypatch,
+        responses,
+        holder,
+        config={**_CONFIG, "dedicated_pcie_drc_index": _DRC},
+        selection_readback=_selection_table(_ASSIGNED),
+    )
+    row = state.row("dedicated slot selection")
+    assert row is not None and row[2] == "PASS"
 
 
 @pytest.mark.asyncio
@@ -606,10 +748,11 @@ async def test_unfinished_probe_cleanup_blocks_the_fixture_and_is_retried_once(
 
     def status(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
         # The admitted read names no partition, but the fixture is never
-        # created here, so every profile read before cleanup is the probe's.
+        # created here, so every profile read after ST29's slot selection and
+        # before cleanup is the probe's.
         if kwargs.get("cmd", "") == _PROFILE_READ:
             probe_reads["n"] += 1
-            return "FAIL" if probe_reads["n"] == 2 else "PASS"
+            return "FAIL" if probe_reads["n"] == 3 else "PASS"
         return "PASS"
 
     state = await _run_arm(
@@ -900,7 +1043,7 @@ async def test_cleanup_removes_slot_whose_assign_response_was_lost(
 async def test_cleanup_refuses_when_confirming_read_was_lost(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ST30's baseline read succeeds; every profile read after it fails.
+    """ST29's selection and ST30's baseline reads succeed; every profile read after fails.
 
     So the assign applies, `applied_io_slots` is never set, and the live
     `io_slots` at cleanup is unreadable. Guard B must enter on the baseline
@@ -913,7 +1056,7 @@ async def test_cleanup_refuses_when_confirming_read_was_lost(
         _happy_responses(holder),
         holder,
         statuses={
-            "hmc_run_command": _nth_matching_command_fails(_PROFILE_READ, 2)
+            "hmc_run_command": _nth_matching_command_fails(_PROFILE_READ, 3)
         },
     )
 
