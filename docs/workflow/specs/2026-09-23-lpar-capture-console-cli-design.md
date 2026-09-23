@@ -20,7 +20,8 @@ MCP tool `hmc_capture_lpar_console`, so the bare-CEC recipe documents a gap.
   raises, is interrupted, or the write fails, the file this command created is removed.
 - When the capture returns, one stderr line reports stop reason, byte count, `released`, and any
   error; when it raises, stderr carries the `Error:` line only.
-- Exit codes follow [ADR 0175](../../adr/0175-capture-console-exit-codes.md).
+- Exit codes follow [ADR 0175](../../adr/0175-capture-console-exit-codes.md); the command help
+  and the `docs/cli.md` console lines state them, and `CHANGELOG.md` records the command.
 - Recipe step 5 captures by name with `--output`; its structural test expects the command.
   Excluded: optical/ISO (#776/PR #777), `--follow` (#957), bound changes.
 
@@ -56,5 +57,4 @@ control is the terminal refusal.
 - focused-test: shared resolution — the existing MCP tool test in
   `tests/unit/test_console_capture.py` with resolution patch targets moved to the operation.
 - focused-test: recipe — `tests/app/test_bare_cec_recipe.py` `EXPECTED_COMMANDS`.
-- task-test-not-applicable: `docs/cli.md` and `CHANGELOG.md` prose; nothing executable reads
-  those lines.
+- task-test-not-applicable: help, `docs/cli.md` and `CHANGELOG.md` prose; nothing reads it.
