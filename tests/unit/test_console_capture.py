@@ -24,10 +24,10 @@ from hmcpctl.ssh.console import (
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
     ConsoleHeldError,
+    ConsoleSession,
     _acquire_capture_stream,
     _open_capture_stream,
     _probe_released,
-    _release_uncancellable,
     _SealedStdin,
     _truncate,
     capture_lpar_console,
@@ -39,18 +39,6 @@ BANNER = b"\r\n Open in progress  \r\n "
 
 def _client() -> HMCClient:
     return HMCClient(make_config())
-
-
-@pytest.mark.asyncio
-async def test_release_propagates_cancellation_from_completed_child() -> None:
-    async def cancelled_release(*args) -> bool:
-        raise asyncio.CancelledError
-
-    with (
-        patch("hmcpctl.ssh.console._release_and_verify", cancelled_release),
-        pytest.raises(asyncio.CancelledError),
-    ):
-        await _release_uncancellable(make_config(), "sys1", "lp1")
 
 
 # The exact recorded P1 contention output, quirks included.
@@ -304,7 +292,7 @@ async def test_contention_is_detected_when_it_arrives_midstream():
             "hmcpctl.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
-        patch("hmcpctl.ssh.console.run_hmc_command", AsyncMock()),
+        patch("hmcpctl.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
         pytest.raises(ConsoleHeldError),
     ):
         await capture_lpar_console(
@@ -313,6 +301,9 @@ async def test_contention_is_detected_when_it_arrives_midstream():
             "lp1",
             **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
         )
+    # ADR 0170 rule 7: the capture keeps ADR 0072's no-rmvterm contention path.
+    release_mock.assert_not_awaited()
+    assert connection.closed
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +560,7 @@ async def test_cancellation_during_acquisition_releases_proven_session():
             "hmcpctl.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
-        patch("hmcpctl.ssh.console._release_uncancellable", release),
+        patch("hmcpctl.ssh.console._release_and_verify", release),
     ):
         task = asyncio.create_task(
             capture_lpar_console(
@@ -609,7 +600,7 @@ async def test_cancellation_during_contended_acquisition_never_releases_holder()
             "hmcpctl.ssh.console.open_hmc_connection",
             AsyncMock(return_value=connection),
         ),
-        patch("hmcpctl.ssh.console._release_uncancellable", release),
+        patch("hmcpctl.ssh.console._release_and_verify", release),
     ):
         task = asyncio.create_task(
             capture_lpar_console(
@@ -941,3 +932,302 @@ def test_capture_tool_preserves_payload_and_profile():
         "bytes_captured": 9,
         "data_base64": base64.b64encode(b"\x00console\xff").decode("ascii"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Continuous console session (issue #974, ADR 0170)
+# ---------------------------------------------------------------------------
+
+
+def _session_patches(*connections: FakeConnection, release=None):
+    """Patch the SSH seams: connections in open order, then rmvterm."""
+    run_command = release or AsyncMock(return_value="Close command sent")
+    return (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection",
+            AsyncMock(side_effect=list(connections)),
+        ),
+        patch("hmcpctl.ssh.console.run_hmc_command", run_command),
+        patch("hmcpctl.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    )
+
+
+@pytest.mark.asyncio
+async def test_session_streams_past_capture_ceiling_and_releases():
+    chunk = b"x" * 65_536
+    count = MAX_CAPTURE_BYTES // len(chunk) + 1
+    stream = FakeConnection([FakeProcess(BANNER, None, *([chunk] * count))])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        # A consumer-side timeout leaves the session open and readable.
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(session.read(), 0.05)
+        received = b"".join([part async for part in session])
+        assert session.released is None
+        assert await session.close() is True
+        assert await session.close() is True
+
+    assert len(received) == count * len(chunk) > MAX_CAPTURE_BYTES
+    assert session.released is True
+    commands = [call.args[1] for call in release.await_args_list]
+    assert commands == ["rmvterm -m sys1 -p lp1"] * 2  # ours + the probe's teardown
+    assert stream.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_session_close_reports_unproven_release():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+
+    assert session.released is False
+
+
+@pytest.mark.asyncio
+async def test_session_contention_at_open_never_releases():
+    stream = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        with pytest.raises(ConsoleHeldError):
+            await session.open()
+        assert await session.close() is False
+        never_opened = ConsoleSession(_client(), "sys1", "lp1")
+        assert await never_opened.close() is False
+
+    release.assert_not_awaited()
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+async def test_session_yields_late_sentinel_as_data():
+    stream = FakeConnection([FakeProcess(BANNER, CONTENTION)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            received = [part async for part in session]
+
+    assert received == [BANNER, CONTENTION]
+    assert session.released is True
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_session_read_error_propagates_and_close_still_releases():
+    class BannerThenFailingStdout(FakeStdout):
+        async def read(self, size: int) -> bytes:
+            if self._chunks:
+                return await super().read(size)
+            raise OSError("channel lost")
+
+    process = FakeProcess()
+    process.stdout = BannerThenFailingStdout(BANNER)
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(OSError, match="channel lost"):
+            await session.read()
+        assert await session.close() is True
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_session_rejects_reopen_and_read_when_not_open():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect as connect_mock, run_command, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        with pytest.raises(RuntimeError):
+            await session.read()
+        await session.open()
+        with pytest.raises(RuntimeError):
+            await session.open()
+        await session.close()
+        with pytest.raises(RuntimeError):
+            await session.read()
+
+        closed_first = ConsoleSession(_client(), "sys1", "lp1")
+        await closed_first.close()
+        with pytest.raises(RuntimeError):
+            await closed_first.open()
+
+    assert connect_mock.await_count == 2  # the session and its probe only
+
+
+@pytest.mark.asyncio
+async def test_session_failed_stdin_pipe_leaves_session_closable():
+    session = ConsoleSession(_client(), "sys1", "lp1")
+    with (
+        patch("hmcpctl.ssh.console.os.pipe", side_effect=OSError(24, "EMFILE")),
+        patch("hmcpctl.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock,
+        pytest.raises(OSError, match="EMFILE"),
+    ):
+        await session.open()
+
+    assert await session.close() is False
+    connect_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_session_close_during_open_is_refused():
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+    stream = FakeConnection([])
+
+    async def blocked_create_process(command: str, **kwargs):
+        entered.set()
+        await finish.wait()
+        return FakeProcess(BANNER, None)
+
+    stream.create_process = blocked_create_process
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        opening = asyncio.create_task(session.open())
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        with pytest.raises(RuntimeError, match="in flight"):
+            await session.close()
+        finish.set()
+        await opening
+        assert await session.close() is True
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_session_cancellation_releases_before_propagating():
+    reading = asyncio.Event()
+    stream = FakeConnection([FakeProcess(BANNER, None, blocked_read_started=reading)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    session = ConsoleSession(_client(), "sys1", "lp1")
+
+    async def collect() -> None:
+        async with session:
+            async for _ in session:
+                pass
+
+    with connect, run_command as release, probe_seconds:
+        task = asyncio.create_task(collect())
+        await asyncio.wait_for(reading.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert session.released is True
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_session_close_survives_cancellation_and_is_idempotent():
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls: list[tuple] = []
+
+    async def slow_release(*args) -> bool:
+        calls.append(args)
+        started.set()
+        await finish.wait()
+        return True
+
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    with (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=stream)
+        ),
+        patch("hmcpctl.ssh.console._release_and_verify", slow_release),
+    ):
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        closing = asyncio.create_task(session.close())
+        await asyncio.wait_for(started.wait(), timeout=5)
+        closing.cancel()
+        await asyncio.sleep(0)
+        closing.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+        assert await session.close() is True
+
+    assert session.released is True
+    assert calls == [(make_config(), "sys1", "lp1")]
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+async def test_session_close_propagates_cancelled_release():
+    async def cancelled_release(*args) -> bool:
+        raise asyncio.CancelledError
+
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    with (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=stream)
+        ),
+        patch("hmcpctl.ssh.console._release_and_verify", cancelled_release),
+    ):
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        with pytest.raises(asyncio.CancelledError):
+            await session.close()
+
+    assert session.released is False
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+async def test_capture_cancelled_during_release_raises_after_release():
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls: list[tuple] = []
+
+    async def slow_release(*args) -> bool:
+        calls.append(args)
+        started.set()
+        await finish.wait()
+        return True
+
+    stream = FakeConnection([FakeProcess(BANNER)])
+    with (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=stream)
+        ),
+        patch("hmcpctl.ssh.console._release_and_verify", slow_release),
+    ):
+        task = asyncio.create_task(
+            capture_lpar_console(_client(), "sys1", "lp1", **_capture_kwargs())
+        )
+        await asyncio.wait_for(started.wait(), timeout=5)
+        task.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert calls == [(make_config(), "sys1", "lp1")]
+    assert stream.closed
+
+
+def test_session_has_no_write_surface():
+    session = ConsoleSession(_client(), "sys1", "lp1")
+    assert not any(
+        name.startswith(("write", "send"))
+        for name in dir(session)
+        if not name.startswith("_")
+    )
