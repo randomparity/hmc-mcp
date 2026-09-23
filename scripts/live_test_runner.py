@@ -486,7 +486,6 @@ class LiveTestConfig:
             "vlan_range_start",
             "vlan_range_end",
         )
-        # sriov_physical_port_id must be non-negative (>= 0).
         invalid = [name for name in positive_fields if parsed[name] <= 0]
         # Processing units are floats, and `nan` would slip past a `<= 0` test.
         invalid += [
@@ -494,6 +493,7 @@ class LiveTestConfig:
             for name in ("scratch_create_desired_procs", "scratch_create_max_procs")
             if not 0 < parsed[name] < math.inf
         ]
+        # sriov_physical_port_id must be non-negative (>= 0).
         if parsed["sriov_physical_port_id"] < 0:
             invalid.append("sriov_physical_port_id")
         if not parsed["protected_lpar_names"]:
