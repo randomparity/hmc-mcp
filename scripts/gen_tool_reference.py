@@ -59,6 +59,19 @@ SCOPE_NOTE = (
     "default deployment does not expose."
 )
 
+# The reference is a summary index by design (ADR 0097, #929): refusal conditions
+# and argument detail live in the handler docstring. FastMCP does not send that
+# docstring verbatim -- it moves `Args:` into the input schema and drops `Returns:`
+# and `Raises:` -- so the note names the docstring as the complete text.
+SUMMARY_NOTE = (
+    "The Summary column on each domain page is the first line of the tool's MCP "
+    "description. The complete text, including the conditions under which a tool "
+    "refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. "
+    "An MCP client's `tools/list` carries that docstring's prose as the "
+    "description and its argument detail in the input schema; `Returns:` and "
+    "`Raises:` sections are not sent."
+)
+
 _ENABLEMENT_NOTE = (
     "> Registered but not exposed by a default deployment: {tools}. The server must "
     "be started with `--enable-arbitrary-command` and the selected access policy "
@@ -257,6 +270,8 @@ def _render_group(group: str, members: list[ToolRecord]) -> str:
         (f"{len(members)} tool{plural} in the `{group}` operation domain. "
          f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."),
         "",
+        SUMMARY_NOTE,
+        "",
         (
             "| Tool | Effect | Operation | Target | Implementation | Verification | "
             "Runtime eligibility | Summary |"
@@ -303,6 +318,8 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
         "",
         (f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
          "cannot drift from what the code registers."),
+        "",
+        SUMMARY_NOTE,
         "",
         f"- **{len(records)}** tools are registered.",
         f"- **{len(records) - len(withheld)}** are exposed by a default deployment.",

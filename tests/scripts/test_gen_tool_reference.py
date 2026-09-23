@@ -243,6 +243,23 @@ def test_every_page_carries_the_banner_and_the_registered_set_decision() -> None
         assert text.endswith("\n"), name
 
 
+def test_every_page_says_the_summary_is_a_first_line_and_where_the_rest_lives() -> None:
+    pages = gen_tool_reference.render_pages(_records())
+
+    note = gen_tool_reference.SUMMARY_NOTE
+    assert "first line of the tool's MCP description" in note
+    assert "refuses" in note
+    assert "`tools/list`" in note
+    assert (
+        "complete text, including the conditions under which a tool refuses, "
+        "is the tool handler's docstring"
+    ) in note
+    assert "`src/hmcpctl/server_tools/`" in note
+    for name, text in pages.items():
+        intro = text.split("\n| ", 1)[0]
+        assert note in intro, name
+
+
 def test_a_tool_a_default_deployment_withholds_is_named_on_its_page() -> None:
     pages = gen_tool_reference.render_pages(
         _records(exposed=lambda name: name != "hmc_beta")
@@ -368,6 +385,19 @@ def test_the_committed_reference_matches_the_live_registry() -> None:
     assert gen_tool_reference.check_pages(
         gen_tool_reference.render_pages(records), COMMITTED
     ) == []
+
+
+def test_served_descriptions_omit_the_docstring_sections_the_note_says_are_not_sent() -> None:
+    """SUMMARY_NOTE tells readers `tools/list` omits these; pin that to the live walk."""
+    descriptions = asyncio.run(gen_tool_reference.load_descriptions())
+
+    sections = ("Args:", "Returns:", "Raises:")
+    leaked = sorted(
+        name
+        for name, description in descriptions.items()
+        if any(line.strip() in sections for line in (description or "").splitlines())
+    )
+    assert leaked == []
 
 
 def test_the_readme_points_at_the_generated_reference_and_keeps_no_tool_table() -> None:
