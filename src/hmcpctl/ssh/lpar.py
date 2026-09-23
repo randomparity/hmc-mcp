@@ -137,8 +137,9 @@ async def create_lpar_via_cli(
 
     Returns the raw ``mksyscfg`` stdout (typically empty on success).
     Raises :class:`HMCCLIError` on non-zero exit, and before any command when
-    more than one virtual processor is requested without processing units or a
-    dedicated-processor count is fractional.
+    more than one virtual processor is requested without processing units, or
+    a dedicated request carries a fractional count or a shared-only
+    ``sharing_mode``.
     """
     config_pairs: list[tuple[str, object]] = [
         ("name", name),
