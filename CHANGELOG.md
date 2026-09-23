@@ -128,7 +128,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   shared-processor record, so the partition was created with shared processors and no error.
   A dedicated create now sends `proc_mode=ded` with whole `min_procs` / `desired_procs` /
   `max_procs` counts from `--min-procs` / `--procs` / `--max-procs`, and no processing units or
-  virtual-processor counts. A fractional count is refused before `mksyscfg` runs (#948).
+  virtual-processor counts. An explicit `sharing_mode` is sent when it is a dedicated value
+  (`keep_idle_procs`, `share_idle_procs`, `share_idle_procs_active`, `share_idle_procs_always`).
+  A fractional count, or a shared-only `sharing_mode` (`capped`, `uncapped`), is refused before
+  `mksyscfg` runs (#948).
 
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The

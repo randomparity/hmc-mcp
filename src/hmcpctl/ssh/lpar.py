@@ -11,6 +11,14 @@ from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
 from .transport import HMCCLIError, run_hmc_command
 
+# mksyscfg's dedicated-processor sharing_mode values (hmc-commands-p10 mksyscfg).
+_DEDICATED_SHARING_MODES = (
+    "keep_idle_procs",
+    "share_idle_procs",
+    "share_idle_procs_active",
+    "share_idle_procs_always",
+)
+
 
 def validate_caller_token(token: str) -> None:
     """Raise ``ValueError`` if *token* cannot be embedded as ``[caller <token>]``.
@@ -215,20 +223,29 @@ def _dedicated_processor_pairs(resources: LparResources) -> list[tuple[str, obje
     """Build the whole-processor ``proc_mode=ded`` fields of a create record.
 
     Virtual-processor fields are shared-mode only and are ignored here, as in
-    the REST dedicated body; ``sharing_mode`` is omitted so the HMC applies its
-    dedicated default.
+    the REST dedicated body. An explicit ``sharing_mode`` must be one of the
+    dedicated ``*_idle_procs`` values; without one the HMC applies its default.
     """
     _min = _whole_processors(resources.min_procs, "min_procs", "--min-procs") or 1
     _des = _whole_processors(resources.desired_procs, "desired_procs", "--procs") or 1
     _max = _whole_processors(resources.max_procs, "max_procs", "--max-procs") or max(
         _des, 2
     )
-    return [
+    pairs: list[tuple[str, object]] = [
         ("proc_mode", "ded"),
         ("min_procs", _min),
         ("desired_procs", _des),
         ("max_procs", _max),
     ]
+    mode = resources.sharing_mode
+    if mode is not None:
+        if mode not in _DEDICATED_SHARING_MODES:
+            raise HMCCLIError(
+                f"sharing_mode={mode!r} applies to shared processors only; with "
+                f"dedicated processors use one of: {', '.join(_DEDICATED_SHARING_MODES)}."
+            )
+        pairs.append(("sharing_mode", mode))
+    return pairs
 
 
 def _whole_processors(value: float | None, field: str, option: str) -> int | None:

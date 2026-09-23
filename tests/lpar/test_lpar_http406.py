@@ -439,3 +439,33 @@ def test_cli_create_refuses_fractional_dedicated_counts(resources, option):
             )
         )
     run.assert_not_awaited()
+
+
+def test_cli_create_passes_dedicated_sharing_mode():
+    fields = _proc_fields(
+        LparResources(
+            dedicated=True, desired_procs=1.0, sharing_mode="keep_idle_procs"
+        )
+    )
+    assert fields["sharing_mode"] == "keep_idle_procs"
+
+
+@pytest.mark.parametrize("mode", ["capped", "uncapped"])
+def test_cli_create_refuses_shared_sharing_mode_for_dedicated(mode):
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match="sharing_mode"),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"),
+                "sys1",
+                "lp1",
+                resources=LparResources(
+                    dedicated=True, desired_procs=1.0, sharing_mode=mode
+                ),
+            )
+        )
+    run.assert_not_awaited()
