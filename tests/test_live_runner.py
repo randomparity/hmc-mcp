@@ -31,6 +31,7 @@ from hmcpctl.ssh import affinity as ssh_affinity
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
 from live_test import (  # noqa: E402
+    bare_cec,
     connectivity,
     escape_hatch,
     inventory,
@@ -48,6 +49,7 @@ from live_test import (  # noqa: E402
 )
 
 LIVE_WORKFLOW_MODULES = (
+    bare_cec,
     connectivity,
     escape_hatch,
     inventory,
@@ -4078,6 +4080,28 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st35-bare-cec": {
+            "lpar-uuid-resolved",
+            "ownership-and-baseline-confirmed",
+            "assign-call-succeeded",
+            "profile-lists-slot",
+            "activation-job-successful",
+            "lpar-reached-firmware",
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful",
+            "refcodes-returned",
+            "refcodes-name-the-fixture",
+            "console-captured",
+            "console-released",
+            "power-off-job-successful",
+            "lpar-not-activated",
+            "unassign-call-succeeded",
+            "profile-restored-to-baseline",
+            "delete-call-succeeded",
+            "lpar-name-absent",
+            "slot-released",
+        },
     }
 
 
