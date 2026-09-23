@@ -12,6 +12,7 @@ import re as _re
 # serialization only. Every inbound HMC response is parsed with defusedxml.
 import xml.etree.ElementTree as ET  # nosec B405
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlparse
 
@@ -84,6 +85,28 @@ def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
             repr(href),
         )
     return match.group(1)
+
+
+def _whole_gib(size_mib: int) -> int:
+    """Convert a MiB size to the whole GiB that RepositorySize and media Size take.
+
+    The HMC reads both fields as GiB. A size that is not a whole number of GiB
+    is refused rather than sent as a fraction whose precision the HMC has not
+    been observed to accept.
+    """
+    if size_mib <= 0 or size_mib % 1024:
+        raise ValueError(
+            f"size_mib must be a positive multiple of 1024 (whole GiB); got {size_mib}"
+        )
+    return size_mib // 1024
+
+
+def _same_gib(stored: str | None, size_gib: int) -> bool:
+    """Whether an HMC GiB text such as "7" or "7.0" equals ``size_gib``."""
+    try:
+        return stored is not None and Decimal(stored) == size_gib
+    except InvalidOperation:
+        return False
 
 
 def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -784,7 +807,7 @@ class StorageMixin:
         name_el = ET.SubElement(vmlib, f"{{{_UOM_NS}}}RepositoryName")
         name_el.text = "VMLibrary"
         size_el = ET.SubElement(vmlib, f"{{{_UOM_NS}}}RepositorySize")
-        size_el.text = str(size_mib)
+        size_el.text = str(_whole_gib(size_mib))
         return mr
 
     def _insert_mr_at_correct_position(
@@ -841,7 +864,11 @@ class StorageMixin:
         VirtualMediaRepository node before VirtualDisks (per the HMC XSD sequence),
         then POST the modified XML back. This is the only approach that works on HMC
         V10R3 firmware (minimal-payload POSTs return HTTP 406 or 500).
+
+        ``size_mib`` is MiB; the HMC's RepositorySize is GiB, so it is sent as
+        ``size_mib / 1024`` and must be a whole number of GiB.
         """
+        size_gib = _whole_gib(size_mib)
         _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
         existing = self._find_vmlib(vg_elem)
@@ -852,17 +879,17 @@ class StorageMixin:
             size = existing.findtext(
                 f"{{{_UOM_NS}}}RepositorySize"
             ) or existing.findtext("RepositorySize")
-            if size == str(size_mib):
+            if _same_gib(size, size_gib):
                 return {
                     "Resource": {
                         "RepositoryName": name or "VMLibrary",
                         "RepositorySize": size,
                     }
                 }
-            observed = f"{size} MiB" if size else "an unknown size"
+            observed = f"{size} GiB" if size else "an unknown size"
             raise HMCError(
                 "Virtual media repository already exists with size "
-                f"{observed}; requested {size_mib} MiB. "
+                f"{observed}; requested {size_mib} MiB ({size_gib} GiB). "
                 "Create does not replace or resize an existing repository; "
                 "use an explicitly destructive repository operation.",
                 409,
@@ -889,7 +916,11 @@ class StorageMixin:
         The HMC XSD structure inside VirtualMediaRepository is:
           Metadata, OpticalMedia (container for VirtualOpticalMedia entries),
           RepositoryName, RepositorySize.
+
+        ``size_mib`` is MiB; the medium's Size is GiB, so it is sent as
+        ``size_mib / 1024`` and must be a whole number of GiB.
         """
+        size_gib = _whole_gib(size_mib)
         _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
         vmlib = self._find_vmlib(vg_elem)
@@ -926,9 +957,9 @@ class StorageMixin:
         ET.SubElement(meta, f"{{{_UOM_NS}}}Atom")
         n = ET.SubElement(vom, f"{{{_UOM_NS}}}MediaName")
         n.text = media_name
-        # The HMC XSD names this field Size, not MediaSize.
+        # The HMC XSD names this field Size, not MediaSize, and measures it in GiB.
         s = ET.SubElement(vom, f"{{{_UOM_NS}}}Size")
-        s.text = str(size_mib)
+        s.text = str(size_gib)
         t = ET.SubElement(vom, f"{{{_UOM_NS}}}MountType")
         t.text = "rw"
 
@@ -991,7 +1022,7 @@ class StorageMixin:
     ) -> dict[str, Any] | None:
         """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
-        Returns the repository with capacity (RepositorySize) and optionally
+        Returns the repository with capacity (RepositorySize, in GiB) and optionally
         embedded VirtualOpticalMedia entries if present. Returns None if the
         Volume Group does not exist or has no media repository.
         """
@@ -1029,7 +1060,7 @@ class StorageMixin:
         """List Virtual Optical Media in the Virtual Media Repository.
 
         Returns a list of optical media entries (ISO containers) with their
-        MediaName, MediaSize, and MediaType. Returns empty list if the
+        MediaName, Size (GiB), and MediaType. Returns empty list if the
         Volume Group does not exist or has no media repository.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"

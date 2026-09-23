@@ -480,7 +480,7 @@ def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "VirtualMediaRepository" in body
     assert "VMLibrary" in body
-    assert "40960" in body
+    assert "RepositorySize>40</" in body  # 40960 MiB is 40 GiB
 
 
 def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
@@ -498,7 +498,7 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in body
     assert "aix.iso" in body
-    assert "4096" in body
+    assert "Size>4</" in body  # 4096 MiB is 4 GiB
     assert "MountType" in body
 
 
