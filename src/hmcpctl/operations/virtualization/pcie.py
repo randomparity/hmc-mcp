@@ -430,9 +430,9 @@ async def _verify_dedicated_change(
         f"after={after_text!r}. The write may have run, so the profile may hold the change, "
         "none of it, or a form this operation refuses. Read it with `lssyscfg -r prof -m "
         f"{shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header`. "
-        f"{_recovery_advice(target, after, add=add, contended=contended)} Never write the read value "
-        "back as `io_slots=` input: that rendering is not established as valid input "
-        f"(ADR 0166).{_holder_advice(holders, holder_error)}"
+        f"{_recovery_advice(target, after, add=add, contended=contended)} Never write the "
+        "read value back as `io_slots=` input: that rendering is not established as valid "
+        f"input (ADR 0166).{_holder_advice(holders, holder_error)}"
     ) from cause
 
 
