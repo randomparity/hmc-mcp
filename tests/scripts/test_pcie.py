@@ -362,7 +362,7 @@ def _rendering_profile_reads(
     responses: dict[str, Any],
     marker_holder: dict[str, str],
     prefix: str,
-    selection_readback: str,
+    selection_readback: Any,
 ) -> dict[str, Any]:
     """Answer each admitted profile read with the table around the modelled value.
 
@@ -390,7 +390,7 @@ async def _run_arm(
     marker_holder: dict[str, str],
     statuses: dict[str, Any] | None = None,
     config: dict[str, str] | None = None,
-    selection_readback: str = _SELECTION_READBACK,
+    selection_readback: Any = _SELECTION_READBACK,
 ) -> ScenarioState:
     live = LiveTestConfig(**(config if config is not None else _CONFIG))
     responses = _rendering_profile_reads(
@@ -562,13 +562,13 @@ async def test_every_unowned_slot_listed_by_a_profile_skips_arm(
     ("statuses", "readback"),
     [
         pytest.param(
-            {"hmc_run_command": _command_fails("-r prof")}, _SELECTION_READBACK, id="failed"
+            {"hmc_run_command": _command_fails("-r prof")}, _CONNECTION_LOST, id="failed"
         ),
         pytest.param(None, "not the admitted table\n", id="unadmitted"),
     ],
 )
 async def test_unreadable_profiles_skip_auto_selection(
-    monkeypatch: pytest.MonkeyPatch, statuses: Any, readback: str
+    monkeypatch: pytest.MonkeyPatch, statuses: Any, readback: Any
 ) -> None:
     """Without the profile table, no slot can be shown to be listed by none."""
     holder: dict[str, str] = {}
@@ -580,6 +580,10 @@ async def test_unreadable_profiles_skip_auto_selection(
     row = state.row("dedicated slot selection")
     assert row is not None and row[2] == "SKIP"
     assert "profile" in str(row[3])
+    # The failure's own detail rides along, so a lost connection reads apart
+    # from a refused command without a re-run.
+    if statuses is not None:
+        assert "connection lost" in str(row[3])
 
 
 @pytest.mark.asyncio

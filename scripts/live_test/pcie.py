@@ -1098,7 +1098,7 @@ async def _auto_select_slot(
     )
     try:
         if st != "PASS" or not isinstance(data, str):
-            raise HMCCLIError(f"profile io_slots read returned {st}")
+            raise HMCCLIError(f"profile io_slots read returned {st}: {str(data)[:400]}")
         profile_rows = parse_profile_io_slot_rows(data)
     except HMCCLIError as error:
         state.skip(
