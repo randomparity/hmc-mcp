@@ -10,6 +10,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
+  duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
+  the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.
+  The session runs the release to completion when cancelled. ADR 0170 states which process
+  exits leave the console held. `capture_lpar_console` is now built on the session with the same
+  signature and results. One exception: if its task is cancelled during the final release, the
+  capture now raises `CancelledError` after the release, as ADR 0072 documents. It is a
+  pre-release domain-module API, not a `hmcpctl.api` export (#974).
+
 - A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
@@ -144,6 +153,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
   parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
+
+- SR-IOV logical-port assign and unassign no longer report an HMC refusal as "could not be
+  verified". When the dispatched `chhwres`/`chsyscfg` command errors and the immediate readback
+  matches the pre-mutation state exactly, `SriovLogicalPortPartialError` now reports the HMC's own
+  failure text as a refusal; a missing, mismatched, or unreadable readback (or a command error
+  whose readback also changed) keeps the existing "could not be verified" wording, since the
+  state there is genuinely uncertain (ADR 0056, #966).
 
 - `hmcpctl lpars summary`, the LPM commands `lpars migrate`, `migrate-affinity`,
   `migrate-validate`, `migrate-abort` and `migrate-recover`, and `hmcpctl vios power-on` /

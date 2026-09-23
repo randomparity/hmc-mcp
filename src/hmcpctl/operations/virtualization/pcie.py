@@ -6,7 +6,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Generic, Literal, TypeVar
+from typing import Generic, Literal, NoReturn, TypeVar
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig
@@ -788,6 +788,41 @@ def _required_sriov_selector(
     )
 
 
+@dataclass(frozen=True)
+class _SriovReadbackOutcome:
+    """The post-dispatch readback facts a partial-error raise needs, bundled to keep
+    `_raise_sriov_partial_error` under the five-positional-parameter limit."""
+
+    cause: Exception | None
+    matches_pre_mutation: bool
+    unverified_detail: object
+
+
+def _raise_sriov_partial_error(
+    operation: Literal["assignment", "unassignment"],
+    error: Exception | None,
+    outcome: _SriovReadbackOutcome,
+    result: SriovLogicalPortChangeResult,
+) -> NoReturn:
+    """Raise the structured partial error for a dispatched SR-IOV mutation.
+
+    A dispatch failure whose immediate readback matches the pre-mutation state exactly
+    is an HMC refusal: nothing changed, so the HMC's own failure text is reported
+    directly. Any other failure -- a missing or mismatched readback, or a dispatch error
+    where the readback also changed -- leaves the state genuinely uncertain, so the
+    existing "could not be verified" wording is kept, with the same fallback detail the
+    caller used before this classification existed.
+    """
+    if error is not None and outcome.matches_pre_mutation:
+        refused = SriovLogicalPortPartialError(f"{operation} refused by HMC: {error}", result)
+        raise refused from error
+    detail = error or outcome.unverified_detail or "readback mismatch"
+    partial = SriovLogicalPortPartialError(f"{operation} could not be verified: {detail}", result)
+    if outcome.cause is not None:
+        raise partial from outcome.cause
+    raise partial
+
+
 async def assign_sriov_logical_port(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -879,14 +914,13 @@ async def assign_sriov_logical_port(
             )
             if failure is not None
         )
-        partial = SriovLogicalPortPartialError(
-            f"assignment could not be verified: {error or readback_errors or 'readback mismatch'}",
-            result,
+        matches_pre_mutation = (
+            readback.error is None and after == before and profile_after == profile_before
         )
-        cause = error or readback.error
-        if cause is not None:
-            raise partial from cause
-        raise partial
+        outcome = _SriovReadbackOutcome(
+            error or readback.error, matches_pre_mutation, readback_errors
+        )
+        _raise_sriov_partial_error("assignment", error, outcome, result)
     return result
 
 
@@ -978,14 +1012,10 @@ async def unassign_sriov_logical_port(
         output=output,
     )
     if error or read_error or after != "none":
-        partial = SriovLogicalPortPartialError(
-            f"unassignment could not be verified: {error or read_error or 'readback mismatch'}",
-            result,
+        outcome = _SriovReadbackOutcome(
+            error or read_error, read_error is None and after == before, read_error
         )
-        cause = error or read_error
-        if cause is not None:
-            raise partial from cause
-        raise partial
+        _raise_sriov_partial_error("unassignment", error, outcome, result)
     return result
 
 
