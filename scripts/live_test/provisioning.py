@@ -8,6 +8,7 @@ from fastmcp import Client
 
 from .observation import ExpectedOutcome
 from .results import resource as get_resource
+from .storage import configured_vg_uuid
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
@@ -128,7 +129,7 @@ async def _recreate_test_disk(
     )
     state.record(14, "hmc_list_volume_groups (pre-create)", status, data)
 
-    vg_name = artifacts.vdisk_vg_name or config.vdisk_volume_group_name
+    vg_name = config.vdisk_volume_group_name
     command = (
         f"viosvrcmd -m {config.system_name} -p {artifacts.vios_uuid}"
         f' -c "rmvlog -vg {vg_name} -lv {config.vdisk_name}"'
@@ -259,7 +260,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
 
     baseline = artifacts.lp3_baseline
     vios_uuid = artifacts.vios_uuid
-    vg_uuid = artifacts.vg_uuid
+    vg_uuid = configured_vg_uuid(state)
     vdisk_size_mib = artifacts.vdisk_size_mib
     pvid = baseline.get("pvid")
     vios_slot = baseline.get("vios_slot")
