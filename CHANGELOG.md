@@ -168,6 +168,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   during configuration parsing — before the runner reached the HMC. Adapter and logical
   port IDs keep the positive check; the physical port ID is now bounded at zero (#708).
 
+- The live-test runner's failure redactor no longer replaces a filename such as `config.toml`
+  with `<REDACTED-HOST>`, which made a config warning read as if a host had been hidden. A
+  single-dot name ending in a common file extension that is not a DNS top-level domain stays
+  readable; every multi-label name, and any name ending in a real TLD such as `.py` or `.md`,
+  is still redacted (#914).
+
 ### Changed
 
 - The distribution, console script, Python package and configuration directory are renamed
