@@ -901,6 +901,19 @@ async def test_sentence_after_banner_in_one_read_is_acquisition():
 
 
 @pytest.mark.asyncio
+async def test_probe_sentence_after_banner_is_acquisition_and_torn_down():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER + CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+
+    assert session.released is True
+    assert release.await_count == 2  # ours plus the probe's teardown
+
+
+@pytest.mark.asyncio
 async def test_session_take_over_rmvterms_then_acquires():
     events: list[str] = []
     stream = FakeConnection([FakeProcess(BANNER, None)])

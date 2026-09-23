@@ -409,6 +409,19 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         stdin.close()
 
 
+def _acquisition_outcome(data: bytes | bytearray) -> Literal["acquired", "held"] | None:
+    """Classify ``mkvterm`` output by whichever sentinel came first (P1, ADR 0172).
+
+    The banner proves the hold, so a contention sentence after it is console
+    content; P1's contention text replaces the banner.
+    """
+    acquired = data.find(ACQUIRED_SENTINEL)
+    held = data.find(HELD_SENTINEL)
+    if held != -1 and (acquired == -1 or held < acquired):
+        return "held"
+    return "acquired" if acquired != -1 else None
+
+
 async def _read_release_probe(
     process: Any,
 ) -> Literal["acquired", "held", "remote-exited", "unproven"]:
@@ -426,10 +439,8 @@ async def _read_release_probe(
         if not chunk:
             return "remote-exited"
         output += chunk
-        if HELD_SENTINEL in output:
-            return "held"
-        if ACQUIRED_SENTINEL in output:
-            return "acquired"
+        if outcome := _acquisition_outcome(output):
+            return outcome
     return "unproven"
 
 
@@ -480,15 +491,14 @@ async def _acquire_capture_stream(
                         "mkvterm exited before confirming console acquisition"
                     )
                 data += chunk
-                acquired = data.find(ACQUIRED_SENTINEL)
-                held = data.find(HELD_SENTINEL)
-                if held != -1 and (acquired == -1 or held < acquired):
+                outcome = _acquisition_outcome(data)
+                if outcome == "held":
                     report = " ".join(bytes(data).decode("ascii", "replace").split())
                     raise ConsoleHeldError(
                         f"{command} found the console held by another session; "
                         f"the HMC reported: {report[:_ERROR_DETAIL_MAX_CHARS]!r}"
                     )
-                if acquired != -1:  # a later sentence is console content (ADR 0172)
+                if outcome == "acquired":
                     return connection, process, bytes(data)
     except TimeoutError as exc:
         connection.close()
