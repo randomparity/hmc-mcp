@@ -24,7 +24,7 @@ hmcpctl lpars get-minimum-affinity-policy mylpar sys1 --json
 hmcpctl lpars system-memopt-score sys1
 hmcpctl lpars plan-memopt-scores sys1 --prioritize-name web --exclude-name batch
 hmcpctl lpars plan-system-memopt-score sys1 --prioritize-id 3 --exclude-id 9 --json
-hmcpctl lpars create web01 --system <uuid> --mem 8192 --vcpus 2
+hmcpctl lpars create web01 --system <uuid> --mem 8192 --vcpus 2 --procs 0.2
 hmcpctl lpars modify web01 --mem 16384 --procs 2.0   # assign resources
 hmcpctl lpars delete web01           # destroy (must be powered off)
 hmcpctl lpars decommission web01 --system <uuid> --dry-run   # preview blast radius
@@ -83,7 +83,7 @@ never part of the replayable profile configuration.
 
 ```bash
 # 1. create the partition
-hmcpctl lpars create web01 --system <sys-uuid> --mem 8192 --vcpus 2
+hmcpctl lpars create web01 --system <sys-uuid> --mem 8192 --vcpus 2 --procs 0.2
 
 # 2. give it a vSCSI adapter paired to the VIOS (find IDs via `vios list`)
 hmcpctl adapters add-vscsi web01 --vios-id 1 --vios-slot 5

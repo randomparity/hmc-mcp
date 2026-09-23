@@ -128,7 +128,8 @@ async def create_lpar_via_cli(
     accounting.  Pass explicit values to override individual resources.
 
     Returns the raw ``mksyscfg`` stdout (typically empty on success).
-    Raises :class:`HMCCLIError` on non-zero exit.
+    Raises :class:`HMCCLIError` on non-zero exit, and before any command when
+    more than one virtual processor is requested without processing units.
     """
     config_pairs: list[tuple[str, object]] = [
         ("name", name),
