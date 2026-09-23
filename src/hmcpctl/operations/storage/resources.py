@@ -10,6 +10,7 @@ import re
 import sys
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, BinaryIO
 from urllib.parse import urlparse
@@ -122,6 +123,21 @@ def _optional_number(
     raise HMCError(f"{operation} returned an invalid {field}")
 
 
+def _optional_gib_as_mib(
+    resource: Mapping[str, Any], field: str, operation: str
+) -> float | None:
+    """Read an optional GiB quantity and report it in MiB.
+
+    Decimal arithmetic keeps a value such as 1.0801 GiB at exactly 1106.0224
+    MiB, where float multiplication would add a binary rounding tail.
+    """
+    gib = _optional_number(resource, field, operation)
+    if gib is None:
+        return None
+    mib = Decimal(str(gib)) * 1024
+    return int(mib) if mib == mib.to_integral_value() else float(mib)
+
+
 def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
     operation = "list_volume_groups"
     resource = _resource(entry, operation)
@@ -155,7 +171,8 @@ def _optical_media(entry: Mapping[str, Any]) -> OpticalMedia:
         raise HMCError(f"{operation} returned an invalid MediaType")
     return OpticalMedia(
         name=_required_text(resource, "MediaName", operation),
-        size_mib=_optional_number(resource, "MediaSize", operation),
+        # The live VirtualOpticalMedia carries Size, in GiB (#963).
+        size_mib=_optional_gib_as_mib(resource, "Size", operation),
         media_type=media_type,
     )
 
@@ -259,6 +276,21 @@ async def create_virtual_disk(
     )
 
 
+def _names_disk_inline(backing: dict[str, Any], vg_uuid: str, disk_name: str) -> bool:
+    """V10R3 carries a mapped disk inline by DiskName with no href (#936).
+
+    The mappings are already scoped to one VIOS, where a logical-volume name is
+    unique; a VolumeGroup link, when the mapping carries one, must name *vg_uuid*.
+    """
+    if backing.get("DiskName") != disk_name:
+        return False
+    group = backing.get("VolumeGroup")
+    group_link = group.get("href", "") if isinstance(group, dict) else ""
+    # UUIDs compare case-insensitively; the HMC sends lowercase hrefs.
+    suffix = f"/volumegroup/{vg_uuid.lower()}"
+    return not group_link or group_link.rstrip("/").lower().endswith(suffix)
+
+
 async def delete_virtual_disk(
     hmc: HMCClient,
     vios_name_or_uuid: str,
@@ -296,8 +328,10 @@ async def delete_virtual_disk(
         backing_storage = mapping.get("Storage", {}).get("VirtualDisk", {})
         if isinstance(backing_storage, dict):
             storage_link = backing_storage.get("href", "")
-            if disk_link in storage_link or storage_link.endswith(
-                f"VirtualDisk/{disk_name}"
+            if (
+                disk_link in storage_link
+                or storage_link.endswith(f"VirtualDisk/{disk_name}")
+                or _names_disk_inline(backing_storage, vg_uuid, disk_name)
             ):
                 lpar = mapping.get("AssociatedLogicalPartition", {})
                 lpar_name = lpar.get("PartitionName", lpar.get("href", "unknown"))
@@ -540,7 +574,7 @@ async def get_media_repository(
 ) -> dict[str, Any] | None:
     """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
-    Returns the repository with capacity (RepositorySize) and optionally
+    Returns the repository with capacity (RepositorySize, in GiB) and optionally
     embedded VirtualOpticalMedia entries if present.
     """
     return await hmc.get_media_repository(
@@ -760,8 +794,8 @@ async def list_optical_media(
     """List Virtual Optical Media in the Virtual Media Repository.
 
     Returns a list of optical media entries (ISO containers) with their
-    MediaName, MediaSize, and MediaType. The repository must exist
-    (VMLibrary on the specified Volume Group).
+    name, size in MiB (converted from the HMC's GiB Size), and media type.
+    The repository must exist (VMLibrary on the specified Volume Group).
     """
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid

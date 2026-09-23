@@ -133,6 +133,28 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage create-media-repo`, `storage create-media`, `hmc_create_media_repository` and
+  `hmc_create_optical_media` convert `size_mib` to the GiB the HMC's `RepositorySize` and media
+  `Size` take. They previously sent the MiB value unconverted, so `--size-mib 20480` asked for a
+  20 TiB repository. A size that is not a multiple of 1024 MiB is now refused before the volume
+  group is read or changed.
+  The existing-repository check compares in GiB, `get-media-repo` labels the size GiB, and
+  `list-optical-media` reads the medium's `Size` element, which the HMC reports in GiB, instead
+  of the absent `MediaSize`, and returns it as `size_mib`. The short live-test repository default
+  (`LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB`) is now 1024, and the live-test runner refuses
+  either repository size at config load when it is not a multiple of 1024 (#963).
+
+- `hmc_create_virtual_disk`, `hmc_delete_virtual_disk` and `hmcpctl storage create-disk` /
+  `delete-disk` no longer POST a sparse `VolumeGroup` document, which V10R3 rejects at schema
+  validation and which omitted the group's existing disks and physical volumes. Both now read the
+  volume group, add or remove exactly one virtual disk, and write the whole group back with
+  `If-Match` set to the read's ETag. They refuse without writing when the read carries no ETag,
+  when create names a disk the group already holds, or when delete matches no disk or several. An
+  HMC 412 (stale ETag) is reported as a concurrent change with nothing written. HMC enforcement of
+  a mismatched ETag and delete by omission are not yet live-verified (#936).
+  `hmc_delete_virtual_disk` also refuses a disk that backs a vSCSI mapping named inline by
+  `DiskName`, the shape V10R3 returns; the mapped-disk check previously matched only an `href`
+  the HMC does not send.
 - `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
   disk name longer than 15 characters before the create request, with a message that states the
   VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
