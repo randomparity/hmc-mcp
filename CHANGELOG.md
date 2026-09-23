@@ -322,6 +322,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
+  type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
+  and then acquires with proven acquisition. The default is `False`, and neither the capture nor
+  the MCP tool sets it. `capture_lpar_console` no longer leaks its own proven hold when console
+  output quotes the contention sentence: it releases the hold, then raises `ConsoleHeldError`
+  as before. A contention sentence that follows the acquisition banner in the same read now
+  counts as console content, both at open and in the release probe (#975, ADR 0172).
+
 - `hmcpctl lpars create` and `hmc_create_lpar` apply the new partition profile, `default_profile`,
   when the HMC creates the partition through `mksyscfg` (its REST create returned HTTP 406). The
   apply is `chsyscfg -r lpar -o apply` and leaves the partition not activated. Before this, such a
