@@ -7,7 +7,7 @@ import json
 import pytest
 import typer
 
-from hmc_mcp.cli_commands.lpar.assignment_input import load_pcie_assignments
+from hmcpctl.cli_commands.lpar.assignment_input import load_pcie_assignments
 
 
 def test_missing_path_returns_empty_assignments() -> None:

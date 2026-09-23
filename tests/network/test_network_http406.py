@@ -10,8 +10,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.server_tools.virtualization.network import (
+from hmcpctl.errors import HMCError
+from hmcpctl.server_tools.virtualization.network import (
     hmc_create_virtual_network,
 )
 

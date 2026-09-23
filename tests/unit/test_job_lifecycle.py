@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter
 
-from hmc_mcp.jobs import (
+from hmcpctl.jobs import (
     job_identifier,
     job_outcome,
     validate_wait_timing,
     vios_stdout,
 )
-from hmc_mcp.operations.updates.models import (
+from hmcpctl.operations.updates.models import (
     PlatformUpdateParameter,
     VIOSUpdateSource,
     VIOSUpgradeSource,

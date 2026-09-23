@@ -18,16 +18,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import make_config
 
-from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.vios.install import (
+from hmcpctl.audit import sink as audit_sink
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.vios.install import (
     InstallHandle,
     InstallRequest,
     install_vios,
     install_vios_by_lpar_selector,
 )
-from hmc_mcp.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmcpctl.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
+from hmcpctl.ssh.transport import HMCCLIError
 
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
@@ -123,8 +123,8 @@ class _Ssh:
 @contextmanager
 def _patch_ssh(ssh: _Ssh):
     with (
-        patch("hmc_mcp.ssh.lpar.run_hmc_command", new=ssh),
-        patch("hmc_mcp.ssh.install.run_hmc_command", new=ssh),
+        patch("hmcpctl.ssh.lpar.run_hmc_command", new=ssh),
+        patch("hmcpctl.ssh.install.run_hmc_command", new=ssh),
     ):
         yield
 
@@ -262,7 +262,7 @@ async def test_operation_surfaces_a_failed_submission(operation):
         raise HMCCLIError(f"SSH command {command!r} failed with exit status 127")
 
     with (
-        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCCLIError, match="exit status 127"),
     ):
         await operation(
@@ -315,7 +315,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     That is what ``server._serve_application`` does and all it does for this
     package's own namespace, so this is the served MCP deployment's real state.
     Before ADR 0102 the submission's only trace was an ``INFO`` record on the
-    unconfigured ``hmc_mcp.operations.vios.install`` logger, whose effective level is
+    unconfigured ``hmcpctl.operations.vios.install`` logger, whose effective level is
     the root's ``WARNING`` — dropped before formatting, and below
     ``logging.lastResort``'s threshold too.
     """
@@ -360,7 +360,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
 async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsys):
     """The other half of #469: a process that configures no logging at all.
 
-    A ``hmc_mcp.api`` consumer calls no ``install_audit_sink``, so the reserved
+    A ``hmcpctl.api`` consumer calls no ``install_audit_sink``, so the reserved
     logger has no handler and does not propagate — which is exactly when
     ``Logger.callHandlers`` consults ``logging.lastResort``. It drops anything
     below ``WARNING``, which is why ADR 0102 §3 fixes the record's level there.
@@ -402,7 +402,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
         raise HMCCLIError("SSH command failed with exit status 127")
 
     with (
-        patch("hmc_mcp.ssh.install.run_hmc_command", new=fail),
+        patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCCLIError),
     ):
         await operation(
@@ -451,7 +451,7 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
 
 @pytest.mark.parametrize("name", ["install_vios_by_lpar_selector", "install_vios"])
 def test_operations_are_owned_by_the_install_module(name):
-    assert globals()[name].__module__ == "hmc_mcp.operations.vios.install"
+    assert globals()[name].__module__ == "hmcpctl.operations.vios.install"
 
 
 def test_detach_handle_is_the_declared_return_type():

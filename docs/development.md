@@ -52,8 +52,8 @@ With credentials configured (TOML profile, env vars, or flags), the cheapest end
 is `console info` — one Logon + one ManagementConsole GET:
 
 ```bash
-hmc-mcp console info
-hmc-mcp systems list      # should print a table of your Power servers
+hmcpctl console info
+hmcpctl systems list      # should print a table of your Power servers
 ```
 
 If `console info` prints the HMC version, auth, TLS and the session
@@ -62,7 +62,7 @@ lifecycle all work; everything else uses the same path.
 ## Layout
 
 ```
-src/hmc_mcp/
+src/hmcpctl/
   *.py              # package-level modules and composition roots
   api.py             # supported connection/configuration facade (ADR 0118)
   config.py          # TOML profiles, environment values, and CLI configuration

@@ -4,8 +4,8 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.documents import build_hmc_user_document
+from hmcpctl.client.core import HMCClient
+from hmcpctl.documents import build_hmc_user_document
 
 CONSOLE = "console-1"
 PROFILE = "profile-1"

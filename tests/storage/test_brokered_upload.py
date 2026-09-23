@@ -17,9 +17,9 @@ import pytest
 from conftest import make_config
 from defusedxml import ElementTree as DET
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
-from hmc_mcp.xmlutil import localname
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
+from hmcpctl.xmlutil import localname
 
 # --------------------------------------------------------------------------- #
 # Brokered file creation fixtures
@@ -238,7 +238,7 @@ async def test_broker_file_upload_sends_a_stream_the_body_never_buffers(monkeypa
               TEST_UPLOAD_CONTENT[3000:]]
     transport = _StreamShapeTransport(BROKERED_FILE_UPLOAD_RESPONSE_200)
     monkeypatch.setattr(
-        "hmc_mcp.client.core.httpx.AsyncClient",
+        "hmcpctl.client.core.httpx.AsyncClient",
         functools.partial(httpx.AsyncClient, transport=transport),
     )
 

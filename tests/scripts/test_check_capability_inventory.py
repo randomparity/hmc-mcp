@@ -731,8 +731,8 @@ def test_attempted_observation_fields_are_pattern_bound(
 
 
 def _package(root: Path, modules: dict[str, str]) -> None:
-    """Write a throwaway `src/hmc_mcp/` package for the closure walk to read."""
-    package = root / "src" / "hmc_mcp"
+    """Write a throwaway `src/hmcpctl/` package for the closure walk to read."""
+    package = root / "src" / "hmcpctl"
     package.mkdir(parents=True, exist_ok=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     for name, source in modules.items():
@@ -748,13 +748,13 @@ def test_closure_fingerprint_changes_with_an_imported_module_only(
         tmp_path,
         {"a.py": "from .b import thing\n", "b.py": "thing = 1\n", "c.py": "other = 2\n"},
     )
-    first = inventory.closure_fingerprint(tmp_path, "hmc_mcp.a")
+    first = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
 
-    (tmp_path / "src" / "hmc_mcp" / "c.py").write_text("other = 3\n", encoding="utf-8")
-    assert inventory.closure_fingerprint(tmp_path, "hmc_mcp.a") == first
+    (tmp_path / "src" / "hmcpctl" / "c.py").write_text("other = 3\n", encoding="utf-8")
+    assert inventory.closure_fingerprint(tmp_path, "hmcpctl.a") == first
 
-    (tmp_path / "src" / "hmc_mcp" / "b.py").write_text("thing = 2\n", encoding="utf-8")
-    assert inventory.closure_fingerprint(tmp_path, "hmc_mcp.a") != first
+    (tmp_path / "src" / "hmcpctl" / "b.py").write_text("thing = 2\n", encoding="utf-8")
+    assert inventory.closure_fingerprint(tmp_path, "hmcpctl.a") != first
 
 
 @pytest.mark.parametrize(
@@ -762,7 +762,7 @@ def test_closure_fingerprint_changes_with_an_imported_module_only(
     [
         "from .b import thing",
         "from . import b",
-        "import hmc_mcp.b",
+        "import hmcpctl.b",
         # A `TYPE_CHECKING` guard is a module-level `If`, so the import is absent
         # from `tree.body` itself; a `try:/except ImportError:` is the same shape.
         "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from .b import thing",
@@ -780,9 +780,9 @@ def test_closure_covers_each_import_form(tmp_path: Path, statement: str) -> None
     """
     _package(tmp_path, {"a.py": f"{statement}\n", "b.py": "thing = 1\n"})
 
-    paths = inventory.closure_paths(tmp_path, "hmc_mcp.a")
+    paths = inventory.closure_paths(tmp_path, "hmcpctl.a")
 
-    assert tmp_path / "src" / "hmc_mcp" / "b.py" in paths
+    assert tmp_path / "src" / "hmcpctl" / "b.py" in paths
 
 
 def test_closure_stops_at_a_function_boundary_inside_a_guard(tmp_path: Path) -> None:
@@ -795,21 +795,21 @@ def test_closure_stops_at_a_function_boundary_inside_a_guard(tmp_path: Path) -> 
         },
     )
 
-    assert tmp_path / "src" / "hmc_mcp" / "b.py" not in inventory.closure_paths(
-        tmp_path, "hmc_mcp.a"
+    assert tmp_path / "src" / "hmcpctl" / "b.py" not in inventory.closure_paths(
+        tmp_path, "hmcpctl.a"
     )
 
 
 def test_closure_excludes_function_body_imports() -> None:
     """A deferred import is not part of the module's import-time implementation.
 
-    `src/hmc_mcp/__init__.py` imports `.cli` inside `main()` and sits on every
+    `src/hmcpctl/__init__.py` imports `.cli` inside `main()` and sits on every
     resolution path, so an `ast.walk` implementation yields 179 of 180 files for
     every handler — ADR 0126's repository-wide fingerprint under another name.
     """
-    paths = inventory.closure_paths(ROOT, "hmc_mcp.server_tools.permissions")
+    paths = inventory.closure_paths(ROOT, "hmcpctl.server_tools.permissions")
 
-    assert ROOT / "src" / "hmc_mcp" / "cli.py" not in paths
+    assert ROOT / "src" / "hmcpctl" / "cli.py" not in paths
     assert len(paths) < 20
 
 
@@ -820,16 +820,16 @@ def test_closure_resolves_packages() -> None:
     `SUCCESSFUL_JOB_STATUSES` — the constant the job scenarios assert against —
     would leave their observations reading as current.
     """
-    paths = inventory.closure_paths(ROOT, "hmc_mcp.server_tools.jobs")
+    paths = inventory.closure_paths(ROOT, "hmcpctl.server_tools.jobs")
 
-    assert ROOT / "src" / "hmc_mcp" / "jobs" / "__init__.py" in paths
-    assert ROOT / "src" / "hmc_mcp" / "jobs" / "core.py" in paths
+    assert ROOT / "src" / "hmcpctl" / "jobs" / "__init__.py" in paths
+    assert ROOT / "src" / "hmcpctl" / "jobs" / "core.py" in paths
 
 
 def test_lifecycle_closure_excludes_split_tool_modules() -> None:
     """LPAR tool modules retain ownership instead of re-exporting siblings."""
-    paths = inventory.closure_paths(ROOT, "hmc_mcp.server_tools.lpar.lifecycle")
-    lpar = ROOT / "src" / "hmc_mcp" / "server_tools" / "lpar"
+    paths = inventory.closure_paths(ROOT, "hmcpctl.server_tools.lpar.lifecycle")
+    lpar = ROOT / "src" / "hmcpctl" / "server_tools" / "lpar"
 
     assert lpar / "lifecycle_boot.py" not in paths
     assert lpar / "lifecycle_create.py" not in paths
@@ -849,10 +849,10 @@ def test_closure_containment(tmp_path: Path) -> None:
             "outside.py": "thing = 1\n",
         },
     )
-    package = tmp_path / "src" / "hmc_mcp"
+    package = tmp_path / "src" / "hmcpctl"
     (package / "b.py").symlink_to(package / "outside.py")
 
-    paths = inventory.closure_paths(tmp_path, "hmc_mcp.a")
+    paths = inventory.closure_paths(tmp_path, "hmcpctl.a")
 
     assert package / "b.py" not in paths
     assert paths == [package / "__init__.py", package / "a.py"]
@@ -869,7 +869,7 @@ def _closure_registry(
         inventory.RegistryTool(
             tool="hmc_list_systems",
             operation=operation,
-            handler="hmc_mcp.a.hmc_list_systems",
+            handler="hmcpctl.a.hmc_list_systems",
             signature="()",
             surfaces=("mcp",),
         ),
@@ -900,7 +900,7 @@ def test_derived_states(
 ) -> None:
     """Staleness is derived when the catalog is read, never stored."""
     registry = _closure_registry(tmp_path)
-    fingerprint = inventory.closure_fingerprint(tmp_path, "hmc_mcp.a")
+    fingerprint = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
     catalog = [
         {
             "operation": "system.list",
@@ -1015,12 +1015,12 @@ def test_closure_refuses_a_relative_import_that_leaves_the_package(
     _package(tmp_path, {"a.py": "from ..outside import thing\n"})
     (tmp_path / "src" / "outside.py").write_text("thing = 1\n", encoding="utf-8")
 
-    paths = inventory.closure_paths(tmp_path, "hmc_mcp.a")
+    paths = inventory.closure_paths(tmp_path, "hmcpctl.a")
 
     assert tmp_path / "src" / "outside.py" not in paths
     assert paths == [
-        tmp_path / "src" / "hmc_mcp" / "__init__.py",
-        tmp_path / "src" / "hmc_mcp" / "a.py",
+        tmp_path / "src" / "hmcpctl" / "__init__.py",
+        tmp_path / "src" / "hmcpctl" / "a.py",
     ]
 
 
@@ -1057,7 +1057,7 @@ def test_runtime_projection_renders_only_recorded_operations(tmp_path: Path) -> 
 
 def test_runtime_projection_preserves_latest_live_observation_time(tmp_path: Path) -> None:
     registry = _closure_registry(tmp_path)
-    fingerprint = inventory.closure_fingerprint(tmp_path, "hmc_mcp.a")
+    fingerprint = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
     record = _operation()
     record["evidence"] = [
         _observation(
@@ -1084,7 +1084,7 @@ def test_runtime_projection_leaves_age_expiry_to_the_packaged_reader(
     tmp_path: Path,
 ) -> None:
     registry = _closure_registry(tmp_path)
-    fingerprint = inventory.closure_fingerprint(tmp_path, "hmc_mcp.a")
+    fingerprint = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
     record = _operation()
     record["evidence"] = [
         _observation(

@@ -53,7 +53,7 @@ async def test_probe_main_propagates_opt_out_before_connect(insecure, monkeypatc
 
 @pytest.mark.parametrize("arguments, insecure", [([], False), (["--insecure"], True)])
 def test_probe_cli_parses_per_run_choice(arguments, insecure, monkeypatch, tmp_path, capsys):
-    config_path = tmp_path / ".config" / "hmc-mcp" / "config.toml"
+    config_path = tmp_path / ".config" / "hmcpctl" / "config.toml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         '[profiles.test]\nhost = "hmc.test"\nuser = "test"\n'

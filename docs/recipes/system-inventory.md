@@ -29,11 +29,11 @@ capture() {
 ## 2. Resolve and capture the managed system
 
 ```bash
-capture system.json hmc-mcp systems show "$SYSTEM_NAME" --json
+capture system.json hmcpctl systems show "$SYSTEM_NAME" --json
 SYSTEM=$(jq -er '.UUID' "$CAPTURE_DIR/system.json")
 printf '%s\n' "${SYSTEM:?unresolved managed system — stop and read system.json.error.txt}" >"$CAPTURE_DIR/system.uuid.txt"
-capture system-summary.json hmc-mcp systems summary "$SYSTEM" --json
-capture managed-system.raw.xml hmc-mcp raw get "/rest/api/uom/ManagedSystem/$SYSTEM"
+capture system-summary.json hmcpctl systems summary "$SYSTEM" --json
+capture managed-system.raw.xml hmcpctl raw get "/rest/api/uom/ManagedSystem/$SYSTEM"
 ```
 
 `systems show` accepts the managed-system name, so one command both resolves the UUID and captures the system. The recipe does not list the console inventory to find it: that listing is not needed to capture a system you can already name, and some HMC firmware levels cannot serialize it at all.
@@ -45,17 +45,17 @@ system.json and system-summary.json are stable CLI JSON for identity, firmware, 
 ## 3. Capture network, PCIe, and SR-IOV inventory
 
 ```bash
-capture virtual-switches.json hmc-mcp network list-switches "$SYSTEM" --json
-capture virtual-networks.json hmc-mcp network list-networks "$SYSTEM" --json
-capture network-bridges.json hmc-mcp network list-bridges "$SYSTEM" --json
-capture sea-adapters.json hmc-mcp network list-sea-adapters "$SYSTEM" --json
-capture dedicated-pcie-slots.json hmc-mcp network list-dedicated-pcie-slots "$SYSTEM" --json
-capture sriov-adapters.json hmc-mcp network list-sriov-adapters "$SYSTEM" --json
+capture virtual-switches.json hmcpctl network list-switches "$SYSTEM" --json
+capture virtual-networks.json hmcpctl network list-networks "$SYSTEM" --json
+capture network-bridges.json hmcpctl network list-bridges "$SYSTEM" --json
+capture sea-adapters.json hmcpctl network list-sea-adapters "$SYSTEM" --json
+capture dedicated-pcie-slots.json hmcpctl network list-dedicated-pcie-slots "$SYSTEM" --json
+capture sriov-adapters.json hmcpctl network list-sriov-adapters "$SYSTEM" --json
 jq -r '.items[]? | select(.adapter_id != null and .adapter_id != "null") | .adapter_id' "$CAPTURE_DIR/sriov-adapters.json" | while IFS= read -r adapter; do
-  capture "sriov-physical-ports-$adapter.json" hmc-mcp network list-sriov-physical-ports "$SYSTEM" --adapter-id "$adapter" --json
-  capture "sriov-logical-ports-$adapter.json" hmc-mcp network list-sriov-logical-ports "$SYSTEM" --adapter-id "$adapter" --json
+  capture "sriov-physical-ports-$adapter.json" hmcpctl network list-sriov-physical-ports "$SYSTEM" --adapter-id "$adapter" --json
+  capture "sriov-logical-ports-$adapter.json" hmcpctl network list-sriov-logical-ports "$SYSTEM" --adapter-id "$adapter" --json
 done
-capture vfc-ports.json hmc-mcp network list-fc-ports "$SYSTEM" --json
+capture vfc-ports.json hmcpctl network list-fc-ports "$SYSTEM" --json
 ```
 
 sea-adapters.json records the Shared Ethernet Adapters that back bridged client networks.
@@ -73,13 +73,13 @@ unavailable capability, and error.txt files are distinct evidence.
 ## 4. Capture every LPAR and its adapters
 
 ```bash
-capture lpars.json hmc-mcp lpars list --system "$SYSTEM" --json
+capture lpars.json hmcpctl lpars list --system "$SYSTEM" --json
 jq -r '.[].UUID' "$CAPTURE_DIR/lpars.json" | while IFS= read -r lpar; do
-  capture "lpar-$lpar.json" hmc-mcp lpars show "$lpar" --json
-  capture "lpar-$lpar-summary.json" hmc-mcp lpars summary "$lpar" --json
-  capture "lpar-$lpar-network.json" hmc-mcp adapters list "$lpar" --type ClientNetworkAdapter --json
-  capture "lpar-$lpar-vscsi.json" hmc-mcp adapters list "$lpar" --type VirtualSCSIClientAdapter --json
-  capture "lpar-$lpar-vfc.json" hmc-mcp adapters list "$lpar" --type ClientFibreChannelAdapter --json
+  capture "lpar-$lpar.json" hmcpctl lpars show "$lpar" --json
+  capture "lpar-$lpar-summary.json" hmcpctl lpars summary "$lpar" --json
+  capture "lpar-$lpar-network.json" hmcpctl adapters list "$lpar" --type ClientNetworkAdapter --json
+  capture "lpar-$lpar-vscsi.json" hmcpctl adapters list "$lpar" --type VirtualSCSIClientAdapter --json
+  capture "lpar-$lpar-vfc.json" hmcpctl adapters list "$lpar" --type ClientFibreChannelAdapter --json
 done
 ```
 
@@ -88,15 +88,15 @@ Full documents and summaries retain LPAR state, memory, CPU allocation, and desc
 ## 5. Capture every VIOS and storage state
 
 ```bash
-capture vios.json hmc-mcp vios list --system "$SYSTEM" --json
+capture vios.json hmcpctl vios list --system "$SYSTEM" --json
 jq -r '.[].UUID' "$CAPTURE_DIR/vios.json" | while IFS= read -r vios; do
-  capture "vios-$vios.raw.xml" hmc-mcp raw get "/rest/api/uom/VirtualIOServer/$vios"
-  capture "vios-$vios-vgs.json" hmc-mcp storage list-vgs "$vios" --system "$SYSTEM" --json
-  capture "vios-$vios-mappings.json" hmc-mcp storage list-mappings "$vios" --system "$SYSTEM" --json
+  capture "vios-$vios.raw.xml" hmcpctl raw get "/rest/api/uom/VirtualIOServer/$vios"
+  capture "vios-$vios-vgs.json" hmcpctl storage list-vgs "$vios" --system "$SYSTEM" --json
+  capture "vios-$vios-mappings.json" hmcpctl storage list-mappings "$vios" --system "$SYSTEM" --json
   jq -r '.[].uuid' "$CAPTURE_DIR/vios-$vios-vgs.json" | while IFS= read -r vg; do
-    capture "vios-$vios-vg-$vg.raw.xml" hmc-mcp raw get "/rest/api/uom/VirtualIOServer/$vios/VolumeGroup/$vg"
-    capture "vios-$vios-vg-$vg-media-repository.json" hmc-mcp storage get-media-repo "$vios" "$vg" --system "$SYSTEM" --json
-    capture "vios-$vios-vg-$vg-optical-media.json" hmc-mcp storage list-optical-media "$vios" "$vg" --system "$SYSTEM" --json
+    capture "vios-$vios-vg-$vg.raw.xml" hmcpctl raw get "/rest/api/uom/VirtualIOServer/$vios/VolumeGroup/$vg"
+    capture "vios-$vios-vg-$vg-media-repository.json" hmcpctl storage get-media-repo "$vios" "$vg" --system "$SYSTEM" --json
+    capture "vios-$vios-vg-$vg-optical-media.json" hmcpctl storage list-optical-media "$vios" "$vg" --system "$SYSTEM" --json
   done
 done
 ```
@@ -110,10 +110,10 @@ mapping.
 ## 6. Capture Shared Storage Pool state
 
 ```bash
-capture clusters.json hmc-mcp cluster list --json
-capture shared-storage-pools.json hmc-mcp cluster list-ssps --json
+capture clusters.json hmcpctl cluster list --json
+capture shared-storage-pools.json hmcpctl cluster list-ssps --json
 jq -r '.[].UUID' "$CAPTURE_DIR/shared-storage-pools.json" | while IFS= read -r ssp; do
-  capture "ssp-$ssp.raw.xml" hmc-mcp raw get "/rest/api/uom/SharedStoragePool/$ssp"
+  capture "ssp-$ssp.raw.xml" hmcpctl raw get "/rest/api/uom/SharedStoragePool/$ssp"
 done
 ```
 

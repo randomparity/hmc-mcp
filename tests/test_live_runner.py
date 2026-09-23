@@ -19,14 +19,14 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
-from hmc_mcp.authorization import target_scope
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.config import ConfigError, HMCConfig
-from hmc_mcp.jobs import JobOutcome
-from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
-from hmc_mcp.ssh import affinity as ssh_affinity
+from hmcpctl.authorization import target_scope
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.config import ConfigError, HMCConfig
+from hmcpctl.jobs import JobOutcome
+from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
+from hmcpctl.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
@@ -1151,7 +1151,7 @@ def test_bootstrap_propagates_unexpected_profile_loader_failure(monkeypatch):
         raise RuntimeError("profile loader defect")
 
     fallback = pytest.fail
-    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr("hmcpctl.config.load_profile", fail_to_load_profile)
     monkeypatch.setattr(runner, "_load_dotenv", fallback)
 
     with pytest.raises(RuntimeError, match="profile loader defect"):
@@ -1164,7 +1164,7 @@ def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, caps
     def fail_to_load_profile():
         raise ConfigError(f"{secret_path}: password=runner-secret")
 
-    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr("hmcpctl.config.load_profile", fail_to_load_profile)
     monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
 
@@ -1183,12 +1183,12 @@ def test_the_no_credentials_message_names_this_platforms_config_directory(
     """It printed a Linux literal, which on macOS names a directory the
     resolver never reads — so the operator it is instructing cannot follow it.
     """
-    from hmc_mcp.config import ConfigError, config_dir
+    from hmcpctl.config import ConfigError, config_dir
 
     def fail_to_load_profile():
         raise ConfigError("no profile")
 
-    monkeypatch.setattr("hmc_mcp.config.load_profile", fail_to_load_profile)
+    monkeypatch.setattr("hmcpctl.config.load_profile", fail_to_load_profile)
     monkeypatch.setattr(runner, "_load_dotenv", lambda: None)
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
 
@@ -3737,7 +3737,7 @@ def test_unrestorable_description_names_the_reason(baseline):
     assert isinstance(reason, str) and reason
 
 
-@pytest.mark.parametrize("baseline", ["", "plain text", "[hmc-mcp owner:a created:x]"])
+@pytest.mark.parametrize("baseline", ["", "plain text", "[hmcpctl owner:a created:x]"])
 def test_restorable_description_is_not_blocked(baseline):
     """An ordinary baseline description is restored, not skipped."""
     assert lpar._unrestorable_description(baseline) is None
@@ -4014,7 +4014,7 @@ def test_verified_scenarios_name_registered_operations():
 def test_scenarios_declare_their_expected_assertion_ids():
     """Deleting an assertion must fail here, not go unnoticed in a stale observation.
 
-    The closure fingerprint covers `src/hmc_mcp/` only, so removing an assertion
+    The closure fingerprint covers `src/hmcpctl/` only, so removing an assertion
     from a harness module leaves every committed observation still listing its id,
     still matching its recomputed hash, and still reported `current` — a reader
     concludes a postcondition was checked that nothing checks any more.
@@ -4049,7 +4049,7 @@ def _live_repo(tmp_path: Path) -> Path:
     (tmp_path / ".gitignore").write_text(
         "test-results*.json\n.test-results*.tmp\n", encoding="utf-8"
     )
-    package = tmp_path / "src" / "hmc_mcp"
+    package = tmp_path / "src" / "hmcpctl"
     package.mkdir(parents=True)
     # A real module, so the validated `closure_fingerprint` is a hash of files
     # rather than the empty-input digest, which would say nothing about the walk.

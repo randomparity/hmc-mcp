@@ -9,11 +9,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.virtualization.pcie import _is_exact_admitted_environment
-from hmc_mcp.ssh.commands import parse_hmc_delimited_rows
-from hmc_mcp.ssh.profiles import ProfileIoSlot, parse_profile_io_slots
-from hmc_mcp.ssh.sriov import list_sriov_physical_port_rows
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.virtualization.pcie import _is_exact_admitted_environment
+from hmcpctl.ssh.commands import parse_hmc_delimited_rows
+from hmcpctl.ssh.profiles import ProfileIoSlot, parse_profile_io_slots
+from hmcpctl.ssh.sriov import list_sriov_physical_port_rows
 
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "pcie"
@@ -135,7 +135,7 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
         probe for probe in capture["probes"] if probe["name"] == "physical-ports"
     )
     run = AsyncMock(side_effect=[roce_probe["stdout"], "No results were found."])
-    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", run)
+    monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     rows = await list_sriov_physical_port_rows(
         HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"}),
@@ -443,7 +443,7 @@ def _canonical_ast(value: object) -> object:
 
 
 def test_sriov_mutation_surface_replaces_legacy_mode_and_never_forces() -> None:
-    source = (ROOT / "src" / "hmc_mcp" / "ssh" / "sriov.py").read_text()
+    source = (ROOT / "src" / "hmcpctl" / "ssh" / "sriov.py").read_text()
     current = ast.parse(source)
     functions = {
         node.name: node

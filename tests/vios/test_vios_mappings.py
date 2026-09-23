@@ -4,7 +4,7 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
+from hmcpctl.client.core import HMCClient
 
 BASE = "https://hmc.test"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"

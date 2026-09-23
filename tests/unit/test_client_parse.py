@@ -12,13 +12,13 @@ import pytest
 from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
-from hmc_mcp.client.client_parse import (
+from hmcpctl.client.client_parse import (
     _find_all_text,
     _find_text,
     _metric_links,
     _parse_feed,
 )
-from hmc_mcp.errors import HMCError
+from hmcpctl.errors import HMCError
 
 
 def test_find_text_parse_error_tags_context():

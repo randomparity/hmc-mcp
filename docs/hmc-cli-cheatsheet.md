@@ -1,19 +1,19 @@
 # HMC CLI Cheatsheet
 
-This cheatsheet covers the IBM HMC CLI commands used by hmc-mcp production code
+This cheatsheet covers the IBM HMC CLI commands used by hmcpctl production code
 and repository tooling.  It is a practical reference, not a reproduction of IBM
 documentation.  For exhaustive syntax, options, and return codes see the
 [IBM HMC commands reference](https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands)
 or run `<command> --help` on the HMC itself.
 
 > **SSH execution** — every command here runs over SSH as `hscroot` (or the
-> configured HMC user).  hmc-mcp opens one SSH connection per command via
+> configured HMC user).  hmcpctl opens one SSH connection per command via
 > asyncssh; there is no persistent shell session.  `hmc_run_command` exposes
 > this transport directly to callers.
 
 > **CLI-name vs UUID resolution** — most HMC CLI options such as `-m <system>`
 > and `-p <partition>` require CLI names rather than REST UUIDs. For those
-> options, hmc-mcp tries REST resolution first and can fall back to
+> options, hmcpctl tries REST resolution first and can fall back to
 > `lssyscfg -r sys/lpar -F uuid,name` over SSH. VIOS backup catalog commands are
 > exceptions: listing passes a VIOS UUID directly, while backup and restore pass
 > a direct system name plus VIOS UUID directly. A VIOS name or a backup/restore
@@ -309,7 +309,7 @@ must not appear inside values.  See [Attribute record grammar](#attribute-record
 **`lpar_env`** values: `aixlinux` (AIX or Linux), `vioserver` (VIOS),
 `os400` (IBM i).
 
-**Repository use:** [`create_lpar_via_cli`](../src/hmc_mcp/ssh/lpar.py); REST 406
+**Repository use:** [`create_lpar_via_cli`](../src/hmcpctl/ssh/lpar.py); REST 406
 fallback in `hmc_provision_lpar`; place_lpars tooling.
 
 ---
@@ -424,7 +424,7 @@ bkprofdata -m <system> -f <hmc-local-path> --force   # overwrite existing
 no automatic retrieval; use `cpfile` or `scp` to copy the file off the HMC
 afterwards.
 
-**Repository use:** [`backup_lpar_profiles`](../src/hmc_mcp/ssh/profiles.py); exposed as
+**Repository use:** [`backup_lpar_profiles`](../src/hmcpctl/ssh/profiles.py); exposed as
 `hmc_backup_lpar_profiles`.
 
 ---
@@ -443,7 +443,7 @@ merge-current-wins, `4` initialize (no `-f` needed).
 
 **Warning:** `-l 1` and `-l 4` overwrite the current profile configuration.
 
-**Repository use:** [`restore_lpar_profiles`](../src/hmc_mcp/ssh/profiles.py); exposed as
+**Repository use:** [`restore_lpar_profiles`](../src/hmcpctl/ssh/profiles.py); exposed as
 `hmc_restore_lpar_profiles`.
 
 ---
@@ -595,7 +595,7 @@ Three characters are structure delimiters and **must not appear in values**:
 | `=` | separates an attribute name from its value |
 | `"` | opens a quoted region (IBM's own escaping) |
 
-hmc-mcp's `build_attribute_record` enforces this rule and raises
+hmcpctl's `build_attribute_record` enforces this rule and raises
 `HMCCLIError` for any value that contains these characters, a control
 character, or a NUL.  The resulting record is then wrapped in
 `shlex.quote` to protect it from the remote shell.
@@ -634,6 +634,6 @@ Validated against live P9, P10, and P11 managed systems on HMC V10R3M1060 and HM
 ## Further reading
 
 - [IBM HMC commands reference (Power10)](https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands)
-- [`src/hmc_mcp/ssh/commands.py`](../src/hmc_mcp/ssh/commands.py) — shared SSH command construction
-- [`src/hmc_mcp/server_tools/vios/core.py`](../src/hmc_mcp/server_tools/vios/core.py) — VIOS backup commands
+- [`src/hmcpctl/ssh/commands.py`](../src/hmcpctl/ssh/commands.py) — shared SSH command construction
+- [`src/hmcpctl/server_tools/vios/core.py`](../src/hmcpctl/server_tools/vios/core.py) — VIOS backup commands
 - [`scripts/live_test_runner.py`](../scripts/live_test_runner.py) — live-test uses of HMC CLI

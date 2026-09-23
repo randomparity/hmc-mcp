@@ -2,7 +2,7 @@
 
 `just verify` used to name six of the fifteen groups by hand, so nine of them had
 their help pages rendered by nothing. The gap is narrower than a load check: the
-root ``hmc-mcp --help`` already builds the whole command tree, so a group whose
+root ``hmcpctl --help`` already builds the whole command tree, so a group whose
 module fails to import, or whose parameters Typer cannot convert, fails there
 already. What only ``<group> --help`` renders is that group's own page -- its
 commands' short helps and its option panel -- and Typer's default
@@ -12,7 +12,7 @@ commands' short helps and its option panel -- and Typer's default
 The list comes from the built command tree rather than from this file, so
 registering a group in ``cli_app`` is all it takes to have it smoke-loaded.
 Rendering happens in-process: fifteen subprocesses would cost about fifteen
-seconds per run, and `just verify` invokes the installed ``hmc-mcp`` console
+seconds per run, and `just verify` invokes the installed ``hmcpctl`` console
 script for the root help alongside this script, so the entry point stays covered.
 """
 
@@ -26,7 +26,7 @@ from collections.abc import Iterator
 import typer
 from typer.testing import CliRunner
 
-from hmc_mcp.cli import app
+from hmcpctl.cli import app
 
 
 def _subgroups(command: object, prefix: tuple[str, ...]) -> Iterator[tuple[str, ...]]:

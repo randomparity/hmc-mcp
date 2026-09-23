@@ -1,4 +1,4 @@
-"""`hmc-mcp` and `python -m hmc_mcp` are one program.
+"""`hmcpctl` and `python -m hmcpctl` are one program.
 
 ADR 0128 holds the two invocations equivalent "by construction, not by a standing
 test", and moved L5 -- the live suite's only fd-2-closed launch -- onto the module
@@ -10,7 +10,7 @@ Two arms, because they fail on different regressions:
 
 * the command tree, which catches a divergence in what the two forms dispatch to;
 * the exit status, which catches a divergence in how that program's status is
-  signalled -- ADR 0128's named risk, `hmc_mcp.main` returning a status instead of
+  signalled -- ADR 0128's named risk, `hmcpctl.main` returning a status instead of
   raising while `__main__.py` no longer wraps it.
 
 Between them the arms observe rendered help, stderr during that render, and an exit
@@ -32,9 +32,9 @@ and both are accommodated rather than asserted:
   prefix and shared tail -- and replaced with one placeholder in that line only.
   Deriving it instead (from `sys.executable` plus the module name, say) would
   reproduce Click's own `_detect_program_name` and break on a Click upgrade for a
-  reason that has nothing to do with `hmc_mcp`. Confining the substitution to the
-  `Usage:` line matters: `hmc-mcp` recurs inside `--profile`'s help text, where
-  `python -m hmc_mcp` does not, so a whole-output substitution corrupts the console
+  reason that has nothing to do with `hmcpctl`. Confining the substitution to the
+  `Usage:` line matters: `hmcpctl` recurs inside `--profile`'s help text, where
+  `python -m hmcpctl` does not, so a whole-output substitution corrupts the console
   form alone and is red at HEAD.
 * `sys.path[0]`, which `-m` sets to the working directory. Both forms are launched
   with `cwd` at an empty `tmp_path` rather than under `-P`, so the module form keeps
@@ -92,12 +92,12 @@ def _launchers() -> tuple[list[str], list[str]]:
     pin, which `sys.executable` gives only while it is the interpreter beside that
     script -- so the two are required to share a `bin` directory.
     """
-    executable = shutil.which("hmc-mcp")
+    executable = shutil.which("hmcpctl")
     if executable is None:
-        pytest.skip("the hmc-mcp console script is not on PATH")
+        pytest.skip("the hmcpctl console script is not on PATH")
     assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
         "the console script resolves outside this checkout, so the equivalence proved "
-        "would belong to a different build of hmc-mcp"
+        "would belong to a different build of hmcpctl"
     )
     # The parent directories are resolved, not the interpreter: a venv's `bin/python`
     # is a symlink out to the interpreter it was created from, so resolving *it* would
@@ -107,7 +107,7 @@ def _launchers() -> tuple[list[str], list[str]]:
         f"{sys.executable} is not beside {executable}, so the two forms would compare "
         "two different installs rather than two entry points into one"
     )
-    return [executable], [sys.executable, "-m", "hmc_mcp"]
+    return [executable], [sys.executable, "-m", "hmcpctl"]
 
 
 def _child_env(home: Path) -> dict[str, str]:
@@ -214,7 +214,7 @@ def test_both_forms_render_the_same_command_tree(tmp_path, command_path):
         _plain_lines(console.stdout), _plain_lines(module.stdout), command_path
     )
     assert normalised_console == normalised_module, (
-        "the console script and python -m hmc_mcp render different command trees; "
+        "the console script and python -m hmcpctl render different command trees; "
         "only the program name is an intended difference (ADR 0128:117-119)"
     )
 
@@ -227,13 +227,13 @@ def test_both_forms_render_the_same_command_tree(tmp_path, command_path):
 def test_both_forms_reject_a_bad_argument_with_the_same_status(tmp_path, args):
     """One usage error raised by the parser, one raised inside the command body.
 
-    The second is the arm that would move first if `hmc_mcp.main` started returning a
+    The second is the arm that would move first if `hmcpctl.main` started returning a
     status: it is raised by `serve` itself rather than by Click's parser.
     """
     console, module = _run_both(args, tmp_path)
 
     assert console.returncode == module.returncode, (
-        f"the console script exited {console.returncode} and python -m hmc_mcp exited "
+        f"the console script exited {console.returncode} and python -m hmcpctl exited "
         f"{module.returncode} on `{' '.join(args)}`; the two entry points no longer "
         "signal the same exit status (ADR 0128:111-114)"
     )

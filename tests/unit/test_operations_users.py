@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.operations.users.core import (
+from hmcpctl.operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,
     create_user,

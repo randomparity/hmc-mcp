@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.operations.lpar import core as lpar_operations
-from hmc_mcp.operations.lpar.core import list_lpars
-from hmc_mcp.operations.systems.core import get_system, list_systems
+from hmcpctl.operations.lpar import core as lpar_operations
+from hmcpctl.operations.lpar.core import list_lpars
+from hmcpctl.operations.systems.core import get_system, list_systems
 
 
 @pytest.mark.asyncio

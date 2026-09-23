@@ -4,8 +4,8 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.jobs import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.jobs import (
     migrate_abort_lpar_job,
     migrate_lpar_job,
     migrate_recover_lpar_job,

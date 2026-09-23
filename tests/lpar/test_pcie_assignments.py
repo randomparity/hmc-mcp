@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.lpar.assignments import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.lpar.assignments import (
     DedicatedPcieAssignment,
     LparPcieAssignments,
     SriovLogicalPortAssignment,
@@ -17,7 +17,7 @@ from hmc_mcp.operations.lpar.assignments import (
     apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-from hmc_mcp.operations.virtualization.pcie import (
+from hmcpctl.operations.virtualization.pcie import (
     InventoryResult,
     InventorySelector,
     PcieAssignmentPartialError,
@@ -26,7 +26,7 @@ from hmc_mcp.operations.virtualization.pcie import (
     SriovLogicalPortCapabilityError,
     list_sriov_physical_ports,
 )
-from hmc_mcp.operations.virtualization.vnic import VnicBackingSelector
+from hmcpctl.operations.virtualization.vnic import VnicBackingSelector
 
 
 def _sriov(logical: str = "27004001") -> SriovLogicalPortAssignment:
@@ -73,12 +73,12 @@ async def test_prevalidation_uses_normalized_physical_port_availability(
         "sriov_logical_port", "available", "sys", InventorySelector("1", "1"), [], None
     )
     with (
-        patch("hmc_mcp.operations.virtualization.pcie._system_name", AsyncMock(return_value="sys")),
-        patch("hmc_mcp.operations.virtualization.pcie.require_admitted_environment", AsyncMock()),
-        patch("hmc_mcp.operations.virtualization.pcie.list_sriov_physical_port_rows", rows),
-        patch("hmc_mcp.operations.lpar.assignments.list_sriov_adapters", AsyncMock(return_value=adapter)),
-        patch("hmc_mcp.operations.lpar.assignments.list_sriov_logical_ports", AsyncMock(return_value=logical)),
-        patch("hmc_mcp.operations.lpar.assignments._existing_capacity", AsyncMock(return_value=Decimal())),
+        patch("hmcpctl.operations.virtualization.pcie._system_name", AsyncMock(return_value="sys")),
+        patch("hmcpctl.operations.virtualization.pcie.require_admitted_environment", AsyncMock()),
+        patch("hmcpctl.operations.virtualization.pcie.list_sriov_physical_port_rows", rows),
+        patch("hmcpctl.operations.lpar.assignments.list_sriov_adapters", AsyncMock(return_value=adapter)),
+        patch("hmcpctl.operations.lpar.assignments.list_sriov_logical_ports", AsyncMock(return_value=logical)),
+        patch("hmcpctl.operations.lpar.assignments._existing_capacity", AsyncMock(return_value=Decimal())),
     ):
         ports = await list_sriov_physical_ports(SimpleNamespace(config=config), "sys", "1", "1")
         assert ports.items[0].availability == availability
@@ -124,11 +124,11 @@ async def test_dedicated_request_outside_the_envelope_fails_before_creation(
     config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.resolve_ssh_names",
+            "hmcpctl.operations.lpar.assignments.resolve_ssh_names",
             AsyncMock(return_value=("sys", None)),
         ),
         patch(
-            "hmc_mcp.operations.virtualization.pcie.read_sriov_environment",
+            "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
             _environment(model),
         ),
         pytest.raises(PcieAssignmentUnavailableError, match="V10R3 M1060"),
@@ -144,10 +144,10 @@ async def test_dedicated_request_inside_the_envelope_prevalidates() -> None:
     environment = _environment("8375-42A")
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.resolve_ssh_names",
+            "hmcpctl.operations.lpar.assignments.resolve_ssh_names",
             AsyncMock(return_value=("sys-resolved", None)),
         ),
-        patch("hmc_mcp.operations.virtualization.pcie.read_sriov_environment", environment),
+        patch("hmcpctl.operations.virtualization.pcie.read_sriov_environment", environment),
     ):
         await prevalidate_lpar_pcie_assignments(
             SimpleNamespace(config=config), "sys", _dedicated()
@@ -184,10 +184,10 @@ async def test_unverified_dedicated_change_is_an_error_step_that_skips_the_rest(
     sriov = AsyncMock()
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.assign_dedicated_pcie_slot",
+            "hmcpctl.operations.lpar.assignments.assign_dedicated_pcie_slot",
             AsyncMock(side_effect=PcieAssignmentPartialError("readback mismatch")),
         ),
-        patch("hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port", sriov),
+        patch("hmcpctl.operations.lpar.assignments.assign_sriov_logical_port", sriov),
     ):
         result = await apply_validated_lpar_pcie_assignments(
             AsyncMock(), "sys", "lpar", assignments
@@ -238,7 +238,7 @@ async def test_structural_selector_character_fails_before_inventory() -> None:
 async def test_dry_run_preserves_stable_assignment_order() -> None:
     assignments = LparPcieAssignments(sriov=(_sriov(),), vnics=(_vnic(),))
     with patch(
-        "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     ):
         result = await apply_validated_lpar_pcie_assignments(
@@ -252,7 +252,7 @@ async def test_dry_run_preserves_stable_assignment_order() -> None:
 async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None:
     validation = AsyncMock(side_effect=RuntimeError("concurrent inventory change"))
     with patch(
-        "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation
+        "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation
     ):
         result = await apply_validated_lpar_pcie_assignments(
             AsyncMock(),
@@ -268,7 +268,7 @@ async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None
 async def test_public_apply_cannot_bypass_validation() -> None:
     validation = AsyncMock(side_effect=ValueError("unsafe collection"))
     with (
-        patch( "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation ),
+        patch( "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments", validation ),
         pytest.raises(ValueError, match="unsafe collection"),
     ):
         await apply_lpar_pcie_assignments(
@@ -284,11 +284,11 @@ async def test_first_assignment_failure_skips_remaining_steps() -> None:
     vnic = AsyncMock()
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
+            "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
             AsyncMock(),
         ),
-        patch("hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port", sriov),
-        patch("hmc_mcp.operations.lpar.assignments.add_vnic", vnic),
+        patch("hmcpctl.operations.lpar.assignments.assign_sriov_logical_port", sriov),
+        patch("hmcpctl.operations.lpar.assignments.add_vnic", vnic),
     ):
         result = await apply_lpar_pcie_assignments(
             AsyncMock(), "sys", "lpar", assignments
@@ -306,15 +306,15 @@ async def test_later_preflight_failure_preserves_prior_assignment(failure: Excep
     assignments = LparPcieAssignments(sriov=(_sriov(),), vnics=(_vnic(),))
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
+            "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
             AsyncMock(),
         ),
         patch(
-            "hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port",
+            "hmcpctl.operations.lpar.assignments.assign_sriov_logical_port",
             AsyncMock(return_value={"assigned": True}),
         ),
         patch(
-            "hmc_mcp.operations.lpar.assignments.add_vnic",
+            "hmcpctl.operations.lpar.assignments.add_vnic",
             AsyncMock(side_effect=failure),
         ),
     ):
@@ -331,11 +331,11 @@ async def test_assignment_programming_defect_propagates() -> None:
     assignments = LparPcieAssignments(sriov=(_sriov(),))
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
+            "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
             AsyncMock(),
         ),
         patch(
-            "hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port",
+            "hmcpctl.operations.lpar.assignments.assign_sriov_logical_port",
             AsyncMock(side_effect=TypeError("bad collaborator")),
         ),
         pytest.raises(TypeError, match="bad collaborator"),
@@ -358,11 +358,11 @@ async def test_success_composes_existing_operations_in_order() -> None:
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
+            "hmcpctl.operations.lpar.assignments.prevalidate_lpar_pcie_assignments",
             AsyncMock(),
         ),
-        patch("hmc_mcp.operations.lpar.assignments.assign_sriov_logical_port", assign),
-        patch("hmc_mcp.operations.lpar.assignments.add_vnic", add),
+        patch("hmcpctl.operations.lpar.assignments.assign_sriov_logical_port", assign),
+        patch("hmcpctl.operations.lpar.assignments.add_vnic", add),
     ):
         result = await apply_lpar_pcie_assignments(
             AsyncMock(), "sys", "lpar", assignments

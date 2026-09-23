@@ -26,42 +26,42 @@ from click import unstyle
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from hmc_mcp import cli
-from hmc_mcp.cli_commands import app as cli_command_app
-from hmc_mcp.cli_commands import metrics as cli_metrics
-from hmc_mcp.cli_commands import runtime as cli_runtime
-from hmc_mcp.cli_commands import snapshot as cli_snapshot
-from hmc_mcp.cli_commands.lpar import config as cli_lpars
-from hmc_mcp.cli_commands.lpar import decommission as cli_lpar_decommission
-from hmc_mcp.cli_commands.lpar import inventory as cli_lpar_inventory
-from hmc_mcp.cli_commands.lpar import lifecycle as cli_lpar_lifecycle
-from hmc_mcp.cli_commands.lpar import migration as cli_lpar_migration
-from hmc_mcp.cli_commands.lpar import modify as cli_lpar_modify
-from hmc_mcp.cli_commands.lpar import provision as cli_lpar_provision
-from hmc_mcp.cli_commands.storage import cluster as cli_storage_cluster
-from hmc_mcp.cli_commands.storage import resources as cli_storage_resources
-from hmc_mcp.cli_commands.vios import core as cli_vios_core
-from hmc_mcp.cli_commands.vios import labels as cli_vios_labels
-from hmc_mcp.cli_commands.virtualization import pcie as cli_pcie
-from hmc_mcp.cli_commands.virtualization import vnic as cli_vnic
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar import ownership as lpar_ownership
-from hmc_mcp.operations.lpar.assignments import LparPcieWorkflowResult
-from hmc_mcp.operations.lpar.provision import ProvisionResult
-from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
-from hmc_mcp.operations.storage.resources import (
+from hmcpctl import cli
+from hmcpctl.cli_commands import app as cli_command_app
+from hmcpctl.cli_commands import metrics as cli_metrics
+from hmcpctl.cli_commands import runtime as cli_runtime
+from hmcpctl.cli_commands import snapshot as cli_snapshot
+from hmcpctl.cli_commands.lpar import config as cli_lpars
+from hmcpctl.cli_commands.lpar import decommission as cli_lpar_decommission
+from hmcpctl.cli_commands.lpar import inventory as cli_lpar_inventory
+from hmcpctl.cli_commands.lpar import lifecycle as cli_lpar_lifecycle
+from hmcpctl.cli_commands.lpar import migration as cli_lpar_migration
+from hmcpctl.cli_commands.lpar import modify as cli_lpar_modify
+from hmcpctl.cli_commands.lpar import provision as cli_lpar_provision
+from hmcpctl.cli_commands.storage import cluster as cli_storage_cluster
+from hmcpctl.cli_commands.storage import resources as cli_storage_resources
+from hmcpctl.cli_commands.vios import core as cli_vios_core
+from hmcpctl.cli_commands.vios import labels as cli_vios_labels
+from hmcpctl.cli_commands.virtualization import pcie as cli_pcie
+from hmcpctl.cli_commands.virtualization import vnic as cli_vnic
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar import ownership as lpar_ownership
+from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
+from hmcpctl.operations.lpar.provision import ProvisionResult
+from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
+from hmcpctl.operations.storage.resources import (
     OpticalMedia,
     StorageMapping,
     VolumeGroup,
 )
-from hmc_mcp.operations.virtualization.vnic import VnicChangeResult, VnicPartialError
-from hmc_mcp.ssh import affinity as ssh_affinity
-from hmc_mcp.ssh import commands as ssh_commands
-from hmc_mcp.ssh import io_inventory, sriov, vnic
-from hmc_mcp.ssh import lpar as ssh_lpar
-from hmc_mcp.ssh import profiles as ssh_profiles
-from hmc_mcp.ssh import refcodes as ssh_refcodes
+from hmcpctl.operations.virtualization.vnic import VnicChangeResult, VnicPartialError
+from hmcpctl.ssh import affinity as ssh_affinity
+from hmcpctl.ssh import commands as ssh_commands
+from hmcpctl.ssh import io_inventory, sriov, vnic
+from hmcpctl.ssh import lpar as ssh_lpar
+from hmcpctl.ssh import profiles as ssh_profiles
+from hmcpctl.ssh import refcodes as ssh_refcodes
 
 LPAR_NAME = "lpar1"
 
@@ -605,7 +605,7 @@ def fake_hmc(monkeypatch):
         return "legacy partition"
 
     async def stamped(*_args, **_kwargs):
-        return "[hmc-mcp owner:hmc-mcp created:2026-08-14]"
+        return "[hmcpctl owner:hmcpctl created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", legacy_description)
     monkeypatch.setattr(lpar_ownership, "stamp_lpar_ownership", stamped)
@@ -626,7 +626,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
     for name in tuple(__import__("os").environ):
         if name.casefold() == "hmc_host":
             monkeypatch.delenv(name)
-    monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: None)
+    monkeypatch.setattr("hmcpctl.config.resolve_config_path", lambda: None)
 
     first = RUNNER.invoke(
         cli.app,
@@ -850,7 +850,7 @@ def test_lpars_list_state_filter(fake_hmc):
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
-    from hmc_mcp.operations.inventory.composite import _lpar_summary
+    from hmcpctl.operations.inventory.composite import _lpar_summary
 
     summary = _lpar_summary(
         {
@@ -865,7 +865,7 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
         [],
     )
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.lpar.inventory.with_client", lambda _operation: summary
+        "hmcpctl.cli_commands.lpar.inventory.with_client", lambda _operation: summary
     )
 
     result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])
@@ -918,8 +918,8 @@ def test_lpars_state_entry_without_uuid_reports_not_found(fake_hmc, monkeypatch)
 
 
 def test_lpars_state_uses_typed_resolver_miss(fake_hmc, monkeypatch):
-    from hmc_mcp.cli_commands.lpar import inventory
-    from hmc_mcp.resource_identity import ResourceNotFoundError
+    from hmcpctl.cli_commands.lpar import inventory
+    from hmcpctl.resource_identity import ResourceNotFoundError
 
     async def missing_lpar(*_args, **_kwargs):
         raise ResourceNotFoundError("LPAR", LPAR_NAME, "typed resolver miss")
@@ -1439,7 +1439,7 @@ def test_lpars_delete_denies_foreign_owned_partition_without_transport(
     fake_hmc, monkeypatch
 ):
     async def foreign_description(*_args):
-        return "[hmc-mcp owner:other-agent created:2026-08-14]"
+        return "[hmcpctl owner:other-agent created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", foreign_description)
 
@@ -1603,7 +1603,7 @@ def test_lpars_decommission_incomplete_json_result_exits_1_after_rendering(fake_
 
 def test_lpars_decommission_denies_foreign_owned_partition(fake_hmc, monkeypatch):
     async def foreign_description(*_args):
-        return "[hmc-mcp owner:other-agent created:2026-08-14]"
+        return "[hmcpctl owner:other-agent created:2026-08-14]"
 
     monkeypatch.setattr(lpar_ownership, "get_lpar_description", foreign_description)
 
@@ -2016,7 +2016,7 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
         return [VolumeGroup(VG_UUID, "rootvg", 100, 5, None)]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_volume_groups", fake_list
+        "hmcpctl.cli_commands.storage.resources.list_volume_groups", fake_list
     )
 
     result = RUNNER.invoke(
@@ -2037,7 +2037,7 @@ def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
         return {"UUID": "disk-1"}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.delete_virtual_disk", fake_delete
+        "hmcpctl.cli_commands.storage.resources.delete_virtual_disk", fake_delete
     )
 
     result = RUNNER.invoke(
@@ -2066,7 +2066,7 @@ def test_storage_delete_disk_declined_confirmation_aborts(fake_hmc, monkeypatch)
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.delete_virtual_disk", fake_delete
+        "hmcpctl.cli_commands.storage.resources.delete_virtual_disk", fake_delete
     )
 
     result = RUNNER.invoke(
@@ -2086,7 +2086,7 @@ def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
     async def fake_map(*args):
         called.append(args)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.storage.resources.map_storage", fake_map)
+    monkeypatch.setattr("hmcpctl.cli_commands.storage.resources.map_storage", fake_map)
 
     result = RUNNER.invoke(
         cli.app,
@@ -2106,7 +2106,7 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.create_media_repository", fake_create
+        "hmcpctl.cli_commands.storage.resources.create_media_repository", fake_create
     )
 
     result = RUNNER.invoke(
@@ -2128,7 +2128,7 @@ def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
         return {"MediaName": "aix.iso"}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.create_optical_media", fake_create
+        "hmcpctl.cli_commands.storage.resources.create_optical_media", fake_create
     )
 
     result = RUNNER.invoke(
@@ -2163,7 +2163,7 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.create_optical_media", fake_create
+        "hmcpctl.cli_commands.storage.resources.create_optical_media", fake_create
     )
 
     result = RUNNER.invoke(
@@ -2193,7 +2193,7 @@ def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
         seen.update(vios=vios, vg=vg, media_name=media_name)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.delete_optical_media", fake_delete
+        "hmcpctl.cli_commands.storage.resources.delete_optical_media", fake_delete
     )
 
     result = RUNNER.invoke(
@@ -2213,7 +2213,7 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
         called.append(args)
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.delete_optical_media", fake_delete
+        "hmcpctl.cli_commands.storage.resources.delete_optical_media", fake_delete
     )
 
     result = RUNNER.invoke(
@@ -2233,7 +2233,7 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
         return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "10240"}}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.get_media_repository", fake_get
+        "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
@@ -2248,7 +2248,7 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
         return {}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.get_media_repository", fake_get
+        "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
@@ -2262,7 +2262,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
         return {"Resource": {"RepositoryName": "VMLibrary"}}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.get_media_repository", fake_get
+        "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
     )
 
     result = RUNNER.invoke(
@@ -2279,7 +2279,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
         return [OpticalMedia("aix.iso", 4096, "ISO")]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_optical_media", fake_list
+        "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
     )
 
     result = RUNNER.invoke(
@@ -2296,7 +2296,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_optical_media", fake_list
+        "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
     )
 
     result = RUNNER.invoke(
@@ -2312,7 +2312,7 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
         return [OpticalMedia("aix.iso", None, None)]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_optical_media", fake_list
+        "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
     )
 
     result = RUNNER.invoke(
@@ -2332,7 +2332,7 @@ def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
         return [StorageMapping("map-1", "lpar1", "VirtualDisk", "bootvol")]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_storage_mappings", fake_mappings
+        "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
@@ -2350,7 +2350,7 @@ def test_storage_list_mappings_renders_physical_volume(fake_hmc, monkeypatch):
         return [StorageMapping("map-2", "lpar1", "PhysicalVolume", "hdisk9")]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_storage_mappings", fake_mappings
+        "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(
@@ -2367,7 +2367,7 @@ def test_storage_list_mappings_json(fake_hmc, monkeypatch):
         return [StorageMapping("map-1", None, None, None)]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.list_storage_mappings", fake_mappings
+        "hmcpctl.cli_commands.storage.resources.list_storage_mappings", fake_mappings
     )
 
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
@@ -2393,7 +2393,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.detach_storage_mapping", fake_detach
+        "hmcpctl.cli_commands.storage.resources.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -2430,7 +2430,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkey
         raise HMCError("mapping is in use")
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.detach_storage_mapping", fake_detach
+        "hmcpctl.cli_commands.storage.resources.detach_storage_mapping", fake_detach
     )
 
     result = RUNNER.invoke(
@@ -2467,7 +2467,7 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
         coroutine.close()
         raise typer.Exit(code=2)
 
-    monkeypatch.setattr("hmc_mcp.cli_commands.runtime.asyncio.run", boom)
+    monkeypatch.setattr("hmcpctl.cli_commands.runtime.asyncio.run", boom)
 
     with pytest.raises(typer.Exit) as excinfo:
         cli_runtime.with_client(lambda hmc: None)
@@ -2491,7 +2491,7 @@ def test_storage_upload_iso_reports_uploaded_media(fake_hmc, monkeypatch):
         }
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.upload_iso", fake_upload
+        "hmcpctl.cli_commands.storage.resources.upload_iso", fake_upload
     )
 
     result = RUNNER.invoke(
@@ -2520,7 +2520,7 @@ def test_storage_upload_iso_json(fake_hmc, monkeypatch):
         return {"status": "uploaded", "media_name": "aix.iso"}
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.storage.resources.upload_iso", fake_upload
+        "hmcpctl.cli_commands.storage.resources.upload_iso", fake_upload
     )
 
     result = RUNNER.invoke(
@@ -3312,9 +3312,9 @@ def _vnic_result(operation: str) -> VnicChangeResult:
 
 def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
-    monkeypatch.setattr("hmc_mcp.cli_commands.virtualization.vnic.add_vnic", operation)
+    monkeypatch.setattr("hmcpctl.cli_commands.virtualization.vnic.add_vnic", operation)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.virtualization.vnic.with_client",
+        "hmcpctl.cli_commands.virtualization.vnic.with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
@@ -3352,10 +3352,10 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
     partial = VnicPartialError("incomplete", _vnic_result("remove"))
     operation = AsyncMock(side_effect=partial)
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.virtualization.vnic.remove_vnic", operation
+        "hmcpctl.cli_commands.virtualization.vnic.remove_vnic", operation
     )
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.virtualization.vnic.with_client",
+        "hmcpctl.cli_commands.virtualization.vnic.with_client",
         lambda fn: asyncio.run(fn(object())),
     )
 
@@ -4136,7 +4136,7 @@ def test_jobs_list_limits_and_renders_json(fake_hmc, monkeypatch):
         return [{"UUID": "job-1"}, {"UUID": "job-2"}]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.jobs.operations_jobs.list_jobs", fake_list
+        "hmcpctl.cli_commands.jobs.operations_jobs.list_jobs", fake_list
     )
 
     result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "1", "--json"])
@@ -4209,7 +4209,7 @@ def test_boot_order_commands_delegate_to_operations(
         return {"devices": ["network", "cd"]}
 
     monkeypatch.setattr(
-        f"hmc_mcp.cli_commands.lpar.profiles.{operation}", fake_operation
+        f"hmcpctl.cli_commands.lpar.profiles.{operation}", fake_operation
     )
 
     result = RUNNER.invoke(cli.app, command)
@@ -4226,7 +4226,7 @@ def test_set_boot_order_rejects_invalid_device_before_operation(monkeypatch):
         called = True
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.lpar.profiles.set_lpar_boot_order", fake_operation
+        "hmcpctl.cli_commands.lpar.profiles.set_lpar_boot_order", fake_operation
     )
 
     result = RUNNER.invoke(
@@ -4501,7 +4501,7 @@ def test_memory_pools_list_table(monkeypatch):
         return [{"pool_name": "pool1", "size": "1024", "lpar_names": "lpar1"}]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.systems.memory_pools.list_memory_pools", fake_list
+        "hmcpctl.cli_commands.systems.memory_pools.list_memory_pools", fake_list
     )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
@@ -4515,7 +4515,7 @@ def test_memory_pools_list_json(monkeypatch):
         return [{"pool_name": "pool1", "size": "1024"}]
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.systems.memory_pools.list_memory_pools", fake_list
+        "hmcpctl.cli_commands.systems.memory_pools.list_memory_pools", fake_list
     )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1", "--json"])
 
@@ -4528,7 +4528,7 @@ def test_memory_pools_list_empty(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.systems.memory_pools.list_memory_pools", fake_list
+        "hmcpctl.cli_commands.systems.memory_pools.list_memory_pools", fake_list
     )
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
@@ -4541,7 +4541,7 @@ def test_memory_pools_remove_with_yes(monkeypatch):
         return "pool removed\n"
 
     monkeypatch.setattr(
-        "hmc_mcp.cli_commands.systems.memory_pools.remove_memory_pool", fake_remove
+        "hmcpctl.cli_commands.systems.memory_pools.remove_memory_pool", fake_remove
     )
     result = RUNNER.invoke(
         cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]

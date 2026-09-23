@@ -10,24 +10,24 @@ import pytest
 from fastmcp import Client
 from typer.testing import CliRunner
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli import app
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.cli_commands.lpar import config as cli_lpars
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.affinity.ssh import (
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli import app
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.cli_commands.lpar import config as cli_lpars
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.affinity.ssh import (
     MinimumAffinityPolicyResult,
     get_minimum_affinity_policy,
     set_minimum_affinity_policy,
 )
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools.lpar import configuration as server_lpar_config
-from hmc_mcp.ssh.affinity import (
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools.lpar import configuration as server_lpar_config
+from hmcpctl.ssh.affinity import (
     MinimumAffinityPolicy,
     query_minimum_affinity_policy,
     set_minimum_affinity_policy_cli,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmcpctl.ssh.transport import HMCCLIError
 
 
 def _config() -> HMCConfig:
@@ -47,8 +47,8 @@ async def test_policy_query_uses_compatibility_gate_and_exact_projection():
         ]
     )
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
     ):
         result = await query_minimum_affinity_policy(_config(), "system", "lpar one")
 
@@ -73,8 +73,8 @@ async def test_policy_query_accepts_quoted_compatibility_modes():
         ]
     )
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
     ):
         result = await query_minimum_affinity_policy(_config(), "system", "lpar")
 
@@ -87,8 +87,8 @@ async def test_policy_query_accepts_quoted_compatibility_modes():
 async def test_policy_query_returns_capability_absence_without_policy_command():
     runner = AsyncMock(return_value="default,POWER9,POWER10\n")
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
     ):
         result = await query_minimum_affinity_policy(_config(), "system", "lpar")
 
@@ -115,8 +115,8 @@ async def test_policy_query_returns_capability_absence_without_policy_command():
 async def test_policy_query_rejects_malformed_output(output):
     runner = AsyncMock(side_effect=["POWER11\n", output])
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
         pytest.raises(HMCCLIError, match="malformed lssyscfg minimum-affinity"),
     ):
         await query_minimum_affinity_policy(_config(), "system", "lpar")
@@ -128,8 +128,8 @@ async def test_policy_setter_rejects_invalid_score_before_hmc_call(score):
     runner = AsyncMock()
     policy = MinimumAffinityPolicy(score, "warn")
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
         pytest.raises(ValueError, match="integer from 0 through 100"),
     ):
         await set_minimum_affinity_policy_cli(_config(), "system", "lpar", policy)
@@ -140,8 +140,8 @@ async def test_policy_setter_rejects_invalid_score_before_hmc_call(score):
 async def test_policy_setter_rejects_unsupported_system_before_mutation():
     runner = AsyncMock(return_value="default,POWER10\n")
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
         pytest.raises(HMCCLIError, match="advertises POWER11"),
     ):
         await set_minimum_affinity_policy_cli(
@@ -155,8 +155,8 @@ async def test_policy_setter_rejects_unsupported_system_before_mutation():
 async def test_policy_setter_requires_deliberate_fail_and_quotes_command():
     runner = AsyncMock(side_effect=["POWER11\n", "changed\n"])
     with (
-        patch("hmc_mcp.ssh.affinity.run_hmc_command", runner),
-        patch("hmc_mcp.ssh.profiles.run_hmc_command", runner),
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
     ):
         result = await set_minimum_affinity_policy_cli(
             _config(), "system one", "lpar one", MinimumAffinityPolicy(90, "fail")
@@ -174,7 +174,7 @@ async def test_public_policy_setter_validates_before_resolution():
     hmc.config = _config()
     resolver = AsyncMock()
     with patch(
-                "hmc_mcp.operations.affinity.ssh.resolve_and_authorize_lpar_names",
+                "hmcpctl.operations.affinity.ssh.resolve_and_authorize_lpar_names",
         resolver,
     ), pytest.raises(ValueError, match="none, warn, or fail"):
         await set_minimum_affinity_policy(
@@ -199,10 +199,10 @@ async def test_public_policy_setter_authorizes_before_mutation():
     mutate = AsyncMock(side_effect=lambda *args: events.append("mutate") or "changed")
     with (
         patch(
-                "hmc_mcp.operations.affinity.ssh.resolve_and_authorize_lpar_names",
+                "hmcpctl.operations.affinity.ssh.resolve_and_authorize_lpar_names",
             authorize,
         ),
-            patch("hmc_mcp.operations.affinity.ssh.set_minimum_affinity_policy_cli", mutate),
+            patch("hmcpctl.operations.affinity.ssh.set_minimum_affinity_policy_cli", mutate),
     ):
         result = await set_minimum_affinity_policy(
             hmc, "system", "lpar", MinimumAffinityPolicy(80, "warn")
@@ -226,10 +226,10 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
     )
     with (
         patch(
-                "hmc_mcp.operations.affinity.ssh.resolve_ssh_names",
+                "hmcpctl.operations.affinity.ssh.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", "resolved-lpar")),
         ),
-            patch("hmc_mcp.operations.affinity.ssh.query_minimum_affinity_policy", query),
+            patch("hmcpctl.operations.affinity.ssh.query_minimum_affinity_policy", query),
     ):
         result = await get_minimum_affinity_policy(_hmc(), "system", "lpar")
 

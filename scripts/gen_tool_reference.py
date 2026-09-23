@@ -27,13 +27,13 @@ from dataclasses import dataclass
 from operator import attrgetter
 from pathlib import Path
 
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operation_maturity import OperationMaturityError, operation_maturity
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools.command import configure_arbitrary_command_tool
-from hmc_mcp.tool_registry import ToolSecurity
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operation_maturity import OperationMaturityError, operation_maturity
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.tool_registry import ToolSecurity
 
 # Resolve the repo root relative to this script so the generator can be run from
 # any working directory, exactly as scripts/check_env_vars.py does.
@@ -485,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
             print(problem, file=sys.stderr)
         print(
             "\nRun `just tool-docs` and commit the result. Do not edit these pages "
-            "by hand -- they are generated from src/hmc_mcp.",
+            "by hand -- they are generated from src/hmcpctl.",
             file=sys.stderr,
         )
         return 1

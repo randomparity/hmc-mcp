@@ -7,22 +7,22 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations.virtualization.pcie import (
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.virtualization.pcie import (
     PcieAssignmentPartialError,
     PcieAssignmentUnavailableError,
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
 )
-from hmc_mcp.server_tools.lpar.profiles import tool_security
-from hmc_mcp.ssh.profiles import (
+from hmcpctl.server_tools.lpar.profiles import tool_security
+from hmcpctl.ssh.profiles import (
     ProfileIoSlot,
     assign_profile_io_slot,
     parse_profile_io_slots,
     read_profile_io_slot_rows,
     unassign_profile_io_slot,
 )
-from hmc_mcp.ssh.transport import HMCCLIError
+from hmcpctl.ssh.transport import HMCCLIError
 
 _DRC = "21010020"
 _ADMITTED_VERSION = "version= Version: 10\n Release: 3\n Service Pack: 1060\n"
@@ -139,15 +139,15 @@ def hmc(monkeypatch) -> AsyncMock:
     client.config = _config()
     authorize = AsyncMock(return_value=("sys", "lpar"))
     monkeypatch.setattr(
-        "hmc_mcp.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
+        "hmcpctl.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
     )
     client.authorize = authorize
     return client
 
 
 def _install(monkeypatch, fake: _FakeHmc) -> _FakeHmc:
-    monkeypatch.setattr("hmc_mcp.ssh.profiles.run_hmc_command", fake.run)
-    monkeypatch.setattr("hmc_mcp.ssh.sriov.run_hmc_command", fake.run)
+    monkeypatch.setattr("hmcpctl.ssh.profiles.run_hmc_command", fake.run)
+    monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", fake.run)
     return fake
 
 
@@ -165,7 +165,7 @@ def _unassign(hmc, drc: str = _DRC, profile: str = "prof") -> None:
 )
 def test_profile_commands_are_symmetric_and_never_force(monkeypatch, operation, token):
     command = AsyncMock(return_value="ok")
-    monkeypatch.setattr("hmc_mcp.ssh.profiles.run_hmc_command", command)
+    monkeypatch.setattr("hmcpctl.ssh.profiles.run_hmc_command", command)
 
     assert asyncio.run(operation(_config(), "sys", "lpar", "profile", _DRC)) == "ok"
     built = command.await_args.args[1]
@@ -185,7 +185,7 @@ def test_profile_io_slot_read_is_the_admitted_command(monkeypatch):
 
 def test_profile_io_slot_read_refuses_a_headerless_answer(monkeypatch):
     monkeypatch.setattr(
-        "hmc_mcp.ssh.profiles.run_hmc_command", AsyncMock(return_value="lpar,prof,none\n")
+        "hmcpctl.ssh.profiles.run_hmc_command", AsyncMock(return_value="lpar,prof,none\n")
     )
     with pytest.raises(HMCCLIError, match="unadmitted profile io_slots readback"):
         asyncio.run(read_profile_io_slot_rows(_config(), "sys"))

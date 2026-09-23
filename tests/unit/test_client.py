@@ -16,13 +16,13 @@ import respx
 from conftest import LOGON_RESPONSE, make_config
 from defusedxml import ElementTree as DET
 
-from hmc_mcp.audit import sink as audit_sink
-from hmc_mcp.client import core as client_core
-from hmc_mcp.client.core import HMCClient, TLSVerificationDisabledWarning
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError, HMCTransportError
-from hmc_mcp.jobs import build_job_request
-from hmc_mcp.xmlutil import localname
+from hmcpctl.audit import sink as audit_sink
+from hmcpctl.client import core as client_core
+from hmcpctl.client.core import HMCClient, TLSVerificationDisabledWarning
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError, HMCTransportError
+from hmcpctl.jobs import build_job_request
+from hmcpctl.xmlutil import localname
 
 BASE = "https://hmc.test"
 
@@ -1021,14 +1021,14 @@ async def test_list_managed_systems_fallback_warns_on_skipped_names(mock_hmc, ca
                 [found],
             ]
         )
-        with caplog.at_level(logging.WARNING, logger="hmc_mcp.client.client_systems"):
+        with caplog.at_level(logging.WARNING, logger="hmcpctl.client.client_systems"):
             systems = await hmc.list_managed_systems()
 
     assert systems == [found]
     messages = [
         record.getMessage()
         for record in caplog.records
-        if record.name == "hmc_mcp.client.client_systems"
+        if record.name == "hmcpctl.client.client_systems"
         and record.levelno == logging.WARNING
     ]
     assert len(messages) == 3
@@ -1203,7 +1203,7 @@ async def test_create_logical_partition(mock_hmc):
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=CREATED_LPAR)
     )
-    from hmc_mcp.documents import LparResources, build_lpar_document
+    from hmcpctl.documents import LparResources, build_lpar_document
 
     xml = build_lpar_document(
         name="newlpar",
@@ -1229,7 +1229,7 @@ async def test_modify_logical_partition(mock_hmc):
     route = mock_hmc.post("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
         return_value=httpx.Response(200, text=CREATED_LPAR)
     )
-    from hmc_mcp.documents import LparResources, build_lpar_document
+    from hmcpctl.documents import LparResources, build_lpar_document
 
     xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
     async with HMCClient(make_config()) as hmc:
@@ -2821,7 +2821,7 @@ async def test_list_quick_properties_reads_names_at_any_depth(mock_hmc, body):
         ({"X-HMC-Schema-Version": "V1_0"}, "V1_0"),
         # FW950 echoes the request's X-Audit-Memento into this header, so the
         # value is returned verbatim rather than validated as a level (ADR 0139).
-        ({"X-HMC-Schema-Version": "hmc-mcp"}, "hmc-mcp"),
+        ({"X-HMC-Schema-Version": "hmcpctl"}, "hmcpctl"),
         ({}, None),
     ],
 )

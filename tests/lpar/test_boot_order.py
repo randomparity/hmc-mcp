@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp.documents import (
+from hmcpctl.documents import (
     BOOT_DEVICE_SELECTORS,
     BootDeviceSelector,
     build_boot_order_document,
     build_clear_boot_order_document,
 )
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar.boot_order import (
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
@@ -138,19 +138,19 @@ def test_all_boot_device_selectors_are_valid():
 
 def test_set_lpar_boot_order_validates_devices():
     """Setting boot order validates device selectors."""
-    from hmc_mcp.documents import BOOT_DEVICE_SELECTORS
+    from hmcpctl.documents import BOOT_DEVICE_SELECTORS
 
     # Test that each selector is valid
     for selector in BOOT_DEVICE_SELECTORS:
         # This should not raise
-        from hmc_mcp.documents.boot import _build_pending_boot_string
+        from hmcpctl.documents.boot import _build_pending_boot_string
         result = _build_pending_boot_string([selector])
         assert selector in result
 
 
 def test_set_lpar_boot_order_rejects_invalid_devices():
     """Setting boot order rejects invalid device selectors."""
-    from hmc_mcp.documents.boot import _build_pending_boot_string
+    from hmcpctl.documents.boot import _build_pending_boot_string
 
     invalid_devices = ["invalid", "tape", "floppy", "invalid-device"]
     for device in invalid_devices:
@@ -160,7 +160,7 @@ def test_set_lpar_boot_order_rejects_invalid_devices():
 
 def test_boot_order_string_format():
     """PendingBootString is space-separated."""
-    from hmc_mcp.documents.boot import _build_pending_boot_string
+    from hmcpctl.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["cd", "disk", "network"])
     assert result == "cd disk network"
@@ -168,7 +168,7 @@ def test_boot_order_string_format():
 
 def test_boot_order_single_device_format():
     """Single device PendingBootString has no spaces."""
-    from hmc_mcp.documents.boot import _build_pending_boot_string
+    from hmcpctl.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["network"])
     assert result == "network"
@@ -176,7 +176,7 @@ def test_boot_order_single_device_format():
 
 def test_boot_order_string_no_extra_spaces():
     """No extra spaces in PendingBootString."""
-    from hmc_mcp.documents.boot import _build_pending_boot_string
+    from hmcpctl.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["cd", "disk"])
     assert result == "cd disk"
@@ -185,7 +185,7 @@ def test_boot_order_string_no_extra_spaces():
 
 def test_boot_order_string_order_preservation():
     """Device order is preserved in PendingBootString."""
-    from hmc_mcp.documents.boot import _build_pending_boot_string
+    from hmcpctl.documents.boot import _build_pending_boot_string
 
     result = _build_pending_boot_string(["network", "cd", "disk"])
     assert result == "network cd disk"
@@ -213,7 +213,7 @@ async def test_read_lpar_boot_order_returns_named_boot_state():
     }
 
     with patch(
-        "hmc_mcp.operations.lpar.boot_order.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.boot_order.resolve_lpar_uuid",
         new=AsyncMock(return_value="lpar-1"),
     ) as resolve:
         result = await read_lpar_boot_order(hmc, "system-a", "aix-db")
@@ -237,7 +237,7 @@ async def test_read_lpar_boot_order_rejects_missing_lpar():
     hmc.get_logical_partition.return_value = None
 
     with patch(
-        "hmc_mcp.operations.lpar.boot_order.resolve_lpar_uuid",
+        "hmcpctl.operations.lpar.boot_order.resolve_lpar_uuid",
         new=AsyncMock(return_value="missing"),
     ), pytest.raises(ValueError, match="LPAR 'missing' not found"):
         await read_lpar_boot_order(hmc, "system-a", "missing")
@@ -257,11 +257,11 @@ async def test_set_lpar_boot_order_authorizes_before_forwarding_payload():
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+            "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
             side_effect=authorize,
         ) as authorization,
         patch(
-            "hmc_mcp.operations.lpar.boot_order.build_boot_order_document",
+            "hmcpctl.operations.lpar.boot_order.build_boot_order_document",
             side_effect=lambda devices: events.append(("build", devices)) or "<boot/>",
         ),
     ):
@@ -296,11 +296,11 @@ async def test_clear_lpar_boot_order_propagates_default_ownership_override():
 
     with (
         patch(
-            "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+            "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
             side_effect=authorize,
         ),
         patch(
-            "hmc_mcp.operations.lpar.boot_order.build_clear_boot_order_document",
+            "hmcpctl.operations.lpar.boot_order.build_clear_boot_order_document",
             side_effect=lambda: events.append(("build",)) or "<clear/>",
         ),
     ):
@@ -328,7 +328,7 @@ async def test_boot_order_mutations_translate_hmc_not_acceptable(operation: str)
     )
 
     with patch(
-        "hmc_mcp.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+        "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
         new=AsyncMock(return_value="lpar-1"),
     ), pytest.raises(HMCError, match="Not Acceptable") as exc_info:
         if operation == "set":

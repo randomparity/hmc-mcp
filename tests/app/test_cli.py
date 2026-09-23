@@ -9,9 +9,9 @@ explicit init arg would otherwise shadow the environment).
 
 from __future__ import annotations
 
-from hmc_mcp.cli_commands import output as cli_output
-from hmc_mcp.cli_commands import runtime as cli_runtime
-from hmc_mcp.resource_identity import is_uuid
+from hmcpctl.cli_commands import output as cli_output
+from hmcpctl.cli_commands import runtime as cli_runtime
+from hmcpctl.resource_identity import is_uuid
 
 
 def test_cross_module_cli_seams_use_public_internal_names() -> None:

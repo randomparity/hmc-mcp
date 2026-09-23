@@ -1,6 +1,6 @@
 # Documentation
 
-Start with the [README quick starts](../README.md) to install hmc-mcp, connect to
+Start with the [README quick starts](../README.md) to install hmcpctl, connect to
 an HMC, and use the CLI or an MCP client.
 
 ## Guides

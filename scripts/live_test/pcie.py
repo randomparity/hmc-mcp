@@ -56,16 +56,16 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-from hmc_mcp.operations.lpar.ownership import parse_lpar_ownership_caller_token
+from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 
 # These two are imported rather than restated so the arm's SKIP envelope cannot
 # drift from the one require_admitted_environment enforces for the SR-IOV path;
 # a copied literal would go stale silently the first time the admitted release moves.
-from hmc_mcp.operations.virtualization.pcie import (
+from hmcpctl.operations.virtualization.pcie import (
     _ADMITTED_HMC_RELEASE,
     _ADMITTED_SYSTEM_MODEL,
 )
-from hmc_mcp.ssh.commands import build_attribute_record, build_filter
+from hmcpctl.ssh.commands import build_attribute_record, build_filter
 
 from .observation import CallFailure
 
@@ -334,9 +334,9 @@ async def _check_sriov_physical_port_capacity(client: Client, state: RunState) -
             "sriov assign arm",
             f"phys_port {config.sriov_physical_port_id} has only {available}% capacity remaining "
             f"(need {config.sriov_capacity_percent}%); all unconfigured logical ports are T1-addressed "
-            "and hmc-mcp's location-code check blocks cross-port assignment — SKIP assign arm. "
+            "and hmcpctl's location-code check blocks cross-port assignment — SKIP assign arm. "
             "NOTE: chhwres assigns T1 logical ports to phys_port 1 (T2) successfully "
-            "at the firmware layer; the location-code check is an hmc-mcp admission gate, "
+            "at the firmware layer; the location-code check is an hmcpctl admission gate, "
             "not a firmware constraint.",
         )
         return False

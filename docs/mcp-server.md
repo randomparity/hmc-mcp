@@ -14,12 +14,12 @@ For first-time setup, the [MCP quick start](../README.md#mcp-quick-start) walks 
 creating a policy and connecting a client.
 
 ```bash
-hmc-mcp serve --access-policy lab            # stdio — what MCP clients/agents expect
-hmc-mcp serve --access-policy lab --http --listen-host 127.0.0.1 --port 8000
+hmcpctl serve --access-policy lab            # stdio — what MCP clients/agents expect
+hmcpctl serve --access-policy lab --http --listen-host 127.0.0.1 --port 8000
 # Explicitly enable the arbitrary-command MCP escape hatch when required. The policy
 # must also grant hmc_run_command by name; the flag alone is not enough:
-hmc-mcp serve --access-policy lab --enable-arbitrary-command
-hmc-mcp serve --access-policy lab --audit-level WARNING   # authorization denials only on stderr
+hmcpctl serve --access-policy lab --enable-arbitrary-command
+hmcpctl serve --access-policy lab --audit-level WARNING   # authorization denials only on stderr
 ```
 
 `--access-policy NAME` enforces the named policy from the platform-native
@@ -62,7 +62,7 @@ may omit the argument.
 
 ### What the policy does not bound
 
-The access policy bounds **this MCP server**. It does not bound `hmc-mcp`
+The access policy bounds **this MCP server**. It does not bound `hmcpctl`
 commands run at a shell, and it does not bound a Python program importing the
 supported reusable API — both reach the HMC directly under the operator's own
 credentials, and
@@ -92,13 +92,13 @@ without one stops serving. Two commands and a read:
 
 ```bash
 # 1. Write it. This activates nothing, and prints the path it wrote to stdout.
-hmc-mcp config init-access-policy
+hmcpctl config init-access-policy
 
 # 2. Read it. It is one grant, and the tools array is the whole of your exposure.
-$EDITOR ~/.config/hmc-mcp/access-policy.toml   # macOS: ~/Library/Application Support/hmc-mcp/
+$EDITOR ~/.config/hmcpctl/access-policy.toml   # macOS: ~/Library/Application Support/hmcpctl/
 
 # 3. Select it, in whatever launches your server.
-hmc-mcp serve --access-policy legacy-equivalent
+hmcpctl serve --access-policy legacy-equivalent
 ```
 
 The generated `legacy-equivalent` policy grants exactly what the unpolicied server granted:
@@ -125,7 +125,7 @@ Six things are worth knowing before you run it.
 - **It never overwrites.** To check a deployed policy after an upgrade, run:
 
   ```bash
-  hmc-mcp config diff-access-policy ~/.config/hmc-mcp/access-policy.toml
+  hmcpctl config diff-access-policy ~/.config/hmcpctl/access-policy.toml
   ```
 
   This renders what the current build plus your current `config.toml` would generate
@@ -162,7 +162,7 @@ registered set, which is exactly what the policy produced.
 operator has to remember to do:
 
 ```bash
-hmc-mcp config diff-access-policy ~/.config/hmc-mcp/access-policy.toml
+hmcpctl config diff-access-policy ~/.config/hmcpctl/access-policy.toml
 ```
 
 It renders the legacy-equivalent policy exactly as `config init-access-policy` would —
@@ -209,7 +209,7 @@ connections = ["lab"]
 targets = "all-targets"
 ```
 
-And the legacy-equivalent policy, which `hmc-mcp config init-access-policy` writes in full
+And the legacy-equivalent policy, which `hmcpctl config init-access-policy` writes in full
 — every ordinary tool named explicitly, which is why it is generated rather than typed:
 
 ```toml
@@ -351,12 +351,12 @@ not be interpreted as a healthy job feed.
 ### Authorization audit records
 
 With a policy selected, every authorization decision writes one line of JSON to stderr
-on the `hmc_mcp.audit` logger — policy, tool, effect class, decision, a stable reason
+on the `hmcpctl.audit` logger — policy, tool, effect class, decision, a stable reason
 code, the connection selector, and the declared target selectors. Denials are `WARNING`
 and permits are `INFO`. Credentials, whole argument sets, command text, and response
 bodies are absent by construction.
 
-`--audit-level LEVEL` on `hmc-mcp serve` tunes that stream: `DEBUG` and `INFO` keep both
+`--audit-level LEVEL` on `hmcpctl serve` tunes that stream: `DEBUG` and `INFO` keep both
 records (the default), `WARNING` keeps denials only, and `ERROR` or `CRITICAL` silences it.
 An unknown level name is a usage error that starts nothing.
 
@@ -377,13 +377,13 @@ reason codes, and how to route or silence them.
 ## Client setup
 
 The [README quick start](../README.md#mcp-quick-start) shows a stdio client configuration.
-The client must launch the installed `hmc-mcp` executable with the connection environment
+The client must launch the installed `hmcpctl` executable with the connection environment
 and access-policy file available to that process.
 
 ### Use with Hermes Agent
 
 ```bash
-hermes mcp add hmc -- hmc-mcp serve \
+hermes mcp add hmc -- hmcpctl serve \
   --access-policy legacy-equivalent
 ```
 

@@ -6,9 +6,9 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.storage.resources import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.storage.resources import (
     get_media_repository,
     list_optical_media,
     unmount_optical_media,
@@ -18,12 +18,12 @@ from hmc_mcp.operations.storage.resources import (
 @pytest.fixture(autouse=True)
 def _authorize_lpar_mutations(monkeypatch):
     async def authorize(hmc, system, lpar, **_kwargs):
-        from hmc_mcp.resource_identity import resolve_lpar_uuid
+        from hmcpctl.resource_identity import resolve_lpar_uuid
 
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
     )
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -447,7 +447,7 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
 
 def test_detach_optical_mapping_alias_is_gone():
     """Issue #362: the duplicate name is removed outright, with no shim."""
-    import hmc_mcp.operations.storage.resources as ops
+    import hmcpctl.operations.storage.resources as ops
 
     assert not hasattr(ops, "detach_optical_mapping")
 

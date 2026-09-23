@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-from hmc_mcp.ssh.commands import build_filter
-from hmc_mcp.ssh.lpar import validate_lpar_description
+from hmcpctl.ssh.commands import build_filter
+from hmcpctl.ssh.lpar import validate_lpar_description
 
 from .observation import ExpectedOutcome
 

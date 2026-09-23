@@ -11,8 +11,8 @@ import pytest
 from conftest import make_config
 from defusedxml.common import EntitiesForbidden
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
 
 
 @pytest.mark.asyncio

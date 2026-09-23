@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from conftest import mock_uuid_resolution
 
-from hmc_mcp.server_tools.virtualization.pcie import (
+from hmcpctl.server_tools.virtualization.pcie import (
     hmc_set_sriov_adapter_mode,
 )
 
@@ -50,8 +50,8 @@ def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
     )
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
-        patch("hmc_mcp.operations.virtualization.pcie.require_admitted_environment"),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        patch("hmcpctl.operations.virtualization.pcie.require_admitted_environment"),
     ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "sriov")
 
@@ -76,8 +76,8 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
     )
 
     with (
-        patch("hmc_mcp.ssh.transport.asyncssh.connect", return_value=conn_mock),
-        patch("hmc_mcp.operations.virtualization.pcie.require_admitted_environment"),
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        patch("hmcpctl.operations.virtualization.pcie.require_admitted_environment"),
     ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "dedicated")
 

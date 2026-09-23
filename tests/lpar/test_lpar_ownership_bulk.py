@@ -13,8 +13,8 @@ import asyncio
 
 import httpx
 
-from hmc_mcp.operations.lpar import ownership as lpar_ownership
-from hmc_mcp.server_tools.lpar.lifecycle_boot import hmc_list_lpar_ownership
+from hmcpctl.operations.lpar import ownership as lpar_ownership
+from hmcpctl.server_tools.lpar.lifecycle_boot import hmc_list_lpar_ownership
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
@@ -62,15 +62,15 @@ MIXED_FEED = _feed(
     _lpar_entry(
         "11111111-1111-4111-8111-111111111111",
         "lp-owned",
-        "[hmc-mcp owner:alice created:2026-08-22]",
+        "[hmcpctl owner:alice created:2026-08-22]",
     ),
     # Owned with a trailing ADR 0064 caller segment after the stamp.
     _lpar_entry(
         "11111111-1111-4111-8111-111111111112",
         "lp-owned-caller",
-        "[hmc-mcp owner:bob created:2026-01-02] [caller ticket-4711]",
+        "[hmcpctl owner:bob created:2026-01-02] [caller ticket-4711]",
     ),
-    # Unparsable: a description, but not an hmc-mcp ownership token.
+    # Unparsable: a description, but not an hmcpctl ownership token.
     _lpar_entry(
         "11111111-1111-4111-8111-111111111113",
         "lp-foreign",
@@ -95,7 +95,7 @@ def test_bulk_read_parses_mixed_ownership(monkeypatch, mock_hmc):
     assert owned["owned"] is True
     assert owned["owner"] == "alice"
     assert owned["unparsed"] is False
-    assert owned["description"] == "[hmc-mcp owner:alice created:2026-08-22]"
+    assert owned["description"] == "[hmcpctl owner:alice created:2026-08-22]"
 
     caller = by_name["lp-owned-caller"]
     assert caller["owned"] is True
@@ -130,7 +130,7 @@ def test_bulk_read_issues_exactly_one_rest_call(monkeypatch, mock_hmc):
 def test_token_characters_round_trip_unescaped(monkeypatch, mock_hmc):
     """Bracket, equals, colon, and space survive the REST body byte-for-byte."""
     _hmc_env(monkeypatch)
-    raw = "[hmc-mcp owner:ops-team created:2026-03-04] project=[env:x] note=a=b:c d"
+    raw = "[hmcpctl owner:ops-team created:2026-03-04] project=[env:x] note=a=b:c d"
     feed = _feed(_lpar_entry("11111111-1111-4111-8111-111111111115", "lp-chars", raw))
     mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=feed))
 
@@ -221,7 +221,7 @@ def test_operation_reuses_the_shared_ownership_parser(monkeypatch, mock_hmc):
 
     monkeypatch.setattr(lpar_ownership, "parse_lpar_ownership_owner", spy)
 
-    from hmc_mcp.client.client_factory import client_from_env
+    from hmcpctl.client.client_factory import client_from_env
 
     async def _run_op():
         async with client_from_env() as hmc:

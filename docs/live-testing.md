@@ -17,8 +17,8 @@ Credentials resolve in this order, highest first:
 2. `config.toml` in the platform config directory — the documented profile
 3. a local `.env` file
 
-That directory is `~/.config/hmc-mcp` on Linux (or `$XDG_CONFIG_HOME/hmc-mcp`)
-and `~/Library/Application Support/hmc-mcp` on macOS. The runner resolves it
+That directory is `~/.config/hmcpctl` on Linux (or `$XDG_CONFIG_HOME/hmcpctl`)
+and `~/Library/Application Support/hmcpctl` on macOS. The runner resolves it
 per platform; when it finds nothing it prints the path it looked in.
 
 Scenario settings — every `LIVE_TEST_*` key — come **only** from `.env`. That
@@ -134,6 +134,9 @@ ends on exit 2 has not been shown clean by anything — check the system yoursel
 It identifies this run's leftovers by the run marker recorded in the results
 document. A partition sharing the fixture's name but carrying a different
 marker is never attributed to your run, and never reported for you to delete.
+Run the check from the run's tested commit. A partition that carries your marker
+in an ownership stamp this checkout cannot parse, such as one written before the
+`hmcpctl` rename, exits 2 rather than being reported clean.
 
 ## If something goes wrong mid-run
 

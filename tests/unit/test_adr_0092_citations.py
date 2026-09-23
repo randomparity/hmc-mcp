@@ -18,7 +18,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ADR_PATH = (
     _REPO_ROOT / "docs" / "adr" / "0092-uniform-lpar-ownership-authorization-rule.md"
 )
-_SOURCE_ROOT = _REPO_ROOT / "src" / "hmc_mcp"
+_SOURCE_ROOT = _REPO_ROOT / "src" / "hmcpctl"
 _SECTION_HEADING = "### 3. Classification"
 _NEXT_SECTION_HEADING = "### 6."
 _SYMBOL_CITATION = re.compile(

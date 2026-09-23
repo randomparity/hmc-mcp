@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 from conftest import assert_only_these_client_methods_used
 
-from hmc_mcp.operations.lpar.assignments import WorkflowStep
-from hmc_mcp.operations.lpar.provision import (
+from hmcpctl.operations.lpar.assignments import WorkflowStep
+from hmcpctl.operations.lpar.provision import (
     AttachDiskResult,
     ProvisionStorage,
     attach_disk_to_lpar,
@@ -23,7 +23,7 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.provision.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.lpar.provision.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
@@ -109,7 +109,7 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
 
 @pytest.mark.asyncio
 async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None:
-    from hmc_mcp.errors import HMCError
+    from hmcpctl.errors import HMCError
 
     client = _client()
     client.add_vscsi_adapter.side_effect = HMCError("adapter failed")

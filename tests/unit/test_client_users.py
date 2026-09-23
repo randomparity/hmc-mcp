@@ -11,9 +11,9 @@ import pytest
 from conftest import make_config
 from test_request_path_safety import _recording_client
 
-from hmc_mcp.client.client_contracts import _MAX_UOM_TYPE_LENGTH
-from hmc_mcp.client.client_users import UsersMixin
-from hmc_mcp.client.core import HMCClient
+from hmcpctl.client.client_contracts import _MAX_UOM_TYPE_LENGTH
+from hmcpctl.client.client_users import UsersMixin
+from hmcpctl.client.core import HMCClient
 
 
 def test_user_child_path_escapes_console_identifiers():

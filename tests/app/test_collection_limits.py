@@ -8,19 +8,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from hmc_mcp import _app as app_runtime
-from hmc_mcp._app import run_limited_collection
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.operations.lpar import core as lpar_core
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools import (
+from hmcpctl import _app as app_runtime
+from hmcpctl._app import run_limited_collection
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operations.lpar import core as lpar_core
+from hmcpctl.server import TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools import (
     jobs as server_jobs,
 )
-from hmc_mcp.server_tools.storage import resources as server_storage
-from hmc_mcp.server_tools.systems import core as server_systems
-from hmc_mcp.server_tools.virtualization import adapters as server_adapters
-from hmc_mcp.server_tools.virtualization import network as server_network
+from hmcpctl.server_tools.storage import resources as server_storage
+from hmcpctl.server_tools.systems import core as server_systems
+from hmcpctl.server_tools.virtualization import adapters as server_adapters
+from hmcpctl.server_tools.virtualization import network as server_network
 
 # Composed here rather than imported: ADR 0041 removed the module-level application, so
 # every consumer builds its own. The legacy-equivalent policy registers exactly the

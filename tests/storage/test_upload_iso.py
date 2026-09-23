@@ -12,10 +12,10 @@ import httpx
 import pytest
 from conftest import make_config
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.config import parse_iso_url_allowlist
-from hmc_mcp.errors import HMCError, HMCTransportError
-from hmc_mcp.operations.storage.resources import (
+from hmcpctl.client.core import HMCClient
+from hmcpctl.config import parse_iso_url_allowlist
+from hmcpctl.errors import HMCError, HMCTransportError
+from hmcpctl.operations.storage.resources import (
     UPLOAD_CHUNK_SIZE,
     _aiter_file_chunks,
     _download_iso_from_url,
@@ -93,7 +93,7 @@ def stage_download(tmp_path: Path, monkeypatch):
             return_value=(staged, hashlib.sha256(content).hexdigest(), len(content))
         )
         monkeypatch.setattr(
-            "hmc_mcp.operations.storage.resources._download_iso_from_url", download
+            "hmcpctl.operations.storage.resources._download_iso_from_url", download
         )
         return download
 
@@ -236,13 +236,13 @@ async def test_upload_iso_refuses_a_local_path_before_touching_anything(
         return _boom
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.Path", _detonate("the filesystem")
+        "hmcpctl.operations.storage.resources.Path", _detonate("the filesystem")
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.resolve_vios_uuid", _detonate("the HMC")
+        "hmcpctl.operations.storage.resources.resolve_vios_uuid", _detonate("the HMC")
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources._download_iso_from_url", _detonate("the network")
+        "hmcpctl.operations.storage.resources._download_iso_from_url", _detonate("the network")
     )
 
     with pytest.raises(ValueError) as exc_info:
@@ -735,7 +735,7 @@ async def test_download_iso_from_http_url_success():
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
     
-    with patch('hmc_mcp.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
+    with patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
         temp_file, sha256, size = await _download_iso_from_url(test_url)
         
         assert temp_file.exists()
@@ -774,7 +774,7 @@ async def test_download_iso_from_https_url_success():
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
     
-    with patch('hmc_mcp.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
+    with patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
         temp_file, _sha256, size = await _download_iso_from_url(test_url)
         
         assert temp_file.exists()
@@ -809,7 +809,7 @@ async def test_download_iso_http_error():
     mock_client.stream = MagicMock(return_value=mock_response)
 
     with (
-        patch('hmc_mcp.operations.storage.resources.httpx.AsyncClient', return_value=mock_client),
+        patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client),
         pytest.raises(httpx.HTTPStatusError),
     ):
         await _download_iso_from_url(test_url)
@@ -843,8 +843,8 @@ async def test_download_iso_size_limit_exceeded():
     
     # Patch the size limit to be small
     with (
-        patch('hmc_mcp.operations.storage.resources.MAX_DOWNLOAD_SIZE_BYTES', small_limit),
-        patch('hmc_mcp.operations.storage.resources.httpx.AsyncClient', return_value=mock_client),
+        patch('hmcpctl.operations.storage.resources.MAX_DOWNLOAD_SIZE_BYTES', small_limit),
+        patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client),
         pytest.raises(ValueError, match="exceeds maximum allowed size"),
     ):
         await _download_iso_from_url(test_url)
@@ -875,7 +875,7 @@ async def test_download_iso_cleanup_on_error():
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
     
-    with patch('hmc_mcp.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
+    with patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
         with pytest.raises(RuntimeError):
             await _download_iso_from_url(test_url)
         
@@ -927,10 +927,10 @@ def detonate_on_network(monkeypatch):
     # than in the code under test. `connect` is the reaching-out half.
     monkeypatch.setattr(socket.socket, "connect", _trap("a connection"))
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.httpx.AsyncClient", _trap("the HTTP client")
+        "hmcpctl.operations.storage.resources.httpx.AsyncClient", _trap("the HTTP client")
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.resolve_vios_uuid", _trap("the HMC")
+        "hmcpctl.operations.storage.resources.resolve_vios_uuid", _trap("the HMC")
     )
     return calls
 
@@ -1083,7 +1083,7 @@ def _install_iso_transport(monkeypatch, handler):
         return handler(request)
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.httpx.AsyncClient",
+        "hmcpctl.operations.storage.resources.httpx.AsyncClient",
         functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(_record)),
     )
     return requests
@@ -1271,11 +1271,11 @@ async def test_upload_iso_translates_download_invalid_url(monkeypatch):
     hmc = _client_for(ISO_HOST)
     hmc.list_optical_media = AsyncMock(return_value=[])
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.resolve_vios_uuid",
+        "hmcpctl.operations.storage.resources.resolve_vios_uuid",
         AsyncMock(return_value=VIOS_UUID),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources._download_iso_from_url",
+        "hmcpctl.operations.storage.resources._download_iso_from_url",
         AsyncMock(side_effect=cause),
     )
 

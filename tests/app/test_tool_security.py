@@ -20,15 +20,15 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp import tool_registry
-from hmc_mcp.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.cli_commands.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
-from hmc_mcp.server_tools import command as server_command
-from hmc_mcp.server_tools import permissions as server_permissions
-from hmc_mcp.server_tools.vios import core as server_vios
-from hmc_mcp.tool_registry import (
+from hmcpctl import tool_registry
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
+from hmcpctl.server_tools import command as server_command
+from hmcpctl.server_tools import permissions as server_permissions
+from hmcpctl.server_tools.vios import core as server_vios
+from hmcpctl.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,
     UNBOUNDED_ARGUMENTS,
@@ -526,7 +526,7 @@ def test_no_classification_regresses_against_the_pre_adr_sets():
 
 def test_the_derivation_tables_are_read_only():
     """The two tables producing every hint and every selector must not be edited."""
-    from hmc_mcp import tool_registry
+    from hmcpctl import tool_registry
 
     with pytest.raises(TypeError):
         tool_registry.REQUIRED_TARGET_ARGUMENTS["lpar_name_or_uuid"] = "vios"
@@ -556,7 +556,7 @@ def test_the_classification_index_is_read_only():
 
 def test_legacy_classification_sets_are_gone():
     """G9: replace, don't deprecate."""
-    from hmc_mcp import _app, server
+    from hmcpctl import _app, server
 
     for module in (_app, server):
         for removed in (
@@ -1730,7 +1730,7 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
-        "hmc_mcp.ssh.transport.asyncssh.connect",
+        "hmcpctl.ssh.transport.asyncssh.connect",
         side_effect=AssertionError("reached the SSH layer"),
     ):
         for escape in escapes:
@@ -1757,9 +1757,9 @@ def test_power_on_partition_profile_is_bounded_by_a_containment_guard():
     """
     import inspect
 
-    from hmc_mcp.operations.lpar import core as lpar_core
-    from hmc_mcp.server_tools.lpar.lifecycle import hmc_power_on_lpar
-    from hmc_mcp.tool_registry import (
+    from hmcpctl.operations.lpar import core as lpar_core
+    from hmcpctl.server_tools.lpar.lifecycle import hmc_power_on_lpar
+    from hmcpctl.tool_registry import (
         REQUIRED_TARGET_ARGUMENTS,
         UNBOUNDED_ARGUMENTS,
     )

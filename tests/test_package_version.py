@@ -108,13 +108,13 @@ def test_wheel_metadata_and_package_contents(built_project: BuiltProject) -> Non
     version, names = wheel_metadata(built_project.wheel)
     source_modules = {
         path.relative_to(built_project.project / "src").as_posix()
-        for path in (built_project.project / "src" / "hmc_mcp").rglob("*.py")
+        for path in (built_project.project / "src" / "hmcpctl").rglob("*.py")
     }
 
     assert version == built_project.version
     assert source_modules <= names
-    assert "hmc_mcp/__init__.py" in names
-    assert "hmc_mcp/server.py" in names
+    assert "hmcpctl/__init__.py" in names
+    assert "hmcpctl/server.py" in names
 
 
 def test_installed_wheel_runtime_version_matches_metadata(
@@ -133,7 +133,7 @@ def test_installed_wheel_runtime_version_matches_metadata(
     result = run(
         sys.executable,
         "-c",
-        "import hmc_mcp; print(hmc_mcp.__version__)",
+        "import hmcpctl; print(hmcpctl.__version__)",
         cwd=tmp_path,
         extra_env={"PYTHONPATH": str(target)},
     )
@@ -181,7 +181,7 @@ def test_editable_install_uses_computed_metadata(
     result = run(
         str(interpreter),
         "-c",
-        "import hmc_mcp; print(hmc_mcp.__version__)",
+        "import hmcpctl; print(hmcpctl.__version__)",
         cwd=tmp_path,
     )
 

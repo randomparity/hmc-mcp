@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.documents import LparResources
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.lpar.assignments import (
+from hmcpctl.documents import LparResources
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
 )
-from hmc_mcp.operations.lpar.dlpar import modify_lpar
-from hmc_mcp.operations.lpar.workflow_contract import WorkflowStep
+from hmcpctl.operations.lpar.dlpar import modify_lpar
+from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 
 
 @pytest.mark.asyncio
@@ -22,11 +22,11 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
         HMCError("resource update failed", 500),
     ]
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
         AsyncMock(return_value="lpar-1"),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     )
 
@@ -53,11 +53,11 @@ async def test_modify_lpar_propagates_resource_failure_without_partial_state(mon
     hmc = AsyncMock()
     hmc.modify_logical_partition.side_effect = HMCError("resource update failed", 500)
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
         AsyncMock(return_value="lpar-1"),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     )
 
@@ -76,15 +76,15 @@ async def test_modify_lpar_preserves_steps_when_final_readback_fails(monkeypatch
     hmc = AsyncMock()
     hmc.get_logical_partition.side_effect = HMCError("readback unavailable", 503)
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
         AsyncMock(return_value="lpar-1"),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.lpar.dlpar.apply_validated_lpar_pcie_assignments",
+        "hmcpctl.operations.lpar.dlpar.apply_validated_lpar_pcie_assignments",
         AsyncMock(
             return_value=LparPcieWorkflowResult(
                 False,

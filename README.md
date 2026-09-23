@@ -1,6 +1,6 @@
-# hmc-mcp
+# hmcpctl
 
-Manage IBM Power systems from your terminal or an AI assistant. hmc-mcp connects
+Manage IBM Power systems from your terminal or an AI assistant. hmcpctl connects
 to the IBM Hardware Management Console (HMC) to inventory systems, inspect LPARs
 and VIOS partitions, manage resources, and run lifecycle operations.
 
@@ -15,15 +15,18 @@ The project supports every stable, non-EOL CPython release at or above that floo
 Install the CLI and MCP server from source:
 
 ```bash
-git clone https://github.com/randomparity/hmc-mcp.git
-cd hmc-mcp
+git clone https://github.com/randomparity/hmc-mcp.git hmcpctl
+cd hmcpctl
 uv tool install --python 3.11 '.[app]'
-hmc-mcp --help
+hmcpctl --help
 ```
 
-If your shell cannot find `hmc-mcp`, run `uv tool update-shell` and open a new
+If your shell cannot find `hmcpctl`, run `uv tool update-shell` and open a new
 terminal. The `app` extra includes both the CLI and MCP server; for development,
 use [the contributor setup](CONTRIBUTING.md).
+
+Existing pre-release installations must use the one-time
+[clean-cutover procedure](docs/configuration.md#clean-cutover-from-the-former-name).
 
 You need network access to an HMC and an HMC account with permissions for your
 intended operations. The project targets HMC V8–V11; individual operations have
@@ -47,50 +50,50 @@ HMC's CA certificate to be trusted locally. Verification is off by default if
 Check the connection:
 
 ```bash
-hmc-mcp console info
+hmcpctl console info
 ```
 
 This prints HMC information after a successful logon. Some operations also use
 SSH; see [configuration](https://github.com/randomparity/hmc-mcp/blob/main/docs/configuration.md)
 for SSH credentials, TOML profiles, friendly nicknames, and connection precedence.
-For multiple consoles, start with `hmc-mcp config init` and edit the file it prints.
+For multiple consoles, start with `hmcpctl config init` and edit the file it prints.
 
 ## CLI quick start
 
 Explore your systems and partitions:
 
 ```bash
-hmc-mcp systems list
-hmc-mcp systems health --json
-hmc-mcp lpars list --system <system-uuid>
-hmc-mcp lpars show <lpar-uuid>
-hmc-mcp vios list
-hmc-mcp jobs list -n 5
+hmcpctl systems list
+hmcpctl systems health --json
+hmcpctl lpars list --system <system-uuid>
+hmcpctl lpars show <lpar-uuid>
+hmcpctl vios list
+hmcpctl jobs list -n 5
 ```
 
 Use UUIDs from the inventory output to identify resources. To change an LPAR,
 for example:
 
 ```bash
-hmc-mcp lpars modify <lpar-uuid> --mem 16384 --procs 2.0
-hmc-mcp lpars power-on <lpar-uuid>
+hmcpctl lpars modify <lpar-uuid> --mem 16384 --procs 2.0
+hmcpctl lpars power-on <lpar-uuid>
 ```
 
 Memory is in MiB; power-on asks for confirmation. HMC permissions and operation
 guards still apply. MCP access policies apply only to the MCP server; shell
 commands run under your HMC credentials.
 
-Use `hmc-mcp --help` or `hmc-mcp lpars --help` to explore.
+Use `hmcpctl --help` or `hmcpctl lpars --help` to explore.
 The [CLI guide](https://github.com/randomparity/hmc-mcp/blob/main/docs/cli.md)
 covers storage, adapters, snapshots, provisioning, and job output.
 
 ## MCP quick start
 
-Create `access-policy.toml` in the platform's hmc-mcp configuration directory:
+Create `access-policy.toml` in the platform's hmcpctl configuration directory:
 
-- Linux: `~/.config/hmc-mcp/` (or `$XDG_CONFIG_HOME/hmc-mcp/`)
-- macOS: `~/Library/Application Support/hmc-mcp/`
-- Windows: `%APPDATA%/hmc-mcp/`
+- Linux: `~/.config/hmcpctl/` (or `$XDG_CONFIG_HOME/hmcpctl/`)
+- macOS: `~/Library/Application Support/hmcpctl/`
+- Windows: `%APPDATA%/hmcpctl/`
 
 Create the directory if needed. For an initial read-only server, add this policy
 to the file, preserving any policies already there:
@@ -109,7 +112,7 @@ local profile and policy metadata; see the
 With the connection environment above available, start the server over stdio:
 
 ```bash
-hmc-mcp serve --access-policy readonly
+hmcpctl serve --access-policy readonly
 ```
 
 An MCP client normally launches this process for you. For clients that use an
@@ -119,7 +122,7 @@ An MCP client normally launches this process for you. For clients that use an
 {
   "mcpServers": {
     "hmc": {
-      "command": "hmc-mcp",
+      "command": "hmcpctl",
       "args": ["serve", "--access-policy", "readonly"],
       "env": {
         "HMC_HOST": "hmc.example.com",

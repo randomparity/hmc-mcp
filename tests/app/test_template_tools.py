@@ -12,8 +12,8 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.errors import HMCError
-from hmc_mcp.server_tools.templates.core import (
+from hmcpctl.errors import HMCError
+from hmcpctl.server_tools.templates.core import (
     hmc_deploy_partition_template,
     hmc_get_partition_template,
     hmc_list_partition_templates,
@@ -153,7 +153,7 @@ def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock
     )
     resolver = AsyncMock(return_value=TARGET_SYSTEM_UUID)
 
-    with patch("hmc_mcp.operations.templates.core.resolve_system_uuid", new=resolver):
+    with patch("hmcpctl.operations.templates.core.resolve_system_uuid", new=resolver):
         hmc_deploy_partition_template("draft-uuid", "system-prod")
 
     resolver.assert_awaited_once_with(ANY, "system-prod")
@@ -239,7 +239,7 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))
-    with patch("hmc_mcp.operations.templates.core.stamp_created_lpar_ownership", new=stamp):
+    with patch("hmcpctl.operations.templates.core.stamp_created_lpar_ownership", new=stamp):
         result = hmc_deploy_partition_template(
             "draft-uuid",
             TARGET_SYSTEM_UUID,

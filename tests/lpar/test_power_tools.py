@@ -15,19 +15,19 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
-from hmc_mcp.documents import LparResources
-from hmc_mcp.errors import HMCError
-from hmc_mcp.operations.systems.core import power_system
-from hmc_mcp.server_tools.lpar.lifecycle import (
+from hmcpctl.documents import LparResources
+from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems.core import power_system
+from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
 )
-from hmc_mcp.server_tools.systems.core import (
+from hmcpctl.server_tools.systems.core import (
     hmc_modify_system,
     hmc_power_off_system,
     hmc_power_on_system,
 )
-from hmc_mcp.server_tools.vios.core import (
+from hmcpctl.server_tools.vios.core import (
     hmc_power_off_vios,
     hmc_power_on_vios,
 )
@@ -97,7 +97,7 @@ def _partition_feed() -> str:
 def _unowned_partition():
     """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
     return patch(
-        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=""),
     )
 
@@ -203,7 +203,7 @@ def test_dlpar_without_a_system_selector_discovers_the_owner_and_writes(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     read = AsyncMock(return_value="")
-    with patch("hmc_mcp.operations.lpar.ownership.get_lpar_description", new=read):
+    with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         result = tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
 
     assert result["Resource"]["PartitionName"] == "lpar1"
@@ -225,8 +225,8 @@ def test_dlpar_without_a_system_selector_refuses_a_foreign_owner(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     with patch(
-        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]"),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
         tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
     assert not route.called
@@ -250,8 +250,8 @@ def test_dlpar_override_without_a_selector_needs_no_discovery(
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
-    with patch("hmc_mcp.operations.lpar.ownership.get_lpar_description", new=read):
+    read = AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]")
+    with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         tool(
             LPAR_UUID,
             LparResources(desired_procs=1.0, desired_memory=2048),
@@ -270,8 +270,8 @@ def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
     with patch(
-        "hmc_mcp.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]"),
     ), pytest.raises(PermissionError, match="ownership_override=true"):
         hmc_dlpar_proc(
             LPAR_UUID,
@@ -289,8 +289,8 @@ def test_dlpar_mem_ownership_override_reaches_the_write(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
-    with patch("hmc_mcp.operations.lpar.ownership.get_lpar_description", new=read):
+    read = AsyncMock(return_value="[hmcpctl owner:bob created:2026-08-14]")
+    with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read):
         hmc_dlpar_mem(
             LPAR_UUID,
             LparResources(desired_memory=4096),

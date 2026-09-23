@@ -17,8 +17,8 @@ import pytest
 from conftest import make_config
 from defusedxml.common import EntitiesForbidden
 
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
@@ -241,7 +241,7 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
         import asyncio
         from types import SimpleNamespace
 
-        from hmc_mcp.client.client_storage import StorageMixin
+        from hmcpctl.client.client_storage import StorageMixin
 
         class FakeClient(StorageMixin):
             async def _get(self, *_args, **_kwargs):

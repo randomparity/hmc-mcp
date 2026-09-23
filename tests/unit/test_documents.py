@@ -2,8 +2,8 @@
 
 import pytest
 
-from hmc_mcp import documents
-from hmc_mcp.documents import (
+from hmcpctl import documents
+from hmcpctl.documents import (
     AUTHENTICATION_TYPES,
     PARTITION_TYPES,
     SHARING_MODES,

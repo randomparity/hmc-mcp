@@ -23,8 +23,8 @@ from typing import BinaryIO, Never, Protocol
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
-PROJECT_NAME = "hmc-mcp"
-PACKAGE_NAME = "hmc_mcp"
+PROJECT_NAME = "hmcpctl"
+PACKAGE_NAME = "hmcpctl"
 # PEP 561: without this marker in the distribution a type-checker reads every
 # exported model, alias, and signature as Any, so it is a shipped-artifact
 # invariant rather than a source-tree convenience.

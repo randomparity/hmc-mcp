@@ -244,7 +244,7 @@ def _happy_responses(
         if description is not None:
             return description
         token = marker_holder.get("marker", "")
-        return f"[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller {token}]"
+        return f"[hmcpctl owner:hmcpctl created:2026-09-02] [caller {token}]"
 
     def get_lpar(_kwargs: dict[str, Any], index: int) -> dict[str, Any] | None:
         value = (
@@ -589,7 +589,7 @@ async def test_probe_carrying_a_foreign_token_is_never_deleted_and_blocks_the_fi
     holder: dict[str, str] = {}
     responses = _happy_responses(
         holder,
-        probe_description="[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]",
+        probe_description="[hmcpctl owner:hmcpctl created:2026-09-02] [caller someone-else]",
     )
     _probe_create_succeeds(responses)
 
@@ -653,7 +653,7 @@ async def test_foreign_caller_token_blocks_every_cleanup_mutation(
     holder: dict[str, str] = {}
     responses = _happy_responses(
         holder,
-        description="[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]",
+        description="[hmcpctl owner:hmcpctl created:2026-09-02] [caller someone-else]",
     )
     state = await _run_arm(monkeypatch, responses, holder)
 
@@ -728,7 +728,7 @@ async def test_ownership_stamp_not_landed_blocks_hardware_mutation(
     responses = _happy_responses(
         holder,
         ownership_stamped=False,
-        description="[hmc-mcp owner:hmc-mcp created:2026-09-02]",  # no caller segment
+        description="[hmcpctl owner:hmcpctl created:2026-09-02]",  # no caller segment
     )
     state = await _run_arm(monkeypatch, responses, holder)
 
@@ -898,8 +898,8 @@ async def test_identity_drift_before_delete_blocks_guard_c(
     def make_description() -> list[str]:
         # Two matching stamps, then the foreign one on the third read.
         # The index clamps at the last entry, so read 3 onward is the foreign one.
-        base = "[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller {token}]"
-        foreign = "[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]"
+        base = "[hmcpctl owner:hmcpctl created:2026-09-02] [caller {token}]"
+        foreign = "[hmcpctl owner:hmcpctl created:2026-09-02] [caller someone-else]"
         return [base, base, foreign]
 
     descriptions = make_description()
@@ -1184,7 +1184,7 @@ async def test_foreign_partition_of_the_same_name_is_never_adopted(
     holder: dict[str, str] = {}
     responses = _happy_responses(holder)
     responses["hmc_get_lpar_description"] = lambda _k, _n: (
-        "[hmc-mcp owner:hmc-mcp created:2026-09-02] [caller someone-else]"
+        "[hmcpctl owner:hmcpctl created:2026-09-02] [caller someone-else]"
     )
     state = await _run_arm(
         monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}

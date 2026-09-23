@@ -6,7 +6,7 @@ Install the library from a local checkout into your application's virtual
 environment:
 
 ```bash
-uv pip install /path/to/hmc-mcp
+uv pip install /path/to/hmcpctl
 ```
 
 The bare package includes the connection boundary. The `app` extra is needed
@@ -15,14 +15,14 @@ only for the CLI and MCP server. Configure the
 
 ## Stable connection API
 
-`hmc_mcp.api` has exactly six stable names: `HMCClient`, `HMCConfig`,
+`hmcpctl.api` has exactly six stable names: `HMCClient`, `HMCConfig`,
 `ConfigError`, `HMCError`, `HMCTransportError`, and
 `TLSVerificationDisabledWarning`. Construct the client through this boundary:
 
 ```python
 import asyncio
 
-from hmc_mcp.api import HMCClient, HMCConfig
+from hmcpctl.api import HMCClient, HMCConfig
 
 
 async def main() -> None:
@@ -45,7 +45,7 @@ They remain available for pre-release consumers that explicitly choose those
 imports, but they are not compatibility promises. For example:
 
 ```python
-from hmc_mcp.operations.inventory.capacity import fetch_capacity_report
+from hmcpctl.operations.inventory.capacity import fetch_capacity_report
 
 report = await fetch_capacity_report(hmc)
 ```

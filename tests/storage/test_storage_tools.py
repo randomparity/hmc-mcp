@@ -16,8 +16,8 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY
 
-from hmc_mcp.client.client_contracts import ADAPTER_TYPES
-from hmc_mcp.server_tools.storage.resources import (
+from hmcpctl.client.client_contracts import ADAPTER_TYPES
+from hmcpctl.server_tools.storage.resources import (
     hmc_create_logical_unit,
     hmc_create_media_repository,
     hmc_create_optical_media,
@@ -32,7 +32,7 @@ from hmc_mcp.server_tools.storage.resources import (
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
 )
-from hmc_mcp.server_tools.virtualization.adapters import (
+from hmcpctl.server_tools.virtualization.adapters import (
     hmc_add_network_adapter,
     hmc_add_vfc_adapter,
     hmc_add_vscsi_adapter,
@@ -47,10 +47,10 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmc_mcp.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", authorize
     )
     monkeypatch.setattr(
-        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
     )
 
 
@@ -178,7 +178,7 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
 
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
-        "hmc_mcp.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
+        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
     ):
         assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
 

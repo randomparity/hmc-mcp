@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from hmc_mcp.authorization.access_policy import compile_access_policy
-from hmc_mcp.authorization.connection_scope import (
+from hmcpctl.authorization.access_policy import compile_access_policy
+from hmcpctl.authorization.connection_scope import (
     UNRESOLVED,
     ConnectionScopeError,
     selected_connection,
 )
-from hmc_mcp.authorization.dispatch_scope import dispatch_authorizer
-from hmc_mcp.authorization.target_scope import TargetScopeError
-from hmc_mcp.config import config_dir
-from hmc_mcp.tool_registry import ToolSecurity
+from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
+from hmcpctl.authorization.target_scope import TargetScopeError
+from hmcpctl.config import config_dir
+from hmcpctl.tool_registry import ToolSecurity
 
 # `prod` is both a profile key and a nickname targeting `lab`; `load_profile`
 # resolves it to the profile, and a nicknames-first normalizer would answer
@@ -220,7 +220,7 @@ def test_dangling_nickname_resolves_to_nothing(config):
 
 def test_the_unresolved_sentinel_can_never_appear_in_a_grant(config):
     """It denies structurally: access_policy rejects an empty connection entry."""
-    from hmc_mcp.authorization.access_policy import AccessPolicyError
+    from hmcpctl.authorization.access_policy import AccessPolicyError
 
     with pytest.raises(AccessPolicyError, match="empty or padded"):
         _policy(UNRESOLVED)

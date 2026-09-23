@@ -23,21 +23,21 @@ from urllib.parse import quote, unquote
 import httpx
 import pytest
 
-from hmc_mcp.client.client_contracts import (
+from hmcpctl.client.client_contracts import (
     _MAX_UOM_PATH_VALUE_LENGTH,
     _MAX_UOM_TYPE_LENGTH,
     ADAPTER_TYPES,
     _reject_over_long_path_value,
     _reject_unknown_uom_type,
 )
-from hmc_mcp.client.core import (
+from hmcpctl.client.core import (
     MEDIA_UOM,
     HMCClient,
     _reject_dot_segments,
     _reject_non_job_path,
 )
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError, HMCTransportError
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError, HMCTransportError
 
 UUID_A = "12345678-1234-1234-1234-1234567890ab"
 UUID_B = "ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF"
@@ -359,8 +359,8 @@ _UUID_PATH_BUILDERS = {
 def test_uuid_only_path_builder_inventory_uses_explicit_metadata(
     owner, method, arguments
 ):
-    from hmc_mcp.client.client_storage import StorageMixin
-    from hmc_mcp.client.client_updates import UpdatesMixin
+    from hmcpctl.client.client_storage import StorageMixin
+    from hmcpctl.client.client_updates import UpdatesMixin
 
     owner_type = {
         "HMCClient": HMCClient,
@@ -497,7 +497,7 @@ def test_the_guard_is_reached_by_every_transport_helper():
     guard above stops covering it. This asserts the property the placement
     depends on, rather than trusting that no such helper appears.
     """
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     source = inspect.getsource(client_module)
     tree = ast.parse(source)
@@ -873,7 +873,7 @@ def test_every_group_query_interpolation_is_encoded():
     cost of adding an unencoded site in the idiom the module uses; it is not a
     proof that none can exist.
     """
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     tree = ast.parse(inspect.getsource(client_module))
     unencoded: list[tuple[str, str]] = []
@@ -1095,7 +1095,7 @@ def _uom_path_sites() -> tuple[
     Aliases, arbitrary helper returns, percent/format strings and guard dominance
     remain outside this bounded inventory (ADR 0159).
     """
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     package = Path(client_module.__file__).parent
     interpolations: list[tuple[str, str, str, str]] = []
@@ -1183,7 +1183,7 @@ def test_every_governed_uom_segment_has_policy_evidence():
     Recognizes current direct declarations, literal request metadata and the two
     concrete storage closures; not aliases, dataflow or guard dominance.
     """
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     sites, _, _, _ = _uom_path_sites()
     required = {
@@ -1260,7 +1260,7 @@ def test_every_governed_uom_segment_has_policy_evidence():
     ids=["direct", "mapped"],
 )
 def test_uuid_inventory_detects_missing_site_evidence(tmp_path, monkeypatch, evidence):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     core_path = tmp_path / "core.py"
     core_path.write_text("", encoding="utf-8")
@@ -1292,7 +1292,7 @@ def test_uuid_inventory_detects_missing_site_evidence(tmp_path, monkeypatch, evi
     ],
 )
 def test_uuid_inventory_requires_matching_argument_and_destination(tmp_path, monkeypatch, evidence):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     source = tmp_path / "core.py"
     source.write_text(
@@ -1308,7 +1308,7 @@ def test_uuid_inventory_requires_matching_argument_and_destination(tmp_path, mon
 
 @pytest.mark.parametrize("missing", ["bound", "quote"])
 def test_console_inventory_requires_its_own_bound_and_quote(tmp_path, monkeypatch, missing):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     source = tmp_path / "core.py"
     evidence = {
@@ -1335,7 +1335,7 @@ def test_console_inventory_requires_its_own_bound_and_quote(tmp_path, monkeypatc
 def test_storage_dispatch_metadata_certifies_only_its_captured_path(
     tmp_path, monkeypatch, function, binding
 ):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     core_path = tmp_path / "core.py"
     core_path.write_text("", encoding="utf-8")
@@ -1367,7 +1367,7 @@ def test_an_inline_quoted_uuid_identity_still_requires_its_check(
     synthetic site is classified as `system_uuid` and must still carry the
     canonical check — encoding is not a supported identity rule (ADR 0160).
     """
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     source = tmp_path / "core.py"
     source.write_text(
@@ -1414,7 +1414,7 @@ def test_every_uom_path_interpolation_is_a_known_argument():
 
 
 def test_uom_path_inventory_detects_an_unclassified_module(tmp_path, monkeypatch):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     core_path = tmp_path / "core.py"
     core_path.write_text("# Synthetic package root.\n", encoding="utf-8")
@@ -1429,7 +1429,7 @@ def test_uom_path_inventory_detects_an_unclassified_module(tmp_path, monkeypatch
 
 
 def test_uom_inventory_keeps_prefixed_composed_and_inline_segments(tmp_path, monkeypatch):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     core_path = tmp_path / "core.py"
     core_path.write_text("", encoding="utf-8")
@@ -1476,7 +1476,7 @@ def test_uom_inventory_keeps_prefixed_composed_and_inline_segments(tmp_path, mon
 
 
 def test_uom_inventory_cannot_borrow_another_functions_guards(tmp_path, monkeypatch):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     core_path = tmp_path / "core.py"
     core_path.write_text(
@@ -1509,7 +1509,7 @@ def test_uom_inventory_cannot_borrow_another_functions_guards(tmp_path, monkeypa
 
 
 def test_inline_encoding_cannot_certify_a_raw_sibling(tmp_path, monkeypatch):
-    from hmc_mcp.client import core as client_module
+    from hmcpctl.client import core as client_module
 
     source = tmp_path / "core.py"
     inline = (

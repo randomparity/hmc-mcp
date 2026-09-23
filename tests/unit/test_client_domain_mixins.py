@@ -9,17 +9,17 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from hmc_mcp.client.client_lpars import LparsMixin
-from hmc_mcp.client.client_lpm import LpmMixin
-from hmc_mcp.client.client_network import NetworkMixin
-from hmc_mcp.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
-from hmc_mcp.client.client_storage import StorageMixin
-from hmc_mcp.client.client_systems import SystemsMixin
-from hmc_mcp.client.client_templates import TemplatesMixin
-from hmc_mcp.client.client_updates import UpdatesMixin
-from hmc_mcp.client.core import HMCClient
-from hmc_mcp.config import HMCConfig
-from hmc_mcp.errors import HMCError
+from hmcpctl.client.client_lpars import LparsMixin
+from hmcpctl.client.client_lpm import LpmMixin
+from hmcpctl.client.client_network import NetworkMixin
+from hmcpctl.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
+from hmcpctl.client.client_storage import StorageMixin
+from hmcpctl.client.client_systems import SystemsMixin
+from hmcpctl.client.client_templates import TemplatesMixin
+from hmcpctl.client.client_updates import UpdatesMixin
+from hmcpctl.client.core import HMCClient
+from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError
 
 UUID_A = "12345678-1234-1234-1234-1234567890ab"
 UUID_B = "ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF"
@@ -234,7 +234,7 @@ async def test_lpar_parent_discovery_has_total_deadline(monkeypatch):
     ]
     client.list_logical_partitions = AsyncMock(side_effect=_yield_empty)
     monkeypatch.setattr(
-        "hmc_mcp.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
+        "hmcpctl.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
     )
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):
@@ -604,7 +604,7 @@ async def test_vios_parent_discovery_has_total_deadline(monkeypatch):
     )
     client.list_vios = AsyncMock(side_effect=_yield_empty)
     monkeypatch.setattr(
-        "hmc_mcp.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
+        "hmcpctl.client.client_resolution.PARENT_DISCOVERY_TIMEOUT_SECONDS", 0
     )
 
     with pytest.raises(ValueError, match="timed out; supply managed-system scope"):

@@ -103,7 +103,7 @@ Preferred approach:
    (conflict markers included) with the resolved text — or use `apply_diff` /
    `search_and_replace` with the conflict markers escaped.
 3. Verify syntax before staging:
-   `uv run --no-sync python -c "import hmc_mcp.server"` (or the relevant
+   `uv run --no-sync python -c "import hmcpctl.server"` (or the relevant
    module) must succeed **before** `git add`.
 
 Never call `git add <file>` and `git rebase --continue` in the same step unless
@@ -126,7 +126,7 @@ fastmcp's server-extra transitive dependencies (`cyclopts`, `openapi-pydantic`,
 `websockets`, `watchfiles`, `shellingham`, and more). `uv sync --dry-run` prints
 the exact list for the current lock and writes nothing, so check there rather
 than trusting a list in this file. Losing `typer` alone breaks `just typecheck`,
-which covers every `src/hmc_mcp/cli_*.py` module, in a way whose cause is
+which covers every `src/hmcpctl/cli_*.py` module, in a way whose cause is
 nowhere near the error. A bare `uv sync` also drops `--locked` and can silently
 rewrite `uv.lock`.
 
@@ -161,11 +161,11 @@ bare `uv run` may re-sync and undo the extras state `just setup` established —
 the same breakage as above, arrived at sideways.
 
 Package code in an older worktree is **not** stale: the project is installed
-editable (`.venv/lib/python3.11/site-packages/_editable_impl_hmc_mcp.pth`), so
+editable (`.venv/lib/python3.11/site-packages/_editable_impl_hmcpctl.pth`), so
 `src/` is what imports. Only dependency and extra state drifts, and only
 `just setup` restores it.
 
-**Reading a `SyntaxError`.** Under an editable install, a `hmc_mcp` syntax
+**Reading a `SyntaxError`.** Under an editable install, a `hmcpctl` syntax
 error surfaces at a `src/` path — that one is yours to fix in source. A
 `SyntaxError` at a `.venv/lib/…/site-packages/` path is third-party code, so it
 means the extras or lock state is wrong, or the interpreter does not match what
@@ -291,7 +291,7 @@ just smoke-verbose  # list every exposed MCP tool
 ```
 
 Before pushing, run `just verify` inside the branch worktree. If pytest fails
-during collection, run `just smoke`; it imports `hmc_mcp.server` directly and
+during collection, run `just smoke`; it imports `hmcpctl.server` directly and
 can expose an import-time syntax error that collection obscures.
 
 `just verify` is `static test smoke build verify-artifacts` plus a CLI-group
@@ -362,7 +362,7 @@ the recipe its `entry: just <recipe>` names, and each block must carry
 without its hook and a test in a file about CI shape goes red for a reason that
 looks unrelated.
 
-**`hmc_mcp.api` is the six-name stable facade in ADR 0118.** Keep its exact
+**`hmcpctl.api` is the six-name stable facade in ADR 0118.** Keep its exact
 exports in `tests/unit/test_public_api.py`. Domain operations and models are
 pre-release module APIs, not facade exports; add no compatibility re-exports.
 

@@ -21,7 +21,7 @@ VARIANT_ID = re.compile(r"[a-z][a-z0-9-]{0,63}")
 _HTTP_STATUS_RE = re.compile(r"\bHTTP (\d{3})\b")
 
 #: The ``on <targets>`` segment is optional because three of the four
-#: ``src/hmc_mcp/authorization/target_scope.py`` templates (``:71``, ``:76``,
+#: ``src/hmcpctl/authorization/target_scope.py`` templates (``:71``, ``:76``,
 #: ``:80``) omit it, and all four are denials.
 _DENIAL_RE = re.compile(r" is not permitted (?:on .+ )?by access policy ")
 
