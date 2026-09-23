@@ -55,6 +55,7 @@ from hmcpctl.operations.storage.resources import (
     StorageMapping,
     VolumeGroup,
 )
+from hmcpctl.operations.virtualization.adapters import AdapterResult
 from hmcpctl.operations.virtualization.vnic import VnicChangeResult, VnicPartialError
 from hmcpctl.ssh import affinity as ssh_affinity
 from hmcpctl.ssh import commands as ssh_commands
@@ -1704,6 +1705,73 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
     assert result.exit_code == 2
     assert "UnknownAdapter" in result.stderr
     assert fake_hmc.calls == []
+
+
+_ATTACH_DISK_ARGS = [
+    "--vios", VIOS_UUID, "--vg", VG_UUID, "--name", "bootvol", "--capacity-mib", "1024",
+    "--vios-id", "2", "--vios-slot", "10", "--dry-run",
+]
+
+
+@pytest.mark.parametrize(
+    ("module", "operation", "args", "returned"),
+    [
+        ("virtualization.adapters", "list_adapters", ["adapters", "list"], []),
+        (
+            "virtualization.adapters",
+            "add_network_adapter",
+            ["adapters", "add-network", "--vlan", "100", "--yes"],
+            AdapterResult(LPAR_UUID, None),
+        ),
+        (
+            "virtualization.adapters",
+            "add_vscsi_adapter",
+            ["adapters", "add-vscsi", "--vios-id", "1", "--vios-slot", "5", "--yes"],
+            AdapterResult(LPAR_UUID, None),
+        ),
+        (
+            "virtualization.adapters",
+            "add_vfc_adapter",
+            ["adapters", "add-vfc", "--vios-id", "1", "--vios-slot", "6", "--yes"],
+            AdapterResult(LPAR_UUID, None),
+        ),
+        (
+            "virtualization.adapters",
+            "delete_adapter",
+            [
+                "adapters", "delete", "--type", "ClientNetworkAdapter",
+                "--uuid", "adapter-1", "--yes",
+            ],
+            "adapter-1",
+        ),
+        (
+            "storage.resources",
+            "attach_disk_to_lpar",
+            ["storage", "attach-disk", *_ATTACH_DISK_ARGS],
+            None,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("scope_args", "expected_system"),
+    [(["--system", SYSTEM_UUID], SYSTEM_UUID), (["-s", SYSTEM_UUID], SYSTEM_UUID), ([], None)],
+)
+def test_lpar_scoped_commands_pass_system_scope(
+    fake_hmc, monkeypatch, module, operation, args, returned, scope_args, expected_system
+):
+    seen = []
+
+    async def fake_operation(_hmc, system, lpar, *_args, **_kwargs):
+        seen.append((system, lpar))
+        return returned
+
+    monkeypatch.setattr(f"hmcpctl.cli_commands.{module}.{operation}", fake_operation)
+    command, rest = args[:2], args[2:]
+
+    result = RUNNER.invoke(cli.app, [*command, LPAR_NAME, *rest, *scope_args])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [(expected_system, LPAR_NAME)]
 
 
 def test_storage_map_rejects_invalid_kind_before_client_call(fake_hmc):
