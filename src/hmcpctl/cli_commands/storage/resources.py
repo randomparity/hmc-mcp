@@ -254,7 +254,11 @@ def storage_map(
 def storage_create_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
-    size_mib: int = typer.Option(..., "--size-mib", help="Repository size in MiB"),
+    size_mib: int = typer.Option(
+        ...,
+        "--size-mib",
+        help="Repository size in MiB, a multiple of 1024 (sent to the HMC as whole GiB)",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -280,7 +284,11 @@ def storage_create_media(
     name: str = typer.Option(
         ..., "--name", "-n", help="Media file name (e.g. aix.iso)"
     ),
-    size_mib: int = typer.Option(..., "--size-mib", help="Media size in MiB"),
+    size_mib: int = typer.Option(
+        ...,
+        "--size-mib",
+        help="Media size in MiB, a multiple of 1024 (sent to the HMC as whole GiB)",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -364,7 +372,7 @@ def storage_get_media_repo(
         repo_name = resource.get("RepositoryName", "N/A")
         repo_size = resource.get("RepositorySize", "N/A")
         console.print(f"  Name: {repo_name}")
-        console.print(f"  Size: {repo_size} MiB")
+        console.print(f"  Size: {repo_size} GiB")
     else:
         console.print("[yellow]No media repository found[/yellow]")
 

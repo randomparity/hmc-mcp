@@ -2364,6 +2364,22 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
     assert "10240" in result.stdout
 
 
+def test_storage_get_media_repo_labels_the_size_in_gib(fake_hmc, monkeypatch):
+    """RepositorySize is GiB on the HMC (#963); the rendered unit must say so."""
+
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
+        return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "64"}}
+
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
+    )
+
+    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+
+    assert result.exit_code == 0
+    assert "Size: 64 GiB" in result.stdout
+
+
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
     async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
         return {}

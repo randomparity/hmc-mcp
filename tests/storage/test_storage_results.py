@@ -35,7 +35,7 @@ class _StorageClient:
         return [{"UUID": "vg-1", "Resource": {"GroupName": "rootvg", "FreeSpace": "10"}}]
 
     async def list_optical_media(self, _vios_uuid: str, _vg_uuid: str):
-        return [{"MediaName": "install.iso", "MediaSize": "1024", "MediaType": "ISO"}]
+        return [{"MediaName": "install.iso", "Size": "1", "MediaType": "ISO"}]
 
     async def list_storage_mappings(self, _vios_uuid: str, _lpar_uuid=None):
         return _observed_mappings()
@@ -185,16 +185,21 @@ async def test_volume_group_rejects_bool_capacity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_optical_media_accepts_fractional_size() -> None:
-    """MediaSize routes through the same helper, so it gains the same tolerance."""
+@pytest.mark.parametrize(
+    ("size_gib", "size_mib"),
+    [("1.0801", 1106.0224), ("0.5", 512), ("20", 20480), (None, None)],
+)
+async def test_optical_media_reports_the_gib_size_field_in_mib(size_gib, size_mib) -> None:
+    """The live medium carries Size in GiB (#963); size_mib is that value times 1024."""
 
     class _Client:
         async def list_optical_media(self, _vios_uuid: str, _vg_uuid: str):
-            return [{"MediaName": "install.iso", "MediaSize": "1024.5", "MediaType": "ISO"}]
+            return [{"MediaName": "install.iso", "Size": size_gib, "MediaType": "ISO"}]
 
     media = await list_optical_media(cast(HMCClient, _Client()), VIOS_UUID, "vg-1")
 
-    assert media[0].size_mib == pytest.approx(1024.5)
+    assert media[0].size_mib == size_mib
+    assert type(media[0].size_mib) is type(size_mib)
 
 
 @pytest.mark.asyncio
