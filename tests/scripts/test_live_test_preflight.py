@@ -40,7 +40,7 @@ def _env_text(**overrides: str) -> str:
 _DEDICATED = {
     "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME": "sys-R1",
     "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX": "live-pcie-",
-    "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX": "553713664",
+    "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX": "21010020",
 }
 
 
@@ -242,7 +242,7 @@ def test_the_dedicated_verdict_names_system_prefix_and_slot(
     output = capsys.readouterr().out
     assert "sys-R1" in output
     assert "live-pcie-" in output
-    assert "553713664" in output
+    assert "21010020" in output
     assert "RUNNABLE" in output
 
 
