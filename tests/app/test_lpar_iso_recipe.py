@@ -15,25 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RECIPE = ROOT / "docs" / "recipes" / "lpar-iso-install.md"
 RECIPE_LINK = "(recipes/lpar-iso-install.md)"
 SHELL_BLOCK = re.compile(r"```(?:bash|sh)\n(.*?)```", re.DOTALL)
-NUMERIC_VALUES = {
-    "$MIN_MEMORY_MIB": "4096",
-    "$MEMORY_MIB": "8192",
-    "$MAX_MEMORY_MIB": "16384",
-    "$PROCESSING_UNITS": "2.0",
-    "$VCPUS": "2",
-    "$VLAN_ID": "100",
-    "$VIRTUAL_SWITCH_ID": "0",
-    "$VIOS_PARTITION_ID": "2",
-    "$VIOS_SLOT": "20",
-    "$VIOS_ID": "2",
-    "$DISK_CAPACITY_MIB": "51200",
-    "$MEDIA_REPO_SIZE_MIB": "20480",
-    "$POWER_TIMEOUT_SECONDS": "900",
-    "$POLL_INTERVAL_SECONDS": "5",
-    "$CAPTURE_SECONDS": "30",
-    "$CAPTURE_BYTES": "65536",
-    "$IDLE_TIMEOUT_SECONDS": "10",
-}
+NUMERIC_VALUES = {"$VLAN_ID": "100", "$VIOS_ID": "2", "$VIOS_SLOT": "20"}
 EXPECTED_COMMANDS = {
     ("adapters", "add-network"),
     ("adapters", "add-vscsi"),
@@ -52,6 +34,7 @@ EXPECTED_COMMANDS = {
     ("lpars", "power-on"),
     ("lpars", "read-boot-order"),
     ("lpars", "set-boot-order"),
+    ("lpars", "show"),
     ("lpars", "state"),
     ("network", "list-networks"),
     ("storage", "create-disk"),
@@ -68,7 +51,7 @@ EXPECTED_COMMANDS = {
     ("storage", "mount-optical-media"),
     ("storage", "unmount-optical-media"),
     ("storage", "upload-iso"),
-    ("systems", "list"),
+    ("systems", "show"),
     ("vios", "list"),
 }
 
@@ -95,14 +78,14 @@ def _recipe_commands(markdown: str) -> list[list[str]]:
     for block in SHELL_BLOCK.findall(markdown):
         for line in _logical_shell_lines(block):
             tokens = shlex.split(line, comments=True, posix=True)
-            if tokens and tokens[0] == "hmc-mcp":
+            if tokens and tokens[0] == "hmcpctl":
                 commands.append([NUMERIC_VALUES.get(token, token) for token in tokens])
     return commands
 
 
 def _parse_command(tokens: list[str]) -> tuple[str, ...]:
     command = get_command(cli.app)
-    context = click.Context(command, info_name="hmc-mcp")
+    context = click.Context(command, info_name="hmcpctl")
     remaining = tokens[1:]
     path: list[str] = []
 
@@ -121,8 +104,13 @@ def test_recipe_commands_match_the_installed_cli_contract() -> None:
     markdown = RECIPE.read_text(encoding="utf-8")
     commands = _recipe_commands(markdown)
 
-    assert commands, "recipe has no hmc-mcp commands in shell blocks"
+    assert commands, "recipe has no hmcpctl commands in shell blocks"
     assert {_parse_command(command) for command in commands} == EXPECTED_COMMANDS
+
+
+def test_recipe_never_overrides_ownership() -> None:
+    for command in _recipe_commands(RECIPE.read_text(encoding="utf-8")):
+        assert "--ownership-override" not in command, command
 
 
 def test_recipe_is_linked_from_both_cli_navigation_pages() -> None:
