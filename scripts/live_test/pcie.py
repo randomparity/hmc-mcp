@@ -46,6 +46,7 @@ cleanup (does not attempt additional mutations on an unknown state).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shlex
 import sys
@@ -1171,13 +1172,20 @@ def partition_not_found(status: str, data: object) -> bool:
     It is also not proof of absence: IBM's recovery action for HSCL8012 includes
     rebuilding the managed system (`docs/refs/ibm-hsc-ref/HSCL80xx.md:157`), so a
     stale HMC inventory can answer it too.
-    Callers treat it as the best available evidence, not a guarantee (#906).
+    Callers treat it as the best available evidence, not a guarantee, and
+    `_created_despite_failure` asks twice before believing it (#906).
     """
     return (
         status != "PASS"
         and isinstance(data, CallFailure)
         and "HSCL8012" in data.message
     )
+
+
+#: Seconds between a failed create's HSCL8012 lookup and the one re-read that
+#: must repeat it before absence is confirmed. Unmeasured: how long a lost REST
+#: create, or the CLI view of one, can lag is the #879 live window's question.
+_ABSENCE_REREAD_DELAY_S = 10.0
 
 
 class _Absence(Enum):
@@ -1204,14 +1212,26 @@ async def _created_despite_failure(
     that answered with something other than this run's marker. Any other failed
     read, or an empty description (a partition whose ownership stamp never
     landed), leaves it unconfirmed. HSCL8012 is the best available evidence rather
-    than proof: IBM documents a stale HMC inventory as one of its causes (#906).
+    than proof: IBM documents a stale HMC inventory as one of its causes.
+
+    A create still in flight, or an SSH view lagging the REST create, can
+    answer HSCL8012 for a partition that then appears, so the first HSCL8012
+    is re-read once after `_ABSENCE_REREAD_DELAY_S` and only a second one
+    confirms absence (#906). The re-read's answer is then judged like any other.
     """
-    st, data = await state.call(
-        client,
-        "hmc_get_lpar_description",
-        system_name_or_uuid=fixture.config.system_name,
-        lpar_name_or_uuid=lpar_name,
-    )
+
+    async def lookup() -> tuple[str, object]:
+        return await state.call(
+            client,
+            "hmc_get_lpar_description",
+            system_name_or_uuid=fixture.config.system_name,
+            lpar_name_or_uuid=lpar_name,
+        )
+
+    st, data = await lookup()
+    if partition_not_found(st, data):
+        await asyncio.sleep(_ABSENCE_REREAD_DELAY_S)
+        st, data = await lookup()
     if partition_not_found(st, data):
         return _Absence.CONFIRMED
     if st != "PASS" or not isinstance(data, str) or not data.strip():
@@ -1232,6 +1252,8 @@ async def _probe_create_time_assignment(
     assign would ask for a slot another profile may still list. A failed create
     whose partition cannot be confirmed either way returns True with a recovery
     row: the fixture's own assign then refuses a slot another profile lists.
+    That probe is not retried at final cleanup, and its row says so; the
+    manual-recovery row is this run's only record of it (#906).
     """
     arm = fixture.config
     st, data = await state.call(
@@ -1272,7 +1294,8 @@ async def _probe_create_time_assignment(
                 f"run's marker {fixture.run_marker!r} could be confirmed on "
                 f"{arm.system_name!r}. A lost response may still have created it "
                 f"holding slot {fixture.drc_index!r}; if it exists with that marker, "
-                "remove the slot from its profile and then delete it.",
+                "remove the slot from its profile and then delete it. This run "
+                "does not retry cleanup of a partition it could not find.",
             )
             return True
         fixture.probe_created = True
