@@ -114,10 +114,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - A blank or whitespace-only optional managed-system selector (`--system ""`, or
   `system_name_or_uuid: ""` from an MCP client) now reads as omitted on the read and resolve paths,
   as ADR 0094 already read it on guarded mutations. `adapters list`, `storage attach-disk`, LPAR
-  and VIOS listing, `hmc_list_lpar_ownership`, and PCM metric targets used to look up a managed
-  system named `''` and fail; a PowerOn with an affinity assessment now refuses a blank selector
-  as missing before any job. A non-blank optional selector loses its surrounding whitespace on
-  these paths too, not only on guarded mutations (#945).
+  and VIOS listing, `hmc_list_lpar_ownership`, and PCM LogicalPartition targets used to look up a
+  managed system named `''` and fail; PCM ManagedSystem targets refused `''` as a stray scope.
+  A selector that is required refuses a blank one as missing before any HMC call: VIOS backup and
+  restore, the boot-order read, and a PowerOn with an affinity assessment. A non-blank selector
+  loses its surrounding whitespace on these paths, so an affinity assessment whose captured
+  identity is padded no longer matches (#945).
 
 - `hmcpctl storage attach-disk` and every `hmcpctl adapters` subcommand (`list`, `add-network`,
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
