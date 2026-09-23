@@ -150,7 +150,7 @@ HTTP is unauthenticated: keep it on loopback or put an authenticated proxy in fr
 ## Documentation
 
 - [Documentation index](https://github.com/randomparity/hmc-mcp/blob/main/docs/index.md) — guides and reference.
-- [MCP tool reference](https://github.com/randomparity/hmc-mcp/blob/main/docs/tools/index.md) — available tools, parameters, and effects.
+- [MCP tool reference](https://github.com/randomparity/hmc-mcp/blob/main/docs/tools/index.md) — available tools, their effects, and one-line summaries.
 - [Environment variables](https://github.com/randomparity/hmc-mcp/blob/main/docs/environment-variables.md) — all connection and operation settings.
 - [Operation details](https://github.com/randomparity/hmc-mcp/blob/main/docs/operations.md) — selectors, units, limits, and firmware-specific behavior.
 - [Development guide](https://github.com/randomparity/hmc-mcp/blob/main/docs/development.md) — stack, testing, source layout, and HMC API internals.
