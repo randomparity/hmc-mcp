@@ -125,6 +125,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
+  disk name longer than 15 characters before the create request, with a message that states the
+  VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
+  reported as a possible side effect (#964).
+
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
   adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not
