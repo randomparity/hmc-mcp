@@ -23,13 +23,17 @@ In `src/hmcpctl/ssh/console.py`:
   `_release_and_verify` and `_probe_released` unchanged through one shielded task per session.
   `_release_uncancellable` is deleted: its callers were all in the capture, and the session's
   `close()` replaces it.
-- `read()` scans a rolling window (the previous `len(HELD_SENTINEL) - 1` bytes plus the new
-  chunk) for the sentinel. The window is seeded from the acquisition bytes.
+- `read()` does not scan for the sentinel (ADR 0170 rule 2). `close()` makes the session
+  terminal, and `close()` during an in-flight `open()` raises `RuntimeError` (rule 1).
 - Rebuild `capture_lpar_console` as `async with ConsoleSession(...)` around
-  `_collect_output(session, ...)`. `_collect_output` reads through `session.read()`,
-  re-raises `ConsoleHeldError`, and keeps its other outcomes. `released` comes from
-  `session.released is True`. The signature, `ConsoleCapture`, error types and messages,
-  and the MCP tool are unchanged.
+  `_collect_output(session, ...)`. `_collect_output` reads through `session.read()` and
+  keeps its outcomes. After the block, the existing whole-buffer `HELD_SENTINEL` check raises
+  `ConsoleHeldError` with today's message. `released` comes from `session.released is True`.
+  The signature, `ConsoleCapture`, error types and messages, and the MCP tool are unchanged.
+- Intentional capture differences, both ADR 0170 consequences: a late sentinel now releases
+  the proven hold (`rmvterm` plus probe) before `ConsoleHeldError`; cancellation during the
+  final release raises `CancelledError` after the release instead of returning a result.
+- Update the module docstring's opening paragraph to name the session as the hold owner.
 - ADR 0170, and one `CHANGELOG.md` "Added" entry (repository convention for a new domain API).
 
 No change to `hmcpctl.api`, the MCP or CLI surfaces, the transport, or the bounds and ceilings.
@@ -50,8 +54,11 @@ No change to `hmcpctl.api`, the MCP or CLI surfaces, the transport, or the bound
    - The process-exit leaks named in ADR 0170 rule 6 (SIGKILL, `os._exit`, default SIGTERM, a
      stopped loop, an unclosed session). They cannot be handled in-process, and the next
      `open()` reports them as `ConsoleHeldError`.
-   - Console text that quotes the contention sentence ends a session without release. This is
-     ADR 0072 assumption 2 over a longer stream, and #975 owns refinement.
+   - Console text that quotes the contention sentence makes a bounded capture raise
+     `ConsoleHeldError` after releasing (ADR 0072 assumption 2, kept by #974's criterion 6).
+     A session treats it as data.
+   - Loop-wide shutdown or a second SIGINT during a release (ADR 0170 rule 6). No in-process
+     remedy exists; rule 6 tells applications to close sessions before the loop ends.
    - Acquisition timeout without a sentinel leaves ownership unknown and issues no `rmvterm`.
      This behavior is unchanged from ADR 0072.
 4. **Covered elsewhere**
@@ -77,12 +84,15 @@ No change to `hmcpctl.api`, the MCP or CLI surfaces, the transport, or the bound
 1. A session opens, yields more than `MAX_CAPTURE_BYTES` across chunks and survives a
    timed-out read, then closes with `released=True` after `rmvterm` and a clean probe.
 2. `close()` on an unproven, contended, or never-opened session returns `False`. The
-   contended and never-opened cases issue no `rmvterm`.
-3. Cancellation inside `async with`, and cancellation of `close()` itself, both complete the
-   release before `CancelledError` propagates. A repeated `close()` does not repeat the release.
-4. Contention at open or later in the stream raises `ConsoleHeldError` with no `rmvterm`.
-5. Every existing capture test passes, with seams retargeted only where a private helper
-   was removed.
+   contended and never-opened cases issue no `rmvterm`. `open()` after `close()` and
+   `close()` during `open()` raise `RuntimeError` without acquiring or releasing.
+3. Cancellation inside `async with`, and cancellation of a caller awaiting `close()`, both
+   complete the release before `CancelledError` propagates. A repeated `close()` does not
+   repeat the release.
+4. Contention at open raises `ConsoleHeldError` with no `rmvterm`. A session yields a later
+   sentinel as data. A capture that sees one raises `ConsoleHeldError` after its release.
+5. Every existing capture test passes. Seams are retargeted where a private helper was
+   removed, and the `_release_uncancellable` cancellation test is replaced by a close test.
 6. The session exposes no public attribute named `write*` or `send*`.
 
 ## Validation
@@ -94,10 +104,11 @@ command is `uv run --no-sync pytest tests/unit/test_console_capture.py -q`.
 |---|---|---|
 | Uncapped stream, timed-out read keeps session (S1) | focused-test | `test_session_streams_past_capture_ceiling_and_releases` |
 | Unproven/contended/unopened close (S2) | focused-test | `test_session_close_reports_unproven_release`, `test_session_contention_at_open_never_releases` |
-| Cancellation and idempotent close (S3) | focused-test | `test_session_cancellation_releases_before_propagating`, `test_session_close_survives_cancellation_and_is_idempotent` |
-| Late contention across chunks (S4) | focused-test | `test_session_late_contention_across_chunks_never_releases` |
+| Cancellation and idempotent close (S3) | focused-test | `test_session_cancellation_releases_before_propagating`, `test_session_close_survives_cancellation_and_is_idempotent`, `test_session_close_propagates_cancelled_release` |
+| Late sentinel is data; capture releases then raises (S4) | focused-test | `test_session_yields_late_sentinel_as_data`, `test_contention_is_detected_when_it_arrives_midstream` (now asserts the release) |
+| Capture cancelled in final release (S3, difference 2) | focused-test | `test_capture_cancelled_during_release_raises_after_release` |
 | Transport error leaves release owed (rule 3) | focused-test | `test_session_read_error_propagates_and_close_still_releases` |
-| Single-open and closed-read misuse (rule 1) | focused-test | `test_session_rejects_reopen_and_read_when_not_open` |
+| Terminal close and misuse (rule 1, S2) | focused-test | `test_session_rejects_reopen_and_read_when_not_open`, `test_session_close_during_open_is_refused` |
 | Capture unchanged (S5) | focused-test | existing capture tests; `_release_uncancellable` seams retargeted to `_release_and_verify` |
 | No write surface (S6) | focused-test | `test_session_has_no_write_surface` |
 | Process-exit contract, facade decision | task-test-not-applicable | A written contract in ADR 0170 and the docstring. No in-process test can observe SIGKILL, and the facade membership is already pinned by `tests/unit/test_public_api.py`. |

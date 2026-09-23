@@ -4,7 +4,8 @@
 
 Accepted (2026-09-23). Extends ADR 0072: its prototype evidence (P1-P8), contention,
 proven-release, sealed-stdin, and byte-integrity rules stand. Only the rule that every
-console hold is bounded changes.
+console hold is bounded changes. The mechanism ADR 0072 names for its rule 1,
+`_release_uncancellable`, is replaced by `ConsoleSession.close()`.
 
 ## Context
 
@@ -20,13 +21,16 @@ consumer would have needed a second release path. #975 (contention, takeover), #
 vterm from `open()` until `close()`. It is also an async context manager and an async
 iterator of raw `bytes` chunks. Its core rules:
 
-1. **One hold per session.** `open()` runs once. A second `open()`, or a `read()` outside
-   the open state, raises `RuntimeError`. A session is never reused after `close()`.
-2. **Acquisition is proven, contention never releases.** `open()` returns only after
-   mkvterm prints `Open in progress`. The P1 sentinel raises `ConsoleHeldError` and issues no
-   `rmvterm`, both at open and when it appears later in the stream (whole stream, across
-   chunk boundaries, as the capture scanned its whole buffer). A session that saw
-   contention owes no release.
+1. **One hold per session.** `open()` runs only on a new session. `open()` after `close()`,
+   a second `open()`, `close()` while `open()` is in flight (cancel the opening task
+   instead), and `read()` outside the open state all raise `RuntimeError`. `close()` is
+   terminal: a closed session is never reopened.
+2. **Acquisition is proven, contention at open never releases.** `open()` returns only after
+   mkvterm prints `Open in progress`. The P1 sentinel before that point raises
+   `ConsoleHeldError` and issues no `rmvterm`. After acquisition the session scans nothing:
+   P1's contention text replaces the banner and is never sent to a holder, so the sentence
+   later in the stream is console content, and the session's proven hold is still released
+   on `close()`.
 3. **No cap.** `read()` returns the next raw chunk, the acquisition bytes first, and `b""`
    after the remote end closes. The session enforces no duration, byte, or idle bound.
    Consumers own their bounds, for example with `asyncio.wait_for` around `read()`. A
@@ -36,8 +40,9 @@ iterator of raw `bytes` chunks. Its core rules:
    independent mkvterm probe (ADR 0072, P2), closes the session's connection and stdin, and
    returns `released`. `released` is `True` only on proof. It is `None` before `close()` and
    `False` for any unproven, contended, or never-acquired session. `close()` is idempotent:
-   later and concurrent calls await the same single release. Cancellation of `close()` never
-   interrupts the release. The cancellation is re-raised after the release completes. The
+   later and concurrent calls await the same single release. Cancelling a caller that awaits
+   `close()` never interrupts the release; the cancellation is re-raised after the release
+   completes. Cancelling the release task itself, as a loop-wide shutdown does, can. The
    context manager calls `close()` on every exit, including exceptions and
    `CancelledError`. Cancellation during `open()` after acquisition closes the session
    before `CancelledError` propagates, as in ADR 0072.
@@ -51,16 +56,23 @@ iterator of raw `bytes` chunks. Its core rules:
    return, an exception, and task cancellation, including the main-task cancellation
    `asyncio.run` performs on SIGINT (Python 3.11+). It cannot release on exits that stop the
    interpreter without unwinding that coroutine: SIGKILL, `os._exit`, a crash, power loss,
-   SIGTERM under its default action, an event loop stopped with the owning task unfinished,
-   and a session that is dropped without being closed. An application that wants SIGTERM
-   handled must turn it into task cancellation. P3 says the HMC never reclaims a leaked hold.
+   SIGTERM under its default action, a second SIGINT under `asyncio.run` (it raises
+   `KeyboardInterrupt` instead of cancelling), an event loop stopped with the owning task
+   unfinished, `asyncio.run` returning while a release is in flight in a task the main
+   coroutine does not await (its shutdown cancels every task), and a session that is
+   dropped without being closed. An application that wants SIGTERM handled must turn it
+   into task cancellation, and must await its sessions' `close()` before its main coroutine
+   returns. P3 says the HMC never reclaims a leaked hold.
    The next `open()` for that partition then raises `ConsoleHeldError`, the same error
    another holder causes, and the operator recovers with
    `rmvterm -m <system> -p <partition>`. Telling a leftover hold apart from another holder
    is #975/#977's work.
 7. **Bounded capture is a consumer.** `capture_lpar_console` opens a session, reads until its
    three ADR 0072 bounds fire, and closes it. The module keeps one release path, and the
-   capture's signature, result, errors, and MCP tool are unchanged.
+   capture's signature, result, error types, and MCP tool are unchanged. The capture keeps
+   its own whole-buffer check for the contention sentence and still raises
+   `ConsoleHeldError` for it (#974 keeps contention's error unchanged), now after the
+   session has released its proven hold.
 8. **Not a facade export.** The session is a pre-release domain-module API under ADR 0118.
    `hmcpctl.api` keeps its six names. #975-#977 and #958 still reshape the session, and a
    facade export would freeze it first.
@@ -71,12 +83,11 @@ iterator of raw `bytes` chunks. Its core rules:
   release path, so a later release fix reaches both.
 - A consumer that forgets `close()` leaks the vterm with no warning. The context manager is
   the documented use.
-- Scanning an unbounded stream for the contention sentence widens ADR 0072 assumption 2.
-  Console text that quotes the sentence ends the session with `ConsoleHeldError` and no
-  release attempt. #975 owns a narrower contention rule.
-- Cancelling the bounded capture during its final release now raises `CancelledError` after
-  the release instead of returning a result. That is ADR 0072's stated rule, "runs to
-  completion before cancellation propagates".
+- Two capture side effects change. When console text quotes the contention sentence, the
+  capture now releases its proven hold before raising `ConsoleHeldError`; before, it raised
+  without `rmvterm` and leaked that hold. Cancelling the capture during its final release
+  now raises `CancelledError` after the release instead of returning a result, which is ADR
+  0072's stated rule, "runs to completion before cancellation propagates".
 
 ## Considered & rejected
 
@@ -87,13 +98,15 @@ iterator of raw `bytes` chunks. Its core rules:
 - **Release from `__del__` or `atexit`.** verified: a script that registers an `atexit`
   handler and then receives default-action SIGTERM, SIGKILL, or `os._exit(0)` never runs the
   handler (CPython 3.11.15 and 3.14.7, Linux x86_64; exit codes 143, 137, 0). The exits a
-  hook would add are the ones it never sees, and a clean interpreter exit under
-  `asyncio.run` already cancels and unwinds the owning task. `__del__` cannot await the
-  release.
+  hook would add are the ones it never sees. The exits that do run it, a normal return
+  and a first SIGINT under `asyncio.run`, already unwind the session's owning task.
+  `__del__` cannot await the release.
 - **Install a SIGTERM handler in the library.** judgment: signal disposition belongs to the
-  application. A library handler would override the MCP server's and the CLI's own.
+  application, and a library handler would replace whatever handler the application set.
 - **Export the session through `hmcpctl.api`.** judgment: it would freeze an API that four
   approved issues are about to extend.
-- **Leave late-contention detection in the capture only.** judgment: the capture would need
-  a hook to skip the session's release, and contention would be a capture rule instead of a
-  session rule that #975 can extend.
+- **Scan the whole session stream for the contention sentence and skip release on a match.**
+  verified: `_acquire_capture_stream` returns only after `Open in progress` with no sentinel
+  (`src/hmcpctl/ssh/console.py:493-499` at main 80b8bb1d), and ADR 0072's P1 record shows the
+  contention text in place of the banner. A later match is console content, so skipping
+  release would leak the session's own hold and report it as another holder.
