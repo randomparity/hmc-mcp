@@ -53,7 +53,7 @@ import re
 import shlex
 import sys
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -864,6 +864,7 @@ def _record_sriov_assignments(
 # ---------------------------------------------------------------------------
 
 _DEFAULT_DEDICATED_PROFILE = "default_profile"
+_DEDICATED_SCENARIO = "st29-dedicated-pcie"
 
 @dataclass(frozen=True)
 class _DedicatedConfig:
@@ -886,6 +887,9 @@ class _DedicatedFixture:
     created: bool = False
     probe_created: bool = False
     probe_lpar_uuid: str | None = None
+    #: (call succeeded, readback held) for each addition cleanup must undo, keyed
+    #: by step; recorded once the teardown has decided (`_record_dedicated_additions`).
+    evidence: dict[str, tuple[bool, bool]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1416,6 +1420,33 @@ async def _created_despite_failure(
     return uuid_match.group(1) if uuid_match else ""
 
 
+async def name_absent(client: Client, state: RunState, fixture: _DedicatedFixture) -> bool:
+    """Whether the fixture's name answers HSCL8012 after its delete.
+
+    Only a readable description carrying this run's marker means the partition
+    is still there. Any other answer — a lost connection, an SSH view lagging
+    the REST delete — is read once more after `_ABSENCE_REREAD_DELAY_S`,
+    as `_created_despite_failure` does (#906), before it is believed.
+    """
+
+    async def lookup() -> tuple[str, Any]:
+        return await state.call(
+            client,
+            "hmc_get_lpar_description",
+            system_name_or_uuid=fixture.config.system_name,
+            lpar_name_or_uuid=fixture.lpar_name,
+        )
+
+    st, data = await lookup()
+    if partition_not_found(st, data):
+        return True
+    if st == "PASS" and isinstance(data, str):
+        return False
+    await asyncio.sleep(_ABSENCE_REREAD_DELAY_S)
+    st, data = await lookup()
+    return partition_not_found(st, data)
+
+
 async def _probe_create_time_assignment(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> bool:
@@ -1496,10 +1527,22 @@ async def _probe_create_time_assignment(
         f"probe io_slots={io_slots!r} expected to contain drc_index="
         f"{fixture.drc_index!r} (create status {st})",
     )
-    if await _cleanup_probe_partition(client, state, fixture):
+    cleaned = await _cleanup_probe_partition(client, state, fixture)
+    state.record_verified(
+        30,
+        "hmc_create_lpar (create-time verified)",
+        operation="lpar.create",
+        scenario=_DEDICATED_SCENARIO,
+        assertions=[
+            Assertion("create-call-succeeded", st == "PASS"),
+            Assertion("profile-lists-slot", landed),
+        ],
+        cleanup="passed" if cleaned else "failed",
+        data=f"probe io_slots={io_slots!r} drc_index={fixture.drc_index!r}",
+    )
+    if cleaned:
         fixture.probe_created = False
-        return True
-    return False
+    return cleaned
 
 
 async def create_dedicated_fixture(
@@ -1750,6 +1793,7 @@ async def assign_dedicated_slot(
     assigned = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
     if assigned:
         fixture.applied_io_slots = applied
+    fixture.evidence["assign"] = (st == "PASS", assigned)
     state.record(
         31,
         "profile io_slots readback (post-assign)",
@@ -1813,6 +1857,18 @@ async def unassign_dedicated_slot(
         f"io_slots={observed!r} baseline={fixture.baseline_io_slots!r} "
         f"(command status {st})",
     )
+    state.record_verified(
+        33,
+        "chsyscfg-io-slots-remove",
+        operation="command.run",
+        scenario=_DEDICATED_SCENARIO,
+        assertions=[
+            Assertion("remove-command-succeeded", st == "PASS"),
+            Assertion("profile-restored-to-baseline", restored),
+        ],
+        cleanup="not-required",
+        data=f"io_slots={observed!r} baseline={fixture.baseline_io_slots!r}",
+    )
     return st == "PASS" and restored
 
 
@@ -1835,6 +1891,7 @@ async def reassign_dedicated_slot(
     ok = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
     if ok:
         fixture.applied_io_slots = applied
+    fixture.evidence["reassign"] = (st == "PASS", ok)
     state.record(
         33,
         "profile io_slots readback (post-reassign)",
@@ -1946,8 +2003,11 @@ async def _cleanup_probe_partition(
 
 async def cleanup_dedicated(
     client: Client, state: RunState, fixture: _DedicatedFixture
-) -> None:
-    """Remove the slot, then delete the fixture — each only on an exact match."""
+) -> str | None:
+    """Remove the slot, then delete the fixture — each only on an exact match.
+
+    Returns the fixture delete call's status, or None when no delete was issued.
+    """
     arm = fixture.config
     print("\n=== ST34: Dedicated PCIe Cleanup (issue #217) ===")
 
@@ -1958,7 +2018,7 @@ async def cleanup_dedicated(
     if fixture.probe_created and await _cleanup_probe_partition(client, state, fixture):
         fixture.probe_created = False
     if not fixture.created:
-        return
+        return None
 
     # Guard A — fixture identity, re-read immediately before any mutation.
     observed = await _read_dedicated_state(client, state, fixture)
@@ -1979,7 +2039,7 @@ async def cleanup_dedicated(
             f"{recovery} Expected caller token {fixture.run_marker!r}, read "
             f"{observed.caller_token!r}.",
         )
-        return
+        return None
     if fixture.lpar_uuid is not None and observed.lpar_uuid != fixture.lpar_uuid:
         state.record(
             34,
@@ -1988,7 +2048,7 @@ async def cleanup_dedicated(
             f"{recovery} Expected UUID {fixture.lpar_uuid!r}, read "
             f"{observed.lpar_uuid!r}.",
         )
-        return
+        return None
 
     # Guard B — remove the slot before the partition, decided on LIVE state.
     #
@@ -2023,7 +2083,7 @@ async def cleanup_dedicated(
                 "whatever is assigned. Recover with "
                 f"`{_change_io_slots_command(fixture, add=False)}`.",
             )
-            return
+            return None
         st, data = await state.call(
             client,
             "hmc_run_command",
@@ -2041,7 +2101,7 @@ async def cleanup_dedicated(
                 f"`{_change_io_slots_command(fixture, add=False)}` then delete "
                 f"{fixture.lpar_name!r}. Error: {str(data)[:400]}",
             )
-            return
+            return None
         after = await _read_profile_io_slots(client, state, fixture)
         if after != fixture.baseline_io_slots:
             state.record(
@@ -2053,7 +2113,7 @@ async def cleanup_dedicated(
                 f"{fixture.baseline_io_slots!r}; the partition was not deleted. "
                 f"Reconcile {fixture.lpar_name!r} by hand.",
             )
-            return
+            return None
         state.record(
             34,
             "dedicated cleanup: slot removed",
@@ -2076,7 +2136,7 @@ async def cleanup_dedicated(
             f"{fixture.run_marker!r} / {fixture.lpar_uuid!r}. The partition was "
             "NOT deleted; remove it by hand after confirming what it is.",
         )
-        return
+        return None
     # `_read_dedicated_state` already fetched the profile, so this clause is
     # free — and without it the "refuse the delete while the profile differs
     # from the baseline" rule is enforced only at Guard A's earlier read.
@@ -2098,7 +2158,7 @@ async def cleanup_dedicated(
             "changed it after this run's last check. The partition was NOT "
             "deleted, because deleting it would strand whatever is assigned.",
         )
-        return
+        return None
 
     # Act on the identity Guard C just verified. `hmc_delete_lpar` accepts a
     # UUID or a name; deleting by name would re-resolve the name and reopen
@@ -2122,6 +2182,7 @@ async def cleanup_dedicated(
             f"{arm.system_name!r} still exists and must be deleted by hand. "
             f"Its slot assignment was already removed. Error: {str(data)[:400]}",
         )
+    return st
 
 
 async def exercise_dedicated_pcie_assignment(
@@ -2152,8 +2213,64 @@ async def exercise_dedicated_pcie_assignment(
         # before cleaning up — it may hold the slot. A create that never happened has
         # nothing to clean up, and calling cleanup then would emit a
         # manual-recovery row for a partition that does not exist.
+        deleted = None
         if fixture.created or fixture.probe_created:
-            await cleanup_dedicated(client, state, fixture)
+            deleted = await cleanup_dedicated(client, state, fixture)
+        clean = False
+        if deleted is not None:
+            absent = await name_absent(client, state, fixture)
+            clean = absent and not fixture.probe_created
+            state.record_verified(
+                34,
+                "hmc_delete_lpar (verified)",
+                operation="lpar.delete",
+                scenario=_DEDICATED_SCENARIO,
+                assertions=[
+                    Assertion("delete-call-succeeded", deleted == "PASS"),
+                    Assertion("lpar-name-absent", absent),
+                ],
+                cleanup="not-required",
+                data=f"lpar={fixture.lpar_name!r} delete status {deleted}",
+            )
+        _record_dedicated_additions(state, fixture, clean)
+
+
+def _record_dedicated_additions(
+    state: RunState, fixture: _DedicatedFixture, clean: bool
+) -> None:
+    """Record each slot addition once the teardown has decided its cleanup.
+
+    Cleanup is `passed` only when the fixture delete was confirmed by absence
+    and no probe partition remains: an addition whose partition survives is not
+    one this run undid.
+    """
+    cleanup = "passed" if clean else "failed"
+    if (held := fixture.evidence.get("assign")) is not None:
+        state.record_verified(
+            31,
+            "hmc_assign_dedicated_pcie_slot (verified)",
+            operation="pcie.assign_dedicated_slot",
+            scenario=_DEDICATED_SCENARIO,
+            assertions=[
+                Assertion("assign-call-succeeded", held[0]),
+                Assertion("profile-lists-slot", held[1]),
+            ],
+            cleanup=cleanup,
+            data=f"drc_index={fixture.drc_index!r}",
+        )
+    if (held := fixture.evidence.get("reassign")) is not None:
+        state.record_verified(
+            33,
+            "chsyscfg-io-slots-add",
+            operation="command.run",
+            scenario=_DEDICATED_SCENARIO,
+            assertions=[
+                Assertion("add-command-succeeded", held[0]),
+                Assertion("profile-lists-slot", held[1]),
+            ],
+            cleanup=cleanup,
+            data=f"drc_index={fixture.drc_index!r}",
+        )
 
 
 async def _exercise_dedicated_steps(

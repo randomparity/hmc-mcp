@@ -89,6 +89,7 @@ class ScenarioState:
         self.artifacts = LiveTestArtifacts()
         self.tool_counts: dict[str, int] = {}
         self.cleanup_start: int | None = None
+        self.observations: list[dict[str, Any]] = []
 
     async def call(
         self, _client: object, tool: str, **kwargs: Any
@@ -108,7 +109,7 @@ class ScenarioState:
         return status, response
 
     def record(
-        self, subtask: int, tool: str, status: str, data: Any, note: str = ""
+        self, subtask: int, tool: str, status: str, data: Any, note: str = "", **_kwargs: Any
     ) -> None:
         # `RunState.record` carries the note in `note` and the payload in
         # `data`; keeping whichever is populated lets one assertion read both.
@@ -124,6 +125,9 @@ class ScenarioState:
     # tests exercise the real declared-limitation matching rather than a copy
     # that can agree with a broken arm.
     record_with_expected = RunState.record_with_expected
+    # Likewise the production observation writer, so the tests pin the exact
+    # objects `_emit_observations` would write.
+    record_verified = RunState.record_verified
 
     # -- views -------------------------------------------------------------
 
@@ -411,9 +415,9 @@ async def _run_arm(
     # global, so wrapping it records where cleanup's calls begin.
     real_cleanup = pcie.cleanup_dedicated
 
-    async def marking_cleanup(client: Any, st: Any, fixture: Any) -> None:
+    async def marking_cleanup(client: Any, st: Any, fixture: Any) -> str | None:
         st.cleanup_start = len(st.calls)
-        await real_cleanup(client, st, fixture)
+        return await real_cleanup(client, st, fixture)
 
     monkeypatch.setattr(pcie, "cleanup_dedicated", marking_cleanup)
 
@@ -818,6 +822,96 @@ async def test_probe_carrying_a_foreign_token_is_never_deleted_and_blocks_the_fi
     assert "hmc_delete_lpar" not in state.tools()
     assert not [c for c in state.commands() if "io_slots-" in c]
     assert not any(t == "hmc_create_lpar" and not _is_probe(k) for t, k in state.calls)
+
+
+def _fixture_absent_after_delete(responses: dict[str, Any]) -> None:
+    """Answer HSCL8012 for the fixture once its delete has been issued."""
+    describe = responses["hmc_get_lpar_description"]
+    deleted: set[str] = set()
+
+    def delete(kwargs: dict[str, Any], _index: int) -> str:
+        deleted.add(str(kwargs["lpar_name_or_uuid"]))
+        return "deleted"
+
+    def get_description(kwargs: dict[str, Any], index: int) -> Any:
+        if "fixture-uuid" in deleted and not _is_probe_name(kwargs):
+            return _NOT_FOUND
+        return describe(kwargs, index)
+
+    responses["hmc_delete_lpar"] = delete
+    responses["hmc_get_lpar_description"] = get_description
+
+
+def _emitted(state: ScenarioState) -> dict[str, tuple[str, str, str, str, list[str]]]:
+    """Each observation by id: operation, scenario, result, cleanup, assertion ids."""
+    emitted = {
+        item["observation"]["id"]: (
+            item["operation"],
+            item["observation"]["scenario"],
+            item["observation"]["result"],
+            item["observation"]["cleanup"],
+            sorted(item["observation"]["assertions"]),
+        )
+        for item in state.observations
+    }
+    assert len(emitted) == len(state.observations), "a duplicate id discards the document"
+    return emitted
+
+
+async def _run_dedicated_with_probe(
+    monkeypatch: pytest.MonkeyPatch, *, fixture_absent: bool = True
+) -> ScenarioState:
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_exists=True)
+    _probe_create_succeeds(responses)
+    if fixture_absent:
+        _fixture_absent_after_delete(responses)
+    return await _run_arm(monkeypatch, responses, holder, statuses={"hmc_create_lpar": "PASS"})
+
+
+@pytest.mark.asyncio
+async def test_dedicated_arm_emits_verified_observations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = await _run_dedicated_with_probe(monkeypatch)
+
+    scenario = "st29-dedicated-pcie"
+    assert _emitted(state) == {
+        "st30-hmc-create-lpar": (
+            "lpar.create", scenario, "passed", "passed",
+            ["create-call-succeeded", "profile-lists-slot"],
+        ),
+        "st31-hmc-assign-dedicated-pcie-slot": (
+            "pcie.assign_dedicated_slot", scenario, "passed", "passed",
+            ["assign-call-succeeded", "profile-lists-slot"],
+        ),
+        "st33-chsyscfg-io-slots-remove": (
+            "command.run", scenario, "passed", "not-required",
+            ["profile-restored-to-baseline", "remove-command-succeeded"],
+        ),
+        "st33-chsyscfg-io-slots-add": (
+            "command.run", scenario, "passed", "passed",
+            ["add-command-succeeded", "profile-lists-slot"],
+        ),
+        "st34-hmc-delete-lpar": (
+            "lpar.delete", scenario, "passed", "not-required",
+            ["delete-call-succeeded", "lpar-name-absent"],
+        ),
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_fixture_that_survives_its_delete_fails_the_additions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An assignment whose partition is still there was not undone by this run."""
+    state = await _run_dedicated_with_probe(monkeypatch, fixture_absent=False)
+
+    emitted = _emitted(state)
+    assert emitted["st34-hmc-delete-lpar"][2:4] == ("failed", "not-required")
+    assert emitted["st34-hmc-delete-lpar"][4] == ["delete-call-succeeded"]
+    for key in ("st31-hmc-assign-dedicated-pcie-slot", "st33-chsyscfg-io-slots-add"):
+        assert emitted[key][2:4] == ("failed", "failed")
 
 
 @pytest.mark.asyncio

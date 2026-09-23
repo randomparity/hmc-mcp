@@ -4379,6 +4379,16 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st29-dedicated-pcie": {
+            "create-call-succeeded",
+            "profile-lists-slot",
+            "assign-call-succeeded",
+            "remove-command-succeeded",
+            "profile-restored-to-baseline",
+            "add-command-succeeded",
+            "delete-call-succeeded",
+            "lpar-name-absent",
+        },
         "st23-sriov-logical-port": {
             "assign-call-succeeded",
             "logical-port-configured",
