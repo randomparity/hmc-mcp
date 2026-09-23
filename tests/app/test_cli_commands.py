@@ -2523,6 +2523,7 @@ def test_lpars_capture_console_json_preserves_bytes(fake_hmc, monkeypatch):
         "bytes_captured": 11,
         "data_base64": base64.b64encode(b"boot\n\x1b[31m\xff").decode("ascii"),
     }
+    assert "vterm may still be held" in result.stderr
 
 
 def test_lpars_capture_console_text_escapes_controls_and_warns(fake_hmc, monkeypatch):

@@ -26,6 +26,23 @@ def _capture_json(capture: ConsoleCapture) -> dict[str, Any]:
     }
 
 
+def _print_capture_text(capture: ConsoleCapture) -> None:
+    metadata = (
+        f"system: {capture.system}\n"
+        f"partition: {capture.lpar}\n"
+        f"stop reason: {capture.stop_reason}\n"
+        f"released: {capture.released}\n"
+        f"error: {capture.error}\n"
+        f"bytes captured: {len(capture.data)}"
+    )
+    console.print(metadata, markup=False, highlight=False)
+    console.print(
+        ascii(capture.data.decode("utf-8", errors="backslashreplace")),
+        markup=False,
+        highlight=False,
+    )
+
+
 def lpars_capture_console(
     lpar_name_or_uuid: str = typer.Argument(
         ..., metavar="LPAR", help="LPAR name or UUID"
@@ -57,22 +74,8 @@ def lpars_capture_console(
     )
     if as_json:
         print_json(_capture_json(capture))
-        return
-
-    metadata = (
-        f"system: {capture.system}\n"
-        f"partition: {capture.lpar}\n"
-        f"stop reason: {capture.stop_reason}\n"
-        f"released: {capture.released}\n"
-        f"error: {capture.error}\n"
-        f"bytes captured: {len(capture.data)}"
-    )
-    console.print(metadata, markup=False, highlight=False)
-    console.print(
-        ascii(capture.data.decode("utf-8", errors="backslashreplace")),
-        markup=False,
-        highlight=False,
-    )
+    else:
+        _print_capture_text(capture)
     if not capture.released:
         err_console.print(
             "WARNING: console release was not proven; the vterm may still be held.",
