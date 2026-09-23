@@ -1234,6 +1234,12 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     responses = _happy_responses(holder)
     # The HMC has no partition of either name.
     responses["hmc_get_lpar_description"] = lambda _k, _n: _NOT_FOUND
+    delays: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(pcie.asyncio, "sleep", record_sleep)
     state = await _run_arm(
         monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
     )
@@ -1242,6 +1248,14 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     skip = state.row("dedicated fixture create")
     assert skip is not None and skip[2] == "SKIP"
     assert "nothing to clean up" in str(skip[3])
+    # Each failed create waits once, then re-reads once: absence takes two
+    # HSCL8012 answers, and never a third lookup (#906).
+    lookups = [
+        k["lpar_name_or_uuid"] for t, k in state.calls if t == "hmc_get_lpar_description"
+    ]
+    assert len(lookups) == 4 and len(set(lookups)) == 2
+    assert all(lookups.count(name) == 2 for name in lookups)
+    assert delays == [pcie._ABSENCE_REREAD_DELAY_S] * 2
 
 
 def _not_found_first(responses: dict[str, Any], probe: bool) -> None:
