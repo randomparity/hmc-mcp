@@ -31,8 +31,11 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
 
 
 @escapes_string_arguments
-def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
-    """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
+def build_virtual_disk_element(disk_name: str, capacity_mib: int) -> str:
+    """One VirtualDisk for insertion into a fetched VolumeGroup (read-modify-write, #936).
+
+    V10R3 rejects ``kb`` on VirtualDisk and requires DiskCapacity (GiB) before DiskName.
+    """
     name_length = len(html.unescape(disk_name))  # the decorator escaped disk_name
     if name_length > VIRTUAL_DISK_NAME_MAX:
         raise ValueError(
@@ -42,16 +45,11 @@ def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     if capacity_mib <= 0 or capacity_mib % 1024:
         raise ValueError("capacity_mib must be a positive multiple of 1024")
     capacity_gib = capacity_mib // 1024
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualDisk schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <DiskCapacity kb="CUR" kxe="false">{capacity_gib}</DiskCapacity>
-      <DiskName kb="CUR" kxe="false">{disk_name}</DiskName>
-    </VirtualDisk>
-  </VirtualDisks>"""
-    return document_envelope("VolumeGroup", body)
+    return f"""<VirtualDisk xmlns="{UOM_NS}" schemaVersion="V1_0">
+  <Metadata><Atom/></Metadata>
+  <DiskCapacity kb="CUR" kxe="false">{capacity_gib}</DiskCapacity>
+  <DiskName kb="CUR" kxe="false">{disk_name}</DiskName>
+</VirtualDisk>"""
 
 
 _TARGET_DEVICE_ELEMENTS = {
@@ -239,20 +237,6 @@ def build_virtual_optical_media_delete_document(
       </VirtualOpticalMedia>
     </VirtualMediaRepository>
   </MediaRepositories>"""
-    return document_envelope("VolumeGroup", body)
-
-
-@escapes_string_arguments
-def build_virtual_disk_delete_document(disk_name: str) -> str:
-    """VolumeGroup document marking a VirtualDisk for deletion (POST)."""
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualDisks schemaVersion="V1_0" kb="CUD">
-    <Metadata><Atom/></Metadata>
-    <VirtualDisk schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <VolumeGroupName kb="CUD" kxe="false">{disk_name}</VolumeGroupName>
-    </VirtualDisk>
-  </VirtualDisks>"""
     return document_envelope("VolumeGroup", body)
 
 

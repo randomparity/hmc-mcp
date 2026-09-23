@@ -261,6 +261,10 @@ class StorageClient(Protocol):
         **kwargs: Any,
     ) -> Any: ...
 
+    def _uom_headers(
+        self, resource_type: str | None, include_schema_version: bool = True
+    ) -> dict[str, str]: ...
+
     async def _get(
         self,
         path: str,
@@ -320,10 +324,16 @@ class StorageClient(Protocol):
 
     async def _get_vg_raw_xml(
         self, vios_uuid: str, vg_uuid: str
-    ) -> tuple[str, Element]: ...
+    ) -> tuple[str | None, Element]: ...
 
     async def _post_vg_xml(
-        self, vios_uuid: str, vg_uuid: str, vg_elem: Element
+        self,
+        vios_uuid: str,
+        vg_uuid: str,
+        vg_elem: Element,
+        *,
+        operation: str = ...,
+        etag: str | None = None,
     ) -> dict[str, Any] | None: ...
 
     def _build_mr_element(self, size_mib: int) -> Element: ...
