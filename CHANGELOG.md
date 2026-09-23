@@ -337,6 +337,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   as before. A contention sentence that follows the acquisition banner in the same read now
   counts as console content, both at open and in the release probe (#975, ADR 0172).
 
+- `hmcpctl lpars create` and `hmc_create_lpar` apply the new partition profile, `default_profile`,
+  when the HMC creates the partition through `mksyscfg` (its REST create returned HTTP 406). The
+  apply is `chsyscfg -r lpar -o apply` and leaves the partition not activated. Before this, such a
+  partition had no current configuration: REST adapter writes failed with `REST0269` and the
+  create result showed zero memory and processors. The result reports an `apply_profile` step; a
+  failed apply stops the remaining steps and leaves the partition in place. `--no-apply` /
+  `apply_partition_profile=false` skips it and returns a warning instead (#939).
+
 - The distribution, console script, Python package and configuration directory are renamed
   from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now
   `hmcpctl.api`, `import hmc_mcp` fails, and the former configuration directory is not read.

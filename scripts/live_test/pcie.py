@@ -53,7 +53,7 @@ import re
 import shlex
 import sys
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -77,7 +77,7 @@ from hmcpctl.ssh.profiles import (
 )
 from hmcpctl.ssh.transport import HMCCLIError
 
-from .observation import CallFailure
+from .observation import Assertion, CallFailure
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -86,6 +86,42 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # SR-IOV state snapshot helpers
 # ---------------------------------------------------------------------------
+
+_SRIOV_SCENARIO = "st23-sriov-logical-port"
+
+
+@dataclass
+class _SriovEvidence:
+    """What the assign and reassign readbacks showed, recorded once cleanup has decided.
+
+    Both add something cleanup must undo, so their observations carry cleanup's
+    outcome rather than claiming none was needed (`bare_cec._record_create_and_assign`).
+    """
+
+    assign_changed: bool = False
+    assign: tuple[bool, bool, bool] | None = None  # configured, owner, capacity
+    reassign: tuple[bool, bool] | None = None  # configured, owner
+
+
+def _sriov_changed(data: object) -> bool:
+    """Whether an SR-IOV tool result, in any shape it is served, reports a mutation.
+
+    Both operations return `changed=False` from an idempotent no-op: an assign
+    of a port already assigned as asked, an unassign of a profile reading
+    `none`. Such a call exercised no mutation path, so it backs no observation.
+    """
+    if isinstance(data, dict):
+        return data.get("changed") is True
+    if isinstance(data, str):
+        return "changed=True" in data
+    # The live client serves the result dataclass as a generated model, not a
+    # mapping (as `metrics._as_outcome` also has to handle), so read the field.
+    return getattr(data, "changed", None) is True
+
+
+def _profile_read_clean(profile_ports: str | None) -> bool:
+    """Profile ports read back as empty; an unreadable profile (None) is not."""
+    return profile_ports in ("none", "")
 
 
 @dataclass
@@ -212,8 +248,12 @@ def _logical_port_is_configured(data: object, logical_port_id: str) -> bool:
     )
 
 
-async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
-    """Record final logical-port and profile checks after cleanup."""
+async def _verify_cleanup_inventory(client: Client, state: RunState) -> tuple[bool, bool]:
+    """Record final logical-port and profile checks after cleanup.
+
+    Returns (restored, profile_clean): restored only when the inventory read
+    shows the port unconfigured and the profile is clean.
+    """
     config = state.config
     st, data = await state.call(
         client,
@@ -223,6 +263,7 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
         logical_port_id=str(config.sriov_logical_port_id),
     )
     state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
+    unconfigured = False
     if st == "PASS":
         still_configured = _logical_port_is_configured(
             data, str(config.sriov_logical_port_id)
@@ -238,9 +279,11 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
                 else f"logical port {config.sriov_logical_port_id} is unconfigured — baseline restored"
             ),
         )
+        unconfigured = not still_configured
 
     final_state = await _read_sriov_state(client, state)
     profile_clean = final_state.profile_ports in (None, "none", "")
+    read_clean = _profile_read_clean(final_state.profile_ports)
     state.record(
         28,
         "lp3 profile final check",
@@ -255,6 +298,7 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
             else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
         ),
     )
+    return unconfigured and read_clean, read_clean
 
 
 async def _check_sriov_adapter_health(client: Client, state: RunState) -> bool:
@@ -452,7 +496,9 @@ async def capture_sriov_baseline(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
+async def assign_sriov_to_lp3(
+    client: Client, state: RunState, evidence: _SriovEvidence
+) -> bool:
     """Assign test logical port to lp3.  Returns False if the call failed."""
     config = state.config
     print("\n=== ST24: SR-IOV Assign (issue #217) ===")
@@ -469,6 +515,7 @@ async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
         ownership_override=True,
     )
     state.record(24, "hmc_assign_sriov_logical_port", st, data)
+    evidence.assign_changed = st == "PASS" and _sriov_changed(data)
     return st == "PASS"
 
 
@@ -477,7 +524,9 @@ async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
+async def verify_sriov_assigned(
+    client: Client, state: RunState, assign_ok: bool, evidence: _SriovEvidence
+) -> bool:
     """Verify the logical port is configured on lp3 after assign."""
     config = state.config
     print("\n=== ST25: SR-IOV Post-Assign Verify (issue #217) ===")
@@ -520,6 +569,8 @@ async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
         f"profile sriov_eth_logical_ports={sriov_state.profile_ports!r} "
         "(dynamic assign does not update the profile for Not Activated LPARs)",
     )
+    if assign_ok and evidence.assign_changed:
+        evidence.assign = (sriov_state.configured, owner_ok, cap_ok)
 
     return sriov_state.configured and owner_ok and cap_ok
 
@@ -568,6 +619,22 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
         f"effective configured={sriov_state.configured} owner={sriov_state.owner_lpar!r} "
         "(profile-only unassign does not touch effective layer; port remains until next activation)",
     )
+    if not _sriov_changed(data):
+        # An idempotent no-op dispatched nothing to verify (see _sriov_changed).
+        return profile_clean
+    state.record_verified(
+        26,
+        "hmc_unassign_sriov_logical_port (verified)",
+        operation="sriov.unassign_logical_port",
+        scenario=_SRIOV_SCENARIO,
+        assertions=[
+            # A failed call returned above, before any readback.
+            Assertion("unassign-call-succeeded", True),
+            Assertion("profile-ports-cleared", _profile_read_clean(sriov_state.profile_ports)),
+        ],
+        cleanup="not-required",
+        data=f"profile_ports={sriov_state.profile_ports!r}",
+    )
     return profile_clean
 
 
@@ -576,7 +643,9 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
+async def reassign_sriov_to_lp3(
+    client: Client, state: RunState, evidence: _SriovEvidence
+) -> bool:
     """Re-assign the same port to prove the round-trip path."""
     config = state.config
     print("\n=== ST27: SR-IOV Reassign (issue #217) ===")
@@ -599,6 +668,8 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
     # Verify ownership
     sriov_state = await _read_sriov_state(client, state)
     ok = sriov_state.configured and sriov_state.owner_lpar == config.lp3_name
+    if _sriov_changed(data):
+        evidence.reassign = (sriov_state.configured, sriov_state.owner_lpar == config.lp3_name)
     state.record(
         27,
         "sriov post-reassign verify",
@@ -613,8 +684,8 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def cleanup_sriov(client: Client, state: RunState) -> None:
-    """Unassign the test port (cleanup) and confirm the baseline is restored."""
+async def cleanup_sriov(client: Client, state: RunState) -> bool:
+    """Unassign the test port (cleanup); return whether the baseline is confirmed restored."""
     config = state.config
     print("\n=== ST28: SR-IOV Cleanup (issue #217) ===")
 
@@ -635,7 +706,9 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             "PASS",
             "no cleanup action required",
         )
-    elif sriov_state.owner_lpar != config.lp3_name:
+        restored, _ = await _verify_cleanup_inventory(client, state)
+        return restored
+    if sriov_state.owner_lpar != config.lp3_name:
         state.record(
             28,
             "sriov cleanup: owner mismatch",
@@ -644,64 +717,80 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             f"to {sriov_state.owner_lpar!r} — expected {config.lp3_name!r}. "
             "Do not unassign — another LPAR owns this port.",
         )
-        return
-    else:
-        # Step 1: profile unassign (clears sriov_eth_logical_ports via chsyscfg)
-        st, data = await state.call(
-            client,
-            "hmc_unassign_sriov_logical_port",
-            system_name_or_uuid=config.system_name,
-            lpar_name_or_uuid=config.lp3_name,
-            adapter_id=str(config.sriov_adapter_id),
-            physical_port_id=str(config.sriov_physical_port_id),
-            logical_port_id=str(config.sriov_logical_port_id),
-            profile_name=config.sriov_profile_name,
-            ownership_override=True,
+        return False
+    # Step 1: profile unassign (clears sriov_eth_logical_ports via chsyscfg)
+    st, data = await state.call(
+        client,
+        "hmc_unassign_sriov_logical_port",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
+        profile_name=config.sriov_profile_name,
+        ownership_override=True,
+    )
+    state.record(28, "hmc_unassign_sriov_logical_port (cleanup)", st, data)
+    if st != "PASS":
+        state.record(
+            28,
+            "sriov cleanup: unassign failed",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
+            f"logical port {config.sriov_logical_port_id} may still be in profile and effective layer. "
+            f"Run: chhwres -r sriov --rsubtype logport -m {config.system_name} "
+            f"-o r -p {config.lp3_name} "
+            f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
+            f"to recover. Error: {str(data)[:400]}",
         )
-        state.record(28, "hmc_unassign_sriov_logical_port (cleanup)", st, data)
-        if st != "PASS":
-            state.record(
-                28,
-                "sriov cleanup: unassign failed",
-                "FAIL",
-                f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
-                f"logical port {config.sriov_logical_port_id} may still be in profile and effective layer. "
-                f"Run: chhwres -r sriov --rsubtype logport -m {config.system_name} "
-                f"-o r -p {config.lp3_name} "
-                f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
-                f"to recover. Error: {str(data)[:400]}",
-            )
-            return
+        return False
 
-        # Step 2: effective removal (chhwres -o r) — the profile-only unassign
-        # does not touch the effective layer.  Remove it explicitly so the
-        # port returns to the unconfigured pool.
-        st2, data2 = await state.call(
-            client,
-            "hmc_run_command",
-            cmd=(
-                f"chhwres -r sriov --rsubtype logport"
-                f" -m {config.system_name}"
-                f" -o r -p {config.lp3_name}"
-                f' -a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}"'
-            ),
+    # Step 2: effective removal (chhwres -o r) — the profile-only unassign
+    # does not touch the effective layer.  Remove it explicitly so the
+    # port returns to the unconfigured pool.
+    st2, data2 = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=(
+            f"chhwres -r sriov --rsubtype logport"
+            f" -m {config.system_name}"
+            f" -o r -p {config.lp3_name}"
+            f' -a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}"'
+        ),
+    )
+    state.record(28, "chhwres -o r (effective cleanup)", st2, data2)
+    if st2 != "PASS":
+        state.record(
+            28,
+            "sriov cleanup: effective removal failed",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: effective removal failed — "
+            f"logical port {config.sriov_logical_port_id} still assigned to {config.lp3_name!r}. "
+            f"Run manually: chhwres -r sriov --rsubtype logport -m {config.system_name} "
+            f"-o r -p {config.lp3_name} "
+            f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
+            f"Error: {str(data2)[:400]}",
         )
-        state.record(28, "chhwres -o r (effective cleanup)", st2, data2)
-        if st2 != "PASS":
-            state.record(
-                28,
-                "sriov cleanup: effective removal failed",
-                "FAIL",
-                f"MANUAL RECOVERY REQUIRED: effective removal failed — "
-                f"logical port {config.sriov_logical_port_id} still assigned to {config.lp3_name!r}. "
-                f"Run manually: chhwres -r sriov --rsubtype logport -m {config.system_name} "
-                f"-o r -p {config.lp3_name} "
-                f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
-                f"Error: {str(data2)[:400]}",
-            )
-            return
+        return False
 
-    await _verify_cleanup_inventory(client, state)
+    restored, profile_clean = await _verify_cleanup_inventory(client, state)
+    if not _sriov_changed(data):
+        # The profile already read `none`; the raw chhwres did the removal.
+        return restored
+    state.record_verified(
+        28,
+        "hmc_unassign_sriov_logical_port (cleanup verified)",
+        operation="sriov.unassign_logical_port",
+        scenario=_SRIOV_SCENARIO,
+        assertions=[
+            # Both failed calls returned above with a manual-recovery row.
+            Assertion("unassign-call-succeeded", True),
+            Assertion("profile-ports-cleared", profile_clean),
+        ],
+        cleanup="passed" if restored else "failed",
+        data="final logical-port inventory and profile after cleanup",
+    )
+    return restored
 
 
 # ---------------------------------------------------------------------------
@@ -722,12 +811,13 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
         await cleanup_sriov(client, state)
         return
 
+    evidence = _SriovEvidence()
     try:
         # Phase 2: Assign
-        assign_ok = await assign_sriov_to_lp3(client, state)
+        assign_ok = await assign_sriov_to_lp3(client, state, evidence)
 
         # Phase 3: Verify assign (always run, even if assign failed — documents state)
-        verify_ok = await verify_sriov_assigned(client, state)
+        verify_ok = await verify_sriov_assigned(client, state, assign_ok, evidence)
 
         # Phase 4: Unassign (only if assign succeeded and verification passed)
         if assign_ok and verify_ok:
@@ -742,7 +832,7 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
 
         # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
         if unassign_ok:
-            await reassign_sriov_to_lp3(client, state)
+            await reassign_sriov_to_lp3(client, state, evidence)
         else:
             state.skip(
                 27,
@@ -751,13 +841,55 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
             )
     finally:
         active_error = sys.exception()
+        restored = False
         try:
             # Phase 6: Cleanup — always runs after a successful baseline.
-            await cleanup_sriov(client, state)
+            restored = await cleanup_sriov(client, state)
         except BaseException as cleanup_error:
             if active_error is None:
                 raise
             active_error.add_note(f"SR-IOV cleanup failed: {cleanup_error}")
+        finally:
+            _record_sriov_assignments(state, evidence, restored)
+
+
+def _record_sriov_assignments(
+    state: RunState, evidence: _SriovEvidence, restored: bool
+) -> None:
+    """Record assign and reassign once cleanup has decided their cleanup."""
+    cleanup = "passed" if restored else "failed"
+    if evidence.assign is not None:
+        configured, owner_ok, cap_ok = evidence.assign
+        state.record_verified(
+            25,
+            "hmc_assign_sriov_logical_port (verified)",
+            operation="sriov.assign_logical_port",
+            scenario=_SRIOV_SCENARIO,
+            assertions=[
+                # Set only when the call passed and dispatched a change (see _sriov_changed).
+                Assertion("assign-call-succeeded", True),
+                Assertion("logical-port-configured", configured),
+                Assertion("owner-is-target-lpar", owner_ok),
+                Assertion("capacity-matches", cap_ok),
+            ],
+            cleanup=cleanup,
+            data=f"configured={configured} owner_ok={owner_ok} capacity_ok={cap_ok}",
+        )
+    if evidence.reassign is not None:
+        configured, owner_ok = evidence.reassign
+        state.record_verified(
+            27,
+            "hmc_assign_sriov_logical_port (reassign verified)",
+            operation="sriov.assign_logical_port",
+            scenario=_SRIOV_SCENARIO,
+            assertions=[
+                Assertion("assign-call-succeeded", True),
+                Assertion("logical-port-configured", configured),
+                Assertion("owner-is-target-lpar", owner_ok),
+            ],
+            cleanup=cleanup,
+            data=f"configured={configured} owner_ok={owner_ok}",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +897,8 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_DEDICATED_PROFILE = "default_profile"
+_DEDICATED_SCENARIO = "st29-dedicated-pcie"
+_IO_SLOTS_SCENARIO = "st36-io-slots"
 
 @dataclass(frozen=True)
 class _DedicatedConfig:
@@ -787,6 +921,9 @@ class _DedicatedFixture:
     created: bool = False
     probe_created: bool = False
     probe_lpar_uuid: str | None = None
+    #: The assertion values of each addition cleanup must undo, keyed by step;
+    #: recorded once the teardown has decided (`_record_dedicated_additions`).
+    evidence: dict[str, tuple[bool, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -883,13 +1020,24 @@ def select_profile_io_slots(output: str, lpar_name: str, profile_name: str) -> s
     return values[0]
 
 
-def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str:
-    """Return the documented profile mutation, without --force (ADR 0055)."""
+def _change_io_slots_command(
+    fixture: _DedicatedFixture,
+    *,
+    add: bool,
+    drc_index: str | None = None,
+    required: bool = False,
+) -> str:
+    """Return the documented profile mutation, without --force (ADR 0055).
+
+    *drc_index* defaults to the arm's slot; *required* writes `is_required=1`,
+    which only the io_slots scenario's setup and restore issue (#912).
+    """
     arm = fixture.config
+    element = f"{drc_index or fixture.drc_index}//{1 if required else 0}"
     record = build_attribute_record(
         [
             ("name", arm.profile_name),
-            ("io_slots+" if add else "io_slots-", f"{fixture.drc_index}//0"),
+            ("io_slots+" if add else "io_slots-", element),
             ("lpar_name", fixture.lpar_name),
         ]
     )
@@ -1038,6 +1186,12 @@ async def _admit_dedicated_environment(
 AUTO_SELECTED_SLOT = "(first slot no partition owns and no partition profile lists)"
 
 
+def _slot_unowned(row: dict[str, Any]) -> bool:
+    """Whether an inventory row names no owning partition (`null` is the CLI's none)."""
+    owner = (row.get("owner_lpar") or "").strip()
+    return not owner or owner == "null"
+
+
 def _profile_lists_slot(profile_rows: list[dict[str, str]], drc_index: str) -> bool:
     """Whether any profile lists *drc_index*, decided as the #882 holder check decides it.
 
@@ -1172,10 +1326,7 @@ async def capture_dedicated_baseline(
     # failing read is already covered above.
 
     rows = [item for item in data.get("items") or [] if isinstance(item, dict)]
-    unassigned = [
-        row for row in rows
-        if not (owner := (row.get("owner_lpar") or "").strip()) or owner == "null"
-    ]
+    unassigned = [row for row in rows if _slot_unowned(row)]
     if arm.drc_index is not None:
         selected = next(
             (row for row in unassigned if row.get("drc_index") == arm.drc_index),
@@ -1317,6 +1468,33 @@ async def _created_despite_failure(
     return uuid_match.group(1) if uuid_match else ""
 
 
+async def name_absent(client: Client, state: RunState, fixture: _DedicatedFixture) -> bool:
+    """Whether the fixture's name answers HSCL8012 after its delete.
+
+    Only a readable description carrying this run's marker means the partition
+    is still there. Any other answer — a lost connection, an SSH view lagging
+    the REST delete — is read once more after `_ABSENCE_REREAD_DELAY_S`,
+    as `_created_despite_failure` does (#906), before it is believed.
+    """
+
+    async def lookup() -> tuple[str, Any]:
+        return await state.call(
+            client,
+            "hmc_get_lpar_description",
+            system_name_or_uuid=fixture.config.system_name,
+            lpar_name_or_uuid=fixture.lpar_name,
+        )
+
+    st, data = await lookup()
+    if partition_not_found(st, data):
+        return True
+    if st == "PASS" and isinstance(data, str):
+        return False
+    await asyncio.sleep(_ABSENCE_REREAD_DELAY_S)
+    st, data = await lookup()
+    return partition_not_found(st, data)
+
+
 async def _probe_create_time_assignment(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> bool:
@@ -1397,10 +1575,22 @@ async def _probe_create_time_assignment(
         f"probe io_slots={io_slots!r} expected to contain drc_index="
         f"{fixture.drc_index!r} (create status {st})",
     )
-    if await _cleanup_probe_partition(client, state, fixture):
+    cleaned = await _cleanup_probe_partition(client, state, fixture)
+    state.record_verified(
+        30,
+        "hmc_create_lpar (create-time verified)",
+        operation="lpar.create",
+        scenario=_DEDICATED_SCENARIO,
+        assertions=[
+            Assertion("create-call-succeeded", st == "PASS"),
+            Assertion("profile-lists-slot", landed),
+        ],
+        cleanup="passed" if cleaned else "failed",
+        data=f"probe io_slots={io_slots!r} drc_index={fixture.drc_index!r}",
+    )
+    if cleaned:
         fixture.probe_created = False
-        return True
-    return False
+    return cleaned
 
 
 async def create_dedicated_fixture(
@@ -1651,6 +1841,7 @@ async def assign_dedicated_slot(
     assigned = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
     if assigned:
         fixture.applied_io_slots = applied
+    fixture.evidence["assign"] = (st == "PASS", assigned)
     state.record(
         31,
         "profile io_slots readback (post-assign)",
@@ -1714,6 +1905,18 @@ async def unassign_dedicated_slot(
         f"io_slots={observed!r} baseline={fixture.baseline_io_slots!r} "
         f"(command status {st})",
     )
+    state.record_verified(
+        33,
+        "chsyscfg-io-slots-remove",
+        operation="command.run",
+        scenario=_DEDICATED_SCENARIO,
+        assertions=[
+            Assertion("remove-command-succeeded", st == "PASS"),
+            Assertion("profile-restored-to-baseline", restored),
+        ],
+        cleanup="not-required",
+        data=f"io_slots={observed!r} baseline={fixture.baseline_io_slots!r}",
+    )
     return st == "PASS" and restored
 
 
@@ -1736,6 +1939,7 @@ async def reassign_dedicated_slot(
     ok = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
     if ok:
         fixture.applied_io_slots = applied
+    fixture.evidence["reassign"] = (st == "PASS", ok)
     state.record(
         33,
         "profile io_slots readback (post-reassign)",
@@ -1847,8 +2051,11 @@ async def _cleanup_probe_partition(
 
 async def cleanup_dedicated(
     client: Client, state: RunState, fixture: _DedicatedFixture
-) -> None:
-    """Remove the slot, then delete the fixture — each only on an exact match."""
+) -> str | None:
+    """Remove the slot, then delete the fixture — each only on an exact match.
+
+    Returns the fixture delete call's status, or None when no delete was issued.
+    """
     arm = fixture.config
     print("\n=== ST34: Dedicated PCIe Cleanup (issue #217) ===")
 
@@ -1859,7 +2066,7 @@ async def cleanup_dedicated(
     if fixture.probe_created and await _cleanup_probe_partition(client, state, fixture):
         fixture.probe_created = False
     if not fixture.created:
-        return
+        return None
 
     # Guard A — fixture identity, re-read immediately before any mutation.
     observed = await _read_dedicated_state(client, state, fixture)
@@ -1880,7 +2087,7 @@ async def cleanup_dedicated(
             f"{recovery} Expected caller token {fixture.run_marker!r}, read "
             f"{observed.caller_token!r}.",
         )
-        return
+        return None
     if fixture.lpar_uuid is not None and observed.lpar_uuid != fixture.lpar_uuid:
         state.record(
             34,
@@ -1889,7 +2096,7 @@ async def cleanup_dedicated(
             f"{recovery} Expected UUID {fixture.lpar_uuid!r}, read "
             f"{observed.lpar_uuid!r}.",
         )
-        return
+        return None
 
     # Guard B — remove the slot before the partition, decided on LIVE state.
     #
@@ -1924,7 +2131,7 @@ async def cleanup_dedicated(
                 "whatever is assigned. Recover with "
                 f"`{_change_io_slots_command(fixture, add=False)}`.",
             )
-            return
+            return None
         st, data = await state.call(
             client,
             "hmc_run_command",
@@ -1942,7 +2149,7 @@ async def cleanup_dedicated(
                 f"`{_change_io_slots_command(fixture, add=False)}` then delete "
                 f"{fixture.lpar_name!r}. Error: {str(data)[:400]}",
             )
-            return
+            return None
         after = await _read_profile_io_slots(client, state, fixture)
         if after != fixture.baseline_io_slots:
             state.record(
@@ -1954,7 +2161,7 @@ async def cleanup_dedicated(
                 f"{fixture.baseline_io_slots!r}; the partition was not deleted. "
                 f"Reconcile {fixture.lpar_name!r} by hand.",
             )
-            return
+            return None
         state.record(
             34,
             "dedicated cleanup: slot removed",
@@ -1977,7 +2184,7 @@ async def cleanup_dedicated(
             f"{fixture.run_marker!r} / {fixture.lpar_uuid!r}. The partition was "
             "NOT deleted; remove it by hand after confirming what it is.",
         )
-        return
+        return None
     # `_read_dedicated_state` already fetched the profile, so this clause is
     # free — and without it the "refuse the delete while the profile differs
     # from the baseline" rule is enforced only at Guard A's earlier read.
@@ -1999,7 +2206,7 @@ async def cleanup_dedicated(
             "changed it after this run's last check. The partition was NOT "
             "deleted, because deleting it would strand whatever is assigned.",
         )
-        return
+        return None
 
     # Act on the identity Guard C just verified. `hmc_delete_lpar` accepts a
     # UUID or a name; deleting by name would re-resolve the name and reopen
@@ -2023,6 +2230,7 @@ async def cleanup_dedicated(
             f"{arm.system_name!r} still exists and must be deleted by hand. "
             f"Its slot assignment was already removed. Error: {str(data)[:400]}",
         )
+    return st
 
 
 async def exercise_dedicated_pcie_assignment(
@@ -2053,8 +2261,78 @@ async def exercise_dedicated_pcie_assignment(
         # before cleaning up — it may hold the slot. A create that never happened has
         # nothing to clean up, and calling cleanup then would emit a
         # manual-recovery row for a partition that does not exist.
+        deleted = None
         if fixture.created or fixture.probe_created:
-            await cleanup_dedicated(client, state, fixture)
+            deleted = await cleanup_dedicated(client, state, fixture)
+        clean = False
+        if deleted is not None:
+            absent = await name_absent(client, state, fixture)
+            clean = absent and not fixture.probe_created
+            state.record_verified(
+                34,
+                "hmc_delete_lpar (verified)",
+                operation="lpar.delete",
+                scenario=_DEDICATED_SCENARIO,
+                assertions=[
+                    Assertion("delete-call-succeeded", deleted == "PASS"),
+                    Assertion("lpar-name-absent", absent),
+                ],
+                cleanup="not-required",
+                data=f"lpar={fixture.lpar_name!r} delete status {deleted}",
+            )
+        _record_dedicated_additions(state, fixture, clean)
+
+
+def _record_dedicated_additions(
+    state: RunState, fixture: _DedicatedFixture, clean: bool
+) -> None:
+    """Record each slot addition once the teardown has decided its cleanup.
+
+    Cleanup is `passed` only when the fixture delete was confirmed by absence
+    and no probe partition remains: an addition whose partition survives is not
+    one this run undid.
+    """
+    cleanup = "passed" if clean else "failed"
+    if (held := fixture.evidence.get("assign")) is not None:
+        state.record_verified(
+            31,
+            "hmc_assign_dedicated_pcie_slot (verified)",
+            operation="pcie.assign_dedicated_slot",
+            scenario=_DEDICATED_SCENARIO,
+            assertions=[
+                Assertion("assign-call-succeeded", held[0]),
+                Assertion("profile-lists-slot", held[1]),
+            ],
+            cleanup=cleanup,
+            data=f"drc_index={fixture.drc_index!r}",
+        )
+    if (held := fixture.evidence.get("io-slots-add")) is not None:
+        state.record_verified(
+            36,
+            "hmc_assign_dedicated_pcie_slot (io-slots)",
+            operation="pcie.assign_dedicated_slot",
+            scenario=_IO_SLOTS_SCENARIO,
+            assertions=[
+                Assertion("zero-suffix-add-accepted", held[0]),
+                Assertion("added-slot-renders-none-pool", held[1]),
+                Assertion("other-slots-stable-on-add", held[2]),
+            ],
+            cleanup=cleanup,
+            data="third slot added through the operation (#912)",
+        )
+    if (held := fixture.evidence.get("reassign")) is not None:
+        state.record_verified(
+            33,
+            "chsyscfg-io-slots-add",
+            operation="command.run",
+            scenario=_DEDICATED_SCENARIO,
+            assertions=[
+                Assertion("add-command-succeeded", held[0]),
+                Assertion("profile-lists-slot", held[1]),
+            ],
+            cleanup=cleanup,
+            data=f"drc_index={fixture.drc_index!r}",
+        )
 
 
 async def _exercise_dedicated_steps(
@@ -2084,10 +2362,254 @@ async def _exercise_dedicated_steps(
         unassign_ok = False
 
     if unassign_ok:
-        await reassign_dedicated_slot(client, state, fixture)
+        if await reassign_dedicated_slot(client, state, fixture):
+            await _io_slots_scenario(client, state, fixture)
     else:
         state.skip(
             33,
             "chsyscfg io_slots+ (reassign)",
             f"skipping reassign: unassign_ok={unassign_ok}",
         )
+
+
+# ---------------------------------------------------------------------------
+# io_slots scenario — ST36, inside the dedicated arm (#912)
+# ---------------------------------------------------------------------------
+
+
+def _io_slot_elements(io_slots: str) -> list[str]:
+    """The admitted value's `drc/pool/is_required` elements, in their read order."""
+    return [] if io_slots == "none" else io_slots.split(",")
+
+
+def _listed_drcs(io_slots: str) -> list[str]:
+    return [element.split("/", 1)[0] for element in _io_slot_elements(io_slots)]
+
+
+async def _spare_slots(
+    client: Client, state: RunState, fixture: _DedicatedFixture
+) -> list[str] | None:
+    """Unowned slots no profile lists, other than the arm's — the ST29 guards (#916).
+
+    Read fresh rather than reused from ST29, whose selection is minutes old by
+    now. None when either read fails, which rules every slot out.
+    """
+    arm = fixture.config
+    st, data = await state.call(
+        client, "hmc_list_dedicated_pcie_slots", system_name_or_uuid=arm.system_name
+    )
+    if st != "PASS" or not isinstance(data, dict):
+        return None
+    st, table = await state.call(
+        client, "hmc_run_command", cmd=profile_io_slot_rows_command(arm.system_name)
+    )
+    if st != "PASS" or not isinstance(table, str):
+        return None
+    try:
+        profile_rows = parse_profile_io_slot_rows(table)
+    except HMCCLIError:
+        return None
+    return [
+        str(row.get("drc_index"))
+        for row in data.get("items") or []
+        if isinstance(row, dict)
+        and _slot_unowned(row)
+        and row.get("drc_index") != fixture.drc_index
+        and not _profile_lists_slot(profile_rows, str(row.get("drc_index")))
+    ]
+
+
+async def _io_slots_scenario(
+    client: Client, state: RunState, fixture: _DedicatedFixture
+) -> None:
+    """Answer #912 on the fixture: `//0` add and remove, rendering, stability, `none`.
+
+    Runs after the reassign, with the profile at exactly the arm's one slot A.
+    Adds B with `is_required=1`, adds and removes C through the operations,
+    removes B with `//0`, then A. A restore removes whatever of B and C is still
+    listed; the dedicated cleanup handles A as it always does.
+    """
+    print("\n=== ST36: io_slots grammar (issue #912) ===")
+    slot_a = str(fixture.drc_index)
+    if fixture.config.drc_index is not None:
+        state.skip(
+            36,
+            "io_slots scenario",
+            "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX pins the arm to one slot and the "
+            "scenario needs two more; a pinned run mutates only the slot it names — "
+            "SKIP io_slots scenario",
+        )
+        return
+    if fixture.baseline_io_slots != "none" or fixture.applied_io_slots != f"{slot_a}/none/0":
+        state.skip(
+            36,
+            "io_slots scenario",
+            f"the fixture profile is not the empty baseline plus {slot_a}/none/0 "
+            f"(baseline={fixture.baseline_io_slots!r} applied="
+            f"{fixture.applied_io_slots!r}) — SKIP io_slots scenario",
+        )
+        return
+    spares = await _spare_slots(client, state, fixture)
+    if spares is None or len(spares) < 2:
+        state.skip(
+            36,
+            "io_slots scenario",
+            "fewer than two further slots are unowned and listed by no profile "
+            f"(found {spares!r}) — SKIP io_slots scenario",
+        )
+        return
+    slot_b, slot_c = spares[:2]
+    try:
+        await _io_slots_steps(client, state, fixture, slot_b, slot_c)
+    finally:
+        await _restore_io_slots(client, state, fixture, ((slot_c, False), (slot_b, True)))
+
+
+async def _io_slots_steps(
+    client: Client,
+    state: RunState,
+    fixture: _DedicatedFixture,
+    slot_b: str,
+    slot_c: str,
+) -> None:
+    """The five #912 steps; any failed step returns and leaves the rest to the restore."""
+    arm = fixture.config
+    slot_a = str(fixture.drc_index)
+    st, data = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=_change_io_slots_command(fixture, add=True, drc_index=slot_b, required=True),
+    )
+    populated = await _read_profile_io_slots(client, state, fixture)
+    setup_ok = st == "PASS" and populated is not None and sorted(
+        _io_slot_elements(populated)
+    ) == sorted([f"{slot_a}/none/0", f"{slot_b}/none/1"])
+    state.record(
+        36,
+        "io_slots setup (is_required=1 element)",
+        "PASS" if setup_ok else "FAIL",
+        data if st != "PASS" else f"io_slots={populated!r}",
+    )
+    if not setup_ok or populated is None:
+        return
+
+    # A lost response has still written, so each readback decides.
+    st, data = await state.call(
+        client,
+        "hmc_assign_dedicated_pcie_slot",
+        system_name_or_uuid=arm.system_name,
+        lpar_name_or_uuid=fixture.lpar_name,
+        profile_name=arm.profile_name,
+        drc_index=slot_c,
+    )
+    state.record(36, "hmc_assign_dedicated_pcie_slot (io-slots call)", st, data)
+    added = await _read_profile_io_slots(client, state, fixture)
+    elements = _io_slot_elements(added) if added is not None else []
+    rendered_c = [element for element in elements if element.split("/", 1)[0] == slot_c]
+    held = (
+        st == "PASS" and bool(rendered_c),
+        rendered_c == [f"{slot_c}/none/0"],
+        added is not None
+        and [e for e in elements if e not in rendered_c] == _io_slot_elements(populated),
+    )
+    fixture.evidence["io-slots-add"] = held
+    if not all(held):
+        return
+
+    st, data = await state.call(
+        client,
+        "hmc_unassign_dedicated_pcie_slot",
+        system_name_or_uuid=arm.system_name,
+        lpar_name_or_uuid=fixture.lpar_name,
+        profile_name=arm.profile_name,
+        drc_index=slot_c,
+    )
+    removed = await _read_profile_io_slots(client, state, fixture)
+    c_removed = st == "PASS" and removed is not None and slot_c not in _listed_drcs(removed)
+    state.record_verified(
+        36,
+        "hmc_unassign_dedicated_pcie_slot (io-slots)",
+        operation="pcie.unassign_dedicated_slot",
+        scenario=_IO_SLOTS_SCENARIO,
+        assertions=[
+            Assertion("zero-suffix-remove-accepted", c_removed),
+            Assertion("other-slots-stable-on-remove", removed == populated),
+        ],
+        cleanup="not-required",
+        data=data if st != "PASS" else f"io_slots={removed!r} before add={populated!r}",
+    )
+    if not c_removed or removed != populated:
+        return
+
+    st, data = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=_change_io_slots_command(fixture, add=False, drc_index=slot_b),
+    )
+    remaining = await _read_profile_io_slots(client, state, fixture)
+    b_removed = st == "PASS" and remaining is not None and slot_b not in _listed_drcs(remaining)
+    state.record_verified(
+        36,
+        "chsyscfg-io-slots-remove-required",
+        operation="command.run",
+        scenario=_IO_SLOTS_SCENARIO,
+        assertions=[
+            Assertion("required-slot-removed-by-zero-suffix", b_removed),
+            Assertion("remaining-slot-stable", remaining == f"{slot_a}/none/0"),
+        ],
+        cleanup="not-required",
+        data=data if st != "PASS" else f"io_slots={remaining!r}",
+    )
+    if not b_removed or remaining != f"{slot_a}/none/0":
+        return
+
+    st, data = await state.call(
+        client, "hmc_run_command", cmd=_change_io_slots_command(fixture, add=False)
+    )
+    emptied = await _read_profile_io_slots(client, state, fixture)
+    state.record_verified(
+        36,
+        "chsyscfg-io-slots-remove-last",
+        operation="command.run",
+        scenario=_IO_SLOTS_SCENARIO,
+        assertions=[
+            Assertion("remove-command-succeeded", st == "PASS"),
+            Assertion("empty-profile-reads-none", emptied == "none"),
+        ],
+        cleanup="not-required",
+        data=data if st != "PASS" else f"io_slots={emptied!r}",
+    )
+
+
+async def _restore_io_slots(
+    client: Client,
+    state: RunState,
+    fixture: _DedicatedFixture,
+    written: tuple[tuple[str, bool], ...],
+) -> None:
+    """Remove each scenario slot still listed, with the suffix its readback renders.
+
+    Not `//0` throughout: whether `//0` removes an `is_required=1` element is
+    the question step 4 asks, so the restore must not depend on its answer. An
+    unreadable profile proves nothing, so every slot is removed with the suffix
+    it was written with; removing an absent one only fails.
+    """
+    current = await _read_profile_io_slots(client, state, fixture)
+    rendered = (
+        {element.split("/", 1)[0]: element for element in _io_slot_elements(current)}
+        if current is not None
+        else None
+    )
+    for drc_index, required in written:
+        if rendered is not None:
+            if drc_index not in rendered:
+                continue
+            required = rendered[drc_index].endswith("/1")
+        st, data = await state.call(
+            client,
+            "hmc_run_command",
+            cmd=_change_io_slots_command(
+                fixture, add=False, drc_index=drc_index, required=required
+            ),
+        )
+        state.record(36, "io_slots restore (io_slots-)", st, data)

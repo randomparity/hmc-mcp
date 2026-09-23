@@ -9,6 +9,7 @@ from .assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
     apply_validated_lpar_pcie_assignments,
+    assignment_step_names,
     prevalidate_lpar_pcie_assignments,
 )
 from .core import LparCreation, create_and_stamp_lpar
@@ -32,11 +33,19 @@ async def create_lpar(
             raise
         raise translated from exc
     steps = [WorkflowStep("create", "ok", created.lpar)]
-    if created.lpar is None:
+    if created.apply_step is not None:
+        steps.append(created.apply_step)
+    # A failed apply stops the ordered workflow; the partition stays created.
+    apply_failed = created.apply_step is not None and created.apply_step.status == "error"
+    if apply_failed:
+        steps.extend(
+            WorkflowStep(name, "skipped") for name in assignment_step_names(assignments)
+        )
+    if created.lpar is None or apply_failed:
         return LparPcieWorkflowResult(
             True,
             False,
-            None,
+            created.lpar,
             created.ownership_stamped,
             tuple(steps),
             created.warnings,
