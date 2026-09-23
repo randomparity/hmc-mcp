@@ -10,6 +10,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- A `bare-cec` live-test arm, `scripts/live_bare_cec.py`. It creates a partition with explicit
+  processing units, assigns a dedicated slot through `hmc_assign_dedicated_pcie_slot`, records a
+  PowerOn that names no profile, and activates the partition to SMS against its own profile. It
+  then inspects that job, reads reference codes and captures the console. It runs the PowerOff
+  variants, unassigns the slot and deletes the partition. Each of its ten operations is recorded
+  as a promotable observation. It reuses the dedicated arm's `LIVE_TEST_DEDICATED_PCIE_*` keys and
+  requires `HMC_AUTHORIZE_POWER_OPERATIONS=true`. `LIVE_TEST_ACCEPT_PLATFORM_DUMP=true` opts into
+  the `dumprestart` step. A results document written before this key existed no longer restores
+  artifacts into a subset run; the runner warns and continues (#876).
+
 - `hmc_power_off_lpar`, `power_lpar` and `hmcpctl lpars power-off` accept the PowerOff job's
   `restart` and `operation` parameters. `operation` is a closed set — `shutdown`, `osshutdown`,
   `dumprestart` — refused before any XML is built; the vendor's fourth value `dumpretry` is

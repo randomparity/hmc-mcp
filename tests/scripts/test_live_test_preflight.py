@@ -274,6 +274,51 @@ def test_a_delimiter_in_an_arm_setting_is_predicted_skip(
     assert "SKIP" in capsys.readouterr().out
 
 
+def test_the_bare_cec_verdict_names_what_it_creates_and_powers(
+    workspace, monkeypatch, capsys
+):
+    (workspace / ".env").write_text(
+        _env_text(**_DEDICATED, LIVE_TEST_ACCEPT_PLATFORM_DUMP="true"), encoding="utf-8"
+    )
+    _credentials(monkeypatch)
+    monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "true")
+
+    assert preflight.main(["--group", "bare-cec", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "bare-cec   RUNNABLE" in output
+    assert "live-pcie-* (created, activated to SMS" in output
+    assert "21010020" in output
+    assert "platform dump: taken" in output
+
+
+@pytest.mark.parametrize(
+    ("overrides", "authorized", "reason"),
+    [
+        ({}, "true", "_LPAR_PREFIX must both be set"),
+        (_DEDICATED, "false", "HMC_AUTHORIZE_POWER_OPERATIONS must be true"),
+        (
+            {**_DEDICATED, "LIVE_TEST_ACCEPT_PLATFORM_DUMP": "maybe"},
+            "true",
+            "LIVE_TEST_ACCEPT_PLATFORM_DUMP must be true, false or unset",
+        ),
+    ],
+)
+def test_a_bare_cec_arm_the_arm_would_refuse_is_predicted_skip(
+    workspace, monkeypatch, capsys, overrides, authorized, reason
+):
+    """Each refusal is the arm's own admission, so the prediction must match it."""
+    (workspace / ".env").write_text(_env_text(**overrides), encoding="utf-8")
+    _credentials(monkeypatch)
+    monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", authorized)
+
+    assert preflight.main(["--group", "bare-cec", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "bare-cec   SKIP" in output
+    assert reason in output
+
+
 def test_every_arm_is_predicted_when_no_group_is_given(workspace, monkeypatch, capsys):
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
     _credentials(monkeypatch)
