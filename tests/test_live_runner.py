@@ -1201,6 +1201,7 @@ def test_failure_redaction_keeps_a_named_file_readable(filename):
         "lab_hmc01.example.com",
         "hmc01.lab_net.example.com",
         "_hmc.lab.example.com",
+        "hmc_.lab.example.com",
         "hmc-01.lab-a.example.com",
     ],
 )
