@@ -6,6 +6,8 @@ Configure a connection first using the [configuration guide](configuration.md).
 Use `hmcpctl --help` and `hmcpctl <group> --help` to discover commands and options.
 The [HMC CLI cheatsheet](hmc-cli-cheatsheet.md) covers the underlying IBM commands
 used over SSH; this guide covers the `hmcpctl` application.
+The [bare-CEC LPAR recipe](recipes/bare-cec-lpar.md) walks a dedicated-I/O partition from
+create to delete.
 
 ## CLI usage
 

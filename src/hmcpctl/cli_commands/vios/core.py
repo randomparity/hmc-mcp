@@ -51,6 +51,9 @@ def vios_power_on(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Power on a VIOS (submits a PowerOn job)."""
     validate_wait_timing(wait, timeout, interval)
@@ -61,7 +64,7 @@ def vios_power_on(
         lambda hmc: power_vios(
             hmc,
             name_or_uuid,
-            system_name_or_uuid=None,
+            system_name_or_uuid=system,
             power_on=True,
             wait=wait,
             timeout_seconds=timeout,
@@ -84,6 +87,9 @@ def vios_power_off(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Power off a VIOS (submits a PowerOff job)."""
     validate_wait_timing(wait, timeout, interval)
@@ -95,7 +101,7 @@ def vios_power_off(
         lambda hmc: power_vios(
             hmc,
             name_or_uuid,
-            system_name_or_uuid=None,
+            system_name_or_uuid=system,
             power_on=False,
             immediate=immediate,
             wait=wait,

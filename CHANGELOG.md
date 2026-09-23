@@ -10,6 +10,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
+  dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
+  unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
+  the v0.1.0 live window runs it (#877).
+
 - A `bare-cec` live-test arm, `scripts/live_bare_cec.py`. It creates a partition with explicit
   processing units, assigns a dedicated slot through `hmc_assign_dedicated_pcie_slot`, records a
   PowerOn that names no profile, and activates the partition to SMS against its own profile. It
@@ -115,6 +120,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
   parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
+
+- `hmcpctl lpars summary`, the LPM commands `lpars migrate`, `migrate-affinity`,
+  `migrate-validate`, `migrate-abort` and `migrate-recover`, and `hmcpctl vios power-on` /
+  `power-off` accept `--system/-s` and pass it to the operation as the managed system (the
+  migration source for the LPM commands). They hard-coded no scope, so a name lookup on a large
+  HMC could hit the 30 s parent-discovery bound with no way to narrow it (#946).
 
 - The `mksyscfg` create path used by `hmcpctl lpars create` and by `hmc_create_lpar`'s HTTP 406
   fallback no longer sends its 0.1 processing-unit default with more than one virtual processor.
