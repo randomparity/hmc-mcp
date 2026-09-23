@@ -65,7 +65,7 @@ Return values are unchanged: the first parsed entry of the POST response, or `No
    against an HMC it is authorized to mutate; V10R3 is the verified target.
 2. **Invariants and assets at stake** — existing virtual disks (guest data) and physical-volume
    membership of the target group (#779: an earlier VolumeGroup write destroyed PV metadata).
-   The POST is conditioned on `If-Match`; that the HMC enforces a mismatch is confirmed under
+   The POST is conditioned on `If-Match`; that the HMC enforces a mismatch is to be confirmed under
    #879 (live evidence shows only that a matching tag is accepted).
 3. **Accepted failure classes** —
    - An HMC that returns no `ETag` on the VolumeGroup GET cannot create or delete virtual disks
@@ -75,8 +75,8 @@ Return values are unchanged: the first parsed entry of the POST response, or `No
      is rejected at schema validation before any change, as both live rejections were.
    - Delete by omission (the whole-group POST without the disk) is not live-verified; live
      evidence covers the create. If the HMC merged rather than replaced the collection, delete
-     would return success with the disk still present. Confirmation belongs to #879; the POST
-     response body's shape is unrecorded, so no postcondition is checked against it.
+     would return success with the disk still present. Confirmation belongs to #879; a read-back
+     postcondition (re-GET and look for the disk) is deferred there too, not added here.
    - `ET` re-serialization of the fetched element (namespace prefixes, whitespace) is the same
      serialization the media operations already POST.
 4. **Covered elsewhere** — write-header strategy (#935); live confirmation (#879); builder
