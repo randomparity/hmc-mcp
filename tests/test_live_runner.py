@@ -3710,6 +3710,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     state = runner.RunState()
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     state.artifacts.vios_partition_id = 7
     state.artifacts.vdisk_size_mib = 2048
     state.artifacts.lp3_baseline = {
@@ -3768,8 +3769,35 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "dry_run": False,
     }
     assert calls[9][1] == {"lpar_name_or_uuid": state.config.lp3_name}
+    assert f"-vg {state.config.vdisk_volume_group_name} " in calls[5][1]["cmd"]
     assert calls[10][1] == {"lpar_name_or_uuid": state.config.lp3_name}
     assert state.artifacts.lp3_uuid == "recreated-lp3"
+
+
+@pytest.mark.asyncio
+async def test_storage_provisioning_refuses_untrusted_volume_group(monkeypatch):
+    """A restored vg_uuid not recorded for the configured group writes nothing."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "first-listed-vg"
+    state.artifacts.vdisk_vg_name = ""
+    state.artifacts.vios_partition_id = 7
+    state.artifacts.vdisk_size_mib = 2048
+    state.artifacts.lp3_baseline = {"pvid": 3101, "vios_slot": 11}
+
+    await runner.exercise_storage_provisioning(None, state)
+
+    assert calls == []
+    preflight = next(r for r in state.results if r["tool"] == "pre-flight check")
+    assert preflight["status"] == "FAIL"
+    assert "vg_uuid" in str(preflight)
 
 
 @pytest.mark.asyncio
