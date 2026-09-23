@@ -75,7 +75,10 @@ _RESOURCES: dict[str, Any] = {
 
 _JOB_TIMEOUT_S = 900
 _JOB_POLL_INTERVAL_S = 10
-_STATE_POLL_ATTEMPTS = 12
+#: Five minutes for a state to settle after its job completes. Unmeasured until
+#: the #879 window: a FAIL whose data shows `starting` may be this budget, not a
+#: refusal.
+_STATE_POLL_ATTEMPTS = 30
 _STATE_POLL_DELAY_S = 10.0
 
 _NOT_ACTIVATED = frozenset({"not activated"})
@@ -705,12 +708,29 @@ async def _unassign(client: Client, state: RunState, run: _Run) -> bool:
 
 
 async def _name_absent(client: Client, state: RunState, fixture: pcie._DedicatedFixture) -> bool:
-    st, data = await state.call(
-        client,
-        "hmc_get_lpar_description",
-        system_name_or_uuid=fixture.config.system_name,
-        lpar_name_or_uuid=fixture.lpar_name,
-    )
+    """Whether the fixture's name answers HSCL8012 after its delete.
+
+    Only a readable description carrying this run's marker means the partition
+    is still there. Any other answer — a lost connection, an SSH view lagging
+    the REST delete — is read once more after `pcie._ABSENCE_REREAD_DELAY_S`,
+    as `pcie._created_despite_failure` does (#906), before it is believed.
+    """
+
+    async def lookup() -> tuple[str, Any]:
+        return await state.call(
+            client,
+            "hmc_get_lpar_description",
+            system_name_or_uuid=fixture.config.system_name,
+            lpar_name_or_uuid=fixture.lpar_name,
+        )
+
+    st, data = await lookup()
+    if pcie.partition_not_found(st, data):
+        return True
+    if st == "PASS" and isinstance(data, str):
+        return False
+    await asyncio.sleep(pcie._ABSENCE_REREAD_DELAY_S)
+    st, data = await lookup()
     return pcie.partition_not_found(st, data)
 
 

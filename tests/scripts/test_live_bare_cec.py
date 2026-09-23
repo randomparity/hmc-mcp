@@ -638,6 +638,20 @@ def test_a_delete_whose_response_was_lost_is_judged_by_readback(schemas):
     _assert_torn_down(world)
 
 
+def test_a_transient_name_read_after_a_delete_is_re_read_not_alarmed(schemas):
+    world, state = World(), _state(schemas)
+    lost = iter([HMCCLIError("ssh: connection reset")])
+    world.overrides["hmc_get_lpar_description"] = lambda _k: (
+        _DEFAULT if world.created else next(lost, _DEFAULT)
+    )
+
+    _run(world, state)
+
+    assert _observations(state)["lpar.delete"]["result"] == "passed"
+    assert not any(row["subtask"] == 34 for row in state.results)
+    _assert_torn_down(world)
+
+
 def test_a_missing_profile_link_stops_before_assigning_and_deletes(schemas):
     world, state = World(), _state(schemas)
     world.overrides["hmc_get_lpar"] = lambda _k: {"UUID": _LPAR_UUID}
