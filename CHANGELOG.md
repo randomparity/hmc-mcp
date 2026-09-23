@@ -116,6 +116,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_create_virtual_disk`, `hmc_delete_virtual_disk` and `hmcpctl storage create-disk` /
+  `delete-disk` no longer POST a sparse `VolumeGroup` document, which V10R3 rejects at schema
+  validation and which omitted the group's existing disks and physical volumes. Both now read the
+  volume group, add or remove exactly one virtual disk, and write the whole group back with
+  `If-Match` set to the read's ETag. They refuse without writing when the read carries no ETag,
+  when create names a disk the group already holds, or when delete matches no disk or several; a
+  concurrent change between read and write fails with HTTP 412 and nothing written. Delete by
+  omission is not yet live-verified (#936).
+
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
   adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not

@@ -416,34 +416,16 @@ async def test_templates_mixin_routes_deployment_job():
 async def test_storage_mixin_routes_schema_sensitive_operations():
     client = StorageHarness()
     vios_uuid = "11111111-1111-1111-1111-111111111111"
-    vg_uuid = "22222222-2222-2222-2222-222222222222"
 
     assert client.get_lpar_link(UUID_A) == (
         f"https://hmc.test:12443/rest/api/uom/LogicalPartition/{UUID_A}"
     )
     assert await client.list_volume_groups(vios_uuid) == []
-    assert await client.create_virtual_disk(vios_uuid, vg_uuid, "disk", 1024) is None
 
-    assert client._get.await_count == 1
-    client._post.assert_awaited_once()
-    assert client._post.await_args.kwargs == {
-        "resource_type": "VolumeGroup",
+    assert client._get.await_args.kwargs == {
         "include_schema_version": False,
-        "uuid_path_arguments": {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-        "fallback_to_generic_uom_on_406": True,
+        "uuid_path_arguments": {"vios_uuid": vios_uuid},
     }
-
-
-@pytest.mark.asyncio
-async def test_storage_mixin_uses_active_base_for_volume_group_url():
-    client = StorageHarness()
-    client._get.return_value = '<VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>'
-
-    url, _ = await client._get_vg_raw_xml("vios-1", "vg-1")
-
-    assert url == (
-        "https://hmc.test:12443/rest/api/uom/VirtualIOServer/vios-1/VolumeGroup/vg-1"
-    )
 
 
 @pytest.mark.asyncio

@@ -1398,20 +1398,6 @@ async def test_create_volume_group(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_create_virtual_disk(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
-    ).mock(return_value=httpx.Response(200, text=VG_FEED))
-    route = mock_hmc.post(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
-    ).mock(return_value=httpx.Response(200, text=VG_ENTRY))
-    async with HMCClient(make_config()) as hmc:
-        await hmc.create_virtual_disk("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "lv_boot", 51200)
-    body = route.calls.last.request.content.decode()
-    assert "VirtualDisks" in body and "lv_boot" in body and "50" in body
-
-
-@pytest.mark.asyncio
 async def test_map_storage_to_lpar(mock_hmc):
     mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"

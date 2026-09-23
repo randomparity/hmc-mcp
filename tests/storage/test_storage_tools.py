@@ -361,11 +361,17 @@ def test_create_volume_group_declares_hmc_resource_result() -> None:
 
 
 def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
-    """hmc_create_virtual_disk POSTs a VolumeGroup doc with a VirtualDisk."""
+    """hmc_create_virtual_disk POSTs the fetched VolumeGroup with a new VirtualDisk."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
+    path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200, text=_feed(VG_UUID, "VolumeGroup"), headers={"ETag": '"etag-1"'}
+        )
+    )
+    route = mock_hmc.post(path).mock(
+        return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
+    )
     hmc_create_virtual_disk(VIOS_UUID, VG_UUID, "lv_boot", 51200)
     body = route.calls.last.request.content.decode()
     assert "<VirtualDisks" in body

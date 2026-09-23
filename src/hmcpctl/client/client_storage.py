@@ -21,14 +21,13 @@ from ..documents import (
     StorageKind,
     build_brokered_file_document,
     build_linked_optical_media_document,
-    build_virtual_disk_delete_document,
-    build_virtual_disk_document,
+    build_virtual_disk_element,
     build_virtual_optical_mapping_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
 )
 from ..errors import HMCError
-from ..xmlutil import element_to_dict
+from ..xmlutil import element_to_dict, localname
 from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
@@ -180,6 +179,43 @@ def mapping_lpar_uuid(mapping: Mapping[str, Any]) -> str | None:
 
 def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
     return mapping_lpar_uuid(mapping) == lpar_uuid
+
+
+def _children_named(parent: ET.Element, name: str) -> list[ET.Element]:
+    return [child for child in parent if localname(child.tag) == name]
+
+
+def _required_etag(etag: str | None) -> str:
+    """The GET's ETag; a virtual-disk write never falls back to an unconditional POST."""
+    if not etag:
+        raise HMCError(
+            "VolumeGroup GET returned no ETag; refusing a whole-group virtual-disk write "
+            "that could overwrite a concurrent change. Retry, and report the HMC version "
+            "if it persists."
+        )
+    return etag
+
+
+def _virtual_disks(vg_elem: ET.Element) -> ET.Element:
+    """The group's VirtualDisks collection, appended (last in the XSD) when absent."""
+    found = _children_named(vg_elem, "VirtualDisks")
+    if found:
+        return found[0]
+    disks = ET.SubElement(
+        vg_elem,
+        f"{{{_UOM_NS}}}VirtualDisks",
+        attrib={"kb": "CUD", "kxe": "false", "schemaVersion": "V1_0"},
+    )
+    ET.SubElement(ET.SubElement(disks, f"{{{_UOM_NS}}}Metadata"), f"{{{_UOM_NS}}}Atom")
+    return disks
+
+
+def _disks_named(disks: ET.Element, disk_name: str) -> list[ET.Element]:
+    return [
+        disk
+        for disk in _children_named(disks, "VirtualDisk")
+        if any(name.text == disk_name for name in _children_named(disk, "DiskName"))
+    ]
 
 
 class StorageMixin:
@@ -369,57 +405,57 @@ class StorageMixin:
     ) -> dict[str, Any] | None:
         """Create a Virtual Disk (logical volume) in a Volume Group.
 
-        The VolumeGroup POST endpoint returns HTTP 406 when X-HMC-Schema-Version
-        is present on some HMC firmware (same behaviour as the GET), so we omit
-        the schema-version header here.
+        Read-modify-write (#936): GET the whole VolumeGroup, insert the new
+        VirtualDisk after the VirtualDisks Metadata, and POST the whole element
+        back with If-Match set to the GET's ETag, so existing disks and physical
+        volumes are carried through unchanged. Refuses, without writing, a GET
+        with no ETag and a name the group already holds.
         """
 
         for argument, value in (("vios_uuid", vios_uuid), ("vg_uuid", vg_uuid)):
             if not _UUID_PATTERN.fullmatch(value):
                 raise ValueError(f"{argument} must be a UUID")
-        xml = build_virtual_disk_document(disk_name, capacity_mib)
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._reconcile_storage_mutation(
-            "create_virtual_disk",
-            lambda: self.get_volume_group(vios_uuid, vg_uuid),
-            lambda: self._post(
-                path,
-                xml,
-                resource_type="VolumeGroup",
-                include_schema_version=False,
-                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-                fallback_to_generic_uom_on_406=True,
-            ),
+        element = DET.fromstring(build_virtual_disk_element(disk_name, capacity_mib))
+        etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
+        etag = _required_etag(etag)
+        disks = _virtual_disks(vg_elem)
+        if _disks_named(disks, disk_name):
+            raise HMCError(
+                f"Virtual disk {disk_name!r} already exists in the volume group; "
+                "create does not replace it.",
+                409,
+            )
+        metadata = _children_named(disks, "Metadata")
+        disks.insert(list(disks).index(metadata[0]) + 1 if metadata else 0, element)
+        return await self._post_vg_xml(
+            vios_uuid, vg_uuid, vg_elem, operation="create_virtual_disk", etag=etag
         )
-        entries = _parse_feed(resp, path) if resp else []
-        return entries[0] if entries else None
 
     async def delete_virtual_disk(
         self: StorageClient, vios_uuid: str, vg_uuid: str, disk_name: str
     ) -> dict[str, Any] | None:
         """Delete a Virtual Disk (logical volume) from a Volume Group.
 
-        The VolumeGroup POST endpoint returns HTTP 406 when X-HMC-Schema-Version
-        is present on some HMC firmware (same behaviour as the GET), so we omit
-        the schema-version header here.
+        Read-modify-write (#936): GET the whole VolumeGroup, remove the one
+        VirtualDisk whose DiskName matches, and POST the whole element back with
+        If-Match set to the GET's ETag. Refuses, without writing, a GET with no
+        ETag and zero or several matching disks.
         """
 
-        xml = build_virtual_disk_delete_document(disk_name)
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._reconcile_storage_mutation(
-            "delete_virtual_disk",
-            lambda: self.get_volume_group(vios_uuid, vg_uuid),
-            lambda: self._post(
-                path,
-                xml,
-                resource_type="VolumeGroup",
-                include_schema_version=False,
-                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-                fallback_to_generic_uom_on_406=True,
-            ),
+        etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
+        etag = _required_etag(etag)
+        collections = _children_named(vg_elem, "VirtualDisks")
+        matches = _disks_named(collections[0], disk_name) if collections else []
+        if len(matches) != 1:
+            raise HMCError(
+                f"Refusing to delete virtual disk {disk_name!r}: the volume group holds "
+                f"{len(matches)} virtual disks with that name; expected exactly one.",
+                409 if matches else 404,
+            )
+        collections[0].remove(matches[0])
+        return await self._post_vg_xml(
+            vios_uuid, vg_uuid, vg_elem, operation="delete_virtual_disk", etag=etag
         )
-        entries = _parse_feed(resp, path) if resp else []
-        return entries[0] if entries else None
 
     async def map_storage_to_lpar(
         self: StorageClient,
@@ -595,20 +631,23 @@ class StorageMixin:
 
     async def _get_vg_raw_xml(
         self: StorageClient, vios_uuid: str, vg_uuid: str
-    ) -> tuple[str, ET.Element]:
-        """GET the full VolumeGroup XML and return (url, VolumeGroup element).
+    ) -> tuple[str | None, ET.Element]:
+        """GET the full VolumeGroup XML and return (ETag, VolumeGroup element).
 
         Parses the Atom feed to extract the single VolumeGroup element.
         The returned ET.Element is a copy with namespace prefixes re-registered
         so subsequent serialisation round-trips cleanly.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        raw = await self._get(
+        resp = await self._request_with_uuid_path_arguments(
+            "GET",
             path,
-            "VolumeGroup",
-            include_schema_version=False,
             uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
+            headers=self._uom_headers("VolumeGroup", include_schema_version=False),
         )
+        if resp.status_code not in (200, 204):
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        raw = resp.text if resp.status_code == 200 else ""
         if not raw:
             raise HMCError(f"GET {path} returned empty body", 200, "")
 
@@ -619,10 +658,18 @@ class StorageMixin:
         root = DET.fromstring(raw)
         # Firmware returns either an Atom-wrapped or bare VolumeGroup document.
         ns = {"atom": _ATOM_NS, "uom": _UOM_NS}
-        vg_elem = (
-            root.find(".//atom:entry/atom:content/uom:VolumeGroup", ns)
-            or root.find(".//uom:VolumeGroup", ns)
-            or root.find(".//VolumeGroup")
+        # Explicit None checks: an Element with no children is falsy.
+        vg_elem = next(
+            (
+                found
+                for pattern in (
+                    ".//atom:entry/atom:content/uom:VolumeGroup",
+                    ".//uom:VolumeGroup",
+                    ".//VolumeGroup",
+                )
+                if (found := root.find(pattern, ns)) is not None
+            ),
+            None,
         )
         if vg_elem is None:
             local = root.tag.split("}")[-1] if "}" in root.tag else root.tag
@@ -634,11 +681,16 @@ class StorageMixin:
                     200,
                     raw[:500],
                 )
-        url = f"{self._rest_base_url}{path}"
-        return url, vg_elem
+        return resp.headers.get("ETag"), vg_elem
 
     async def _post_vg_xml(
-        self: StorageClient, vios_uuid: str, vg_uuid: str, vg_elem: ET.Element
+        self: StorageClient,
+        vios_uuid: str,
+        vg_uuid: str,
+        vg_elem: ET.Element,
+        *,
+        operation: str = "update_virtual_media_repository",
+        etag: str | None = None,
     ) -> dict[str, Any] | None:
         """POST the serialised VolumeGroup element and return the parsed response.
 
@@ -655,6 +707,8 @@ class StorageMixin:
             "Accept": "*/*",
             "Content-Type": f"{MEDIA_UOM}; type=VolumeGroup",
         }
+        if etag:
+            headers["If-Match"] = etag
         body = ET.tostring(vg_elem, encoding="unicode", xml_declaration=False)
         async def dispatch() -> Any:
             resp = await self._request_with_uuid_path_arguments(
@@ -664,12 +718,19 @@ class StorageMixin:
                 content=body,
                 headers=headers,
             )
+            if resp.status_code == 412:
+                raise HMCError(
+                    f"POST {path} refused: the volume group changed since it was read "
+                    "(If-Match mismatch). Nothing was written; re-run the operation.",
+                    412,
+                    resp.text,
+                )
             if resp.status_code not in (200, 201, 202):
                 raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
             return resp
 
         resp = await self._reconcile_storage_mutation(
-            "update_virtual_media_repository",
+            operation,
             lambda: self._get(
                 path,
                 "VolumeGroup",
