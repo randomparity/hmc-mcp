@@ -50,6 +50,7 @@ import ast
 import asyncio
 import inspect
 import json
+import math
 import os
 import re
 import subprocess
@@ -270,6 +271,8 @@ class LiveTestConfig:
     scratch_create_max_memory_mib: int = 3072
     scratch_create_desired_vcpus: int = 3
     scratch_create_max_vcpus: int = 6
+    scratch_create_desired_procs: float = 0.3
+    scratch_create_max_procs: float = 0.6
     scratch_modify_desired_memory_mib: int = 2304
     scratch_modify_max_memory_mib: int = 4608
     dry_run_lpar_name: str = "example-lt-609-dry-run"
@@ -339,6 +342,8 @@ class LiveTestConfig:
         "LIVE_TEST_SCRATCH_CREATE_MAX_MEMORY_MIB": "scratch_create_max_memory_mib",
         "LIVE_TEST_SCRATCH_CREATE_DESIRED_VCPUS": "scratch_create_desired_vcpus",
         "LIVE_TEST_SCRATCH_CREATE_MAX_VCPUS": "scratch_create_max_vcpus",
+        "LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS": "scratch_create_desired_procs",
+        "LIVE_TEST_SCRATCH_CREATE_MAX_PROCS": "scratch_create_max_procs",
         "LIVE_TEST_SCRATCH_MODIFY_DESIRED_MEMORY_MIB": "scratch_modify_desired_memory_mib",
         "LIVE_TEST_SCRATCH_MODIFY_MAX_MEMORY_MIB": "scratch_modify_max_memory_mib",
         "LIVE_TEST_DRY_RUN_LPAR_NAME": "dry_run_lpar_name",
@@ -441,6 +446,8 @@ class LiveTestConfig:
                     )
                 ):
                     parsed[cls._CONFIG_FIELDS[key]] = int(values[key])
+                elif key.endswith("_PROCS"):
+                    parsed[cls._CONFIG_FIELDS[key]] = float(values[key])
             parsed["sriov_capacity_percent"] = float(
                 values["LIVE_TEST_SRIOV_CAPACITY_PERCENT"]
             )
@@ -479,8 +486,14 @@ class LiveTestConfig:
             "vlan_range_start",
             "vlan_range_end",
         )
-        # sriov_physical_port_id must be non-negative (>= 0).
         invalid = [name for name in positive_fields if parsed[name] <= 0]
+        # Processing units are floats, and `nan` would slip past a `<= 0` test.
+        invalid += [
+            name
+            for name in ("scratch_create_desired_procs", "scratch_create_max_procs")
+            if not 0 < parsed[name] < math.inf
+        ]
+        # sriov_physical_port_id must be non-negative (>= 0).
         if parsed["sriov_physical_port_id"] < 0:
             invalid.append("sriov_physical_port_id")
         if not parsed["protected_lpar_names"]:
@@ -497,6 +510,8 @@ class LiveTestConfig:
             > parsed["scratch_create_max_memory_mib"]
             or parsed["scratch_create_desired_vcpus"]
             > parsed["scratch_create_max_vcpus"]
+            or parsed["scratch_create_desired_procs"]
+            > parsed["scratch_create_max_procs"]
             or parsed["scratch_modify_desired_memory_mib"]
             > parsed["scratch_modify_max_memory_mib"]
             or not (

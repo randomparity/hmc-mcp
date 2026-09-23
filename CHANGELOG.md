@@ -144,6 +144,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   A fractional count, or a shared-only `sharing_mode` (`capped`, `uncapped`), is refused before
   `mksyscfg` runs (#948).
 
+- The live-test scratch LPAR create (ST8) passes explicit processing units, so its multi-vCPU
+  create is no longer refused on the `mksyscfg` fallback. `.env` now requires
+  `LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS` and `LIVE_TEST_SCRATCH_CREATE_MAX_PROCS`: finite,
+  positive, desired no greater than max. A results document written before these keys existed
+  no longer restores artifacts into a later run; the runner warns and continues (#947).
+
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The
   check used to pass on `V10R3 M1060` anywhere in the output — a later service pack that still
