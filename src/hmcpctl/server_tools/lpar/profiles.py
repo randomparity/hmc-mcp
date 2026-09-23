@@ -189,11 +189,19 @@ def hmc_assign_dedicated_pcie_slot(
 ) -> None:
     """Assign a dedicated PCIe slot when safe profile readback is available.
 
+    Refuses outside the ADR 0165 envelope (HMC V10R3 M1060 on managed-system model
+    8375-42A, matched exactly). The target LPAR must be in the 'Not Activated' state;
+    on any other state this tool refuses rather than mutate a profile whose change
+    would not take effect. Also refuses when another LPAR's profile already lists
+    the slot, since two partitions listing the same slot would contend for it at
+    activation.
+
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         lpar_name_or_uuid: The name or UUID of the logical partition to assign the slot to.
         profile_name: The name of the profile to modify.
-        drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O slot.
+        drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O
+            slot, exactly eight uppercase hexadecimal digits (e.g. "21010003").
         ownership_override: Bypass ownership rejection only after operator approval.
         profile: Optional configured HMC profile name.
     """
@@ -222,11 +230,19 @@ def hmc_unassign_dedicated_pcie_slot(
 ) -> None:
     """Unassign a dedicated PCIe slot when safe profile readback is available.
 
+    Refuses outside the ADR 0165 envelope (HMC V10R3 M1060 on managed-system model
+    8375-42A, matched exactly). The target LPAR must be in the 'Not Activated' state;
+    on any other state this tool refuses rather than mutate a profile whose change
+    would not take effect. Unlike assign, this operation does not refuse when
+    another LPAR's profile also lists the slot — that check only guards adding a
+    new listing.
+
     Args:
         system_name_or_uuid: Managed-system name or UUID.
         lpar_name_or_uuid: Logical-partition name or UUID.
         profile_name: LPAR profile containing the dedicated slot.
-        drc_index: Normalized dedicated-slot DRC index.
+        drc_index: Normalized dedicated-slot DRC index, exactly eight uppercase
+            hexadecimal digits (e.g. "21010003").
         ownership_override: Bypass ownership rejection only after operator approval.
         profile: Optional configured HMC profile name.
     """
