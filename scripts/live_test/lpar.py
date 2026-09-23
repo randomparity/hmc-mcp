@@ -158,7 +158,7 @@ def _unrestorable_description(text: str) -> str | None:
     Defers to the server's own validator rather than restating its rules, so a
     baseline description the CLI cannot round-trip (non-ASCII, a control
     character, or a character the HMC's ``-i`` attribute record treats as
-    structure — ADR 0045) is skipped rather than failing the restore.
+    structure — ADR 0045) is refused before the restore call is attempted.
     """
     if not text:
         return None
@@ -178,17 +178,27 @@ def _baseline_description(state: RunState) -> str:
 
 
 async def _restore_description(client: Client, state: RunState, scenario: int) -> None:
-    """Restore the captured description when the CLI can represent it."""
+    """Restore the captured description, or fail with a manual-recovery row.
+
+    The baseline carries the partition's ownership stamp, so a description the
+    CLI cannot write back is a FAIL, not a SKIP: every ownership-guarded command
+    refuses the partition until someone restores it (#968).
+    """
     description = _baseline_description(state)
     blocked = _unrestorable_description(description)
+    config = state.config
     if blocked:
-        state.skip(
+        state.record(
             scenario,
             "hmc_set_lpar_description (restore)",
-            f"original description cannot be restored via CLI: {blocked}",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: partition {config.lp3_name!r} keeps the ST{scenario} "
+            f"probe description; the original {description!r} cannot be written back via "
+            f"CLI ({blocked}). Restore it by hand: chsyscfg -r lpar -m {config.system_name} "
+            f'-i "name={config.lp3_name},description=<original>", or through the HMC GUI '
+            "where the CLI record cannot carry it",
         )
         return
-    config = state.config
     status, data = await state.call(
         client,
         "hmc_set_lpar_description",
