@@ -48,7 +48,6 @@ ResourceKind = Literal[
     "sriov_logical_port",
 ]
 SRIOV_UNAVAILABLE_REASON = "ADR 0053 admits selectors but no SR-IOV read projection"
-_ADMITTED_HMC_RELEASE = "V10R3 M1060"
 _ADMITTED_SYSTEM_MODEL = "8375-42A"
 PCIE_ASSIGNMENT_UNAVAILABLE_REASON = (
     "dedicated PCIe profile assignment is admitted only for HMC V10R3 M1060 "

@@ -25,10 +25,13 @@ def adapters_list(
         "ClientNetworkAdapter", "--type", "-t", help=_ADAPTER_TYPES
     ),
     as_json: bool = typer.Option(False, "--json"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """List an LPAR's virtual adapters of a given type."""
 
-    adapters = with_client(lambda hmc: list_adapters(hmc, None, lpar, adapter_type))
+    adapters = with_client(lambda hmc: list_adapters(hmc, system, lpar, adapter_type))
 
     output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
@@ -48,6 +51,9 @@ def adapters_add_network(
     mac: str | None = typer.Option(None, "--mac", help="Pin the MAC address"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Add a Virtual Ethernet (network) adapter to an LPAR."""
 
@@ -55,7 +61,7 @@ def adapters_add_network(
         raise typer.Abort()
 
     result = with_client(
-        lambda hmc: add_network_adapter(hmc, None, lpar, vlan, slot_number=slot,
+        lambda hmc: add_network_adapter(hmc, system, lpar, vlan, slot_number=slot,
             virtual_switch_id=virtual_switch_id, tagged=tagged, mac_address=mac,
             ownership_override=ownership_override)
     )
@@ -71,6 +77,9 @@ def adapters_add_vscsi(
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Add a Virtual SCSI client adapter, paired to a VIOS."""
 
@@ -80,7 +89,7 @@ def adapters_add_vscsi(
         raise typer.Abort()
 
     result = with_client(lambda hmc: add_vscsi_adapter(
-        hmc, None, lpar, vios_id, vios_slot, slot_number=slot,
+        hmc, system, lpar, vios_id, vios_slot, slot_number=slot,
         ownership_override=ownership_override))
     _adapter_mutation(result, lpar, "vSCSI")
 
@@ -94,6 +103,9 @@ def adapters_add_vfc(
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""
 
@@ -103,7 +115,7 @@ def adapters_add_vfc(
         raise typer.Abort()
 
     result = with_client(lambda hmc: add_vfc_adapter(
-        hmc, None, lpar, vios_id, vios_slot, slot_number=slot,
+        hmc, system, lpar, vios_id, vios_slot, slot_number=slot,
         ownership_override=ownership_override))
     _adapter_mutation(result, lpar, "vFC")
 
@@ -116,6 +128,9 @@ def adapters_delete(
     ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Remove a virtual adapter from an LPAR."""
 
@@ -125,7 +140,7 @@ def adapters_delete(
         raise typer.Abort()
 
     deleted_uuid = with_client(lambda hmc: delete_adapter(
-        hmc, None, lpar, adapter_type, adapter_uuid,
+        hmc, system, lpar, adapter_type, adapter_uuid,
         ownership_override=ownership_override))
 
     console.print(f"[green]Deleted {adapter_type} {deleted_uuid}[/green] from {lpar}")

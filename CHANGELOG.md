@@ -101,6 +101,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage attach-disk` and every `hmcpctl adapters` subcommand (`list`, `add-network`,
+  `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
+  way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
+  parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
+
+- The `mksyscfg` create path used by `hmcpctl lpars create` and by `hmc_create_lpar`'s HTTP 406
+  fallback no longer sends its 0.1 processing-unit default with more than one virtual processor.
+  The HMC rejected that profile with HSCL0622. On that path, a create with `--vcpus` or
+  `--min-vcpus` above 1 now needs `--procs` or `--min-procs` (`desired_procs` / `min_procs`),
+  and without them it is refused before `mksyscfg` runs. The refusal includes two virtual
+  processors, a count some platforms may accept at 0.1 units, because the per-processor minimum
+  is not recorded here (#938).
+
 - SR-IOV and vNIC operations admit an HMC only when `lshmc -V` reports exactly Version 10,
   Release 3 and Service Pack 1060, the fields the dedicated PCIe gate already matched. The
   check used to pass on `V10R3 M1060` anywhere in the output — a later service pack that still
@@ -180,6 +193,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   readable; every multi-label name, and any name ending in a real TLD such as `.py` or `.md`,
   is still redacted (#914).
 
+- The live-test runner's failure redactor now replaces a hostname whose labels contain an
+  underscore in full. `lab_hmc01.example.com` was printed as `lab_hmc01.<REDACTED-HOST>`,
+  leaving the label that names the machine readable (#927). Dotted identifiers containing an
+  underscore, such as a module path or `test_live_runner.py`, are now redacted too.
+
 - The live-test dedicated PCIe arm no longer takes a single HSCL8012 ("partition not found")
   after a failed create as proof that nothing was created. It re-reads once after a short delay
   and confirms absence only on a second HSCL8012, so a partition whose create was still in
@@ -200,6 +218,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   unowned in inventory and listed by no profile, read with the admitted profile table, and
   SKIPs with the reason when none qualifies or the table cannot be read. Preflight predicts the
   same rule (#916).
+
+- The live-test dedicated PCIe arm's admitted-environment gate (ST29) no longer matches the
+  HMC release by substring. It now uses the product's exact `lshmc -V` Version, Release and
+  Service Pack comparison (ADR 0166), so a later service pack such as `10600`, or one whose
+  output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
+  on an environment the repository does not admit (#928).
 
 ### Changed
 
@@ -695,6 +719,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_unmount_optical_media`. The exposed tool count drops from 148 to 147.
 
 ### Documentation
+
+- Every generated `docs/tools/` page now states that its Summary column is the first line of
+  each tool's MCP description, and that the complete text — including the conditions under which
+  a tool refuses — is the handler's docstring under `src/hmcpctl/server_tools/`. `tools/list`
+  carries that docstring's prose and, in the input schema, its argument detail, but not its
+  `Returns:` or `Raises:` sections (ADR 0097, #929).
 
 - ADR 0096 records the decision behind `HMCConfig.from_mapping` and why documentation alone was
   not enough (#368). `AGENTS.md` no longer teaches `HMCConfig(_env_file=None)` as the

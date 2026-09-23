@@ -124,8 +124,11 @@ _SECRET_VALUE_RE = re.compile(
     r"(?P=quote)"
 )
 _URL_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s@]+@")
+#: Labels admit `_` (#927). It is a word character, so without it `\b` cannot fire
+#: inside an underscore label: the match began at the next dot-separated label and
+#: left every label up to the underscore one readable, or missed a two-label name.
 _HOSTNAME_RE = re.compile(
-    r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b"
+    r"(?i)\b(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63}\b"
 )
 #: A single-dot `name.ext` with one of these extensions is a filename, not a
 #: host (#914). None is an IANA TLD — `.py`, `.md`, `.sh` and `.zip` are, so
