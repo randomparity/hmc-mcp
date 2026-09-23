@@ -138,7 +138,7 @@ async def _create_and_confirm_vmedia_repository(
     state.record(16, "hmc_get_media_repository (pre-existing)", st, data)
     if st != "PASS" or data:
         reason = (
-            "a repository already exists; not created by the live test"
+            "a repository already exists; this invocation did not create it"
             if st == "PASS"
             else "cannot confirm that no repository exists"
         )
