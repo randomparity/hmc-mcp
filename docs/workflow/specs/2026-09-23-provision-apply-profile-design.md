@@ -52,5 +52,9 @@ CLI option, MCP parameter or tool-docs change.
   (no apply call, no step). Green: `uv run --no-sync pytest tests/lpar/test_provision_tool.py`.
 - Success 2: `focused-test`, same file, apply raising `HMCCLIError`; red before the change
   (network runs). Same green command.
-- Success 3: `focused-test`, existing REST-path tests plus an assertion that no
-  `apply_profile` step appears in the full-workflow test.
+- Success 3: `focused-test`, same file, REST create: apply not awaited, no `apply_profile` step;
+  existing REST-path tests stay green.
+- No-UUID create with an apply step: `focused-test`, same file, `create`, `apply_profile`, then
+  each remaining step `skipped` once. Same green command.
+- Follow-up candidate: #939's apply-error warning says to redo "assignment steps"; in provision
+  it also skips network, vSCSI, storage and power-on (`operations/lpar/core.py`).
