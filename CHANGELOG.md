@@ -201,6 +201,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   SKIPs with the reason when none qualifies or the table cannot be read. Preflight predicts the
   same rule (#916).
 
+- The live-test dedicated PCIe arm's admitted-environment gate (ST29) no longer matches the
+  HMC release by substring. It now uses the product's exact `lshmc -V` Version, Release and
+  Service Pack comparison (ADR 0166), so a later service pack such as `10600`, or one whose
+  output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
+  on an environment the repository does not admit (#928).
+
 ### Changed
 
 - The distribution, console script, Python package and configuration directory are renamed

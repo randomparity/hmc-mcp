@@ -11,8 +11,9 @@ the io_slots profile grammar this arm issues has only been probed on a Power8
 documentation row and must not be executed on an unidentified environment.
 Configuration is required — no fallback to an arbitrary system.
 
-Admitted environment (ADR 0053 / operations/virtualization/pcie.py):
-  HMC V10R3 M1060 · managed-system model 8375-42A
+Admitted environment (ADR 0053; matched exactly per ADR 0166 decision 3 by
+operations/virtualization/pcie.py `_is_exact_admitted_environment`):
+  `lshmc -V` Version 10 · Release 3 · Service Pack 1060 · managed-system model 8375-42A
 
 SR-IOV test structure (ST23–ST28):
   ST23 — Baseline: read adapter/physport/logport inventory; confirm lp3 profile is clean
@@ -60,12 +61,13 @@ from fastmcp import Client
 
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 
-# These two are imported rather than restated so the arm's SKIP envelope cannot
-# drift from the one require_admitted_environment enforces for the SR-IOV path;
-# a copied literal would go stale silently the first time the admitted release moves.
+# Imported rather than restated so the arm's SKIP envelope cannot drift from the one
+# the product's admission gates enforce (ADR 0166 decision 3); a copied predicate or
+# literal would go stale silently the first time the admitted release moves.
 from hmcpctl.operations.virtualization.pcie import (
-    _ADMITTED_HMC_RELEASE,
+    _ADMITTED_RELEASE_FIELDS,
     _ADMITTED_SYSTEM_MODEL,
+    _is_exact_admitted_environment,
 )
 from hmcpctl.ssh.commands import build_attribute_record
 from hmcpctl.ssh.profiles import (
@@ -852,22 +854,6 @@ def _dedicated_state_summary(s: _DedicatedState) -> str:
     )
 
 
-def _environment_admitted(version: str, model: str) -> bool:
-    """Whether this HMC release and system model are the ADR 0053-admitted pair.
-
-    The same normalized comparison ``operations/virtualization/pcie.py`` applies in
-    ``require_admitted_environment``: the arm mutates through raw profile
-    grammar rather than through that operation, so nothing else enforces the
-    envelope on this path.
-    """
-    normalized = " ".join(version.split()).lower()
-    admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
-        marker in normalized
-        for marker in ("version: 10", "release: 3", "service pack: 1060")
-    )
-    return admitted and model == _ADMITTED_SYSTEM_MODEL
-
-
 def select_profile_io_slots(output: str, lpar_name: str, profile_name: str) -> str:
     """Return one profile's exact `io_slots` from the ADR 0165-admitted readback.
 
@@ -1005,7 +991,7 @@ async def _read_dedicated_state(
 async def _admit_dedicated_environment(
     client: Client, state: RunState, config: _DedicatedConfig
 ) -> bool:
-    """Record the HMC release and system model; admit only the ADR 0053 pair."""
+    """Record the HMC release and system model; admit only the exact ADR 0166 §3 pair."""
     st_v, version = await state.call(client, "hmc_run_command", cmd="lshmc -V")
     st_m, model = await state.call(
         client,
@@ -1026,20 +1012,22 @@ async def _admit_dedicated_environment(
         return False
     version_text = str(version).strip()
     model_text = str(model).strip()
-    admitted = _environment_admitted(version_text, model_text)
+    # The arm mutates through raw profile grammar rather than through the product's
+    # operations, so nothing else enforces the envelope on this path.
+    admitted = _is_exact_admitted_environment(version_text, model_text)
     state.record(
         29,
         "dedicated admitted environment",
         "PASS" if admitted else "SKIP",
         f"hmc_release={version_text!r} system_model={model_text!r} "
-        f"admitted={_ADMITTED_HMC_RELEASE!r}/{_ADMITTED_SYSTEM_MODEL!r}",
+        f"admitted={_ADMITTED_RELEASE_FIELDS!r}/{_ADMITTED_SYSTEM_MODEL!r}",
     )
     if not admitted:
         state.skip(
             29,
             "dedicated admitted environment (envelope)",
             f"HMC release {version_text!r} / model {model_text!r} is outside "
-            "the ADR 0053-admitted envelope for dedicated profile grammar; "
+            "the exactly matched ADR 0166 §3 envelope for dedicated profile grammar; "
             "issuing io_slots mutations here would use a grammar this "
             "repository has not probed — SKIP dedicated arm",
         )
