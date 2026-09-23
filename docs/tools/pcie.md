@@ -8,9 +8,9 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_assign_dedicated_pcie_slot` | `mutate` | `pcie.assign_dedicated_slot` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Assign a dedicated PCIe slot when safe profile readback is available. |
+| `hmc_assign_dedicated_pcie_slot` | `mutate` | `pcie.assign_dedicated_slot` | `lpar` | `partial` | `current` | `existing-runtime-guards` | Assign a dedicated PCIe slot when safe profile readback is available. |
 | `hmc_list_dedicated_pcie_slots` | `read` | `pcie.list_dedicated_slots` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized dedicated PCIe slots with stable DRC identities. |
 | `hmc_list_sriov_adapters` | `read` | `pcie.list_sriov_adapters` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized SR-IOV adapters, or report capability unavailable. |
 | `hmc_list_sriov_logical_ports` | `read` | `pcie.list_sriov_logical_ports` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized SR-IOV logical ports, or report capability unavailable. |
 | `hmc_list_sriov_physical_ports` | `read` | `pcie.list_sriov_physical_ports` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List normalized SR-IOV physical ports, or report capability unavailable. |
-| `hmc_unassign_dedicated_pcie_slot` | `mutate` | `pcie.unassign_dedicated_slot` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Unassign a dedicated PCIe slot when safe profile readback is available. |
+| `hmc_unassign_dedicated_pcie_slot` | `mutate` | `pcie.unassign_dedicated_slot` | `lpar` | `partial` | `current` | `existing-runtime-guards` | Unassign a dedicated PCIe slot when safe profile readback is available. |

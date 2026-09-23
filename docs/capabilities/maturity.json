@@ -366,6 +366,271 @@
           "closure_fingerprint": "af935cc3368e9d8ac173069bb77b3ac4ee741a919b5d462cd90bb7e346a2341d"
         }
       ]
+    },
+    {
+      "operation": "lpar.create",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "powered-off-partition-with-default-profile",
+            "parameters": []
+          },
+          {
+            "variant": "with-pcie-assignments",
+            "parameters": [
+              {
+                "name": "assignments",
+                "constraint": "dedicated, SR-IOV or vNIC assignments applied through the partition profile"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st30-hmc-create-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-dedicated-pcie",
+          "observed_at": "2026-09-23T22:47:38Z",
+          "cleanup": "passed",
+          "assertions": [
+            "create-call-succeeded",
+            "profile-lists-slot"
+          ],
+          "tested_commit": "0261001fd09f1981b71305ba177e301e35b75873",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "f10293191cd3456b0921a791cf7857ba5d66c44ae2a7619a5141202aa3d4c15d"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.delete",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "not-activated-owned-partition",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "Not Activated state; ownership token matches or ownership_override is approved"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st34-hmc-delete-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-dedicated-pcie",
+          "observed_at": "2026-09-23T22:49:55Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "delete-call-succeeded",
+            "lpar-name-absent"
+          ],
+          "tested_commit": "0261001fd09f1981b71305ba177e301e35b75873",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "86365c915d3fb6b59f6a5f16a53366be76afc47d0d6d7f462166ce30bd2a3a69"
+        }
+      ]
+    },
+    {
+      "operation": "command.run",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "hmc-cli-over-ssh",
+            "parameters": [
+              {
+                "name": "cmd",
+                "constraint": "complete HMC CLI command; registered only when capability and policy gates allow"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st33-chsyscfg-io-slots-add",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-dedicated-pcie",
+          "observed_at": "2026-09-23T22:49:55Z",
+          "cleanup": "passed",
+          "assertions": [
+            "add-command-succeeded",
+            "profile-lists-slot"
+          ],
+          "tested_commit": "0261001fd09f1981b71305ba177e301e35b75873",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "3f689e1d02d94e68b32e20ffab9f51ade867933d14deffb465af8e0b9bdb5009"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.assign_dedicated_slot",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "adr-0165-envelope-profile-add",
+            "parameters": [
+              {
+                "name": "drc_index",
+                "constraint": "eight uppercase hex digits; not listed in another LPAR profile"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "Not Activated state on HMC V10R3 M1060 with managed-system model 8375-42A"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "outside-adr-0165-envelope",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "HMC release or managed-system model other than V10R3 M1060 / 8375-42A; refused before mutation"
+              }
+            ]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "st36-hmc-assign-dedicated-pcie-slot",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st36-io-slots",
+          "observed_at": "2026-09-23T22:49:55Z",
+          "cleanup": "passed",
+          "assertions": [
+            "zero-suffix-add-accepted",
+            "added-slot-renders-none-pool",
+            "other-slots-stable-on-add"
+          ],
+          "tested_commit": "0261001fd09f1981b71305ba177e301e35b75873",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "272331d209a886a646a7362b45b6cd2a3a5b82106955f2b0296c996dfd64ef6d"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.unassign_dedicated_slot",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "adr-0165-envelope-profile-remove",
+            "parameters": [
+              {
+                "name": "drc_index",
+                "constraint": "eight uppercase hex digits"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "Not Activated state on HMC V10R3 M1060 with managed-system model 8375-42A"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "outside-adr-0165-envelope",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "HMC release or managed-system model other than V10R3 M1060 / 8375-42A; refused before mutation"
+              }
+            ]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "st36-hmc-unassign-dedicated-pcie-slot",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st36-io-slots",
+          "observed_at": "2026-09-23T22:49:20Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "zero-suffix-remove-accepted",
+            "other-slots-stable-on-remove"
+          ],
+          "tested_commit": "0261001fd09f1981b71305ba177e301e35b75873",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "272331d209a886a646a7362b45b6cd2a3a5b82106955f2b0296c996dfd64ef6d"
+        }
+      ]
+    },
+    {
+      "operation": "sriov.assign_logical_port",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "adr-0056-ethernet-logical-port",
+            "parameters": [
+              {
+                "name": "capacity_percent",
+                "constraint": "1 through 100"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "Not Activated, or Running with active RMC, on HMC V10R3 M1060 with managed-system model 8375-42A"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "outside-sriov-envelope",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "HMC release or managed-system model other than V10R3 M1060 / 8375-42A; refused before mutation"
+              }
+            ]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "st25-hmc-assign-sriov-logical-port",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st23-sriov-logical-port",
+          "observed_at": "2026-09-23T22:52:57Z",
+          "cleanup": "passed",
+          "assertions": [
+            "assign-call-succeeded",
+            "logical-port-configured",
+            "owner-is-target-lpar",
+            "capacity-matches"
+          ],
+          "tested_commit": "0261001fd09f1981b71305ba177e301e35b75873",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "34f9aeb3a42b75cc450242f82a851a65d990576895f6d384476a908c7536e846"
+        }
+      ]
     }
   ]
 }

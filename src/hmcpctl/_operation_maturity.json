@@ -3,6 +3,13 @@
   "runtime_eligibility": "existing-runtime-guards",
   "operations": [
     {
+      "operation": "command.run",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-23T22:49:55Z"
+    },
+    {
       "operation": "console.info",
       "implementation": "implemented",
       "verification": "stale",
@@ -15,6 +22,20 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-09-10T21:54:32Z"
+    },
+    {
+      "operation": "lpar.create",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-23T22:47:38Z"
+    },
+    {
+      "operation": "lpar.delete",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-23T22:49:55Z"
     },
     {
       "operation": "lpar.get",
@@ -36,6 +57,27 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-09-10T21:54:45Z"
+    },
+    {
+      "operation": "pcie.assign_dedicated_slot",
+      "implementation": "partial",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-23T22:49:55Z"
+    },
+    {
+      "operation": "pcie.unassign_dedicated_slot",
+      "implementation": "partial",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-23T22:49:20Z"
+    },
+    {
+      "operation": "sriov.assign_logical_port",
+      "implementation": "partial",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-09-23T22:52:57Z"
     },
     {
       "operation": "sriov.set_mode",

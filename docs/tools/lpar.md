@@ -9,9 +9,9 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_capture_lpar_console` | `mutate` | `lpar.capture_console` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Capture a bounded snapshot of an LPAR's virtual console (mkvterm). |
-| `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a new LPAR on a managed system. |
+| `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | Create a new LPAR on a managed system. |
 | `hmc_decommission_lpar` | `destructive` | `lpar.decommission` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Inventory, authorize, and optionally decommission one LPAR. |
-| `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
+| `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `implemented` | `current` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
 | `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
 | `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |
 | `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Get one logical partition by partition name or UUID. |

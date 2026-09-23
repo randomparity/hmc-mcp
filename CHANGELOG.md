@@ -10,6 +10,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- Live observations for six operations in `docs/capabilities/maturity.json`, from the
+  2026-09-23 dedicated-PCIe and SR-IOV live window on HMC V10R3 M1060, POWER9:
+  `lpar.create`, `lpar.delete` and `command.run` are implemented and current;
+  `pcie.assign_dedicated_slot`, `pcie.unassign_dedicated_slot` and
+  `sriov.assign_logical_port` are partial (outside their admitted envelope) and current (#879).
+
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
   the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.
