@@ -788,12 +788,20 @@ def _required_sriov_selector(
     )
 
 
+@dataclass(frozen=True)
+class _SriovReadbackOutcome:
+    """The post-dispatch readback facts a partial-error raise needs, bundled to keep
+    `_raise_sriov_partial_error` under the five-positional-parameter limit."""
+
+    cause: Exception | None
+    matches_pre_mutation: bool
+    unverified_detail: object
+
+
 def _raise_sriov_partial_error(
     operation: Literal["assignment", "unassignment"],
     error: Exception | None,
-    cause: Exception | None,
-    readback_matches_pre_mutation: bool,
-    unverified_detail: object,
+    outcome: _SriovReadbackOutcome,
     result: SriovLogicalPortChangeResult,
 ) -> NoReturn:
     """Raise the structured partial error for a dispatched SR-IOV mutation.
@@ -805,15 +813,13 @@ def _raise_sriov_partial_error(
     existing "could not be verified" wording is kept, with the same fallback detail the
     caller used before this classification existed.
     """
-    if error is not None and readback_matches_pre_mutation:
+    if error is not None and outcome.matches_pre_mutation:
         refused = SriovLogicalPortPartialError(f"{operation} refused by HMC: {error}", result)
         raise refused from error
-    partial = SriovLogicalPortPartialError(
-        f"{operation} could not be verified: {error or unverified_detail or 'readback mismatch'}",
-        result,
-    )
-    if cause is not None:
-        raise partial from cause
+    detail = error or outcome.unverified_detail or "readback mismatch"
+    partial = SriovLogicalPortPartialError(f"{operation} could not be verified: {detail}", result)
+    if outcome.cause is not None:
+        raise partial from outcome.cause
     raise partial
 
 
@@ -908,14 +914,13 @@ async def assign_sriov_logical_port(
             )
             if failure is not None
         )
-        _raise_sriov_partial_error(
-            "assignment",
-            error,
-            error or readback.error,
-            readback.error is None and after == before and profile_after == profile_before,
-            readback_errors,
-            result,
+        matches_pre_mutation = (
+            readback.error is None and after == before and profile_after == profile_before
         )
+        outcome = _SriovReadbackOutcome(
+            error or readback.error, matches_pre_mutation, readback_errors
+        )
+        _raise_sriov_partial_error("assignment", error, outcome, result)
     return result
 
 
@@ -1007,14 +1012,10 @@ async def unassign_sriov_logical_port(
         output=output,
     )
     if error or read_error or after != "none":
-        _raise_sriov_partial_error(
-            "unassignment",
-            error,
-            error or read_error,
-            read_error is None and after == before,
-            read_error,
-            result,
+        outcome = _SriovReadbackOutcome(
+            error or read_error, read_error is None and after == before, read_error
         )
+        _raise_sriov_partial_error("unassignment", error, outcome, result)
     return result
 
 
