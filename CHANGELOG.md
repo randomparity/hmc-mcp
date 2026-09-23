@@ -124,6 +124,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   when create names a disk the group already holds, or when delete matches no disk or several. An
   HMC 412 (stale ETag) is reported as a concurrent change with nothing written. HMC enforcement of
   a mismatched ETag and delete by omission are not yet live-verified (#936).
+  `hmc_delete_virtual_disk` also refuses a disk that backs a vSCSI mapping named inline by
+  `DiskName`, the shape V10R3 returns; the mapped-disk check previously matched only an `href`
+  the HMC does not send.
 
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server

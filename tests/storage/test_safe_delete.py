@@ -1,5 +1,6 @@
 """Tests for safe ISO and media-repository deletion operations."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -276,3 +277,57 @@ async def test_delete_optical_media_refusal_is_repr_quoted(mock_hmc):
 
     message = str(exc_info.value)
     assert repr(media_name) in message
+
+
+V10R3_MAPPINGS = (Path(__file__).with_name("vscsi_mapping_v10r3.xml")).read_text(encoding="utf-8")
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+
+
+@pytest.mark.asyncio
+async def test_delete_virtual_disk_refuses_disk_mapped_inline_by_name(mock_hmc):
+    """V10R3 names a mapped disk inline by DiskName, with no href (#936)."""
+    mock_hmc.get(VIOS_PATH).mock(
+        return_value=httpx.Response(
+            200,
+            text=f"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>
+      <VirtualIOServer xmlns="{UOM_NS}">{V10R3_MAPPINGS}</VirtualIOServer>
+    </content></entry></feed>""",
+        )
+    )
+    vg_get = mock_hmc.get(VG_PATH)
+    vg_post = mock_hmc.post(VG_PATH)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="'vd-R1': it is mapped to"):
+            await delete_virtual_disk(hmc, VIOS_UUID, VG_UUID, "vd-R1")
+
+    assert not vg_get.called and not vg_post.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("group_link", "refused"),
+    [
+        (None, True),
+        (f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}", True),
+        (f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/other-vg", False),
+    ],
+    ids=["no-group-link", "same-group", "other-group"],
+)
+async def test_delete_virtual_disk_inline_match_honours_the_group_link(
+    mock_hmc, group_link, refused
+):
+    backing = {"DiskName": "vd-1"}
+    if group_link:
+        backing["VolumeGroup"] = {"href": group_link, "rel": "related"}
+    mapping = {"Storage": {"VirtualDisk": backing}, "AssociatedLogicalPartition": {}}
+
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_storage_mappings = AsyncMock(return_value=[mapping])
+        hmc.delete_virtual_disk = AsyncMock(return_value=None)
+        if refused:
+            with pytest.raises(HMCError, match="it is mapped to"):
+                await delete_virtual_disk(hmc, VIOS_UUID, VG_UUID, "vd-1")
+        else:
+            await delete_virtual_disk(hmc, VIOS_UUID, VG_UUID, "vd-1")
+    assert hmc.delete_virtual_disk.await_count == (0 if refused else 1)

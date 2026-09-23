@@ -50,7 +50,11 @@ is added to `core.py`.
    direct-child `VirtualDisks` whose `DiskName` equals `disk_name`; refuse zero matches
    (`HMCError`, 404) and more than one (`HMCError`, 409) without writing; remove the one match;
    `_post_vg_xml(operation="delete_virtual_disk", etag=...)`.
-6. Element names are matched by local name so a bare (non-namespaced) document, which
+6. **In-use guard** (operator decision (A), 2026-09-23): the operation-level
+   `delete_virtual_disk` refuses when a mapping on the same VIOS names the disk inline by
+   `DiskName` (V10R3 sends no `href`), keeping the `href` match; a `VolumeGroup` link on the
+   mapping's disk, when present, must name the target group.
+7. Element names are matched by local name so a bare (non-namespaced) document, which
    `_get_vg_raw_xml` already accepts, works the same way.
 
 Return values are unchanged: the first parsed entry of the POST response, or `None`.
