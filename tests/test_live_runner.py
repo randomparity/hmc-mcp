@@ -24,6 +24,10 @@ from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.config import ConfigError, HMCConfig
 from hmcpctl.jobs import JobOutcome
+from hmcpctl.operations.virtualization.pcie import (
+    InventorySelector,
+    SriovLogicalPortChangeResult,
+)
 from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
 from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 from hmcpctl.ssh import affinity as ssh_affinity
@@ -4285,6 +4289,36 @@ async def test_wait_for_job_outcome_normalizes_from_the_served_shape():
     assert outcome is not None
     assert outcome.status == "COMPLETED_OK"
     assert outcome.job_id == "job-uuid"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", [True, False])
+# FastMCP's client cannot enforce the served schema's Decimal pattern and says so;
+# the field it concerns is not the one this test reads.
+@pytest.mark.filterwarnings("ignore:Pattern .* is not supported by Pydantic:UserWarning")
+async def test_sriov_changed_reads_the_served_result_shape(changed: bool):
+    """The SR-IOV transcripts script mappings; the live client serves a model."""
+    application = FastMCP("sriov-shape-probe")
+
+    @application.tool
+    async def probe() -> SriovLogicalPortChangeResult:
+        return SriovLogicalPortChangeResult(
+            operation="unassign",
+            path="profile",
+            changed=changed,
+            selector=InventorySelector("1", "0", "3"),
+            effective_before=None,
+            effective_after=None,
+            profile_before="none",
+            profile_after="none",
+            output="",
+        )
+
+    async with Client(application) as client:
+        result = await client.call_tool("probe", {})
+
+    assert not isinstance(result.data, dict)
+    assert pcie._sriov_changed(result.data) is changed
 
 
 def _recorded_scenarios() -> dict[str, set[str]]:

@@ -104,7 +104,7 @@ class _SriovEvidence:
 
 
 def _sriov_changed(data: object) -> bool:
-    """Whether an SR-IOV tool result reports a dispatched mutation.
+    """Whether an SR-IOV tool result, in any shape it is served, reports a mutation.
 
     Both operations return `changed=False` from an idempotent no-op: an assign
     of a port already assigned as asked, an unassign of a profile reading
@@ -112,7 +112,11 @@ def _sriov_changed(data: object) -> bool:
     """
     if isinstance(data, dict):
         return data.get("changed") is True
-    return isinstance(data, str) and "changed=True" in data
+    if isinstance(data, str):
+        return "changed=True" in data
+    # The live client serves the result dataclass as a generated model, not a
+    # mapping (as `metrics._as_outcome` also has to handle), so read the field.
+    return getattr(data, "changed", None) is True
 
 
 def _profile_read_clean(profile_ports: str | None) -> bool:
