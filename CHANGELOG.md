@@ -181,6 +181,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   absence cannot be confirmed now says in its manual-recovery row that the run will not retry
   its cleanup (#906).
 
+- When no slot is pinned, the live-test dedicated PCIe arm no longer auto-selects a slot that a
+  partition profile lists but no partition owns. The assignment refuses such a slot, so the arm
+  recorded a FAIL unrelated to the change under test. It now picks the first slot that is
+  unowned in inventory and listed by no profile, read with the admitted profile table, and
+  SKIPs with the reason when none qualifies or the table cannot be read. Preflight predicts the
+  same rule (#916).
+
 ### Changed
 
 - The distribution, console script, Python package and configuration directory are renamed

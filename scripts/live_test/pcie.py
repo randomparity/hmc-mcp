@@ -37,7 +37,8 @@ it is pointed at, so an exported value must not be able to redirect it):
   LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME — managed-system name; the arm SKIPs if unset
   LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX — name prefix for the run-unique fixture; SKIPs if unset
   LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME — profile name (default: default_profile)
-  LIVE_TEST_DEDICATED_PCIE_DRC_INDEX — specific DRC index; auto-selects first unassigned if absent
+  LIVE_TEST_DEDICATED_PCIE_DRC_INDEX — specific DRC index; auto-selects the
+      first slot no partition owns and no partition profile lists if absent
 
 Missing hardware or a wrong LPAR state produces SKIP per arm, not FAIL.
 Any cleanup mutation failure records manual-recovery evidence and halts further
@@ -53,7 +54,7 @@ import sys
 import uuid
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
@@ -1045,6 +1046,86 @@ async def _admit_dedicated_environment(
     return admitted
 
 
+#: The slot ST29 picks when none is configured; preflight prints it as its prediction.
+AUTO_SELECTED_SLOT = "(first slot no partition owns and no partition profile lists)"
+
+
+def _profile_lists_slot(profile_rows: list[dict[str, str]], drc_index: str) -> bool:
+    """Whether any profile lists *drc_index*, decided as the #882 holder check decides it.
+
+    Only rows that mention the DRC are parsed, as `_other_holders` in
+    `operations/virtualization/pcie.py` does, so one unrelated profile in an
+    unadmitted rendering cannot rule out every slot. A mentioning row the parser
+    refuses counts as listing the slot: the operation refuses that slot too.
+    """
+    for row in profile_rows:
+        if drc_index not in row["io_slots"]:
+            continue
+        try:
+            if _io_slots_contains(row["io_slots"], drc_index):
+                return True
+        except HMCCLIError:
+            return True
+    return False
+
+
+async def _auto_select_slot(
+    client: Client,
+    state: RunState,
+    arm: _DedicatedConfig,
+    inventoried: int,
+    unassigned: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Pick the first unowned slot no partition profile lists, or SKIP.
+
+    Inventory ownership is the running state; a profile can list a slot no
+    partition owns, and assigning it is what the #882 holder check refuses. So
+    a slot is eligible only when the ADR 0165-admitted table shows no profile
+    listing it, and an unreadable table rules out every slot (#916).
+    """
+    if not unassigned:
+        state.skip(
+            29,
+            "dedicated slot selection",
+            f"no unassigned dedicated PCIe slot on {arm.system_name!r} "
+            f"({inventoried} slot(s) inventoried, all owned) — SKIP dedicated arm",
+        )
+        return None
+    st, data = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=profile_io_slot_rows_command(arm.system_name),
+    )
+    try:
+        if st != "PASS" or not isinstance(data, str):
+            raise HMCCLIError(f"profile io_slots read returned {st}")
+        profile_rows = parse_profile_io_slot_rows(data)
+    except HMCCLIError as error:
+        state.skip(
+            29,
+            "dedicated slot selection",
+            f"could not read the partition profiles on {arm.system_name!r} ({error}); "
+            "without them no unowned slot can be shown to be listed by no profile, "
+            "and assigning a listed one is refused — SKIP dedicated arm",
+        )
+        return None
+    eligible = [
+        row for row in unassigned
+        if not _profile_lists_slot(profile_rows, str(row.get("drc_index")))
+    ]
+    if not eligible:
+        state.skip(
+            29,
+            "dedicated slot selection",
+            f"all {len(unassigned)} unowned dedicated PCIe slot(s) on "
+            f"{arm.system_name!r} are listed by a partition profile, which the "
+            "assignment refuses — SKIP dedicated arm rather than select a slot "
+            "the operation will refuse",
+        )
+        return None
+    return eligible[0]
+
+
 async def capture_dedicated_baseline(
     client: Client, state: RunState
 ) -> _DedicatedFixture | None:
@@ -1109,16 +1190,10 @@ async def capture_dedicated_baseline(
                 "mutate a slot this run did not select",
             )
             return None
-    elif unassigned:
-        selected = unassigned[0]
     else:
-        state.skip(
-            29,
-            "dedicated slot selection",
-            f"no unassigned dedicated PCIe slot on {arm.system_name!r} "
-            f"({len(rows)} slot(s) inventoried, all owned) — SKIP dedicated arm",
-        )
-        return None
+        selected = await _auto_select_slot(client, state, arm, len(rows), unassigned)
+        if selected is None:
+            return None
 
     run_marker = _new_run_marker()
     lpar_name = f"{arm.lpar_prefix}{run_marker}"
