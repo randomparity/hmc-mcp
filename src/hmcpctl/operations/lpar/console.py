@@ -39,8 +39,12 @@ async def capture_lpar_console_by_selector(
     lpar_name = await resolve_lpar_name(hmc, lpar_name_or_uuid)
     # The REST read is not scoped to a system, and partition names are unique
     # only within one: confirm the name resolves back to this UUID on SYSTEM.
-    if is_uuid(lpar_name_or_uuid) and lpar_uuid != await resolve_lpar_uuid(
-        hmc, lpar_name, system_name_or_uuid=system_uuid
+    if (
+        is_uuid(lpar_name_or_uuid)
+        and lpar_uuid.casefold()
+        != (
+            await resolve_lpar_uuid(hmc, lpar_name, system_name_or_uuid=system_uuid)
+        ).casefold()
     ):
         raise ResourceNotFoundError(
             "LPAR",

@@ -784,17 +784,21 @@ async def test_capture_lpar_console_by_selector_resolves_names():
 
 
 @pytest.mark.asyncio
-async def test_capture_lpar_console_by_selector_resolves_uuids():
+@pytest.mark.parametrize(
+    "rest_uuid",
+    ["aaaaaaaa-2222-2222-2222-222222222222", "AAAAAAAA-2222-2222-2222-222222222222"],
+)
+async def test_capture_lpar_console_by_selector_resolves_uuids(rest_uuid):
     from hmcpctl.operations.lpar import console as lpar_console
 
     system_uuid = "11111111-1111-1111-1111-111111111111"
-    lpar_uuid = "22222222-2222-2222-2222-222222222222"
+    lpar_uuid = "aaaaaaaa-2222-2222-2222-222222222222"
     client = MagicMock()
     client.get_logical_partition = AsyncMock(
         return_value={"Resource": {"PartitionName": "resolved-lpar"}}
     )
     resolve_system_uuid = AsyncMock(return_value=system_uuid)
-    resolve_lpar_uuid = AsyncMock(return_value=lpar_uuid)
+    resolve_lpar_uuid = AsyncMock(side_effect=[lpar_uuid, rest_uuid])
     resolve_system_name = AsyncMock(return_value="resolved-system")
     ssh_command = AsyncMock()
     capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
