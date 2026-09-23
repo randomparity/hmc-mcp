@@ -1707,12 +1707,6 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
     assert fake_hmc.calls == []
 
 
-_ATTACH_DISK_ARGS = [
-    "--vios", VIOS_UUID, "--vg", VG_UUID, "--name", "bootvol", "--capacity-mib", "1024",
-    "--vios-id", "2", "--vios-slot", "10", "--dry-run",
-]
-
-
 @pytest.mark.parametrize(
     ("module", "operation", "args", "returned"),
     [
@@ -1747,7 +1741,11 @@ _ATTACH_DISK_ARGS = [
         (
             "storage.resources",
             "attach_disk_to_lpar",
-            ["storage", "attach-disk", *_ATTACH_DISK_ARGS],
+            [
+                "storage", "attach-disk", "--vios", VIOS_UUID, "--vg", VG_UUID,
+                "--name", "bootvol", "--capacity-mib", "1024",
+                "--vios-id", "2", "--vios-slot", "10", "--dry-run",
+            ],
             None,
         ),
     ],
