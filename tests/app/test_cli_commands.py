@@ -46,8 +46,10 @@ from hmcpctl.cli_commands.virtualization import pcie as cli_pcie
 from hmcpctl.cli_commands.virtualization import vnic as cli_vnic
 from hmcpctl.config import HMCConfig
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.inventory.composite import _lpar_summary
 from hmcpctl.operations.lpar import ownership as lpar_ownership
 from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
+from hmcpctl.operations.lpar.migration import LpmResult
 from hmcpctl.operations.lpar.provision import ProvisionResult
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.storage.resources import (
@@ -1747,6 +1749,42 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
                 "--vios-id", "2", "--vios-slot", "10", "--dry-run",
             ],
             None,
+        ),
+        (
+            "lpar.inventory",
+            "fetch_lpar_summary",
+            ["lpars", "summary", "--json"],
+            _lpar_summary({"Resource": {}}, []),
+        ),
+        (
+            "lpar.migration",
+            "migrate_lpar",
+            ["lpars", "migrate", "--target", "sys2", "--no-validate-first", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "migrate_lpar_with_affinity_preflight",
+            ["lpars", "migrate-affinity", "--target", "sys2", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "validate_lpar_migration",
+            ["lpars", "migrate-validate", "--target", "sys2", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "abort_lpar_migration",
+            ["lpars", "migrate-abort", "--yes"],
+            LpmResult(LPAR_UUID, None),
+        ),
+        (
+            "lpar.migration",
+            "recover_lpar_migration",
+            ["lpars", "migrate-recover", "--yes"],
+            LpmResult(LPAR_UUID, None),
         ),
     ],
 )
@@ -3673,6 +3711,28 @@ def test_vios_power_on(fake_hmc):
     assert result.exit_code == 0
     assert "Submitted PowerOn" in result.stdout
     assert fake_hmc.calls == [("power_on_vios", (VIOS_UUID,), {})]
+
+
+@pytest.mark.parametrize("command", ["power-on", "power-off"])
+@pytest.mark.parametrize(
+    ("scope_args", "expected_system"),
+    [(["--system", SYSTEM_UUID], SYSTEM_UUID), (["-s", SYSTEM_UUID], SYSTEM_UUID), ([], None)],
+)
+def test_vios_power_commands_pass_system_scope(
+    fake_hmc, monkeypatch, command, scope_args, expected_system
+):
+    seen = []
+
+    async def fake_power_vios(_hmc, vios, *, system_name_or_uuid, **_kwargs):
+        seen.append((system_name_or_uuid, vios))
+        return {}
+
+    monkeypatch.setattr(cli_vios_core, "power_vios", fake_power_vios)
+
+    result = RUNNER.invoke(cli.app, ["vios", command, VIOS_UUID, "--yes", *scope_args])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [(expected_system, VIOS_UUID)]
 
 
 def test_vios_power_on_declined_confirm_aborts(fake_hmc):
