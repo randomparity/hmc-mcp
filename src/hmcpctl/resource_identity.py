@@ -31,6 +31,18 @@ def is_uuid(value: str) -> bool:
     return _UUID_RE.fullmatch(value) is not None
 
 
+def optional_system_selector(value: str | None) -> str | None:
+    """Return an optional managed-system selector, reading a blank one as absent.
+
+    ADR 0094: MCP clients serialise an unset optional string as ``""``, so a
+    blank or whitespace-only selector means "no system named", never a system
+    named ``""``. Surrounding whitespace is dropped from a non-blank one. Every
+    optional-selector path applies this one rule, so the same input scopes a
+    read and a guarded mutation the same way.
+    """
+    return (value or "").strip() or None
+
+
 async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
     """Resolve a managed-system name or pass through its UUID."""
     if is_uuid(value):
@@ -68,10 +80,9 @@ async def resolve_lpar_uuid(
     """Resolve an LPAR name or pass through its UUID."""
     if is_uuid(value):
         return value
+    selector = optional_system_selector(system_name_or_uuid)
     system_uuid = (
-        await resolve_system_uuid(hmc, system_name_or_uuid)
-        if system_name_or_uuid is not None
-        else None
+        await resolve_system_uuid(hmc, selector) if selector is not None else None
     )
     entry = (
         await hmc.find_partition_by_name(value, system_uuid=system_uuid)
@@ -94,10 +105,9 @@ async def resolve_vios_uuid(
     """Resolve a VIOS name or pass through its UUID."""
     if is_uuid(value):
         return value
+    selector = optional_system_selector(system_name_or_uuid)
     system_uuid = (
-        await resolve_system_uuid(hmc, system_name_or_uuid)
-        if system_name_or_uuid is not None
-        else None
+        await resolve_system_uuid(hmc, selector) if selector is not None else None
     )
     entry = (
         await hmc.find_vios_by_name(value, system_uuid=system_uuid)

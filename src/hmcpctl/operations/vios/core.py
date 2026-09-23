@@ -19,7 +19,12 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from ...resource_identity import is_uuid, resolve_system_uuid, resolve_vios_uuid
+from ...resource_identity import (
+    is_uuid,
+    optional_system_selector,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from ...ssh.commands import build_filter
 from ...ssh.transport import run_hmc_cli
 
@@ -33,10 +38,9 @@ async def list_vios(
     if state is not None and state not in PARTITION_STATES:
         allowed = ", ".join(sorted(PARTITION_STATES))
         raise ValueError(f"state must be one of: {allowed}")
+    selector = optional_system_selector(system_name_or_uuid)
     system_uuid = (
-        await resolve_system_uuid(hmc, system_name_or_uuid)
-        if system_name_or_uuid is not None
-        else None
+        await resolve_system_uuid(hmc, selector) if selector is not None else None
     )
     vios = (
         await hmc.search_uom("VirtualIOServer", "PartitionState", state)

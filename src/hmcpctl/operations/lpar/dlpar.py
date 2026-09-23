@@ -14,6 +14,7 @@ from ...documents import (
     build_lpar_document,
 )
 from ...errors import HMCError
+from ...resource_identity import optional_system_selector
 from .assignments import (
     LparPcieAssignments,
     LparPcieWorkflowResult,
@@ -36,6 +37,7 @@ async def modify_lpar(
     ownership_override: bool = False,
 ) -> LparPcieWorkflowResult:
     """Authorize and apply rename, resource, and PCIe changes in order."""
+    system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if (
         assignments != LparPcieAssignments() or new_name is not None
     ) and system_name_or_uuid is None:
