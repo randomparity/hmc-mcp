@@ -14,8 +14,9 @@ records the design decision per prototype fact.
 
 - **Contention** (P1): a held vterm is reported on *stdout* with exit code 0,
   so the exit status proves nothing; the sentinel sentence below is parsed
-  instead and :class:`ConsoleHeldError` is raised. No ``rmvterm`` is issued on
-  that path — it would release the *other* holder's session.
+  instead and :class:`ConsoleHeldError` is raised, quoting what the HMC printed.
+  No ``rmvterm`` is issued on that path — it would release the *other* holder's
+  session — unless the caller explicitly asked for a forced takeover (ADR 0172).
 - **Mandatory release** (P2/P3/P4): the HMC does not auto-release a vterm,
   not after an abrupt disconnect and not after a graceful close. ``rmvterm``
   therefore runs on every exit path, cancellation included, and runs to
@@ -94,8 +95,11 @@ class ConsoleHeldError(HMCError):
 
     The HMC allows exactly one open vterm per partition (P1: signalled on
     stdout, always with exit code 0). This error is deliberately distinct
-    from :class:`hmcpctl.ssh.transport.HMCCLIError`: a capture never force-closes
-    another holder's session, and no ``rmvterm`` is issued on this path.
+    from :class:`hmcpctl.ssh.transport.HMCCLIError`. No ``rmvterm`` is issued
+    against another holder's session on this path; only an explicit
+    ``ConsoleSession(..., take_over=True)`` does that (ADR 0172). When the
+    capture sees the sentence after it proved acquisition, it raises this after
+    releasing its own hold.
     """
 
 
@@ -310,18 +314,22 @@ async def _release_and_verify(
     ``rmvterm``'s exit code is not proof; only an independent-session
     ``mkvterm`` starting without the contention sentinel is.
     """
+    await _rmvterm(config, system_name, lpar_name)
+    return await _probe_released(config, system_name, lpar_name)
+
+
+async def _rmvterm(config: HMCConfig, system_name: str, lpar_name: str) -> None:
+    """Issue ``rmvterm``; a failure is only logged, since its exit code proves nothing (P2)."""
     quoted = f"rmvterm -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
     try:
         await run_hmc_command(config, quoted)
     except HMCCLIError as exc:
         logger.warning(
-            "rmvterm for %s/%s failed (%s); the probe below still decides "
-            "'released' honestly",
+            "rmvterm for %s/%s failed (%s); a following mkvterm decides the outcome",
             system_name,
             lpar_name,
             exc,
         )
-    return await _probe_released(config, system_name, lpar_name)
 
 
 async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -> bool:
@@ -401,6 +409,19 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         stdin.close()
 
 
+def _acquisition_outcome(data: bytes | bytearray) -> Literal["acquired", "held"] | None:
+    """Classify ``mkvterm`` output by whichever sentinel came first (P1, ADR 0172).
+
+    The banner proves the hold, so a contention sentence after it is console
+    content; P1's contention text replaces the banner.
+    """
+    acquired = data.find(ACQUIRED_SENTINEL)
+    held = data.find(HELD_SENTINEL)
+    if held != -1 and (acquired == -1 or held < acquired):
+        return "held"
+    return "acquired" if acquired != -1 else None
+
+
 async def _read_release_probe(
     process: Any,
 ) -> Literal["acquired", "held", "remote-exited", "unproven"]:
@@ -418,10 +439,8 @@ async def _read_release_probe(
         if not chunk:
             return "remote-exited"
         output += chunk
-        if HELD_SENTINEL in output:
-            return "held"
-        if ACQUIRED_SENTINEL in output:
-            return "acquired"
+        if outcome := _acquisition_outcome(output):
+            return outcome
     return "unproven"
 
 
@@ -472,12 +491,14 @@ async def _acquire_capture_stream(
                         "mkvterm exited before confirming console acquisition"
                     )
                 data += chunk
-                if HELD_SENTINEL in data:
+                outcome = _acquisition_outcome(data)
+                if outcome == "held":
+                    report = " ".join(bytes(data).decode("ascii", "replace").split())
                     raise ConsoleHeldError(
-                        "Another session already holds the console; "
-                        "the capture never force-closes another holder's session."
+                        f"{command} found the console held by another session; "
+                        f"the HMC reported: {report[:_ERROR_DETAIL_MAX_CHARS]!r}"
                     )
-                if ACQUIRED_SENTINEL in data:
+                if outcome == "acquired":
                     return connection, process, bytes(data)
     except TimeoutError as exc:
         connection.close()
@@ -516,7 +537,9 @@ class ConsoleSession:
 
     ADR 0170 is the contract. :meth:`open` returns once ``mkvterm`` proves
     this session acquired the vterm and raises :class:`ConsoleHeldError`,
-    issuing no ``rmvterm``, when another session holds it (P1). :meth:`read`
+    issuing no ``rmvterm``, when another session holds it (P1). With
+    ``take_over=True`` (never the default) :meth:`open` first issues ``rmvterm``
+    to end whatever holds the vterm, then acquires as usual (ADR 0172). :meth:`read`
     returns raw chunks, the acquisition bytes first and ``b""`` after the
     remote end closes; the session enforces no bound, so consumers wrap reads
     in their own timeouts. :meth:`close` is the only release: ``rmvterm``, an
@@ -536,8 +559,11 @@ class ConsoleSession:
     attribute or method of a session writes to the partition console.
     """
 
-    def __init__(self, hmc: HMCClient, system_name: str, lpar_name: str) -> None:
+    def __init__(
+        self, hmc: HMCClient, system_name: str, lpar_name: str, *, take_over: bool = False
+    ) -> None:
         self._config = hmc.config
+        self._take_over = take_over
         self._system = system_name
         self._lpar = lpar_name
         self._state: Literal["new", "opening", "held", "unheld"] = "new"
@@ -556,9 +582,14 @@ class ConsoleSession:
     async def open(self) -> None:
         """Acquire the vterm, or raise without releasing another holder's session.
 
+        With ``take_over=True``, ``rmvterm`` runs first and ends any other
+        holder's session; a failed ``rmvterm`` is only logged, and acquisition
+        decides. Contention after it raises with no second ``rmvterm``.
+
         Raises:
 
-            ConsoleHeldError: Another session holds the vterm (P1).
+            ConsoleHeldError: Another session holds the vterm (P1); the message
+                quotes the HMC output.
             HMCCLIError: ``mkvterm`` could not start or never confirmed acquisition.
             RuntimeError: The session was already opened or closed.
         """
@@ -568,6 +599,11 @@ class ConsoleSession:
         self._state = "opening"
         command = f"mkvterm -m {shlex.quote(self._system)} -p {shlex.quote(self._lpar)}"
         try:
+            if self._take_over:
+                logger.warning(
+                    "forced takeover of the console of %s/%s", self._system, self._lpar
+                )
+                await _rmvterm(self._config, self._system, self._lpar)
             connection, process, data, cancelled = await _await_acquisition(
                 self._config, command, self._stdin
             )
@@ -640,10 +676,6 @@ class ConsoleSession:
             if self._stdin is not None:
                 self._stdin.close()
 
-    def _disown(self) -> None:
-        """Owe no release: the capture's late-contention path (ADR 0072, ADR 0170)."""
-        self._state = "unheld"
-
     async def __aenter__(self) -> Self:
         await self.open()
         return self
@@ -694,7 +726,9 @@ async def capture_lpar_console(
 
         ConsoleHeldError: Another session holds the vterm (P1). Nothing was
             captured and no ``rmvterm`` was issued — releasing would close
-            the other holder's session.
+            the other holder's session. Also raised, after the capture's own
+            proven hold is released, when the contention sentence appears in
+            the captured output (ADR 0172).
 
     Args:
 
@@ -713,15 +747,13 @@ async def capture_lpar_console(
         data, stop_reason, error = await _collect_output(
             session, duration_seconds, max_bytes, idle_timeout_seconds
         )
-        if HELD_SENTINEL in data:
-            # P1 contention, possibly observed late: ADR 0072 keeps this path
-            # free of rmvterm, which could close another holder's session.
-            session._disown()
-            raise ConsoleHeldError(
-                f"Another session already holds the console of "
-                f"{lpar_name!r} on {system_name!r}; the capture never "
-                "force-closes another holder's session."
-            )
+    if HELD_SENTINEL in data:
+        raise ConsoleHeldError(
+            f"The console of {lpar_name!r} on {system_name!r} printed the HMC "
+            f"contention sentence {HELD_SENTINEL.decode()!r} after acquisition; "
+            f"rmvterm was issued for the capture's own hold "
+            f"(released={session.released is True})."
+        )
     return ConsoleCapture(
         system=system_name,
         lpar=lpar_name,
