@@ -12,18 +12,18 @@ write, fails with `REST0269` on a partition with no current configuration.
 ## Scope
 
 Operator decision (2026-09-23): provision always applies on the `mksyscfg` path; no opt-out,
-CLI option, MCP parameter or tool-docs change.
+CLI option, MCP parameter or tool-docs change. This supersedes the #939 spec's "provision is
+unchanged" line.
 
 - `provision_lpar` passes `apply_profile=True`. #939's mechanism is reused unchanged: only the
   SSH path runs `chsyscfg -o apply`, and the REST path leaves `apply_step` as `None`.
 - When `creation.apply_step` is present, `apply_profile` is inserted into the step-name list
   after `create` and the step is appended after the `create` step (also after a `create`
   error for a create with no UUID), so `_failed_provision_result` keeps skipping by position.
-- An `error` step stops the workflow: every remaining named step is `skipped`,
+- An `error` step stops the workflow: every step after `apply_profile` is `skipped`,
   `workflow_completed` is `false`, and no network call is made. `create_and_stamp_lpar`'s
   unapplied-profile warning passes through.
-- Dry-run and REST-path step lists are unchanged (the path is unknown until the create runs).
-- No ownership transition: provision stays the caller of the create owner.
+- Dry-run and REST-path step lists are unchanged. No ownership transition.
 - CHANGELOG `Fixed` entry.
 
 ### Failure model
@@ -31,7 +31,7 @@ CLI option, MCP parameter or tool-docs change.
 1. Actors and deployments: an operator (`lpars provision`) or MCP agent (`hmc_provision_lpar`)
    provisioning on an HMC whose REST create returns 406 (V10R3 lab).
 2. Invariants: a created partition is never deleted; a failed apply is an `error` step with
-   `workflow_completed: false`; no network, storage, assignment or power leg runs after it.
+   `workflow_completed: false`; no step after it runs.
 3. Accepted: a `mksyscfg`-path dry run does not list `apply_profile` (path unknown before the
    create); the REST path gets no apply (excluded).
 4. Covered elsewhere: live `REST0269` confirmation (#879); adapter changes lost on profile
@@ -41,8 +41,8 @@ CLI option, MCP parameter or tool-docs change.
 
 1. SSH path: steps read `create` `ok`, `apply_profile` `ok`, then `network` onward; the apply
    runs before the network call.
-2. Apply `error`: `network`, `vscsi`, `storage`, assignment and `power_on` steps are `skipped`,
-   `workflow_completed` is `false`, the network route is not called.
+2. Apply `error`: every later step is `skipped`, `workflow_completed` is `false`, the network
+   route is not called.
 3. REST path: no `chsyscfg`, no `apply_profile` step (existing tests unchanged).
 
 ## Validation
@@ -56,5 +56,5 @@ CLI option, MCP parameter or tool-docs change.
   existing REST-path tests stay green.
 - No-UUID create with an apply step: `focused-test`, same file, `create`, `apply_profile`, then
   each remaining step `skipped` once. Same green command.
-- Follow-up candidate: #939's apply-error warning says to redo "assignment steps"; in provision
-  it also skips network, vSCSI, storage and power-on (`operations/lpar/core.py`).
+- Accepted: #939's apply-error warning names only "assignment steps" (`core.py`, not edited);
+  its rewording is a follow-up candidate returned to the campaign.
