@@ -3,7 +3,7 @@
 import pytest
 
 from hmcpctl.documents import (
-    build_virtual_disk_document,
+    build_virtual_disk_element,
     build_volume_group_document,
     build_vscsi_mapping_document,
 )
@@ -17,31 +17,30 @@ def test_volume_group_document():
     assert "hdisk10" in xml and "hdisk11" in xml
 
 
-def test_virtual_disk_document():
-    xml = build_virtual_disk_document("lv_boot", 51200)
-    assert "VolumeGroup" in xml
-    assert "VirtualDisks" in xml
+def test_virtual_disk_element():
+    xml = build_virtual_disk_element("lv_boot", 51200)
+    assert xml.startswith("<VirtualDisk ")
     assert "<DiskName" in xml and "lv_boot" in xml
     assert "<DiskCapacity" in xml and "50" in xml
 
 
 @pytest.mark.parametrize("capacity_mib", [0, -1024, 1, 1025])
-def test_virtual_disk_document_rejects_non_integral_gib(capacity_mib: int) -> None:
+def test_virtual_disk_element_rejects_non_integral_gib(capacity_mib: int) -> None:
     with pytest.raises(ValueError, match="positive multiple of 1024"):
-        build_virtual_disk_document("lv_boot", capacity_mib)
+        build_virtual_disk_element("lv_boot", capacity_mib)
 
 
-def test_virtual_disk_document_accepts_15_character_name() -> None:
-    assert "lv_fifteen_char" in build_virtual_disk_document("lv_fifteen_char", 1024)
+def test_virtual_disk_element_accepts_15_character_name() -> None:
+    assert "lv_fifteen_char" in build_virtual_disk_element("lv_fifteen_char", 1024)
 
 
-def test_virtual_disk_document_counts_the_unescaped_name() -> None:
-    assert "a&amp;b_fifteen_cha" in build_virtual_disk_document("a&b_fifteen_cha", 1024)
+def test_virtual_disk_element_counts_the_unescaped_name() -> None:
+    assert "a&amp;b_fifteen_cha" in build_virtual_disk_element("a&b_fifteen_cha", 1024)
 
 
-def test_virtual_disk_document_rejects_16_character_name() -> None:
+def test_virtual_disk_element_rejects_16_character_name() -> None:
     with pytest.raises(ValueError, match="15 characters"):
-        build_virtual_disk_document("lv_sixteen_chars", 1024)
+        build_virtual_disk_element("lv_sixteen_chars", 1024)
 
 
 def test_vscsi_mapping_virtual_disk():

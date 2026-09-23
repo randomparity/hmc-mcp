@@ -86,7 +86,7 @@ def test_recorded_kb_values(xml: str, expected: dict[str, str]) -> None:
 
 
 def test_virtual_disk_create_matches_fixture() -> None:
-    built = _first(_tree(documents.build_virtual_disk_document("lv1", 2048)), "VirtualDisk")
+    built = _first(_tree(documents.build_virtual_disk_element("lv1", 2048)), "VirtualDisk")
     live = _first(FIXTURE, "VirtualDisk")
     assert _kbx(built) == _kbx(live)
     names = [n for n in _children(built) if n != "Metadata"]
@@ -153,11 +153,6 @@ def test_volume_group_physical_volume_attributes() -> None:
     assert _first(root, "PhysicalVolume").attrib == {"schemaVersion": "V1_0"}
 
 
-def test_virtual_disk_delete_virtual_disk_attributes() -> None:
-    root = _tree(documents.build_virtual_disk_delete_document("lv1"))
-    assert _first(root, "VirtualDisk").attrib == {"schemaVersion": "V1_0"}
-
-
 RESOURCES = documents.LparResources(
     min_memory=512, desired_memory=1024, max_memory=2048, desired_procs=0.5, desired_vcpus=1
 )
@@ -169,7 +164,7 @@ BUILT = {
         1, 2, 0, True, "02:00:00:00:00:01"
     ),
     "volume-group": documents.build_volume_group_document("vg1", ["hdisk1"]),
-    "virtual-disk": documents.build_virtual_disk_document("lv1", 1024),
+    "virtual-disk": documents.build_virtual_disk_element("lv1", 1024),
     "vscsi-mapping": documents.build_vscsi_mapping_document(
         "PhysicalVolume", "hdisk1", LINK, "vt1"
     ),
@@ -179,7 +174,6 @@ BUILT = {
     "optical-media-delete": documents.build_virtual_optical_media_delete_document(
         "a.iso", "vg1"
     ),
-    "virtual-disk-delete": documents.build_virtual_disk_delete_document("lv1"),
     "brokered-file": documents.build_brokered_file_document("a.iso"),
     "linked-optical-media": documents.build_linked_optical_media_document("a.iso", LINK),
     "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),

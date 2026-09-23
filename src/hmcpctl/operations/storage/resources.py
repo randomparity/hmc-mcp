@@ -276,6 +276,21 @@ async def create_virtual_disk(
     )
 
 
+def _names_disk_inline(backing: dict[str, Any], vg_uuid: str, disk_name: str) -> bool:
+    """V10R3 carries a mapped disk inline by DiskName with no href (#936).
+
+    The mappings are already scoped to one VIOS, where a logical-volume name is
+    unique; a VolumeGroup link, when the mapping carries one, must name *vg_uuid*.
+    """
+    if backing.get("DiskName") != disk_name:
+        return False
+    group = backing.get("VolumeGroup")
+    group_link = group.get("href", "") if isinstance(group, dict) else ""
+    # UUIDs compare case-insensitively; the HMC sends lowercase hrefs.
+    suffix = f"/volumegroup/{vg_uuid.lower()}"
+    return not group_link or group_link.rstrip("/").lower().endswith(suffix)
+
+
 async def delete_virtual_disk(
     hmc: HMCClient,
     vios_name_or_uuid: str,
@@ -313,8 +328,10 @@ async def delete_virtual_disk(
         backing_storage = mapping.get("Storage", {}).get("VirtualDisk", {})
         if isinstance(backing_storage, dict):
             storage_link = backing_storage.get("href", "")
-            if disk_link in storage_link or storage_link.endswith(
-                f"VirtualDisk/{disk_name}"
+            if (
+                disk_link in storage_link
+                or storage_link.endswith(f"VirtualDisk/{disk_name}")
+                or _names_disk_inline(backing_storage, vg_uuid, disk_name)
             ):
                 lpar = mapping.get("AssociatedLogicalPartition", {})
                 lpar_name = lpar.get("PartitionName", lpar.get("href", "unknown"))
