@@ -161,8 +161,8 @@ release. Those are existing deployment and operation contracts, not widened by t
 
 ## Revision 2026-09-23: live-run corrections
 
-The recipe ran live on 2026-09-23 (HMC V10R3 M1060) on a build patched for #935, #936, #961 and
-#962; PR #777 comment 5801497281 records each step. This revision changes the recipe and the
+The recipe ran live on 2026-09-23 (HMC V10R3 M1060) on a build patched for #935, #936, #961, #962
+and #979; PR #777 comment 5801497281 records each step. This revision changes the recipe and the
 capture resolver to match that run. Product fixes stay with their issues.
 
 ### Recipe
@@ -177,8 +177,8 @@ capture resolver to match that run. Product fixes stay with their issues.
 - `adapters add-vscsi` is dropped: `storage map` and `mount-optical-media` create their own
   adapter pairs, and the separately added adapter was left orphaned. No VIOS slot is chosen.
 - Boot-order commands are dropped from the path. They are blocked by #980, and the observed
-  firmware booted the virtual CD without a boot order because the new disk was blank. After the
-  optical mapping is removed, the disk is the only boot device.
+  firmware booted the virtual CD without a boot order because the new disk was blank. Booting
+  the installed disk did not run live, and the recipe says so.
 - `upload-iso` is marked blocked by #978; the live run imported the ISO through the HMC web
   File API instead.
 - The ISO is unmounted after power-off. Unmounting a running partition returned HTTP 500
@@ -199,6 +199,9 @@ capture resolver to match that run. Product fixes stay with their issues.
 `capture_lpar_console_by_selector` resolves a partition UUID to its name with the REST partition
 read (`PartitionName`), the same way it already resolves a system UUID. It no longer needs SSH for
 name resolution.
+The REST read is not scoped to a managed system and partition names are unique only within one,
+so the operation then resolves that name on the named system and refuses the capture unless it
+maps back to the same UUID.
 
 The SSH UUID-to-name lookups in `ssh/lpar.py` sent `-F UUID,PartitionName` and
 `-F UUID,SystemName`. Those are REST element names, and the HMC rejects `UUID` as an invalid

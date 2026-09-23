@@ -1,8 +1,10 @@
 # LPAR ISO installation recipe
 
-> **Status: exercised live, not yet runnable on `main`.** This recipe ran end to end on
-> 2026-09-23 against HMC V10R3 M1060, and the ISO booted into its installer. That run used a
-> build patched for #935, #936, #961, #962 and #979. Unpatched, it stops at
+> **Status: exercised live, not yet runnable on `main`.** An earlier order of these steps ran
+> from creation through cleanup on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into
+> its installer. This version follows what that run found; where its order differs from the run,
+> the step says so. That run used a build patched for #935, #936, #961, #962 and #979.
+> Unpatched, it stops at
 > `adapters add-network` with HTTP 406 (#935). These issues must land before the recipe runs on
 > `main`: #935, #936, #961, #962, #963, #978, #979, #980 and #981. #961 has since landed. Each
 > step that depends on an open issue names it.
@@ -220,10 +222,11 @@ hmcpctl storage get-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
 `create-media-repo` sends the `--size-mib` value unconverted, so the command below asks for a
 20 TiB repository today. Its confirmation prompt still says MiB. Until #963 lands, use a VIOS
 that already has a repository, or create one outside `hmcpctl`. The command shows the value that
-is correct once #963 lands:
+is correct once #963 lands. It carries no `--yes`, so it prompts: do not confirm it until
+#963 lands.
 
 ```bash
-hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
+hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM"
 ```
 
 Put the ISO in the repository and mount it on the partition. **`upload-iso` is blocked by
@@ -257,7 +260,8 @@ lshwres -r virtualio --rsubtype scsi -m <managed-system-name> --level lpar --fil
 lshwres -r virtualio --rsubtype eth -m <managed-system-name> --level lpar --filter lpar_names=<lpar-name>
 ```
 
-Then write every adapter those listings show, both vSCSI client adapters and the Ethernet
+The 2026-09-23 run first powered on without this step, stopped at SMS, then wrote the profile
+and powered on again. Write every adapter those listings show, both vSCSI client adapters and the Ethernet
 adapter, into the profile. Take each field from the listing; the `chsyscfg` help on the HMC
 gives the field order for both attributes:
 
@@ -315,7 +319,8 @@ hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
 Expected: the second `list-mappings` shows the optical mapping gone and the disk mapping
-unchanged. The ISO stays in the repository.
+unchanged. The ISO stays in the repository. The 2026-09-23 run unmounted while the partition was
+running; unmounting after power-off is the recommended order but has not run live.
 
 `unmount-optical-media` and `detach-mapping` refuse on a live HMC until #979 lands. Unmount
 only after power-off. On a running partition the 2026-09-23 run got HTTP 500 HSCL2957 (no RMC
