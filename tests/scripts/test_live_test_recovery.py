@@ -88,6 +88,7 @@ _NOT_FOUND = CallFailure(
 #: its baseline.
 _CLEAN = {
     "hmc_get_lpar_description": _NOT_FOUND,
+    "hmc_get_lpar_state": "Not Activated",
     "hmc_list_dedicated_pcie_slots": {
         "items": [{"drc_index": _DRC, "owner_lpar": None}]
     },
@@ -111,8 +112,9 @@ async def test_a_clean_system_yields_no_findings():
 
 @pytest.mark.asyncio
 async def test_a_surviving_marked_partition_is_reported():
+    """Not Activated (#950): `rmsyscfg` alone is a legal remedy."""
     responses = _responses(
-        hmc_get_lpar_description=_stamped(_MARKER)
+        hmc_get_lpar_description=_stamped(_MARKER), hmc_get_lpar_state="Not Activated"
     )
 
     findings = await recovery.check(_caller(responses), _INPUTS)
@@ -120,6 +122,34 @@ async def test_a_surviving_marked_partition_is_reported():
     assert [f.what for f in findings] == ["surviving partition"]
     assert _LPAR in findings[0].detail
     assert "rmsyscfg" in findings[0].remedy
+    assert "chsysstate" not in findings[0].remedy
+
+
+@pytest.mark.asyncio
+async def test_a_running_surviving_partition_needs_a_shutdown_first():
+    """Running (#950): the HMC refuses `rmsyscfg` outside Not Activated."""
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER), hmc_get_lpar_state="Running"
+    )
+
+    findings = await recovery.check(_caller(responses), _INPUTS)
+
+    assert [f.what for f in findings] == ["surviving partition"]
+    remedy = findings[0].remedy
+    assert "chsysstate" in remedy
+    assert "shutdown --immed" in remedy
+    assert remedy.index("chsysstate") < remedy.index("rmsyscfg")
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_state_on_a_surviving_partition_is_not_clean():
+    """A remedy cannot be chosen without knowing the state (#950)."""
+    responses = _responses(
+        hmc_get_lpar_description=_stamped(_MARKER), hmc_get_lpar_state=None
+    )
+
+    with pytest.raises(recovery.StateUnreadable, match="could not read the state"):
+        await recovery.check(_caller(responses), _INPUTS)
 
 
 @pytest.mark.asyncio
