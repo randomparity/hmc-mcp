@@ -1,6 +1,9 @@
-"""Selector resolution for bounded LPAR console capture."""
+"""Selector resolution and payload for bounded LPAR console capture."""
 
 from __future__ import annotations
+
+import base64
+from typing import Any
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.resource_identity import (
@@ -45,3 +48,16 @@ async def capture_lpar_console_by_selector(
         max_bytes=max_bytes,
         idle_timeout_seconds=idle_timeout_seconds,
     )
+
+
+def console_capture_payload(capture: ConsoleCapture) -> dict[str, Any]:
+    """Project a capture onto the JSON shape the CLI and MCP tool share."""
+    return {
+        "system": capture.system,
+        "partition": capture.lpar,
+        "stop_reason": capture.stop_reason,
+        "released": capture.released,
+        "error": capture.error,
+        "bytes_captured": len(capture.data),
+        "data_base64": base64.b64encode(capture.data).decode("ascii"),
+    }

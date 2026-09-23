@@ -2,28 +2,16 @@
 
 from __future__ import annotations
 
-import base64
-from typing import Any
-
 import typer
 
-from hmcpctl.operations.lpar.console import capture_lpar_console_by_selector
+from hmcpctl.operations.lpar.console import (
+    capture_lpar_console_by_selector,
+    console_capture_payload,
+)
 from hmcpctl.ssh.console import ConsoleCapture
 
 from ..output import console, err_console, print_json
 from ..runtime import with_client
-
-
-def _capture_json(capture: ConsoleCapture) -> dict[str, Any]:
-    return {
-        "system": capture.system,
-        "partition": capture.lpar,
-        "stop_reason": capture.stop_reason,
-        "released": capture.released,
-        "error": capture.error,
-        "bytes_captured": len(capture.data),
-        "data_base64": base64.b64encode(capture.data).decode("ascii"),
-    }
 
 
 def _print_capture_text(capture: ConsoleCapture) -> None:
@@ -73,7 +61,7 @@ def lpars_capture_console(
         )
     )
     if as_json:
-        print_json(_capture_json(capture))
+        print_json(console_capture_payload(capture))
     else:
         _print_capture_text(capture)
     if not capture.released:
