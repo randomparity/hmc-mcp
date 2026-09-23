@@ -564,9 +564,9 @@ class ConsoleSession:
         """
         if self._state != "new" or self._close_task is not None:
             raise RuntimeError("a console session opens once and never after close()")
+        self._stdin = _SealedStdin()
         self._state = "opening"
         command = f"mkvterm -m {shlex.quote(self._system)} -p {shlex.quote(self._lpar)}"
-        self._stdin = _SealedStdin()
         try:
             connection, process, data, cancelled = await _await_acquisition(
                 self._config, command, self._stdin

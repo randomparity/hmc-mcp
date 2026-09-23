@@ -944,6 +944,20 @@ async def test_session_rejects_reopen_and_read_when_not_open():
 
 
 @pytest.mark.asyncio
+async def test_session_failed_stdin_pipe_leaves_session_closable():
+    session = ConsoleSession(_client(), "sys1", "lp1")
+    with (
+        patch("hmcpctl.ssh.console.os.pipe", side_effect=OSError(24, "EMFILE")),
+        patch("hmcpctl.ssh.console.open_hmc_connection", AsyncMock()) as connect_mock,
+        pytest.raises(OSError, match="EMFILE"),
+    ):
+        await session.open()
+
+    assert await session.close() is False
+    connect_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_session_close_during_open_is_refused():
     entered = asyncio.Event()
     finish = asyncio.Event()
