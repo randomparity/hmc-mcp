@@ -23,11 +23,13 @@ def _print_capture_text(capture: ConsoleCapture) -> None:
         f"error: {capture.error}\n"
         f"bytes captured: {len(capture.data)}"
     )
-    console.print(metadata, markup=False, highlight=False)
+    console.print(metadata, markup=False, highlight=False, emoji=False)
     console.print(
         ascii(capture.data.decode("utf-8", errors="backslashreplace")),
         markup=False,
         highlight=False,
+        emoji=False,
+        soft_wrap=True,
     )
 
 

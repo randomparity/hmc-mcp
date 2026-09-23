@@ -2546,6 +2546,25 @@ def test_lpars_capture_console_text_escapes_controls_and_warns(fake_hmc, monkeyp
     assert "vterm may still be held" in result.stderr
 
 
+def test_lpars_capture_console_text_keeps_console_bytes_literal(fake_hmc, monkeypatch):
+    data = b":warning: " + b"x" * 300
+    capture = AsyncMock(
+        return_value=ConsoleCapture(
+            system="system-a",
+            lpar="aix-db",
+            data=data,
+            stop_reason="idle",
+            released=True,
+        )
+    )
+    _patch_lpar_console_capture(monkeypatch, capture)
+
+    result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "aix-db", "system-a"])
+
+    assert result.exit_code == 0
+    assert repr(data.decode("ascii")) in result.stdout
+
+
 def test_lpars_capture_console_help():
     result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "--help"])
 
