@@ -258,8 +258,9 @@ async def power_on_lpar(
             raise ValueError(
                 "system_name_or_uuid is required for post-activation affinity assessment"
             )
-        captured = optional_system_selector(affinity_assessment.system_name_or_uuid)
-        if captured != system_name_or_uuid:
+        # Compared raw: the assessment is measured against its own captured
+        # identity, so a padded capture must not pass as the stripped target.
+        if affinity_assessment.system_name_or_uuid != system_name_or_uuid:
             raise ValueError(
                 "affinity assessment managed-system identity must match target"
             )

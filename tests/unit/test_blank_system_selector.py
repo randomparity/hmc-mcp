@@ -187,15 +187,36 @@ async def test_an_affinity_power_on_with_a_blank_system_submits_nothing(blank):
 
 
 @pytest.mark.asyncio
-async def test_an_affinity_power_on_compares_normalised_system_selectors():
+async def test_an_affinity_power_on_strips_the_target_selector():
     hmc = _hmc()
     hmc.config.authorize_power_operations = False
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.get_quick_property.return_value = "running"
-    assessment = replace(_affinity("frame-1"), system_name_or_uuid=" frame-1 ")
 
     await power_on_lpar(
-        hmc, "lp1", system_name_or_uuid="frame-1  ", affinity_assessment=assessment
+        hmc,
+        "lp1",
+        system_name_or_uuid="frame-1  ",
+        affinity_assessment=_affinity("frame-1"),
     )
 
     hmc.find_system_by_name.assert_awaited_once_with("frame-1")
+
+
+@pytest.mark.asyncio
+async def test_an_affinity_power_on_refuses_a_padded_captured_identity():
+    """The assessment measures its captured identity, so it must match exactly."""
+    hmc = _hmc()
+    hmc.config.authorize_power_operations = False
+
+    with pytest.raises(ValueError, match="identity must match target"):
+        await power_on_lpar(
+            hmc,
+            "lp1",
+            system_name_or_uuid="frame-1",
+            affinity_assessment=replace(
+                _affinity("frame-1"), system_name_or_uuid=" frame-1 "
+            ),
+        )
+
+    hmc.submit_job.assert_not_awaited()
