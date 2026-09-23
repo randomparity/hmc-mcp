@@ -154,6 +154,9 @@ def storage_attach_disk(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID"
+    ),
 ) -> None:
     """Create a virtual disk and attach it to an existing LPAR."""
     if (
@@ -168,7 +171,7 @@ def storage_attach_disk(
     result = with_client(
         lambda hmc: attach_disk_to_lpar(
             hmc,
-            None,
+            system,
             lpar,
             ProvisionStorage(vios, name, vg_uuid=vg),
             capacity_mib=capacity_mib,

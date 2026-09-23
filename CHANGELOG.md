@@ -101,6 +101,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage attach-disk` and every `hmcpctl adapters` subcommand (`list`, `add-network`,
+  `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
+  way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
+  parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
+
 - The `mksyscfg` create path used by `hmcpctl lpars create` and by `hmc_create_lpar`'s HTTP 406
   fallback no longer sends its 0.1 processing-unit default with more than one virtual processor.
   The HMC rejected that profile with HSCL0622. On that path, a create with `--vcpus` or
@@ -714,6 +719,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_unmount_optical_media`. The exposed tool count drops from 148 to 147.
 
 ### Documentation
+
+- Every generated `docs/tools/` page now states that its Summary column is the first line of
+  each tool's MCP description, and that the complete text — including the conditions under which
+  a tool refuses — is the handler's docstring under `src/hmcpctl/server_tools/`. `tools/list`
+  carries that docstring's prose and, in the input schema, its argument detail, but not its
+  `Returns:` or `Raises:` sections (ADR 0097, #929).
 
 - ADR 0096 records the decision behind `HMCConfig.from_mapping` and why documentation alone was
   not enough (#368). `AGENTS.md` no longer teaches `HMCConfig(_env_file=None)` as the
