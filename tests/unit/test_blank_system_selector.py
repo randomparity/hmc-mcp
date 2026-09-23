@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from hmcpctl.documents import LparResources
 from hmcpctl.operations.affinity.rest import ProvisionAffinityAssessment
 from hmcpctl.operations.lpar.assignments import LparPcieAssignments
+from hmcpctl.operations.lpar.boot_order import read_lpar_boot_order
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars, power_on_lpar
 from hmcpctl.operations.lpar.dlpar import modify_lpar
 from hmcpctl.operations.lpar.ownership import list_lpar_ownership
@@ -25,7 +26,7 @@ from hmcpctl.operations.metrics.pcm import (
     resolve_pcm_resource,
     validate_pcm_metric_target,
 )
-from hmcpctl.operations.vios.core import list_vios
+from hmcpctl.operations.vios.core import backup_vios, list_vios, restore_vios
 from hmcpctl.operations.virtualization.adapters import list_adapters
 from hmcpctl.resource_identity import (
     optional_system_selector,
@@ -220,3 +221,57 @@ async def test_an_affinity_power_on_refuses_a_padded_captured_identity():
         )
 
     hmc.submit_job.assert_not_awaited()
+
+
+def _vios_writes(hmc: AsyncMock, system: str) -> list:
+    return [
+        backup_vios(hmc, "vios1", system_name_or_uuid=system, backup_name="b1"),
+        restore_vios(
+            hmc,
+            "vios1",
+            "b1",
+            system_name_or_uuid=system,
+            backup_type="viosioconfig",
+        ),
+    ]
+
+
+@BLANKS
+@pytest.mark.asyncio
+async def test_vios_backup_and_restore_refuse_a_blank_required_system(blank):
+    """A blank ``-m`` must not reach the HMC beside a fleet-resolved VIOS."""
+    hmc = _hmc()
+    cli = AsyncMock(return_value="ok")
+
+    with patch("hmcpctl.operations.vios.core.run_hmc_cli", new=cli):
+        for write in _vios_writes(hmc, blank):
+            with pytest.raises(ValueError, match="required for VIOS backup"):
+                await write
+
+    cli.assert_not_awaited()
+    hmc.find_vios_by_name.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vios_backup_and_restore_send_the_stripped_system():
+    hmc = _hmc()
+    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    cli = AsyncMock(return_value="ok")
+
+    with patch("hmcpctl.operations.vios.core.run_hmc_cli", new=cli):
+        for write in _vios_writes(hmc, " frame-1 "):
+            await write
+
+    assert all(" -m frame-1 " in call.args[0] for call in cli.await_args_list)
+    assert cli.await_count == 2
+
+
+@BLANKS
+@pytest.mark.asyncio
+async def test_a_boot_order_read_refuses_a_blank_required_system(blank):
+    hmc = _hmc()
+
+    with pytest.raises(ValueError, match="required to read a boot order"):
+        await read_lpar_boot_order(hmc, blank, "lp1")
+
+    hmc.find_partition_by_name.assert_not_awaited()
