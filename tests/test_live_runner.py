@@ -2935,6 +2935,7 @@ def _configure_vmedia_artifacts(state, values):
                 "hmc_list_vios",
                 "hmc_get_lpar",
                 "hmc_list_volume_groups",
+                "hmc_get_media_repository",
                 "hmc_create_media_repository",
                 "hmc_get_media_repository",
             ],
@@ -3056,7 +3057,10 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
                 {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 8},
             ]
         if tool == "hmc_get_media_repository":
-            return "PASS", {"UUID": "repo"}
+            first_st16_probe = (
+                workflow is runner.vmedia_bootstrap_and_create_repo and counts[tool] == 1
+            )
+            return "PASS", None if first_st16_probe else {"UUID": "repo"}
         if tool == "hmc_list_optical_media":
             return "PASS", [{"MediaName": "test.iso"}]
         if tool == "hmc_upload_iso":
@@ -3111,6 +3115,31 @@ async def test_vmedia_repository_skips_when_configured_group_too_small(monkeypat
         "hmc_get_media_repository",
     }
     assert all("5120 MiB < 6144 MiB" in str(r) for r in skips)
+
+
+@pytest.mark.asyncio
+async def test_vmedia_does_not_claim_a_pre_existing_repository(monkeypatch):
+    """An existing repository is left alone: create is idempotent for an equal size."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_volume_groups":
+            return "PASS", [{"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 64}]
+        if tool == "hmc_get_media_repository":
+            return "PASS", {"RepositoryName": "VMLibrary", "RepositorySize": "6144"}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "lp3_uuid": "lp3"})
+
+    await runner.vmedia_bootstrap_and_create_repo(None, state)
+    await runner.vmedia_teardown(None, state)
+
+    assert not state.artifacts.vmedia_repo_created
+    assert "hmc_create_media_repository" not in calls
+    assert "hmc_delete_media_repository" not in calls
 
 
 @pytest.mark.asyncio

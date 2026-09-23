@@ -43,8 +43,13 @@ its recorded name equals the configured name.
 - `vmedia._owns_repository(state)` is `vmedia_repo_created and configured_vg_uuid(state)`.
   It gates ST17, ST18, ST19 and ST20. It also gates all of ST22's mapping unmounts, media
   deletes and repository delete; when it is false these SKIP with
-  `no repository created by this run`. ST16 sets the flag on create PASS. ST17's final
-  restore step keeps today's True on PASS and False on failure.
+  `no repository recorded as created by the live test`. ST16 first probes
+  `hmc_get_media_repository`. An existing repository, or a failed probe, SKIPs the create,
+  because create returns PASS for an existing repository of equal size. The flag is set
+  only on a create PASS after an empty probe. ST17's final restore step keeps today's
+  behaviour: True on PASS, False on failure. Ownership carries across a subset run that
+  restores a results document with the same config and HMC identity. That document's run is
+  the live test's own earlier invocation.
 
 ## Failure model
 

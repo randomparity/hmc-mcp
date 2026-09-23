@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
 
 
-_NOT_OWNED = "no repository created by this run in the configured volume group"
+_NOT_OWNED = "no repository recorded as created by the live test in the configured group"
 
 
 def _owns_repository(state: RunState) -> bool:
@@ -126,6 +126,25 @@ async def _create_and_confirm_vmedia_repository(
 ) -> None:
     """Create the ST16 repository and confirm that the HMC reports it."""
     artifacts = state.artifacts
+
+    # Create is idempotent for an existing repository of equal size, so a PASS
+    # alone would claim a repository this run did not create (issue #967).
+    st, data = await state.call(
+        client,
+        "hmc_get_media_repository",
+        vios_name_or_uuid=artifacts.vios_uuid,
+        vg_uuid=artifacts.vg_uuid,
+    )
+    state.record(16, "hmc_get_media_repository (pre-existing)", st, data)
+    if st != "PASS" or data:
+        reason = (
+            "a repository already exists; not created by the live test"
+            if st == "PASS"
+            else "cannot confirm that no repository exists"
+        )
+        for name in ("hmc_create_media_repository", "hmc_get_media_repository"):
+            state.skip(16, name, reason)
+        return
 
     # Step 4 — Create repository
     st, data = await state.call(
