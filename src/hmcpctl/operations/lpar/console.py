@@ -8,12 +8,12 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 from hmcpctl.resource_identity import (
     is_uuid,
+    resolve_lpar_name,
     resolve_lpar_uuid,
     resolve_system_name,
     resolve_system_uuid,
 )
 from hmcpctl.ssh.console import ConsoleCapture, capture_lpar_console
-from hmcpctl.ssh.lpar import resolve_lpar_cli_name
 
 
 async def capture_lpar_console_by_selector(
@@ -27,19 +27,13 @@ async def capture_lpar_console_by_selector(
 ) -> ConsoleCapture:
     """Resolve selectors to HMC CLI names and capture the LPAR console."""
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
-    )
+    await resolve_lpar_uuid(hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid)
     system_name = (
         system_name_or_uuid
         if not is_uuid(system_name_or_uuid)
         else await resolve_system_name(hmc, system_uuid)
     )
-    lpar_name = (
-        lpar_name_or_uuid
-        if not is_uuid(lpar_name_or_uuid)
-        else await resolve_lpar_cli_name(hmc.config, lpar_uuid, system_name)
-    )
+    lpar_name = await resolve_lpar_name(hmc, lpar_name_or_uuid)
     return await capture_lpar_console(
         hmc,
         system_name,

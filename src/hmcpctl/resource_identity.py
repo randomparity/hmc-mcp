@@ -74,6 +74,22 @@ async def resolve_system_name(hmc: HMCClient, value: str) -> str:
     return str(name)
 
 
+async def resolve_lpar_name(hmc: HMCClient, value: str) -> str:
+    """Pass through a partition name or resolve a UUID to its PartitionName."""
+    if not is_uuid(value):
+        return value
+    entry = await hmc.get_logical_partition(value)
+    name = ((entry or {}).get("Resource") or {}).get("PartitionName")
+    if not name:
+        raise ResourceNotFoundError(
+            "LPAR",
+            value,
+            f"LPAR {value!r} has no PartitionName. "
+            "Use hmc_list_lpars to inspect available partitions.",
+        )
+    return str(name)
+
+
 async def resolve_lpar_uuid(
     hmc: HMCClient, value: str, *, system_name_or_uuid: str | None = None
 ) -> str:

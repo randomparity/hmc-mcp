@@ -742,17 +742,18 @@ async def test_capture_lpar_console_by_selector_resolves_names():
     from hmcpctl.operations.lpar import console as lpar_console
 
     client = MagicMock()
+    client.get_logical_partition = AsyncMock()
     resolve_system_uuid = AsyncMock(return_value="system-uuid")
     resolve_lpar_uuid = AsyncMock(return_value="lpar-uuid")
     resolve_system_name = AsyncMock()
-    resolve_lpar_name = AsyncMock()
+    ssh_command = AsyncMock()
     capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
 
     with (
         patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
         patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
         patch.object(lpar_console, "resolve_system_name", resolve_system_name),
-        patch.object(lpar_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch("hmcpctl.ssh.lpar.run_hmc_command", ssh_command),
         patch.object(lpar_console, "capture_lpar_console", capture),
     ):
         result = await lpar_console.capture_lpar_console_by_selector(
@@ -769,7 +770,8 @@ async def test_capture_lpar_console_by_selector_resolves_names():
         client, "aix-db", system_name_or_uuid="system-uuid"
     )
     resolve_system_name.assert_not_awaited()
-    resolve_lpar_name.assert_not_awaited()
+    client.get_logical_partition.assert_not_awaited()
+    ssh_command.assert_not_awaited()
     capture.assert_awaited_once_with(
         client,
         "system-a",
@@ -788,18 +790,20 @@ async def test_capture_lpar_console_by_selector_resolves_uuids():
     system_uuid = "11111111-1111-1111-1111-111111111111"
     lpar_uuid = "22222222-2222-2222-2222-222222222222"
     client = MagicMock()
-    client.config = MagicMock()
+    client.get_logical_partition = AsyncMock(
+        return_value={"Resource": {"PartitionName": "resolved-lpar"}}
+    )
     resolve_system_uuid = AsyncMock(return_value=system_uuid)
     resolve_lpar_uuid = AsyncMock(return_value=lpar_uuid)
     resolve_system_name = AsyncMock(return_value="resolved-system")
-    resolve_lpar_name = AsyncMock(return_value="resolved-lpar")
+    ssh_command = AsyncMock()
     capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
 
     with (
         patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
         patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
         patch.object(lpar_console, "resolve_system_name", resolve_system_name),
-        patch.object(lpar_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch("hmcpctl.ssh.lpar.run_hmc_command", ssh_command),
         patch.object(lpar_console, "capture_lpar_console", capture),
     ):
         result = await lpar_console.capture_lpar_console_by_selector(
@@ -816,9 +820,8 @@ async def test_capture_lpar_console_by_selector_resolves_uuids():
         client, lpar_uuid, system_name_or_uuid=system_uuid
     )
     resolve_system_name.assert_awaited_once_with(client, system_uuid)
-    resolve_lpar_name.assert_awaited_once_with(
-        client.config, lpar_uuid, "resolved-system"
-    )
+    client.get_logical_partition.assert_awaited_once_with(lpar_uuid)
+    ssh_command.assert_not_awaited()
     capture.assert_awaited_once_with(
         client,
         "resolved-system",
@@ -828,6 +831,31 @@ async def test_capture_lpar_console_by_selector_resolves_uuids():
         idle_timeout_seconds=3.5,
     )
     assert result is capture.return_value
+
+
+@pytest.mark.asyncio
+async def test_capture_lpar_console_by_selector_refuses_uuid_without_partition_name():
+    from hmcpctl.operations.lpar import console as lpar_console
+    from hmcpctl.resource_identity import ResourceNotFoundError
+
+    lpar_uuid = "22222222-2222-2222-2222-222222222222"
+    client = MagicMock()
+    client.get_logical_partition = AsyncMock(return_value={"Resource": {}})
+    capture = AsyncMock()
+
+    with (
+        patch.object(lpar_console, "resolve_system_uuid", AsyncMock()),
+        patch.object(
+            lpar_console, "resolve_lpar_uuid", AsyncMock(return_value=lpar_uuid)
+        ),
+        patch.object(lpar_console, "capture_lpar_console", capture),
+        pytest.raises(ResourceNotFoundError, match="no PartitionName"),
+    ):
+        await lpar_console.capture_lpar_console_by_selector(
+            client, lpar_uuid, "system-a"
+        )
+
+    capture.assert_not_awaited()
 
 
 def test_capture_tool_preserves_payload_and_profile():
