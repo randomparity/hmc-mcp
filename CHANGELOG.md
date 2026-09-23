@@ -10,6 +10,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `ConsoleSession` can yield the console to a preempting hold in two named modes (ADR 0173).
+  `async with session.hand_over() as handover:` moves the channel to an in-process holder while
+  the session keeps the vterm held, with no release gap. `suspend()` releases the vterm with the
+  usual `rmvterm` and probe proof for an external holder, and `resume()` acquires it again. It
+  raises `ConsoleHeldError`, issuing no `rmvterm`, if the slot was taken. The collector's
+  `read()` waits while paused. `close()` of a suspended session issues no `rmvterm`. The bounded
+  capture is unchanged (#976).
+
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
   the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.
