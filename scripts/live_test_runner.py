@@ -6,7 +6,7 @@ a JSON document on exit.
 
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
-`scripts/live_{round2,vmedia,sriov,dedicated}.py` to dispatch one arm,
+`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec}.py` to dispatch one arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
@@ -16,7 +16,7 @@ Usage:
 `--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
 stops importing (AGENTS.md).
 
-With no selection every subtask runs, 0 through 24. A bare number runs that one
+With no selection every subtask runs, 0 through 25. A bare number runs that one
 subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
 or `test-results-round2.json` for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
@@ -62,6 +62,7 @@ from typing import Any, ClassVar
 
 import check_capability_inventory
 from fastmcp import Client
+from live_test.bare_cec import exercise_bare_cec
 from live_test.connectivity import inventory_connectivity
 from live_test.escape_hatch import exercise_cli_escape_hatch
 from live_test.inventory import capture_lpar_baseline
@@ -298,6 +299,8 @@ class LiveTestConfig:
     dedicated_pcie_lpar_prefix: str = ""
     dedicated_pcie_profile_name: str = ""
     dedicated_pcie_drc_index: str = ""
+    # The bare-cec arm's platform-dump opt-in: only "true" runs dumprestart.
+    accept_platform_dump: str = ""
     iso_path: str = "/srv/example-lt-609/example-lt-609.iso"
     iso_media_name: str = "example-lt-609.iso"
     iso_http_media_name: str = "example-lt-609-http.iso"
@@ -380,6 +383,7 @@ class LiveTestConfig:
         "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX": "dedicated_pcie_lpar_prefix",
         "LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME": "dedicated_pcie_profile_name",
         "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX": "dedicated_pcie_drc_index",
+        "LIVE_TEST_ACCEPT_PLATFORM_DUMP": "accept_platform_dump",
     }
 
     @classmethod
@@ -918,6 +922,7 @@ SUBTASKS = {
     22: vmedia_teardown,
     23: exercise_sriov_assignment,
     24: exercise_dedicated_pcie_assignment,
+    25: exercise_bare_cec,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
 
@@ -1098,7 +1103,8 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     "vmedia": list(range(16, 23)),
     "sriov": [23],
     "dedicated": [24],
-    "all": list(range(25)),
+    "bare-cec": [25],
+    "all": list(range(26)),
 }
 
 

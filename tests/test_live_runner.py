@@ -31,6 +31,7 @@ from hmcpctl.ssh import affinity as ssh_affinity
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
 from live_test import (  # noqa: E402
+    bare_cec,
     connectivity,
     escape_hatch,
     inventory,
@@ -48,6 +49,7 @@ from live_test import (  # noqa: E402
 )
 
 LIVE_WORKFLOW_MODULES = (
+    bare_cec,
     connectivity,
     escape_hatch,
     inventory,
@@ -1079,6 +1081,20 @@ def _example_env_with(tmp_path: Path, key: str, value: str) -> Path:
     config_path = tmp_path / ".env"
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
+
+
+def test_live_config_reads_the_bare_cec_dump_opt_in_from_the_example(tmp_path) -> None:
+    """The example documents the key commented out; uncommented, the runner accepts it."""
+    example = Path(__file__).parents[1] / ".env.example"
+    text = example.read_text().replace(
+        "#LIVE_TEST_ACCEPT_PLATFORM_DUMP=false", "LIVE_TEST_ACCEPT_PLATFORM_DUMP=true"
+    )
+    assert "LIVE_TEST_ACCEPT_PLATFORM_DUMP=true" in text
+    config_path = tmp_path / ".env"
+    config_path.write_text(text)
+
+    assert runner.LiveTestConfig.from_env_file(config_path).accept_platform_dump == "true"
+    assert runner.LiveTestConfig().accept_platform_dump == ""
 
 
 def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
@@ -4078,6 +4094,28 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st35-bare-cec": {
+            "lpar-uuid-resolved",
+            "ownership-and-baseline-confirmed",
+            "assign-call-succeeded",
+            "profile-lists-slot",
+            "activation-job-successful",
+            "lpar-reached-firmware",
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful",
+            "refcodes-returned",
+            "refcodes-name-the-fixture",
+            "console-captured",
+            "console-released",
+            "power-off-job-successful",
+            "lpar-not-activated",
+            "unassign-call-succeeded",
+            "profile-restored-to-baseline",
+            "delete-call-succeeded",
+            "lpar-name-absent",
+            "slot-released",
+        },
     }
 
 

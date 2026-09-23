@@ -1411,7 +1411,6 @@ async def create_dedicated_fixture(
     Returns True when the fixture exists and its UUID was resolved, which is
     the only state in which the arm may mutate hardware.
     """
-    arm = fixture.config
     print("\n=== ST30: Dedicated PCIe Fixture Create (issue #217) ===")
 
     # Create-time assignment on its own probe partition (ADR 0166). With ADR
@@ -1427,14 +1426,43 @@ async def create_dedicated_fixture(
             "the slot is not assigned again; cleanup retries the probe",
         )
         return False
+    return await create_fixture_partition(client, state, fixture)
 
-    st, data = await state.call(
-        client,
-        "hmc_create_lpar",
-        system_name_or_uuid=arm.system_name,
-        name=fixture.lpar_name,
-        caller_token=fixture.run_marker,
-    )
+
+async def create_fixture_partition(
+    client: Client,
+    state: RunState,
+    fixture: _DedicatedFixture,
+    *,
+    resources: dict[str, Any] | None = None,
+) -> bool:
+    """Create the fixture partition and confirm its identity and profile baseline.
+
+    Returns True only when the partition exists, carries this run's ownership
+    stamp, has a resolved UUID and a readable baseline `io_slots`. The bare-cec
+    arm shares it and passes explicit *resources*; the dedicated arm passes none,
+    so its create call is the tool's default sizing.
+    """
+    arm = fixture.config
+    # Two literal dispatches rather than a splat: the static dispatch guards in
+    # tests/test_live_runner.py read every keyword each call site passes.
+    if resources is None:
+        st, data = await state.call(
+            client,
+            "hmc_create_lpar",
+            system_name_or_uuid=arm.system_name,
+            name=fixture.lpar_name,
+            caller_token=fixture.run_marker,
+        )
+    else:
+        st, data = await state.call(
+            client,
+            "hmc_create_lpar",
+            system_name_or_uuid=arm.system_name,
+            name=fixture.lpar_name,
+            caller_token=fixture.run_marker,
+            resources=resources,
+        )
     state.record(30, "hmc_create_lpar (fixture)", st, data)
     if st != "PASS":
         # Same invariant as the probe above: confirm the partition is really

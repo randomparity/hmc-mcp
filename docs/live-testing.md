@@ -68,6 +68,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | vmedia | `uv run --no-sync python scripts/live_vmedia.py` | subtasks 16–22 |
 | sriov | `uv run --no-sync python scripts/live_sriov.py` | subtask 23 |
 | dedicated | `uv run --no-sync python scripts/live_dedicated.py` | subtask 24 |
+| bare-cec | `uv run --no-sync python scripts/live_bare_cec.py` | subtask 25 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -78,14 +79,34 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 34, while the ids you
-can dispatch stop at 24.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids go up to 35, while the ids you
+can dispatch stop at 25.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34.
-A row numbered 31 is part of the arm you asked for.
+A row numbered 31 is part of the arm you asked for. Subtask 25 dispatches the
+bare-cec arm, which records its own steps as row 35. It reuses the dedicated
+arm's baseline, fixture-create and cleanup steps, so rows 29, 30 and 34 appear
+in a bare-cec run too, with their dedicated-arm wording.
 
 A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent —
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses —
 and that is the arm working.
+
+### The bare-cec arm
+
+The bare-cec arm is the release path end to end. It creates a partition, assigns
+it a dedicated slot, powers it on once with no profile and records what that does,
+and activates it to SMS. It then reads its reference codes and console and runs
+the PowerOff variants, including an `osshutdown` it expects the HMC to refuse.
+Last, it unassigns the slot and deletes the partition.
+
+- It reads the same four `LIVE_TEST_DEDICATED_PCIE_*` keys as the dedicated arm.
+  With no DRC index configured it takes the first free slot, whatever its kind.
+- It SKIPs unless `HMC_AUTHORIZE_POWER_OPERATIONS=true`, so its evidence covers
+  the ownership-guarded power path.
+- `LIVE_TEST_ACCEPT_PLATFORM_DUMP=true` lets it run `dumprestart`, which crashes
+  the partition and takes a platform dump. Unset or `false` skips that one step.
+- Run it on its own. In an `all` run the dedicated arm runs first, and bare-cec
+  SKIPs rather than record a second fixture over the one the recovery check reads.
 
 ## 3. Produce the evidence
 
@@ -118,6 +139,9 @@ Always, including after a run that looked fine:
 uv run --no-sync python scripts/live_test_recovery.py --results test-results-dedicated.json
 ```
 
+After a bare-cec run, pass `--results test-results-bare-cec.json`. The check reads
+the same artifacts for both arms.
+
 | Exit | Meaning |
 |---|---|
 | 0 | nothing carrying this run's marker survives |
@@ -147,6 +171,11 @@ step 4 is what tells you what is there.
 
 Never hand-delete a partition because its name looks like a fixture. Check the
 marker first.
+
+A bare-cec run interrupted after activation can leave its partition running.
+The recovery check reports it, but deleting a running partition fails. Power it
+off first with `chsysstate -m <system> -r lpar -n <partition> -o shutdown --immed`.
+Then remove the slot and delete the partition with the commands the check prints.
 
 ## Recording the result
 

@@ -40,7 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import pcie
+from live_test import bare_cec, pcie
 
 from hmcpctl.config import HMCConfig, env_var_value
 from hmcpctl.operations.virtualization.pcie import (
@@ -65,6 +65,13 @@ class ArmVerdict:
     system_name: str | None = None
 
 
+#: Why either arm built on the dedicated configuration is predicted to SKIP.
+_DEDICATED_CONFIG_REQUIRED = (
+    "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME and _LPAR_PREFIX must both be "
+    "set, and no value may carry an HMC record delimiter"
+)
+
+
 def _dedicated_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Predict the dedicated PCIe arm from the predicate the arm itself uses.
 
@@ -77,8 +84,7 @@ def _dedicated_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
         return ArmVerdict(
             "dedicated",
             False,
-            "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME and _LPAR_PREFIX must both be "
-            "set, and no value may carry an HMC record delimiter",
+            _DEDICATED_CONFIG_REQUIRED,
         )
     return ArmVerdict(
         "dedicated",
@@ -92,6 +98,51 @@ def _dedicated_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
         ),
         resolved.system_name,
     )
+
+
+def _bare_cec_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Predict the bare-cec arm from the predicates the arm itself admits on.
+
+    It shares the dedicated arm's configuration, and adds its own two refusals:
+    power operations must be ownership-guarded, and the platform-dump opt-in
+    must be a value the arm recognises. Both are the arm's functions, called
+    here after `_check_credentials` has loaded `.env`, as the runner has by then.
+    """
+    resolved = pcie._dedicated_config(config)
+    accept_dump = bare_cec._dump_opt_in(config)
+    refusals = [
+        reason
+        for failed, reason in (
+            (resolved is None, _DEDICATED_CONFIG_REQUIRED),
+            (
+                not bare_cec._power_operations_authorized(),
+                "HMC_AUTHORIZE_POWER_OPERATIONS must be true",
+            ),
+            (accept_dump is None, "LIVE_TEST_ACCEPT_PLATFORM_DUMP must be true, false or unset"),
+        )
+        if failed
+    ]
+    if refusals or resolved is None or accept_dump is None:
+        return ArmVerdict("bare-cec", False, "; ".join(refusals))
+    return ArmVerdict(
+        "bare-cec",
+        True,
+        "configured",
+        (
+            f"managed system {resolved.system_name}",
+            (
+                f"partitions named {resolved.lpar_prefix}* (created, activated to "
+                "SMS, powered off and restarted, then deleted)"
+            ),
+            f"profile {resolved.profile_name} io_slots (assigned, then restored)",
+            f"dedicated slot {resolved.drc_index or pcie.AUTO_SELECTED_SLOT}",
+            "platform dump: " + ("taken (dumprestart opted in)" if accept_dump else "not taken"),
+        ),
+        resolved.system_name,
+    )
+
+
+_ARM_VERDICTS = {"dedicated": _dedicated_verdict, "bare-cec": _bare_cec_verdict}
 
 
 def _generic_verdict(group: str, config: runner.LiveTestConfig) -> ArmVerdict:
@@ -117,7 +168,7 @@ def arm_verdicts(
     """Predict each selected arm. `None` selects every arm."""
     selected = tuple(runner.SUBTASK_GROUPS) if group is None else (group,)
     return tuple(
-        _dedicated_verdict(config) if name == "dedicated" else _generic_verdict(name, config)
+        _ARM_VERDICTS[name](config) if name in _ARM_VERDICTS else _generic_verdict(name, config)
         for name in selected
         if name != "all"
     )
