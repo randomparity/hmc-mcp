@@ -21,6 +21,9 @@ Out of scope are new optical-media or capture semantics, an interactive terminal
 changes, dependencies, automatic rollback, and claims of live hardware verification when no suitable
 HMC and VIOS are available.
 
+The 2026-09-23 revision below records what the first live run changed. Where it differs from the
+sections that follow, the revision governs.
+
 ## Public CLI contracts
 
 ### Optical media
@@ -155,3 +158,63 @@ release. Those are existing deployment and operation contracts, not widened by t
 - CI validates Python 3.11–3.14 on amd64 and arm64; ppc64le remains a declared but non-PR-gated target.
 - No live HMC arm is claimed unless suitable configured hardware is available and the tested build is
   confirmed to match the branch HEAD.
+
+## Revision 2026-09-23: live-run corrections
+
+The recipe ran live on 2026-09-23 (HMC V10R3 M1060) on a build patched for #935, #936, #961 and
+#962; PR #777 comment 5801497281 records each step. This revision changes the recipe and the
+capture resolver to match that run. Product fixes stay with their issues.
+
+### Recipe
+
+- The recipe states its live status and the issues that must land before it runs on `main`:
+  #935, #936, #961, #962, #963, #978, #979, #980 and #981. Each affected step names its blocker.
+- Three things have no working `hmcpctl` command yet and run as HMC CLI commands over SSH:
+  applying the new partition's profile after `lpars create` (until #939), writing the REST-added
+  adapters into that profile before a profile power-on (until #981), and reading the partition
+  description for ownership checks (until #965). The recipe gives only these commands and says
+  which issue removes each.
+- `adapters add-vscsi` is dropped: `storage map` and `mount-optical-media` create their own
+  adapter pairs, and the separately added adapter was left orphaned. No VIOS slot is chosen.
+- Boot-order commands are dropped from the path. They are blocked by #980, and the observed
+  firmware booted the virtual CD without a boot order because the new disk was blank. After the
+  optical mapping is removed, the disk is the only boot device.
+- `upload-iso` is marked blocked by #978; the live run imported the ISO through the HMC web
+  File API instead.
+- The ISO is unmounted after power-off. Unmounting a running partition returned HTTP 500
+  HSCL2957 after removing the VIOS side only. `unmount-optical-media` and `detach-mapping` are
+  marked blocked by #979.
+- Ownership checks read the description with HMC `lssyscfg -F description` while
+  `lpars get-description` prints a blank line (#965).
+- Constraints seen live are stated where they apply: virtual-disk names of at most 15 characters
+  (#964) and media names matching `[A-Za-z0-9_.]`.
+- `create-media-repo` is marked blocked by #963 and keeps the value that is correct once #963
+  lands. The recipe states what the command does today but documents no workaround value as
+  correct: a value that is right today would be 1024 times too small after the fix.
+- Cleanup records the observation that `lpars delete` removed the partition and its VIOS server
+  adapter.
+
+### Console capture by UUID
+
+`capture_lpar_console_by_selector` resolves a partition UUID to its name with the REST partition
+read (`PartitionName`), the same way it already resolves a system UUID. It no longer needs SSH for
+name resolution.
+
+The SSH UUID-to-name lookups in `ssh/lpar.py` sent `-F UUID,PartitionName` and
+`-F UUID,SystemName`. Those are REST element names, and the HMC rejects `UUID` as an invalid
+attribute. They now send the HMC CLI attributes `uuid,name`, as `docs/hmc-cli-cheatsheet.md`
+records. That form is documented but has not yet run live; the operator's re-run covers it.
+
+The fix reaches every caller of the lookups: the SSH selector fallbacks (`ssh/selectors.py`),
+VIOS install, the `lpars create` 406 `mksyscfg` fallback and the ownership system-name fallback.
+The last two caught the lookup's failure and fell back to the raw selector. Tests pin the exact
+lookup commands and assert that no REST element name reaches `-F`.
+
+### Acceptance evidence for the revision
+
+- `tests/app/test_lpar_iso_recipe.py` matches the recipe's `hmcpctl` command set, including the
+  removal of `add-vscsi` and the boot-order commands.
+- A focused test proves UUID capture resolves through REST and never calls the SSH lookup; the
+  SSH lookup tests pin `-F uuid,name`.
+- Live confirmation of the revised recipe belongs to the operator's re-run; this revision claims
+  no live arm of its own.

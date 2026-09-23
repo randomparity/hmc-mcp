@@ -29,13 +29,22 @@ from both surfaces. The CLI keeps the existing bounded, sealed-stdin capture. JS
 same base64 payload shape as the MCP tool; terminal output renders captured bytes as escaped text so
 LPAR-controlled bytes cannot inject terminal control structure.
 
+The shared operation resolves a partition UUID to its name with the REST partition read, as it
+already does for a system UUID. HMC CLI attributes are not REST element names: the live run on
+2026-09-23 showed that the SSH lookup's `-F UUID,PartitionName` is rejected as an invalid
+attribute. That lookup now sends the CLI attributes `uuid,name`, which the HMC CLI cheatsheet
+documents; that form has not yet run live.
+
 Keep the lifecycle as documentation rather than a new composite command. Its steps create resources
 whose identifiers and operator choices are visible between calls, and its failure recovery is to
 inspect and resume from the first incomplete step.
 
 ## Consequences
 
-- The installable CLI can express every step required by the recipe.
+- The installable CLI expresses every recipe step except three, which run as HMC CLI commands
+  until their issues land: applying the new partition's profile (#939), writing REST-added
+  adapters into that profile before a profile power-on (#981), and reading the partition
+  description for ownership checks (#965). The 2026-09-23 live run found all three.
 - Existing storage authorization and console capture safety remain the source of truth.
 - The new commands are public CLI/help contracts and receive focused body, confirmation, output,
   selector, ownership, and help-shape tests.
