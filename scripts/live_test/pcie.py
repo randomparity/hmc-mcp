@@ -1295,7 +1295,8 @@ async def _probe_create_time_assignment(
                 f"{arm.system_name!r}. A lost response may still have created it "
                 f"holding slot {fixture.drc_index!r}; if it exists with that marker, "
                 "remove the slot from its profile and then delete it. This run "
-                "does not retry cleanup of a partition it could not find.",
+                "will not retry cleanup of it: it could not confirm the partition "
+                "is this run's.",
             )
             return True
         fixture.probe_created = True

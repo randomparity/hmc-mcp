@@ -530,6 +530,8 @@ async def test_probe_absence_that_cannot_be_confirmed_is_a_recovery_row(
     assert check_row is not None and check_row[2] == "FAIL"
     assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
     assert "-createtime" in str(check_row[3])
+    # Final cleanup never retries this probe, so the row must say so (#906).
+    assert "will not retry cleanup" in str(check_row[3])
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
     assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
 
