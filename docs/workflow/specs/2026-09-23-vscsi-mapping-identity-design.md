@@ -43,7 +43,7 @@ Consumers:
 There is no alias for `mapping_uuid` or `uuid`. The generated `docs/tools/` pages and
 `docs/capabilities/operations.json` are regenerated. `CHANGELOG.md` gets one `Fixed` entry.
 
-Fixtures: `tests/fixtures/storage/vscsi_mapping_v10r3.xml` holds the redacted observed element.
+Fixtures: `tests/storage/vscsi_mapping_v10r3.xml` holds the redacted observed element.
 The mapping, optical, safe-delete, media-operation, tool, and result tests in `tests/storage/` move to
 absolute system-scoped hrefs and adapter/target identities with no `UUID`.
 
