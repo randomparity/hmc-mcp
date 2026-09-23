@@ -629,7 +629,7 @@ class ConsoleSession:
         self._owner: object | None = None  # the session itself, a handover, or None
         self._collecting = asyncio.Event()  # set only while the session owns the channel
         self._inflight: asyncio.Future[bytes] | None = None
-        self._suspend_proof = False
+        self._release_proof = False
         self._settled = asyncio.Event()  # clear only while suspend() or resume() runs
         self._settled.set()
 
@@ -853,21 +853,21 @@ class ConsoleSession:
             if self._state == "held":
                 self._released = await self._release_hold()
             elif self._state == "suspended":
-                self._released = self._suspend_proof
+                self._released = self._release_proof
             return self._released
         finally:
             self._drop_channel()
 
     async def _release_hold(self) -> bool:
         """Release with proof (ADR 0170 rule 4), then drop the channel."""
-        self._suspend_proof = False
+        self._release_proof = False
         try:
-            self._suspend_proof = await _release_and_verify(
+            self._release_proof = await _release_and_verify(
                 self._config, self._system, self._lpar
             )
         finally:
             self._drop_channel()
-        return self._suspend_proof
+        return self._release_proof
 
     def _drop_channel(self) -> None:
         if self._connection is not None:
