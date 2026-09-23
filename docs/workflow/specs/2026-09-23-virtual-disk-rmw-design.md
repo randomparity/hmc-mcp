@@ -32,7 +32,8 @@ is added to `core.py`.
 2. **`_post_vg_xml` gains keyword-only `operation` and `etag`.** `operation` names the write in
    the possible-side-effect error (default `"update_virtual_media_repository"`, today's text);
    a non-empty `etag` is sent as `If-Match`. Media operations pass neither, so their requests
-   are byte-identical to today.
+   are byte-identical to today. A 412 response raises `HMCError(..., 412)` saying the group
+   changed since it was read, nothing was written, and re-running the operation is safe.
 3. **Builder.** `build_virtual_disk_document` is replaced by `build_virtual_disk_element`,
    which returns one `<VirtualDisk xmlns=UOM schemaVersion="V1_0">` with `Metadata`, then
    `DiskCapacity kb="CUR" kxe="false"` (GiB), then `DiskName kb="CUR" kxe="false"`, and no `kb`
@@ -58,20 +59,28 @@ Return values are unchanged: the first parsed entry of the POST response, or `No
 1. **Actors and deployments** — a local operator or agent using `hmcpctl` / the MCP server
    against an HMC it is authorized to mutate; V10R3 is the verified target.
 2. **Invariants and assets at stake** — existing virtual disks (guest data) and physical-volume
-   membership of the target group (#779: an earlier VolumeGroup write destroyed PV metadata);
-   a concurrent change to the group between GET and POST must not be overwritten.
+   membership of the target group (#779: an earlier VolumeGroup write destroyed PV metadata).
+   The POST is conditioned on `If-Match`; that the HMC enforces a mismatch is confirmed under
+   #879 (live evidence shows only that a matching tag is accepted).
 3. **Accepted failure classes** —
    - An HMC that returns no `ETag` on the VolumeGroup GET cannot create or delete virtual disks
      through this path; the error says so. Accepted: V10R3 returns one, and an unconditional
      whole-group write is the lost-update risk this change exists to remove.
    - The created-empty `VirtualDisks` (group with no disks) is not live-verified; a wrong shape
      is rejected at schema validation before any change, as both live rejections were.
+   - Delete by omission (the whole-group POST without the disk) is not live-verified; live
+     evidence covers the create. If the HMC merged rather than replaced the collection, delete
+     would return success with the disk still present. Confirmation belongs to #879; the POST
+     response body's shape is unrecorded, so no postcondition is checked against it.
    - `ET` re-serialization of the fetched element (namespace prefixes, whitespace) is the same
      serialization the media operations already POST.
 4. **Covered elsewhere** — write-header strategy (#935); live confirmation (#879); builder
    `kb`/order sweep beyond this `VirtualDisk` (#961); VIOS mapping sparse documents (#962);
-   media-repository units (#963); 15-character name validation (#964). Media operations do not
-   send `If-Match`; that is reported as a follow-up candidate, not changed here.
+   media-repository units (#963); 15-character name validation (#964). Criterion 5's review of
+   the other VolumeGroup writes is reported in the PR body, not changed here: the media RMW
+   operations POST the whole group without `If-Match`, so one racing a virtual-disk write can
+   re-add a deleted disk or drop a new one; `_broker_iso_import` POSTs a sparse document to the
+   same endpoint; `create_volume_group` PUTs a sparse document to the collection.
 
 ## Success
 
@@ -81,7 +90,7 @@ Return values are unchanged: the first parsed entry of the POST response, or `No
   other `VirtualDisk` and `PhysicalVolume` canonically unchanged.
 - Both POSTs carry `If-Match` equal to the GET's `ETag`.
 - Missing ETag, a duplicate create name, and zero or multiple delete matches raise `HMCError`
-  and send no POST.
+  and send no POST; a 412 raises `HMCError` with status 412 and no second POST.
 - The media-repository operations' requests are unchanged (existing tests stay green).
 
 ## Validation
