@@ -543,7 +543,7 @@ class ConsoleSession:
         self._state: Literal["new", "opening", "held", "unheld"] = "new"
         self._stdin: _SealedStdin | None = None
         self._connection: Any = None
-        self._process: Any = None
+        self._stdout: Any = None  # only the read side of the process is kept
         self._pending = b""
         self._close_task: asyncio.Task[bool] | None = None
         self._released: bool | None = None
@@ -575,7 +575,7 @@ class ConsoleSession:
             self._state = "unheld"
             self._stdin.close()
             raise
-        self._connection, self._process = connection, process
+        self._connection, self._stdout = connection, process.stdout
         self._state = "held"
         self._pending = data
         if cancelled:
@@ -598,7 +598,7 @@ class ConsoleSession:
         if self._pending:
             chunk, self._pending = self._pending, b""
             return chunk
-        return await self._process.stdout.read(_CHUNK)
+        return await self._stdout.read(_CHUNK)
 
     async def close(self) -> bool:
         """Release the vterm once and report whether the release was proven.
