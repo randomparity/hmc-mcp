@@ -125,6 +125,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
+  disk name longer than 15 characters before the create request, with a message that states the
+  VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
+  reported as a possible side effect (#964).
+
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
   adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not
@@ -263,6 +268,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   Accepted widths are bounded at 20 integer and 10 fractional digits, beyond any real
   storage quantity, so a digit string long enough to exhaust `int()` or saturate
   `float()` to `inf` is rejected as malformed rather than parsed (#762).
+
+- The live-test runner restores the test partition's description, and with it the ownership
+  stamp, after ST10 and ST15. The baseline kept the CLI read's trailing newline, which the
+  restore refused as non-printable, so the partition lost its stamp and every
+  ownership-guarded command then refused it. The baseline now drops one trailing line
+  terminator. A description that cannot be written back through the CLI now fails the run
+  with a `MANUAL RECOVERY REQUIRED` row naming the `chsyscfg` restore, not a SKIP (#968).
 
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
