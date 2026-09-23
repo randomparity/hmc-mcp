@@ -24,6 +24,10 @@ from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.config import ConfigError, HMCConfig
 from hmcpctl.jobs import JobOutcome
+from hmcpctl.operations.virtualization.pcie import (
+    InventorySelector,
+    SriovLogicalPortChangeResult,
+)
 from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
 from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 from hmcpctl.ssh import affinity as ssh_affinity
@@ -213,10 +217,11 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
         ]
     )
 
-    assert await pcie.assign_sriov_to_lp3(object(), state)
-    assert await pcie.verify_sriov_assigned(object(), state)
+    evidence = pcie._SriovEvidence()
+    assert await pcie.assign_sriov_to_lp3(object(), state, evidence)
+    assert await pcie.verify_sriov_assigned(object(), state, True, evidence)
     assert await pcie.unassign_sriov_from_lp3(object(), state)
-    assert await pcie.reassign_sriov_to_lp3(object(), state)
+    assert await pcie.reassign_sriov_to_lp3(object(), state, evidence)
 
     assign_tool, assign_args = state.calls[0]
     assert assign_tool == "hmc_assign_sriov_logical_port"
@@ -233,6 +238,7 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
     assert state.calls[3][0] == "hmc_unassign_sriov_logical_port"
     assert state.calls[3][1]["ownership_override"] is True
     assert [entry["status"] for entry in state.results if entry["subtask"] == 26] == [
+        "PASS",
         "PASS",
         "PASS",
         "PASS",
@@ -253,7 +259,9 @@ async def test_sriov_verify_records_wrong_owner_without_mutation() -> None:
         ]
     )
 
-    assert not await pcie.verify_sriov_assigned(object(), state)
+    assert not await pcie.verify_sriov_assigned(
+        object(), state, True, pcie._SriovEvidence()
+    )
 
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_sriov_logical_ports",
@@ -339,6 +347,143 @@ async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
     assert "chhwres -r sriov --rsubtype logport" in cleanup_command
     assert " -o r -p " in cleanup_command
     assert all(entry["status"] == "PASS" for entry in state.results)
+
+
+def _sriov_arm_transcript(
+    state: _ScriptedSriovState,
+    *,
+    assign_status: str = "PASS",
+    chhwres_status: str = "PASS",
+    profile_prepopulated: bool = True,
+    unassign_profile_read: tuple[str, str, object] | None = None,
+) -> list[tuple[str, str, object]]:
+    """Every call `exercise_sriov_assignment` makes after its baseline, in order.
+
+    Answers as the operations do. *profile_prepopulated* is baseline (b): the
+    profile lists the port, so the first profile unassign dispatches; from `none`
+    it is the idempotent `changed=False`. The dynamic assign never touches the
+    profile, and the profile-only unassign leaves the effective port in place,
+    so the reassign always finds it assigned as asked and changes nothing.
+    """
+    owned = _logical_port_state(state, owner=state.config.lp3_name)
+    free = _logical_port_state(state)
+    profile = "configured-port" if profile_prepopulated else "none"
+    transcript = [
+        ("hmc_assign_sriov_logical_port", assign_status, {"changed": True}),
+        ("hmc_list_sriov_logical_ports", "PASS", owned),
+        _profile_state(profile),
+    ]
+    if assign_status == "PASS":
+        transcript += [
+            ("hmc_unassign_sriov_logical_port", "PASS", {"changed": profile != "none"}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            unassign_profile_read or _profile_state(),
+            ("hmc_assign_sriov_logical_port", "PASS", {"changed": False}),
+            ("hmc_list_sriov_logical_ports", "PASS", owned),
+            _profile_state(),
+        ]
+        profile = "none"
+    transcript += [
+        ("hmc_list_sriov_logical_ports", "PASS", owned),
+        _profile_state(profile),
+        ("hmc_unassign_sriov_logical_port", "PASS", {"changed": profile != "none"}),
+        ("hmc_run_command", chhwres_status, "removed"),
+    ]
+    if chhwres_status == "PASS":
+        transcript += [
+            ("hmc_list_sriov_logical_ports", "PASS", free),
+            ("hmc_list_sriov_logical_ports", "PASS", free),
+            _profile_state(),
+        ]
+    return transcript
+
+
+async def _run_sriov_arm(monkeypatch, **faults) -> _ScriptedSriovState:
+    state = _ScriptedSriovState([])
+    state._responses = iter(_sriov_arm_transcript(state, **faults))
+
+    async def baseline_ok(_client, _state) -> bool:
+        return True
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline_ok)
+    await pcie.exercise_sriov_assignment(object(), state)
+    assert next(state._responses, None) is None, "transcript not consumed"
+    return state
+
+
+def _sriov_observations(state) -> dict[str, dict]:
+    return {item["observation"]["id"]: item for item in state.observations}
+
+
+@pytest.mark.asyncio
+async def test_sriov_arm_emits_verified_observations(monkeypatch) -> None:
+    state = await _run_sriov_arm(monkeypatch)
+
+    emitted = _sriov_observations(state)
+    assert len(emitted) == len(state.observations), "duplicate observation id"
+    assert {
+        key: (
+            item["operation"],
+            item["observation"]["result"],
+            item["observation"]["cleanup"],
+            sorted(item["observation"]["assertions"]),
+        )
+        for key, item in emitted.items()
+    } == {
+        "st25-hmc-assign-sriov-logical-port": (
+            "sriov.assign_logical_port",
+            "passed",
+            "passed",
+            sorted(["assign-call-succeeded", "logical-port-configured",
+                    "owner-is-target-lpar", "capacity-matches"]),
+        ),
+        "st26-hmc-unassign-sriov-logical-port": (
+            "sriov.unassign_logical_port",
+            "passed",
+            "not-required",
+            ["profile-ports-cleared", "unassign-call-succeeded"],
+        ),
+    }
+    assert {item["observation"]["scenario"] for item in emitted.values()} == {
+        "st23-sriov-logical-port"
+    }
+
+
+@pytest.mark.asyncio
+async def test_sriov_failed_cleanup_fails_the_assign_observations(monkeypatch) -> None:
+    """A port cleanup left assigned cannot back a passed assign observation."""
+    state = await _run_sriov_arm(monkeypatch, chhwres_status="FAIL")
+
+    emitted = _sriov_observations(state)
+    assign = emitted["st25-hmc-assign-sriov-logical-port"]["observation"]
+    assert (assign["cleanup"], assign["result"]) == ("failed", "failed")
+
+
+@pytest.mark.asyncio
+async def test_sriov_idempotent_calls_back_no_observation(monkeypatch) -> None:
+    """From a `none` profile the unassigns and the reassign dispatch nothing."""
+    state = await _run_sriov_arm(monkeypatch, profile_prepopulated=False)
+
+    assert set(_sriov_observations(state)) == {"st25-hmc-assign-sriov-logical-port"}
+
+
+@pytest.mark.asyncio
+async def test_sriov_unreadable_profile_is_not_a_cleared_profile(monkeypatch) -> None:
+    state = await _run_sriov_arm(
+        monkeypatch, unassign_profile_read=("hmc_run_command", "FAIL", "ssh lost")
+    )
+
+    unassign = _sriov_observations(state)["st26-hmc-unassign-sriov-logical-port"]
+    assert unassign["observation"]["result"] == "failed"
+    assert "profile-ports-cleared" not in unassign["observation"]["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_sriov_failed_assign_records_no_assign_observation(monkeypatch) -> None:
+    """With ST26 skipped the profile still lists the port, so cleanup's unassign dispatches."""
+    state = await _run_sriov_arm(monkeypatch, assign_status="FAIL")
+
+    assert set(_sriov_observations(state)) == {"st28-hmc-unassign-sriov-logical-port"}
 
 
 @pytest.mark.asyncio
@@ -4207,6 +4352,36 @@ async def test_wait_for_job_outcome_normalizes_from_the_served_shape():
     assert outcome.job_id == "job-uuid"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", [True, False])
+# FastMCP's client cannot enforce the served schema's Decimal pattern and says so;
+# the field it concerns is not the one this test reads.
+@pytest.mark.filterwarnings("ignore:Pattern .* is not supported by Pydantic:UserWarning")
+async def test_sriov_changed_reads_the_served_result_shape(changed: bool):
+    """The SR-IOV transcripts script mappings; the live client serves a model."""
+    application = FastMCP("sriov-shape-probe")
+
+    @application.tool
+    async def probe() -> SriovLogicalPortChangeResult:
+        return SriovLogicalPortChangeResult(
+            operation="unassign",
+            path="profile",
+            changed=changed,
+            selector=InventorySelector("1", "0", "3"),
+            effective_before=None,
+            effective_after=None,
+            profile_before="none",
+            profile_after="none",
+            output="",
+        )
+
+    async with Client(application) as client:
+        result = await client.call_tool("probe", {})
+
+    assert not isinstance(result.data, dict)
+    assert pcie._sriov_changed(result.data) is changed
+
+
 def _recorded_scenarios() -> dict[str, set[str]]:
     """Every scenario's declared assertion ids, read from the workflow sources."""
     declared: dict[str, set[str]] = {}
@@ -4334,6 +4509,35 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st29-dedicated-pcie": {
+            "create-call-succeeded",
+            "profile-lists-slot",
+            "assign-call-succeeded",
+            "remove-command-succeeded",
+            "profile-restored-to-baseline",
+            "add-command-succeeded",
+            "delete-call-succeeded",
+            "lpar-name-absent",
+        },
+        "st36-io-slots": {
+            "zero-suffix-add-accepted",
+            "added-slot-renders-none-pool",
+            "other-slots-stable-on-add",
+            "zero-suffix-remove-accepted",
+            "other-slots-stable-on-remove",
+            "required-slot-removed-by-zero-suffix",
+            "remaining-slot-stable",
+            "remove-command-succeeded",
+            "empty-profile-reads-none",
+        },
+        "st23-sriov-logical-port": {
+            "assign-call-succeeded",
+            "logical-port-configured",
+            "owner-is-target-lpar",
+            "capacity-matches",
+            "unassign-call-succeeded",
+            "profile-ports-cleared",
+        },
         "st35-bare-cec": {
             "lpar-uuid-resolved",
             "ownership-and-baseline-confirmed",

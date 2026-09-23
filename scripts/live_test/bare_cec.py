@@ -710,33 +710,6 @@ async def _unassign(client: Client, state: RunState, run: _Run) -> bool:
     return restored
 
 
-async def _name_absent(client: Client, state: RunState, fixture: pcie._DedicatedFixture) -> bool:
-    """Whether the fixture's name answers HSCL8012 after its delete.
-
-    Only a readable description carrying this run's marker means the partition
-    is still there. Any other answer — a lost connection, an SSH view lagging
-    the REST delete — is read once more after `pcie._ABSENCE_REREAD_DELAY_S`,
-    as `pcie._created_despite_failure` does (#906), before it is believed.
-    """
-
-    async def lookup() -> tuple[str, Any]:
-        return await state.call(
-            client,
-            "hmc_get_lpar_description",
-            system_name_or_uuid=fixture.config.system_name,
-            lpar_name_or_uuid=fixture.lpar_name,
-        )
-
-    st, data = await lookup()
-    if pcie.partition_not_found(st, data):
-        return True
-    if st == "PASS" and isinstance(data, str):
-        return False
-    await asyncio.sleep(pcie._ABSENCE_REREAD_DELAY_S)
-    st, data = await lookup()
-    return pcie.partition_not_found(st, data)
-
-
 async def _slot_released(
     client: Client, state: RunState, fixture: pcie._DedicatedFixture
 ) -> bool:
@@ -785,7 +758,7 @@ async def _delete(client: Client, state: RunState, run: _Run) -> bool:
         system_name_or_uuid=fixture.config.system_name,
         lpar_name_or_uuid=fixture.lpar_uuid,
     )
-    absent = await _name_absent(client, state, fixture)
+    absent = await pcie.name_absent(client, state, fixture)
     if not absent:
         state.record(_ROW, "hmc_delete_lpar (call)", st, data)
         await pcie.cleanup_dedicated(client, state, fixture)
