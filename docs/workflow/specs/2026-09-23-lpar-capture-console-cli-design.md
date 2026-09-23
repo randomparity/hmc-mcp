@@ -16,7 +16,7 @@ MCP tool `hmc_capture_lpar_console`, so the bare-CEC recipe documents a gap.
   the MCP tool's; limits are `MAX_CAPTURE_SECONDS`/`MAX_CAPTURE_BYTES`.
 - Before any file or connection is opened, the command refuses (exit 2): a bound outside its
   limits, an existing `--output`, and, without `--output`, a terminal stdout.
-- Raw bytes go to stdout, or to `--output`, opened with exclusive create (`xb`). If the capture
+- Raw bytes go to stdout, or to `--output`, created exclusively with mode 0600. If the capture
   raises (Ctrl-C included) or the write fails, the file this command created is removed.
 - When the capture returns, one stderr line reports stop reason, byte count, `released`, and any
   error; when it raises, stderr carries the `Error:` line only.
@@ -37,7 +37,7 @@ MCP tool `hmc_capture_lpar_console`, so the bare-CEC recipe documents a gap.
    UUID-to-name lookup's attribute names (#776/PR #777).
 
 Threat model: `--output` is an added boundary, an operator-chosen path written with the
-operator's authority; control is `xb`. Partition bytes reaching stdout widen an existing one;
+operator's authority; control is exclusive, owner-only create. Partition bytes reaching stdout widen an existing one;
 control is the terminal refusal.
 
 ## Success
