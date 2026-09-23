@@ -144,6 +144,12 @@ VIOS_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </feed>
 """
 
+VIOS_MAPPINGS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
+VIOS_MAPPINGS_ENTRY = f"""<VirtualIOServer
+  xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+  <UUID>{VIOS_UUID}</UUID><VirtualSCSIMappings/>
+</VirtualIOServer>"""
+
 VG_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -256,7 +262,12 @@ def _mock_execution_steps(mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
     ).mock(return_value=httpx.Response(201, text=VSCSI_ADAPTER_FEED))
 
-    mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+    mock_hmc.get(VIOS_MAPPINGS_PATH).mock(
+        return_value=httpx.Response(
+            200, text=VIOS_MAPPINGS_ENTRY, headers={"ETag": "etag-1"}
+        )
+    )
+    mock_hmc.post(VIOS_MAPPINGS_PATH).mock(
         return_value=httpx.Response(201, text=VIOS_FEED)
     )
 
@@ -772,7 +783,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(500, text="<error>vscsi failed</error>"))
 
     # storage and power_on should not be called
-    storage_route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}")
+    storage_route = mock_hmc.post(VIOS_MAPPINGS_PATH)
     power_on_route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
     )
