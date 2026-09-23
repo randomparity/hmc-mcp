@@ -579,9 +579,16 @@ async def test_unreadable_profiles_skip_auto_selection(
     assert "hmc_create_lpar" not in state.tools()
     row = state.row("dedicated slot selection")
     assert row is not None and row[2] == "SKIP"
-    # The failure is the row's data, which `RunState.record` redacts, so a
-    # lost connection reads apart from a refused command without a re-run.
-    assert row[3] is readback
+    # The failure is a `CallFailure`, whose message alone `RunState.record`
+    # persists, redacted: a lost connection reads apart from an unadmitted table
+    # without a re-run, and raw HMC output never reaches the results file.
+    failure = row[3]
+    assert isinstance(failure, CallFailure)
+    if isinstance(readback, CallFailure):
+        assert failure is readback
+    else:
+        assert "unadmitted profile io_slots readback" in failure.message
+        assert readback.strip() not in failure.message
 
 
 @pytest.mark.asyncio
