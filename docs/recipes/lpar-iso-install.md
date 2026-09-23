@@ -6,7 +6,8 @@
 
 This recipe creates one powered-off LPAR, gives it a virtual network adapter and a VIOS-backed
 virtual disk, uploads an installation ISO, boots the partition from that ISO, observes it, then
-unmounts the ISO and restores a disk-first boot order. The last section tears everything down.
+unmounts the ISO and restores a disk-first boot order. The last section removes the disk
+mapping, disk, ISO, repository, and partition.
 Run it only against an HMC, managed system, and VIOS you own.
 
 > **Sensitive data:** command output contains system, VIOS, and partition names, UUIDs, VLANs,
@@ -54,7 +55,8 @@ shows.
 | `VIOS` | VIOS name or UUID | you choose it; `vios list` shows both |
 | `VIOS_ID` | VIOS partition ID (integer) | `PartitionID` in `vios list --json` |
 | `VIOS_SLOT` | unused VIOS virtual slot (integer) | the HMC, see step 1 |
-| `VG` | volume-group UUID | `storage list-vgs` |
+| `VG` | volume-group UUID for the virtual disk | `storage list-vgs` |
+| `MEDIA_VG` | volume-group UUID holding the media repository | `storage list-vgs`, step 4 |
 | `LPAR_NAME` | new partition name | you choose it |
 | `LPAR` | new partition UUID | `lpars create` output |
 | `DISK_NAME` | virtual-disk (logical volume) name | you choose it |
@@ -65,7 +67,7 @@ shows.
   over SSH and does not resolve UUIDs.
 - `lpars read-boot-order`, `set-boot-order`, and `clear-boot-order` take the managed-system
   **name**, then the partition name or UUID.
-- Every `--vg` and `VG` argument is a volume-group **UUID**.
+- Every `--vg`, `VG`, and `MEDIA_VG` argument is a volume-group **UUID**.
 - Every other `--system`, VIOS, and LPAR selector accepts a name or a UUID.
 
 ## Prerequisites
@@ -74,8 +76,9 @@ shows.
   (`get-description`, boot order, `capture-console`). SSH access needs a trusted host key, see
   [SSH trust setup](../HMC_HINTS.md#ssh-host-key-trust).
 - `HMC_AUTHORIZE_POWER_OPERATIONS=true`. It turns on the ownership guard for `power-on` and
-  `power-off`, so they refuse a partition another owner stamped. The guard needs a
-  managed-system selector: every power command below passes `--system`.
+  `power-off`, so they refuse a partition another owner stamped. With `--system` the guard
+  checks that system directly; without it the guard searches every managed system. Every power
+  command below passes `--system`.
 - A running VIOS with a volume group that has room for the virtual disk and, if one does not
   exist yet, the virtual media repository.
 - An ISO served over HTTP or HTTPS. **The machine running `hmcpctl` downloads the ISO, not the
@@ -128,8 +131,8 @@ The recipe resolves the system by name with `systems show`. On some HMC firmware
 `systems list` cannot serialize the full inventory; `systems show` does not need it.
 
 No `hmcpctl` command lists free VIOS virtual slots. Pick an unused slot number from the HMC
-(the VIOS's virtual adapters view, or `lshwres -r virtualio --rsubtype scsi --level lpar`
-over the HMC CLI).
+(the VIOS's virtual adapters view, or
+`lshwres -r virtualio --rsubtype scsi -m <managed-system-name> --level lpar` over the HMC CLI).
 
 ## 2. Create the powered-off partition
 
@@ -174,19 +177,22 @@ whole GiB the HMC takes. The second `list-vgs` shows the new disk in `VG`. The l
 
 ## 4. Media repository, ISO upload, and mount
 
-Check for an existing repository first. Create one only if `get-media-repo` reports none. It
-must be large enough for the ISO.
+A VIOS has at most one media repository, and it may sit in a different volume group from the
+disk. Run `get-media-repo` against each volume group `list-vgs` returned, starting with the
+VIOS's `rootvg`. Set `MEDIA_VG` to the group that holds the repository. Create one only if no
+group has it, in a group with room for the ISO.
 
 ```bash
-hmcpctl storage get-media-repo "$VIOS" "$VG" --system "$SYSTEM" --json
-hmcpctl storage create-media-repo "$VIOS" "$VG" --size-mib 20480 --system "$SYSTEM" --yes
+MEDIA_VG=<volume-group-uuid-holding-the-media-repository>
+hmcpctl storage get-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
+hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
 ```
 
 Upload the ISO and mount it on the partition:
 
 ```bash
-hmcpctl storage upload-iso "$VIOS" "$VG" "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
-hmcpctl storage list-optical-media "$VIOS" "$VG" --system "$SYSTEM" --json
+hmcpctl storage upload-iso "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
+hmcpctl storage list-optical-media "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 hmcpctl storage mount-optical-media "$VIOS" "$LPAR" "$MEDIA_NAME" --system "$SYSTEM" --yes
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
@@ -280,14 +286,14 @@ Delete the virtual disk, then the ISO. `delete-disk` refuses a disk that is stil
 
 ```bash
 hmcpctl storage delete-disk "$VIOS" --vg "$VG" --name "$DISK_NAME" --system "$SYSTEM" --yes
-hmcpctl storage delete-media "$VIOS" "$VG" "$MEDIA_NAME" --system "$SYSTEM" --yes
+hmcpctl storage delete-media "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" --system "$SYSTEM" --yes
 ```
 
 Delete the media repository only if this run created it and it holds nothing else:
 
 ```bash
-hmcpctl storage list-optical-media "$VIOS" "$VG" --system "$SYSTEM" --json
-hmcpctl storage delete-media-repo "$VIOS" "$VG" --system "$SYSTEM" --yes
+hmcpctl storage list-optical-media "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
+hmcpctl storage delete-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --yes
 ```
 
 Delete the partition last:
@@ -299,7 +305,9 @@ hmcpctl lpars list --system "$SYSTEM" --json
 ```
 
 Expected: the description again carries your caller token; stop if it does not. `lpars delete`
-prints `Deleted LPAR <lpar-uuid>`, and `lpars list` no longer shows the partition.
+prints `Deleted LPAR <lpar-uuid>`, and `lpars list` no longer shows the partition. Then check
+on the HMC that `VIOS_SLOT` on the VIOS no longer holds a vSCSI server adapter. This recipe
+does not know whether the HMC removes it with the partition; the live window records it.
 
 ## Recovery
 
