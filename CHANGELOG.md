@@ -14,8 +14,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   from a VIOS media repository on an LPAR, and `hmcpctl lpars capture-console` takes a bounded,
   input-free console snapshot. The LPAR ISO installation recipe,
   `docs/recipes/lpar-iso-install.md`, uses them to create, provision, ISO-boot, observe, and
-  clean up an LPAR with installed commands only. The bare-CEC recipe now captures the console
-  through the CLI. The recipe is unverified until the v0.1.0 live window runs it (#776).
+  clean up an LPAR. The bare-CEC recipe now captures the console through the CLI. The ISO
+  recipe ran live on 2026-09-23 on a patched build; it names the open issues that block it on
+  `main` and the three HMC CLI steps it still needs (#776).
 
 - A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
@@ -122,6 +123,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+
+- The MCP tool `hmc_capture_lpar_console` resolves a partition UUID through the REST partition
+  read. It used an SSH `lssyscfg -F UUID,PartitionName` lookup, and the HMC rejects `UUID` as an
+  invalid attribute. The SSH UUID-to-name lookups behind the SSH selector fallbacks, VIOS
+  install, and the `lpars create` and ownership name fallbacks now send the HMC CLI attributes
+  `uuid,name` (#776).
 
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server

@@ -15,25 +15,20 @@ ROOT = Path(__file__).resolve().parents[2]
 RECIPE = ROOT / "docs" / "recipes" / "lpar-iso-install.md"
 RECIPE_LINK = "(recipes/lpar-iso-install.md)"
 SHELL_BLOCK = re.compile(r"```(?:bash|sh)\n(.*?)```", re.DOTALL)
-NUMERIC_VALUES = {"$VLAN_ID": "100", "$VIOS_ID": "2", "$VIOS_SLOT": "20"}
+NUMERIC_VALUES = {"$VLAN_ID": "100"}
 EXPECTED_COMMANDS = {
     ("adapters", "add-network"),
-    ("adapters", "add-vscsi"),
     ("adapters", "list"),
     ("config", "show"),
     ("config", "list"),
     ("console", "info"),
     ("jobs", "show"),
     ("lpars", "capture-console"),
-    ("lpars", "clear-boot-order"),
     ("lpars", "create"),
     ("lpars", "delete"),
-    ("lpars", "get-description"),
     ("lpars", "list"),
     ("lpars", "power-off"),
     ("lpars", "power-on"),
-    ("lpars", "read-boot-order"),
-    ("lpars", "set-boot-order"),
     ("lpars", "show"),
     ("lpars", "state"),
     ("network", "list-networks"),
