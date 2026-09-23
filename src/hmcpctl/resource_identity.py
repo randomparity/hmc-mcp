@@ -36,9 +36,9 @@ def optional_system_selector(value: str | None) -> str | None:
 
     ADR 0094: MCP clients serialise an unset optional string as ``""``, so a
     blank or whitespace-only selector means "no system named", never a system
-    named ``""``. Surrounding whitespace is dropped from a non-blank one. Every
-    optional-selector path applies this one rule, so the same input scopes a
-    read and a guarded mutation the same way.
+    named ``""``. Surrounding whitespace is dropped from a non-blank one. The
+    optional-selector resolvers, reads, and guarded mutations apply this one
+    rule, so the same input scopes a read and a mutation the same way.
     """
     return (value or "").strip() or None
 
