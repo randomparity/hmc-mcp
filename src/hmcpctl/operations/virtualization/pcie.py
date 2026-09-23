@@ -407,17 +407,19 @@ async def _verify_dedicated_change(
         rows = await read_profile_io_slot_rows(target.config, target.system_name)
         after_text = _select_profile_io_slots(rows, target.lpar_name, target.profile_name)
         after = _slots_by_drc(after_text)
-        holders = _other_holders(target, rows) if add else []
     except Exception as caught:  # noqa: BLE001 - reported through the partial error
         read_error = caught
     else:
-        if after == expected and not holders:
+        if add:
+            holders, holder_error = _holders_for_advice(target, rows)
+        if after == expected and not holders and holder_error is None:
             return
-        if error is not None and after == before:
+        if error is not None and after == before and holder_error is None:
             raise error
         if not add:
             holders, holder_error = _holders_for_advice(target, rows)
-    cause = error or read_error
+    contended = add and (bool(holders) or holder_error is not None)
+    cause = error or read_error or (holder_error if add else None)
     reasons = [str(cause)] if cause is not None else []
     if add and holders:
         reasons.append(f"slot is also listed by a profile of LPAR {', '.join(holders)}")
@@ -428,7 +430,7 @@ async def _verify_dedicated_change(
         f"after={after_text!r}. The write may have run, so the profile may hold the change, "
         "none of it, or a form this operation refuses. Read it with `lssyscfg -r prof -m "
         f"{shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header`. "
-        f"{_recovery_advice(target, after, holders, add=add)} Never write the read value "
+        f"{_recovery_advice(target, after, add=add, contended=contended)} Never write the read value "
         "back as `io_slots=` input: that rendering is not established as valid input "
         f"(ADR 0166).{_holder_advice(holders, holder_error)}"
     ) from cause
@@ -447,16 +449,16 @@ def _holders_for_advice(
 def _recovery_advice(
     target: _DedicatedProfileTarget,
     after: dict[str, ProfileIoSlot] | None,
-    holders: list[str],
     *,
     add: bool,
+    contended: bool,
 ) -> str:
     """Advise from what the readback shows, naming no command that changes the profile.
 
     A named reversal was wrong in some concurrent state each time one was offered
     (#882 review rounds 1 and 2), so every reversal goes through the HMC UI. A slot
-    read as requested is not to be undone (#905), except beside another holder after
-    an assign, where the two profiles now contend for it.
+    read as requested is not to be undone (#905), except after an assign that another
+    LPAR's profile also lists, or may list, where the two profiles contend for it.
     """
     drc_index = target.drc_index
     where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
@@ -469,7 +471,7 @@ def _recovery_advice(
     if after.get(drc_index) == (None if add else written):
         rendering = "absent" if add else f"{drc_index}/none/0"
         return f"The readback lists {where} as before ({rendering}), so no reversal is needed."
-    if after.get(drc_index) == (written if add else None) and not (add and holders):
+    if after.get(drc_index) == (written if add else None) and not contended:
         rendering = f"{drc_index}/none/0" if add else "absent"
         return (
             f"The readback lists {where} as requested ({rendering}), so the difference is "

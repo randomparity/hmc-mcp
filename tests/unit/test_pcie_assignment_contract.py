@@ -682,6 +682,35 @@ def test_an_assign_beside_a_new_holder_keeps_the_reversal_open(monkeypatch, hmc)
     assert "do not undo" not in message
 
 
+def test_an_assign_beside_an_unreadable_holder_keeps_the_reversal_open(monkeypatch, hmc):
+    def racing_writer(value: str) -> str:
+        fake.rows.append(("third", "p3", f"{_DRC}//0"))
+        return value
+
+    fake = _install(monkeypatch, _FakeHmc(after_write=racing_writer))
+
+    message = _partial_error_message(_assign, hmc)
+
+    assert "could not be verified: unadmitted io_slots rendering" in message
+    assert "Compare the read value with the before value" in message
+    assert "Whether another LPAR's profile lists the slot could not be read" in message
+    assert "do not undo" not in message
+
+
+def test_a_refused_assign_beside_an_unreadable_holder_is_a_partial_error(monkeypatch, hmc):
+    def racing_writer() -> None:
+        fake.rows.append(("third", "p3", f"{_DRC}//0"))
+
+    fake = _install(
+        monkeypatch,
+        _FakeHmc(applies=False, chsyscfg_error=True, before_write=racing_writer),
+    )
+
+    message = _partial_error_message(_assign, hmc)
+
+    assert "could not be verified: response lost" in message
+
+
 def test_an_unassign_that_landed_succeeds_whatever_other_profiles_list(monkeypatch, hmc):
     fake = _install(
         monkeypatch,
