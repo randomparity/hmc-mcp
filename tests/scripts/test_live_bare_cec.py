@@ -510,11 +510,7 @@ def test_a_partition_that_will_not_power_off_is_left_with_recovery_commands(
     schemas, monkeypatch
 ):
     world, state = World(), _state(schemas)
-
-    async def explode(*_args: Any) -> None:
-        raise RuntimeError("scenario bug")
-
-    monkeypatch.setattr(bare_cec, "_observe", explode)
+    _explodes_after_activation(monkeypatch)
     world.overrides["hmc_power_off_lpar"] = lambda _k: _job("COMPLETED_WITH_ERROR", "HSCL1234 no")
 
     _run(world, state)
@@ -533,19 +529,95 @@ def test_a_partition_that_will_not_power_off_is_left_with_recovery_commands(
     assert world.created
 
 
-def test_a_foreign_identity_is_handed_to_the_shared_guards_without_mutation(schemas):
+def _explodes_after_activation(monkeypatch) -> None:
+    async def explode(*_args: Any) -> None:
+        raise RuntimeError("scenario bug")
+
+    monkeypatch.setattr(bare_cec, "_observe", explode)
+
+
+def _assert_left_untouched_with_recovery(state: runner.RunState, world: World) -> None:
+    recovery = _row(state, "bare-cec teardown: identity not confirmed")
+    assert recovery["status"] == "FAIL"
+    for command in ("chsysstate", "io_slots-", "rmsyscfg"):
+        assert command in recovery["data"]
+    assert "hmc_delete_lpar" not in world.tools()
+    assert not any("io_slots-" in k["cmd"] for k in world.calls_to("hmc_run_command"))
+    assert world.io_slots == _ASSIGNED
+    assert world.lpar_state == "open firmware"
+
+
+def test_a_foreign_identity_on_an_active_partition_is_left_with_recovery(
+    schemas, monkeypatch
+):
     world, state = World(), _state(schemas)
-    world.overrides["hmc_assign_dedicated_pcie_slot"] = lambda _k: HMCError("refused")
+    _explodes_after_activation(monkeypatch)
     world.overrides["hmc_get_lpar_description"] = lambda _k: (
         "[hmcpctl owner:hmcpctl created:2026-09-22] [caller someone-else]"
+        if world.lpar_state != "not activated"
+        else _DEFAULT
     )
 
     _run(world, state)
 
-    assert _row(state, "dedicated cleanup: run-marker mismatch")["status"] == "FAIL"
-    assert "hmc_delete_lpar" not in world.tools()
-    assert not any("io_slots-" in k["cmd"] for k in world.calls_to("hmc_run_command"))
-    assert world.created
+    _assert_left_untouched_with_recovery(state, world)
+    assert world.calls_to("hmc_power_off_lpar") == []
+
+
+def test_a_transient_identity_read_is_re_read_before_teardown_acts(schemas, monkeypatch):
+    world, state = World(), _state(schemas)
+    _explodes_after_activation(monkeypatch)
+    failures = iter([HMCError("transient 503", status_code=503)])
+    world.overrides["hmc_get_lpar"] = lambda _k: (
+        next(failures, _DEFAULT) if world.lpar_state == "open firmware" else _DEFAULT
+    )
+
+    _run(world, state)
+
+    assert _observations(state)["lpar.delete"]["result"] == "passed"
+    _assert_torn_down(world)
+
+
+def test_an_identity_that_stays_unreadable_is_never_mutated(schemas, monkeypatch):
+    """Two failed reads: the partition may be active, so nothing is issued."""
+    world, state = World(), _state(schemas)
+    _explodes_after_activation(monkeypatch)
+    world.overrides["hmc_get_lpar"] = lambda _k: (
+        HMCError("transient 503", status_code=503)
+        if world.lpar_state == "open firmware"
+        else _DEFAULT
+    )
+
+    _run(world, state)
+
+    _assert_left_untouched_with_recovery(state, world)
+
+
+def test_a_never_confirmed_fixture_goes_to_the_shared_guards(schemas):
+    """A create whose stamp never landed was never activated: cleanup_dedicated decides."""
+    world, state = World(), _state(schemas)
+    world.overrides["hmc_create_lpar"] = lambda kwargs: {
+        **world._hmc_create_lpar(kwargs),
+        "ownership_stamped": False,
+    }
+
+    _run(world, state)
+
+    assert "hmc_power_on_lpar" not in world.tools()
+    assert _observations(state)["lpar.create"]["result"] == "failed"
+    assert any(row["subtask"] == 34 for row in state.results)
+
+
+def test_an_empty_refcode_read_is_not_promoted(schemas):
+    """The tool answers [] for an unknown partition too, so [] proves nothing."""
+    world, state = World(), _state(schemas)
+    world.overrides["hmc_read_lpar_refcodes"] = lambda _k: []
+
+    _run(world, state)
+
+    refcodes = _observations(state)["lpar.list_refcodes"]
+    assert refcodes["result"] == "failed"
+    assert refcodes["assertions"] == []
 
 
 def test_a_delete_whose_response_was_lost_is_judged_by_readback(schemas):

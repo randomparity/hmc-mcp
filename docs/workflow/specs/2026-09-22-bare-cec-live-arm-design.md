@@ -73,9 +73,11 @@ coming from the reused dedicated helpers with their wording unchanged); dispatch
 13. A SKIP row for network boot, naming #868.
 
 **Teardown** runs in `finally`, after any step or an exception, and decides on live state:
-1. Nothing created → nothing to do. Otherwise read identity (`_read_dedicated_state`); a
-   caller-token or UUID mismatch goes straight to `pcie.cleanup_dedicated`, which records the
-   manual-recovery row without mutating.
+1. Nothing created → nothing to do. A fixture whose create was never confirmed was never
+   activated → `pcie.cleanup_dedicated`. Otherwise read identity (`_read_dedicated_state`),
+   twice before concluding a mismatch; a caller-token or UUID mismatch leaves the partition
+   untouched — it may be active, and the shared guards would unassign and delete without
+   powering off — with a manual-recovery row naming power-off, `io_slots-` and `rmsyscfg`.
 2. State other than `not activated` (including unreadable) → power off `shutdown`, immediate,
    `wait=true`, and poll. Still not `not activated` → a manual-recovery row naming the
    `chsysstate … -o shutdown --immed`, `io_slots-` and `rmsyscfg` commands; stop.
@@ -147,7 +149,7 @@ row, prerequisites, row numbering, recovery `--results test-results-bare-cec.jso
   and the ten verified operations with assertion ids — `lpar.create` {`lpar-uuid-resolved`,
   `ownership-and-baseline-confirmed`}, assign {`assign-call-succeeded`, `profile-lists-slot`},
   `lpar.power_on` {`activation-job-successful`, `lpar-reached-firmware`}, job get/wait
-  {`job-found`, `job-identity-matches`, `job-status-successful`}, refcodes {`refcodes-returned`,
+  {`job-found`, `job-identity-matches`, `job-status-successful`}, refcodes {`refcodes-returned` (at least one row),
   `refcodes-name-the-fixture`}, console {`console-captured` = call PASS and `stop_reason` not
   `error`, `console-released`}, power off
   {`power-off-job-successful`, `lpar-not-activated`}, unassign {`unassign-call-succeeded`,
@@ -155,8 +157,9 @@ row, prerequisites, row numbering, recovery `--results test-results-bare-cec.jso
   `slot-released`}; each admission SKIP creates nothing; a timed-out job is FAIL; both refusal shapes (raised, failed
   job) matched → SKIP and unmatched → FAIL; dump opt-in gating; a mid-arm exception still tears
   down; a running partition is powered off before unassign; a failed teardown power-off
-  records manual recovery and deletes nothing; an identity mismatch hands to
-  `cleanup_dedicated` without mutation; a lost-response delete is judged by readback; the
+  records manual recovery and deletes nothing; an identity mismatch or an identity read that
+  fails twice mutates nothing and records manual recovery, one transient failure does not;
+  an empty reference-code read is not promoted; a lost-response delete is judged by readback; the
   wrapper dispatches `--group bare-cec`. Green:
   `uv run --no-sync pytest tests/scripts/test_live_bare_cec.py -q --no-cov`.
 - `focused-test`: `tests/scripts/test_pcie.py` unchanged and green proves the extraction.

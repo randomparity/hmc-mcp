@@ -188,13 +188,14 @@ def _identity_matches(fixture: pcie._DedicatedFixture, observed: Any) -> bool:
     )
 
 
-def _manual_power_off_recovery(fixture: pcie._DedicatedFixture, observed: str | None) -> str:
+def _manual_recovery(fixture: pcie._DedicatedFixture, why: str) -> str:
+    """The recovery for a fixture that may still be active and hold its slot."""
     arm = fixture.config
     system, name = shlex.quote(arm.system_name), shlex.quote(fixture.lpar_name)
     return (
         f"MANUAL RECOVERY REQUIRED: partition {fixture.lpar_name!r} on "
-        f"{arm.system_name!r} is in state {observed!r} and could not be powered "
-        "off, so its slot was not unassigned and it was NOT deleted. In order: "
+        f"{arm.system_name!r} {why}, so its slot was not unassigned and it was "
+        "NOT deleted. Once you have confirmed it is this run's, in order: "
         f"`chsysstate -m {system} -r lpar -n {name} -o shutdown --immed`; once it "
         f"is Not Activated and its profile still lists slot {fixture.drc_index!r}, "
         f"`{pcie._change_io_slots_command(fixture, add=False)}`; then "
@@ -499,10 +500,12 @@ async def _observe(client: Client, state: RunState, fixture: pcie._DedicatedFixt
         operation="lpar.list_refcodes",
         scenario=_SCENARIO,
         assertions=[
-            Assertion("refcodes-returned", rows is not None),
+            # Non-empty: the tool answers an empty list for a partition it does
+            # not know too, so an empty read proves nothing about the fixture.
+            Assertion("refcodes-returned", bool(rows)),
             Assertion(
                 "refcodes-name-the-fixture",
-                rows is not None
+                bool(rows)
                 and all(
                     isinstance(row, dict) and row.get("lpar_name") == fixture.lpar_name
                     for row in rows
@@ -786,14 +789,35 @@ async def _delete(client: Client, state: RunState, run: _Run) -> bool:
 async def _teardown_fixture(client: Client, state: RunState, run: _Run) -> bool:
     """Power off, unassign and delete, each decided on live state.
 
-    Returns True only when the partition is gone and its slot released. Anything
-    this arm cannot prove its own is handed to `pcie.cleanup_dedicated`, which
-    refuses to mutate it and writes the manual-recovery row.
+    Returns True only when the partition is gone and its slot released. A
+    partition this arm cannot prove its own is left untouched with a
+    manual-recovery row; drift once it is powered off goes to
+    `pcie.cleanup_dedicated`, whose guards re-decide on live state.
     """
     fixture = run.fixture
-    observed = await pcie._read_dedicated_state(client, state, fixture)
-    if not run.create_ok or not _identity_matches(fixture, observed):
+    if not run.create_ok:
+        # Never activated, so the shared guards' delete precondition holds.
         await pcie.cleanup_dedicated(client, state, fixture)
+        return False
+    # Read twice before concluding a mismatch: a transient read failure reads as
+    # a missing token or UUID. The partition may be active here, and the shared
+    # guards would unassign and try to delete it without powering it off.
+    observed = await pcie._read_dedicated_state(client, state, fixture)
+    if not _identity_matches(fixture, observed):
+        observed = await pcie._read_dedicated_state(client, state, fixture)
+    if not _identity_matches(fixture, observed):
+        state.record(
+            _ROW,
+            "bare-cec teardown: identity not confirmed",
+            "FAIL",
+            _manual_recovery(
+                fixture,
+                f"could not be confirmed as this run's (read caller token "
+                f"{observed.caller_token!r} and UUID {observed.lpar_uuid!r}, expected "
+                f"{fixture.run_marker!r} and {fixture.lpar_uuid!r}) and may still be "
+                "active; this run did not power it off",
+            ),
+        )
         return False
     lpar_state = await _read_state(client, state, fixture, _NOT_ACTIVATED, attempts=1)
     if lpar_state not in _NOT_ACTIVATED:
@@ -805,7 +829,9 @@ async def _teardown_fixture(client: Client, state: RunState, run: _Run) -> bool:
                 _ROW,
                 "bare-cec teardown: partition not powered off",
                 "FAIL",
-                _manual_power_off_recovery(fixture, lpar_state),
+                _manual_recovery(
+                    fixture, f"is in state {lpar_state!r} and could not be powered off"
+                ),
             )
             return False
         observed = await pcie._read_dedicated_state(client, state, fixture)
