@@ -10,6 +10,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmcpctl storage mount-optical-media` and `unmount-optical-media` mount and unmount an ISO
+  from a VIOS media repository on an LPAR, and `hmcpctl lpars capture-console` takes a bounded,
+  input-free console snapshot. The LPAR ISO installation recipe,
+  `docs/recipes/lpar-iso-install.md`, uses them to create, provision, ISO-boot, observe, and
+  clean up an LPAR with installed commands only. The bare-CEC recipe now captures the console
+  through the CLI. The recipe is unverified until the v0.1.0 live window runs it (#776).
+
 - A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
