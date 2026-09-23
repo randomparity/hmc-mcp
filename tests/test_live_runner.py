@@ -1178,7 +1178,8 @@ def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, caps
 
 
 @pytest.mark.parametrize(
-    "filename", ["config.toml", "test-results-round2.json", "CONFIG.TOML", "settings.yaml"]
+    "filename",
+    ["config.toml", "test-results-round2.json", "CONFIG.TOML", "settings.yaml", "lab_run.log"],
 )
 def test_failure_redaction_keeps_a_named_file_readable(filename):
     """#914: `config.toml: no default_profile set` printed as `<REDACTED-HOST>: …`."""
@@ -1196,11 +1197,18 @@ def test_failure_redaction_keeps_a_named_file_readable(filename):
         "example.com",
         "example.py",
         "example.md",
+        "results.py",
+        "lab_hmc01.example.com",
+        "hmc01.lab_net.example.com",
+        "_hmc.lab.example.com",
+        "hmc_.lab.example.com",
+        "hmc-01.lab-a.example.com",
     ],
 )
 def test_failure_redaction_still_hides_a_hostname(hostname):
     """Only a single-dot name with a non-TLD file extension escapes; `.py` and
     `.md` are country-code TLDs, and any multi-label name stays a hostname.
+    An underscore or hyphen in a label must not leave a leading label readable (#927).
     """
     redacted = runner._redact_failure_text(f"connect to {hostname} failed")
 
