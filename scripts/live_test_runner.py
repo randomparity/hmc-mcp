@@ -500,6 +500,16 @@ class LiveTestConfig:
             invalid.append("LIVE_TEST_PROTECTED_LPAR_NAMES")
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
+        # The HMC's RepositorySize is whole GiB; hmc_create_media_repository refuses
+        # anything else, which would otherwise surface mid-ST17 after a delete (#963).
+        invalid += [
+            f"{key} must be a multiple of 1024"
+            for key in (
+                "LIVE_TEST_VMEDIA_REPOSITORY_SIZE_MIB",
+                "LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB",
+            )
+            if parsed[cls._CONFIG_FIELDS[key]] % 1024
+        ]
         if (
             parsed["vlan_range_start"] > parsed["vlan_range_end"]
             or parsed["vlan_range_end"] > 4094
