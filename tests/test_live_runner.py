@@ -4389,6 +4389,17 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "delete-call-succeeded",
             "lpar-name-absent",
         },
+        "st36-io-slots": {
+            "zero-suffix-add-accepted",
+            "added-slot-renders-none-pool",
+            "other-slots-stable-on-add",
+            "zero-suffix-remove-accepted",
+            "other-slots-stable-on-remove",
+            "required-slot-removed-by-zero-suffix",
+            "remaining-slot-stable",
+            "remove-command-succeeded",
+            "empty-profile-reads-none",
+        },
         "st23-sriov-logical-port": {
             "assign-call-succeeded",
             "logical-port-configured",

@@ -84,10 +84,11 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 35, while the ids you
+Rows print as they complete. **Row subtask ids go up to 36, while the ids you
 can dispatch stop at 25.** That is not a bug: subtask 24 dispatches the whole
-dedicated arm, and the arm records its internal phases as rows 26 through 34.
-A row numbered 31 is part of the arm you asked for. Subtask 25 dispatches the
+dedicated arm, and the arm records its internal phases as rows 26 through 34,
+plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
+asked for. Subtask 25 dispatches the
 bare-cec arm, which records its own steps as row 35. It reuses the dedicated
 arm's baseline, fixture-create and cleanup steps, so rows 29, 30 and 34 appear
 in a bare-cec run too, with their dedicated-arm wording.
@@ -95,6 +96,23 @@ in a bare-cec run too, with their dedicated-arm wording.
 A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent —
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses —
 and that is the arm working.
+
+### The io_slots scenario
+
+After its reassign, the dedicated arm answers the #912 profile grammar
+questions on its own fixture: row 36. It adds a second slot with
+`is_required=1`, adds and removes a third through the assign and unassign
+operations, removes the `is_required=1` slot with `//0`, then removes the last
+and expects the profile to read `none`.
+
+- It takes **two more slots** than preflight names: the first two, other than
+  the arm's own, that no partition owns and no partition profile lists. Only the
+  fixture's profile lists them, and only while the scenario runs.
+- It SKIPs when `LIVE_TEST_DEDICATED_PCIE_DRC_INDEX` is set, because a pinned
+  run mutates only the slot it names, and when fewer than two such slots exist.
+- A failed step ends the scenario. The arm then removes the slots it added, and
+  its cleanup deletes the fixture only when the profile is back at the baseline.
+  Otherwise it prints a manual-recovery row, as for any other drift.
 
 ### The bare-cec arm
 
@@ -112,6 +130,15 @@ Last, it unassigns the slot and deletes the partition.
   the partition and takes a platform dump. Unset or `false` skips that one step.
 - Run it on its own. In an `all` run the dedicated arm runs first, and bare-cec
   SKIPs rather than record a second fixture over the one the recovery check reads.
+
+### Observations
+
+The SR-IOV and dedicated arms record their verified steps through the same
+observation path as the bare-cec arm. Scenarios are `st23-sriov-logical-port`,
+`st29-dedicated-pcie` and `st36-io-slots`. A run from a clean committed tree,
+with both `LIVE_TEST_ENV_*` keys set, writes them to
+`test-results-<arm>-observations.json`. Promote them by hand
+(`docs/capabilities/README.md`, "Recording an observation").
 
 ## 3. Produce the evidence
 

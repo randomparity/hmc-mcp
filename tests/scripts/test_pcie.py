@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -1244,7 +1245,7 @@ async def test_profile_drift_before_delete_blocks_guard_c(
     """
     holder: dict[str, str] = {}
     # In the full happy-path run, Guard C's _read_dedicated_state calls
-    # _read_profile_io_slots on profile read #13 (1-indexed). Returning a foreign
+    # _read_profile_io_slots on profile read #9 (1-indexed). Returning a foreign
     # value there while Guard A (#11) and Guard B's confirming read (#12) both see
     # the baseline means only Guard C's comparison fails.
     profile_read_count = {"n": 0}
@@ -1263,11 +1264,12 @@ async def test_profile_drift_before_delete_blocks_guard_c(
             slots["io_slots"] = "none"
             return ""
         profile_read_count["n"] += 1
-        # Profile read #8 is Guard C's in the full happy-path run:
+        # Profile read #9 is Guard C's in the full happy-path run:
         # #1 ST30-baseline, #2 ST31-post-assign, #3 ST32-verify,
-        # #4 ST33-unassign-confirm, #5 ST33-post-reassign, #6 Guard-A,
-        # #7 Guard-B-confirm, #8 Guard-C.
-        if profile_read_count["n"] == 8:
+        # #4 ST33-unassign-confirm, #5 ST33-post-reassign, #6 ST36 spare-slot
+        # selection (one slot inventoried, so the scenario SKIPs), #7 Guard-A,
+        # #8 Guard-B-confirm, #9 Guard-C.
+        if profile_read_count["n"] == 9:
             return "21030030/none/0"
         return slots["io_slots"]
 
@@ -1629,3 +1631,195 @@ async def test_foreign_partition_of_the_same_name_is_never_adopted(
     assert "hmc_delete_lpar" not in [t for t, _ in state.calls]
     # A partition of that name held by someone else rules out one of this run's.
     assert state.row("create-time probe partition not confirmed absent") is None
+
+
+# ---------------------------------------------------------------------------
+# ST36 — io_slots scenario (#912)
+# ---------------------------------------------------------------------------
+
+_SLOT_B = "21010021"
+_SLOT_C = "21010022"
+_IO_SLOTS_IDS = {
+    "st36-hmc-assign-dedicated-pcie-slot",
+    "st36-hmc-unassign-dedicated-pcie-slot",
+    "st36-chsyscfg-io-slots-remove-required",
+    "st36-chsyscfg-io-slots-remove-last",
+}
+
+
+def _io_slots_world(
+    holder: dict[str, str], *, c_suffix: str = "0"
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A three-slot system whose fixture profile is a list of rendered elements.
+
+    `io_slots+=X//R` appends `X/none/R`; `io_slots-=X//R` removes X's element
+    whatever its `is_required`, which is the answer the #879 window observed.
+    *c_suffix* renders the operation's add of C, so a test can make the HMC
+    store it differently from what the operation wrote.
+    """
+    model: dict[str, Any] = {"elements": [], "unreadable": False}
+
+    def change(cmd: str) -> None:
+        match = re.search(r"io_slots([+-])=(\w+)//(\d)", cmd)
+        assert match is not None, cmd
+        sign, drc, required = match.groups()
+        if sign == "+":
+            model["elements"].append(f"{drc}/none/{required}")
+        else:
+            model["elements"] = [e for e in model["elements"] if not e.startswith(f"{drc}/")]
+
+    def run_command(kwargs: dict[str, Any], _index: int) -> str:
+        cmd = kwargs["cmd"]
+        if cmd == "lshmc -V":
+            return _ADMITTED_VERSION
+        if "-r sys " in cmd and "type_model" in cmd:
+            return _ADMITTED_MODEL
+        if "io_slots" in cmd and cmd.startswith("chsyscfg"):
+            change(cmd)
+            return ""
+        if model["unreadable"]:
+            return "not the admitted table"
+        return ",".join(model["elements"]) or "none"
+
+    def assign(kwargs: dict[str, Any], _index: int) -> None:
+        suffix = c_suffix if kwargs["drc_index"] == _SLOT_C else "0"
+        change(f"chsyscfg io_slots+={kwargs['drc_index']}//{suffix}")
+
+    def unassign(kwargs: dict[str, Any], _index: int) -> None:
+        change(f"chsyscfg io_slots-={kwargs['drc_index']}//0")
+
+    responses = _happy_responses(holder, run_command=run_command)
+    responses["hmc_list_dedicated_pcie_slots"] = lambda _k, _n: {
+        "capability": "available",
+        "items": [
+            {"drc_index": drc, "description": "PCIe adapter", "owner_lpar": ""}
+            for drc in (_DRC, _SLOT_B, _SLOT_C)
+        ],
+    }
+    responses["hmc_assign_dedicated_pcie_slot"] = assign
+    responses["hmc_unassign_dedicated_pcie_slot"] = unassign
+    _fixture_absent_after_delete(responses)
+    return responses, model
+
+
+def _unreadable_rendering(responses: dict[str, Any], model: dict[str, Any]) -> None:
+    """Keep "not the admitted table" out of `_rendering_profile_reads`' table."""
+    inner = responses["hmc_run_command"]
+
+    def run_command(kwargs: dict[str, Any], index: int) -> Any:
+        value = inner(kwargs, index)
+        return _LOOKUP_LOST if value == "not the admitted table" else value
+
+    responses["hmc_run_command"] = run_command
+
+
+@pytest.mark.asyncio
+async def test_io_slots_scenario_emits_verified_observations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    holder: dict[str, str] = {}
+    responses, model = _io_slots_world(holder)
+    state = await _run_arm(monkeypatch, responses, holder)
+
+    emitted = {k: v for k, v in _emitted(state).items() if k.startswith("st36-")}
+    scenario = "st36-io-slots"
+    assert emitted == {
+        "st36-hmc-assign-dedicated-pcie-slot": (
+            "pcie.assign_dedicated_slot", scenario, "passed", "passed",
+            ["added-slot-renders-none-pool", "other-slots-stable-on-add",
+             "zero-suffix-add-accepted"],
+        ),
+        "st36-hmc-unassign-dedicated-pcie-slot": (
+            "pcie.unassign_dedicated_slot", scenario, "passed", "not-required",
+            ["other-slots-stable-on-remove", "zero-suffix-remove-accepted"],
+        ),
+        "st36-chsyscfg-io-slots-remove-required": (
+            "command.run", scenario, "passed", "not-required",
+            ["remaining-slot-stable", "required-slot-removed-by-zero-suffix"],
+        ),
+        "st36-chsyscfg-io-slots-remove-last": (
+            "command.run", scenario, "passed", "not-required",
+            ["empty-profile-reads-none", "remove-command-succeeded"],
+        ),
+    }
+    assert f"io_slots+={_SLOT_B}//1" in " ".join(state.commands())
+    assert model["elements"] == []
+    # Step 5 left the profile at its baseline, so cleanup deletes without a removal.
+    assert not [c for c in state.cleanup_commands() if "io_slots-" in c]
+    assert "hmc_delete_lpar" in state.cleanup_tools()
+
+
+@pytest.mark.asyncio
+async def test_io_slots_rendering_fault_fails_the_add_and_restores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C stored as `C/none/1` is not the `//0` rendering the operation relies on."""
+    holder: dict[str, str] = {}
+    responses, model = _io_slots_world(holder, c_suffix="1")
+    state = await _run_arm(monkeypatch, responses, holder)
+
+    emitted = _emitted(state)
+    add = emitted["st36-hmc-assign-dedicated-pcie-slot"]
+    assert add[2] == "failed"
+    assert "added-slot-renders-none-pool" not in add[4]
+    assert not _IO_SLOTS_IDS - {"st36-hmc-assign-dedicated-pcie-slot"} & set(emitted)
+    # The restore removed C and B with the suffix each renders.
+    restores = [c for c in state.commands() if "io_slots-" in c and _DRC not in c]
+    assert [re.search(r"io_slots-=(\S+?),", c).group(1) for c in restores] == [
+        f"{_SLOT_C}//1",
+        f"{_SLOT_B}//1",
+    ]
+    assert model["elements"] == []
+
+
+@pytest.mark.asyncio
+async def test_io_slots_unreadable_after_a_failed_remove_restores_both_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    holder: dict[str, str] = {}
+    responses, model = _io_slots_world(holder)
+    unassign = responses["hmc_unassign_dedicated_pcie_slot"]
+
+    def lost_unassign(kwargs: dict[str, Any], index: int) -> Any:
+        unassign(kwargs, index)
+        model["unreadable"] = True
+        return _LOOKUP_LOST
+
+    responses["hmc_unassign_dedicated_pcie_slot"] = lost_unassign
+    _unreadable_rendering(responses, model)
+    state = await _run_arm(monkeypatch, responses, holder)
+
+    emitted = _emitted(state)
+    assert emitted["st36-hmc-unassign-dedicated-pcie-slot"][2] == "failed"
+    assert "st36-chsyscfg-io-slots-remove-required" not in emitted
+    restores = [c for c in state.commands() if "io_slots-" in c and _DRC not in c]
+    assert [re.search(r"io_slots-=(\S+?),", c).group(1) for c in restores][:2] == [
+        f"{_SLOT_C}//0",
+        f"{_SLOT_B}//1",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("config", "inventory"),
+    [
+        pytest.param({**_CONFIG, "dedicated_pcie_drc_index": _DRC}, 3, id="pinned"),
+        pytest.param(_CONFIG, 2, id="one-spare"),
+    ],
+)
+async def test_io_slots_scenario_skips_without_two_selectable_spares(
+    monkeypatch: pytest.MonkeyPatch, config: dict[str, str], inventory: int
+) -> None:
+    holder: dict[str, str] = {}
+    responses, _model = _io_slots_world(holder)
+    slots = (_DRC, _SLOT_B, _SLOT_C)[:inventory]
+    responses["hmc_list_dedicated_pcie_slots"] = lambda _k, _n: {
+        "capability": "available",
+        "items": [{"drc_index": d, "description": "x", "owner_lpar": ""} for d in slots],
+    }
+    state = await _run_arm(monkeypatch, responses, holder, config=config)
+
+    row = state.row("io_slots scenario")
+    assert row is not None and row[2] == "SKIP"
+    assert not [c for c in state.commands() if _SLOT_B in c or _SLOT_C in c]
+    assert not _IO_SLOTS_IDS & set(_emitted(state))
