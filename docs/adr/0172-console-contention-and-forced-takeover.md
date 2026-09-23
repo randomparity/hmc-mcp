@@ -44,6 +44,8 @@ Consequences).
   its `close()` issues `rmvterm`, which ends the taker's hold. Takeover is meant for leaked or
   foreign holds. A session that could detect that it lost its hold needs live evidence of how
   `mkvterm` ends under `rmvterm` (#879).
+- Takeover does not tell a leftover hold from another holder. #977 owns that distinction and
+  the reclaim policy.
 - Takeover races another client. If a third client acquires between the `rmvterm` and the
   `mkvterm`, `open()` reports contention and does not try again.
 - The capture no longer leaks its hold on a late sentence, but it still raises contention for

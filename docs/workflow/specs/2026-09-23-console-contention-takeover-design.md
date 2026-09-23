@@ -16,7 +16,8 @@ All changes are in `src/hmcpctl/ssh/console.py`:
 - `_acquire_capture_stream`: the contention message becomes
   `f"{command} found the console held by another session; the HMC reported: {report!r}"`,
   where `report = " ".join(bytes(data).decode("ascii", "replace").split())` cut to
-  `_ERROR_DETAIL_MAX_CHARS`. `data` is the output read up to the sentence.
+  `_ERROR_DETAIL_MAX_CHARS`. `data` holds the chunks read through the one containing the
+  sentence; P1 puts the sentence first, so the cut keeps it.
 - `_rmvterm(config, system_name, lpar_name) -> None`: issues `rmvterm` and logs an
   `HMCCLIError` as a warning. `_release_and_verify` calls it in place of its inline copy.
 - `ConsoleSession.__init__(..., *, take_over: bool = False)`. In `open()`, inside the existing
