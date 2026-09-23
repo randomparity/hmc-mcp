@@ -13,9 +13,9 @@ STORAGE_KINDS = frozenset(get_args(StorageKind))
 def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     """Document to create a Volume Group from a set of physical volumes."""
     pvs = "\n".join(
-        f'    <PhysicalVolume kb="CUD" kxe="false" schemaVersion="V1_0">\n'
+        f'    <PhysicalVolume schemaVersion="V1_0">\n'
         f"      <Metadata><Atom/></Metadata>\n"
-        f'      <VolumeName kb="CUD" kxe="false">{pv}</VolumeName>\n'
+        f'      <VolumeName kb="CUR" kxe="false">{pv}</VolumeName>\n'
         f"    </PhysicalVolume>"
         for pv in physical_volumes
     )
@@ -37,13 +37,55 @@ def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     body = f"""  <Metadata><Atom/></Metadata>
   <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_0">
+    <VirtualDisk schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
-      <DiskName kb="CUD" kxe="false">{disk_name}</DiskName>
-      <DiskCapacity kb="CUD" kxe="false">{capacity_gib}</DiskCapacity>
+      <DiskCapacity kb="CUR" kxe="false">{capacity_gib}</DiskCapacity>
+      <DiskName kb="CUR" kxe="false">{disk_name}</DiskName>
     </VirtualDisk>
   </VirtualDisks>"""
     return document_envelope("VolumeGroup", body)
+
+
+_TARGET_DEVICE_ELEMENTS = {
+    "PhysicalVolume": "PhysicalVolumeVirtualTargetDevice",
+    "VirtualDisk": "LogicalVolumeVirtualTargetDevice",
+    "VirtualOpticalMedia": "VirtualOpticalTargetDevice",
+}
+
+
+def _target_device(element: str, name: str | None) -> str:
+    """Typed V10R3 TargetDevice pinning the vtscsi name; empty when *name* is unset."""
+    if not name:
+        return ""
+    return f"""
+      <TargetDevice kb="CUR" kxe="false">
+        <{element} schemaVersion="V1_0">
+          <Metadata><Atom/></Metadata>
+          <TargetName kb="CUR" kxe="false">{name}</TargetName>
+        </{element}>
+      </TargetDevice>"""
+
+
+def _mapping_document(storage_xml: str, target_xml: str, lpar_link: str) -> str:
+    """VirtualIOServer document with one VirtualSCSIMapping, in the V10R3 child order.
+
+    Arguments are already escaped by the public builders; this helper adds no values.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
+  <Metadata><Atom/></Metadata>
+  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
+    <Metadata><Atom/></Metadata>
+    <VirtualSCSIMapping schemaVersion="V1_0">
+      <Metadata><Atom/></Metadata>
+      <AssociatedLogicalPartition kb="CUR" kxe="false" href="{lpar_link}" rel="related"/>
+      <Storage kb="CUR" kxe="false">
+{storage_xml}
+      </Storage>{target_xml}
+    </VirtualSCSIMapping>
+  </VirtualSCSIMappings>
+</VirtualIOServer>
+"""
 
 
 @escapes_string_arguments
@@ -69,30 +111,12 @@ def build_vscsi_mapping_document(
             f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"
         )
     name_field = "VolumeName" if storage_kind == "PhysicalVolume" else "DiskName"
-    target = ""
-    if target_device:
-        target = (
-            f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
-        )
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
-  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <Storage kb="CUD" kxe="false" schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <{storage_kind} kb="CUD" kxe="false" schemaVersion="V1_0">
+    storage = f"""        <{storage_kind} schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
-          <{name_field} kb="CUD" kxe="false">{storage_name}</{name_field}>
-        </{storage_kind}>
-      </Storage>
-{target}      <AssociatedLogicalPartition xmlns="{ATOM_NS}" rel="related" href="{lpar_link}"/>
-    </VirtualSCSIMapping>
-  </VirtualSCSIMappings>
-</VirtualIOServer>
-"""
+          <{name_field} kb="CUR" kxe="false">{storage_name}</{name_field}>
+        </{storage_kind}>"""
+    target = _target_device(_TARGET_DEVICE_ELEMENTS[storage_kind], target_device)
+    return _mapping_document(storage, target, lpar_link)
 
 
 @escapes_string_arguments
@@ -107,30 +131,12 @@ def build_virtual_optical_mapping_document(
     lpar_link is the Atom SELF href of the client LPAR the optical media is mapped to.
     target_device optionally pins the vtscsi name. This creates a read-only optical mapping.
     """
-    target = ""
-    if target_device:
-        target = (
-            f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
-        )
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
-  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <Storage kb="CUD" kxe="false" schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <VirtualOpticalMedia kb="CUD" kxe="false" schemaVersion="V1_0">
+    storage = f"""        <VirtualOpticalMedia schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
-          <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
-        </VirtualOpticalMedia>
-      </Storage>
-{target}      <AssociatedLogicalPartition xmlns="{ATOM_NS}" rel="related" href="{lpar_link}"/>
-    </VirtualSCSIMapping>
-  </VirtualSCSIMappings>
-</VirtualIOServer>
-"""
+          <MediaName kb="CUR" kxe="false">{media_name}</MediaName>
+        </VirtualOpticalMedia>"""
+    target = _target_device(_TARGET_DEVICE_ELEMENTS["VirtualOpticalMedia"], target_device)
+    return _mapping_document(storage, target, lpar_link)
 
 
 # Virtual Network (child of ManagedSystem)
@@ -165,9 +171,9 @@ def build_virtual_network_document(
 <VirtualNetwork xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
 {assoc}  <NetworkName kb="CUD" kxe="false">{name}</NetworkName>
-  <NetworkVLANID kb="CUD" kxe="false">{vlan_id}</NetworkVLANID>
-  <VswitchID kb="CUD" kxe="false">{virtual_switch_id}</VswitchID>
-  <TaggedNetwork kb="CUD" kxe="false">{tagged_str}</TaggedNetwork>
+  <NetworkVLANID kb="COD" kxe="false">{vlan_id}</NetworkVLANID>
+  <VswitchID kb="ROR" kxe="false">{virtual_switch_id}</VswitchID>
+  <TaggedNetwork kb="COD" kxe="false">{tagged_str}</TaggedNetwork>
 </VirtualNetwork>
 """
 
@@ -228,7 +234,7 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
     body = f"""  <Metadata><Atom/></Metadata>
   <VirtualDisks schemaVersion="V1_0" kb="CUD">
     <Metadata><Atom/></Metadata>
-    <VirtualDisk kb="CUD">
+    <VirtualDisk schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
       <VolumeGroupName kb="CUD" kxe="false">{disk_name}</VolumeGroupName>
     </VirtualDisk>
