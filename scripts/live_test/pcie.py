@@ -77,7 +77,7 @@ from hmcpctl.ssh.profiles import (
 )
 from hmcpctl.ssh.transport import HMCCLIError
 
-from .observation import CallFailure
+from .observation import Assertion, CallFailure
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -86,6 +86,20 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # SR-IOV state snapshot helpers
 # ---------------------------------------------------------------------------
+
+_SRIOV_SCENARIO = "st23-sriov-logical-port"
+
+
+@dataclass
+class _SriovEvidence:
+    """What the assign and reassign readbacks showed, recorded once cleanup has decided.
+
+    Both add something cleanup must undo, so their observations carry cleanup's
+    outcome rather than claiming none was needed (`bare_cec._record_create_and_assign`).
+    """
+
+    assign: tuple[bool, bool, bool] | None = None  # configured, owner, capacity
+    reassign: tuple[bool, bool] | None = None  # configured, owner
 
 
 @dataclass
@@ -212,8 +226,12 @@ def _logical_port_is_configured(data: object, logical_port_id: str) -> bool:
     )
 
 
-async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
-    """Record final logical-port and profile checks after cleanup."""
+async def _verify_cleanup_inventory(client: Client, state: RunState) -> tuple[bool, bool]:
+    """Record final logical-port and profile checks after cleanup.
+
+    Returns (restored, profile_clean): restored only when the inventory read
+    shows the port unconfigured and the profile is clean.
+    """
     config = state.config
     st, data = await state.call(
         client,
@@ -223,6 +241,7 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
         logical_port_id=str(config.sriov_logical_port_id),
     )
     state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
+    unconfigured = False
     if st == "PASS":
         still_configured = _logical_port_is_configured(
             data, str(config.sriov_logical_port_id)
@@ -238,6 +257,7 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
                 else f"logical port {config.sriov_logical_port_id} is unconfigured — baseline restored"
             ),
         )
+        unconfigured = not still_configured
 
     final_state = await _read_sriov_state(client, state)
     profile_clean = final_state.profile_ports in (None, "none", "")
@@ -255,6 +275,7 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> None:
             else "sriov_eth_logical_ports=none — lp3 profile restored to baseline"
         ),
     )
+    return unconfigured and profile_clean, profile_clean
 
 
 async def _check_sriov_adapter_health(client: Client, state: RunState) -> bool:
@@ -477,7 +498,9 @@ async def assign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
+async def verify_sriov_assigned(
+    client: Client, state: RunState, assign_ok: bool, evidence: _SriovEvidence
+) -> bool:
     """Verify the logical port is configured on lp3 after assign."""
     config = state.config
     print("\n=== ST25: SR-IOV Post-Assign Verify (issue #217) ===")
@@ -520,6 +543,8 @@ async def verify_sriov_assigned(client: Client, state: RunState) -> bool:
         f"profile sriov_eth_logical_ports={sriov_state.profile_ports!r} "
         "(dynamic assign does not update the profile for Not Activated LPARs)",
     )
+    if assign_ok:
+        evidence.assign = (sriov_state.configured, owner_ok, cap_ok)
 
     return sriov_state.configured and owner_ok and cap_ok
 
@@ -568,6 +593,19 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
         f"effective configured={sriov_state.configured} owner={sriov_state.owner_lpar!r} "
         "(profile-only unassign does not touch effective layer; port remains until next activation)",
     )
+    state.record_verified(
+        26,
+        "hmc_unassign_sriov_logical_port (verified)",
+        operation="sriov.unassign_logical_port",
+        scenario=_SRIOV_SCENARIO,
+        assertions=[
+            # A failed call returned above, before any readback.
+            Assertion("unassign-call-succeeded", True),
+            Assertion("profile-ports-cleared", profile_clean),
+        ],
+        cleanup="not-required",
+        data=f"profile_ports={sriov_state.profile_ports!r}",
+    )
     return profile_clean
 
 
@@ -576,7 +614,9 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
+async def reassign_sriov_to_lp3(
+    client: Client, state: RunState, evidence: _SriovEvidence
+) -> bool:
     """Re-assign the same port to prove the round-trip path."""
     config = state.config
     print("\n=== ST27: SR-IOV Reassign (issue #217) ===")
@@ -599,6 +639,7 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
     # Verify ownership
     sriov_state = await _read_sriov_state(client, state)
     ok = sriov_state.configured and sriov_state.owner_lpar == config.lp3_name
+    evidence.reassign = (sriov_state.configured, sriov_state.owner_lpar == config.lp3_name)
     state.record(
         27,
         "sriov post-reassign verify",
@@ -613,8 +654,8 @@ async def reassign_sriov_to_lp3(client: Client, state: RunState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def cleanup_sriov(client: Client, state: RunState) -> None:
-    """Unassign the test port (cleanup) and confirm the baseline is restored."""
+async def cleanup_sriov(client: Client, state: RunState) -> bool:
+    """Unassign the test port (cleanup); return whether the baseline is confirmed restored."""
     config = state.config
     print("\n=== ST28: SR-IOV Cleanup (issue #217) ===")
 
@@ -635,7 +676,9 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             "PASS",
             "no cleanup action required",
         )
-    elif sriov_state.owner_lpar != config.lp3_name:
+        restored, _ = await _verify_cleanup_inventory(client, state)
+        return restored
+    if sriov_state.owner_lpar != config.lp3_name:
         state.record(
             28,
             "sriov cleanup: owner mismatch",
@@ -644,64 +687,77 @@ async def cleanup_sriov(client: Client, state: RunState) -> None:
             f"to {sriov_state.owner_lpar!r} — expected {config.lp3_name!r}. "
             "Do not unassign — another LPAR owns this port.",
         )
-        return
-    else:
-        # Step 1: profile unassign (clears sriov_eth_logical_ports via chsyscfg)
-        st, data = await state.call(
-            client,
-            "hmc_unassign_sriov_logical_port",
-            system_name_or_uuid=config.system_name,
-            lpar_name_or_uuid=config.lp3_name,
-            adapter_id=str(config.sriov_adapter_id),
-            physical_port_id=str(config.sriov_physical_port_id),
-            logical_port_id=str(config.sriov_logical_port_id),
-            profile_name=config.sriov_profile_name,
-            ownership_override=True,
+        return False
+    # Step 1: profile unassign (clears sriov_eth_logical_ports via chsyscfg)
+    st, data = await state.call(
+        client,
+        "hmc_unassign_sriov_logical_port",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        adapter_id=str(config.sriov_adapter_id),
+        physical_port_id=str(config.sriov_physical_port_id),
+        logical_port_id=str(config.sriov_logical_port_id),
+        profile_name=config.sriov_profile_name,
+        ownership_override=True,
+    )
+    state.record(28, "hmc_unassign_sriov_logical_port (cleanup)", st, data)
+    if st != "PASS":
+        state.record(
+            28,
+            "sriov cleanup: unassign failed",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
+            f"logical port {config.sriov_logical_port_id} may still be in profile and effective layer. "
+            f"Run: chhwres -r sriov --rsubtype logport -m {config.system_name} "
+            f"-o r -p {config.lp3_name} "
+            f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
+            f"to recover. Error: {str(data)[:400]}",
         )
-        state.record(28, "hmc_unassign_sriov_logical_port (cleanup)", st, data)
-        if st != "PASS":
-            state.record(
-                28,
-                "sriov cleanup: unassign failed",
-                "FAIL",
-                f"MANUAL RECOVERY REQUIRED: profile unassign failed — "
-                f"logical port {config.sriov_logical_port_id} may still be in profile and effective layer. "
-                f"Run: chhwres -r sriov --rsubtype logport -m {config.system_name} "
-                f"-o r -p {config.lp3_name} "
-                f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
-                f"to recover. Error: {str(data)[:400]}",
-            )
-            return
+        return False
 
-        # Step 2: effective removal (chhwres -o r) — the profile-only unassign
-        # does not touch the effective layer.  Remove it explicitly so the
-        # port returns to the unconfigured pool.
-        st2, data2 = await state.call(
-            client,
-            "hmc_run_command",
-            cmd=(
-                f"chhwres -r sriov --rsubtype logport"
-                f" -m {config.system_name}"
-                f" -o r -p {config.lp3_name}"
-                f' -a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}"'
-            ),
+    # Step 2: effective removal (chhwres -o r) — the profile-only unassign
+    # does not touch the effective layer.  Remove it explicitly so the
+    # port returns to the unconfigured pool.
+    st2, data2 = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=(
+            f"chhwres -r sriov --rsubtype logport"
+            f" -m {config.system_name}"
+            f" -o r -p {config.lp3_name}"
+            f' -a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}"'
+        ),
+    )
+    state.record(28, "chhwres -o r (effective cleanup)", st2, data2)
+    if st2 != "PASS":
+        state.record(
+            28,
+            "sriov cleanup: effective removal failed",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: effective removal failed — "
+            f"logical port {config.sriov_logical_port_id} still assigned to {config.lp3_name!r}. "
+            f"Run manually: chhwres -r sriov --rsubtype logport -m {config.system_name} "
+            f"-o r -p {config.lp3_name} "
+            f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
+            f"Error: {str(data2)[:400]}",
         )
-        state.record(28, "chhwres -o r (effective cleanup)", st2, data2)
-        if st2 != "PASS":
-            state.record(
-                28,
-                "sriov cleanup: effective removal failed",
-                "FAIL",
-                f"MANUAL RECOVERY REQUIRED: effective removal failed — "
-                f"logical port {config.sriov_logical_port_id} still assigned to {config.lp3_name!r}. "
-                f"Run manually: chhwres -r sriov --rsubtype logport -m {config.system_name} "
-                f"-o r -p {config.lp3_name} "
-                f'-a "adapter_id={config.sriov_adapter_id},logical_port_id={config.sriov_logical_port_id}" '
-                f"Error: {str(data2)[:400]}",
-            )
-            return
+        return False
 
-    await _verify_cleanup_inventory(client, state)
+    restored, profile_clean = await _verify_cleanup_inventory(client, state)
+    state.record_verified(
+        28,
+        "hmc_unassign_sriov_logical_port (cleanup verified)",
+        operation="sriov.unassign_logical_port",
+        scenario=_SRIOV_SCENARIO,
+        assertions=[
+            # Both failed calls returned above with a manual-recovery row.
+            Assertion("unassign-call-succeeded", True),
+            Assertion("profile-ports-cleared", profile_clean),
+        ],
+        cleanup="passed" if restored else "failed",
+        data="final logical-port inventory and profile after cleanup",
+    )
+    return restored
 
 
 # ---------------------------------------------------------------------------
@@ -722,12 +778,13 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
         await cleanup_sriov(client, state)
         return
 
+    evidence = _SriovEvidence()
     try:
         # Phase 2: Assign
         assign_ok = await assign_sriov_to_lp3(client, state)
 
         # Phase 3: Verify assign (always run, even if assign failed — documents state)
-        verify_ok = await verify_sriov_assigned(client, state)
+        verify_ok = await verify_sriov_assigned(client, state, assign_ok, evidence)
 
         # Phase 4: Unassign (only if assign succeeded and verification passed)
         if assign_ok and verify_ok:
@@ -742,7 +799,7 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
 
         # Phase 5: Reassign (only if unassign succeeded — proves round-trip)
         if unassign_ok:
-            await reassign_sriov_to_lp3(client, state)
+            await reassign_sriov_to_lp3(client, state, evidence)
         else:
             state.skip(
                 27,
@@ -751,13 +808,55 @@ async def exercise_sriov_assignment(client: Client, state: RunState) -> None:
             )
     finally:
         active_error = sys.exception()
+        restored = False
         try:
             # Phase 6: Cleanup — always runs after a successful baseline.
-            await cleanup_sriov(client, state)
+            restored = await cleanup_sriov(client, state)
         except BaseException as cleanup_error:
             if active_error is None:
                 raise
             active_error.add_note(f"SR-IOV cleanup failed: {cleanup_error}")
+        finally:
+            _record_sriov_assignments(state, evidence, restored)
+
+
+def _record_sriov_assignments(
+    state: RunState, evidence: _SriovEvidence, restored: bool
+) -> None:
+    """Record assign and reassign once cleanup has decided their cleanup."""
+    cleanup = "passed" if restored else "failed"
+    if evidence.assign is not None:
+        configured, owner_ok, cap_ok = evidence.assign
+        state.record_verified(
+            25,
+            "hmc_assign_sriov_logical_port (verified)",
+            operation="sriov.assign_logical_port",
+            scenario=_SRIOV_SCENARIO,
+            assertions=[
+                # Set only when the call passed; a failed assign records no observation.
+                Assertion("assign-call-succeeded", True),
+                Assertion("logical-port-configured", configured),
+                Assertion("owner-is-target-lpar", owner_ok),
+                Assertion("capacity-matches", cap_ok),
+            ],
+            cleanup=cleanup,
+            data=f"configured={configured} owner_ok={owner_ok} capacity_ok={cap_ok}",
+        )
+    if evidence.reassign is not None:
+        configured, owner_ok = evidence.reassign
+        state.record_verified(
+            27,
+            "hmc_assign_sriov_logical_port (reassign verified)",
+            operation="sriov.assign_logical_port",
+            scenario=_SRIOV_SCENARIO,
+            assertions=[
+                Assertion("assign-call-succeeded", True),
+                Assertion("logical-port-configured", configured),
+                Assertion("owner-is-target-lpar", owner_ok),
+            ],
+            cleanup=cleanup,
+            data=f"configured={configured} owner_ok={owner_ok}",
+        )
 
 
 # ---------------------------------------------------------------------------

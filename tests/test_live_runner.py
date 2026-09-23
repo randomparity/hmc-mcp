@@ -214,9 +214,10 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
     )
 
     assert await pcie.assign_sriov_to_lp3(object(), state)
-    assert await pcie.verify_sriov_assigned(object(), state)
+    evidence = pcie._SriovEvidence()
+    assert await pcie.verify_sriov_assigned(object(), state, True, evidence)
     assert await pcie.unassign_sriov_from_lp3(object(), state)
-    assert await pcie.reassign_sriov_to_lp3(object(), state)
+    assert await pcie.reassign_sriov_to_lp3(object(), state, evidence)
 
     assign_tool, assign_args = state.calls[0]
     assert assign_tool == "hmc_assign_sriov_logical_port"
@@ -233,6 +234,7 @@ async def test_sriov_phases_assign_verify_unassign_and_reassign() -> None:
     assert state.calls[3][0] == "hmc_unassign_sriov_logical_port"
     assert state.calls[3][1]["ownership_override"] is True
     assert [entry["status"] for entry in state.results if entry["subtask"] == 26] == [
+        "PASS",
         "PASS",
         "PASS",
         "PASS",
@@ -253,7 +255,9 @@ async def test_sriov_verify_records_wrong_owner_without_mutation() -> None:
         ]
     )
 
-    assert not await pcie.verify_sriov_assigned(object(), state)
+    assert not await pcie.verify_sriov_assigned(
+        object(), state, True, pcie._SriovEvidence()
+    )
 
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_sriov_logical_ports",
@@ -339,6 +343,118 @@ async def test_sriov_cleanup_removes_owned_port_and_verifies_baseline() -> None:
     assert "chhwres -r sriov --rsubtype logport" in cleanup_command
     assert " -o r -p " in cleanup_command
     assert all(entry["status"] == "PASS" for entry in state.results)
+
+
+def _sriov_arm_transcript(
+    state: _ScriptedSriovState, *, assign_status: str = "PASS", chhwres_status: str = "PASS"
+) -> list[tuple[str, str, object]]:
+    """Every call `exercise_sriov_assignment` makes after its baseline, in order."""
+    owned = _logical_port_state(state, owner=state.config.lp3_name)
+    free = _logical_port_state(state)
+    assign = [("hmc_assign_sriov_logical_port", assign_status, {"changed": True})]
+    verify = [("hmc_list_sriov_logical_ports", "PASS", owned), _profile_state()]
+    round_trip = (
+        [("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}), *verify]
+        + [("hmc_assign_sriov_logical_port", "PASS", {"changed": True}), *verify]
+        if assign_status == "PASS"
+        else []
+    )
+    cleanup = [
+        ("hmc_list_sriov_logical_ports", "PASS", owned),
+        _profile_state("configured-port"),
+        ("hmc_unassign_sriov_logical_port", "PASS", {"changed": True}),
+        ("hmc_run_command", chhwres_status, "removed"),
+    ]
+    if chhwres_status == "PASS":
+        cleanup += [
+            ("hmc_list_sriov_logical_ports", "PASS", free),
+            ("hmc_list_sriov_logical_ports", "PASS", free),
+            _profile_state(),
+        ]
+    return assign + verify + round_trip + cleanup
+
+
+async def _run_sriov_arm(monkeypatch, **faults) -> _ScriptedSriovState:
+    state = _ScriptedSriovState([])
+    state._responses = iter(_sriov_arm_transcript(state, **faults))
+
+    async def baseline_ok(_client, _state) -> bool:
+        return True
+
+    monkeypatch.setattr(pcie, "capture_sriov_baseline", baseline_ok)
+    await pcie.exercise_sriov_assignment(object(), state)
+    assert next(state._responses, None) is None, "transcript not consumed"
+    return state
+
+
+def _sriov_observations(state) -> dict[str, dict]:
+    return {item["observation"]["id"]: item for item in state.observations}
+
+
+@pytest.mark.asyncio
+async def test_sriov_arm_emits_verified_observations(monkeypatch) -> None:
+    state = await _run_sriov_arm(monkeypatch)
+
+    emitted = _sriov_observations(state)
+    assert len(emitted) == len(state.observations), "duplicate observation id"
+    assert {
+        key: (
+            item["operation"],
+            item["observation"]["result"],
+            item["observation"]["cleanup"],
+            sorted(item["observation"]["assertions"]),
+        )
+        for key, item in emitted.items()
+    } == {
+        "st25-hmc-assign-sriov-logical-port": (
+            "sriov.assign_logical_port",
+            "passed",
+            "passed",
+            sorted(["assign-call-succeeded", "logical-port-configured",
+                    "owner-is-target-lpar", "capacity-matches"]),
+        ),
+        "st26-hmc-unassign-sriov-logical-port": (
+            "sriov.unassign_logical_port",
+            "passed",
+            "not-required",
+            ["profile-ports-cleared", "unassign-call-succeeded"],
+        ),
+        "st27-hmc-assign-sriov-logical-port": (
+            "sriov.assign_logical_port",
+            "passed",
+            "passed",
+            sorted(["assign-call-succeeded", "logical-port-configured",
+                    "owner-is-target-lpar"]),
+        ),
+        "st28-hmc-unassign-sriov-logical-port": (
+            "sriov.unassign_logical_port",
+            "passed",
+            "passed",
+            ["profile-ports-cleared", "unassign-call-succeeded"],
+        ),
+    }
+    assert {item["observation"]["scenario"] for item in emitted.values()} == {
+        "st23-sriov-logical-port"
+    }
+
+
+@pytest.mark.asyncio
+async def test_sriov_failed_cleanup_fails_the_assign_observations(monkeypatch) -> None:
+    """A port cleanup left assigned cannot back a passed assign observation."""
+    state = await _run_sriov_arm(monkeypatch, chhwres_status="FAIL")
+
+    emitted = _sriov_observations(state)
+    for key in ("st25-hmc-assign-sriov-logical-port", "st27-hmc-assign-sriov-logical-port"):
+        assert emitted[key]["observation"]["cleanup"] == "failed"
+        assert emitted[key]["observation"]["result"] == "failed"
+    assert "st28-hmc-unassign-sriov-logical-port" not in emitted
+
+
+@pytest.mark.asyncio
+async def test_sriov_failed_assign_records_no_assign_observation(monkeypatch) -> None:
+    state = await _run_sriov_arm(monkeypatch, assign_status="FAIL")
+
+    assert set(_sriov_observations(state)) == {"st28-hmc-unassign-sriov-logical-port"}
 
 
 @pytest.mark.asyncio
@@ -4263,6 +4379,14 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st23-sriov-logical-port": {
+            "assign-call-succeeded",
+            "logical-port-configured",
+            "owner-is-target-lpar",
+            "capacity-matches",
+            "unassign-call-succeeded",
+            "profile-ports-cleared",
+        },
         "st35-bare-cec": {
             "lpar-uuid-resolved",
             "ownership-and-baseline-confirmed",
