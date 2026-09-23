@@ -1177,6 +1177,36 @@ def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, caps
     assert "<REDACTED-SECRET>" in output
 
 
+@pytest.mark.parametrize(
+    "filename", ["config.toml", "test-results-round2.json", "CONFIG.TOML", "settings.yaml"]
+)
+def test_failure_redaction_keeps_a_named_file_readable(filename):
+    """#914: `config.toml: no default_profile set` printed as `<REDACTED-HOST>: …`."""
+    message = f"{filename}: no default_profile set"
+
+    assert runner._redact_failure_text(message) == message
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    [
+        "hmc01.lab.example.com",
+        "lab.example.toml",
+        "hmc.lab.json",
+        "example.com",
+        "example.py",
+        "example.md",
+    ],
+)
+def test_failure_redaction_still_hides_a_hostname(hostname):
+    """Only a single-dot name with a non-TLD file extension escapes; `.py` and
+    `.md` are country-code TLDs, and any multi-label name stays a hostname.
+    """
+    redacted = runner._redact_failure_text(f"connect to {hostname} failed")
+
+    assert redacted == "connect to <REDACTED-HOST> failed"
+
+
 def test_the_no_credentials_message_names_this_platforms_config_directory(
     monkeypatch, capsys
 ):
