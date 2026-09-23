@@ -46,6 +46,7 @@ cleanup (does not attempt additional mutations on an unknown state).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shlex
 import sys
@@ -65,7 +66,13 @@ from hmcpctl.operations.virtualization.pcie import (
     _ADMITTED_HMC_RELEASE,
     _ADMITTED_SYSTEM_MODEL,
 )
-from hmcpctl.ssh.commands import build_attribute_record, build_filter
+from hmcpctl.ssh.commands import build_attribute_record
+from hmcpctl.ssh.profiles import (
+    parse_profile_io_slot_rows,
+    parse_profile_io_slots,
+    profile_io_slot_rows_command,
+)
+from hmcpctl.ssh.transport import HMCCLIError
 
 from .observation import CallFailure
 
@@ -860,33 +867,33 @@ def _environment_admitted(version: str, model: str) -> bool:
     return admitted and model == _ADMITTED_SYSTEM_MODEL
 
 
-def profile_io_slots_command(
-    system_name: str, lpar_name: str, profile_name: str
-) -> str:
-    """Return the exact `io_slots` profile read admitted by ADR 0053.
+def select_profile_io_slots(output: str, lpar_name: str, profile_name: str) -> str:
+    """Return one profile's exact `io_slots` from the ADR 0165-admitted readback.
 
-    The `--filter` expression goes through `build_filter` for the same reason
-    the record goes through `build_attribute_record`: a delimiter inside
-    `profile_name` — which arrives from the environment with only `.strip()`
-    applied — would otherwise rewrite the filter and answer about a profile
-    the arm did not name, while Guard B's exact-match comparisons still
-    reported success. `shlex.quote` protects the remote shell, not the HMC's
-    own record parser, and does not substitute for it.
+    The admitted read answers for every profile on the system, so the arm's
+    profile is chosen here by exact `lpar_name` and `name` rather than by a
+    `--filter` ADR 0165 does not admit. A partition may carry several profiles,
+    so `lpar_name` alone is not a selection. The value is returned as read, for
+    the guards' exact comparisons, once `parse_profile_io_slots` accepts it.
+    Public so the recovery check selects and validates exactly as the arm does.
 
-    `profile_names` is half the filter, not decoration: a partition may carry
-    several profiles, and filtering on `lpar_names` alone answers with one
-    record per profile. The recovery check read it that way and saw two
-    records from a real VIOS partition, which its "exactly one record" rule
-    then reported as an unreadable system. Public so that check builds the
-    same command this arm does, rather than a second one that drifts from it.
+    Raises:
+        HMCCLIError: If *output* is not the admitted table, holds other than
+            exactly one row for the profile, or renders `io_slots` in a form
+            ADR 0165 does not admit.
     """
-    filters = build_filter(
-        [("lpar_names", lpar_name), ("profile_names", profile_name)]
-    )
-    return (
-        f"lssyscfg -r prof -m {shlex.quote(system_name)} "
-        f"--filter {shlex.quote(filters)} -F io_slots"
-    )
+    values = [
+        row["io_slots"]
+        for row in parse_profile_io_slot_rows(output)
+        if row["lpar_name"] == lpar_name and row["name"] == profile_name
+    ]
+    if len(values) != 1:
+        raise HMCCLIError(
+            f"profile io_slots readback holds {len(values)} rows for profile "
+            f"{profile_name!r} of {lpar_name!r}; expected exactly 1"
+        )
+    parse_profile_io_slots(values[0])
+    return values[0]
 
 
 def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str:
@@ -908,17 +915,18 @@ def _change_io_slots_command(fixture: _DedicatedFixture, *, add: bool) -> str:
 def _io_slots_contains(io_slots: str, drc_index: str) -> bool:
     """Whether `io_slots` lists *drc_index* as a slot, by entry not by substring.
 
-    `io_slots` renders as comma-separated `<drc>/<bus>/<slot>` entries, or the
-    literal `none` when the profile holds no slot. A plain `drc in io_slots`
-    also matches a DRC index that is merely a substring of a longer one, or a
-    run of characters spanning the `/` and `,` separators — so on a system
-    carrying DRC indices of unequal length a failed `io_slots+` could still be
-    recorded as a PASS against an unchanged profile, corrupting the ADR 0053
-    evidence this arm exists to produce.
+    `io_slots` renders as comma-separated `drc_index/pool_id/is_required`
+    triples, with the literal `none` as `pool_id` for a slot in no pool, or as
+    the whole value `none` when the profile holds no slot (ADR 0165). A plain
+    `drc in io_slots` also matches a substring of a listed DRC index, or a run
+    of characters spanning the `/` and `,` separators — so a failed `io_slots+`
+    could still be recorded as a PASS against an unchanged profile, corrupting
+    the ADR 0053 evidence this arm exists to produce.
+
+    Raises:
+        HMCCLIError: If *io_slots* is not in the admitted rendering.
     """
-    return any(
-        entry.strip().split("/")[0] == drc_index for entry in io_slots.split(",")
-    )
+    return any(slot.drc_index == drc_index for slot in parse_profile_io_slots(io_slots))
 
 
 async def _read_profile_io_slots(
@@ -926,27 +934,23 @@ async def _read_profile_io_slots(
 ) -> str | None:
     """Return the profile's exact `io_slots` value, or None when unreadable.
 
-    A response that is not exactly one non-empty line is refused, matching
-    `ssh/profiles.py:read_lpar_profile_record`: the guards compare exact
-    strings, so a multi-record answer — the filter selected more than the arm
-    named — must read as unreadable rather than as its first line.
+    Anything `select_profile_io_slots` refuses reads as unreadable, the empty
+    answer included: a profile with no slots reads `none`, so reading an empty
+    response as "no slots" would hand the guards a baseline nothing established.
     """
     st, data = await state.call(
         client,
         "hmc_run_command",
-        cmd=profile_io_slots_command(
-            fixture.config.system_name, fixture.lpar_name, fixture.config.profile_name
-        ),
+        cmd=profile_io_slot_rows_command(fixture.config.system_name),
     )
     if st != "PASS" or not isinstance(data, str):
         return None
-    records = [line for line in data.splitlines() if line.strip()]
-    if len(records) != 1:
-        # Includes the empty answer. A profile with no slots prints `none`,
-        # so an empty response is a failed read, and reading it as "no
-        # slots" would hand the guards a baseline nothing established.
+    try:
+        return select_profile_io_slots(
+            data, fixture.lpar_name, fixture.config.profile_name
+        )
+    except HMCCLIError:
         return None
-    return records[0].strip()
 
 
 async def _read_dedicated_state(
@@ -1168,13 +1172,20 @@ def partition_not_found(status: str, data: object) -> bool:
     It is also not proof of absence: IBM's recovery action for HSCL8012 includes
     rebuilding the managed system (`docs/refs/ibm-hsc-ref/HSCL80xx.md:157`), so a
     stale HMC inventory can answer it too.
-    Callers treat it as the best available evidence, not a guarantee (#906).
+    Callers treat it as the best available evidence, not a guarantee, and
+    `_created_despite_failure` asks twice before believing it (#906).
     """
     return (
         status != "PASS"
         and isinstance(data, CallFailure)
         and "HSCL8012" in data.message
     )
+
+
+#: Seconds between a failed create's HSCL8012 lookup and the one re-read that
+#: must repeat it before absence is confirmed. Unmeasured: how long a lost REST
+#: create, or the CLI view of one, can lag is the #879 live window's question.
+_ABSENCE_REREAD_DELAY_S = 10.0
 
 
 class _Absence(Enum):
@@ -1201,14 +1212,26 @@ async def _created_despite_failure(
     that answered with something other than this run's marker. Any other failed
     read, or an empty description (a partition whose ownership stamp never
     landed), leaves it unconfirmed. HSCL8012 is the best available evidence rather
-    than proof: IBM documents a stale HMC inventory as one of its causes (#906).
+    than proof: IBM documents a stale HMC inventory as one of its causes.
+
+    A create still in flight, or an SSH view lagging the REST create, can
+    answer HSCL8012 for a partition that then appears, so the first HSCL8012
+    is re-read once after `_ABSENCE_REREAD_DELAY_S` and only a second one
+    confirms absence (#906). The re-read's answer is then judged like any other.
     """
-    st, data = await state.call(
-        client,
-        "hmc_get_lpar_description",
-        system_name_or_uuid=fixture.config.system_name,
-        lpar_name_or_uuid=lpar_name,
-    )
+
+    async def lookup() -> tuple[str, object]:
+        return await state.call(
+            client,
+            "hmc_get_lpar_description",
+            system_name_or_uuid=fixture.config.system_name,
+            lpar_name_or_uuid=lpar_name,
+        )
+
+    st, data = await lookup()
+    if partition_not_found(st, data):
+        await asyncio.sleep(_ABSENCE_REREAD_DELAY_S)
+        st, data = await lookup()
     if partition_not_found(st, data):
         return _Absence.CONFIRMED
     if st != "PASS" or not isinstance(data, str) or not data.strip():
@@ -1229,6 +1252,8 @@ async def _probe_create_time_assignment(
     assign would ask for a slot another profile may still list. A failed create
     whose partition cannot be confirmed either way returns True with a recovery
     row: the fixture's own assign then refuses a slot another profile lists.
+    That probe is not retried at final cleanup, and its row says so; the
+    manual-recovery row is this run's only record of it (#906).
     """
     arm = fixture.config
     st, data = await state.call(
@@ -1269,7 +1294,9 @@ async def _probe_create_time_assignment(
                 f"run's marker {fixture.run_marker!r} could be confirmed on "
                 f"{arm.system_name!r}. A lost response may still have created it "
                 f"holding slot {fixture.drc_index!r}; if it exists with that marker, "
-                "remove the slot from its profile and then delete it.",
+                "remove the slot from its profile and then delete it. This run "
+                "will not retry cleanup of it: it could not confirm the partition "
+                "is this run's.",
             )
             return True
         fixture.probe_created = True

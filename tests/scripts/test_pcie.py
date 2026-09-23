@@ -24,6 +24,9 @@ _CONFIG = {
 }
 _DRC = "21010020"
 _ASSIGNED = f"{_DRC}/none/0"
+#: The one profile read ADR 0165 Decision 1 admits, as a literal so a builder
+#: that drifts from it fails here rather than agreeing with itself.
+_PROFILE_READ = "lssyscfg -r prof -m sys-one -F lpar_name,name,io_slots --header"
 #: What the HMC answers for a partition name it does not have
 #: (`scripts/live_test_recovery.py:172-173`, ADR 0162).
 _NOT_FOUND = CallFailure(
@@ -332,6 +335,41 @@ def _nth_matching_command_fails(needle: str, first: int) -> Any:
     return status
 
 
+def _admitted_readback(io_slots: str, lpar_name: str) -> str:
+    """The admitted table: every profile on the system, not only the arm's.
+
+    The fixture and its create-time probe share one modelled value. The rows the
+    arm must not read list the slot, so selecting one of them instead reads a
+    foreign assignment and the guards notice.
+    """
+    rows = [
+        (lpar_name, pcie._DEFAULT_DEDICATED_PROFILE, io_slots),
+        (f"{lpar_name}-createtime", pcie._DEFAULT_DEDICATED_PROFILE, io_slots),
+        (lpar_name, "other_profile", f"{_DRC}/none/1"),
+        ("vios-1", pcie._DEFAULT_DEDICATED_PROFILE, f"{_DRC}/none/1,21030030/none/0"),
+    ]
+    lines = ["lpar_name,name,io_slots"]
+    lines += [f'{lpar},{name},"{value}"' for lpar, name, value in rows]
+    return "\n".join(lines) + "\n"
+
+
+def _rendering_profile_reads(
+    responses: dict[str, Any], marker_holder: dict[str, str], prefix: str
+) -> dict[str, Any]:
+    """Answer each admitted profile read with the table around the modelled value."""
+    command_model = responses.get("hmc_run_command")
+    if not callable(command_model):
+        return responses
+
+    def run_command(kwargs: dict[str, Any], index: int) -> Any:
+        value = command_model(kwargs, index)
+        if kwargs["cmd"] != _PROFILE_READ or not isinstance(value, str):
+            return value
+        return _admitted_readback(value, f"{prefix}{marker_holder['marker']}")
+
+    return {**responses, "hmc_run_command": run_command}
+
+
 async def _run_arm(
     monkeypatch: pytest.MonkeyPatch,
     responses: dict[str, Any],
@@ -340,6 +378,9 @@ async def _run_arm(
     config: dict[str, str] | None = None,
 ) -> ScenarioState:
     live = LiveTestConfig(**(config if config is not None else _CONFIG))
+    responses = _rendering_profile_reads(
+        responses, marker_holder, live.dedicated_pcie_lpar_prefix
+    )
 
     real_marker = pcie._new_run_marker
 
@@ -349,6 +390,7 @@ async def _run_arm(
         return marker
 
     monkeypatch.setattr(pcie, "_new_run_marker", capture)
+    monkeypatch.setattr(pcie, "_ABSENCE_REREAD_DELAY_S", 0)
 
     # The cleanup phase boundary: the arm reaches cleanup through this module
     # global, so wrapping it records where cleanup's calls begin.
@@ -488,6 +530,8 @@ async def test_probe_absence_that_cannot_be_confirmed_is_a_recovery_row(
     assert check_row is not None and check_row[2] == "FAIL"
     assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
     assert "-createtime" in str(check_row[3])
+    # Final cleanup never retries this probe, so the row must say so (#906).
+    assert "will not retry cleanup" in str(check_row[3])
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
     assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
 
@@ -561,8 +605,9 @@ async def test_unfinished_probe_cleanup_blocks_the_fixture_and_is_retried_once(
     probe_reads = {"n": 0}
 
     def status(_tool: str, kwargs: dict[str, Any], _index: int) -> str:
-        cmd = kwargs.get("cmd", "")
-        if "-F io_slots" in cmd and "-createtime" in cmd:
+        # The admitted read names no partition, but the fixture is never
+        # created here, so every profile read before cleanup is the probe's.
+        if kwargs.get("cmd", "") == _PROFILE_READ:
             probe_reads["n"] += 1
             return "FAIL" if probe_reads["n"] == 2 else "PASS"
         return "PASS"
@@ -868,7 +913,7 @@ async def test_cleanup_refuses_when_confirming_read_was_lost(
         _happy_responses(holder),
         holder,
         statuses={
-            "hmc_run_command": _nth_matching_command_fails("-F io_slots", 2)
+            "hmc_run_command": _nth_matching_command_fails(_PROFILE_READ, 2)
         },
     )
 
@@ -959,7 +1004,7 @@ async def test_profile_drift_before_delete_blocks_guard_c(
         # #4 ST33-unassign-confirm, #5 ST33-post-reassign, #6 Guard-A,
         # #7 Guard-B-confirm, #8 Guard-C.
         if profile_read_count["n"] == 8:
-            return "foreign-slot//0"
+            return "21030030/none/0"
         return slots["io_slots"]
 
     responses = _happy_responses(holder, run_command=run_cmd_guard_c_drift)
@@ -1075,14 +1120,13 @@ async def test_a_skipped_arm_records_no_pcie_artifacts(
     ("io_slots", "drc", "expected"),
     [
         ("none", "21010020", False),
-        ("21010020//0", "21010020", True),
         ("21010020/none/0", "21010020", True),
-        ("21010020//0,21030030//1", "21030030", True),
-        # The substring traps: a longer DRC index that merely contains the one
-        # under test, and a run of characters spanning the `/` and `,` joins.
-        ("210100201//0", "21010020", False),
-        ("121010020//0", "21010020", False),
-        ("21010//0,20999//1", "0,2099", False),
+        ("21010020/none/0,21030030/none/1", "21030030", True),
+        # The substring traps: a shorter index inside a listed one, and a run
+        # of characters spanning the `/` and `,` joins.
+        ("21010020/none/0", "2101002", False),
+        ("21010020/none/0", "none", False),
+        ("21010020/none/0,21030030/none/1", "0,2103", False),
     ],
 )
 def test_io_slots_membership_is_by_entry_not_substring(
@@ -1090,6 +1134,67 @@ def test_io_slots_membership_is_by_entry_not_substring(
 ) -> None:
     """A DRC index counts as present only as a whole first field of an entry."""
     assert pcie._io_slots_contains(io_slots, drc) is expected
+
+
+@pytest.mark.parametrize(
+    "io_slots", ["21010020//0", "210100201/none/0", "21010020/none", ""]
+)
+def test_io_slots_membership_refuses_an_unadmitted_rendering(io_slots: str) -> None:
+    """The documented input grammar's empty pool is not the read rendering (ADR 0165)."""
+    with pytest.raises(pcie.HMCCLIError, match="unadmitted io_slots rendering"):
+        pcie._io_slots_contains(io_slots, "21010020")
+
+
+@pytest.mark.asyncio
+async def test_every_profile_read_is_the_admitted_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0165 Decision 1: three fields, `--header`, and no `--filter`."""
+    holder: dict[str, str] = {}
+    state = await _run_arm(monkeypatch, _happy_responses(holder), holder)
+
+    reads = [c for c in state.commands() if c.startswith("lssyscfg -r prof")]
+    assert reads
+    assert set(reads) == {_PROFILE_READ}
+    assert "hmc_delete_lpar" in state.cleanup_tools()
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        pytest.param(_admitted_readback(_ASSIGNED, "live-x"), _ASSIGNED, id="assigned"),
+        pytest.param(_admitted_readback("none", "live-x"), "none", id="no-slots"),
+        pytest.param(
+            "lpar_name,name,io_slots\nvios-1,default_profile,none\n",
+            None,
+            id="no-row-for-the-profile",
+        ),
+        pytest.param(
+            "lpar_name,name,io_slots\nlive-x,default_profile,none\n"
+            "live-x,default_profile,none\n",
+            None,
+            id="two-rows-for-the-profile",
+        ),
+        pytest.param("live-x,default_profile,none\n", None, id="headerless"),
+        pytest.param("", None, id="empty"),
+        pytest.param(
+            f"lpar_name,name,io_slots\nlive-x,default_profile,{_DRC}//0\n",
+            None,
+            id="empty-pool",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_profile_read_selects_exactly_the_arms_row(
+    output: str, expected: str | None
+) -> None:
+    """The value of the one `lpar_name`/`name` row, or unreadable."""
+    state = ScenarioState({"hmc_run_command": output})
+    arm = pcie._DedicatedConfig("sys-one", "live-", pcie._DEFAULT_DEDICATED_PROFILE, _DRC)
+    fixture = pcie._DedicatedFixture(arm, "x", "live-x", "live-x-createtime")
+
+    assert await pcie._read_profile_io_slots(None, state, fixture) == expected
+    assert state.commands() == [_PROFILE_READ]
 
 
 @pytest.mark.asyncio
@@ -1129,6 +1234,12 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     responses = _happy_responses(holder)
     # The HMC has no partition of either name.
     responses["hmc_get_lpar_description"] = lambda _k, _n: _NOT_FOUND
+    delays: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(pcie.asyncio, "sleep", record_sleep)
     state = await _run_arm(
         monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
     )
@@ -1137,6 +1248,67 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     skip = state.row("dedicated fixture create")
     assert skip is not None and skip[2] == "SKIP"
     assert "nothing to clean up" in str(skip[3])
+    # Each failed create waits once, then re-reads once: absence takes two
+    # HSCL8012 answers, and never a third lookup (#906).
+    lookups = [
+        k["lpar_name_or_uuid"] for t, k in state.calls if t == "hmc_get_lpar_description"
+    ]
+    assert len(lookups) == 4 and len(set(lookups)) == 2
+    assert all(lookups.count(name) == 2 for name in lookups)
+    assert delays == [pcie._ABSENCE_REREAD_DELAY_S] * 2
+
+
+def _not_found_first(responses: dict[str, Any], probe: bool) -> None:
+    """The partition's first lookup answers HSCL8012; later ones see it.
+
+    A create still in flight when the readback runs, or a CLI view lagging
+    REST, answers HSCL8012 for a partition that then appears (#906).
+    """
+    get_description = responses["hmc_get_lpar_description"]
+    seen = {"n": 0}
+
+    def description(kwargs: dict[str, Any], index: int) -> Any:
+        if _is_probe_name(kwargs) is probe:
+            seen["n"] += 1
+            if seen["n"] == 1:
+                return _NOT_FOUND
+        return get_description(kwargs, index)
+
+    responses["hmc_get_lpar_description"] = description
+
+
+@pytest.mark.asyncio
+async def test_probe_in_flight_on_first_lookup_is_found_by_the_reread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One HSCL8012 is not absence: the delayed re-read finds the probe."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_exists=True)
+    _not_found_first(responses, probe=True)
+    state = await _run_arm(monkeypatch, responses, holder)
+    row = state.row("create-time probe created a partition despite")
+    assert row is not None and row[2] == "FAIL"
+    deletes = [k for t, k in state.calls if t == "hmc_delete_lpar"]
+    assert any(
+        str(k.get("lpar_name_or_uuid", "")).endswith("-createtime") for k in deletes
+    ), "the probe partition the re-read found must be deleted"
+
+
+@pytest.mark.asyncio
+async def test_fixture_in_flight_on_first_lookup_is_found_by_the_reread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fixture's failed create gets the same re-read as the probe's."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    _not_found_first(responses, probe=False)
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
+    )
+    row = state.row("fixture create reported failure but created a partition")
+    assert row is not None and row[2] == "FAIL"
+    assert "nothing to clean up" not in " ".join(str(r[3]) for r in state.results)
+    assert "hmc_delete_lpar" in state.cleanup_tools()
 
 
 @pytest.mark.asyncio

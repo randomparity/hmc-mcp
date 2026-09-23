@@ -168,6 +168,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   during configuration parsing — before the runner reached the HMC. Adapter and logical
   port IDs keep the positive check; the physical port ID is now bounded at zero (#708).
 
+- The live-test runner's failure redactor no longer replaces a filename such as `config.toml`
+  with `<REDACTED-HOST>`, which made a config warning read as if a host had been hidden. A
+  single-dot name ending in a common file extension that is not a DNS top-level domain stays
+  readable; every multi-label name, and any name ending in a real TLD such as `.py` or `.md`,
+  is still redacted (#914).
+
+- The live-test dedicated PCIe arm no longer takes a single HSCL8012 ("partition not found")
+  after a failed create as proof that nothing was created. It re-reads once after a short delay
+  and confirms absence only on a second HSCL8012, so a partition whose create was still in
+  flight is found and cleaned up rather than left holding the slot. A create-time probe whose
+  absence cannot be confirmed now says in its manual-recovery row that the run will not retry
+  its cleanup (#906).
+
 ### Changed
 
 - The distribution, console script, Python package and configuration directory are renamed
