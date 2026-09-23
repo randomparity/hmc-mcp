@@ -6,7 +6,6 @@ import math
 from pathlib import Path
 from typing import BinaryIO
 
-import click
 import typer
 
 from hmcpctl.operations.lpar.console import capture_lpar_console_by_selector
@@ -20,7 +19,7 @@ RELEASE_UNPROVEN = 3
 
 
 def _stdout_is_terminal() -> bool:
-    return click.get_text_stream("stdout").isatty()
+    return typer.get_text_stream("stdout").isatty()
 
 
 def _check_bounds(duration: float, max_bytes: int, idle_timeout: float) -> None:
@@ -45,7 +44,7 @@ def _open_sink(output: Path | None) -> BinaryIO:
                 "stdout is a terminal and console bytes carry escape sequences; "
                 "redirect stdout or pass --output FILE"
             )
-        return click.get_binary_stream("stdout")
+        return typer.get_binary_stream("stdout")
     try:
         return output.open("xb")
     except FileExistsError:
