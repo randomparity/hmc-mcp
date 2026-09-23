@@ -156,7 +156,7 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
          "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
          "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header"),
     ]
-    fixture_sha256 = "8c13d5e53c44183a0ade3e26f654aab24593d5f84945902f758186cfee74f597"  # pragma: allowlist secret -- pinned fixture checksum
+    fixture_sha256 = "67910d8a6d60bf4bb6bc5e64c890d3486789beaca547742706dce09fe2a42965"  # pragma: allowlist secret -- pinned fixture checksum
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
     assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
     with pytest.raises(AssertionError):
