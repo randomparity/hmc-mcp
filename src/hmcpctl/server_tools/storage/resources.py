@@ -465,8 +465,7 @@ def hmc_list_optical_media(
 
     Returns a list of optical media entries (ISO containers) with their
     name, size_mib (converted from the HMC's GiB Size), and media_type.
-    The repository must exist
-    (VMLibrary on the specified Volume Group).
+    The repository must exist (VMLibrary on the specified Volume Group).
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
