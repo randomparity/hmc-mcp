@@ -1083,6 +1083,20 @@ def _example_env_with(tmp_path: Path, key: str, value: str) -> Path:
     return config_path
 
 
+def test_live_config_reads_the_bare_cec_dump_opt_in_from_the_example(tmp_path) -> None:
+    """The example documents the key commented out; uncommented, the runner accepts it."""
+    example = Path(__file__).parents[1] / ".env.example"
+    text = example.read_text().replace(
+        "#LIVE_TEST_ACCEPT_PLATFORM_DUMP=false", "LIVE_TEST_ACCEPT_PLATFORM_DUMP=true"
+    )
+    assert "LIVE_TEST_ACCEPT_PLATFORM_DUMP=true" in text
+    config_path = tmp_path / ".env"
+    config_path.write_text(text)
+
+    assert runner.LiveTestConfig.from_env_file(config_path).accept_platform_dump == "true"
+    assert runner.LiveTestConfig().accept_platform_dump == ""
+
+
 def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
     """Physical port IDs are zero-indexed on Power, so port 0 is the first port.
 
