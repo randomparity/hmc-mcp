@@ -3,6 +3,7 @@
 **Issue:** #936 · **Branch:** fix/vdisk-rmw-936 · **BASE_BRANCH:** main ·
 **Guardrails:** `just test`, `just lint`, `just typecheck`; `just verify` and
 `uv run --no-sync prek run --all-files` before push.
+**ADR:** [0171](../../adr/0171-virtual-disk-volume-group-read-modify-write.md)
 
 ## Problem
 
