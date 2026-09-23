@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from conftest import make_config
@@ -816,9 +816,10 @@ async def test_capture_lpar_console_by_selector_resolves_uuids():
         )
 
     resolve_system_uuid.assert_awaited_once_with(client, system_uuid)
-    resolve_lpar_uuid.assert_awaited_once_with(
-        client, lpar_uuid, system_name_or_uuid=system_uuid
-    )
+    assert resolve_lpar_uuid.await_args_list == [
+        call(client, lpar_uuid, system_name_or_uuid=system_uuid),
+        call(client, "resolved-lpar", system_name_or_uuid=system_uuid),
+    ]
     resolve_system_name.assert_awaited_once_with(client, system_uuid)
     client.get_logical_partition.assert_awaited_once_with(lpar_uuid)
     ssh_command.assert_not_awaited()
@@ -853,6 +854,36 @@ async def test_capture_lpar_console_by_selector_refuses_uuid_without_partition_n
     ):
         await lpar_console.capture_lpar_console_by_selector(
             client, lpar_uuid, "system-a"
+        )
+
+    capture.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_capture_lpar_console_by_selector_refuses_uuid_on_another_system():
+    """A UUID whose name belongs to a different partition on SYSTEM is refused."""
+    from hmcpctl.operations.lpar import console as lpar_console
+    from hmcpctl.resource_identity import ResourceNotFoundError
+
+    lpar_uuid = "22222222-2222-2222-2222-222222222222"
+    client = MagicMock()
+    client.get_logical_partition = AsyncMock(
+        return_value={"Resource": {"PartitionName": "shared-name"}}
+    )
+    resolve_lpar_uuid = AsyncMock(
+        side_effect=[lpar_uuid, "33333333-3333-3333-3333-333333333333"]
+    )
+    capture = AsyncMock()
+
+    with (
+        patch.object(lpar_console, "resolve_system_uuid", AsyncMock()),
+        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
+        patch.object(lpar_console, "resolve_system_name", AsyncMock()),
+        patch.object(lpar_console, "capture_lpar_console", capture),
+        pytest.raises(ResourceNotFoundError, match="not on managed system"),
+    ):
+        await lpar_console.capture_lpar_console_by_selector(
+            client, lpar_uuid, "system-b"
         )
 
     capture.assert_not_awaited()
