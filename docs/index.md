@@ -14,6 +14,7 @@ an HMC, and use the CLI or an MCP client.
 | [HMC compatibility](compatibility.md) | HMC versions and firmware write-path limitations |
 | [Development](development.md) | Stack, setup, testing, source layout, and HMC REST API internals |
 | [Read-only system inventory recipe](recipes/system-inventory.md) | Capture managed-system configuration before later operator decisions |
+| [Bare-CEC LPAR recipe](recipes/bare-cec-lpar.md) | Bring up an LPAR on a dedicated PCIe slot, activate it to SMS, and tear it down |
 
 ## Reference
 
