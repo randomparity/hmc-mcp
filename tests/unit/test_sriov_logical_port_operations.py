@@ -394,3 +394,33 @@ async def test_unassign_keeps_unverified_wording_when_readback_also_changed(monk
     assert "could not be verified" in message
     assert "refused by HMC" not in message
     assert caught.value.result.profile_after == "none"
+
+
+@pytest.mark.asyncio
+async def test_unassign_wraps_post_dispatch_read_failure(monkeypatch):
+    _common(monkeypatch)
+    record = "0:1:0:3:0:0:0:all::all:0:0:2.0:100.0:none:0::::"
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.read_sriov_profile_ports",
+        AsyncMock(
+            side_effect=[
+                {"name": "prof", "sriov_eth_logical_ports": record},
+                RuntimeError("read failed"),
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.unassign_sriov_logical_port_profile",
+        AsyncMock(return_value=""),
+    )
+    with pytest.raises(SriovLogicalPortPartialError) as caught:
+        await unassign_sriov_logical_port(
+            _hmc(), "sys", "lpar", InventorySelector("1", "0", "3"), profile_name="prof"
+        )
+    message = str(caught.value)
+    assert "could not be verified" in message
+    assert "refused by HMC" not in message
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "read failed"
+    assert caught.value.result.profile_before == record
+    assert caught.value.result.profile_after is None
