@@ -106,7 +106,7 @@ command is `uv run --no-sync pytest tests/unit/test_console_capture.py -q`.
 | Uncapped stream, timed-out read keeps session (S1) | focused-test | `test_session_streams_past_capture_ceiling_and_releases` |
 | Unproven/contended/unopened close (S2) | focused-test | `test_session_close_reports_unproven_release`, `test_session_contention_at_open_never_releases` |
 | Cancellation and idempotent close (S3) | focused-test | `test_session_cancellation_releases_before_propagating`, `test_session_close_survives_cancellation_and_is_idempotent`, `test_session_close_propagates_cancelled_release` |
-| Late sentinel is data; capture releases then raises (S4) | focused-test | `test_session_yields_late_sentinel_as_data`, `test_contention_is_detected_when_it_arrives_midstream` (now also asserts no `rmvterm`) |
+| Late sentinel is data; capture raises with no rmvterm (S4) | focused-test | `test_session_yields_late_sentinel_as_data`, `test_contention_is_detected_when_it_arrives_midstream` (now also asserts no `rmvterm`) |
 | Capture cancelled in final release (S3, the one difference) | focused-test | `test_capture_cancelled_during_release_raises_after_release` |
 | Transport error leaves release owed (rule 3) | focused-test | `test_session_read_error_propagates_and_close_still_releases` |
 | Terminal close and misuse (rule 1, S2) | focused-test | `test_session_rejects_reopen_and_read_when_not_open`, `test_session_close_during_open_is_refused` |
