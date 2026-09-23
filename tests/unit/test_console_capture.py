@@ -744,6 +744,8 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
     system_name: str,
     lpar_name: str,
 ):
+    from hmcpctl.operations.lpar import console as lpar_console
+
     client = MagicMock()
     client.config = MagicMock()
     context = MagicMock()
@@ -765,11 +767,11 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
 
     with (
         patch("hmcpctl._app.client_from_env", return_value=context) as factory,
-        patch.object(server_console, "resolve_system_uuid", resolve_system_uuid),
-        patch.object(server_console, "resolve_lpar_uuid", resolve_lpar_uuid),
-        patch.object(server_console, "resolve_system_name", resolve_system_name),
-        patch.object(server_console, "resolve_lpar_cli_name", resolve_lpar_name),
-        patch.object(server_console, "capture_lpar_console", capture),
+        patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
+        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
+        patch.object(lpar_console, "resolve_system_name", resolve_system_name),
+        patch.object(lpar_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch.object(lpar_console, "capture_lpar_console", capture),
     ):
         result = server_console.hmc_capture_lpar_console(
             lpar_selector,

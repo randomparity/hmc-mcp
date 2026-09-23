@@ -85,6 +85,20 @@ is activated, it has no current configuration and REST adapter writes fail. `--n
 the apply. Adapter changes made through REST after the apply live only in the current
 configuration; a later power-on with the profile does not keep them (#981).
 
+A bounded console capture reads an LPAR's virtual console without sending it input:
+
+```bash
+hmcpctl lpars capture-console aix1 --system sys1 --duration 30 --output aix1.console.log
+```
+
+It stops at `--duration` seconds (at most 3600), `--max-bytes` (at most 1048576), or
+`--idle-timeout` seconds of silence, writes the raw bytes to `--output` or to a redirected stdout,
+and refuses an existing file or a terminal stdout. One stderr line reports the stop reason, byte
+count and `released`. Exit codes ([ADR 0175](adr/0175-capture-console-exit-codes.md)): `0` the
+capture finished and the console was released; `1` a lookup, SSH or HMC failure, a console held
+by another session, a capture stopped by an error, or bytes that could not be written; `2` a
+usage error; `3` the release was not proven, so run `rmvterm` on the HMC before another capture.
+
 `hmcpctl lpars decommission` enforces the ADR 0011 ownership token even for
 `--dry-run`; use `--ownership-override` only after explicit operator approval.
 
