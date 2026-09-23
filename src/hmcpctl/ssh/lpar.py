@@ -201,6 +201,13 @@ def _explicit_lpar_resource_pairs(
     _min_vp = resources.min_vcpus or 1
     _des_vp = resources.desired_vcpus or 1
     _max_vp = resources.max_vcpus or max(_des_vp, 2)
+    if resources.dedicated is not True:
+        _require_units_for_vcpus(
+            resources.min_procs, _min_vp, "min_procs", "--min-procs"
+        )
+        _require_units_for_vcpus(
+            resources.desired_procs, _des_vp, "desired_procs", "--procs"
+        )
 
     pairs: list[tuple[str, object]] = [
         ("min_mem", _min_mem),
@@ -218,6 +225,23 @@ def _explicit_lpar_resource_pairs(
     if max_virtual_slots is not None:
         pairs.append(("max_virtual_slots", max_virtual_slots))
     return pairs
+
+
+def _require_units_for_vcpus(
+    units: float | None, vcpus: int, field: str, option: str
+) -> None:
+    """Refuse the 0.1 processing-unit default for more than one virtual processor.
+
+    The HMC rejects 0.1 units spread over several virtual processors
+    (HSCL0622, #938). The per-processor minimum is platform-specific and not
+    recorded in this repository, so no default is derived from the count.
+    """
+    if not units and vcpus > 1:
+        raise HMCCLIError(
+            f"{vcpus} virtual processors need explicit processing units: pass "
+            f"{field} ({option} on the CLI). The 0.1-unit default covers one "
+            "virtual processor only."
+        )
 
 
 # UUID -> CLI-name lookup (SSH fallback for the REST-based resolvers)

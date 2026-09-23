@@ -7,11 +7,13 @@ CLI fallback and still surface an actionable HMCError on 406.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
+from hmcpctl.config import HMCConfig
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.ownership import _resolve_system_name as _system_name
@@ -21,6 +23,7 @@ from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_modify_lpar,
 )
 from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
+from hmcpctl.ssh.lpar import create_lpar_via_cli
 from hmcpctl.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -98,9 +101,9 @@ def _mock_dlpar_authorization(router) -> None:
 def _partition_feed(*entries: str) -> str:
     """Wrap rendered LPAR entries in the Atom feed envelope the client parses."""
     inner = "".join(
-        entry.split("?>", 1)[1].strip().replace(
-            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
-        )
+        entry.split("?>", 1)[1]
+        .strip()
+        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
         for entry in entries
     )
     return (
@@ -265,3 +268,69 @@ def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
     msg = str(exc_info.value)
     assert "406" in msg
     assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+
+
+# ---------------------------------------------------------------------- #
+# create_lpar_via_cli — omitted processing units vs. virtual processors (#938)
+# ---------------------------------------------------------------------- #
+
+
+def _cli_create(resources: LparResources) -> AsyncMock:
+    """Run the CLI create with *resources*; return the patched command runner."""
+    with patch(
+        "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+    ) as run:
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"), "sys1", "lp1", resources=resources
+            )
+        )
+    return run
+
+
+@pytest.mark.parametrize(
+    ("resources", "option"),
+    [
+        (LparResources(desired_vcpus=3, max_vcpus=6), "--procs"),
+        (LparResources(min_vcpus=2, desired_vcpus=2, desired_procs=0.4), "--min-procs"),
+    ],
+)
+def test_cli_create_refuses_default_units_for_several_vcpus(resources, option):
+    """The 0.1 unit default is never sent with more than one virtual processor."""
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match=option),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"), "sys1", "lp1", resources=resources
+            )
+        )
+    run.assert_not_awaited()
+
+
+def test_cli_create_sends_explicit_units_with_several_vcpus():
+    run = _cli_create(
+        LparResources(
+            min_procs=0.1,
+            desired_procs=0.3,
+            max_procs=2.0,
+            desired_vcpus=3,
+            max_vcpus=6,
+        )
+    )
+    command = run.await_args.args[1]
+    assert "min_proc_units=0.1,desired_proc_units=0.3,max_proc_units=2.0" in command
+    assert "min_procs=1,desired_procs=3,max_procs=6" in command
+
+
+@pytest.mark.parametrize(
+    "resources",
+    [LparResources(desired_vcpus=1), LparResources(dedicated=True, desired_vcpus=3)],
+)
+def test_cli_create_keeps_unit_defaults_outside_the_refusal(resources):
+    """One virtual processor, and dedicated mode, keep the legacy unit defaults."""
+    command = _cli_create(resources).await_args.args[1]
+    assert "min_proc_units=0.1,desired_proc_units=0.1,max_proc_units=2.0" in command
