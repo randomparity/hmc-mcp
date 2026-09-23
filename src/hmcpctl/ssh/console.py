@@ -1,11 +1,13 @@
-"""Bounded, non-interactive LPAR console capture over the HMC ``mkvterm`` CLI.
+"""Read-only LPAR console sessions and bounded capture over the HMC ``mkvterm`` CLI.
 
 The HMC exposes exactly one virtual terminal (vterm) per partition through the
 ``mkvterm``/``rmvterm`` CLI pair over SSH. ``mkvterm`` never exits on its own:
 it streams the partition console until torn down, so it structurally cannot
 run through :func:`hmcpctl.ssh.transport.run_hmc_command` (a one-shot exec that collects
-output until the remote command exits). This module adds a bounded capture on
-top of :func:`hmcpctl.ssh.transport.open_hmc_connection` and enforces issue #385's
+output until the remote command exits). :class:`ConsoleSession` holds the vterm
+on top of :func:`hmcpctl.ssh.transport.open_hmc_connection` with no duration or
+byte cap and owns its acquisition and proven release (ADR 0170);
+:func:`capture_lpar_console` is its bounded consumer and enforces issue #385's
 design contract. Every invariant below traces to a recorded observation from
 the P1-P8 live-hardware prototype on that issue (HMC V10R3 M1060); ADR 0072
 records the design decision per prototype fact.
@@ -42,7 +44,8 @@ import math
 import os
 import shlex
 from dataclasses import dataclass
-from typing import Any, Literal
+from types import TracebackType
+from typing import Any, Literal, Self
 
 import asyncssh
 
@@ -243,11 +246,10 @@ def _truncate(data: bytes, limit: int) -> bytes:
 
 
 async def _collect_output(
-    process: Any,
+    session: ConsoleSession,
     duration_seconds: float,
     max_bytes: int,
     idle_timeout_seconds: float,
-    initial_data: bytes = b"",
 ) -> tuple[bytes, StopReason, str | None]:
     """Read the stream until one of the three client-side bounds fires (P8).
 
@@ -256,7 +258,7 @@ async def _collect_output(
     still runs, since P3 showed the HMC never reclaims the vterm itself.
     """
     loop = asyncio.get_running_loop()
-    buf = bytearray(initial_data)
+    buf = bytearray()
     deadline = loop.time() + duration_seconds
     idle_deadline = loop.time() + idle_timeout_seconds
     while True:
@@ -269,7 +271,7 @@ async def _collect_output(
             return bytes(buf), "idle", None
         try:
             chunk = await asyncio.wait_for(
-                process.stdout.read(_CHUNK),
+                session.read(),
                 min(deadline, idle_deadline) - now,
             )
         except TimeoutError:
@@ -298,26 +300,6 @@ def _error_detail(error: Exception) -> str:
     if len(detail) <= _ERROR_DETAIL_MAX_CHARS:
         return detail
     return detail[: _ERROR_DETAIL_MAX_CHARS - 1] + "…"
-
-
-async def _release_uncancellable(
-    config: HMCConfig, system_name: str, lpar_name: str
-) -> bool:
-    """Run the mandatory release to completion, surviving cancellation (P4).
-
-    The release is a separate task awaited through a shield in a loop: each
-    new cancellation request interrupts only the wait, never the release,
-    because a leaked vterm blocks the operator's own console indefinitely
-    (P3).
-    """
-    task = asyncio.create_task(_release_and_verify(config, system_name, lpar_name))
-    while True:
-        try:
-            return await asyncio.shield(task)
-        except asyncio.CancelledError:
-            if task.done():
-                return task.result()
-            continue
 
 
 async def _release_and_verify(
@@ -529,6 +511,168 @@ async def _await_acquisition(
         return connection, process, data, cancelled
 
 
+class ConsoleSession:
+    """A read-only hold on one partition's vterm with no duration or byte cap.
+
+    ADR 0170 is the contract. :meth:`open` returns once ``mkvterm`` proves
+    this session acquired the vterm and raises :class:`ConsoleHeldError`,
+    issuing no ``rmvterm``, when another session holds it (P1). :meth:`read`
+    returns raw chunks, the acquisition bytes first and ``b""`` after the
+    remote end closes; the session enforces no bound, so consumers wrap reads
+    in their own timeouts. :meth:`close` is the only release: ``rmvterm``, an
+    independent-session probe, then local teardown, run to completion even
+    when the caller is cancelled (P2/P3/P4). Use the session as an async
+    context manager so every exit that unwinds the owning coroutine closes it.
+
+    Process exit: the library installs no ``atexit`` hook or signal handler.
+    SIGKILL, ``os._exit``, a crash, default-action SIGTERM, a second SIGINT
+    under :func:`asyncio.run`, an event loop stopped or shut down before
+    :meth:`close` finishes, and a session dropped without :meth:`close` all
+    leave the vterm held, because the HMC never releases it (P3). The next
+    :meth:`open` then raises :class:`ConsoleHeldError`; ``rmvterm -m <system>
+    -p <partition>`` recovers the console.
+
+    stdin is sealed by construction (:class:`_SealedStdin`, P5/P7): no
+    attribute or method of a session writes to the partition console.
+    """
+
+    def __init__(self, hmc: HMCClient, system_name: str, lpar_name: str) -> None:
+        self._config = hmc.config
+        self._system = system_name
+        self._lpar = lpar_name
+        self._state: Literal["new", "opening", "held", "unheld"] = "new"
+        self._stdin: _SealedStdin | None = None
+        self._connection: Any = None
+        self._stdout: Any = None  # only the read side of the process is kept
+        self._pending = b""
+        self._close_task: asyncio.Task[bool] | None = None
+        self._released: bool | None = None
+
+    @property
+    def released(self) -> bool | None:
+        """``None`` before :meth:`close`; then ``True`` only on proven release."""
+        return self._released
+
+    async def open(self) -> None:
+        """Acquire the vterm, or raise without releasing another holder's session.
+
+        Raises:
+
+            ConsoleHeldError: Another session holds the vterm (P1).
+            HMCCLIError: ``mkvterm`` could not start or never confirmed acquisition.
+            RuntimeError: The session was already opened or closed.
+        """
+        if self._state != "new" or self._close_task is not None:
+            raise RuntimeError("a console session opens once and never after close()")
+        self._stdin = _SealedStdin()
+        self._state = "opening"
+        command = f"mkvterm -m {shlex.quote(self._system)} -p {shlex.quote(self._lpar)}"
+        try:
+            connection, process, data, cancelled = await _await_acquisition(
+                self._config, command, self._stdin
+            )
+        except BaseException:
+            self._state = "unheld"
+            self._stdin.close()
+            raise
+        self._connection, self._stdout = connection, process.stdout
+        self._state = "held"
+        self._pending = data
+        if cancelled:
+            released = await self.close()
+            logger.warning(
+                "console acquisition on %s/%s was cancelled; released=%s",
+                self._system,
+                self._lpar,
+                released,
+            )
+            raise asyncio.CancelledError
+
+    async def read(self) -> bytes:
+        """Return the next raw chunk, or ``b""`` once the remote end has closed.
+
+        Transport errors propagate unwrapped; the session still owes its release.
+        """
+        if self._state != "held" or self._close_task is not None:
+            raise RuntimeError("the console session is not open")
+        if self._pending:
+            chunk, self._pending = self._pending, b""
+            return chunk
+        return await self._stdout.read(_CHUNK)
+
+    async def close(self) -> bool:
+        """Release the vterm once and report whether the release was proven.
+
+        Later and concurrent calls await the same release. Cancelling the
+        caller never interrupts the release; the cancellation is re-raised
+        after it completes.
+        """
+        if self._state == "opening":
+            raise RuntimeError(
+                "close() cannot run while open() is in flight; cancel the opening task"
+            )
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._teardown())
+        cancelled = False
+        while True:
+            try:
+                released = await asyncio.shield(self._close_task)
+            except asyncio.CancelledError:
+                if self._close_task.done():
+                    self._close_task.result()  # the release itself was cancelled
+                cancelled = True
+                continue
+            if cancelled:
+                raise asyncio.CancelledError
+            return released
+
+    async def _teardown(self) -> bool:
+        self._released = False
+        try:
+            if self._state == "held":
+                self._released = await _release_and_verify(
+                    self._config, self._system, self._lpar
+                )
+            return self._released
+        finally:
+            if self._connection is not None:
+                self._connection.close()
+            if self._stdin is not None:
+                self._stdin.close()
+
+    def _disown(self) -> None:
+        """Owe no release: the capture's late-contention path (ADR 0072, ADR 0170)."""
+        self._state = "unheld"
+
+    async def __aenter__(self) -> Self:
+        await self.open()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        released = await self.close()
+        if exc_type is asyncio.CancelledError:
+            logger.warning(
+                "console session on %s/%s was cancelled; released=%s",
+                self._system,
+                self._lpar,
+                released,
+            )
+
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> bytes:
+        chunk = await self.read()
+        if not chunk:
+            raise StopAsyncIteration
+        return chunk
+
+
 async def capture_lpar_console(
     hmc: HMCClient,
     system_name: str,
@@ -564,60 +708,25 @@ async def capture_lpar_console(
         idle_timeout_seconds: Client-side cap on silence (time since the last
             received byte); the HMC never times an idle stream out itself.
     """
-    config = hmc.config
     _validate_bounds(duration_seconds, max_bytes, idle_timeout_seconds)
-    command = f"mkvterm -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
-    stdin = _SealedStdin()
-    connection: Any = None
-    try:
-        connection, process, initial_data, cancelled = await _await_acquisition(
-            config, command, stdin
+    async with ConsoleSession(hmc, system_name, lpar_name) as session:
+        data, stop_reason, error = await _collect_output(
+            session, duration_seconds, max_bytes, idle_timeout_seconds
         )
-        if cancelled:
-            released = await _release_uncancellable(config, system_name, lpar_name)
-            logger.warning(
-                "console acquisition on %s/%s was cancelled; released=%s",
-                system_name,
-                lpar_name,
-                released,
-            )
-            raise asyncio.CancelledError
-        try:
-            data, stop_reason, error = await _collect_output(
-                process,
-                duration_seconds,
-                max_bytes,
-                idle_timeout_seconds,
-                initial_data,
-            )
-        except asyncio.CancelledError:
-            released = await _release_uncancellable(config, system_name, lpar_name)
-            logger.warning(
-                "console capture on %s/%s was cancelled; released=%s",
-                system_name,
-                lpar_name,
-                released,
-            )
-            raise
         if HELD_SENTINEL in data:
-            # P1 contention, possibly observed late: we never held the
-            # vterm, so releasing would close the other holder's session.
+            # P1 contention, possibly observed late: ADR 0072 keeps this path
+            # free of rmvterm, which could close another holder's session.
+            session._disown()
             raise ConsoleHeldError(
                 f"Another session already holds the console of "
                 f"{lpar_name!r} on {system_name!r}; the capture never "
                 "force-closes another holder's session."
             )
-        released = await _release_uncancellable(config, system_name, lpar_name)
-        result = ConsoleCapture(
-            system=system_name,
-            lpar=lpar_name,
-            data=_truncate(data, max_bytes),
-            stop_reason=stop_reason,
-            released=released,
-            error=error,
-        )
-        return result
-    finally:
-        if connection is not None:
-            connection.close()
-        stdin.close()
+    return ConsoleCapture(
+        system=system_name,
+        lpar=lpar_name,
+        data=_truncate(data, max_bytes),
+        stop_reason=stop_reason,
+        released=session.released is True,
+        error=error,
+    )
