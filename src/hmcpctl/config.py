@@ -913,23 +913,16 @@ def load_profile(
     requested = profile or os.environ.get("HMC_PROFILE")
     path = _selected_config_path(None)
     doc: dict[str, Any]
-    if path is None:
-        if requested is None:
-            # Nothing would select a profile even if the file existed, so name
-            # the platform path that was looked in rather than reporting a
-            # missing default_profile the operator cannot fix by adding one.
-            raise ConfigFileNotFoundError(
-                f"{config_dir() / 'config.toml'}: config file not found"
-            )
-        doc = {}
-    elif requested is None:
-        # resolve_config_path() saw the file a moment ago, but nothing here
-        # re-checks between that probe and this read. A file removed in
-        # between must still be reported as missing rather than falling back
-        # to missing_ok's {} and a misleading no-default_profile message.
-        doc = _read_config_document(path, missing_ok=False)
+    if requested is None:
+        # Nothing would select a profile even if the file existed, so read
+        # with missing_ok=False: a platform file resolve_config_path() never
+        # found, or one it found but that vanished before this read, is
+        # reported as missing by path rather than as a misleading
+        # no-default_profile message (#915). config_dir() stands in for
+        # *path* only when resolve_config_path() never had one to report.
+        doc = _read_config_document(path or config_dir() / "config.toml", missing_ok=False)
     else:
-        doc = _read_config_document(path)
+        doc = {} if path is None else _read_config_document(path)
     return _load_profile_from_document(doc, path, profile)
 
 
