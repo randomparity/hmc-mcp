@@ -311,7 +311,7 @@ class LiveTestConfig:
     iso_advertised_host: str = "iso.example.test"
     iso_http_port: int = 18090
     vmedia_repository_size_mib: int = 6144
-    vmedia_short_repository_size_mib: int = 1536
+    vmedia_short_repository_size_mib: int = 1024
     placement_memory_mib: int = 3072
     vlan_range_start: int = 3100
     vlan_range_end: int = 3199
