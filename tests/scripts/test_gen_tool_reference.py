@@ -387,6 +387,19 @@ def test_the_committed_reference_matches_the_live_registry() -> None:
     ) == []
 
 
+def test_served_descriptions_omit_the_docstring_sections_the_note_says_are_not_sent() -> None:
+    """SUMMARY_NOTE tells readers `tools/list` omits these; pin that to the live walk."""
+    descriptions = asyncio.run(gen_tool_reference.load_descriptions())
+
+    sections = ("Args:", "Returns:", "Raises:")
+    leaked = sorted(
+        name
+        for name, description in descriptions.items()
+        if any(line.strip() in sections for line in (description or "").splitlines())
+    )
+    assert leaked == []
+
+
 def test_the_readme_points_at_the_generated_reference_and_keeps_no_tool_table() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
