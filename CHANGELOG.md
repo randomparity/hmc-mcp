@@ -697,9 +697,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 ### Documentation
 
 - Every generated `docs/tools/` page now states that its Summary column is the first line of
-  each tool's MCP description, and that the full description — including the conditions under
-  which a tool refuses — is what an MCP client receives from `tools/list`, held in the handler's
-  docstring under `src/hmcpctl/server_tools/` (ADR 0097, #929).
+  each tool's MCP description, and that the complete text — including the conditions under which
+  a tool refuses — is the handler's docstring under `src/hmcpctl/server_tools/`. `tools/list`
+  carries that docstring's prose and, in the input schema, its argument detail, but not its
+  `Returns:` or `Raises:` sections (ADR 0097, #929).
 
 - ADR 0096 records the decision behind `HMCConfig.from_mapping` and why documentation alone was
   not enough (#368). `AGENTS.md` no longer teaches `HMCConfig(_env_file=None)` as the

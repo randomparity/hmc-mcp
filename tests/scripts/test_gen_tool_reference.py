@@ -250,6 +250,10 @@ def test_every_page_says_the_summary_is_a_first_line_and_where_the_rest_lives() 
     assert "first line of the tool's MCP description" in note
     assert "refuses" in note
     assert "`tools/list`" in note
+    assert (
+        "complete text, including the conditions under which a tool refuses, "
+        "is the tool handler's docstring"
+    ) in note
     assert "`src/hmcpctl/server_tools/`" in note
     for name, text in pages.items():
         intro = text.split("\n| ", 1)[0]

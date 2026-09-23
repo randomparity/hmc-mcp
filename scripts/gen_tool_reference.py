@@ -60,12 +60,16 @@ SCOPE_NOTE = (
 )
 
 # The reference is a summary index by design (ADR 0097, #929): refusal conditions
-# and argument detail live in the full description MCP clients receive.
+# and argument detail live in the handler docstring. FastMCP does not send that
+# docstring verbatim -- it moves `Args:` into the input schema and drops `Returns:`
+# and `Raises:` -- so the note names the docstring as the complete text.
 SUMMARY_NOTE = (
     "The Summary column on each domain page is the first line of the tool's MCP "
-    "description. The full description, including the conditions under which a "
-    "tool refuses, is what an MCP client receives from `tools/list`; it is the "
-    "tool handler's docstring under `src/hmcpctl/server_tools/`."
+    "description. The complete text, including the conditions under which a tool "
+    "refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. "
+    "An MCP client's `tools/list` carries that docstring's prose as the "
+    "description and its argument detail in the input schema; `Returns:` and "
+    "`Raises:` sections are not sent."
 )
 
 _ENABLEMENT_NOTE = (
