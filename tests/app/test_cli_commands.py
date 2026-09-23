@@ -3240,7 +3240,7 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
     async def fake(_config, command):
         commands.append(command)
         if command == "lshmc -V":
-            return "V10R3 M1060 build 2408210051\n"
+            return "Version: 10\nRelease: 3\nService Pack: 1060\n"
         if "-r sys" in command and "type_model" in command:
             return "8375-42A\n"
         if "--rsubtype adapter" in command:

@@ -26,7 +26,7 @@ def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-        AsyncMock(return_value=("V10R3 M1060 build 2408210051", "8375-42A")),
+        AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.list_sriov_adapter_rows",

@@ -193,7 +193,7 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
         patch("hmcpctl.operations.virtualization.pcie.resolve_ssh_names", resolver),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+            AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.list_sriov_adapter_rows",
@@ -263,7 +263,7 @@ async def test_sriov_physical_inventory_normalizes_port_state() -> None:
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+            AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.list_sriov_physical_port_rows",
@@ -293,7 +293,7 @@ async def test_sriov_physical_inventory_rejects_malformed_port_state(state: str)
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+            AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.list_sriov_physical_port_rows",
@@ -327,7 +327,7 @@ async def test_sriov_physical_inventory_validates_unselected_port_state() -> Non
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+            AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.list_sriov_physical_port_rows",
@@ -347,7 +347,7 @@ async def test_sriov_physical_inventory_rejects_both_empty_supported_levels() ->
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+            AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.list_sriov_physical_port_rows",
@@ -387,7 +387,7 @@ async def test_unconfigured_logical_port_requires_unique_physical_parent() -> No
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+            AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",

@@ -395,27 +395,33 @@ async def _verify_dedicated_change(
     """Classify a dispatched change by what the profile reads back as.
 
     An assign is also re-checked for another LPAR listing the slot, since a
-    concurrent assign elsewhere passes the pre-write holder check too.
+    concurrent assign elsewhere passes the pre-write holder check too. An
+    unverified unassign looks holders up for its advice only (#905).
     """
     after_text: str | None = None
     after: dict[str, ProfileIoSlot] | None = None
     read_error: Exception | None = None
     holders: list[str] = []
+    holder_error: HMCCLIError | None = None
     try:
         rows = await read_profile_io_slot_rows(target.config, target.system_name)
         after_text = _select_profile_io_slots(rows, target.lpar_name, target.profile_name)
         after = _slots_by_drc(after_text)
-        holders = _other_holders(target, rows) if add else []
     except Exception as caught:  # noqa: BLE001 - reported through the partial error
         read_error = caught
     else:
-        if after == expected and not holders:
+        if add:
+            holders, holder_error = _holders_or_error(target, rows)
+        if after == expected and not holders and holder_error is None:
             return
-        if error is not None and after == before:
+        if error is not None and after == before and holder_error is None:
             raise error
-    cause = error or read_error
+        if not add:
+            holders, holder_error = _holders_or_error(target, rows)
+    contended = add and (bool(holders) or holder_error is not None)
+    cause = error or read_error or (holder_error if add else None)
     reasons = [str(cause)] if cause is not None else []
-    if holders:
+    if add and holders:
         reasons.append(f"slot is also listed by a profile of LPAR {', '.join(holders)}")
     operation = "assignment" if add else "unassignment"
     raise PcieAssignmentPartialError(
@@ -424,19 +430,35 @@ async def _verify_dedicated_change(
         f"after={after_text!r}. The write may have run, so the profile may hold the change, "
         "none of it, or a form this operation refuses. Read it with `lssyscfg -r prof -m "
         f"{shlex.quote(target.system_name)} -F lpar_name,name,io_slots --header`. "
-        f"{_recovery_advice(target, after, add=add)} Never write the read value back as "
-        "`io_slots=` input: that rendering is not established as valid input (ADR 0166)."
-        f"{_holder_advice(holders)}"
+        f"{_recovery_advice(target, after, add=add, contended=contended)} Never write the "
+        "read value back as `io_slots=` input: that rendering is not established as valid "
+        f"input (ADR 0166).{_holder_advice(holders, holder_error)}"
     ) from cause
 
 
+def _holders_or_error(
+    target: _DedicatedProfileTarget, profile_rows: list[dict[str, str]]
+) -> tuple[list[str], HMCCLIError | None]:
+    """Return other holders, or the parse error of a row naming the slot, without raising."""
+    try:
+        return _other_holders(target, profile_rows), None
+    except HMCCLIError as caught:
+        return [], caught
+
+
 def _recovery_advice(
-    target: _DedicatedProfileTarget, after: dict[str, ProfileIoSlot] | None, *, add: bool
+    target: _DedicatedProfileTarget,
+    after: dict[str, ProfileIoSlot] | None,
+    *,
+    add: bool,
+    contended: bool,
 ) -> str:
     """Advise from what the readback shows, naming no command that changes the profile.
 
     A named reversal was wrong in some concurrent state each time one was offered
-    (#882 review rounds 1 and 2), so every reversal goes through the HMC UI.
+    (#882 review rounds 1 and 2), so every reversal goes through the HMC UI. A slot
+    read as requested is not to be undone (#905), except after an assign that another
+    LPAR's profile also lists, or may list, where the two profiles contend for it.
     """
     drc_index = target.drc_index
     where = f"slot {drc_index} of profile {target.profile_name!r} of LPAR {target.lpar_name!r}"
@@ -449,14 +471,26 @@ def _recovery_advice(
     if after.get(drc_index) == (None if add else written):
         rendering = "absent" if add else f"{drc_index}/none/0"
         return f"The readback lists {where} as before ({rendering}), so no reversal is needed."
+    if after.get(drc_index) == (written if add else None) and not contended:
+        rendering = f"{drc_index}/none/0" if add else "absent"
+        return (
+            f"The readback lists {where} as requested ({rendering}), so the difference is "
+            "elsewhere in the profile: compare the read value with the before value, make any "
+            f"reversal of the other slots through the HMC UI, and do not undo slot {drc_index}."
+        )
     return (
         "Compare the read value with the before value, and make any reversal of "
         f"{where} through the HMC UI."
     )
 
 
-def _holder_advice(holders: list[str]) -> str:
+def _holder_advice(holders: list[str], holder_error: HMCCLIError | None) -> str:
     """Name another LPAR listing the slot, whose profile ADR 0011 does not authorize."""
+    if holder_error is not None:
+        return (
+            " Whether another LPAR's profile lists the slot could not be read "
+            f"({holder_error}); check that in the HMC UI."
+        )
     if not holders:
         return ""
     return (
@@ -520,8 +554,9 @@ _ADMITTED_RELEASE_FIELDS = {"version": "10", "release": "3", "service pack": "10
 def _is_exact_admitted_environment(version: str, model: str) -> bool:
     """Match `lshmc -V`'s own Version/Release/Service Pack fields exactly.
 
-    Stricter than the SR-IOV predicate, which also accepts ``V10R3 M1060`` anywhere in
-    the text: an HMC at a later service pack may still list an M1060 fix line.
+    The one envelope predicate both admission gates share. Never a substring test: an HMC
+    at a later service pack may still list an ``M1060`` fix line, and ``1060`` is a prefix
+    of ``10600``.
     """
     pairs = re.findall(r"\b(Version|Release|Service Pack):[ \t]*(\S+)", version)
     fields = {name.lower(): value for name, value in pairs}
@@ -539,13 +574,7 @@ async def require_dedicated_pcie_environment(config: HMCConfig, system_name: str
 
 
 async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:
-    version, model = await read_sriov_environment(config, system_name)
-    normalized = " ".join(version.split()).lower()
-    admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
-        marker in normalized
-        for marker in ("version: 10", "release: 3", "service pack: 1060")
-    )
-    if not admitted or model != _ADMITTED_SYSTEM_MODEL:
+    if not _is_exact_admitted_environment(*await read_sriov_environment(config, system_name)):
         raise SriovLogicalPortCapabilityError(
             "SR-IOV operations are admitted only for HMC V10R3 M1060 "
             "with managed-system model 8375-42A"

@@ -390,6 +390,7 @@ async def _run_arm(
         return marker
 
     monkeypatch.setattr(pcie, "_new_run_marker", capture)
+    monkeypatch.setattr(pcie, "_ABSENCE_REREAD_DELAY_S", 0)
 
     # The cleanup phase boundary: the arm reaches cleanup through this module
     # global, so wrapping it records where cleanup's calls begin.
@@ -529,6 +530,8 @@ async def test_probe_absence_that_cannot_be_confirmed_is_a_recovery_row(
     assert check_row is not None and check_row[2] == "FAIL"
     assert "MANUAL RECOVERY REQUIRED" in str(check_row[3])
     assert "-createtime" in str(check_row[3])
+    # Final cleanup never retries this probe, so the row must say so (#906).
+    assert "will not retry cleanup" in str(check_row[3])
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
     assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
 
@@ -1231,6 +1234,12 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     responses = _happy_responses(holder)
     # The HMC has no partition of either name.
     responses["hmc_get_lpar_description"] = lambda _k, _n: _NOT_FOUND
+    delays: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(pcie.asyncio, "sleep", record_sleep)
     state = await _run_arm(
         monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
     )
@@ -1239,6 +1248,67 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     skip = state.row("dedicated fixture create")
     assert skip is not None and skip[2] == "SKIP"
     assert "nothing to clean up" in str(skip[3])
+    # Each failed create waits once, then re-reads once: absence takes two
+    # HSCL8012 answers, and never a third lookup (#906).
+    lookups = [
+        k["lpar_name_or_uuid"] for t, k in state.calls if t == "hmc_get_lpar_description"
+    ]
+    assert len(lookups) == 4 and len(set(lookups)) == 2
+    assert all(lookups.count(name) == 2 for name in lookups)
+    assert delays == [pcie._ABSENCE_REREAD_DELAY_S] * 2
+
+
+def _not_found_first(responses: dict[str, Any], probe: bool) -> None:
+    """The partition's first lookup answers HSCL8012; later ones see it.
+
+    A create still in flight when the readback runs, or a CLI view lagging
+    REST, answers HSCL8012 for a partition that then appears (#906).
+    """
+    get_description = responses["hmc_get_lpar_description"]
+    seen = {"n": 0}
+
+    def description(kwargs: dict[str, Any], index: int) -> Any:
+        if _is_probe_name(kwargs) is probe:
+            seen["n"] += 1
+            if seen["n"] == 1:
+                return _NOT_FOUND
+        return get_description(kwargs, index)
+
+    responses["hmc_get_lpar_description"] = description
+
+
+@pytest.mark.asyncio
+async def test_probe_in_flight_on_first_lookup_is_found_by_the_reread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One HSCL8012 is not absence: the delayed re-read finds the probe."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_exists=True)
+    _not_found_first(responses, probe=True)
+    state = await _run_arm(monkeypatch, responses, holder)
+    row = state.row("create-time probe created a partition despite")
+    assert row is not None and row[2] == "FAIL"
+    deletes = [k for t, k in state.calls if t == "hmc_delete_lpar"]
+    assert any(
+        str(k.get("lpar_name_or_uuid", "")).endswith("-createtime") for k in deletes
+    ), "the probe partition the re-read found must be deleted"
+
+
+@pytest.mark.asyncio
+async def test_fixture_in_flight_on_first_lookup_is_found_by_the_reread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fixture's failed create gets the same re-read as the probe's."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    _not_found_first(responses, probe=False)
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "FAIL"}
+    )
+    row = state.row("fixture create reported failure but created a partition")
+    assert row is not None and row[2] == "FAIL"
+    assert "nothing to clean up" not in " ".join(str(r[3]) for r in state.results)
+    assert "hmc_delete_lpar" in state.cleanup_tools()
 
 
 @pytest.mark.asyncio
