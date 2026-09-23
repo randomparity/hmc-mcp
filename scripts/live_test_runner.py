@@ -127,14 +127,27 @@ _URL_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s@]+@"
 _HOSTNAME_RE = re.compile(
     r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b"
 )
+#: A single-dot `name.ext` with one of these extensions is a filename, not a
+#: host (#914). None is an IANA TLD — `.py`, `.md`, `.sh` and `.zip` are, so
+#: they stay out; a multi-label name is redacted whatever its last label.
+_FILENAME_EXTENSIONS = frozenset(
+    {"cfg", "conf", "csv", "ini", "iso", "json", "log", "toml", "txt", "xml", "yaml", "yml"}
+)
 _ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
+
+
+def _redact_hostname(match: re.Match[str]) -> str:
+    stem, _, extension = match.group().rpartition(".")
+    if "." not in stem and extension.lower() in _FILENAME_EXTENSIONS:
+        return match.group()
+    return "<REDACTED-HOST>"
 
 
 def _redact_failure_text(value: str) -> str:
     """Replace sensitive values in runner failure diagnostics."""
     value = _SECRET_VALUE_RE.sub(r"\g<name>\g<separator><REDACTED-SECRET>", value)
     value = _URL_USERINFO_RE.sub(r"\g<scheme><REDACTED-URL-USERINFO>@", value)
-    value = _HOSTNAME_RE.sub("<REDACTED-HOST>", value)
+    value = _HOSTNAME_RE.sub(_redact_hostname, value)
     return _ABSOLUTE_PATH_RE.sub("<REDACTED-PATH>", value)
 
 

@@ -38,7 +38,7 @@ from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
     partition_not_found,
-    profile_io_slots_command,
+    select_profile_io_slots,
 )
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
@@ -46,6 +46,8 @@ from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
 from hmcpctl.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.ssh.profiles import profile_io_slot_rows_command
+from hmcpctl.ssh.transport import HMCCLIError
 
 #: Every tool this script may call. Enforced on the call path rather than left
 #: to review: the whole point of the script is that it cannot make things worse
@@ -239,21 +241,20 @@ async def _profile_drift(call, inputs: RecoveryInputs) -> Finding | None:
         return None
     status, data = await call(
         "hmc_run_command",
-        cmd=profile_io_slots_command(
-            inputs.system_name, inputs.fixture_lpar, inputs.profile_name
-        ),
+        cmd=profile_io_slot_rows_command(inputs.system_name),
     )
     if status != "PASS" or not isinstance(data, str):
         raise StateUnreadable(
             f"could not read profile io_slots for {inputs.fixture_lpar} ({status})"
         )
-    records = [line.strip() for line in data.splitlines() if line.strip()]
-    if len(records) != 1:
-        raise StateUnreadable(
-            f"profile io_slots for {inputs.fixture_lpar} answered "
-            f"{len(records)} records; expected exactly 1"
+    try:
+        observed = select_profile_io_slots(
+            data, inputs.fixture_lpar, inputs.profile_name
         )
-    observed = records[0]
+    except HMCCLIError as error:
+        raise StateUnreadable(
+            f"profile io_slots for {inputs.fixture_lpar} is unreadable: {error}"
+        ) from error
     if observed == inputs.baseline_io_slots:
         return None
     still_assigned = _io_slots_contains(observed, inputs.drc_index)

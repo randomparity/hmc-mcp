@@ -344,23 +344,36 @@ class ProfileIoSlot:
     is_required: bool
 
 
-async def read_profile_io_slot_rows(
-    config: HMCConfig, system_name: str
-) -> list[dict[str, str]]:
-    """Read every profile's `io_slots` with the exact command ADR 0165 admits.
+def profile_io_slot_rows_command(system_name: str) -> str:
+    """Return the exact profile `io_slots` read ADR 0165 admits.
 
     The captured form is issued verbatim: all three fields, ``--header``, and no
     ``--filter``. ADR 0165 admits no narrower form.
     """
-    command = (
+    return (
         f"lssyscfg -r prof -m {shlex.quote(system_name)} "
         f"-F {','.join(PROFILE_IO_SLOT_FIELDS)} --header"
     )
-    output = await run_hmc_command(config, command)
+
+
+def parse_profile_io_slot_rows(output: str) -> list[dict[str, str]]:
+    """Parse the admitted readback into one row per profile.
+
+    Raises:
+        HMCCLIError: If *output* is not the header-bearing three-field table.
+    """
     try:
         return parse_hmc_delimited_rows(output, PROFILE_IO_SLOT_FIELDS)
     except ValueError as error:
         raise HMCCLIError(f"unadmitted profile io_slots readback: {error}") from error
+
+
+async def read_profile_io_slot_rows(
+    config: HMCConfig, system_name: str
+) -> list[dict[str, str]]:
+    """Read every profile's `io_slots` with the exact command ADR 0165 admits."""
+    output = await run_hmc_command(config, profile_io_slot_rows_command(system_name))
+    return parse_profile_io_slot_rows(output)
 
 
 def parse_profile_io_slots(value: str) -> tuple[ProfileIoSlot, ...]:
