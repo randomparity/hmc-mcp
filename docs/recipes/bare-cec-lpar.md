@@ -67,11 +67,12 @@ hmcpctl lpars state "$LPAR_NAME"
 Expected: `Created LPAR '<new-lpar-name>'` and the partition as JSON; copy its `UUID` into
 `LPAR`. `lpars state` prints `not activated`.
 
-The command writes one partition profile, `default_profile`. The HMC gives the partition a
-current configuration only when that profile is applied or the partition is activated with
-it. Until then the JSON above shows zero memory and processors. No installed command applies a
-profile without powering the partition on (#939). This recipe's path is step 4, which activates
-against the profile.
+The command writes one partition profile, `default_profile`. When the HMC creates the partition
+through `mksyscfg` (its REST create answered HTTP 406), the command then applies that profile
+without powering the partition on, and the step list shows `apply_profile` as `ok`. The partition
+then has a current configuration and an `AssociatedPartitionProfile` link, which step 4 reads.
+A partition created with `--no-apply`, or whose apply failed, shows zero memory and processors
+until the profile is applied or the partition is activated (#939).
 
 ## 3. Assign the dedicated slot
 
@@ -101,7 +102,8 @@ profile UUID. `power-on` prints `Job submitted for <lpar-uuid>` and the finished
 its status is `COMPLETED_OK`. Copy the job's `JobID` into `JOB_ID`.
 
 A PowerOn that names no profile is not a substitute. The arm records it expecting an `HSCL3680`
-refusal on a partition that has never been activated; #879 confirms that outcome.
+refusal, an expectation written before `lpars create` applied the profile (#939). On an applied
+partition the outcome is unconfirmed; #879 records it.
 
 ## 5. Observe the partition
 
