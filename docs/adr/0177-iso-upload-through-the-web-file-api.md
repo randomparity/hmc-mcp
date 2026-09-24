@@ -6,6 +6,16 @@ Accepted (2026-09-24). Supersedes [ADR 0031](0031-hmc-brokered-upload-import-ver
 brokered-file request shape. ADR 0052's streaming decision stands and now applies to the File
 contents upload.
 
+> **Amended by #1055** (2026-09-24): the Consequences bullet on the contents PUT's timeout is now
+> measured. On `V10R3 M1060` (`8375-42A`), with the default 60 s `HMC_TIMEOUT`, a 1,048,627,200-byte
+> ISO took 343.9 s and the HMC answered 6.7 s after the last byte; a 4,194,355,200-byte ISO took
+> 1,540.1 s and the HMC answered 14.8 s after the last byte. The longest gap between chunk writes
+> was 1.96 s. The wait grows with size; a line through the two points crosses 60 s near 21.7 GB.
+> The contents PUT now waits `max(HMC_TIMEOUT, HMC_UPLOAD_TIMEOUT)` (default 600 s) for the
+> response. Its connect and write waits stay at `HMC_TIMEOUT`. A read timeout there says the HMC
+> may still import the ISO. Design and measurement:
+> `docs/workflow/specs/2026-09-24-iso-upload-response-timeout-design.md`.
+
 ## Context
 
 ADR 0031 derived `upload_iso`'s requests from documentation: a `BrokeredFile` POST to the

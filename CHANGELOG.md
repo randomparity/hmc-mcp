@@ -180,6 +180,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and a successful upload now records FAIL instead of a PASS row whose note contradicted it.
   The unused `LIVE_TEST_ISO_HTTP_MEDIA_NAME` setting is removed (#1053).
 
+- The ISO upload no longer times out while the HMC finishes taking a large ISO. The HMC answers
+  the web File contents PUT only after it has taken the whole file: 14.8 s after the last byte of a
+  4.2 GB ISO, longer for a larger one. That response now gets its own wait, `HMC_UPLOAD_TIMEOUT`
+  (TOML `upload_timeout`, default 600 s, never shorter than `HMC_TIMEOUT`). A timeout there says the
+  HMC may still import the ISO (#1055).
+
 - Three `client_storage` XML parse sites (VIOS mapping read-modify-write, storage-mapping
   delete, and VolumeGroup read) now catch `DefusedXmlException` alongside `ParseError`, so an
   HMC body carrying a DTD, entity, or external reference raises `HMCError` naming the request

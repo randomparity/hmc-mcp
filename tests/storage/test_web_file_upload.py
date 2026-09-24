@@ -14,7 +14,7 @@ from conftest import make_config
 from defusedxml import ElementTree as DET
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.errors import HMCError
+from hmcpctl.errors import HMCError, HMCTransportError
 from hmcpctl.xmlutil import WEB_NS, localname
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000001"
@@ -272,6 +272,53 @@ async def test_web_file_upload_raises_on_failure_status(mock_hmc):
             await hmc._web_file_upload(FILE_UUID, _aiter(b"iso"), 3)
 
     assert raised.value.status_code == 500
+
+
+@pytest.mark.parametrize(
+    ("config", "read"),
+    [({}, 600.0), ({"timeout": 900.0}, 900.0), ({"upload_timeout": 1200.0}, 1200.0)],
+)
+@pytest.mark.asyncio
+async def test_web_file_upload_waits_the_upload_timeout_for_the_response(
+    mock_hmc, config, read
+):
+    """#1055: the HMC answers a 4.2 GB upload 14.8 s after its last byte, growing with size."""
+    route = mock_hmc.put(CONTENTS_PATH).mock(return_value=httpx.Response(204))
+    hmc_config = make_config(**config)
+
+    async with HMCClient(hmc_config) as hmc:
+        await hmc._web_file_upload(FILE_UUID, _aiter(b"iso"), 3)
+
+    general = hmc_config.timeout
+    assert route.calls.last.request.extensions["timeout"] == {
+        "connect": general, "read": read, "write": general, "pool": general,
+    }
+
+
+@pytest.mark.asyncio
+async def test_web_file_upload_read_timeout_names_the_upload_setting(mock_hmc):
+    mock_hmc.put(CONTENTS_PATH).mock(side_effect=httpx.ReadTimeout("timed out"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCTransportError) as raised:
+            await hmc._web_file_upload(FILE_UUID, _aiter(b"iso"), 3)
+
+    message = str(raised.value)
+    assert "within 600s" in message
+    assert "may still import" in message
+    assert "HMC_UPLOAD_TIMEOUT" in message
+
+
+@pytest.mark.asyncio
+async def test_web_file_upload_write_timeout_keeps_the_generic_message(mock_hmc):
+    mock_hmc.put(CONTENTS_PATH).mock(side_effect=httpx.WriteTimeout("timed out"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCTransportError) as raised:
+            await hmc._web_file_upload(FILE_UUID, _aiter(b"iso"), 3)
+
+    assert "HMC_TIMEOUT" in str(raised.value)
+    assert "HMC_UPLOAD_TIMEOUT" not in str(raised.value)
 
 
 @pytest.mark.asyncio
