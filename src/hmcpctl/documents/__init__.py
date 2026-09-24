@@ -14,12 +14,7 @@ from .adapters import (  # noqa: F401
     build_vfc_adapter_document,
     build_vscsi_adapter_document,
 )
-from .boot import (  # noqa: F401
-    BOOT_DEVICE_SELECTORS,
-    BootDeviceSelector,
-    build_boot_order_document,
-    build_clear_boot_order_document,
-)
+from .boot import join_boot_device_paths  # noqa: F401
 from .lpar import (  # noqa: F401
     KEYLOCK_POSITIONS,
     OS_TYPES,
