@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from defusedxml import ElementTree as DET
+from defusedxml.common import DefusedXmlException
 
 from ..documents import (
     StorageKind,
@@ -338,7 +339,7 @@ class StorageMixin:
             )
         try:
             identities = DET.fromstring(response.text).findall(f".//{{{WEB_NS}}}FileUUID")
-        except ET.ParseError as exc:
+        except (ET.ParseError, DefusedXmlException) as exc:
             raise HMCError(
                 "Web File create response is not XML", response.status_code, response.text
             ) from exc

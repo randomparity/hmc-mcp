@@ -145,8 +145,9 @@ async def test_web_file_create_carries_a_configured_schema_version(mock_hmc):
         file_response("not-a-uuid"),
         file_response(f"{FILE_UUID}/../x"),
         "not xml",
+        '<!DOCTYPE a [<!ENTITY e "x">]><a>&e;</a>',
     ],
-    ids=["none", "two", "not-uuid", "traversal", "not-xml"],
+    ids=["none", "two", "not-uuid", "traversal", "not-xml", "entity"],
 )
 @pytest.mark.asyncio
 async def test_web_file_create_rejects_a_response_without_one_file_uuid(mock_hmc, body):
