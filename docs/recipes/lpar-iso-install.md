@@ -279,8 +279,9 @@ hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30
 Expected: `power-on` prints `Job submitted for <lpar-uuid>` and the finished job, whose status
 is `COMPLETED_OK`. `jobs show` prints the same job. `lpars state` prints `running` or
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
-is blank. The boot-order commands (`lpars read-boot-order`, `set-boot-order`,
-`clear-boot-order`) are blocked by #980 and this path does not need them.
+is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
+Firmware device paths, and a never-booted partition reports none. On V10R3, `clear-boot-order` fails
+with HTTP 500 `REST0126`, so a pending boot order, once set, cannot be cleared with it.
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes
