@@ -6,8 +6,8 @@ These exercise ``operations_lpar.set_lpar_processors`` /
 running event loop* — the property issue #365 exists to establish, and the one
 the pre-extraction ``asyncio.run`` tool bodies could not satisfy.
 
-The document builders and the raw ``modify_logical_partition`` POST stay covered
-by ``test_dlpar.py``; the MCP tool delegation is covered by ``test_power_tools.py``.
+The field mapping and the whole-partition read-modify-write stay covered by
+``test_lpar_rmw.py``; the MCP tool delegation is covered by ``test_power_tools.py``.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import LPAR_RESOURCE_CONFIG, make_config
 
 from hmcpctl.audit import sink as audit_sink
 from hmcpctl.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
@@ -52,6 +52,7 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>{name}</PartitionName>
+""" + LPAR_RESOURCE_CONFIG + """\
       <PartitionState>running</PartitionState>
     </LogicalPartition>
   </content>
@@ -74,10 +75,12 @@ def _feed(*entries: str) -> str:
 
 
 def _mock_lpar_detail(router, uuid: str = LPAR_UUID) -> None:
-    """``resolve_lpar_ownership_names`` reads the partition name from this GET."""
+    """The ownership name read and the read-modify-write both GET this partition."""
     router.get(f"/rest/api/uom/LogicalPartition/{uuid}").mock(
         return_value=httpx.Response(
-            200, text=LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME)
+            200,
+            text=LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME),
+            headers={"ETag": "etag-1"},
         )
     )
 
@@ -171,10 +174,12 @@ async def test_set_lpar_processors_runs_inside_a_running_event_loop(mock_hmc):
             )
 
     assert result["Resource"]["PartitionName"] == LPAR_NAME
-    body = route.calls.last.request.content.decode()
-    assert "PartitionProcessorConfiguration" in body
-    assert "DesiredProcessingUnits" in body and ">1.5<" in body
-    assert "PartitionMemoryConfiguration" not in body
+    request = route.calls.last.request
+    assert request.headers["If-Match"] == "etag-1"
+    body = request.content.decode()
+    assert "<DesiredProcessingUnits>1.5<" in body
+    assert "<DesiredVirtualProcessors>3<" in body
+    assert "<DesiredMemory>4096<" in body
 
 
 @pytest.mark.asyncio
@@ -196,10 +201,12 @@ async def test_set_lpar_memory_runs_inside_a_running_event_loop(mock_hmc):
             )
 
     assert result["Resource"]["PartitionName"] == LPAR_NAME
-    body = route.calls.last.request.content.decode()
-    assert "PartitionMemoryConfiguration" in body
-    assert "DesiredMemory" in body and ">8192<" in body
-    assert "PartitionProcessorConfiguration" not in body
+    request = route.calls.last.request
+    assert request.headers["If-Match"] == "etag-1"
+    body = request.content.decode()
+    assert "<DesiredMemory>8192<" in body
+    assert "<MinimumMemory>1024<" in body and "<MaximumMemory>16384<" in body
+    assert "<DesiredProcessingUnits>0.5<" in body
 
 
 # ------------------------------------------------------------------ #
@@ -358,8 +365,8 @@ async def test_an_override_without_a_selector_skips_discovery_entirely(
 
     Discovery exists only to feed the guard, so an approved override must not
     depend on it. No fleet route is registered, so respx fails this test if the
-    walk runs at all; the partition read that names the audit record is the only
-    GET allowed.
+    walk runs at all; the partition read that names the audit record and the
+    read-modify-write's own read are the only GETs allowed.
     """
     _mock_lpar_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
@@ -381,7 +388,7 @@ async def test_an_override_without_a_selector_skips_discovery_entirely(
         call.request.url.path
         for call in mock_hmc.calls
         if call.request.method == "GET"
-    ] == [f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"]
+    ] == [f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"] * 2
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET  # nosec B405 - reads an element the caller parsed with defusedxml
 from dataclasses import dataclass, field
 from typing import Literal, get_args
 
@@ -41,7 +42,8 @@ class LparResources:
     dedicated: bool | None = field(
         default=None,
         metadata={
-            "description": "Whether processors are dedicated rather than shared."
+            "description": "Whether processors are dedicated rather than shared. On a "
+            "modify it must match the partition's current mode; a switch is refused."
         },
     )
     min_procs: float | None = field(
@@ -118,6 +120,19 @@ def _validate_sharing_mode(value: SharingMode | None) -> None:
         )
 
 
+def _render_units(value: float) -> str:
+    return str(int(value) if isinstance(value, float) and value.is_integer() else value)
+
+
+def _shared_sharing_mode(resources: LparResources) -> str | None:
+    return (
+        "uncapped"
+        if resources.uncapped is True
+        else resources.sharing_mode
+        or ("capped" if resources.uncapped is False else None)
+    )
+
+
 def _dedicated_processor_body(resources: LparResources) -> list[str]:
     parts = [
         '    <DedicatedProcessorConfiguration kb="CUD" kxe="false">',
@@ -166,19 +181,11 @@ def _shared_processor_body(resources: LparResources) -> list[str]:
         ("MinimumVirtualProcessors", resources.min_vcpus),
     ):
         if value is not None:
-            rendered = (
-                int(value) if isinstance(value, float) and value.is_integer() else value
-            )
-            parts.append(f'      <{name} kb="CUD" kxe="false">{rendered}</{name}>')
+            parts.append(f'      <{name} kb="CUD" kxe="false">{_render_units(value)}</{name}>')
     if resources.uncapped is False:
         parts.append('      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>')
     parts.append("    </SharedProcessorConfiguration>")
-    mode = (
-        "uncapped"
-        if resources.uncapped is True
-        else resources.sharing_mode
-        or ("capped" if resources.uncapped is False else None)
-    )
+    mode = _shared_sharing_mode(resources)
     if mode:
         parts.append(f'    <SharingMode kb="CUD" kxe="false">{mode}</SharingMode>')
     return parts
@@ -215,7 +222,7 @@ def _processor_config(resources: LparResources) -> str:
 
 @escapes_string_arguments
 def build_lpar_document(
-    name: str | None,
+    name: str,
     partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
     resources: LparResources | None = None,
@@ -223,12 +230,13 @@ def build_lpar_document(
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
 ) -> str:
-    """Build a LogicalPartition document for PUT (create) or POST (modify).
+    """Build a LogicalPartition document to PUT (create).
 
-    For a create, `name` is required; the rest are optional (the HMC supplies
-    defaults). For a modify, supply only the fields to change (pass name=None
-    to omit it). `resources` carries the memory/processor fields; None means
-    no resource block is emitted.
+    `name` is required; the rest are optional (the HMC supplies defaults).
+    `resources` carries the memory/processor fields; None means no resource
+    block is emitted. A modify goes through :func:`partition_updates` instead:
+    V10R3 rejects a sparse LogicalPartition POST, and ``PartitionType`` is
+    create-only.
 
     os_type: target OS type — ``aix``, ``linux``, or ``ibmi``.
     keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
@@ -265,10 +273,7 @@ def build_lpar_document(
             f'  <MaximumVirtualIoSlots kb="CUD" kxe="false">{max_virtual_slots}</MaximumVirtualIoSlots>'
         )
 
-    if name is not None:
-        body_parts.append(
-            f'  <PartitionName kb="CUR" kxe="false">{name}</PartitionName>'
-        )
+    body_parts.append(f'  <PartitionName kb="CUR" kxe="false">{name}</PartitionName>')
 
     if os_type is not None:
         body_parts.append(
@@ -318,40 +323,95 @@ def build_vios_document(
     )
 
 
-@escapes_string_arguments
-def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
-    """Minimal LogicalPartition document containing only PartitionProcessorConfiguration.
+_UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+_PPC = "PartitionProcessorConfiguration"
+_MODE_SWITCH_REFUSAL = (
+    "Refusing to switch the partition between dedicated and shared processors: the "
+    "partition read carries no configuration for the other mode, so nothing was written. "
+    "Omit `dedicated`, or pass the partition's current mode."
+)
 
-    Used for DLPAR processor hot-plug: POST to /rest/api/uom/LogicalPartition/{uuid}.
-    On a running partition this applies immediately if RMC is active; otherwise the
-    change is profile-only and takes effect on next activation.
 
-    For shared partitions, procs are processing units (may be fractional, e.g. 0.5);
-    vcpus are the virtual processor counts (ints).
-    Set dedicated=True to assign whole CPUs; dedicated=False (default) for shared.
+def _changed(pairs: tuple[tuple[str, object], ...]) -> dict[str, str]:
+    return {path: str(value) for path, value in pairs if value is not None}
+
+
+def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, str]:
+    _validate_sharing_mode(resources.sharing_mode)
+    current = lpar.findtext(f"{{{_UOM_NS}}}{_PPC}/{{{_UOM_NS}}}HasDedicatedProcessors")
+    dedicated = current == "true" if current is not None else bool(resources.dedicated)
+    if resources.dedicated is not None and resources.dedicated != dedicated:
+        raise ValueError(_MODE_SWITCH_REFUSAL)
+    if dedicated:
+        if resources.uncapped is not None or any(
+            value is not None
+            for value in (resources.min_vcpus, resources.desired_vcpus, resources.max_vcpus)
+        ):
+            raise ValueError(
+                "Virtual processor counts and capping apply only to a shared-processor "
+                "partition; this partition has dedicated processors. Nothing was written."
+            )
+        config = f"{_PPC}/DedicatedProcessorConfiguration"
+        updates = _changed(
+            tuple(
+                (f"{config}/{name}", None if value is None else int(value))
+                for name, value in (
+                    ("DesiredProcessors", resources.desired_procs),
+                    ("MaximumProcessors", resources.max_procs),
+                    ("MinimumProcessors", resources.min_procs),
+                )
+            )
+        )
+        mode = resources.sharing_mode
+    else:
+        config = f"{_PPC}/SharedProcessorConfiguration"
+        updates = _changed(
+            tuple(
+                (f"{config}/{name}", None if value is None else _render_units(value))
+                for name, value in (
+                    ("DesiredProcessingUnits", resources.desired_procs),
+                    ("MaximumProcessingUnits", resources.max_procs),
+                    ("MinimumProcessingUnits", resources.min_procs),
+                )
+            )
+            + (
+                (f"{config}/DesiredVirtualProcessors", resources.desired_vcpus),
+                (f"{config}/MaximumVirtualProcessors", resources.max_vcpus),
+                (f"{config}/MinimumVirtualProcessors", resources.min_vcpus),
+            )
+        )
+        mode = _shared_sharing_mode(resources)
+    if mode:
+        updates[f"{_PPC}/SharingMode"] = mode
+    if updates:
+        updates[f"{_PPC}/HasDedicatedProcessors"] = str(dedicated).lower()
+    return updates
+
+
+def partition_updates(
+    lpar: ET.Element,
+    *,
+    name: str | None = None,
+    resources: LparResources | None = None,
+) -> dict[str, str]:
+    """Map a rename or resource change to the partition elements it sets.
+
+    Returns element text keyed by a slash path relative to *lpar*, the
+    ``LogicalPartition`` element of a whole-partition read, for
+    ``HMCClient.update_logical_partition``. Processor paths follow the
+    partition's current mode (``HasDedicatedProcessors``); a requested
+    ``dedicated`` value that differs from it raises ``ValueError``, because
+    switching needs a configuration element the read does not carry.
+    ``UncappedWeight`` is never written: V10R3 drops it on capping and recreates
+    it as 0 on uncapping.
     """
     resources = resources or LparResources()
-    proc = _processor_config(resources)
-    body = "  <Metadata><Atom/></Metadata>"
-    if proc:
-        body = body + "\n" + proc
-    return lpar_envelope(body)
-
-
-@escapes_string_arguments
-def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
-    """Minimal LogicalPartition document containing only PartitionMemoryConfiguration.
-
-    Used for DLPAR memory hot-plug: POST to /rest/api/uom/LogicalPartition/{uuid}.
-    On a running partition this applies immediately if RMC is active; otherwise the
-    change is profile-only and takes effect on next activation.
-
-    Memory values are in MiB. Only the min/desired/max memory fields of
-    `resources` are emitted; processor fields are ignored.
-    """
-    resources = resources or LparResources()
-    mem = _memory_config(resources)
-    body = "  <Metadata><Atom/></Metadata>"
-    if mem:
-        body = body + "\n" + mem
-    return lpar_envelope(body)
+    updates = {} if name is None else {"PartitionName": name}
+    updates |= _changed(
+        (
+            ("PartitionMemoryConfiguration/DesiredMemory", resources.desired_memory),
+            ("PartitionMemoryConfiguration/MaximumMemory", resources.max_memory),
+            ("PartitionMemoryConfiguration/MinimumMemory", resources.min_memory),
+        )
+    )
+    return updates | _processor_updates(lpar, resources)

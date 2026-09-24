@@ -17,6 +17,7 @@ import asyncio
 import inspect
 import json
 import textwrap
+import xml.etree.ElementTree as ET  # nosec B405 - parses a literal test partition
 from typing import Self
 from unittest.mock import AsyncMock
 
@@ -103,6 +104,7 @@ def _patch_ssh_command(monkeypatch, replacement) -> None:
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 PARTITION_PROFILE_UUID = "00000000-0000-0000-0000-0000000000aa"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 VG_UUID = "33333333-3333-4333-8333-333333333333"
 VIOS_UUID = "44444444-4444-4444-8444-444444444444"
 JOB_UUID = "55555555-5555-4555-8555-555555555555"
@@ -293,8 +295,13 @@ class FakeHMC:
         self._record("create_logical_partition", system_uuid, xml)
         return self.lpar
 
-    async def modify_logical_partition(self, lpar_uuid, xml):
-        self._record("modify_logical_partition", lpar_uuid, xml)
+    async def update_logical_partition(self, lpar_uuid, updates, subject):
+        partition = ET.fromstring(
+            f'<LogicalPartition xmlns="{UOM_NS}"><PartitionProcessorConfiguration>'
+            "<HasDedicatedProcessors>false</HasDedicatedProcessors>"
+            "</PartitionProcessorConfiguration></LogicalPartition>"
+        )
+        self._record("update_logical_partition", lpar_uuid, updates(partition), subject)
         return self.lpar
 
     async def delete_logical_partition(self, lpar_uuid):
@@ -1403,9 +1410,9 @@ def test_lpars_modify_renames(fake_hmc):
     assert result.exit_code == 0
     assert "Modified LPAR" in result.stdout
     name, args, _ = fake_hmc.calls[-1]
-    assert name == "modify_logical_partition"
+    assert name == "update_logical_partition"
     assert args[0] == LPAR_UUID
-    assert "renamed" in args[1]
+    assert args[1] == {"PartitionName": "renamed"}
 
 
 def test_lpars_modify_reports_incomplete_workflow_with_nonzero_exit(
@@ -1474,27 +1481,27 @@ def test_lpars_modify_procs_only_keeps_sharing_mode(fake_hmc):
 
     assert result.exit_code == 0
     _, args, _ = next(
-        call for call in fake_hmc.calls if call[0] == "modify_logical_partition"
+        call for call in fake_hmc.calls if call[0] == "update_logical_partition"
     )
-    body = args[1]
-    assert "DesiredProcessingUnits" in body and ">0.5<" in body
-    assert "HasDedicatedProcessors" not in body
-    assert "SharingMode" not in body
+    assert args[1] == {
+        "PartitionProcessorConfiguration/SharedProcessorConfiguration/DesiredProcessingUnits": (
+            "0.5"
+        ),
+        "PartitionProcessorConfiguration/HasDedicatedProcessors": "false",
+    }
 
 
-def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
+def test_lpars_modify_dedicated_flag_must_match_the_partition_mode(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
         ["lpars", "modify", LPAR_UUID, "--procs", "2", "--dedicated", "--yes"],
     )
 
-    assert result.exit_code == 0
-    _, args, _ = next(
-        call for call in fake_hmc.calls if call[0] == "modify_logical_partition"
+    assert result.exit_code != 0
+    assert "switch the partition between dedicated and shared" in str(result.exception) + (
+        result.output
     )
-    body = args[1]
-    assert "DedicatedProcessorConfiguration" in body
-    assert "HasDedicatedProcessors" in body and ">true<" in body
+    assert not any(call[0] == "update_logical_partition" for call in fake_hmc.calls)
 
 
 def test_lpars_delete(fake_hmc):

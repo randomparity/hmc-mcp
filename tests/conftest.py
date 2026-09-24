@@ -325,6 +325,23 @@ JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
+# The memory and processor elements a whole-partition read-modify-write edits
+# (#1057), for LogicalPartition entries that tests hand to rename or DLPAR.
+LPAR_RESOURCE_CONFIG = """\
+      <PartitionMemoryConfiguration>
+        <DesiredMemory>4096</DesiredMemory>
+        <MaximumMemory>16384</MaximumMemory>
+        <MinimumMemory>1024</MinimumMemory>
+      </PartitionMemoryConfiguration>
+      <PartitionProcessorConfiguration>
+        <HasDedicatedProcessors>false</HasDedicatedProcessors>
+        <SharedProcessorConfiguration>
+          <DesiredProcessingUnits>0.5</DesiredProcessingUnits>
+          <DesiredVirtualProcessors>1</DesiredVirtualProcessors>
+        </SharedProcessorConfiguration>
+      </PartitionProcessorConfiguration>
+"""
+
 # Single-resource uom entries used by SSH tools to resolve a system / LPAR
 # UUID to its CLI name via REST. Both accept {uuid} and {name} placeholders.
 SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

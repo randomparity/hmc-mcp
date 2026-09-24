@@ -31,7 +31,8 @@ def lpars_modify(
     dedicated: bool | None = typer.Option(
         None,
         "--dedicated/--no-dedicated",
-        help="Assign dedicated CPUs (default: leave unchanged)",
+        help="Must match the partition's current mode; a switch is refused "
+        "(default: leave unchanged)",
     ),
     min_procs: float | None = typer.Option(None, "--min-procs"),
     procs: float | None = typer.Option(None, "--procs"),
@@ -40,7 +41,10 @@ def lpars_modify(
     vcpus: int | None = typer.Option(None, "--vcpus"),
     max_vcpus: int | None = typer.Option(None, "--max-vcpus"),
     capped: bool | None = typer.Option(
-        None, "--capped/--uncapped", help="Cap shared CPU (default: leave unchanged)"
+        None,
+        "--capped/--uncapped",
+        help="Cap shared CPU; uncapping a capped partition leaves weight 0 "
+        "(default: leave unchanged)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(

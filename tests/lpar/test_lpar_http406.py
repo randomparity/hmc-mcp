@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from conftest import LPAR_RESOURCE_CONFIG
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.documents import LparResources
@@ -77,6 +78,7 @@ LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>lpar1</PartitionName>
+{LPAR_RESOURCE_CONFIG}\
       <PartitionState>not activated</PartitionState>
     </LogicalPartition>
   </content>
@@ -108,7 +110,7 @@ def _mock_dlpar_authorization(router) -> None:
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
+        return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
     )
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=_partition_feed(LPAR_ENTRY))
@@ -369,9 +371,9 @@ def test_apply_profile_sends_verified_chsyscfg():
 def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
     """hmc_modify_lpar returns an actionable message on HTTP 406."""
     _hmc_env(monkeypatch)
-    # LPAR UUID resolution
+    # The read-modify-write's read
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
+        return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
     )
     # modify returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(

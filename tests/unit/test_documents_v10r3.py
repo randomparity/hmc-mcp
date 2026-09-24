@@ -195,8 +195,6 @@ BUILT = {
     "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
-    "dlpar-mem": documents.build_dlpar_mem_document(RESOURCES),
-    "dlpar-proc": documents.build_dlpar_proc_document(RESOURCES),
 }
 # No live evidence records whether V10R3 requires schemaVersion on these; left unchanged (#961).
 PROCESSOR_WRAPPERS_UNVERIFIED = frozenset(

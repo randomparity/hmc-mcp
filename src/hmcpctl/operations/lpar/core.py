@@ -30,6 +30,7 @@ from ...documents import (
     OsType,
     PartitionType,
     build_lpar_document,
+    partition_updates,
 )
 from ...errors import HMCError
 from ...jobs import (
@@ -61,6 +62,7 @@ from ...ssh.lpar import (
     validate_caller_token,
 )
 from ...ssh.transport import HMCCLIError
+from ...xmlutil import escape_xml
 
 _logger = logging.getLogger(__name__)
 
@@ -742,7 +744,8 @@ async def rename_lpar(
     *,
     ownership_override: bool = False,
 ) -> tuple[str, dict[str, Any] | None]:
-    """Resolve, authorize, and rename one LPAR."""
+    """Resolve, authorize, and rename one LPAR by whole-partition read-modify-write."""
+    escape_xml(new_name)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -750,8 +753,10 @@ async def rename_lpar(
         ownership_override=ownership_override,
     )
     try:
-        updated = await hmc.modify_logical_partition(
-            lpar_uuid, build_lpar_document(name=new_name)
+        updated = await hmc.update_logical_partition(
+            lpar_uuid,
+            lambda lpar: partition_updates(lpar, name=new_name),
+            "the partition name",
         )
     except HMCError as exc:
         translated = translate_lpar_write_error(exc)

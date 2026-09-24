@@ -263,7 +263,7 @@ def test_mcp_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
             system_name_or_uuid=SYSTEM_UUID,
         )
 
-    hmc.modify_logical_partition.assert_not_awaited()
+    hmc.update_logical_partition.assert_not_awaited()
 
 
 def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
@@ -299,13 +299,13 @@ def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
         assert result.exception is not None
         assert "ownership_override=true" in str(result.exception)
 
-    hmc.modify_logical_partition.assert_not_awaited()
+    hmc.update_logical_partition.assert_not_awaited()
 
 
 def test_resource_modify_override_skips_ownership_read_and_writes() -> None:
     """An approved resource override reaches the shared operation's POST."""
     hmc = _real_guard_hmc()
-    hmc.modify_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
+    hmc.update_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
     with patch(
         "hmcpctl.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=FOREIGN_OWNER),
@@ -320,7 +320,7 @@ def test_resource_modify_override_skips_ownership_read_and_writes() -> None:
         )
 
     read.assert_not_awaited()
-    hmc.modify_logical_partition.assert_awaited_once()
+    hmc.update_logical_partition.assert_awaited_once()
 
 
 @pytest.mark.asyncio

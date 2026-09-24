@@ -287,18 +287,11 @@ async def test_lpar_mixin_writes_use_schema_compatible_paths():
     client = LparsHarness()
 
     assert await client.create_logical_partition(UUID_A, "<lpar/>") is None
-    assert await client.modify_logical_partition(UUID_B, "<update/>") is None
     await client.delete_logical_partition(UUID_B)
 
     client._put.assert_awaited_once_with(
         f"/rest/api/uom/ManagedSystem/{UUID_A}/LogicalPartition",
         "<lpar/>",
-        resource_type="LogicalPartition",
-        include_schema_version=False,
-    )
-    client._post.assert_awaited_once_with(
-        f"/rest/api/uom/LogicalPartition/{UUID_B}",
-        "<update/>",
         resource_type="LogicalPartition",
         include_schema_version=False,
     )

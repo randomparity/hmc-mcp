@@ -7,6 +7,7 @@ domain mixin; this module only defines methods for lpars.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET  # nosec B405 - serializes a defusedxml-parsed tree
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from defusedxml import ElementTree as DET
@@ -32,19 +33,6 @@ def _logical_partition_element(root: ET.Element, path: str, raw: str) -> ET.Elem
     found = root.find(f"{{{_ATOM_NS}}}content/{{{_UOM_NS}}}LogicalPartition")
     if found is None:
         raise HMCError(f"GET {path} contains no LogicalPartition element", 200, raw[:500])
-    return found
-
-
-def _pending_boot_string_element(lpar: ET.Element, path: str, raw: str) -> ET.Element:
-    """The existing ``BootListInformation/PendingBootString``; never one made up."""
-    found = lpar.find(f"{{{_UOM_NS}}}BootListInformation/{{{_UOM_NS}}}PendingBootString")
-    if found is None:
-        raise HMCError(
-            f"GET {path} has no BootListInformation/PendingBootString; refusing to "
-            "write the boot order",
-            200,
-            raw[:500],
-        )
     return found
 
 
@@ -126,39 +114,36 @@ class LparsMixin:
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
-    async def modify_logical_partition(
-        self: LparsClient, lpar_uuid: str, lpar_xml: str
-    ) -> dict[str, Any] | None:
-        """Modify an LPAR's properties (POST a partial LogicalPartition doc).
-
-        Memory/CPU changes to a *running* partition only take effect if the
-        partition supports dynamic LPAR (DLPAR) and RMC is up; otherwise the
-        change lands in the profile for the next activation.
-
-        Omits X-HMC-Schema-Version header — some HMC firmware versions return
-        HTTP 406 for this POST when the schema-version header is present.
-        """
-        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
-        path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-        xml = await self._post(
-            path,
-            lpar_xml,
-            resource_type="LogicalPartition",
-            include_schema_version=False,
-        )
-        entries = _parse_feed(xml, path) if xml else []
-        return entries[0] if entries else None
-
     async def set_pending_boot_string(
         self: LparsClient, lpar_uuid: str, boot_string: str
     ) -> dict[str, Any] | None:
         """Set ``BootListInformation/PendingBootString`` by read-modify-write.
 
-        GETs the whole partition in the ``Advanced`` group, replaces only that
-        element's text, and POSTs the element back to the same URL with
-        ``If-Match`` set to the GET's ETag, on the terms ADR 0171 sets for
-        VolumeGroup writes. Refuses before any POST when the GET carries no ETag
-        or the partition has no ``BootListInformation/PendingBootString``.
+        Replaces only that element's text through :meth:`update_logical_partition`,
+        which refuses before any POST when the GET carries no ETag or the partition
+        has no ``BootListInformation/PendingBootString``.
+        """
+        return await self.update_logical_partition(
+            lpar_uuid,
+            lambda _lpar: {"BootListInformation/PendingBootString": boot_string or None},
+            "the boot order",
+        )
+
+    async def update_logical_partition(
+        self: LparsClient,
+        lpar_uuid: str,
+        updates: Callable[[ET.Element], Mapping[str, str | None]],
+        subject: str,
+    ) -> dict[str, Any] | None:
+        """Change named partition fields by whole-partition read-modify-write.
+
+        GETs the partition in the ``Advanced`` group, sets the text of each element
+        ``updates(partition)`` names by a slash path relative to the partition, and
+        POSTs the element back to the same URL with ``If-Match`` set to the GET's
+        ETag, on the terms ADR 0171 sets for VolumeGroup writes. Every attribute,
+        sibling and order stays as read. Refuses before any POST when the GET carries
+        no ETag, a named element is missing (no element is ever created), or the
+        mapping is empty.
         """
         _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
         path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}?group=Advanced"
@@ -186,7 +171,18 @@ class LparsMixin:
         except DET.ParseError as exc:
             raise HMCError(f"GET {path} response is not valid XML", 200, got.text[:500]) from exc
         lpar = _logical_partition_element(root, path, got.text)
-        _pending_boot_string_element(lpar, path, got.text).text = boot_string or None
+        changes = updates(lpar)
+        if not changes:
+            raise ValueError(f"nothing to write for {subject}; nothing was sent")
+        for field, text in changes.items():
+            element = lpar.find("/".join(f"{{{_UOM_NS}}}{part}" for part in field.split("/")))
+            if element is None:
+                raise HMCError(
+                    f"GET {path} has no {field}; refusing to write {subject}",
+                    200,
+                    got.text[:500],
+                )
+            element.text = text
 
         response = await self._request_with_uuid_path_arguments(
             "POST",
