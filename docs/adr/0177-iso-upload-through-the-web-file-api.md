@@ -23,12 +23,14 @@ In the #879 window on 2026-09-23 (`V10R3 M1060`, `8375-42A`), an out-of-tree pro
    `Accept: */*`. The body is a web-namespace `File` with `schemaVersion="V1_0"`, an empty
    `Metadata/Atom`, then `Filename`, `InternetMediaType` (`application/octet-stream`),
    `ExpectedFileSizeInBytes`, `FileEnumType` (`BROKERED_MEDIA_ISO`) and
-   `TargetVirtualIOServerUUID`, in that order. The HMC answered 200 with an Atom entry whose
-   `File` carries a `FileUUID`.
-2. `PUT /rest/api/web/File/contents/<FileUUID>`, `Content-Type: application/octet-stream`, the
-   bytes streamed with a `Content-Length`: 204.
-3. The media was in the VIOS repository's `VolumeGroup` on the first poll.
-4. `DELETE /rest/api/web/File/<FileUUID>`: 204.
+   `TargetVirtualIOServerUUID`, in that order. The HMC answered 200 with an Atom `entry` whose
+   `content` holds `File:File` in the web namespace as the default namespace; its `FileUUID`
+   child is therefore in that namespace, and equals the entry's `id`.
+2. `PUT /rest/api/web/File/contents/<FileUUID>`, `Content-Type: application/octet-stream`,
+   `Accept: */*`, the bytes streamed with a `Content-Length`: 204.
+3. The VIOS repository's `VolumeGroup` listed a `MediaName` equal to the `Filename` sent, on the
+   first poll.
+4. `DELETE /rest/api/web/File/<FileUUID>`, `Accept: */*`: 204.
 
 The HMC echoed the elements in its own order: `Filename`, `DateModified`, `InternetMediaType`,
 `FileUUID`, `ExpectedFileSizeInBytes`, `FileEnumType`, `TargetVirtualIOServerUUID`. The
@@ -47,7 +49,8 @@ headers. The optional `X-HMC-Schema-Version` header is added the way every other
   from ADR 0052.
 - `_web_file_delete(file_uuid) -> None` accepts 200, 202, 204 and 404.
 
-The operation creates the File, streams the staged ISO into it, and then polls the target
+Before downloading anything, the operation refuses a volume group that holds no media
+repository. It creates the File, streams the staged ISO into it, and then polls the target
 volume group's repository. It reports `uploaded` only when the media name is listed there, and
 fails if it is not listed within a bounded number of polls. It deletes the File handle in a
 `finally` on every outcome after a successful create. A delete failure is raised after a
@@ -62,8 +65,12 @@ are removed.
 
 - There is no separate import request. The HMC puts the uploaded ISO into the VIOS's single
   media repository. The volume-group argument now picks where visibility is checked, not
-  where the ISO goes. A repository on a different volume group fails the visibility check,
-  and the error says the media may still have landed.
+  where the ISO goes. A volume group with no repository is refused before the transfer. The
+  errors raised after the HMC accepted the bytes say so, and they tell the operator to check
+  `list-optical-media` before retrying.
+- When the media does not appear in time, the `finally` deletes the File before the media is
+  visible. Nobody has tested whether that cancels an import that is still running, and the
+  error says the media may or may not land.
 - `media` in the result is never `None`. The HMC's inventory not listing the media is now an
   error, not a success with no entry.
 - A SHA-256 element on the `File` stays unverified, so the digest is still computed and

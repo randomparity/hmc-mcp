@@ -22,7 +22,9 @@ In scope:
 - `operations/storage/resources.py`: `_upload_iso_via_web_file` replaces
   `_upload_iso_via_broker`. Visibility polling is bounded by module constants
   `VISIBILITY_POLLS = 12` and `VISIBILITY_POLL_SECONDS = 5.0`, so it waits about 55 s at
-  most. `upload_iso`'s pre-checks, download, and temp-file cleanup do not change.
+  most. `upload_iso` adds one pre-check: before the download, `hmc.get_media_repository(vios_uuid,
+  vg_uuid)` returning `None` raises `ValueError` naming the volume group. The other pre-checks,
+  the download, and the temp-file cleanup do not change.
 - The tool, CLI, and operation docstrings name the web File API. `docs/tools/media.md` is
   regenerated.
 - Stale references are corrected: the ADR 0031 supersession banner, an ADR 0052 status
@@ -35,6 +37,7 @@ Out of scope, per the WORK:SCOPE exclusions: a `SHA256` element (operator), the
 
 ## Behaviour
 
+0. A volume group without a media repository is refused before anything is downloaded.
 1. The operation creates the File and gets a `FileUUID`. A create that fails leaves nothing to
    delete. It raises `HMCError` for a status other than 200 or 201, or for a response without
    exactly one UUID-shaped `FileUUID`.
@@ -44,10 +47,12 @@ Out of scope, per the WORK:SCOPE exclusions: a `SHA256` element (operator), the
    sleeps `VISIBILITY_POLL_SECONDS` between polls, never before the first one. It returns the
    first entry whose `MediaName` equals `media_name`. If none appears, it raises
    `HMCError(status_code=None)`. The message names the media, the volume group, and the poll
-   count, and says the ISO may still land in the VIOS repository, so the operator should check
-   `list-optical-media` before retrying.
+   count. It says the HMC accepted the bytes, that the File release which follows may or may
+   not stop the import, and that the operator should check `list-optical-media` before
+   retrying. An `HMCError` raised by a poll gets the same note (`add_note`).
 4. In a `finally`, once a `FileUUID` exists, it calls `_web_file_delete`. A delete failure is
-   raised if nothing else failed. If something else failed, the delete failure is logged with
+   raised if nothing else failed, with a note that the ISO is in the repository. If something
+   else failed, the delete failure is logged with
    the `FileUUID`, and the first failure is the one raised.
 5. `upload_iso` returns the existing five keys. `media` is always the visible entry.
 
@@ -57,13 +62,16 @@ Out of scope, per the WORK:SCOPE exclusions: a `SHA256` element (operator), the
    (`media.upload_iso`), running the CLI or the MCP server against the V10R3 M1060 HMC the
    2026-09-23 window verified; other HMC releases are outside the model.
 2. **Invariants and assets:** the VIOS media repository's contents. The shared server
-   process's memory (ADR 0052: the ISO is never buffered). No leaked File handle after a
-   successful create. `uploaded` is never reported for media the repository does not list.
+   process's memory (ADR 0052: the ISO is never buffered). Every File handle that is created
+   is either deleted or reported by `FileUUID`, raised or logged. `uploaded` is never reported
+   for media the repository does not list.
 3. **Accepted failure classes:**
    - A create that the HMC applied but whose response was lost or malformed leaves an
      orphaned handle. We have no `FileUUID` to delete, and the error names the create.
    - The contents PUT timing out under `HMC_TIMEOUT` on a large ISO. The existing timeout
      message tells the operator to raise it (ADR 0177 consequence).
+   - A delete that fails leaves the handle on the HMC. Its `FileUUID` is reported, and nothing
+     retries it.
    - Media that becomes visible after the poll bound. The error says so and does not tell the
      operator to retry blindly.
 4. **Covered elsewhere:** a 406 on typed headers (#935). URL allowlist, redirect refusal, and
