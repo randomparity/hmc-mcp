@@ -87,15 +87,19 @@ _SETTLED_STATES = _NOT_ACTIVATED | _FIRMWARE_STATES
 
 _UUID_AT_END = re.compile(r"/([0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12})/?\Z")
 
-#: A new partition has no current configuration until a profile is applied
-#: (#939), so a PowerOn naming no profile is expected to be refused. Transient:
-#: an environment refusal, not a product gap to catalogue. The code is the one
-#: epic #871 names and is unconfirmed on hardware; #879 reconciles it.
+#: Before #939, `hmc_create_lpar` left a new partition without an applied profile, so a
+#: PowerOn naming no profile had no current configuration to activate and HSCL3680 was
+#: expected. Since #939 (PR #986) `hmc_create_lpar` applies the profile by default, so
+#: this PowerOn normally targets an applied partition, where the outcome is unconfirmed
+#: (#879 records it) — except a create whose `apply_profile` step failed
+#: (`_apply_created_profile` catches `HMCCLIError` without raising) leaves it unapplied,
+#: where HSCL3680 still applies. Transient: an environment refusal, not a product gap.
 _NO_PROFILE_ACTIVATION_REFUSED = ExpectedOutcome(
     operation="lpar.power_on",
     variant="no-current-configuration",
-    reason="a partition whose profile was never applied has no current "
-    "configuration to activate (#939) — expected on a freshly created partition",
+    reason="a PowerOn naming no profile normally targets an applied partition (#939) "
+    "with an unconfirmed outcome on hardware — #879 records it; a create whose "
+    "apply_profile step failed leaves it unapplied, where HSCL3680 still applies",
     error_codes=frozenset({"HSCL3680"}),
     transient=True,
 )
