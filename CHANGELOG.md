@@ -16,6 +16,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   file, reports the stop reason and `released` on stderr, and exits 0, 1, 2 or 3 as ADR 0175
   states; 3 means the console may still be held. The bare-CEC recipe now captures the console
   with it. The MCP tool and the command share one selector resolver (#959).
+- `ConsoleSession` can yield the console to a preempting hold in two named modes (ADR 0173).
+  `async with session.hand_over() as handover:` moves the channel to an in-process holder while
+  the session keeps the vterm held, with no release gap. `suspend()` releases the vterm with the
+  usual `rmvterm` and probe proof for an external holder, and `resume()` acquires it again. It
+  raises `ConsoleHeldError`, issuing no `rmvterm`, if the slot was taken. The collector's
+  `read()` waits while paused. `close()` of a suspended session issues no `rmvterm`. The bounded
+  capture is unchanged (#976).
 
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
@@ -154,6 +161,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_delete_virtual_disk` also refuses a disk that backs a vSCSI mapping named inline by
   `DiskName`, the shape V10R3 returns; the mapped-disk check previously matched only an `href`
   the HMC does not send.
+- `hmc_create_media_repository`, `hmc_create_optical_media`, `hmc_delete_media_repository`,
+  `hmc_delete_optical_media` and their `hmcpctl storage` commands write the volume group back
+  with `If-Match` set to the read's ETag, as the virtual-disk writes do. Without it, a media
+  write racing a virtual-disk write could post the group as it was before that write, restoring a
+  deleted disk or dropping a created one. They now refuse without writing when the read carries
+  no ETag, and an HMC 412 is reported as a concurrent change with nothing written. HMC
+  enforcement of a mismatched ETag on this path is not yet live-verified (#996).
 - `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
   disk name longer than 15 characters before the create request, with a message that states the
   VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was

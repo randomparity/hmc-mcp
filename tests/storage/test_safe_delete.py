@@ -202,7 +202,7 @@ async def test_delete_optical_media_succeeds_when_unmounted(mock_hmc):
         return_value=httpx.Response(200, text=NO_MAPPINGS_FEED)
     )
     mock_hmc.get(VG_PATH).mock(
-        return_value=httpx.Response(200, text=MEDIA_VG_FEED)
+        return_value=httpx.Response(200, text=MEDIA_VG_FEED, headers={"ETag": '"etag-1"'})
     )
     mock_hmc.post(VG_PATH).mock(
         return_value=httpx.Response(200, text=EMPTY_REPO_FEED)

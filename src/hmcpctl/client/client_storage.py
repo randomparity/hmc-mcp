@@ -209,10 +209,10 @@ def _children_named(parent: ET.Element, name: str) -> list[ET.Element]:
 
 
 def _required_etag(etag: str | None) -> str:
-    """The GET's ETag; a virtual-disk write never falls back to an unconditional POST."""
+    """The GET's ETag; a VolumeGroup write never falls back to an unconditional POST."""
     if not etag:
         raise HMCError(
-            "VolumeGroup GET returned no ETag; refusing a whole-group virtual-disk write "
+            "VolumeGroup GET returned no ETag; refusing a whole-group write "
             "that could overwrite a concurrent change. Retry, and report the HMC version "
             "if it persists."
         )
@@ -914,14 +914,15 @@ class StorageMixin:
 
         Uses a read-modify-write pattern: GET the full VolumeGroup XML, inject a
         VirtualMediaRepository node before VirtualDisks (per the HMC XSD sequence),
-        then POST the modified XML back. This is the only approach that works on HMC
-        V10R3 firmware (minimal-payload POSTs return HTTP 406 or 500).
+        then POST the modified XML back with If-Match set to the GET's ETag (ADR 0171).
+        This is the only approach that works on HMC V10R3 firmware (minimal-payload
+        POSTs return HTTP 406 or 500).
 
         ``size_mib`` is MiB; the HMC's RepositorySize is GiB, so it is sent as
         ``size_mib / 1024`` and must be a whole number of GiB.
         """
         size_gib = _whole_gib(size_mib)
-        _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
+        etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
         existing = self._find_vmlib(vg_elem)
         if existing is not None:
@@ -950,7 +951,9 @@ class StorageMixin:
         mr = self._build_mr_element(size_mib)
         self._insert_mr_at_correct_position(vg_elem, mr)
 
-        return await self._post_vg_xml(vios_uuid, vg_uuid, vg_elem)
+        return await self._post_vg_xml(
+            vios_uuid, vg_uuid, vg_elem, etag=_required_etag(etag)
+        )
 
     async def create_optical_media(
         self: StorageClient,
@@ -963,7 +966,8 @@ class StorageMixin:
 
         Uses a read-modify-write pattern: GET the full VolumeGroup XML, inject a
         VirtualOpticalMedia node into the OpticalMedia container inside the
-        VirtualMediaRepository, then POST the modified XML back.
+        VirtualMediaRepository, then POST the modified XML back with If-Match set to
+        the GET's ETag (ADR 0171).
 
         The HMC XSD structure inside VirtualMediaRepository is:
           Metadata, OpticalMedia (container for VirtualOpticalMedia entries),
@@ -973,7 +977,7 @@ class StorageMixin:
         ``size_mib / 1024`` and must be a whole number of GiB.
         """
         size_gib = _whole_gib(size_mib)
-        _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
+        etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
         vmlib = self._find_vmlib(vg_elem)
         if vmlib is None:
@@ -1015,7 +1019,9 @@ class StorageMixin:
         t = ET.SubElement(vom, f"{{{_UOM_NS}}}MountType")
         t.text = "rw"
 
-        return await self._post_vg_xml(vios_uuid, vg_uuid, vg_elem)
+        return await self._post_vg_xml(
+            vios_uuid, vg_uuid, vg_elem, etag=_required_etag(etag)
+        )
 
     async def delete_media_repository(
         self: StorageClient, vios_uuid: str, vg_uuid: str
@@ -1023,9 +1029,10 @@ class StorageMixin:
         """Delete the Virtual Media Repository (VMLibrary) from a Volume Group.
 
         Uses a read-modify-write pattern: GET the full VolumeGroup XML, remove the
-        MediaRepositories block, then POST the modified XML back.
+        MediaRepositories block, then POST the modified XML back with If-Match set to
+        the GET's ETag (ADR 0171).
         """
-        _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
+        etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
         mr_tag = f"{{{_UOM_NS}}}MediaRepositories"
         mr = vg_elem.find(f".//{mr_tag}")
@@ -1033,7 +1040,9 @@ class StorageMixin:
             return None
         vg_elem.remove(mr)
 
-        return await self._post_vg_xml(vios_uuid, vg_uuid, vg_elem)
+        return await self._post_vg_xml(
+            vios_uuid, vg_uuid, vg_elem, etag=_required_etag(etag)
+        )
 
     async def delete_optical_media(
         self: StorageClient, vios_uuid: str, vg_uuid: str, media_name: str
@@ -1041,9 +1050,10 @@ class StorageMixin:
         """Delete a VirtualOpticalMedia (ISO image) from the media repository.
 
         Uses a read-modify-write pattern: GET the full VolumeGroup XML, remove the
-        named VirtualOpticalMedia node from the OpticalMedia container, then POST back.
+        named VirtualOpticalMedia node from the OpticalMedia container, then POST back
+        with If-Match set to the GET's ETag (ADR 0171).
         """
-        _, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
+        etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
         vmlib = self._find_vmlib(vg_elem)
         if vmlib is None:
@@ -1067,7 +1077,9 @@ class StorageMixin:
             return None
         search_in.remove(to_remove)
 
-        return await self._post_vg_xml(vios_uuid, vg_uuid, vg_elem)
+        return await self._post_vg_xml(
+            vios_uuid, vg_uuid, vg_elem, etag=_required_etag(etag)
+        )
 
     async def get_media_repository(
         self: StorageClient, vios_uuid: str, vg_uuid: str
