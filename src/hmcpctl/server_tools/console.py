@@ -37,7 +37,8 @@ def hmc_capture_lpar_console(
     session already holds it, the call fails with a distinct contention error
     and never force-closes that session. On every other exit path the capture
     releases the console by closing its stdin, which ends only its own
-    ``mkvterm`` (``rmvterm`` if that does not finish), and then *proves* the
+    ``mkvterm`` (``rmvterm`` if the stream had already ended or does not end in
+    time), and then *proves* the
     release by opening a fresh ``mkvterm`` from an independent session; ``released`` is true only when that proof
     succeeds. The exception: when the HMC's report that another client ended
     the capture's hold arrives before the capture closes, the capture stops with ``stop_reason`` ``error``, an ``error`` naming

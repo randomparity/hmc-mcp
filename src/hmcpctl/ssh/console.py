@@ -1288,8 +1288,8 @@ class WritableConsoleSession(ConsoleSession):
 
     Constructing one is the authorization gate: hmcpctl never builds one on a
     caller's behalf, and the MCP tool, the CLI and :func:`capture_lpar_console`
-    use the sealed :class:`ConsoleSession`. The stdin writer stays private, never
-    sends EOF, and is replaced on every acquisition (open, resume, reconnect).
+    use the sealed :class:`ConsoleSession`. The stdin writer stays private, sends EOF
+    only at release (#1058), and is replaced on every acquisition (open, resume, reconnect).
     Every write emits a ``console-write`` audit record carrying no written bytes
     before the bytes are queued.
 
@@ -1451,7 +1451,7 @@ async def capture_lpar_console(
         raise ConsoleHeldError(
             f"The console of {lpar_name!r} on {system_name!r} printed the HMC "
             f"contention sentence {HELD_SENTINEL.decode()!r} after acquisition; "
-            f"the capture's own hold was released "
+            f"a release of the capture's own hold ran "
             f"(released={session.released is True})."
         )
     return ConsoleCapture(
