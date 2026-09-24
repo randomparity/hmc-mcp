@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded by [0177](0177-iso-upload-through-the-web-file-api.md)** (2026-09-24)
+
 Accepted. Amended 2026-08-20 by ADR 0052 — see *Amendment* below; the decision
 recorded here stands, one signature it lists has changed.
 
