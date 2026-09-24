@@ -43,7 +43,6 @@ async def create_lpar(
         steps.extend(
             WorkflowStep(name, "skipped") for name in assignment_step_names(assignments)
         )
-    if assignments_skipped:
         return LparPcieWorkflowResult(
             True,
             False,
