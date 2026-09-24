@@ -181,6 +181,16 @@ async def test_delete_refuses_without_etag(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_create_rejects_a_response_with_xml_entities(mock_hmc):
+    """An entity-bearing VolumeGroup GET body raises HMCError, not a raw DefusedXmlException."""
+    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
+    _routes(mock_hmc, feed=document)
+
+    with pytest.raises(HMCError, match="not valid XML"):
+        await _create()
+
+
+@pytest.mark.asyncio
 async def test_create_refuses_duplicate_name(mock_hmc):
     route = _routes(mock_hmc)
 
