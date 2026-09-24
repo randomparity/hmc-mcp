@@ -69,7 +69,7 @@ _VG_POST_RESPONSE = _VG_FEED_BARE
 async def test_create_media_repository(mock_hmc):
     """create_media_repository GETs the VG, injects VMLibrary, then POSTs."""
     vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VG_FEED_BARE))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VG_FEED_BARE, headers={"ETag": '"etag-1"'}))
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
     )
@@ -160,7 +160,7 @@ async def test_create_optical_media(mock_hmc):
     """create_optical_media GETs the VG, appends VirtualOpticalMedia, then POSTs."""
     vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(
-        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB, headers={"ETag": '"etag-1"'})
     )
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
@@ -192,7 +192,7 @@ async def test_delete_media_repository(mock_hmc):
     """delete_media_repository GETs the VG, removes MediaRepositories, then POSTs."""
     vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(
-        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB, headers={"ETag": '"etag-1"'})
     )
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)

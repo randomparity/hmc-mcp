@@ -1,8 +1,9 @@
-# ADR 0171: Virtual-disk VolumeGroup writes use read-modify-write with If-Match
+# ADR 0171: VolumeGroup writes use read-modify-write with If-Match
 
 ## Status
 
-Accepted (2026-09-23).
+Accepted (2026-09-23). Scope amended 2026-09-23 (#996) to cover every VolumeGroup write: the
+four media-repository operations join the virtual-disk writes under the same contract.
 
 ## Context
 
@@ -22,14 +23,22 @@ whole element back through the existing media-repository helper (`Accept: */*`, 
 before any POST. A 412 is reported as a concurrent change with nothing written. Delete refuses
 zero or several matching disks; create refuses a name the group already holds.
 
+The same contract governs every whole-group `VolumeGroup` write. `create_media_repository`,
+`create_optical_media`, `delete_media_repository` and `delete_optical_media` already
+read-modify-write the group; each now POSTs with `If-Match` set to its GET's ETag, refuses before
+any POST when that GET carried none, and reports a 412 as the same nothing-written concurrent
+change (#996). A media operation that finds nothing to change posts nothing and so needs no
+ETag.
+
 ## Consequences
 
-- An HMC that sends no ETag on the VolumeGroup GET cannot create or delete virtual disks
-  through this path; the error names the missing ETag.
+- An HMC that sends no ETag on the VolumeGroup GET cannot create or delete virtual disks, or
+  create or delete a media repository or optical medium, through this path; the error names the
+  missing ETag.
 - That the HMC enforces a mismatched `If-Match`, and deletes a disk omitted from the POST, is
-  not yet live-verified (#879).
-- The media-repository operations still POST the whole group without `If-Match`, so one racing
-  a virtual-disk write can undo it; that is reported, not changed here.
+  not yet live-verified (#879), for either the virtual-disk or the media path.
+- Because every VolumeGroup write is conditioned on the ETag it read, a media write racing a
+  virtual-disk write fails with 412 rather than posting the group as it was before that write.
 
 ## Considered & rejected
 
