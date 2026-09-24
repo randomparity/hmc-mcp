@@ -372,7 +372,7 @@ class StorageMixin:
         """Stream bounded ISO content into a web File; never buffer it (ADR 0052).
 
         The HMC answers only once it has taken the whole file, later the larger
-        the ISO, so the read wait is ``upload_timeout`` (ADR 0177, #1055).
+        the ISO, so the read wait is ``max(timeout, upload_timeout)`` (ADR 0177, #1055).
         """
         read = max(self.config.timeout, self.config.upload_timeout)
         path = f"{_WEB_FILE_PATH}/contents/{file_uuid}"
