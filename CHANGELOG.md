@@ -169,6 +169,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The live-test runner's ST18 asserts a same-name ISO re-upload is refused with a name
+  collision, instead of expecting a `status: "existing"` dedup hit `hmc_upload_iso` has never
+  returned. The re-upload reuses the ST18 name, so the collision guard
+  (`_refuse_existing_media`) refuses it before any download — no second multi-GiB transfer —
+  and a successful upload now records FAIL instead of a PASS row whose note contradicted it.
+  The unused `LIVE_TEST_ISO_HTTP_MEDIA_NAME` setting is removed (#1053).
+
 - Three `client_storage` XML parse sites (VIOS mapping read-modify-write, storage-mapping
   delete, and VolumeGroup read) now catch `DefusedXmlException` alongside `ParseError`, so an
   HMC body carrying a DTD, entity, or external reference raises `HMCError` naming the request
