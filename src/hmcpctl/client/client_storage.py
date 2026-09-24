@@ -1046,9 +1046,7 @@ class StorageMixin:
         name_tag = f"{{{_UOM_NS}}}MediaName"
         media = mr.findall(f".//{vom_tag}")
         if media:
-            names = ", ".join(
-                (m.findtext(name_tag) or "unknown") for m in media
-            )
+            names = ", ".join(m.findtext(name_tag) or "unknown" for m in media)
             raise HMCError(
                 f"Cannot delete media repository: it contains {len(media)} "
                 f"image(s): {names!r}. Delete all images first.",
