@@ -17,7 +17,7 @@ from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 @pytest.mark.asyncio
 async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch):
     hmc = AsyncMock()
-    hmc.modify_logical_partition.side_effect = [
+    hmc.update_logical_partition.side_effect = [
         {"UUID": "lpar-1", "PartitionName": "renamed"},
         HMCError("resource update failed", 500),
     ]
@@ -51,7 +51,7 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
 @pytest.mark.asyncio
 async def test_modify_lpar_propagates_resource_failure_without_partial_state(monkeypatch):
     hmc = AsyncMock()
-    hmc.modify_logical_partition.side_effect = HMCError("resource update failed", 500)
+    hmc.update_logical_partition.side_effect = HMCError("resource update failed", 500)
     monkeypatch.setattr(
         "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
         AsyncMock(return_value="lpar-1"),

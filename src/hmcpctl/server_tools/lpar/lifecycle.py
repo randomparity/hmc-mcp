@@ -50,9 +50,12 @@ def hmc_modify_lpar(
     (find it with hmc_list_lpars). Only the fields you pass are changed.
     Memory values are in MiB. For a running partition these are dynamic
     (DLPAR) operations and require an active RMC connection; otherwise the
-    change applies on next activation. Set dedicated=True to assign whole
-    CPUs, False for shared processing units + virtual processors; omit it
-    to leave the sharing mode unchanged.
+    change applies on next activation. The partition is read whole and
+    written back under If-Match. dedicated must match the partition's
+    current mode (True for whole CPUs, False for shared processing units +
+    virtual processors) or be omitted; a switch between them is refused.
+    Uncapping a capped partition leaves its uncapped weight 0; no field sets
+    the weight.
 
     Use hmc_rename_lpar for a name change, which requires a managed-system
     selector for ownership authorization.
@@ -129,11 +132,14 @@ def hmc_dlpar_proc(
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
-    Posts a minimal PartitionProcessorConfiguration document to the HMC.
-    Only the fields you pass are changed. For shared partitions, procs are
-    processing units (may be fractional, e.g. 0.5); vcpus are virtual
-    processor counts (ints). Set dedicated=True for whole-CPU assignment,
-    False for shared; omit it to leave the sharing mode unchanged.
+    Reads the whole partition and writes it back under If-Match with only
+    the fields you pass changed. For shared partitions, procs are processing
+    units (may be fractional, e.g. 0.5); vcpus are virtual processor counts
+    (ints). For dedicated partitions, procs are whole CPUs and vcpus and
+    uncapped are refused. dedicated must match the partition's current mode
+    or be omitted; a switch between dedicated and shared is refused.
+    Uncapping a capped partition leaves its uncapped weight 0; no field sets
+    the weight.
 
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).
@@ -172,8 +178,8 @@ def hmc_dlpar_mem(
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
-    Posts a minimal PartitionMemoryConfiguration document to the HMC.
-    Memory values are in MiB. Only the fields you pass are changed.
+    Reads the whole partition and writes it back under If-Match with only
+    the memory fields you pass changed. Memory values are in MiB.
 
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).

@@ -173,6 +173,21 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- LPAR rename (`hmc_rename_lpar`), DLPAR processor and memory changes (`hmc_dlpar_proc`,
+  `hmc_dlpar_mem`) and `lpars modify` / `hmc_modify_lpar` now write on V10R3. Each reads the
+  whole partition and writes it back under `If-Match` with only the requested fields changed,
+  the read-modify-write the boot order already used. V10R3 rejected the previous sparse
+  documents, so these operations wrote nothing. Rename and the modify workflow no longer send
+  the create builder's default `PartitionType`. Processor changes now refuse, before any write:
+  a `dedicated` value that differs from the partition's current mode, and virtual processor
+  counts, `uncapped` or a fractional processor count on a dedicated partition. `UncappedWeight` is no longer set on capping,
+  because V10R3 drops it; uncapping a capped partition leaves the weight 0, and no parameter
+  sets it. A name containing a character XML 1.0 cannot carry is refused before any request,
+  a negative or non-finite memory or processor value is refused before the write, a DLPAR
+  call with no processor or memory field is refused, and the processor DLPAR ignores memory
+  fields as the memory DLPAR ignores processor fields. `HMCClient.modify_logical_partition`,
+  `build_dlpar_proc_document` and `build_dlpar_mem_document` are removed (#1057).
+
 - The live-test runner's ST18 asserts a same-name ISO re-upload is refused with a name
   collision, instead of expecting a `status: "existing"` dedup hit `hmc_upload_iso` has never
   returned. The re-upload reuses the ST18 name, so the collision guard

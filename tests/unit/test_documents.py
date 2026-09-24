@@ -1,4 +1,6 @@
-"""Tests for the LogicalPartition create/modify document builder."""
+"""Tests for the LogicalPartition create builder and the modify field mapping."""
+
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -8,9 +10,13 @@ from hmcpctl.documents import (
     PARTITION_TYPES,
     SHARING_MODES,
     LparResources,
-    build_dlpar_proc_document,
     build_hmc_user_document,
     build_lpar_document,
+    partition_updates,
+)
+
+_EMPTY_LPAR = ET.fromstring(
+    '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>'
 )
 
 
@@ -167,7 +173,7 @@ def test_invalid_sharing_mode_is_rejected_before_xml(dedicated, desired_procs):
     "builder",
     [
         lambda resources: build_lpar_document(name="bad", resources=resources),
-        build_dlpar_proc_document,
+        lambda resources: partition_updates(_EMPTY_LPAR, resources=resources),
     ],
 )
 def test_malformed_sharing_mode_type_raises_actionable_value_error(malformed, builder):
@@ -229,12 +235,6 @@ def test_all_authentication_types_serialize_unchanged():
 def test_invalid_authentication_type_is_rejected():
     with pytest.raises(ValueError, match="authentication_type"):
         build_hmc_user_document(user_id="operator", authentication_type="radius")
-
-
-def test_modify_document_omits_name_when_none():
-    xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
-    assert "PartitionName" not in xml
-    assert "2048" in xml
 
 
 def test_os_type_emitted():

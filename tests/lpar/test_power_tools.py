@@ -1,6 +1,6 @@
 """Tool-layer tests for the DLPAR and system/VIOS power MCP tools.
 
-The document builders and client methods are covered in test_dlpar.py and
+The read-modify-write and client methods are covered in test_lpar_rmw.py and
 test_power.py; these tests call the actual ``@mcp.tool`` functions in
 ``server_tools.lpar.lifecycle`` against the respx ``mock_hmc`` router so the
 argument->URL and argument->XML mapping in the tool bodies is exercised.
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, SYSTEM_ENTRY
+from conftest import JOB_ENTRY, LPAR_RESOURCE_CONFIG, SYSTEM_ENTRY
 
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
@@ -54,6 +54,7 @@ LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>lpar1</PartitionName>
+{LPAR_RESOURCE_CONFIG}\
       <PartitionState>running</PartitionState>
     </LogicalPartition>
   </content>
@@ -75,7 +76,7 @@ def _mock_dlpar_authorization(router) -> None:
         )
     )
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
+        return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
     )
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=_partition_feed())
@@ -127,7 +128,7 @@ def _mock_owning_system_discovery(router) -> None:
 
 
 def test_dlpar_proc_posts_proc_document(monkeypatch, mock_hmc):
-    """hmc_dlpar_proc POSTs a PartitionProcessorConfiguration document."""
+    """hmc_dlpar_proc writes the partition back with only its processor fields changed."""
     _hmc_env(monkeypatch)
     _mock_dlpar_authorization(mock_hmc)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
@@ -140,15 +141,14 @@ def test_dlpar_proc_posts_proc_document(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
         )
     body = route.calls.last.request.content.decode()
-    assert "PartitionProcessorConfiguration" in body
-    assert "DesiredProcessingUnits" in body and ">1.5<" in body
-    assert "DesiredVirtualProcessors" in body and ">3<" in body
-    assert "PartitionMemoryConfiguration" not in body
+    assert "<DesiredProcessingUnits>1.5<" in body
+    assert "<DesiredVirtualProcessors>3<" in body
+    assert "<DesiredMemory>4096<" in body
     assert result["Resource"]["PartitionState"] == "running"
 
 
 def test_dlpar_mem_posts_mem_document(monkeypatch, mock_hmc):
-    """hmc_dlpar_mem POSTs a PartitionMemoryConfiguration document."""
+    """hmc_dlpar_mem writes the partition back with only its memory fields changed."""
     _hmc_env(monkeypatch)
     _mock_dlpar_authorization(mock_hmc)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
@@ -161,11 +161,10 @@ def test_dlpar_mem_posts_mem_document(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
         )
     body = route.calls.last.request.content.decode()
-    assert "PartitionMemoryConfiguration" in body
-    assert "DesiredMemory" in body and ">8192<" in body
-    assert "MinimumMemory" in body and ">1024<" in body
-    assert "MaximumMemory" in body and ">16384<" in body
-    assert "PartitionProcessorConfiguration" not in body
+    assert "<DesiredMemory>8192<" in body
+    assert "<MinimumMemory>1024<" in body
+    assert "<MaximumMemory>16384<" in body
+    assert "<DesiredProcessingUnits>0.5<" in body
     assert result["Resource"]["PartitionName"] == "lpar1"
 
 
@@ -240,12 +239,13 @@ def test_dlpar_override_without_a_selector_needs_no_discovery(
 
     No fleet route is registered, so respx fails the test if the tool tries to
     walk the fleet — the regression this asserts against. The partition read
-    that names the audit record is the only lookup the override pays for.
+    that names the audit record, and the write's own read, are the only lookups
+    the override pays for.
     """
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_AGENT_ID", "alice")
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=LPAR_ENTRY)
+        return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
     )
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)

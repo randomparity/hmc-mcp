@@ -17,7 +17,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY
+from conftest import JOB_ENTRY, LPAR_RESOURCE_CONFIG
 
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
@@ -120,6 +120,22 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   </entry>
 </feed>
 """
+
+# The whole-partition read rename and resource changes modify and write back (#1057).
+LPAR_ENTRY = (
+    '<entry xmlns="http://www.w3.org/2005/Atom"><content>'
+    '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
+    "<PartitionName>owned-lpar</PartitionName>"
+    + LPAR_RESOURCE_CONFIG
+    + "</LogicalPartition></content></entry>"
+)
+
+
+def _mock_partition_read(router) -> None:
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
+    )
+
 
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom"/>
@@ -478,8 +494,9 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
 
 
 def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
-    """hmc_modify_lpar emits only the fields passed; unchanged fields are omitted."""
+    """hmc_modify_lpar changes only the fields passed; the rest are written back as read."""
     _hmc_env(monkeypatch)
+    _mock_partition_read(mock_hmc)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
     )
@@ -492,16 +509,16 @@ def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
             resources=LparResources(desired_memory=8192),
         )
     body = route.calls.last.request.content.decode()
-    assert "PartitionName" not in body
-    assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body
-    # A modify document carries only what changed.
-    assert "MaximumMemory" not in body
-    assert "ProcessingUnits" not in body
+    assert "<DesiredMemory>8192</DesiredMemory>" in body
+    assert "<PartitionName>owned-lpar</PartitionName>" in body
+    assert "<MaximumMemory>16384</MaximumMemory>" in body
+    assert "<DesiredProcessingUnits>0.5</DesiredProcessingUnits>" in body
     assert result["Resource"]["PartitionName"] == "owned-lpar"
 
 
 def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
+    _mock_partition_read(mock_hmc)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
     )
@@ -518,7 +535,7 @@ def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
         )
 
     body = route.calls.last.request.content.decode()
-    assert "renamed</PartitionName>" in body
+    assert "<PartitionName>renamed</PartitionName>" in body
     guard.assert_awaited_once_with(ANY, SYSTEM_UUID, LPAR_UUID, ownership_override=True)
     assert result["Resource"]["PartitionName"] == "renamed"
 

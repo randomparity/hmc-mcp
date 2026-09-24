@@ -208,6 +208,13 @@ class LparsClient(Protocol):
 
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None: ...
 
+    async def update_logical_partition(
+        self,
+        lpar_uuid: str,
+        updates: Callable[[Element], Mapping[str, str | None]],
+        subject: str,
+    ) -> dict[str, Any] | None: ...
+
 
 class PcmClient(Protocol):
     """Host state and operations required by :class:`client_pcm.PcmMixin`."""

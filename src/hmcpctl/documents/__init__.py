@@ -26,10 +26,9 @@ from .lpar import (  # noqa: F401
     OsType,
     PartitionType,
     SharingMode,
-    build_dlpar_mem_document,
-    build_dlpar_proc_document,
     build_lpar_document,
     build_vios_document,
+    partition_updates,
 )
 from .storage import (  # noqa: F401
     STORAGE_KINDS,

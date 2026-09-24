@@ -1225,21 +1225,6 @@ async def test_create_logical_partition(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_modify_logical_partition(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
-        return_value=httpx.Response(200, text=CREATED_LPAR)
-    )
-    from hmcpctl.documents import LparResources, build_lpar_document
-
-    xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
-    async with HMCClient(make_config()) as hmc:
-        updated = await hmc.modify_logical_partition("33333333-3333-3333-3333-333333333333", xml)
-    assert route.called
-    assert "2048" in route.calls.last.request.content.decode()
-    assert updated is not None
-
-
-@pytest.mark.asyncio
 async def test_delete_logical_partition(mock_hmc):
     route = mock_hmc.delete("/rest/api/uom/LogicalPartition/33333333-3333-3333-3333-333333333333").mock(
         return_value=httpx.Response(204)
