@@ -853,17 +853,18 @@ class ConsoleSession:
         return await self._reconnect_outcome(task)
 
     async def _reconnect_outcome(self, task: asyncio.Task[ConsoleGap]) -> bytes | ConsoleGap:
-        """Await the reconnect; a consumer's timeout leaves it running."""
+        """Await the reconnect; a consumer's timeout leaves it and its outcome in place."""
         gap: ConsoleGap | None = None
         try:
             gap = await asyncio.shield(task)
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if not task.cancelled() or (current is not None and current.cancelling()):
-                raise
-        finally:
-            if task.done() and self._reconnect_task is task:
-                self._reconnect_task = None
+                raise  # the reader's own cancellation: the next read gets the outcome
+        except BaseException:
+            self._reconnect_task = None
+            raise
+        self._reconnect_task = None
         return b"" if gap is None or self._close_task is not None else gap
 
     async def _reconnect_after_drop(self, error: str) -> ConsoleGap:
@@ -873,9 +874,7 @@ class ConsoleSession:
         except ConsoleHeldError as exc:
             raise ConsoleHeldAfterDropError(
                 f"reconnect of {self._lpar!r} on {self._system!r} after a dropped connection "
-                "found the console held, most likely by this session's leftover hold (P3). "
-                "No rmvterm was issued; close() this session and open one with "
-                f"take_over=True to reclaim it. {exc}"
+                f"found the console held; {self._held_after_drop_advice()} {exc}"
             ) from exc
         except HMCCLIError as exc:
             raise HMCCLIError(
@@ -885,6 +884,17 @@ class ConsoleSession:
         if cancelled:
             raise asyncio.CancelledError  # close() arrived; its teardown releases the new hold
         return ConsoleGap(error=error, took_over=self._take_over)
+
+    def _held_after_drop_advice(self) -> str:
+        if self._take_over:
+            return (
+                "rmvterm ran first, so another holder acquired the console after it. "
+                "Whether to take it again is the caller's decision."
+            )
+        return (
+            "most likely this session's leftover hold (P3). No rmvterm was issued; "
+            "close() this session and open one with take_over=True to reclaim it."
+        )
 
     @contextlib.asynccontextmanager
     async def hand_over(self) -> AsyncIterator[ConsoleHandover]:

@@ -1758,3 +1758,42 @@ async def test_resume_on_reconnect_session_raises_plain_contention():
             await session.resume()
         assert not isinstance(caught.value, ConsoleHeldAfterDropError)
         assert await session.close() is True
+
+
+@pytest.mark.asyncio
+async def test_reader_cancelled_as_reconnect_completes_keeps_the_gap():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    second, entered, finish = _blocked_resume_stream()
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            reading = asyncio.create_task(session.read())
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            reconnect = session._reconnect_task
+            assert reconnect is not None
+            finish.set()
+            while not reconnect.done():
+                await asyncio.sleep(0)
+            reading.cancel()  # the consumer's timeout lands in the same tick
+            with pytest.raises(asyncio.CancelledError):
+                await reading
+            assert await session.read() == KEEPALIVE_GAP
+            assert await session.read() == BANNER
+
+
+@pytest.mark.asyncio
+async def test_take_over_reconnect_into_held_vterm_says_rmvterm_ran():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    held = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(first, held)
+    with connect, run_command as release, probe_seconds:
+        session = _reconnecting(take_over=True)
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(ConsoleHeldAfterDropError, match="rmvterm ran first"):
+            await session.read()
+        assert await session.close() is False
+
+    assert release.await_count == 2  # the takeovers at open and at reconnect
