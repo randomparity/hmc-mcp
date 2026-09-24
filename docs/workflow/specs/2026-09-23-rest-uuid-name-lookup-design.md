@@ -21,9 +21,9 @@ errors still propagate unchanged, so the SSH transport fallback is untouched. Ca
 public resolvers change nothing.
 
 Out: `operations/lpar/ownership.py`'s `_resolve_system_name` (operator); the SSH `-F` format
-(#777). Outside the surface and reported as follow-ups: `ownership.py`'s `_partition_name` and
-`resolve_lpar_ownership_names` LPAR reads, and the ambiguity-message system reads in
-`client/client_lpars.py` and `client/client_systems.py`.
+(#777). Outside the surface, owned by campaign 36310ffc40 as follow-ups: the `ownership.py`
+`_partition_name` and `resolve_lpar_ownership_names` LPAR reads, and the ambiguity-message
+system reads in `client/client_lpars.py` and `client/client_systems.py`.
 
 ### Failure model
 
