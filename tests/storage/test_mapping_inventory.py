@@ -458,6 +458,23 @@ async def test_delete_storage_mapping_rejects_untrusted_system_link(
         VIOS_PARENT.replace(
             f"<AtomID>{VIOS_UUID}</AtomID>", "<AtomID>wrong-vios</AtomID>"
         ),
+        # AtomID matches but PartitionUUID names a different VIOS.
+        VIOS_PARENT.replace(
+            f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>',
+            '<PartitionUUID kb="ROO">wrong-vios</PartitionUUID>',
+        ),
+        # A duplicated PartitionUUID is ambiguous even though AtomID matches.
+        VIOS_PARENT.replace(
+            f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>',
+            f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>'
+            f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>',
+        ),
+    ],
+    ids=[
+        "ambiguous-feed",
+        "atomid-mismatch",
+        "partitionuuid-mismatch",
+        "partitionuuid-duplicate",
     ],
 )
 async def test_delete_storage_mapping_rejects_ambiguous_vios_document(
