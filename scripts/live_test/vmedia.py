@@ -746,10 +746,18 @@ async def _prepare_boot_media(
     return True
 
 
+_SET_BOOT_ORDER_STEP = "hmc_set_lpar_boot_order (boot device list)"
+
+
 async def _configure_boot_order(
     client: Client, state: RunState, lpar_uuid: str
 ) -> None:
-    """Capture the current boot order and replace it with the boot-test order."""
+    """Capture the current boot order and set the firmware's own boot device list.
+
+    The boot order takes Open Firmware device paths (#980). No path is reported for
+    the virtual CD, so the step no longer forces a CD-first boot: it writes back the
+    paths the HMC reports, which exercises the write, and skips on an empty list.
+    """
     config = state.config
     artifacts = state.artifacts
     status, data = await state.call(
@@ -759,20 +767,26 @@ async def _configure_boot_order(
         lpar_name_or_uuid=lpar_uuid,
     )
     state.record(20, "hmc_read_lpar_boot_order (baseline)", status, data)
+    boot_devices: list[str] = []
     if status == "PASS" and isinstance(data, dict):
-        pending = data.get("pending_boot_string") or ""
-        artifacts.vmedia_orig_boot_order = [
-            device.strip() for device in pending.split(",") if device.strip()
-        ]
+        artifacts.vmedia_orig_boot_order = (data.get("pending_boot_string") or "").split()
+        boot_devices = (data.get("boot_device_list") or "").split()
 
+    if not boot_devices:
+        state.skip(
+            20,
+            _SET_BOOT_ORDER_STEP,
+            "no boot device list reported (a never-booted partition has none)",
+        )
+        return
     status, data = await state.call(
         client,
         "hmc_set_lpar_boot_order",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=lpar_uuid,
-        devices=["cd", "network", "disk"],
+        devices=boot_devices,
     )
-    state.record(20, "hmc_set_lpar_boot_order (cd first)", status, data)
+    state.record(20, _SET_BOOT_ORDER_STEP, status, data)
 
 
 async def _run_boot_probe(client: Client, state: RunState) -> None:
@@ -870,7 +884,7 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         "hmc_power_off_lpar (pre-boot)",
         "hmc_mount_optical_media (boot test)",
         "hmc_read_lpar_boot_order (baseline)",
-        "hmc_set_lpar_boot_order (cd first)",
+        _SET_BOOT_ORDER_STEP,
         "hmc_power_on_lpar",
         "hmc_lpar_summary (verify running)",
         "hmc_power_off_lpar (post-boot)",
