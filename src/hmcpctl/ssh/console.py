@@ -117,6 +117,9 @@ _RELEASE_PROBE_SECONDS = 10.0
 _UNREAD_READ_SECONDS = 0.1
 _UNREAD_SCAN_SECONDS = 1.0
 
+#: The states in which :meth:`ConsoleSession._release_hold` runs: close() and suspend().
+_RELEASABLE: tuple[_State, ...] = ("held", "suspending")
+
 #: Upper caps for the MCP tool surface. The bounds are caller-chosen, but a
 #: capture runs inside the MCP server process, so memory (``max_bytes``) and
 #: wall clock (``duration_seconds``) get hard ceilings.
@@ -894,7 +897,7 @@ class ConsoleSession:
     def _watch_for_lost_hold(self, chunk: bytes) -> None:
         """Latch ``lost`` when the HMC reports another client's ``rmvterm`` (#1004)."""
         window = self._tail + chunk
-        if self._state == "held" and LOST_HOLD_SENTINEL in window:
+        if self._state in _RELEASABLE and LOST_HOLD_SENTINEL in window:
             self._state = "lost"
         self._tail = window[-(len(LOST_HOLD_SENTINEL) - 1) :]
 
@@ -907,7 +910,7 @@ class ConsoleSession:
         # A failed scan must never cost a held session its release (ADR 0170).
         with contextlib.suppress(Exception):
             async with asyncio.timeout(_UNREAD_SCAN_SECONDS):
-                while self._state == "held":
+                while self._state in _RELEASABLE:
                     chunk = await asyncio.wait_for(
                         self._stdout.read(_CHUNK), _UNREAD_READ_SECONDS
                     )
@@ -1064,7 +1067,8 @@ class ConsoleSession:
         """Mode (b): release the vterm for an external holder; return the proof.
 
         Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
-        does, and closes the connection. Cancelling the caller never interrupts
+        does, and closes the connection; like :meth:`close`, it returns
+        ``False`` with no ``rmvterm`` for a hold another client ended (#1004). Cancelling the caller never interrupts
         the release; the cancellation is re-raised after it completes.
         :meth:`read` waits until :meth:`resume`. The external holder should
         acquire only after this returns: the probe holds the slot briefly, and

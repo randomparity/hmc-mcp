@@ -2303,3 +2303,19 @@ async def test_capture_reports_lost_hold_as_error_without_rmvterm():
     assert capture.error is not None and "ConsoleHoldLostError" in capture.error
     assert capture.released is False
     assert capture.release_calls == []
+
+
+@pytest.mark.asyncio
+async def test_suspend_after_unread_lost_hold_skips_rmvterm():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, LOST, None)])
+    )
+    with connect as opener, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        assert await session.suspend() is False
+        assert await session.close() is False
+
+    assert release.await_count == 0
+    assert opener.await_count == 1
