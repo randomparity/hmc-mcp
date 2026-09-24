@@ -1163,8 +1163,10 @@ class WritableConsoleSession(ConsoleSession):
     while suspended, dropped, reconnecting, or closing, it raises
     ``RuntimeError``. Writes never start or wait for a reconnect; a transport
     error on a write propagates, and the collector's read detects the drop.
-    A write that returns was handed to the SSH channel, which does not prove
-    the partition received it. ``~.`` in written bytes may end the vterm session
+    asyncssh queues a write's whole buffer before draining, so a returned write
+    proves only that it was queued, and cancelling one does not withdraw it:
+    never retry a cancelled write. A writable session does not consult the
+    ADR 0011 ownership guard. ``~.`` in written bytes may end the vterm session
     (the ``mkvterm`` manual page).
     """
 

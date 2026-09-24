@@ -5,7 +5,9 @@
 Accepted (2026-09-23). Extends ADR 0170 within ADR 0172, ADR 0173 and ADR 0174. Amends ADR
 0072's sealed-stdin rule (P5/P7) in part: the rule still holds for `ConsoleSession`, the bounded
 capture, the release probe, and `hmc_capture_lpar_console`. It is lifted only inside a
-`WritableConsoleSession`.
+`WritableConsoleSession`. Amends ADR 0170 rule 5 in part: the private stdin shape that
+acquisition takes becomes `source` and `adopt(process)`, a rename that leaves the acquisition and
+release logic unchanged.
 
 ## Context
 
@@ -37,8 +39,9 @@ guard in the operations layer, and leasing between writers belongs to kdive (ADR
    `send_sysrq(key, *, prefix)` sends `prefix + key` as one write. `prefix` is required and has
    no default, because the HMC sequence is unverified (Context). `key` is one printable ASCII
    character. Inside `raw_mode()`, only the raw channel's `write(data)` works. `data` is
-   non-empty `bytes`, and a write whose drain finishes has been handed to the SSH channel.
-   Nothing proves the guest received it.
+   non-empty `bytes`. asyncssh queues the whole buffer synchronously, and the drain only
+   applies flow control, so a returned write proves the bytes were queued, not that the guest
+   received them.
 4. **Exclusive raw mode is a handover.** `async with session.raw_mode() as channel:` is ADR 0173
    mode (a) with a channel that adds `write`. The vterm stays held. The collector's `read()`
    waits, and the session's own `write()` and `send_sysrq()` raise `RuntimeError`. Leaving the
@@ -65,11 +68,21 @@ guard in the operations layer, and leasing between writers belongs to kdive (ADR
   (`b""`). hmcpctl does not filter raw bytes, since KGDB traffic must pass through unchanged.
 - `send_sysrq` does not make SysRq work. It frames one audited write. kdive supplies the prefix
   until #879 verifies one, and a later record may then add a default.
-- A write that is cancelled while it drains may leave a partial write on the wire.
+- Cancelling a write during its drain does not withdraw it. asyncssh has already queued the
+  whole buffer (`SSHChannel.write`, asyncssh 2.24), so the bytes go out unless the connection
+  dies. A caller must not retry a cancelled write on the assumption that nothing was sent,
+  because a retried SysRq fires twice.
+- A writable session does not consult the ADR 0011 ownership guard, even when
+  `authorize_power_operations` is on. A SysRq write can therefore crash or reboot a partition
+  whose power-off that guard would refuse. A caller that wants ownership enforcement calls
+  `resolve_and_authorize_lpar_mutation` before constructing the session.
 - Holders are not arbitrated. Two writers in one process each pass the gate; kdive's leases
   decide who writes (ADR-0539).
-- Raw mode records one audit record per write, and the audit sink drops records when it is full
-  (ADR 0043).
+- Off the serve path hmcpctl installs no audit sink. Each record goes synchronously through the
+  embedder's logging, or through `logging.lastResort`, and raw mode makes one such call per
+  write. The embedder's logging configuration can suppress records with no drop count
+  (`docs/authorization-audit.md`). What is guaranteed is one record emitted before each write,
+  not its delivery.
 
 ## Considered & rejected
 
@@ -83,9 +96,13 @@ guard in the operations layer, and leasing between writers belongs to kdive (ADR
   library caller that builds the type has already decided.
 - **Ship `^O` as the default SysRq prefix.** judgment: fit. The prefix is sourced from the guest
   kernel, not from the HMC, and the operator required an unverified sequence to stay explicit.
-- **Write through the existing pipe (`os.write` on `_SealedStdin`'s write end).** judgment:
-  complexity. A blocking pipe write stalls the event loop, and a non-blocking one needs
-  hand-written readiness handling that asyncssh's `SSHWriter.drain()` already provides.
+- **Write through the existing pipe (`_SealedStdin`'s write end).** judgment: fit. The pipe is a
+  second buffer between the caller and the SSH channel, so a drain on it reflects the local
+  pipe, not the channel's flow control. asyncssh's own stdin writer has neither problem.
+- **Use ADR 0173 mode (b): `suspend()`, and let kdive run its own `mkvterm`.** judgment: fit.
+  SysRq is injected while collection keeps running on the same stream. KGDB outside the session
+  would reopen the release gap that mode (a) exists to remove (ADR 0173), and would lose the
+  session's proven release (ADR 0170 rule 4).
 - **Record the written bytes, or their hash, in the audit.** judgment: fit. Console input can
   carry credentials, and a hash of short input can be reversed by guessing.
 - **Do nothing.** judgment: fit. kdive #1826 needs both holds, and shelling out to `mkvterm`

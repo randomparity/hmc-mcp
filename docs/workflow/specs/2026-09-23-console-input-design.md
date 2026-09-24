@@ -49,17 +49,22 @@ behavior of `ConsoleSession`. No MCP or CLI surface is added.
 1. Actors and deployments: an in-process library caller, such as kdive's console plane, holds
    HMC credentials and constructs the session. The MCP server and the CLI build only
    `ConsoleSession` through the capture.
-2. Invariants: no read-only path can send a byte or EOF. Every byte a writable session sends is
-   preceded by exactly one `console-write` record, and no record carries written content.
+2. Invariants: no read-only path (`ConsoleSession`, `ConsoleHandover`, the capture, the release
+   probe) can send a byte or EOF. Exactly one `console-write` record is emitted before each
+   writer call, and no record carries written content.
    Writes in raw mode are exclusive, and leaving the block restores collection. The release
    guarantees of ADR 0170, 0172, 0173 and 0174 are unchanged.
 3. Accepted:
    - The SysRq prefix is unverified. The caller supplies it, and #879 verifies it.
    - `~.` in written bytes may end the vterm, which reads as a remote close (ADR 0176
      Consequences).
-   - A write cancelled mid-drain may be partial.
+   - Cancelling a write during its drain does not withdraw it, because asyncssh has already
+     queued the whole buffer. A retried write is sent twice.
    - A record is emitted for a write that then fails, so records can overstate delivery.
-   - Records can be dropped under sink backpressure (ADR 0043).
+   - Off the serve path no sink is installed. Records go synchronously through the embedder's
+     logging, one per raw-mode write, and the embedder's configuration can suppress them with
+     no drop count (ADR 0176 Consequences).
+   - Writes bypass the ADR 0011 ownership guard (ADR 0176 Consequences).
 4. Covered elsewhere: leasing between writers (kdive ADR-0539), a lost hold versus a drop
    (#1004), live SysRq proof (#879), and a served write surface (not requested).
 
@@ -90,15 +95,20 @@ Threat model:
    session's `write` and `send_sysrq` raise `RuntimeError`. After the block the collector reads
    again, and no `rmvterm` or `mkvterm` ran. A raw write after the block raises `RuntimeError`.
 6. `write` raises `RuntimeError` with no record while suspended, while dropped or reconnecting,
-   after `close()`, and inside `hand_over()`. After a reconnect gap, writes reach the new
+   after `close()`, and inside `hand_over()`. It also refuses once a reconnect has re-acquired
+   but before `read()` has returned its gap. After the gap is read, writes reach the new
    process's writer.
-7. The `console-write` event appears in `EVENTS` and in `docs/authorization-audit.md`.
+7. With `reconnect=True`, a drop inside `raw_mode()` reaches the channel's read, and the raw
+   write's transport error propagates unwrapped with no reconnect started. After the block,
+   `read()` yields a `ConsoleGap`, a session write reaches the new process, and the stale raw
+   channel's write raises `RuntimeError`.
+8. The `console-write` event appears in `EVENTS` and in `docs/authorization-audit.md`.
 
 ## Validation
 
-Items 1-6 are `focused-test`s in `tests/unit/test_console_capture.py`, using its fakes
+Items 1-7 are `focused-test`s in `tests/unit/test_console_capture.py`, using its fakes
 (`FakeProcess` gains a recording `stdin`). Item 4 also asserts the record through `caplog` on
-the `hmcpctl.audit` logger. Item 7 is covered by the existing drift tests in
+the `hmcpctl.audit` logger. Item 8 is covered by the existing drift tests in
 `tests/test_authorization_audit_doc.py`, plus a record-shape case in `tests/unit/test_audit.py`.
 Tests that already pass (item 1) show their bite by a controlled fault, such as giving
 `_SealedStdin` a `write` method. Command:
