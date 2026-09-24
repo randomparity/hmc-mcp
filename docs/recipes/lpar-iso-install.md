@@ -81,8 +81,8 @@ One thing in this recipe has no working `hmcpctl` command yet. Run it in an SSH 
 the HMC, as the HMC user in your connection profile:
 
 - writing the adapters that `hmcpctl` adds into the partition's profile before a profile
-  power-on, when `CurrentProfileSync` is `Disabled` or `Suspended` (see step 5). `hmcpctl`
-  reports the sync state but does not yet write the profile itself.
+  power-on, when `CurrentProfileSync` is not `On` (see step 5). `hmcpctl` reports the sync
+  state but does not yet write the profile itself.
 
 The HMC CLI block below uses `<angle-bracket>` placeholders, not shell variables. Fill it in
 from the same values.
