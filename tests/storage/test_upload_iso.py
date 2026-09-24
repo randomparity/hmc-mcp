@@ -398,10 +398,11 @@ async def test_upload_iso_releases_the_file_when_the_upload_fails(mock_hmc, stag
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
 
-        with pytest.raises(HMCError, match="Web File upload failed"):
+        with pytest.raises(HMCError, match="Web File upload failed") as raised:
             await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
 
     assert routes.delete.call_count == 1
+    assert any("list-optical-media" in note for note in raised.value.__notes__)
     # Cleanup runs on the failure path too, staged file included (#308).
     staged, _, _ = download.return_value
     assert not staged.exists()
@@ -419,6 +420,21 @@ async def test_upload_iso_refuses_a_name_taken_during_the_download(stage_downloa
     hmc._web_file_create.assert_not_awaited()
     staged, _, _ = download.return_value
     assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_rejected_transfer_carries_no_landed_note(stage_download):
+    """A 4xx on the transfer is a refusal, so it does not say the HMC may hold the ISO."""
+    stage_download()
+    hmc = _web_file_client(
+        _web_file_upload=AsyncMock(side_effect=HMCError("Web File upload failed", 400, ""))
+    )
+
+    with pytest.raises(HMCError, match="Web File upload failed") as raised:
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+
+    assert not getattr(raised.value, "__notes__", [])
+    hmc._web_file_delete.assert_awaited_once_with(FILE_UUID)
 
 
 @pytest.mark.asyncio

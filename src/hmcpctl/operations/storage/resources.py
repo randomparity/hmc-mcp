@@ -859,7 +859,12 @@ async def _upload_iso_via_web_file(
         await _refuse_existing_media(hmc, vios_uuid, vg_uuid, media_name)
         file_uuid = await hmc._web_file_create(vios_uuid, media_name, file_size)
         with iso_path.open("rb") as handle:
-            await hmc._web_file_upload(file_uuid, _aiter_file_chunks(handle), file_size)
+            try:
+                await hmc._web_file_upload(file_uuid, _aiter_file_chunks(handle), file_size)
+            except HMCError as exc:
+                if exc.status_code is not None and exc.status_code >= 500:
+                    exc.add_note(_ACCEPTED_NOTE)
+                raise
         return await _wait_for_media(hmc, vios_uuid, vg_uuid, media_name)
     finally:
         primary_error = sys.exception()

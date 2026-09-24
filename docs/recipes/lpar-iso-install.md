@@ -24,9 +24,9 @@ Run it only against an HMC, managed system, and VIOS you own.
   start again from the top.
 - **VolumeGroup and VIOS writes can fail after they take effect.** HMC V10R3 has returned
   HTTP 500 after a VolumeGroup write had already changed storage (#779). On a 5xx from a
-  volume-group, virtual-disk, media-repository, ISO-import, or mapping write, the error says
-  the write may have changed state and whether a read-back succeeded (ADR 0136). It does not
-  print that state. **Do not retry.** Run `storage list-vgs`, `storage list-mappings`, and
+  volume-group, virtual-disk, media-repository, or mapping write, the error says the write may
+  have changed state and whether a read-back succeeded (ADR 0136). A 5xx on the `upload-iso`
+  transfer says the HMC may already hold the ISO (ADR 0177). Neither prints that state. **Do not retry.** Run `storage list-vgs`, `storage list-mappings`, and
   `storage list-optical-media` to see what changed, and reconcile by hand first.
 - **Mapping removals rewrite the whole VIOS document.** `unmount-optical-media` and
   `detach-mapping` read the VIOS, remove one mapping, and write the whole document back. A
