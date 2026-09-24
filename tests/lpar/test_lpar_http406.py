@@ -1,7 +1,7 @@
 """Tool-layer tests for HTTP 406 behaviour on LPAR write tools.
 
 hmc_create_lpar falls back to the CLI (mksyscfg over SSH) when REST returns
-HTTP 406, rather than raising.  hmc_modify_lpar and the DLPAR tools have no
+HTTP 406 or a 400 REST0001 schema rejection, rather than raising.  hmc_modify_lpar and the DLPAR tools have no
 CLI fallback and still surface an actionable HMCError on 406.
 """
 
@@ -144,12 +144,24 @@ def _unowned_partition():
 # ---------------------------------------------------------------------- #
 
 
+# The 400 a V10R3 HMC returned for the LPAR create PUT once writes sent Accept */*
+# (#935, 2026-09-24), in the HttpErrorResponse shape of tests/unit/test_client.py.
+_REST0001_BODY = (
+    '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">'
+    "<HTTPStatus>400</HTTPStatus>"
+    "<Message>REST0001 Failed to unmarshal input payload. Attribute 'schemaVersion' must "
+    "appear on element 'PartitionProcessorConfiguration'.</Message>"
+    "</HttpErrorResponse>"
+)
+
+
 def _mock_create_406(
     mock_hmc,
     order: list[str] | None = None,
     readback: httpx.Response | None = None,
+    rejection: httpx.Response | None = None,
 ) -> None:
-    """REST create answers 406; the name search is empty before, found after."""
+    """REST create is refused (406 by default); the name search is empty before, found after."""
     search_responses = iter(
         [
             httpx.Response(200, text=EMPTY_FEED),
@@ -169,7 +181,7 @@ def _mock_create_406(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+        return_value=rejection or httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
 
@@ -230,6 +242,35 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
     assert result.workflow_completed is True
     assert result.warnings == ()
+
+
+def test_create_lpar_rest0001_schema_rejection_falls_back_to_cli(monkeypatch, mock_hmc):
+    """A 400 REST0001 created nothing, so the create still reaches mksyscfg (ADR 0178)."""
+    _hmc_env(monkeypatch)
+    order: list[str] = []
+    _mock_create_406(mock_hmc, order, rejection=httpx.Response(400, text=_REST0001_BODY))
+    apply = AsyncMock(return_value="")
+
+    result, create_via_cli = _create_via_406(apply, order)
+
+    create_via_cli.assert_awaited_once()
+    apply.assert_awaited_once()
+    assert result.lpar.get("UUID") == LPAR_UUID
+    assert order == ["search", "mksyscfg", "search"]
+
+
+def test_create_lpar_other_400_is_raised_without_cli_fallback(monkeypatch, mock_hmc):
+    """A 400 that is not a schema rejection is the HMC's answer, not a reason to retry."""
+    _hmc_env(monkeypatch)
+    _mock_create_406(
+        mock_hmc, rejection=httpx.Response(400, text="<error>HSCL0622 bad value</error>")
+    )
+    apply = AsyncMock(return_value="")
+
+    with pytest.raises(HMCError, match="HSCL0622"):
+        _create_via_406(apply)
+
+    apply.assert_not_awaited()
 
 
 def test_create_lpar_http_406_no_apply_leaves_profile_unapplied(monkeypatch, mock_hmc):
