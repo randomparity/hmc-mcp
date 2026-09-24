@@ -13,6 +13,7 @@ from typing import Any
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...documents import LparResources, PartitionType, StorageKind
 from ...errors import HMCError
@@ -126,6 +127,17 @@ class ProvisionResult:
     warnings: tuple[str, ...] = field(
         metadata={"description": "Non-fatal workflow warnings."}
     )
+    change_location: ChangeLocation | None = field(
+        default=None,
+        metadata={
+            "description": (
+                "Where the network, vSCSI, and storage changes now live: the "
+                "partition's CurrentProfileSync and whether the change reaches "
+                "its current profile too. Null when no adapter or mapping step "
+                "ran, or when the read failed (see warnings)."
+            )
+        },
+    )
 
 
 @dataclass(frozen=True)
@@ -201,6 +213,20 @@ async def _record_hmc_step(
         return False
     steps.append(WorkflowStep(name, "ok", result))
     return True
+
+
+async def _read_change_location(
+    hmc: HMCClient, lpar_uuid: str
+) -> tuple[ChangeLocation | None, tuple[str, ...]]:
+    """Where the network, vSCSI, and storage changes just made now live.
+
+    Advisory, like ``profile_adapter_warnings``: a failed read becomes a
+    warning rather than failing provisioning that already succeeded.
+    """
+    try:
+        return await read_change_location(hmc, lpar_uuid), ()
+    except HMCError as exc:
+        return None, (f"Change location not read: {exc}",)
 
 
 async def _add_network(
@@ -396,6 +422,7 @@ def _provision_result(
     steps: list[WorkflowStep],
     workflow_completed: bool,
     warnings: tuple[str, ...] = (),
+    change_location: ChangeLocation | None = None,
 ) -> ProvisionResult:
     return ProvisionResult(
         resource_created=creation.resource_created if creation else False,
@@ -405,6 +432,7 @@ def _provision_result(
         ownership_stamped=creation.ownership_stamped if creation else None,
         steps=tuple(steps),
         warnings=(*(creation.warnings if creation else ()), *warnings),
+        change_location=change_location,
     )
 
 
@@ -514,9 +542,13 @@ def _failed_provision_result(
     created_uuid: str,
     steps: list[WorkflowStep],
     step_names: list[str],
+    warnings: tuple[str, ...] = (),
+    change_location: ChangeLocation | None = None,
 ) -> ProvisionResult:
     _skip_steps(steps, step_names[len(steps) :])
-    return _provision_result(creation, created_uuid, steps, False)
+    return _provision_result(
+        creation, created_uuid, steps, False, warnings, change_location
+    )
 
 
 async def _preflight_provision_request(
@@ -647,6 +679,10 @@ async def provision_lpar(
     if not await _run_network_leg(steps, hmc, created_uuid, request.adapters.port_vlan_id):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
+    # Read once here, not through the standalone adapter/storage operations,
+    # which would repeat the authorization read once per step (#1056).
+    change_location, location_warnings = await _read_change_location(hmc, created_uuid)
+
     storage_steps, storage_completed = await _run_storage_leg(
         hmc,
         created_uuid,
@@ -656,27 +692,47 @@ async def provision_lpar(
     )
     steps.extend(storage_steps)
     if not storage_completed:
-        return _failed_provision_result(creation, created_uuid, steps, step_names)
+        return _failed_provision_result(
+            creation, created_uuid, steps, step_names,
+            location_warnings, change_location,
+        )
 
     if not await _run_assignment_leg(
         steps, hmc, system_name_or_uuid, request.name, request.assignments
     ):
-        return _failed_provision_result(creation, created_uuid, steps, step_names)
+        return _failed_provision_result(
+            creation, created_uuid, steps, step_names,
+            location_warnings, change_location,
+        )
 
     if request.power_on and not await _run_power_leg(
         steps, hmc, system_name_or_uuid, created_uuid, request.affinity_assessment
     ):
-        return _failed_provision_result(creation, created_uuid, steps, step_names)
+        return _failed_provision_result(
+            creation, created_uuid, steps, step_names,
+            location_warnings, change_location,
+        )
 
     if request.affinity_assessment is not None:
         if not request.power_on:
             steps.append(WorkflowStep("affinity_assessment", "skipped"))
-            return _provision_result(creation, created_uuid, steps, False)
-        completed, warnings = await _run_affinity_leg(
+            return _provision_result(
+                creation, created_uuid, steps, False,
+                location_warnings, change_location,
+            )
+        completed, affinity_warnings = await _run_affinity_leg(
             steps, hmc, request.affinity_assessment, request.minimum_affinity_policy
         )
         if not completed:
-            return _provision_result(creation, created_uuid, steps, False)
-        return _provision_result(creation, created_uuid, steps, True, warnings)
+            return _provision_result(
+                creation, created_uuid, steps, False,
+                location_warnings, change_location,
+            )
+        return _provision_result(
+            creation, created_uuid, steps, True,
+            location_warnings + affinity_warnings, change_location,
+        )
 
-    return _provision_result(creation, created_uuid, steps, True)
+    return _provision_result(
+        creation, created_uuid, steps, True, location_warnings, change_location
+    )

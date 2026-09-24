@@ -83,10 +83,14 @@ def hmc_provision_lpar(
 
     Returns:
         A structured result with resource_created, workflow_completed, lpar_uuid,
-        dry_run, ownership_stamped, steps, and warnings fields.
+        dry_run, ownership_stamped, steps, warnings, and change_location fields.
         With ``caller_token``, ``ownership_stamped=True`` confirms both the ownership
         stamp and the caller segment landed (one combined write); ``False`` means both
         were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
+        ``change_location`` reports where the network, vSCSI, and storage changes
+        just made now live — the partition's CurrentProfileSync and whether a later
+        ``power-on --partition-profile`` would keep them; ``None`` when no adapter or
+        mapping step ran, or when the read itself failed (see ``warnings``).
     """
 
     return with_client(

@@ -310,7 +310,6 @@ class LiveTestConfig:
     accept_platform_dump: str = ""
     iso_path: str = "/srv/example-lt-609/example-lt-609.iso"
     iso_media_name: str = "example-lt-609.iso"
-    iso_http_media_name: str = "example-lt-609-http.iso"
     iso_bind_host: str = "0.0.0.0"
     iso_advertised_host: str = "iso.example.test"
     iso_http_port: int = 18090
@@ -371,7 +370,6 @@ class LiveTestConfig:
         "LIVE_TEST_SRIOV_PROFILE_NAME": "sriov_profile_name",
         "LIVE_TEST_ISO_PATH": "iso_path",
         "LIVE_TEST_ISO_MEDIA_NAME": "iso_media_name",
-        "LIVE_TEST_ISO_HTTP_MEDIA_NAME": "iso_http_media_name",
         "LIVE_TEST_ISO_BIND_HOST": "iso_bind_host",
         "LIVE_TEST_ISO_ADVERTISED_HOST": "iso_advertised_host",
         "LIVE_TEST_ISO_HTTP_PORT": "iso_http_port",

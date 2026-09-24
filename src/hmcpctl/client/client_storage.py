@@ -285,7 +285,7 @@ async def _append_vios_mapping(
     ET.register_namespace("atom", _ATOM_NS)
     try:
         vios_elem = _find_vios_element(DET.fromstring(got.text), vios_uuid)
-    except DET.ParseError as exc:
+    except (DET.ParseError, DefusedXmlException) as exc:
         raise HMCError(f"GET {path} response is not valid XML", 200, got.text) from exc
     mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
     if mappings is None:
@@ -645,7 +645,7 @@ class StorageMixin:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
         try:
             root = DET.fromstring(vios_xml)
-        except DET.ParseError as exc:
+        except (DET.ParseError, DefusedXmlException) as exc:
             raise HMCError(
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
@@ -738,7 +738,10 @@ class StorageMixin:
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
 
-        root = DET.fromstring(raw)
+        try:
+            root = DET.fromstring(raw)
+        except (DET.ParseError, DefusedXmlException) as exc:
+            raise HMCError(f"GET {path} response is not valid XML", 200, raw) from exc
         # Firmware returns either an Atom-wrapped or bare VolumeGroup document. Only
         # the root or an Atom content child is the group: each VirtualDisk carries a
         # nested VolumeGroup link element that an unanchored search would select.
