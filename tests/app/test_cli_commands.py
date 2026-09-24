@@ -4576,14 +4576,18 @@ def test_jobs_wait_not_found_exits_1_after_one_poll(fake_hmc):
                 "set-boot-order",
                 "sys1",
                 LPAR_UUID,
-                "network, cd",
+                "/vdevice/v-scsi@30000003/disk@8100000000000000",
+                "/vdevice/l-lan@30000002:speed=auto,duplex=auto,192.0.2.10,,192.0.2.1",
                 "--ownership-override",
             ],
             "set_lpar_boot_order",
             {
                 "system_name_or_uuid": "sys1",
                 "lpar_name_or_uuid": LPAR_UUID,
-                "devices": ["network", "cd"],
+                "devices": [
+                    "/vdevice/v-scsi@30000003/disk@8100000000000000",
+                    "/vdevice/l-lan@30000002:speed=auto,duplex=auto,192.0.2.10,,192.0.2.1",
+                ],
                 "ownership_override": True,
             },
         ),
@@ -4606,7 +4610,7 @@ def test_boot_order_commands_delegate_to_operations(
     async def fake_operation(hmc, **kwargs):
         assert hmc is fake_hmc
         seen.update(kwargs)
-        return {"devices": ["network", "cd"]}
+        return {"PendingBootString": "/vdevice/v-scsi@30000003/disk@8100000000000000"}
 
     monkeypatch.setattr(
         f"hmcpctl.cli_commands.lpar.profiles.{operation}", fake_operation
@@ -4618,7 +4622,8 @@ def test_boot_order_commands_delegate_to_operations(
     assert seen == expected
 
 
-def test_set_boot_order_rejects_invalid_device_before_operation(monkeypatch):
+@pytest.mark.parametrize("devices", [["tape"], ["network,cd"], ["/ok", "disk"]])
+def test_set_boot_order_rejects_invalid_device_before_operation(monkeypatch, devices):
     called = False
 
     async def fake_operation(*_args, **_kwargs):
@@ -4630,11 +4635,11 @@ def test_set_boot_order_rejects_invalid_device_before_operation(monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, "tape"]
+        cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, *devices]
     )
 
     assert result.exit_code == 2
-    assert "Invalid boot device selector" in result.output
+    assert "Invalid boot device path" in result.output
     assert called is False
 
 
