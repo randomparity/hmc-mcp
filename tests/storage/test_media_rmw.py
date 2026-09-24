@@ -30,6 +30,18 @@ _REPOSITORY = """
           </VirtualMediaRepository>
         </MediaRepositories>"""
 
+# A repository present but holding no media — delete_media_repository's own
+# refusal (#1012) only fires on media, so its generic ETag-mechanics tests use
+# this rather than _REPOSITORY, which carries old.iso for the other operations.
+_EMPTY_REPOSITORY = """
+        <MediaRepositories>
+          <VirtualMediaRepository>
+            <OpticalMedia/>
+            <RepositoryName>VMLibrary</RepositoryName>
+            <RepositorySize>7</RepositorySize>
+          </VirtualMediaRepository>
+        </MediaRepositories>"""
+
 
 def _feed(repository: str) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -45,18 +57,18 @@ def _feed(repository: str) -> str:
 </feed>"""
 
 
-# (operation, arguments, repository present in the fetched group)
+# (operation, arguments, repository XML embedded in the fetched group, or None for a bare VG)
 OPERATIONS = [
-    ("create_media_repository", (2048,), False),
-    ("create_optical_media", ("new.iso", 3072), True),
-    ("delete_media_repository", (), True),
-    ("delete_optical_media", ("old.iso",), True),
+    ("create_media_repository", (2048,), None),
+    ("create_optical_media", ("new.iso", 3072), _REPOSITORY),
+    ("delete_media_repository", (), _EMPTY_REPOSITORY),
+    ("delete_optical_media", ("old.iso",), _REPOSITORY),
 ]
 IDS = [name for name, _, _ in OPERATIONS]
 
 
-def _routes(mock_hmc, has_repository: bool, *, etag: str | None = ETAG, post_status=200):
-    feed = _feed(_REPOSITORY if has_repository else "")
+def _routes(mock_hmc, repository: str | None, *, etag: str | None = ETAG, post_status=200):
+    feed = _feed(repository or "")
     headers = {"ETag": etag} if etag else {}
     mock_hmc.get(VG_PATH).mock(return_value=httpx.Response(200, text=feed, headers=headers))
     return mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(post_status, text=feed))
@@ -68,9 +80,9 @@ async def _run(operation: str, arguments: tuple):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("operation", "arguments", "has_repository"), OPERATIONS, ids=IDS)
-async def test_media_write_sends_if_match(mock_hmc, operation, arguments, has_repository):
-    route = _routes(mock_hmc, has_repository)
+@pytest.mark.parametrize(("operation", "arguments", "repository"), OPERATIONS, ids=IDS)
+async def test_media_write_sends_if_match(mock_hmc, operation, arguments, repository):
+    route = _routes(mock_hmc, repository)
 
     await _run(operation, arguments)
 
@@ -79,11 +91,11 @@ async def test_media_write_sends_if_match(mock_hmc, operation, arguments, has_re
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("operation", "arguments", "has_repository"), OPERATIONS, ids=IDS)
+@pytest.mark.parametrize(("operation", "arguments", "repository"), OPERATIONS, ids=IDS)
 async def test_media_write_refuses_without_etag(
-    mock_hmc, operation, arguments, has_repository
+    mock_hmc, operation, arguments, repository
 ):
-    route = _routes(mock_hmc, has_repository, etag=None)
+    route = _routes(mock_hmc, repository, etag=None)
 
     with pytest.raises(HMCError, match="no ETag"):
         await _run(operation, arguments)
@@ -92,9 +104,9 @@ async def test_media_write_refuses_without_etag(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("operation", "arguments", "has_repository"), OPERATIONS, ids=IDS)
-async def test_media_write_reports_stale_etag(mock_hmc, operation, arguments, has_repository):
-    route = _routes(mock_hmc, has_repository, post_status=412)
+@pytest.mark.parametrize(("operation", "arguments", "repository"), OPERATIONS, ids=IDS)
+async def test_media_write_reports_stale_etag(mock_hmc, operation, arguments, repository):
+    route = _routes(mock_hmc, repository, post_status=412)
 
     with pytest.raises(HMCError, match="changed since it was read") as exc_info:
         await _run(operation, arguments)
@@ -105,18 +117,35 @@ async def test_media_write_reports_stale_etag(mock_hmc, operation, arguments, ha
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("operation", "arguments", "has_repository"),
+    ("operation", "arguments", "repository"),
     [
-        ("create_media_repository", (7168,), True),
-        ("delete_media_repository", (), False),
-        ("delete_optical_media", ("absent.iso",), True),
+        ("create_media_repository", (7168,), _REPOSITORY),
+        ("delete_media_repository", (), None),
+        ("delete_optical_media", ("absent.iso",), _REPOSITORY),
     ],
     ids=["repository-exists", "no-repository", "no-such-medium"],
 )
-async def test_media_noop_needs_no_etag(mock_hmc, operation, arguments, has_repository):
+async def test_media_noop_needs_no_etag(mock_hmc, operation, arguments, repository):
     """A write that has nothing to change posts nothing, so it needs no ETag."""
-    route = _routes(mock_hmc, has_repository, etag=None)
+    route = _routes(mock_hmc, repository, etag=None)
 
     await _run(operation, arguments)
+
+    assert not route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_media_repository_refuses_medium_seen_at_its_own_read(mock_hmc):
+    """A medium appearing between the operation's emptiness check and this
+    client's own GET is still caught here, with nothing written (#1012).
+
+    The operation-level check (resources.py) does its own GET; this asserts the
+    client refuses independently when *its* GET observes a VirtualOpticalMedia
+    still inside the MediaRepositories block it is about to remove.
+    """
+    route = _routes(mock_hmc, _REPOSITORY)
+
+    with pytest.raises(HMCError, match=r"contains 1 image\(s\): 'old\.iso'"):
+        await _run("delete_media_repository", ())
 
     assert not route.called

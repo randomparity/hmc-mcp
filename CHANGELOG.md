@@ -187,6 +187,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   deleted disk or dropping a created one. They now refuse without writing when the read carries
   no ETag, and an HMC 412 is reported as a concurrent change with nothing written. HMC
   enforcement of a mismatched ETag on this path is not yet live-verified (#996).
+- `hmc_delete_media_repository` and `hmcpctl storage delete-media-repo` refuse, with nothing
+  written, when the read they write from still holds a `VirtualOpticalMedia`. The prior check
+  read the repository once to confirm it was empty and read it again to delete it; a medium
+  created between those two reads was deleted along with the repository without the refusal ever
+  firing. The second read now carries its own refusal, closing that window (#1012).
 - `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
   disk name longer than 15 characters before the create request, with a message that states the
   VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
