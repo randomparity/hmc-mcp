@@ -14,7 +14,7 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, assert_no_mutating_requests
+from conftest import JOB_ENTRY, assert_no_mutating_requests, mock_change_location
 
 from hmcpctl.documents import LparResources
 from hmcpctl.jobs import JobOutcome
@@ -246,7 +246,7 @@ SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>"""
 
 
-def _mock_execution_steps(mock_hmc):
+def _mock_execution_steps(mock_hmc, *, sync="Disabled"):
     """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
@@ -259,6 +259,9 @@ def _mock_execution_steps(mock_hmc):
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(201, text=NETWORK_ADAPTER_FEED))
+
+    # read_change_location, read once after the network leg succeeds (#1056)
+    mock_change_location(mock_hmc, LPAR_UUID, sync=sync)
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
@@ -591,6 +594,39 @@ def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     assert steps["storage"].status == "ok"
     assert steps["power_on"].status == "ok"
     assert isinstance(result.warnings, tuple)
+    assert result.change_location is not None
+    assert result.change_location.current_profile_sync == "Disabled"
+    assert result.change_location.lives_in == "current-configuration"
+
+
+def test_provision_reports_change_location_when_synced(monkeypatch, mock_hmc):
+    """CurrentProfileSync On: the change also reaches the partition's profile (#1056)."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc, sync="On")
+
+    result = hmc_provision_lpar(**_provision_args())
+
+    assert result.workflow_completed is True
+    assert result.change_location is not None
+    assert result.change_location.current_profile_sync == "On"
+    assert result.change_location.lives_in == "current-configuration-and-profile"
+
+
+def test_provision_change_location_read_failure_is_advisory(monkeypatch, mock_hmc):
+    """A failed change-location read is a warning, not a provisioning failure (#1056)."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(500, text="<error>boom</error>")
+    )
+
+    result = hmc_provision_lpar(**_provision_args())
+
+    assert result.workflow_completed is True
+    assert result.change_location is None
+    assert any("Change location not read" in w for w in result.warnings)
 
 
 def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
@@ -778,6 +814,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(201, text=NETWORK_ADAPTER_FEED))
+    mock_change_location(mock_hmc, LPAR_UUID, sync="Disabled")
 
     # vSCSI step fails
     mock_hmc.put(
@@ -803,6 +840,9 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     assert result.resource_created is True
     assert result.workflow_completed is False
     assert result.lpar_uuid == LPAR_UUID
+    # The network adapter that did land still has a location to report (#1056).
+    assert result.change_location is not None
+    assert result.change_location.current_profile_sync == "Disabled"
 
 
 def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mock_hmc):
@@ -840,6 +880,8 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
         next(step for step in result.steps if step.step == "network").status
         == "error"
     )
+    # Nothing changed on the partition, so there is nowhere to report (#1056).
+    assert result.change_location is None
 
 
 def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc):

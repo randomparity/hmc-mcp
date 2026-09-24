@@ -1342,6 +1342,49 @@ def test_lpars_provision_passes_nondefault_request_to_operation(monkeypatch, fak
     assert request.power_on is False
 
 
+def test_lpars_provision_renders_change_location(monkeypatch, fake_hmc):
+    """#1056: provision prints the same CurrentProfileSync line add-network does."""
+    provision = AsyncMock(
+        return_value=ProvisionResult(
+            resource_created=True,
+            workflow_completed=True,
+            lpar_uuid=LPAR_UUID,
+            dry_run=False,
+            ownership_stamped=True,
+            steps=(),
+            warnings=(),
+            change_location=UNSYNCED,
+        )
+    )
+    monkeypatch.setattr(cli_lpar_provision, "provision_lpar", provision)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "provision",
+            "--system",
+            SYSTEM_UUID,
+            "--name",
+            "newlpar",
+            "--vlan",
+            "100",
+            "--vios-uuid",
+            VIOS_UUID,
+            "--vios-partition-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--storage-name",
+            "rootvg",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "CurrentProfileSync is Disabled" in result.stdout
+
+
 def test_lpars_modify_renames(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
