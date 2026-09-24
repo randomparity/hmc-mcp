@@ -707,8 +707,10 @@ def _profile_power_client(profile_slots: list[str], current: dict) -> AsyncMock:
         {
             "UUID": PROFILE_UUID,
             "Resource": {
-                "ProfileVirtualIOAdapters": {
-                    "ProfileVirtualIOAdapterSubclass": subclasses
+                "IOConfigurationInstance": {
+                    "ProfileVirtualIOAdapters": {
+                        "ProfileVirtualIOAdapterSubclass": subclasses
+                    }
                 }
             },
         }

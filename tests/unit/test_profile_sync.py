@@ -16,7 +16,7 @@ from hmcpctl.xmlutil import parse_feed
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
 # The shape a V10R3 HMC returned for a partition profile on 2026-09-24, cut to
-# the adapter block; kb/kxe attributes kept so the parser sees what it will see live.
+# the I/O block; kb/kxe attributes kept so the parser sees what it will see live.
 PROFILE_FEED = """<feed xmlns="http://www.w3.org/2005/Atom"><entry>
 <id>00000000-0000-0000-0000-0000000000aa</id>
 <content type="application/vnd.ibm.powervm.uom+xml; type=LogicalPartitionProfile">
@@ -24,6 +24,9 @@ PROFILE_FEED = """<feed xmlns="http://www.w3.org/2005/Atom"><entry>
  xmlns:LogicalPartitionProfile="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
  xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/" schemaVersion="V1_0">
 <Metadata><Atom/></Metadata>
+<IOConfigurationInstance kb="CUD" kxe="false" schemaVersion="V1_0">
+<Metadata><Atom/></Metadata>
+<MaximumVirtualIOSlots kxe="false" kb="CUD">6</MaximumVirtualIOSlots>
 <ProfileVirtualIOAdapters kb="CUD" kxe="false" schemaVersion="V1_0">
 <Metadata><Atom/></Metadata>
 <ProfileVirtualIOAdapterSubclass>
@@ -38,6 +41,8 @@ PROFILE_FEED = """<feed xmlns="http://www.w3.org/2005/Atom"><entry>
 </ProfileVirtualSCSIClientAdapter>
 </ProfileVirtualIOAdapterSubclass>
 </ProfileVirtualIOAdapters>
+<VirtualOpticonnectPool kb="CUD" kxe="false">false</VirtualOpticonnectPool>
+</IOConfigurationInstance>
 <ProfileName kxe="false" kb="CUR">default_profile</ProfileName>
 </LogicalPartitionProfile:LogicalPartitionProfile>
 </content></entry></feed>"""
@@ -113,7 +118,8 @@ def _adapters(by_type: dict[str, list[str | None]]) -> AsyncMock:
 
 def _profile(*subclasses: dict) -> dict:
     block = list(subclasses) if len(subclasses) != 1 else subclasses[0]
-    return {"Resource": {"ProfileVirtualIOAdapters": {"ProfileVirtualIOAdapterSubclass": block}}}
+    adapters = {"ProfileVirtualIOAdapters": {"ProfileVirtualIOAdapterSubclass": block}}
+    return {"Resource": {"IOConfigurationInstance": adapters}}
 
 
 @pytest.mark.asyncio
@@ -152,7 +158,15 @@ async def test_profile_slots_are_read_from_each_subclass_direct_child():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "profile",
-    [{"Resource": {}}, {"Resource": {"ProfileVirtualIOAdapters": ""}}, {}],
+    [
+        {"Resource": {}},
+        {"Resource": {"IOConfigurationInstance": ""}},
+        {"Resource": {"IOConfigurationInstance": {"ProfileVirtualIOAdapters": ""}}},
+        # Directly under the profile is not where the HMC puts them.
+        {"Resource": {"ProfileVirtualIOAdapters": {"ProfileVirtualIOAdapterSubclass": {
+            "ProfileVirtualSCSIClientAdapter": {"VirtualSlotNumber": "2"}}}}},
+        {},
+    ],
 )
 async def test_a_profile_without_adapters_lacks_every_current_adapter(profile):
     hmc = _adapters({"VirtualSCSIClientAdapter": ["2"]})

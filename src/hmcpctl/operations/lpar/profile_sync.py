@@ -100,10 +100,16 @@ def _as_list(value: Any) -> list[Any]:
 def _profile_slots(profile: dict[str, Any]) -> set[str]:
     """Virtual slots of the profile's adapters, whatever their subclass name.
 
+    The adapters sit under ``IOConfigurationInstance`` (V10R3, 2026-09-24).
     Only each adapter's direct ``VirtualSlotNumber`` counts; a nested partner
     slot must not make a missing client slot look present.
     """
-    adapters = (profile.get("Resource") or {}).get("ProfileVirtualIOAdapters")
+    io_configuration = (profile.get("Resource") or {}).get("IOConfigurationInstance")
+    adapters = (
+        io_configuration.get("ProfileVirtualIOAdapters")
+        if isinstance(io_configuration, dict)
+        else None
+    )
     if not isinstance(adapters, dict):
         return set()
     slots: set[str] = set()
