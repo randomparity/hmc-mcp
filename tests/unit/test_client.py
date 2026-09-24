@@ -1402,7 +1402,9 @@ async def test_map_storage_to_lpar(mock_hmc):
     path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"
     vios = (
         '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
-        "<UUID>11111111-1111-1111-1111-111111111111</UUID><VirtualSCSIMappings/></VirtualIOServer>"
+        "<Metadata><Atom><AtomID>11111111-1111-1111-1111-111111111111</AtomID></Atom></Metadata>"
+        '<PartitionUUID kb="ROO">11111111-1111-1111-1111-111111111111</PartitionUUID>'
+        "<VirtualSCSIMappings/></VirtualIOServer>"
     )
     mock_hmc.get(path).mock(return_value=httpx.Response(200, text=vios, headers={"ETag": "e1"}))
     route = mock_hmc.post(path).mock(return_value=httpx.Response(200, text=VIOS_ENTRY))

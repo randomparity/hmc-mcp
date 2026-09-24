@@ -51,8 +51,18 @@ def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
             ET.tostring(root, encoding="unicode")[:500],
         )
     vios_elem = resources[0]
-    identities = vios_elem.findall(f"{{{_UOM_NS}}}UUID")
-    if len(identities) != 1 or (identities[0].text or "").strip() != vios_uuid:
+    # A live VIOS document carries no <UUID> child; its identity is
+    # Metadata/Atom/AtomID, with PartitionUUID alongside carrying the same value (#979).
+    # Fixtures that invent a <UUID> element describe no observed HMC response.
+    atom_ids = vios_elem.findall(f"{{{_UOM_NS}}}Metadata/{{{_UOM_NS}}}Atom/{{{_UOM_NS}}}AtomID")
+    partition_uuids = vios_elem.findall(f"{{{_UOM_NS}}}PartitionUUID")
+    mismatched = (
+        len(atom_ids) != 1
+        or (atom_ids[0].text or "").strip() != vios_uuid
+        or len(partition_uuids) > 1
+        or (len(partition_uuids) == 1 and (partition_uuids[0].text or "").strip() != vios_uuid)
+    )
+    if mismatched:
         raise HMCError(
             f"VirtualIOServer response identity does not match {vios_uuid!r}",
             200,

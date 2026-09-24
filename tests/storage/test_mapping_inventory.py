@@ -113,7 +113,8 @@ UNIDENTIFIABLE_MAPPING = f"""<VirtualSCSIMapping>
     </VirtualSCSIMapping>"""
 VIOS_PARENT = f"""<VirtualIOServer
   xmlns="{UOM_NS}">
-  <UUID>{VIOS_UUID}</UUID>
+  <Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>
+  <PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>
   <UnrelatedLink href="/rest/api/uom/ManagedSystem/11111111-1111-1111-1111-111111111111"/>
   <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
   <VirtualSCSIMappings>
@@ -455,7 +456,7 @@ async def test_delete_storage_mapping_rejects_untrusted_system_link(
     [
         f'<feed xmlns="http://www.w3.org/2005/Atom">{VIOS_PARENT}{VIOS_PARENT}</feed>',
         VIOS_PARENT.replace(
-            f"<UUID>{VIOS_UUID}</UUID>", "<UUID>wrong-vios</UUID>"
+            f"<AtomID>{VIOS_UUID}</AtomID>", "<AtomID>wrong-vios</AtomID>"
         ),
     ],
 )

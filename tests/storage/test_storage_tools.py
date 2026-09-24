@@ -10,6 +10,7 @@ tool bodies is exercised — the layer the client tests skip.  This mirrors
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
@@ -152,6 +153,7 @@ _LPAR_LINK = (
     "https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/"
     f"{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}"
 )
+_VIOS_IDENTITY = Path(__file__).with_name("vios_identity_v10r3.xml").read_text(encoding="utf-8")
 
 
 def _mapping(target: str, lpar_link: str = _LPAR_LINK) -> str:
@@ -166,11 +168,10 @@ def _mapping(target: str, lpar_link: str = _LPAR_LINK) -> str:
 
 
 def _mock_detach_reads(mock_hmc, mappings: str):
-    parent = f"""<VirtualIOServer xmlns="{_UOM}">
-      <UUID>{VIOS_UUID}</UUID>
-      <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
-      <VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>
-    </VirtualIOServer>"""
+    parent = _VIOS_IDENTITY.replace(
+        "</VirtualIOServer>",
+        f"<VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>\n</VirtualIOServer>",
+    )
     inventory = f"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>
       <VirtualIOServer xmlns="{_UOM}"><VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>
       </VirtualIOServer></content></entry></feed>"""
@@ -386,7 +387,9 @@ def _mapping_routes(mock_hmc):
     mock_hmc.get(path).mock(
         return_value=httpx.Response(
             200,
-            text=f'<VirtualIOServer xmlns="{UOM_NS}"><UUID>{VIOS_UUID}</UUID>'
+            text=f'<VirtualIOServer xmlns="{UOM_NS}">'
+            f"<Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>"
+            f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>'
             "<VirtualSCSIMappings/></VirtualIOServer>",
             headers={"ETag": "etag-1"},
         )

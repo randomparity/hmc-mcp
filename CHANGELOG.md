@@ -160,6 +160,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `storage detach-mapping` and `storage unmount-optical-media` (and mapping/optical-mapping
+  create) no longer refuse on a live HMC. The VIOS identity check read a `<UUID>` child no
+  observed HMC response carries; it now reads `Metadata/Atom/AtomID`, cross-checking
+  `PartitionUUID` when present, and still refuses a document naming a different VIOS or more
+  than one (#979).
+
 - When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
   `provision` report the partition as created, with its profile-apply step and a warning naming
   the read-back error. Before, they reported a failed create with nothing created (#1014).

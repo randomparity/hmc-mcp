@@ -27,7 +27,8 @@ OBSERVED_MAPPINGS = OBSERVED[OBSERVED.index("<VirtualSCSIMappings") :]
 def vios_entry(mappings: str = OBSERVED_MAPPINGS, uuid: str = VIOS_UUID) -> str:
     return f"""<entry xmlns="http://www.w3.org/2005/Atom"><content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
-        <UUID>{uuid}</UUID>
+        <Metadata><Atom><AtomID>{uuid}</AtomID></Atom></Metadata>
+        <PartitionUUID kb="ROO">{uuid}</PartitionUUID>
         {mappings}
       </VirtualIOServer></content></entry>"""
 
