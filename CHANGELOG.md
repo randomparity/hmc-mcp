@@ -10,6 +10,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- Console connections send SSH keepalives, so a dead but idle channel is detected within about
+  60 s (ADR 0174). `ConsoleSession(..., reconnect=True)` then acquires the console again and
+  yields a `ConsoleGap` marker before the new stream. A console still held after the drop raises
+  `ConsoleHeldAfterDropError`, a `ConsoleHeldError`, with no `rmvterm`; with `take_over=True`
+  the reconnect reclaims it. The bounded capture never reconnects, but on a dead idle channel it
+  now ends with `stop_reason="error"` instead of waiting for its idle or duration bound (#977).
 - `hmcpctl lpars capture-console LPAR --system SYSTEM` takes the same bounded, input-free console
   capture as the MCP tool `hmc_capture_lpar_console`, with the same `--duration`, `--max-bytes`
   and `--idle-timeout` defaults and limits. It writes raw bytes to stdout or to a new `--output`
