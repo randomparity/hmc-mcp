@@ -169,6 +169,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- Three `client_storage` XML parse sites (VIOS mapping read-modify-write, storage-mapping
+  delete, and VolumeGroup read) now catch `DefusedXmlException` alongside `ParseError`, so an
+  HMC body carrying a DTD, entity, or external reference raises `HMCError` naming the request
+  instead of escaping as a raw parse exception (#1054).
+
 - `storage detach-mapping` and `storage unmount-optical-media` (and mapping/optical-mapping
   create) no longer refuse on a live HMC. The VIOS identity check read a `<UUID>` child no
   observed HMC response carries; it now reads `Metadata/Atom/AtomID`, cross-checking

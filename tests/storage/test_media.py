@@ -11,7 +11,6 @@ import re
 import httpx
 import pytest
 from conftest import make_config
-from defusedxml.common import EntitiesForbidden
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
@@ -19,13 +18,14 @@ from hmcpctl.errors import HMCError
 
 @pytest.mark.asyncio
 async def test_media_repository_rejects_xml_entities(mock_hmc):
+    """An entity-bearing VolumeGroup GET body raises HMCError, not a raw DefusedXmlException."""
     document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
     mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     ).mock(return_value=httpx.Response(200, text=document))
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(EntitiesForbidden):
+        with pytest.raises(HMCError, match="not valid XML"):
             await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 2048)
 
 # Minimal VolumeGroup feed — no MediaRepositories block (bare VG).
