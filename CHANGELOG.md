@@ -150,6 +150,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   this, provision's network step failed with `REST0269` on such a partition. A failed apply skips
   the remaining steps and leaves the partition in place. There is no opt-out (#999).
 
+- `hmc_create_volume_group` and `hmcpctl storage create-vg` send `GroupName` with `kb="CUR"`,
+  the value a live V10R3 `VolumeGroup` carries, instead of `kb="CUD"`. A test pins the create
+  document against a redacted V10R3 `VolumeGroup` capture (#1001).
 - `hmcpctl storage create-media-repo`, `storage create-media`, `hmc_create_media_repository` and
   `hmc_create_optical_media` convert `size_mib` to the GiB the HMC's `RepositorySize` and media
   `Size` take. They previously sent the MiB value unconverted, so `--size-mib 20480` asked for a

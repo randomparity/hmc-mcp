@@ -16,7 +16,9 @@ from hmcpctl import documents
 from hmcpctl.documents.common import UOM_NS
 from hmcpctl.xmlutil import localname
 
-FIXTURE = DET.parse(Path(__file__).parents[1] / "storage" / "vscsi_mapping_v10r3.xml").getroot()
+STORAGE_FIXTURES = Path(__file__).parents[1] / "storage"
+FIXTURE = DET.parse(STORAGE_FIXTURES / "vscsi_mapping_v10r3.xml").getroot()
+VOLUME_GROUP = DET.parse(STORAGE_FIXTURES / "volume_group_v10r3.xml").getroot()
 
 
 def _tree(xml: str):
@@ -146,6 +148,21 @@ def test_mapping_without_target_device_omits_it() -> None:
     assert _children(_first(root, "VirtualSCSIMapping")) == [
         "Metadata", "AssociatedLogicalPartition", "Storage"
     ]
+
+
+def _assert_matches_live(built, live) -> None:
+    """Built children, repeats collapsed, are a live subsequence with live kb/kxe/schemaVersion."""
+    assert _kbx(built) == _kbx(live), localname(built.tag)
+    names = list(dict.fromkeys(_children(built)))
+    assert _is_subsequence(names, _children(live)), (localname(built.tag), names)
+    for child in built:
+        _assert_matches_live(child, _first(live, localname(child.tag)))
+
+
+def test_volume_group_create_matches_fixture() -> None:
+    built = _tree(documents.build_volume_group_document("vg1", ["hdisk1", "hdisk2"]))
+    assert _children(_first(built, "PhysicalVolumes")).count("PhysicalVolume") == 2
+    _assert_matches_live(built, VOLUME_GROUP)
 
 
 def test_volume_group_physical_volume_attributes() -> None:
