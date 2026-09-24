@@ -10,7 +10,7 @@ contents upload.
 > measured. On `V10R3 M1060` (`8375-42A`), with the default 60 s `HMC_TIMEOUT`, a 1,048,627,200-byte
 > ISO took 343.9 s and the HMC answered 6.7 s after the last byte; a 4,194,355,200-byte ISO took
 > 1,540.1 s and the HMC answered 14.8 s after the last byte. The longest gap between chunk writes
-> was 1.96 s. The wait grows with size; a line through the two points crosses 60 s near 21.6 GB.
+> was 1.96 s. The wait grows with size; a line through the two points crosses 60 s near 21.7 GB.
 > The contents PUT now waits `max(HMC_TIMEOUT, HMC_UPLOAD_TIMEOUT)` (default 600 s) for the
 > response. Its connect and write waits stay at `HMC_TIMEOUT`. A read timeout there says the HMC
 > may still import the ISO. Design and measurement:

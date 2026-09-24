@@ -18,8 +18,8 @@ default 60 s timeout, through `_upload_iso_via_web_file` unchanged:
 Both uploads succeeded and were listed on the first visibility poll. Each run created the media
 repository, then removed the media and the repository; the before and after repository and
 volume-group listings match. The response wait grows with
-size: a line through the two points (about 4.0 s plus 2.6 s per GB) crosses 60 s near 21.6 GB,
-and reaches about 282 s at the 100 GiB download ceiling (`MAX_DOWNLOAD_SIZE_BYTES`). A larger ISO
+size: a line through the two points (about 4.0 s plus 2.6 s per GB) crosses 60 s near 21.7 GB,
+and reaches about 280 s at the 100 GiB download ceiling (`MAX_DOWNLOAD_SIZE_BYTES`). A larger ISO
 therefore fails with default configuration while the HMC may still import it.
 
 ## Design
