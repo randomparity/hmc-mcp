@@ -112,8 +112,8 @@ LOST_HOLD_SENTINEL = (
 #: immediately on a healthy HMC).
 _RELEASE_PROBE_SECONDS = 10.0
 
-#: How long :meth:`ConsoleSession.close` scans bytes already received but unread
-#: for :data:`LOST_HOLD_SENTINEL` before it releases: per read, and in total.
+#: How long a release scans bytes already received but unread for
+#: :data:`LOST_HOLD_SENTINEL` before it issues ``rmvterm``: per read, and in total.
 _UNREAD_READ_SECONDS = 0.1
 _UNREAD_SCAN_SECONDS = 1.0
 
@@ -1068,8 +1068,9 @@ class ConsoleSession:
 
         Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
         does, and closes the connection; like :meth:`close`, it returns
-        ``False`` with no ``rmvterm`` for a hold another client ended (#1004). Cancelling the caller never interrupts
-        the release; the cancellation is re-raised after it completes.
+        ``False`` with no ``rmvterm`` for a hold another client ended (#1004).
+        Cancelling the caller never interrupts the release; the cancellation is
+        re-raised after it completes.
         :meth:`read` waits until :meth:`resume`. The external holder should
         acquire only after this returns: the probe holds the slot briefly, and
         a holder that acquires before the probe makes this return ``False``
