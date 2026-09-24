@@ -93,8 +93,10 @@ becomes create-only; its docstring stops offering modify. No modify write sets o
 create-only element any more: the old rename and resources legs injected the create builder's
 default `PartitionType` (`AIX/Linux`, wrong for a VIOS or IBM i partition), while the
 read-modify-write echoes the partition's own create-only values unchanged, because V10R3
-requires `PartitionType` (probe above). This reading of "modify documents carry no create-only
-fields" was put to the operator through the campaign (2026-09-24).
+requires `PartitionType` (probe above). Operator decision (2026-09-24, relayed by the campaign):
+this reading of "modify documents carry no create-only fields" is accepted — no modify write
+sets or changes a create-only (`kb="COD"`) element, and the read-modify-write echoes the
+partition's own create-only values.
 
 **Operations.** Each operation authorizes first, as today. Then:
 
