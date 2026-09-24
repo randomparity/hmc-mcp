@@ -1030,7 +1030,10 @@ class StorageMixin:
 
         Uses a read-modify-write pattern: GET the full VolumeGroup XML, remove the
         MediaRepositories block, then POST the modified XML back with If-Match set to
-        the GET's ETag (ADR 0171).
+        the GET's ETag (ADR 0171). Refuses, without writing, when the MediaRepositories
+        block this GET observed still holds any VirtualOpticalMedia — the caller's own
+        emptiness check is a separate, earlier GET, so a medium created between the two
+        would otherwise be deleted with it (#1012).
         """
         etag, vg_elem = await self._get_vg_raw_xml(vios_uuid, vg_uuid)
 
@@ -1038,6 +1041,20 @@ class StorageMixin:
         mr = vg_elem.find(f".//{mr_tag}")
         if mr is None:
             return None
+
+        vom_tag = f"{{{_UOM_NS}}}VirtualOpticalMedia"
+        name_tag = f"{{{_UOM_NS}}}MediaName"
+        media = mr.findall(f".//{vom_tag}")
+        if media:
+            names = ", ".join(
+                (m.findtext(name_tag) or "unknown") for m in media
+            )
+            raise HMCError(
+                f"Cannot delete media repository: it contains {len(media)} "
+                f"image(s): {names!r}. Delete all images first.",
+                409,
+            )
+
         vg_elem.remove(mr)
 
         return await self._post_vg_xml(
