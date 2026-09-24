@@ -550,9 +550,12 @@ async def _release_probe_by_eof(stdin: _SealedStdin, process: Any, connection: A
     ``True`` once the stream ended on an open connection, or the HMC reported that
     another client's ``rmvterm`` ended the probe's hold (#1004): either way nothing
     of the probe's is left held, and an ``rmvterm`` could end another client's
-    session. The bound, a failure to send EOF or read, or a closed connection
-    return ``False``, and the caller falls back to ``rmvterm``.
+    session. A stream that had already ended before EOF, the bound, a failure to
+    send EOF or read, or a closed connection return ``False``, and the caller
+    falls back to ``rmvterm``, as a session's release does (#1058).
     """
+    if process.stdout.at_eof():
+        return False
     tail = b""
     with contextlib.suppress(Exception):
         stdin.release()

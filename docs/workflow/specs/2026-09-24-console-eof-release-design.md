@@ -63,8 +63,16 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
      8.5 s more to every proven release (#1072), bounded by the same constant.
    - Fallback `rmvterm` (step 5, or a stream that had already ended) keeps the #1004 in-transit
      window on those paths only.
-   - The probe's fallback `rmvterm` (its EOF wait timing out, an error sending EOF or reading, or
-     a closed connection) keeps its own window after it acquires (#1072).
+   - The probe's fallback `rmvterm` (a stream that ended before EOF, its EOF wait timing out, an
+     error sending EOF or reading, or a closed connection) keeps its own window after it acquires
+     (#1072).
+   - The probe holds the vterm about 12 s instead of about 3 s, so another client's `mkvterm`
+     during a release proof is refused with the contention message for about 8.5 s longer
+     (#1072). That client can acquire once the probe's `mkvterm` exits.
+   - Cancelling the release task itself, or shutting the loop down, during the probe's EOF wait
+     closes its connection with no `rmvterm`, which may leave the probe's hold in place (P3).
+     `close()` and `suspend()` shield that task, so only a direct cancellation reaches it. The
+     same class existed during the probe's `rmvterm`, for about 3 s instead of about 12 s (#1072).
    - A firmware whose EOF does not end `mkvterm` within 20 s gets today's behaviour.
    - A stream that ends during the drain without releasing the hold gets no `rmvterm`, and
      `close()` returns the probe's `False`: in every captured run the exit after EOF meant release
@@ -82,8 +90,8 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
 4. The redacted fixture records the six runs, and a test pins its EOF exit message.
 5. ADR 0072 carries the `#1058` amendment, and ADRs 0170, 0172, and 0176 carry pointers to it.
 6. The probe answers `True` with no `rmvterm` when its stream ends after EOF on an open
-   connection or the lost-hold report arrives; its EOF wait timing out, an error sending EOF or
-   reading, or a closed connection lead to its `rmvterm` (#1072).
+   connection or the lost-hold report arrives; a stream that ended before EOF, its EOF wait timing
+   out, an error sending EOF or reading, or a closed connection lead to its `rmvterm` (#1072).
 7. A second redacted fixture records the probe's cost and second-client runs, and a test pins
    them (#1072).
 
@@ -97,8 +105,9 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
 2. Read its stream to the end, bounded by `_EOF_RELEASE_SECONDS`, keeping the connection open.
 3. The stream ended on an open connection, or `LOST_HOLD_SENTINEL` arrived (another client's
    `rmvterm` already ended the probe's hold, #1004): no `rmvterm`, and the probe answers `True`.
-4. Timeout, an error sending EOF or reading, or a closed connection: `rmvterm`, as before, and a
-   failed `rmvterm` still answers `False`.
+4. A stream that had already ended before EOF, timeout, an error sending EOF or reading, or a
+   closed connection: `rmvterm`, as before, and a failed `rmvterm` still answers `False`. The first
+   case matches the session: an end the probe did not ask for proves nothing about its hold (P3).
 
 Live capture (V10R3 M1060, 2026-09-24, `tests/fixtures/console/probe-eof-release-transcript.json`):
 
