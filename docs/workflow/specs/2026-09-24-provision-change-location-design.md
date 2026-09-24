@@ -44,16 +44,8 @@ to `_power_on`, `attach_disk_to_lpar`/`AttachDiskResult`, or `read_change_locati
 
 ## Validation
 
-- Contract: `change_location` reflects `CurrentProfileSync` after network/vSCSI/storage.
-  Mode: focused-test — `test_provision_reports_change_location_when_synced` (sync `On`) and
-  `test_provision_lpar_full_workflow` (sync `Disabled`, the default); green: `lives_in` is
-  `current-configuration-and-profile` / `current-configuration` respectively.
-- Contract: a failed change-location read is advisory, not a provisioning failure.
-  Mode: focused-test — `test_provision_change_location_read_failure_is_advisory`; green:
-  `workflow_completed is True`, `change_location is None`, a matching warning present.
-- Contract: `change_location` stays `None` when no adapter step ran.
-  Mode: focused-test — `test_policy_provision_network_failure_records_each_step_once`; green:
-  `result.change_location is None`.
-- Contract: the CLI renders the summary line.
-  Mode: focused-test — `test_lpars_provision_renders_change_location`; green:
-  `"CurrentProfileSync is Disabled" in result.stdout`.
+- Contract: `change_location` reflects `CurrentProfileSync` after network/vSCSI/storage. Mode: focused-test — `test_provision_reports_change_location_when_synced` (sync `On`) and `test_provision_lpar_full_workflow` (sync `Disabled`); green: `lives_in` matches each value.
+- Contract: a failed change-location read is advisory, not a provisioning failure. Mode: focused-test — `test_provision_change_location_read_failure_is_advisory`; green: `workflow_completed is True`, `change_location is None`, a matching warning present.
+- Contract: `change_location` stays `None` when no adapter step ran. Mode: focused-test — `test_policy_provision_network_failure_records_each_step_once`; green: `result.change_location is None`.
+- Contract: the CLI renders the summary line. Mode: focused-test — `test_lpars_provision_renders_change_location`; green: `"CurrentProfileSync is Disabled" in result.stdout`.
+- Contract: `hmc_provision_lpar`'s docstring documents the field. Mode: task-test-not-applicable — prose docstring text; no executable or structural check distinguishes a correct description from a plausible wrong one, verified by design and code review instead.
