@@ -278,6 +278,8 @@ class StorageClient(Protocol):
         self, resource_type: str | None, include_schema_version: bool = True
     ) -> dict[str, str]: ...
 
+    def _web_headers(self, extra: dict[str, str]) -> dict[str, str]: ...
+
     async def _get(
         self,
         path: str,

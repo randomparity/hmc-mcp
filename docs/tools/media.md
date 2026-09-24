@@ -17,4 +17,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_list_optical_media` | `read` | `media.list` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List Virtual Optical Media in the Virtual Media Repository. |
 | `hmc_mount_optical_media` | `mutate` | `media.mount` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a VirtualSCSIMapping for optical media (mount ISO to LPAR). |
 | `hmc_unmount_optical_media` | `destructive` | `media.unmount` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove a VirtualSCSIMapping for optical media (unmount). |
-| `hmc_upload_iso` | `mutate` | `media.upload_iso` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Upload an ISO to a VIOS media repository via the HMC file broker. |
+| `hmc_upload_iso` | `mutate` | `media.upload_iso` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Upload an ISO to a VIOS media repository via the HMC web File API. |

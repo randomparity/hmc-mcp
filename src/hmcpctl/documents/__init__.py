@@ -34,8 +34,6 @@ from .lpar import (  # noqa: F401
 from .storage import (  # noqa: F401
     STORAGE_KINDS,
     StorageKind,
-    build_brokered_file_document,
-    build_linked_optical_media_document,
     build_media_repository_delete_document,
     build_virtual_disk_element,
     build_virtual_network_document,
@@ -43,6 +41,7 @@ from .storage import (  # noqa: F401
     build_virtual_optical_media_delete_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
+    build_web_file_document,
 )
 from .system import (  # noqa: F401
     MEM_MIRRORING_MODES,
