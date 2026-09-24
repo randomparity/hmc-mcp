@@ -740,6 +740,7 @@ class ConsoleSession:
             raise
         self._connection, self._stdout = connection, process.stdout
         self._state = "held"
+        self._remote_closed = False  # the latch covers one mkvterm stream
         self._pending += data
         return cancelled
 
@@ -854,7 +855,7 @@ class ConsoleSession:
             self._lpar,
             error,
         )
-        self._state = "reconnecting"
+        self._state = "dropped"  # _acquire moves it on; a failure before that stays dropped
         self._drop_channel()
         task = self._reconnect_task = asyncio.create_task(self._reconnect_after_drop(error))
         task.add_done_callback(_retrieve)

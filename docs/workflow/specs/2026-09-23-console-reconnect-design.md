@@ -25,7 +25,7 @@ drop, get the console back, and know where output may be missing.
   - A drop is one of two things seen by the collector's read while it owns the channel and
     before `close()` begins: an `asyncssh.Error` or `OSError`, or `b""` while the session's
     connection reports `is_closed()`. The first `b""` on an open connection is a remote close
-    and is latched, so later reads never count as a drop. Without `reconnect`, and once
+    and is latched for that stream, so later reads never count as a drop. Without `reconnect`, and once
     `close()` has begun, reads behave exactly as they do today.
   - With `reconnect`, a drop starts one reconnect task. The task closes the dead channel and
     makes one `_acquire` call with the session's `take_over` value. Held contention raises

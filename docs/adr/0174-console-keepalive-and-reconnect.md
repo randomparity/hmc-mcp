@@ -27,7 +27,8 @@ the leftover hold from another client's hold.
 2. **What a drop is.** The session's collector sees a drop while it owns the channel in one of
    two ways: a read raises `asyncssh.Error` or `OSError`, or a read returns `b""` while the
    session's connection reports `is_closed()`. `b""` on an open connection is a remote close,
-   and it is latched: later reads return `b""` and never reconnect. A lost hold (another
+   and it is latched for that stream: later reads return `b""` and never reconnect, until
+   `resume()` acquires a new stream. A lost hold (another
    client's `rmvterm`, #1004) ends `mkvterm` but not the connection, as far as anyone knows, so
    it is a remote close. #879's live evidence is what can confirm that. No drop counts once
    `close()` has begun: the read then behaves as it does without reconnect.

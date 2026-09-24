@@ -1827,3 +1827,54 @@ async def test_drop_as_suspend_starts_reconnects_nothing():
         assert opener.await_count == 2  # the stream and the release probe, no reconnect
         assert await session.close() is True
         assert await asyncio.wait_for(reading, timeout=5) == b""
+
+
+@pytest.mark.asyncio
+async def test_reconnect_pipe_failure_leaves_session_dropped():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    connect, run_command, probe_seconds = _session_patches(first)
+    pipes = [_SealedStdin, OSError(24, "Too many open files")]
+
+    def next_pipe():
+        made = pipes.pop(0)
+        if isinstance(made, OSError):
+            raise made
+        return made()
+
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        patch("hmcpctl.ssh.console._SealedStdin", side_effect=next_pipe),
+    ):
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(OSError, match="Too many open files"):
+            await session.read()
+        with pytest.raises(RuntimeError):
+            await asyncio.wait_for(session.read(), timeout=5)
+        assert await session.close() is False
+
+    assert release.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_remote_close_latch_ends_with_its_stream():
+    stream = FakeConnection([FakeProcess(BANNER)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    resumed = FakeConnection([FakeProcess(BANNER, DROP)])
+    after = FakeConnection([FakeProcess(BANNER, None)])
+    probe2 = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(
+        stream, probe, resumed, after, probe2
+    )
+    with connect, run_command, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            assert await session.read() == b""  # latched remote close
+            assert await session.suspend() is True
+            await session.resume()
+            assert await session.read() == BANNER
+            assert await session.read() == KEEPALIVE_GAP
+            assert await session.read() == BANNER
