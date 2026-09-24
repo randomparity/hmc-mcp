@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from ..._app import (
@@ -15,6 +16,7 @@ from ...jobs import (
     DeviceType,
     LuType,
 )
+from ...operations.lpar.profile_sync import resource_with_change_location
 from ...operations.lpar.provision import (
     AttachDiskResult,
     ProvisionStorage,
@@ -258,7 +260,9 @@ def hmc_map_storage_to_lpar(
 
     The HMC creates the vSCSI client/server adapter pair for the mapping, so
     do not add one first with hmc_add_vscsi_adapter; that adapter stays
-    unpaired. The VIOS's existing mappings are preserved.
+    unpaired. The VIOS's existing mappings are preserved. The result's
+    ``change_location`` says whether that adapter pair lives only in the
+    partition's current configuration (a profile activation then drops it).
     ``storage_kind`` is 'VirtualDisk' (a logical volume created with
     hmc_create_virtual_disk) or 'PhysicalVolume' (a whole hdisk). storage_name
     is the DiskName / device name. target_device optionally pins the vtscsi
@@ -523,11 +527,12 @@ def hmc_detach_storage_mapping(
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
     profile: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Detach a VirtualSCSIMapping by its inventory ID.
 
     Removes the mapping only; the backing storage (PhysicalVolume or
-    VirtualDisk) is preserved.
+    VirtualDisk) is preserved. Returns ``mapping_id`` and ``change_location``:
+    the client partition's CurrentProfileSync and where the removal lives.
 
     Args:
         system_name_or_uuid: Optional managed-system selector used to authorize the
@@ -539,15 +544,15 @@ def hmc_detach_storage_mapping(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    async def detach_mapping(hmc) -> str:
-        await detach_storage_mapping(
+    async def detach_mapping(hmc) -> dict[str, Any]:
+        location = await detach_storage_mapping(
             hmc,
             vios_name_or_uuid,
             mapping_id,
             system_name_or_uuid=system_name_or_uuid,
             ownership_override=ownership_override,
         )
-        return mapping_id
+        return {"mapping_id": mapping_id, "change_location": asdict(location)}
 
     return with_client(detach_mapping, profile=profile)
 
@@ -794,11 +799,14 @@ def hmc_mount_optical_media(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
     Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
     to a client LPAR. The media_name must exist in the VIOS media repository.
+    Returns the mapping plus ``change_location``: the partition's
+    CurrentProfileSync and whether the HMC-created client adapter lives only in
+    the current configuration (a profile activation then drops it).
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
@@ -811,8 +819,8 @@ def hmc_mount_optical_media(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    return with_client(
-        lambda hmc: mount_optical_media(
+    async def mount(hmc: HMCClient) -> dict[str, Any]:
+        result = await mount_optical_media(
             hmc,
             vios_name_or_uuid,
             lpar_name_or_uuid,
@@ -820,9 +828,10 @@ def hmc_mount_optical_media(
             target_device=target_device,
             ownership_override=ownership_override,
             system_name_or_uuid=system_name_or_uuid,
-        ),
-        profile=profile,
-    )
+        )
+        return resource_with_change_location(result.resource, result.change_location)
+
+    return with_client(mount, profile=profile)
 
 
 @tool(effect="destructive", operation="media.unmount", target_kind="vios")
@@ -842,6 +851,7 @@ def hmc_unmount_optical_media(
     VIOS. The backing VirtualOpticalMedia (ISO container) is preserved and can
     be remounted later. No unload-without-detach path has been identified on
     the surveyed firmware, so this is also how you detach an optical mapping.
+    The message ends with where the removal lives (CurrentProfileSync).
 
     The read-modify-write also rewrites the whole VirtualIOServer document from
     a GET snapshot, so another writer's change in that window is lost; ADR 0079
@@ -860,7 +870,7 @@ def hmc_unmount_optical_media(
     """
 
     async def unmount_media_and_confirm(hmc: HMCClient):
-        await unmount_optical_media(
+        location = await unmount_optical_media(
             hmc,
             vios_name_or_uuid,
             lpar_name_or_uuid,
@@ -868,6 +878,9 @@ def hmc_unmount_optical_media(
             ownership_override=ownership_override,
             system_name_or_uuid=system_name_or_uuid,
         )
-        return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
+        return (
+            f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS "
+            f"{vios_name_or_uuid}. {location.summary()}"
+        )
 
     return with_client(unmount_media_and_confirm, profile=profile)

@@ -51,11 +51,13 @@ from hmcpctl.operations.inventory.composite import _lpar_summary
 from hmcpctl.operations.lpar import ownership as lpar_ownership
 from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
 from hmcpctl.operations.lpar.migration import LpmResult
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation
 from hmcpctl.operations.lpar.provision import ProvisionResult
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.storage.resources import (
     OpticalMedia,
     StorageMapping,
+    StorageMapResult,
     VolumeGroup,
 )
 from hmcpctl.operations.virtualization.adapters import AdapterResult
@@ -149,6 +151,9 @@ def _configured_ssh_config(monkeypatch) -> None:
     )
     for module in (cli_lpars, cli_lpar_inventory, cli_pcie, cli_vnic):
         monkeypatch.setattr(module, "ssh_config", lambda: config, raising=False)
+
+
+UNSYNCED = ChangeLocation("Disabled", "current-configuration")
 
 
 class FakeHMC:
@@ -969,6 +974,27 @@ def test_lpars_power_on_submits_power_on_job(fake_hmc):
     assert "PowerOn</OperationName>" in job_xml
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["adapters", "add-network", LPAR_UUID, "--vlan", "100", "--yes"],
+        [
+            "adapters", "delete", LPAR_UUID, "--type", "ClientNetworkAdapter",
+            "--uuid", "adapter-1", "--yes",
+        ],
+    ],
+    ids=["add", "delete"],
+)
+def test_adapter_commands_print_where_the_change_lives(fake_hmc, command):
+    """#981: the fake partition reports no CurrentProfileSync."""
+    result = RUNNER.invoke(cli.app, command)
+
+    assert result.exit_code == 0
+    assert "CurrentProfileSync is not reported" in result.stdout
+    names = [name for name, _args, _kwargs in fake_hmc.calls]
+    assert "get_logical_partition" in names
+
+
 def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     """--boot-mode, --partition-profile and --operation-type reach the document."""
     result = RUNNER.invoke(
@@ -993,6 +1019,9 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     assert ">LogicalPartitionProfile</ParameterName>" in job_xml
     assert PARTITION_PROFILE_UUID in job_xml
     assert ">OperationType</ParameterName>" in job_xml
+    # #981: the fake's adapters carry no slot, so the profile check warns about each.
+    assert "Warning: The partition profile lacks" in result.stdout
+    assert "ClientNetworkAdapter in virtual slot not reported" in result.stdout
 
 
 def test_lpars_power_on_rejects_an_unknown_boot_mode(fake_hmc):
@@ -1740,19 +1769,19 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
             "virtualization.adapters",
             "add_network_adapter",
             ["adapters", "add-network", "--vlan", "100", "--yes"],
-            AdapterResult(LPAR_UUID, None),
+            AdapterResult(LPAR_UUID, None, UNSYNCED),
         ),
         (
             "virtualization.adapters",
             "add_vscsi_adapter",
             ["adapters", "add-vscsi", "--vios-id", "1", "--vios-slot", "5", "--yes"],
-            AdapterResult(LPAR_UUID, None),
+            AdapterResult(LPAR_UUID, None, UNSYNCED),
         ),
         (
             "virtualization.adapters",
             "add_vfc_adapter",
             ["adapters", "add-vfc", "--vios-id", "1", "--vios-slot", "6", "--yes"],
-            AdapterResult(LPAR_UUID, None),
+            AdapterResult(LPAR_UUID, None, UNSYNCED),
         ),
         (
             "virtualization.adapters",
@@ -1761,7 +1790,7 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
                 "adapters", "delete", "--type", "ClientNetworkAdapter",
                 "--uuid", "adapter-1", "--yes",
             ],
-            "adapter-1",
+            UNSYNCED,
         ),
         (
             "storage.resources",
@@ -2095,7 +2124,7 @@ def _storage_app() -> typer.Typer:
         (
             ["detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"],
             "detach_storage_mapping",
-            None,
+            UNSYNCED,
         ),
         (
             [
@@ -2355,7 +2384,11 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 
 
 def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
-    mount = AsyncMock(return_value={"UUID": "mapping-1", "MediaName": "install.iso"})
+    mount = AsyncMock(
+        return_value=StorageMapResult(
+            LPAR_UUID, {"UUID": "mapping-1", "MediaName": "install.iso"}, UNSYNCED
+        )
+    )
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.mount_optical_media", mount
     )
@@ -2391,10 +2424,11 @@ def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
     assert SYSTEM_UUID in result.stdout
     assert "vtopt0" in result.stdout
     assert '"mapping-1"' in result.stdout
+    assert "CurrentProfileSync is Disabled" in result.stdout
 
 
 def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
-    unmount = AsyncMock()
+    unmount = AsyncMock(return_value=UNSYNCED)
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.unmount_optical_media", unmount
     )
@@ -2425,6 +2459,7 @@ def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch)
     )
     assert "Unmounted optical media 'install.iso'" in result.stdout
     assert "backing ISO remains" in result.stdout
+    assert "CurrentProfileSync is Disabled" in result.stdout
 
 
 def test_storage_mount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
@@ -2662,6 +2697,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
             mapping_id=mapping_id,
             ownership_override=ownership_override,
         )
+        return UNSYNCED
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.detach_storage_mapping", fake_detach
@@ -2673,6 +2709,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
 
     assert result.exit_code == 0
     assert "Deleted storage mapping vhost0/vtscsi0" in result.stdout
+    assert "CurrentProfileSync is Disabled" in result.stdout
     assert seen == {
         "system": None,
         "vios": VIOS_UUID,

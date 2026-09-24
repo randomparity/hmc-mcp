@@ -415,6 +415,22 @@ def mock_hmc():
         yield router
 
 
+def mock_change_location(router, lpar_uuid: str, sync: str = "Disabled"):
+    """Register the partition GET adapter and mapping commands read first (#981)."""
+    entry = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<entry xmlns="http://www.w3.org/2005/Atom">'
+        f"<id>urn:uuid:{lpar_uuid}</id>"
+        '<content type="application/vnd.ibm.powervm.uom+xml">'
+        '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
+        f'<CurrentProfileSync kb="CUD" kxe="false">{sync}</CurrentProfileSync>'
+        "</LogicalPartition></content></entry>"
+    )
+    return router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(
+        return_value=httpx.Response(200, text=entry)
+    )
+
+
 # The session lifecycle is the only non-GET traffic a read-only call may produce.
 _SESSION_PATHS = frozenset({"/rest/api/web/Logon"})
 

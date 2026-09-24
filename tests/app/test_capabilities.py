@@ -817,6 +817,7 @@ def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
         "job",
         "message",
         "affinity_assessment",
+        "warnings",
     }
     assert result.already_running is True
     assert result.job is None
@@ -843,6 +844,7 @@ def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
         "job",
         "message",
         "affinity_assessment",
+        "warnings",
     }
     assert result.already_running is False
     assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
@@ -859,6 +861,7 @@ def test_power_on_lpar_has_one_stable_output_schema():
         "job",
         "message",
         "affinity_assessment",
+        "warnings",
     }
     assert set(schema["required"]) == set(schema["properties"])
     assert schema["properties"]["already_running"] == {"type": "boolean"}
@@ -869,6 +872,7 @@ def test_power_on_lpar_has_one_stable_output_schema():
     assert {
         variant["type"] for variant in schema["properties"]["message"]["anyOf"]
     } == {"string", "null"}
+    assert schema["properties"]["warnings"]["type"] == "array"
 
 
 def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
