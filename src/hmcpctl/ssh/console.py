@@ -26,7 +26,8 @@ records the design decision per prototype fact.
   only this session's own ``mkvterm`` about 10 s later (#1058), and issues
   ``rmvterm`` only when the stream had already ended or did not end in time.
   ``released`` is ``True`` only after an independent-session ``mkvterm`` probe
-  proves the slot is free; ``rmvterm``'s own exit code is not proof (P2). A
+  proves the slot is free; ``rmvterm``'s own exit code is not proof (P2). The
+  probe releases its own hold the same way, through stdin EOF (#1072). A
   hold another client's ``rmvterm`` already ended gets no release (#1004): the
   HMC reports it in band, and ``rmvterm`` would end the new holder's session.
 - **Sealed stdin** (P5/P7): mkvterm's stdin is the write socket to the
@@ -1191,7 +1192,9 @@ class ConsoleSession:
         caller never interrupts the release; the cancellation is re-raised
         after it completes. The release sends stdin EOF and waits, about 10 s on
         the recorded HMC, for ``mkvterm`` to exit; ``rmvterm`` runs instead when
-        the stream had ended or does not end in time (#1058). During
+        the stream had ended or does not end in time (#1058). The probe that
+        proves the release waits the same way for its own ``mkvterm`` (#1072),
+        so a release takes about 22 s there. During
         :meth:`suspend` or :meth:`resume` it waits
         for that call, then releases whatever it left held. A suspended
         session issues no ``rmvterm``, since the slot may now be the external

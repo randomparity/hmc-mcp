@@ -43,7 +43,7 @@ covers a remote close seen by a read or by the unread scan. The flag `_stream_en
 end and resets on each acquisition. It is separate from `_remote_closed`, which gates
 `_may_reconnect()` and is set only on the reconnect path.
 
-The probe's own teardown keeps `rmvterm`.
+The probe's own teardown releases the same way (amended by #1072, below).
 
 Documentation that the change falsifies moves with it. ADR 0072 gets an "Amended by #1058" Status
 block covering P5, P7 (the write end now closes at release, to end the stream), P8, and
@@ -59,10 +59,12 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
    hold the session still owns.
 3. **Accepted failure classes:**
    - `close()` and `suspend()` take about 10 s longer on the EOF path, and a cancelled caller
-     waits for that time (bounded by `_EOF_RELEASE_SECONDS`).
+     waits for that time (bounded by `_EOF_RELEASE_SECONDS`). The probe's own EOF wait adds about
+     8.5 s more to every proven release (#1072), bounded by the same constant.
    - Fallback `rmvterm` (step 5, or a stream that had already ended) keeps the #1004 in-transit
      window on those paths only.
-   - The probe's teardown `rmvterm` keeps its own window after it acquires.
+   - The probe's fallback `rmvterm` (its EOF wait timing out, an error sending EOF or reading, or
+     a closed connection) keeps its own window after it acquires (#1072).
    - A firmware whose EOF does not end `mkvterm` within 20 s gets today's behaviour.
    - A stream that ends during the drain without releasing the hold gets no `rmvterm`, and
      `close()` returns the probe's `False`: in every captured run the exit after EOF meant release
@@ -72,13 +74,45 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
 ## Success
 
 1. On a held session whose stream is open, `close()` sends EOF and waits for the stream to end.
-   It then issues only the probe's own `rmvterm`, and it returns the probe's answer. The same holds
-   for sealed and writable sessions, and for `suspend()`.
+   It then issues no `rmvterm` once the probe's own stream ends too (#1072), and it returns the
+   probe's answer. The same holds for sealed and writable sessions, and for `suspend()`.
 2. A lost-hold report that arrives while draining makes `close()` return `False` with no `rmvterm`.
 3. The EOF wait timing out, an error sending EOF or reading, or a stream that ended before release
    each lead to `rmvterm`, then the probe.
 4. The redacted fixture records the six runs, and a test pins its EOF exit message.
 5. ADR 0072 carries the `#1058` amendment, and ADRs 0170, 0172, and 0176 carry pointers to it.
+6. The probe answers `True` with no `rmvterm` when its stream ends after EOF on an open
+   connection or the lost-hold report arrives; its EOF wait timing out, an error sending EOF or
+   reading, or a closed connection lead to its `rmvterm` (#1072).
+7. A second redacted fixture records the probe's cost and second-client runs, and a test pins
+   them (#1072).
+
+## Amendment: the probe's teardown (#1072)
+
+`_probe_released` used to tear its own hold down by closing its connection, then issuing
+`rmvterm`. A client whose `mkvterm` landed in that gap lost its session to the probe's
+`rmvterm`. The probe now releases the way the session does:
+
+1. After the probe's `mkvterm` proves acquisition, send EOF on its `_SealedStdin` (`release()`).
+2. Read its stream to the end, bounded by `_EOF_RELEASE_SECONDS`, keeping the connection open.
+3. The stream ended on an open connection, or `LOST_HOLD_SENTINEL` arrived (another client's
+   `rmvterm` already ended the probe's hold, #1004): no `rmvterm`, and the probe answers `True`.
+4. Timeout, an error sending EOF or reading, or a closed connection: `rmvterm`, as before, and a
+   failed `rmvterm` still answers `False`.
+
+Live capture (V10R3 M1060, 2026-09-24, `tests/fixtures/console/probe-eof-release-transcript.json`):
+
+- Cost: six EOF teardowns took 11.56-12.22 s per probe, against 3.13-3.16 s for five `rmvterm`
+  teardowns, so each release proof takes about 8.5 s longer. The probe's `mkvterm` exited
+  10.1 s after EOF in every run. A session `close()` whose stream is open now takes about 22 s
+  (21.89 s recorded).
+- Second client: while the probe held, each of B's `mkvterm` attempts found the vterm held. B
+  acquired 2.9 s after the probe's `mkvterm` exited, the probe issued no `rmvterm`, B's stream
+  stayed open and silent, an independent probe found the vterm held, and B's own close released
+  it with no `rmvterm`.
+
+Decision: adopt. The 8.5 s is the same kind of cost #1058 accepted to close the same kind of
+window, and a release whose EOF waits both end now issues no `rmvterm` at all.
 
 ## Considered & rejected
 
@@ -92,3 +126,6 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
   captured.
 - **Wait for the `The write socket has closed` text.** judgment: fit. It ties release to firmware
   wording, and the stream end plus the probe already decide the outcome.
+- **Keep the probe's `rmvterm` teardown (#1072).** measured: it saves about 8.5 s per release
+  proof, and keeps a window in which the probe's `rmvterm` ends a client that acquired after the
+  probe closed its connection.

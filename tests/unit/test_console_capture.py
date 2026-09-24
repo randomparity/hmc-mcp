@@ -2567,6 +2567,28 @@ async def test_resume_after_an_ended_stream_releases_through_eof_again():
 # ---------------------------------------------------------------------------
 
 
+_PROBE_EOF_TRANSCRIPT = json.loads(
+    (
+        Path(__file__).parents[1] / "fixtures" / "console" / "probe-eof-release-transcript.json"
+    ).read_text()
+)
+
+
+def test_probe_eof_transcript_records_teardown_without_rmvterm():
+    runs = {run["arm"]: run["events"] for run in _PROBE_EOF_TRANSCRIPT["runs"]}
+    assert set(runs) == {"cost", "race"}
+    for events in runs.values():
+        probes = [event for event in events if event["event"] == "probe"]
+        assert all(p["commands"] == ([] if p["mode"] == "eof" else ["rmvterm"]) for p in probes)
+        exits = [e["data"] for e in events if e["event"] == "P-stdout-chunk"]
+        assert exits.count(EXITED.decode()) == sum(p["mode"] == "eof" for p in probes)
+    race = {event["event"]: event for event in reversed(runs["race"])}  # first of each
+    assert race["B-acquired"]["t"] > race["P-stdout-eof"]["t"]
+    assert race["B-reads-after-probe"]["chunks"][-1] == "<timeout: B stream open and silent>"
+    assert race["C-probe"] == {**race["C-probe"], "released": False, "commands": []}
+    assert race["B-closed"] == {**race["B-closed"], "released": True, "commands": []}
+
+
 async def _probe(
     *processes: FakeProcess, closed: bool = False
 ) -> tuple[bool, AsyncMock, FakeConnection]:
