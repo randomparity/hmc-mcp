@@ -30,6 +30,16 @@ processing units, `LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS` and
 the create sends them explicitly, and the HMC refuses too few units per
 virtual processor.
 
+round2's provisioning subtasks (13 and 14) need two settings a fresh lab cannot
+supply from its own partitions:
+
+- `LIVE_TEST_PROVISION_VLAN_ID` — the VLAN for the provisioned partition's client
+  adapter. It must already have a virtual network on `LIVE_TEST_SYSTEM_NAME`; the
+  runner never creates one. Subtask 14 lists the virtual networks and stops before
+  deleting anything when the VLAN is not there.
+- `LIVE_TEST_PROVISION_DISK_MIB` — the size of the test disk subtask 14 recreates,
+  in MiB and a multiple of 1024.
+
 ## 1. Ask whether the run would start
 
 ```sh
@@ -61,6 +71,11 @@ Two things preflight reports but does not block on: an unreachable HMC, and a
 managed system outside the ADR 0053 envelope. Both make the arm SKIP, which is
 correct behaviour, not a failure. Add `--skip-hardware` to predict from
 configuration alone and contact no HMC.
+
+For round2 it also prints a `provision VLAN:` line. `no virtual network on VLAN
+<id>` means subtasks 13 and 14 will fail: set `LIVE_TEST_PROVISION_VLAN_ID` to a
+VLAN that has one before running. This line does not change the exit status
+either.
 
 Preflight predicts. Only the run decides — an arm can SKIP where preflight said
 RUNNABLE, because it checks preconditions against hardware at dispatch.

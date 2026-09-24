@@ -418,6 +418,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   when one is. Previously preflight showed one mutated slot while an unpinned run touched three
   (#1000).
 
+- The live-test runner's round2 provisioning subtasks (13 and 14) no longer depend on lab
+  fixtures a fresh lab lacks. Two new required `.env` keys set the provisioned partition's VLAN
+  (`LIVE_TEST_PROVISION_VLAN_ID`, which must already have a virtual network) and the test-disk
+  size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
+  networks and stops before deleting the test partition when the VLAN is not there, and
+  `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+
 ### Changed
 
 - Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error

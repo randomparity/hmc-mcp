@@ -44,9 +44,10 @@ from `storage.configured_vg_uuid`, #967's resolver. No second volume-group looku
 ST14's VLAN used to be the test partition's own, so it always had a virtual network. A
 configured one may not, and `hmc_provision_lpar` checks it only after ST14 has deleted the
 test partition and disk. So ST14's pre-flight now calls `hmc_list_virtual_networks` and
-FAILs before any delete unless the configured VLAN is listed. A failed listing or an
-unparsable VLAN identifier FAILs it too. The parsing is `network.listed_vlans(data)`,
-extracted from ST2's `_unused_vlan` so both read VLANs one way.
+FAILs before any delete unless the configured VLAN is listed. A failed listing FAILs it
+too; unparsable VLAN identifiers are named in the refusal but do not refuse a listed VLAN,
+as in `_check_vlan_exists`. The parsing is `network.listed_vlans(data)`, extracted from
+ST2's `_unused_vlan` so both read VLANs one way.
 
 **Dead path removed.** Nothing reads `artifacts.vdisk_size_mib` after this, so the field,
 its entry in `_ARTIFACT_NULLABLE_INTS`, ST3's disk-capacity capture (`_virtual_disks`,
@@ -96,7 +97,7 @@ configuration is blocking and hardware is advisory; this is a hardware fact.
 | `from_env_file` loads both keys; rejects a missing key, VLAN 0 or 4095, disk size 0 or not a multiple of 1024 | focused-test | `tests/test_live_runner.py` |
 | ST13 sends the configured VLAN with no baseline PVID and no `test_vlan_id` | focused-test | `tests/test_live_runner.py` |
 | ST14 runs its full sequence with no `pvid` baseline and no `vdisk_size_mib`, sending the configured VLAN and size | focused-test | `tests/test_live_runner.py` |
-| ST14 pre-flight FAILs with no power-off or delete when the VLAN is not listed, the listing fails, or a VLAN is unparsable | focused-test | `tests/test_live_runner.py` |
+| ST14 pre-flight FAILs with no power-off or delete when the VLAN is not listed (naming any unparsable VLAN) or the listing fails | focused-test | `tests/test_live_runner.py` |
 | `listed_vlans` returns the parsed set and malformed values; ST2 still picks the first unused VLAN | focused-test | `tests/scripts/test_inventory.py` |
 | ST3 no longer records disk capacity | focused-test | `tests/scripts/test_inventory.py` |
 | Preflight reports present, missing and unknown VLAN, keeps exit 0, and makes no HMC call under `--skip-hardware` or for a non-round2 group | focused-test | `tests/scripts/test_live_test_preflight.py` |
