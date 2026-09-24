@@ -10,6 +10,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- Adapter and mapping commands say where their change lives. `adapters add-network`,
+  `add-vscsi`, `add-vfc` and `delete`, and `storage map`, `mount-optical-media`, `detach-mapping`
+  and `unmount-optical-media`, read the partition's `CurrentProfileSync` before the write and
+  report it: `On` means the HMC also writes the change to the partition's current profile;
+  `Disabled` or `Suspended` means it lives only in the current configuration. The MCP tools
+  carry it as a `change_location` object or a closing sentence. `lpars power-on
+  --partition-profile` and `hmc_power_on_lpar` now return `warnings` naming each current virtual
+  SCSI, Fibre Channel or Ethernet client adapter whose slot that profile lacks, and still
+  activate (#981).
 - `WritableConsoleSession`, a `ConsoleSession` subclass, writes to a partition console
   (ADR 0176). `write(data)` sends raw bytes while collection keeps running. `send_sysrq(key,
   prefix=...)` sends a caller-supplied prefix plus the key as one write; hmcpctl ships no SysRq
@@ -165,6 +174,45 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   observed HMC response carries; it now reads `Metadata/Atom/AtomID`, cross-checking
   `PartitionUUID` when present, and still refuses a document naming a different VIOS or more
   than one (#979).
+
+- A `ConsoleSession` whose hold another client ended, with a manual `rmvterm` or a
+  `take_over=True` session, no longer ends that client's session when it closes. The session
+  recognizes the HMC's report of the loss, raises the new `ConsoleHoldLostError` on the next
+  read, and `close()` returns `False` without issuing `rmvterm`, including when the report
+  arrived but was never read; a report still in transit when the session closes (about 1.5 s
+  on V10R3) is not seen. A bounded capture reports the loss as `stop_reason="error"`
+  with a `ConsoleHoldLostError` error, and `lpars capture-console` and `hmc_capture_lpar_console`
+  no longer advise running `rmvterm` then; exit code 3 is unchanged (#1004).
+
+- LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
+  `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/
+  `SystemName` the same way `resource_identity`'s validated readers do, instead of coercing or
+  passing it through by hand (#1026).
+
+- `lpars read-boot-order` and `hmc_read_lpar_boot_order` request the `Advanced` group and
+  return each boot field as a string, or `null` when empty, instead of the element's attribute
+  dict. `set-boot-order` and `clear-boot-order` (and their MCP tools) no longer POST a sparse
+  `LogicalPartition` with a misplaced `PendingBootString`, which V10R3 rejects: they read the
+  whole partition, set `BootListInformation/PendingBootString`, and POST it back with
+  `If-Match`, refusing when the read carries no ETag. The boot order is now Open Firmware
+  device paths, the form `read-boot-order` reports in `boot_device_list`, not the `cd`,
+  `disk` and `network` selectors; the CLI takes them as positional arguments. A V10R3 HMC
+  rejects the empty value `clear-boot-order` writes with HTTP 500 `REST0126`; #1048 tracks
+  it (#980).
+
+- `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
+  partition body — including when the post-create read-back raises (#1014) — instead of omitting
+  the requested assignment steps entirely (#1019).
+
+- `storage upload-iso` and `hmc_upload_iso` upload through the HMC web File API, which V10R3
+  accepts, instead of a `BrokeredFile` document it rejects. They report `uploaded` only once
+  the repository lists the media, and refuse a volume group without a media repository before
+  downloading (ADR 0177, #978).
+
+- `HMCError` extracts `<Message>` from the untruncated HMC error body before truncating the
+  stored body to `MAX_ERROR_BODY_BYTES` (4096). Before, a body over 4096 bytes was cut first,
+  which could leave malformed XML with the `<Message>` element past the cut, so the message was
+  lost and the fallback printed an unhelpful body prefix instead (#982).
 
 - When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
   `provision` report the partition as created, with its profile-apply step and a warning naming
@@ -433,6 +481,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_detach_storage_mapping` returns `{"mapping_id", "change_location"}` instead of the bare
+  mapping ID. `hmc_add_network_adapter`, `hmc_add_vscsi_adapter`, `hmc_add_vfc_adapter` and
+  `hmc_mount_optical_media` add a `change_location` key beside the resource's own keys (#981).
 - Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
   type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
   and then acquires with proven acquisition. The default is `False`, and neither the capture nor

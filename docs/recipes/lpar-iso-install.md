@@ -4,8 +4,8 @@
 > creation through cleanup, on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into its
 > installer. The run used a build patched for #935 and #979, and imported the ISO outside
 > `hmcpctl` (#978). Unpatched, the recipe stops at `adapters add-network` with HTTP 406 (#935).
-> These issues must land before the recipe runs on `main`: #935, #978 and #979; #981 needs the
-> HMC CLI step in section 5 until it lands. Each step that depends on an open issue names it.
+> These issues must land before the recipe runs on `main`: #935 and #979. Each step that
+> depends on an open issue names it.
 
 This recipe creates one powered-off LPAR, gives it a virtual network adapter and a VIOS-backed
 virtual disk, puts an installation ISO in the VIOS media repository, mounts it, and boots the
@@ -24,9 +24,9 @@ Run it only against an HMC, managed system, and VIOS you own.
   start again from the top.
 - **VolumeGroup and VIOS writes can fail after they take effect.** HMC V10R3 has returned
   HTTP 500 after a VolumeGroup write had already changed storage (#779). On a 5xx from a
-  volume-group, virtual-disk, media-repository, ISO-import, or mapping write, the error says
-  the write may have changed state and whether a read-back succeeded (ADR 0136). It does not
-  print that state. **Do not retry.** Run `storage list-vgs`, `storage list-mappings`, and
+  volume-group, virtual-disk, media-repository, or mapping write, the error says the write may
+  have changed state and whether a read-back succeeded (ADR 0136). A 5xx on the `upload-iso`
+  transfer says the HMC may already hold the ISO (ADR 0177). Neither prints that state. **Do not retry.** Run `storage list-vgs`, `storage list-mappings`, and
   `storage list-optical-media` to see what changed, and reconcile by hand first.
 - **Mapping removals rewrite the whole VIOS document.** `unmount-optical-media` and
   `detach-mapping` read the VIOS, remove one mapping, and write the whole document back. A
@@ -195,7 +195,9 @@ hmcpctl storage map "$VIOS" --lpar "$LPAR" --disk "$DISK_NAME" --system "$SYSTEM
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
-Expected: `adapters list` shows the new network adapter on `VLAN_ID`. `--capacity-mib` must be
+Expected: `add-network` and `storage map` each end with a `CurrentProfileSync is ...` line that
+says whether the new adapter lives only in the current configuration; step 5 depends on it.
+`adapters list` shows the new network adapter on `VLAN_ID`. `--capacity-mib` must be
 a positive multiple of 1024; the CLI converts it to the whole GiB the HMC takes. The second
 `list-vgs` shows the new disk in `VG`. `storage map` creates its own vSCSI client and server
 adapter pair, so do not add a vSCSI adapter first: `adapters add-vscsi` would leave an unused
@@ -221,10 +223,9 @@ and reaches the HMC as whole GiB, so the command below creates a 20 GiB reposito
 hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
 ```
 
-Put the ISO in the repository and mount it on the partition. **`upload-iso` is blocked by
-#978:** it sends a `BrokeredFile` element HMC V10R3 does not recognise. The 2026-09-23 run
-imported the ISO through the HMC REST web File API outside `hmcpctl`; this recipe does not
-document that path. `mount-optical-media` needs #935.
+Put the ISO in the repository and mount it on the partition. `upload-iso` sends the ISO
+through the HMC web File API and reports `uploaded` once the repository lists it.
+`mount-optical-media` needs #935.
 
 ```bash
 hmcpctl storage upload-iso "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
@@ -242,10 +243,13 @@ and the new optical mapping, and nothing else changed.
 
 ## 5. Boot from the ISO and observe
 
-The adapters from steps 3 and 4 exist only in the partition's current configuration. A power-on
-with `--partition-profile` activates the profile and drops them, and the firmware stops at SMS
-with no boot devices (#981). Until #981 lands, write them into the profile on the HMC CLI first.
-List the partition's virtual SCSI and Ethernet adapters:
+When steps 3 and 4 printed `CurrentProfileSync is Disabled` (or `Suspended`), their adapters
+exist only in the partition's current configuration. A power-on with `--partition-profile`
+activates the profile and drops them, and the firmware stops at SMS with no boot devices.
+`power-on` prints one `Warning:` line for each current adapter the profile lacks, but still
+activates. When sync is `On` the HMC already wrote them to the profile; skip to the power-on.
+Otherwise write them into the profile on the HMC CLI first. List the partition's virtual SCSI
+and Ethernet adapters:
 
 ```text
 lshwres -r virtualio --rsubtype scsi -m <managed-system-name> --level lpar --filter lpar_names=<lpar-name>
@@ -277,10 +281,13 @@ hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30
 ```
 
 Expected: `power-on` prints `Job submitted for <lpar-uuid>` and the finished job, whose status
-is `COMPLETED_OK`. `jobs show` prints the same job. `lpars state` prints `running` or
+is `COMPLETED_OK`, and no `Warning:` line. A warning names an adapter the profile lacked, which
+the activation removed: power the partition off, re-run the step 3 or 4 command that created
+it, write it into the profile as above from the new listing, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
-is blank. The boot-order commands (`lpars read-boot-order`, `set-boot-order`,
-`clear-boot-order`) are blocked by #980 and this path does not need them.
+is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
+Firmware device paths, and a never-booted partition reports none. On V10R3, `clear-boot-order` fails
+with HTTP 500 `REST0126`, so a pending boot order, once set, cannot be cleared with it (#1048).
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes
@@ -290,7 +297,8 @@ sequences: read them with `less -R` or a log viewer. The capture holds the parti
 console session while it runs. Exit status 1 with a message that the console is held means
 another session has it open; the command leaves that session alone. Exit status 3 means
 `released: false`: the console may still be held, so run the `rmvterm` command the line names
-on the HMC before another capture. Repeat the capture, each time to a new file, to follow the
+on the HMC before another capture. If the line instead says another client ended the hold
+(`ConsoleHoldLostError`), leave that client's session alone. Repeat the capture, each time to a new file, to follow the
 installer's progress. UUID selectors resolve the partition name through the HMC CLI
 `uuid,name` lookup; the 2026-09-23 run captured the console both by UUID and by name.
 

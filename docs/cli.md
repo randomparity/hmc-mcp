@@ -83,7 +83,10 @@ When the HMC creates the partition through `mksyscfg` (its REST create answered 
 the partition on, and reports an `apply_profile` step. Until a profile is applied or the partition
 is activated, it has no current configuration and REST adapter writes fail. `--no-apply` skips
 the apply. Adapter changes made through REST after the apply live only in the current
-configuration; a later power-on with the profile does not keep them (#981).
+configuration unless the partition's `CurrentProfileSync` is `On`. The adapter and mapping
+commands print which after their result. `lpars power-on --partition-profile` warns once for
+each current virtual SCSI, Fibre Channel or Ethernet client adapter the profile lacks, because
+activating that profile removes it; the job is still submitted (#981).
 
 A bounded console capture reads an LPAR's virtual console without sending it input:
 
@@ -97,7 +100,8 @@ and refuses an existing file or a terminal stdout. One stderr line reports the s
 count and `released`. Exit codes ([ADR 0175](adr/0175-capture-console-exit-codes.md)): `0` the
 capture finished and the console was released; `1` a lookup, SSH or HMC failure, a console held
 by another session, a capture stopped by an error, or bytes that could not be written; `2` a
-usage error; `3` the release was not proven, so run `rmvterm` on the HMC before another capture.
+usage error; `3` the release was not proven, so run `rmvterm` on the HMC before another capture,
+unless the line says another client ended the hold (`ConsoleHoldLostError`): leave that session.
 
 `hmcpctl lpars decommission` enforces the ADR 0011 ownership token even for
 `--dry-run`; use `--ownership-override` only after explicit operator approval.

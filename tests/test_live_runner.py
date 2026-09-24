@@ -75,6 +75,10 @@ sys.modules[_SPEC.name] = runner
 _SPEC.loader.exec_module(runner)
 
 
+_BOOT_DISK = "/vdevice/v-scsi@30000003/disk@8100000000000000"
+_BOOT_LAN = "/vdevice/l-lan@30000002:speed=auto,duplex=auto,192.0.2.10,,192.0.2.1"
+
+
 class _FakeClient:
     def __init__(self, _server):
         pass
@@ -877,7 +881,7 @@ async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() ->
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.lp3_uuid = "lp3-uuid"
-    state.artifacts.vmedia_orig_boot_order = ["disk", "network"]
+    state.artifacts.vmedia_orig_boot_order = [_BOOT_DISK, _BOOT_LAN]
     state.artifacts.vmedia_repo_created = True
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
 
@@ -895,7 +899,7 @@ async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() ->
         "hmc_get_media_repository",
         "hmc_list_volume_groups",
     ]
-    assert state.calls[0][1]["devices"] == ["disk", "network"]
+    assert state.calls[0][1]["devices"] == [_BOOT_DISK, _BOOT_LAN]
 
 
 @pytest.mark.asyncio
@@ -3351,7 +3355,7 @@ def _configure_vmedia_artifacts(state, values):
                 "vios_uuid": "vios",
                 "vg_uuid": "vg",
                 "lp3_uuid": "lp3",
-                "vmedia_orig_boot_order": ["disk"],
+                "vmedia_orig_boot_order": [_BOOT_DISK],
             },
             [
                 "hmc_set_lpar_boot_order",
@@ -3402,7 +3406,10 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         ):
             return "FAIL", "media is mapped"
         if tool == "hmc_read_lpar_boot_order":
-            return "PASS", {"pending_boot_string": "disk,network"}
+            return "PASS", {
+                "pending_boot_string": f"{_BOOT_DISK} {_BOOT_LAN}",
+                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
+            }
         if tool == "hmc_list_optical_mappings" and workflow is runner.vmedia_teardown:
             return "PASS", [_optical_mapping("test.iso")]
         return "PASS", {}
@@ -3537,6 +3544,74 @@ def test_vmedia_behavioral_inventory_covers_every_registered_stage():
     } == covered
 
 
+@pytest.mark.parametrize(
+    ("reported", "sets", "skip_reason"),
+    [
+        (
+            {"pending_boot_string": _BOOT_LAN, "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}"},
+            [[_BOOT_DISK, _BOOT_LAN], [_BOOT_LAN]],
+            None,
+        ),
+        (
+            {"pending_boot_string": None, "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}"},
+            [],
+            "REST0126",
+        ),
+        ({"pending_boot_string": None, "boot_device_list": None}, [], "REST0126"),
+        (
+            {"pending_boot_string": _BOOT_LAN, "boot_device_list": None},
+            [],
+            "no boot device list",
+        ),
+        (
+            {"pending_boot_string": "cd disk", "boot_device_list": _BOOT_DISK},
+            [],
+            "cannot be restored",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_vmedia_boot_order_writes_only_what_it_can_restore(
+    monkeypatch, reported, sets, skip_reason
+):
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_upload_iso":
+            return "PASS", {"media_name": "test.iso"}
+        if tool == "hmc_mount_optical_media":
+            return "PASS", {"mapping_uuid": "mapping"}
+        if tool == "hmc_read_lpar_boot_order":
+            return "PASS", reported
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
+    _configure_vmedia_artifacts(
+        state,
+        {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg", "lp3_uuid": "lp3"},
+    )
+
+    await runner.vmedia_boot_verification(None, state)
+
+    assert [
+        kwargs["devices"] for tool, kwargs in calls if tool == "hmc_set_lpar_boot_order"
+    ] == sets
+    assert "hmc_clear_lpar_boot_order" not in [tool for tool, _ in calls]
+    skipped = [
+        entry for entry in state.results
+        if entry["tool"] == "hmc_set_lpar_boot_order (boot device list)"
+        and entry["status"] == "SKIP"
+    ]
+    if skip_reason is None:
+        assert skipped == []
+        assert state.artifacts.vmedia_orig_boot_order == []
+    else:
+        assert len(skipped) == 1 and skip_reason in str(skipped[0])
+
+
 @pytest.mark.asyncio
 async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkeypatch):
     calls = []
@@ -3548,7 +3623,10 @@ async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkey
         if tool == "hmc_mount_optical_media":
             return "PASS", {"mapping_uuid": "mapping"}
         if tool == "hmc_read_lpar_boot_order":
-            return "PASS", {"pending_boot_string": "disk,network"}
+            return "PASS", {
+                "pending_boot_string": f"{_BOOT_DISK} {_BOOT_LAN}",
+                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
+            }
         if tool == "hmc_power_on_lpar":
             return "FAIL", "boot job failed"
         return "PASS", {}

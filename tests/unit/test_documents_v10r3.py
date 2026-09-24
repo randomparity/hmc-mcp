@@ -69,8 +69,6 @@ RECORDED = [
         {"NetworkVLANID": "COD", "VswitchID": "ROR", "TaggedNetwork": "COD"},
     ),
     (documents.build_lpar_document("p1", os_type="linux"), {"OperatingSystemType": "ROR"}),
-    (documents.build_boot_order_document(["cd"]), {"PendingBootString": "UOO"}),
-    (documents.build_clear_boot_order_document(), {"PendingBootString": "UOO"}),
     (
         documents.build_vfc_adapter_document(1, 2, 3),
         {"AdapterType": "ROR", "VirtualSlotNumber": "COD", "ConnectingPartitionID": "CUD",
@@ -191,15 +189,14 @@ BUILT = {
     "optical-media-delete": documents.build_virtual_optical_media_delete_document(
         "a.iso", "vg1"
     ),
-    "brokered-file": documents.build_brokered_file_document("a.iso"),
-    "linked-optical-media": documents.build_linked_optical_media_document("a.iso", LINK),
+    "web-file": documents.build_web_file_document(
+        "a.iso", 1, "00000000-0000-0000-0000-000000000001"
+    ),
     "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
     "dlpar-mem": documents.build_dlpar_mem_document(RESOURCES),
     "dlpar-proc": documents.build_dlpar_proc_document(RESOURCES),
-    "boot-order": documents.build_boot_order_document(["cd"]),
-    "clear-boot-order": documents.build_clear_boot_order_document(),
 }
 # No live evidence records whether V10R3 requires schemaVersion on these; left unchanged (#961).
 PROCESSOR_WRAPPERS_UNVERIFIED = frozenset(

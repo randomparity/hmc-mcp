@@ -325,8 +325,7 @@ _UUID_PATH_BUILDERS = {
         "list_child": ("parent_uuid",),
         "create_child": ("parent_uuid",),
         "delete_child": ("parent_uuid", "child_uuid"),
-        "_broker_file_create": ("vios_uuid", "vg_uuid"),
-        "_broker_iso_import": ("vios_uuid", "vg_uuid"),
+        "set_pending_boot_string": ("lpar_uuid",),
     },
     "StorageMixin": {
         "list_volume_groups": ("vios_uuid",),
@@ -341,6 +340,8 @@ _UUID_PATH_BUILDERS = {
         "list_optical_media": ("vios_uuid", "vg_uuid"),
         "list_optical_mappings": ("vios_uuid",),
         "create_optical_mapping": ("vios_uuid",),
+        "_web_file_upload": ("file_uuid",),
+        "_web_file_delete": ("file_uuid",),
     },
     "UpdatesMixin": {"submit_platform_update": ("system_uuid",)},
 }
@@ -442,6 +443,11 @@ def test_a_non_job_link_is_refused(path):
 # lines, and this list must outlive that. Four independent sweeps enumerated
 # these; two of them produced lists that were each missing sites the other had,
 # which is the argument for guarding the waist rather than the call sites.
+async def _empty_stream():
+    return
+    yield b""
+
+
 _SUB_RESOURCE_CALLS = (
     ("delete_child", ("LogicalPartition", "AUTH", "ClientNetworkAdapter", "{X}")),
     ("create_virtual_disk", ("AUTH", "{X}", "disk", 1)),
@@ -450,8 +456,8 @@ _SUB_RESOURCE_CALLS = (
     ("get_volume_group", ("AUTH", "{X}")),
     ("list_optical_media", ("AUTH", "{X}")),
     ("delete_optical_media", ("AUTH", "{X}", "media")),
-    ("_broker_file_create", ("AUTH", "{X}", "iso")),
-    ("_broker_iso_import", ("AUTH", "{X}", "media", "/broker/uri")),
+    ("_web_file_upload", ("{X}", _empty_stream(), 0)),
+    ("_web_file_delete", ("{X}",)),
     ("delete_virtual_network", ("AUTH", "{X}")),
 )
 
@@ -951,14 +957,13 @@ _UUID_UOM_REQUEST_SITES = {
     "client_lpars.LparsMixin.delete_logical_partition": "lpar_uuid",
     "client_lpars.LparsMixin.list_logical_partitions": "system_uuid",
     "client_lpars.LparsMixin.modify_logical_partition": "lpar_uuid",
+    "client_lpars.LparsMixin.set_pending_boot_string": "lpar_uuid",
     "client_lpm.LpmMixin._lpar_job": "lpar_uuid",
     "client_network.NetworkMixin.create_virtual_network": "system_uuid",
     "client_network.NetworkMixin.delete_virtual_network": "system_uuid network_uuid",
     "client_network.NetworkMixin.list_network_bridges": "system_uuid",
     "client_network.NetworkMixin.list_virtual_networks": "system_uuid",
     "client_network.NetworkMixin.list_virtual_switches": "system_uuid",
-    "client_storage.StorageMixin._broker_file_create": "vios_uuid vg_uuid",
-    "client_storage.StorageMixin._broker_iso_import": "vios_uuid vg_uuid",
     "client_storage.StorageMixin._get_vg_raw_xml": "vios_uuid vg_uuid",
     "client_storage.StorageMixin._post_vg_xml": "vios_uuid vg_uuid",
     "client_storage.StorageMixin.create_optical_mapping": "vios_uuid",

@@ -17,9 +17,11 @@ from hmcpctl.discovery_limits import (
 from hmcpctl.errors import HMCError
 from hmcpctl.resource_identity import (
     is_uuid,
+    lpar_name_from_uuid,
     optional_system_selector,
     resolve_lpar_uuid,
     resolve_system_uuid,
+    system_name_from_uuid,
 )
 from hmcpctl.ssh.description_validation import validate_lpar_description
 from hmcpctl.ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
@@ -307,14 +309,13 @@ async def _partition_name(hmc: HMCClient, lpar_uuid: str, lpar_label: str) -> st
     ``MAX_PARENT_DISCOVERY_SYSTEMS`` partition feeds before reporting a missing
     partition as a missing *system*.
     """
-    lpar = await hmc.get_logical_partition(lpar_uuid)
-    lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
-    if not lpar_name:
+    lpar_name = await lpar_name_from_uuid(hmc, lpar_uuid)
+    if lpar_name is None:
         raise ValueError(
             f"No LPAR {lpar_label!r} found. "
             "Use hmc_list_lpars to list available partitions."
         )
-    return str(lpar_name)
+    return lpar_name
 
 
 async def _authorize_override(
@@ -553,9 +554,8 @@ async def resolve_lpar_ownership_names(
 ) -> tuple[str, str]:
     """Resolve the CLI names required to read an LPAR ownership token."""
     system_name = await _resolve_system_name(hmc, system_uuid, system_name_or_uuid)
-    lpar = await hmc.get_logical_partition(lpar_uuid)
-    lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
-    if not lpar_name:
+    lpar_name = await lpar_name_from_uuid(hmc, lpar_uuid)
+    if lpar_name is None:
         raise ValueError(f"LPAR {lpar_uuid!r} has no partition name")
     return system_name, lpar_name
 
@@ -587,9 +587,8 @@ async def resolve_and_authorize_lpar_names(
 async def _resolve_system_name(hmc: HMCClient, system_uuid: str, fallback: str) -> str:
     """Resolve an HMC CLI system name, falling back to the caller's selector."""
     try:
-        system = await hmc.get_managed_system(system_uuid)
-        name = ((system or {}).get("Resource") or {}).get("SystemName")
-        if name:
+        name = await system_name_from_uuid(hmc, system_uuid)
+        if name is not None:
             return name
     except HMCError as exc:
         _logger.debug(

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 
-from ...documents import (
-    BOOT_DEVICE_SELECTORS,
-)
+from ...documents import join_boot_device_paths
 from ...operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,
@@ -39,8 +38,13 @@ def lpars_read_boot_order(
 def lpars_set_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_name_or_uuid: str = typer.Argument(..., help="Logical partition name or UUID"),
-    devices: str = typer.Argument(
-        ..., help="Ordered boot device list (comma-separated: cd,disk,network)"
+    devices: list[str] = typer.Argument(
+        ...,
+        help=(
+            "Open Firmware device paths, first to last, as read-boot-order reports them. "
+            "A never-booted partition reports none: take the path from SMS or leave the "
+            "boot order unset"
+        ),
     ),
     *,
     ownership_override: bool = typer.Option(
@@ -50,31 +54,24 @@ def lpars_set_boot_order(
     """Set the pending boot order used on the LPAR's next activation.
 
     Example:
-        lpars set-boot-order system1 lpar-uuid-123 "network,cd,disk"
+        lpars set-boot-order system1 lpar-uuid-123 /vdevice/v-scsi@30000002/disk@8100000000000000
     """
-    device_list = [d.strip() for d in devices.split(",") if d.strip()]
-
-    for device in device_list:
-        if device not in BOOT_DEVICE_SELECTORS:
-            raise typer.BadParameter(
-                f"Invalid boot device selector: {device!r}. "
-                f"Must be one of: {', '.join(BOOT_DEVICE_SELECTORS)}"
-            )
-
-    if not device_list:
-        raise typer.BadParameter("Boot order must contain at least one device")
+    try:
+        boot_string = join_boot_device_paths(devices)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     result = with_client(
         lambda hmc: set_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
             lpar_name_or_uuid=lpar_name_or_uuid,
-            devices=device_list,
+            devices=devices,
             ownership_override=ownership_override,
         )
     )
 
-    console.print(f"[green]Boot order set to: {', '.join(device_list)}[/green]")
+    console.print(f"[green]Boot order set to: {escape(boot_string)}[/green]")
     print_json(result)
 
 
@@ -86,7 +83,7 @@ def lpars_clear_boot_order(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
 ) -> None:
-    """Restore the HMC default boot order on the LPAR's next activation.
+    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126).
 
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001
@@ -100,7 +97,7 @@ def lpars_clear_boot_order(
         )
     )
 
-    console.print("[green]Boot order cleared (restored defaults)[/green]")
+    console.print("[green]Pending boot order cleared[/green]")
     print_json(result)
 
 

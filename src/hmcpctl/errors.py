@@ -25,22 +25,28 @@ class HMCError(Exception):
         self, message: str, status_code: int | None = None, body: str | None = None
     ):
         self.status_code = status_code
+        detail = message
+        if status_code is not None:
+            detail = f"{message} (HTTP {status_code})"
+        if body:
+            # HMC error bodies are XML; pull out the message if possible. Parse the
+            # untruncated body -- the response-size cap already bounds it upstream --
+            # so a message past MAX_ERROR_BODY_BYTES isn't lost to a truncation cut
+            # that leaves the XML malformed. Fall back to raw body text if it is not
+            # valid XML.
+            try:
+                msg = find_text(body, "Message", "msg", "error") or body[:500]
+            except (DET.ParseError, DefusedXmlException):
+                msg = body[:500]
+            # Bound the rendered detail independently of the extracted message's own
+            # length: an untruncated body can carry a <Message> far longer than the
+            # fallback's 500-char slice.
+            detail = f"{detail}: {msg[:500]}"
         if body is not None:
             body = body[:MAX_ERROR_BODY_BYTES].encode("utf-8")[:MAX_ERROR_BODY_BYTES].decode(
                 "utf-8", errors="ignore"
             )
         self.body = body
-        detail = message
-        if status_code is not None:
-            detail = f"{message} (HTTP {status_code})"
-        if body:
-            # HMC error bodies are XML; pull out the message if possible.
-            # Fall back to raw body text if it is not valid XML.
-            try:
-                msg = find_text(body, "Message", "msg", "error") or body[:500]
-            except (DET.ParseError, DefusedXmlException):
-                msg = body[:500]
-            detail = f"{detail}: {msg}"
         super().__init__(detail)
 
 

@@ -283,3 +283,17 @@ def test_help_lists_every_option():
         "--output",
     ):
         assert option in unstyle(result.stdout)
+
+
+def test_lost_hold_reports_the_new_holder_without_rmvterm_advice(capture):
+    capture.return_value = _capture(
+        stop_reason="error",
+        released=False,
+        error="ConsoleHoldLostError: another client's rmvterm ended the hold",
+    )
+
+    result = RUNNER.invoke(cli.app, COMMAND)
+
+    assert result.exit_code == 3
+    assert "another client ended this hold" in result.stderr
+    assert "rmvterm -m" not in result.stderr

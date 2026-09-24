@@ -41,9 +41,8 @@ and none whose requests all omit it:
 - **Requests that build their own headers never carry it**, whatever this
   variable is set to. That is the `Accept: */*` discovery reads — quick
   properties, and the operation, schema and search-parameter listings, where
-  ADR 0139 records the omission deliberately — the storage-broker ISO
-  create/upload/cleanup calls, and every `do/{Operation}` job, which is the
-  path LPAR power on/off and activation take.
+  ADR 0139 records the omission deliberately — and every `do/{Operation}`
+  job, which is the path LPAR power on/off and activation take.
 
 Unset — or set to the empty string, which disables the header the same way —
 is therefore the setting under which no request carries it at all.

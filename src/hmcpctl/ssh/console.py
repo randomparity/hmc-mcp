@@ -24,7 +24,9 @@ records the design decision per prototype fact.
   therefore runs on every exit path, cancellation included, and runs to
   completion before cancellation propagates. ``released`` is ``True`` only
   after an independent-session ``mkvterm`` probe proves the slot is free;
-  ``rmvterm``'s own exit code is not proof (P2).
+  ``rmvterm``'s own exit code is not proof (P2). The one exception is a hold
+  another client's ``rmvterm`` already ended (#1004): the HMC reports it in
+  band, and releasing would end the new holder's session.
 - **Sealed stdin** (P5/P7): mkvterm's stdin is the write socket to the
   partition console, and EOF on it terminates the vterm. The capture opens a
   pipe, hands mkvterm the read end, and holds the write end open without ever
@@ -82,6 +84,7 @@ _State = Literal[
     "reconnecting",
     "dropped",
     "unheld",
+    "lost",
 ]
 
 #: The distinctive sentence of the contention message (P1). The full recorded
@@ -96,10 +99,26 @@ _State = Literal[
 HELD_SENTINEL = b"A terminal session is already open for this partition."
 ACQUIRED_SENTINEL = b"Open in progress"
 
+#: What the HMC sends a holder once another client's ``rmvterm`` ended its hold
+#: (#1004, recorded on HMC V10R3 M1060, followed there by one space). The channel
+#: then stays open and silent: no EOF and no exit status arrive.
+LOST_HOLD_SENTINEL = (
+    b"\r\n Connection has closed \r\n\r\n\r\n"
+    b" This session is no longer connected. Please close this window.\n\n\n"
+)
+
 #: How long the release probe waits for its own ``mkvterm`` to speak before
 #: giving up (P1/P5: both the contention text and the HMC banner arrive
 #: immediately on a healthy HMC).
 _RELEASE_PROBE_SECONDS = 10.0
+
+#: How long a release scans bytes already received but unread for
+#: :data:`LOST_HOLD_SENTINEL` before it issues ``rmvterm``: per read, and in total.
+_UNREAD_READ_SECONDS = 0.1
+_UNREAD_SCAN_SECONDS = 1.0
+
+#: The states in which :meth:`ConsoleSession._release_hold` runs: close() and suspend().
+_RELEASABLE: tuple[_State, ...] = ("held", "suspending")
 
 #: Upper caps for the MCP tool surface. The bounds are caller-chosen, but a
 #: capture runs inside the MCP server process, so memory (``max_bytes``) and
@@ -133,6 +152,14 @@ class ConsoleHeldAfterDropError(ConsoleHeldError):
     """
 
 
+class ConsoleHoldLostError(HMCError):
+    """Another client's ``rmvterm`` ended this session's hold (#1004).
+
+    The HMC reported it with :data:`LOST_HOLD_SENTINEL`. :meth:`ConsoleSession.close`
+    then issues no ``rmvterm``: it would end the new holder's session.
+    """
+
+
 @dataclass(frozen=True)
 class ConsoleGap:
     """Marks where console output may be missing after a reconnect (ADR 0174).
@@ -152,7 +179,9 @@ class ConsoleCapture:
     ``released`` is honest, not optimistic: ``True`` only when an independent
     follow-up ``mkvterm`` proved the vterm slot free after the mandatory
     ``rmvterm`` (P2). ``False`` means the caller may have left the partition's
-    console held and should treat further console access as broken.
+    console held and should treat further console access as broken, unless
+    ``error`` names :class:`ConsoleHoldLostError`: then another client ended
+    the hold and no ``rmvterm`` was issued (#1004).
     """
 
     system: str
@@ -647,6 +676,7 @@ class ConsoleHandover:
 
         Raises:
 
+            ConsoleHoldLostError: Another client's ``rmvterm`` ended the hold.
             RuntimeError: The handover has ended, including a read still
                 pending when the ``hand_over()`` block exits.
         """
@@ -754,6 +784,7 @@ class ConsoleSession:
         self._settled = asyncio.Event()  # clear only while suspend() or resume() runs
         self._settled.set()
         self._remote_closed = False  # latched: a remote close never later counts as a drop
+        self._tail = b""  # the stream's last bytes, for a sentinel split across reads
         self._reconnect_task: asyncio.Task[ConsoleGap] | None = None
 
     @property
@@ -805,6 +836,7 @@ class ConsoleSession:
         self._connection, self._stdout = connection, process.stdout
         self._state = "held"
         self._remote_closed = False  # the latch covers one mkvterm stream
+        self._tail = b""
         self._pending += data
         return cancelled
 
@@ -844,10 +876,15 @@ class ConsoleSession:
         """
         if self._owner is not owner:
             return None
+        if self._state == "lost":
+            raise ConsoleHoldLostError(
+                f"another client's rmvterm ended this session's hold on the console of "
+                f"{self._lpar!r} on {self._system!r}; close() issued no rmvterm"
+            )
         read = asyncio.ensure_future(self._stdout.read(_CHUNK))
         self._inflight = read
         try:
-            return await read
+            chunk = await read
         except asyncio.CancelledError:
             task = asyncio.current_task()
             if task is not None and task.cancelling():
@@ -856,6 +893,32 @@ class ConsoleSession:
         finally:
             if self._inflight is read:
                 self._inflight = None
+        self._watch_for_lost_hold(chunk)
+        return chunk
+
+    def _watch_for_lost_hold(self, chunk: bytes) -> None:
+        """Latch ``lost`` when the HMC reports another client's ``rmvterm`` (#1004)."""
+        window = self._tail + chunk
+        if self._state in _RELEASABLE and LOST_HOLD_SENTINEL in window:
+            self._state = "lost"
+        self._tail = window[-(len(LOST_HOLD_SENTINEL) - 1) :]
+
+    async def _scan_unread(self) -> None:
+        """Scan bytes received but never read, so an unread loss still skips ``rmvterm``."""
+        if self._inflight is not None:
+            inflight = self._inflight
+            inflight.cancel()
+            await asyncio.wait({inflight})  # asyncssh allows one reader per stream
+        # A failed scan must never cost a held session its release (ADR 0170).
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(_UNREAD_SCAN_SECONDS):
+                while self._state in _RELEASABLE:
+                    chunk = await asyncio.wait_for(
+                        self._stdout.read(_CHUNK), _UNREAD_READ_SECONDS
+                    )
+                    if not chunk:
+                        return
+                    self._watch_for_lost_hold(chunk)
 
     async def read(self) -> bytes | ConsoleGap:
         """Return the next raw chunk, or ``b""`` once the remote end has closed.
@@ -872,6 +935,9 @@ class ConsoleSession:
 
             ConsoleHeldAfterDropError: A reconnect found the vterm held; the
                 session is then dropped and :meth:`close` issues no ``rmvterm``.
+            ConsoleHoldLostError: Another client's ``rmvterm`` ended the hold;
+                the read before returned the HMC's report, and :meth:`close`
+                issues no ``rmvterm``. The session never reconnects after it.
             HMCCLIError: A reconnect could not connect or acquire.
             RuntimeError: The session is not open, or it was dropped.
         """
@@ -1003,8 +1069,12 @@ class ConsoleSession:
         """Mode (b): release the vterm for an external holder; return the proof.
 
         Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
-        does, and closes the connection. Cancelling the caller never interrupts
-        the release; the cancellation is re-raised after it completes.
+        does, and closes the connection; like :meth:`close`, it returns
+        ``False`` with no ``rmvterm`` for a hold another client ended (#1004).
+        That loss is reported only by ``False`` and a logged warning; a later
+        :meth:`resume` meets any new holder as :class:`ConsoleHeldError`.
+        Cancelling the caller never interrupts the release; the cancellation is
+        re-raised after it completes.
         :meth:`read` waits until :meth:`resume`. The external holder should
         acquire only after this returns: the probe holds the slot briefly, and
         a holder that acquires before the probe makes this return ``False``
@@ -1071,7 +1141,9 @@ class ConsoleSession:
         session issues no ``rmvterm``, since the slot may now be the external
         holder's, and reports the proof :meth:`suspend` obtained. A reconnect in
         flight is cancelled first, and a hold it already acquired is released;
-        a dropped session reports ``False`` with no ``rmvterm``.
+        a dropped session reports ``False`` with no ``rmvterm``. So does a
+        session whose hold another client's ``rmvterm`` ended (#1004), found
+        by a read or by scanning bytes received but not yet read.
         """
         if self._state == "opening":
             raise RuntimeError(
@@ -1099,8 +1171,20 @@ class ConsoleSession:
             self._drop_channel()
 
     async def _release_hold(self) -> bool:
-        """Release with proof (ADR 0170 rule 4), then drop the channel."""
+        """Release with proof (ADR 0170 rule 4), then drop the channel.
+
+        A hold another client's ``rmvterm`` ended gets no ``rmvterm`` (#1004).
+        """
         self._release_proof = False
+        await self._scan_unread()
+        if self._state == "lost":
+            logger.warning(
+                "another client ended the console hold on %s/%s; no rmvterm issued",
+                self._system,
+                self._lpar,
+            )
+            self._drop_channel()
+            return False
         try:
             self._release_proof = await _release_and_verify(
                 self._config, self._system, self._lpar
@@ -1274,7 +1358,9 @@ async def capture_lpar_console(
     (no byte can reach the partition console, P7), enforces the three
     client-side bounds (P8), then releases the vterm with ``rmvterm`` on
     every exit path and reports honestly whether the release was *proven*
-    (P2/P3/P4).
+    (P2/P3/P4). The exception is a hold another client's ``rmvterm`` already
+    ended (#1004): no ``rmvterm``, ``stop_reason="error"`` naming
+    :class:`ConsoleHoldLostError`, and ``released=False``.
 
     Raises:
 
@@ -1300,6 +1386,12 @@ async def capture_lpar_console(
     async with ConsoleSession(hmc, system_name, lpar_name) as session:
         data, stop_reason, error = await _collect_output(
             session, duration_seconds, max_bytes, idle_timeout_seconds
+        )
+    if session._state == "lost" and stop_reason != "error":
+        # A bound fired on the loss report, or the release scan found it unread.
+        stop_reason = "error"
+        error = _error_detail(
+            ConsoleHoldLostError("another client's rmvterm ended the capture's hold")
         )
     if HELD_SENTINEL in data:
         raise ConsoleHeldError(
