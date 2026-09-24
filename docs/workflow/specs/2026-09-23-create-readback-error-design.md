@@ -19,11 +19,11 @@ reads it back by name. An `HMCError` from that read-back escapes, so `lpars crea
   "create returned no LPAR body". A `None` read-back keeps its current wording.
 - `stamp_policy='required'` (decided here, per the dispatch triage): raise `HMCError`, as the
   `None` branch does, chained from the read-back error. The message names the partition, says
-  `mksyscfg` created it, includes the read-back error, and keeps the re-stamp advice. Before
-  this change the bare read-back error escaped, so only the message changes.
-- Provision is unchanged: its no-UUID branch already reports the create step as `error`,
-  the apply step, and `resource_created` from the result.
-- No ownership transition. REST-path read-back is excluded (operator); live confirmation #879.
+  it exists (created by `mksyscfg`) but is unstamped, includes the read-back error, and gives
+  the re-stamp or delete advice. Before this change the bare read-back error escaped.
+- Provision is unchanged: its no-UUID branch reports `create` `error`, then the apply step.
+- `workflows.create_lpar` is unchanged; when `lpar` is `None` it still emits no PCIe assignment
+  steps (pre-existing, outside the surface; a follow-up candidate). No ownership transition. REST-path read-back is excluded (operator); live confirmation #879.
 - CHANGELOG `Fixed` entry.
 
 ### Failure model
@@ -39,7 +39,7 @@ reads it back by name. An `HMCError` from that read-back escapes, so `lpars crea
 
 ## Success
 
-1. CLI create, read-back raises `HMCError`: result has `resource_created=True`, `lpar=None`, the
+1. `mksyscfg`-path create, read-back raises `HMCError`: result has `resource_created=True`, `lpar=None`, the
    apply step, and a warning containing the read-back error text.
 2. Provision in the same case: `resource_created=True`, `create` `error`, `apply_profile`
    step present, later steps `skipped`.
