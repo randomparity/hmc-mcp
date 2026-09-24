@@ -139,7 +139,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
-- The apply-error warning from `create` and `provision` says "redo the skipped steps" instead of
+- The apply-error warning from `create` and `provision` says "redo any skipped steps" instead of
   "redo any skipped assignment steps". Since #999, a failed apply during `provision` also skips
   network, vSCSI, storage, power-on and affinity-policy steps, which the old wording didn't
   cover (#1013).
