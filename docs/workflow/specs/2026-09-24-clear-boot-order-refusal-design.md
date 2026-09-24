@@ -42,7 +42,8 @@ unchanged.
 
 ## Considered & rejected
 
-- **Refuse before any request.** judgment: the MCP tool must open its client through
+- **Refuse before any request.** Operator decision (2026-09-24, relayed by the campaign): criterion 3
+  is met by refusing before any write request, with authorization first. judgment: the MCP tool must open its client through
   `with_client(profile=...)` (ADR 0038, pinned by `tests/app/test_profile_routing.py`), so logon
   happens either way. Refusing before authorization would save only read-only resolve and
   ownership reads. It would also break ADR 0092's rule that every exposed LPAR mutator reaches
