@@ -1,0 +1,85 @@
+# ADR 0174: Console keepalive, drop detection, and opt-in reconnect
+
+## Status
+
+Accepted (2026-09-23). Extends ADR 0170 within ADR 0172 and ADR 0173. It amends ADR 0170 rule 3
+in part: a transport error still propagates unwrapped unless the caller opted into reconnect.
+It amends ADR 0072's P8 rule in part: the HMC still sends no keepalives, but hmcpctl now sends
+SSH keepalives on every console connection. It settles the reconnect-while-paused interaction
+that ADR 0173 assigned to #977.
+
+## Context
+
+A continuous collector (#957) must survive a dropped connection, including an idle channel whose
+peer is gone, and must learn where output may be missing. The console connection sent no
+keepalives, so an idle dead channel stayed silent forever (P8). After an abrupt disconnect the
+HMC keeps the vterm held (P3), so a re-acquisition meets that leftover hold. hmcpctl cannot tell
+the leftover hold from another client's hold.
+
+## Decision
+
+1. **Keepalive.** `open_hmc_connection` sends an OpenSSH keepalive request every 15 s. After 3
+   unanswered requests, asyncssh closes the connection with `ConnectionLost`. A pending read
+   raises it, and a later read returns `b""`. Any reply counts as alive, including a request
+   failure. The console stream, the acquisition, and the release probe all use this connection.
+2. **What a drop is.** The session's collector sees a drop while it owns the channel in one of
+   two ways: a read raises `asyncssh.Error` or `OSError`, or a read returns `b""` while the
+   session's connection reports `is_closed()`. `b""` on an open connection is a remote close.
+   A lost hold (another client's `rmvterm`, #1004) ends `mkvterm` but not the connection, as far
+   as anyone knows, so it is a remote close. #879's live evidence is what can confirm that.
+3. **Reconnect is opt-in.** `ConsoleSession(..., reconnect=False)` is the default. Without it, a
+   drop behaves exactly as ADR 0170 rule 3 says. `capture_lpar_console` never sets it, so the
+   capture still ends with `stop_reason="error"` on a read failure.
+4. **Reconnect.** With `reconnect=True`, a drop starts one session-owned task. The task closes
+   the dead channel and acquires again through the `open()` path, up to 3 attempts 5 s apart,
+   and retries only `HMCCLIError`. On success, `read()` returns a `ConsoleGap(error, took_over)`
+   marker before the new stream's first bytes. `read()` awaits the task through a shield, so a
+   consumer's read timeout neither cancels the reconnect nor loses its outcome. `close()`
+   cancels the task, waits for it, and releases a hold that the task acquired.
+5. **Default after a drop: typed error, no reclaim.** When a re-acquisition meets a held vterm,
+   the session raises `ConsoleHeldAfterDropError`, a `ConsoleHeldError`. It issues no `rmvterm`,
+   because hmcpctl cannot prove the hold is its own (ADR 0172 rule 3). Exhausted retries raise
+   `HMCCLIError`. Either failure leaves the session dropped: `read()`, `hand_over()` and
+   `suspend()` raise `RuntimeError`, and `close()` returns `False` with no `rmvterm`. Reclaiming
+   uses #975's option: with `take_over=True`, each reconnect attempt issues `rmvterm` before
+   `mkvterm`, and the gap reports `took_over=True`.
+6. **Reconnect while paused.** Mode (a): the handover's reader receives a drop as an exception
+   or `b""`, and the session does not reconnect under an in-process holder. When the block
+   exits, the collector's next read finds the closed connection and reconnects. Mode (b): a
+   suspended session holds no connection and cannot drop. `resume()` stays the only
+   re-acquisition, never issues `rmvterm`, and raises plain `ConsoleHeldError`. A reconnect in
+   progress or a dropped session refuses both modes.
+
+## Consequences
+
+- A dead console channel is detected within about 60 s. The bounded capture can therefore end
+  with `"error"` before its idle or duration bound fires. Its result mapping is unchanged.
+- Consumers that enable reconnect must handle `ConsoleGap` items in the stream. The session's
+  `read()` type is now `bytes | ConsoleGap`, including for sessions that never emit one.
+- A session with `take_over=True` and `reconnect=True` ends whatever holds the vterm after every
+  drop. That includes a client that acquired during the outage.
+- A lost hold whose SSH connection also closes would be treated as a drop. With `take_over=True`
+  this would end the new holder's session. That stays unverified until #879.
+- A drop seen during `suspend()`'s release or `open()`'s acquisition keeps its existing
+  behavior. Reconnect covers only the collector's reads.
+
+## Considered & rejected
+
+- **Do nothing; the consumer reopens a session after a read error.** judgment: fit. #977 asks
+  for detection, a gap marker, and one session to iterate, and a reopen still meets the
+  leftover hold with no typed signal.
+- **Reclaim the leftover hold by default.** judgment: fit. #957 and ADR 0172 rule 3 reserve
+  `rmvterm` of an unproven hold for an explicit `take_over=True`.
+- **Signal the gap with an exception the consumer catches before reading on.** judgment: fit.
+  #977 asks for a marker in the iterated stream, and an exception ends an `async for`.
+- **A sentinel byte string as the marker.** judgment: fit. Any byte string can occur in raw
+  console output, so a consumer could not tell the marker from data.
+- **Reconnect inside the reader's own task.** judgment: fit. A consumer's `asyncio.wait_for`
+  timeout would cancel the re-acquisition, and ADR 0170 rule 3 says a timed-out read leaves
+  the session usable.
+- **Retry forever.** judgment: an HMC that stays unreachable would hang the collector with no
+  signal. Three attempts bound the wait, and the consumer decides what happens next.
+- **Classify a drop by the channel's missing exit status.** judgment: complexity. No recorded
+  evidence shows that `mkvterm` reports an exit status when it ends, while `is_closed()` is a
+  connection fact that asyncssh sets before it wakes the reader
+  (`asyncssh/connection.py` `_cleanup`, asyncssh 2.24.0).
