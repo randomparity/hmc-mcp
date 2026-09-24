@@ -10,6 +10,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- Adapter and mapping commands say where their change lives. `adapters add-network`,
+  `add-vscsi`, `add-vfc` and `delete`, and `storage map`, `mount-optical-media`, `detach-mapping`
+  and `unmount-optical-media`, read the partition's `CurrentProfileSync` before the write and
+  report it: `On` means the HMC also writes the change to the partition's current profile;
+  `Disabled` or `Suspended` means it lives only in the current configuration. The MCP tools
+  carry it as a `change_location` object or a closing sentence. `lpars power-on
+  --partition-profile` and `hmc_power_on_lpar` now return `warnings` naming each current virtual
+  SCSI, Fibre Channel or Ethernet client adapter whose slot that profile lacks, and still
+  activate (#981).
 - `WritableConsoleSession`, a `ConsoleSession` subclass, writes to a partition console
   (ADR 0176). `write(data)` sends raw bytes while collection keeps running. `send_sysrq(key,
   prefix=...)` sends a caller-supplied prefix plus the key as one write; hmcpctl ships no SysRq
@@ -432,6 +441,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_detach_storage_mapping` returns `{"mapping_id", "change_location"}` instead of the bare
+  mapping ID. `hmc_add_network_adapter`, `hmc_add_vscsi_adapter`, `hmc_add_vfc_adapter` and
+  `hmc_mount_optical_media` add a `change_location` key beside the resource's own keys (#981).
 - Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
   type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
   and then acquires with proven acquisition. The default is `False`, and neither the capture nor
