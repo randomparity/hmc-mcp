@@ -27,7 +27,7 @@ New `operations/lpar/profile_sync.py` owns the policy (clean extension, no owner
   `LparPowerResult` and `LparPowerOnOutcome`; an `HMCError` from an adapter feed becomes one
   "check not run" warning. The job is submitted either way.
 - **Warn, not refuse:** activating a profile legitimately discards current changes, refusal
-  needs a new override flag, and a wrong activation is recovered by powering off.
+  needs a new override flag, and a removed adapter is recreated after power-off.
 - Recipe step 5, `docs/cli.md`, regenerated `docs/tools/` and `CHANGELOG.md` describe both.
 
 ### Failure model

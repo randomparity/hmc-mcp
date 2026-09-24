@@ -282,8 +282,9 @@ hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30
 ```
 
 Expected: `power-on` prints `Job submitted for <lpar-uuid>` and the finished job, whose status
-is `COMPLETED_OK`, and no `Warning:` line. A warning names a current adapter the profile still
-lacks: power the partition off, add that adapter to the profile, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
+is `COMPLETED_OK`, and no `Warning:` line. A warning names an adapter the profile lacked, which
+the activation removed: power the partition off, re-run the step 3 or 4 command that created
+it, write it into the profile as above from the new listing, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
 is blank. The boot-order commands (`lpars read-boot-order`, `set-boot-order`,
 `clear-boot-order`) are blocked by #980 and this path does not need them.

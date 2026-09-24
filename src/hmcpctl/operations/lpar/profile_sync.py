@@ -159,7 +159,8 @@ async def profile_adapter_warnings(
         return (f"Partition profile adapter check not run: {exc}",)
     return tuple(
         f"The partition profile lacks the current configuration's {adapter}; "
-        "activating it removes that adapter. Add it to the profile, or power on "
-        "without a partition profile."
+        "activating it removes that adapter. The job is still submitted: recreate "
+        "the adapter and add it to the profile before the next profile activation, "
+        "or power on without a partition profile."
         for adapter in missing
     )
