@@ -169,6 +169,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
+  `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/
+  `SystemName` the same way `resource_identity`'s validated readers do, instead of coercing or
+  passing it through by hand (#1026).
+
 - `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
   partition body — including when the post-create read-back raises (#1014) — instead of omitting
   the requested assignment steps entirely (#1019).
