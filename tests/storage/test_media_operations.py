@@ -202,9 +202,8 @@ VIOS_DOC_WITH_OPTICAL_MAPPINGS = f"""<?xml version="1.0" encoding="UTF-8" standa
 
 _VIOS_GET_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
 _MAPPINGS_GET_PATH = f"{_VIOS_GET_PATH}?group=ViosSCSIMapping"
-_VIOS_POST_PATH = (
-    f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
-)
+# The detach RMW (ADR 0169) posts back to the same grouped URL it read, under If-Match.
+_MAPPINGS_POST_PATH = _MAPPINGS_GET_PATH
 
 
 def _posted_document(post_route) -> str:
@@ -213,12 +212,15 @@ def _posted_document(post_route) -> str:
 
 
 def _mock_unmount_reads(mock_hmc, document=VIOS_DOC_WITH_OPTICAL_MAPPINGS):
+    """Mock the grouped GET both the inventory lookup and the RMW detach read hit.
+
+    ``unmount_optical_media`` looks up the mapping via ``list_optical_mappings``
+    before deleting it, then ``delete_storage_mapping`` re-reads the same grouped
+    group under If-Match (ADR 0169); both land on the identical URL.
+    """
     mock_change_location(mock_hmc, LPAR_UUID)
-    mock_hmc.get(_MAPPINGS_GET_PATH).mock(
-        return_value=httpx.Response(200, text=document)
-    )
-    return mock_hmc.get(_VIOS_GET_PATH).mock(
-        return_value=httpx.Response(200, text=document)
+    return mock_hmc.get(_MAPPINGS_GET_PATH).mock(
+        return_value=httpx.Response(200, text=document, headers={"ETag": '"etag-1"'})
     )
 
 
@@ -346,7 +348,7 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
     LPAR-scoped inventory identity is part of the selection.
     """
     _mock_unmount_reads(mock_hmc)
-    post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         result = await unmount_optical_media(
@@ -369,7 +371,7 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
     container stays available for a later remount.
     """
     _mock_unmount_reads(mock_hmc)
-    post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         await unmount_optical_media(
@@ -394,7 +396,7 @@ async def test_unmount_optical_media_fails_without_post_when_mapping_is_absent(m
     mock_hmc.get(_MAPPINGS_GET_PATH).mock(
         return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
     )
-    post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not found"):
@@ -416,7 +418,7 @@ async def test_unmount_optical_media_preserves_a_sibling_with_a_prefix_name(
         "</VirtualOpticalMedia></Storage>",
     )
     _mock_unmount_reads(mock_hmc, doc)
-    post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         await unmount_optical_media(
@@ -454,7 +456,7 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
         return_value=httpx.Response(200, text=lpar_search)
     )
     _mock_unmount_reads(mock_hmc)
-    post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         await unmount_optical_media(

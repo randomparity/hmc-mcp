@@ -74,31 +74,6 @@ def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
     return vios_elem
 
 
-def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
-    """Extract the exact ManagedSystem UUID associated with one VIOS element."""
-    links = vios_elem.findall(f"{{{_UOM_NS}}}AssociatedManagedSystem")
-    if len(links) != 1:
-        raise HMCError(
-            "VirtualIOServer must have exactly one AssociatedManagedSystem link",
-            200,
-            ET.tostring(vios_elem, encoding="unicode")[:500],
-        )
-    href = links[0].get("href", "")
-    match = _re.fullmatch(
-        r"(?:https?://[^/]+)?/rest/api/uom/ManagedSystem/"
-        r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/?",
-        href,
-    )
-    if not match:
-        raise HMCError(
-            "AssociatedManagedSystem href does not contain an exact ManagedSystem UUID",
-            200,
-            repr(href),
-        )
-    return match.group(1)
-
-
 def _whole_gib(size_mib: int) -> int:
     """Convert a MiB size to the whole GiB that RepositorySize and media Size take.
 
@@ -254,17 +229,33 @@ def _disks_named(disks: ET.Element, disk_name: str) -> list[ET.Element]:
     ]
 
 
-async def _append_vios_mapping(
+def _append_mapping(mapping_document: str) -> Callable[[ET.Element], None]:
+    """A mutate callback that appends one parsed ``VirtualSCSIMapping`` (create)."""
+
+    def _mutate(mappings: ET.Element) -> None:
+        mappings.append(
+            DET.fromstring(mapping_document).find(f".//{{{_UOM_NS}}}VirtualSCSIMapping")
+        )
+
+    return _mutate
+
+
+async def _rmw_vios_mapping(
     client: StorageClient,
     operation: str,
     path: str,
     uuid_path_arguments: Mapping[str, str],
-    mapping_document: str,
+    mutate: Callable[[ET.Element], None],
 ) -> str:
-    """Add one mapping by read-modify-write of the VIOS ``ViosSCSIMapping`` group.
+    """Read-modify-write the VIOS ``ViosSCSIMapping`` group under If-Match (ADR 0169).
 
-    The fetched mappings are posted back unchanged beside the new one, under the
-    GET's ETag, so the create never replaces the VIOS's mapping set (ADR 0169).
+    Fetches the grouped document, refuses before any POST when the GET has no
+    ``ETag`` or no ``VirtualSCSIMappings`` collection, hands ``mutate`` the fetched
+    collection to change in place (append a new mapping for a create, remove one for
+    a detach), then posts the whole VIOS element back under the GET's ``ETag`` so
+    the write never replaces mappings ``mutate`` did not touch. A 412 means the VIOS
+    changed since the GET; nothing is written, and it is reported as a concurrent
+    change rather than retried.
     """
     vios_uuid = uuid_path_arguments["vios_uuid"]
     got = await client._request_with_uuid_path_arguments(
@@ -298,9 +289,7 @@ async def _append_vios_mapping(
             200,
             got.text[:500],
         )
-    mappings.append(
-        DET.fromstring(mapping_document).find(f".//{{{_UOM_NS}}}VirtualSCSIMapping")
-    )
+    mutate(mappings)
 
     async def dispatch() -> str:
         response = await client._request_with_uuid_path_arguments(
@@ -589,8 +578,8 @@ class StorageMixin:
         )
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
-        resp = await _append_vios_mapping(
-            self, "map_storage_to_lpar", path, {"vios_uuid": vios_uuid}, xml
+        resp = await _rmw_vios_mapping(
+            self, "map_storage_to_lpar", path, {"vios_uuid": vios_uuid}, _append_mapping(xml)
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -639,92 +628,48 @@ class StorageMixin:
     async def delete_storage_mapping(
         self: StorageClient, vios_uuid: str, mapping_id: str, lpar_uuid: str
     ) -> None:
-        """Detach one mapping through its parent VirtualIOServer document.
+        """Detach one mapping by read-modify-write of the VIOS ``ViosSCSIMapping`` group.
 
         ``mapping_id`` is the ``<server adapter>/<target device>`` identity from
-        :func:`storage_mapping_id`. Exactly one mapping in the fetched document must
-        carry it, and its client-LPAR link must name ``lpar_uuid``, the partition the
-        caller authorized; otherwise nothing is posted (ADR 0168).
+        :func:`storage_mapping_id`. Exactly one mapping in the fetched grouped
+        document must carry it, and its client-LPAR link must name ``lpar_uuid``,
+        the partition the caller authorized; otherwise nothing is posted (ADR 0168).
+        The read-modify-write itself follows the same grouped GET / If-Match POST
+        sequence as a create (ADR 0169): a missing ``ETag`` refuses before any POST,
+        and a 412 is reported as a concurrent change.
         """
         if not mapping_id:
             raise ValueError("Storage mapping ID must not be empty")
         ET.register_namespace("", _UOM_NS)
         ET.register_namespace("atom", _ATOM_NS)
-
-        get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        vios_xml = await self._get(
-            get_path,
-            "VirtualIOServer",
-            include_schema_version=False,
-            uuid_path_arguments={"vios_uuid": vios_uuid},
-        )
-        if not vios_xml:
-            raise HMCError(f"GET {get_path} returned empty response", 200, "")
-        try:
-            root = DET.fromstring(vios_xml)
-        except (DET.ParseError, DefusedXmlException) as exc:
-            raise HMCError(
-                "VirtualIOServer GET response is not valid XML", 200, vios_xml
-            ) from exc
-
-        vios_elem = _find_vios_element(root, vios_uuid)
-        mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         not_found = f"Storage mapping {mapping_id!r} not found on VIOS {vios_uuid!r}"
-        if mappings is None:
-            raise HMCError(not_found)
-        matches = [
-            (mapping, parsed)
-            for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
-            if isinstance(parsed := element_to_dict(mapping), dict)
-            and storage_mapping_id(parsed) == mapping_id
-        ]
-        if not matches:
-            raise HMCError(not_found)
-        if len(matches) > 1:
-            raise HMCError(
-                f"VirtualSCSIMapping {mapping_id!r} is duplicated; "
-                "refusing an ambiguous detach"
-            )
-        target, parsed = matches[0]
-        if not _mapping_targets_lpar(parsed, lpar_uuid):
-            raise HMCError(
-                f"Storage mapping {mapping_id!r} does not belong to LPAR {lpar_uuid!r}; "
-                "refusing to detach a mapping that was not authorized"
-            )
 
-        mappings.remove(target)
-        system_uuid = _extract_system_uuid_from_vios(vios_elem)
-        post_path = (
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
-        )
-        async def dispatch() -> None:
-            response = await self._request_with_uuid_path_arguments(
-                "POST",
-                post_path,
-                uuid_path_arguments={
-                    "system_uuid": system_uuid,
-                    "vios_uuid": vios_uuid,
-                },
-                content=ET.tostring(vios_elem, encoding="unicode"),
-                headers={
-                    "Accept": "*/*",
-                    "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
-                },
-            )
-            if response.status_code not in (200, 201, 202):
+        def _detach_one(mappings: ET.Element) -> None:
+            matches = [
+                (mapping, parsed)
+                for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
+                if isinstance(parsed := element_to_dict(mapping), dict)
+                and storage_mapping_id(parsed) == mapping_id
+            ]
+            if not matches:
+                raise HMCError(not_found)
+            if len(matches) > 1:
                 raise HMCError(
-                    f"POST {post_path} failed", response.status_code, response.text
+                    f"VirtualSCSIMapping {mapping_id!r} is duplicated; "
+                    "refusing an ambiguous detach"
                 )
+            target, parsed = matches[0]
+            if not _mapping_targets_lpar(parsed, lpar_uuid):
+                raise HMCError(
+                    f"Storage mapping {mapping_id!r} does not belong to LPAR {lpar_uuid!r}; "
+                    "refusing to detach a mapping that was not authorized"
+                )
+            mappings.remove(target)
 
-        await self._reconcile_storage_mutation(
-            "delete_storage_mapping",
-            lambda: self._get(
-                get_path,
-                "VirtualIOServer",
-                include_schema_version=False,
-                uuid_path_arguments={"vios_uuid": vios_uuid},
-            ),
-            dispatch,
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
+        await _rmw_vios_mapping(
+            self, "delete_storage_mapping", path, {"vios_uuid": vios_uuid}, _detach_one
         )
 
     # Virtual media repository (VolumeGroup read-modify-write operations)
@@ -1226,8 +1171,12 @@ class StorageMixin:
         )
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
-        response = await _append_vios_mapping(
-            self, "create_optical_mapping", path, {"vios_uuid": vios_uuid}, document
+        response = await _rmw_vios_mapping(
+            self,
+            "create_optical_mapping",
+            path,
+            {"vios_uuid": vios_uuid},
+            _append_mapping(document),
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

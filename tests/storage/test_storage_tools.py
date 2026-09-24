@@ -151,7 +151,6 @@ def test_invalid_adapter_type_fails_before_resource_request(monkeypatch, mock_hm
     assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
-_UOM = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _LPAR_LINK = (
     "https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/"
     f"{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}"
@@ -171,22 +170,26 @@ def _mapping(target: str, lpar_link: str = _LPAR_LINK) -> str:
 
 
 def _mock_detach_reads(mock_hmc, mappings: str):
+    """Mock the grouped GET both the pre-check lookup and the RMW detach read hit.
+
+    The operations layer looks up the mapping via ``list_storage_mappings`` before
+    authorizing, then ``delete_storage_mapping`` re-reads the same grouped group
+    under If-Match (ADR 0169); both requests land on the identical URL, so one
+    identity-bearing fixture (observed shape, #979) serves both.
+    """
     mock_change_location(mock_hmc, LPAR_UUID)
-    parent = _VIOS_IDENTITY.replace(
+    resource = _VIOS_IDENTITY.replace(
         "</VirtualIOServer>",
         f"<VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>\n</VirtualIOServer>",
     )
     inventory = f"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>
-      <VirtualIOServer xmlns="{_UOM}"><VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>
-      </VirtualIOServer></content></entry></feed>"""
+      {resource}
+      </content></entry></feed>"""
     mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
-    ).mock(return_value=httpx.Response(200, text=inventory))
-    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(200, text=parent)
-    )
+    ).mock(return_value=httpx.Response(200, text=inventory, headers={"ETag": '"etag-1"'}))
     return mock_hmc.post(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
     ).mock(return_value=httpx.Response(200, text=""))
 
 
