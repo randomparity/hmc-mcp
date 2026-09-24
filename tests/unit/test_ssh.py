@@ -395,3 +395,12 @@ def test_validate_credentials_password_still_required_by_default(monkeypatch):
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
     with pytest.raises(ValueError, match="password"):
         HMCConfig(host="h", user="u").validate_credentials()
+
+
+@pytest.mark.asyncio
+async def test_console_connection_sends_keepalives():
+    connect = AsyncMock()
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", connect):
+        await open_hmc_connection(make_config())
+    assert connect.call_args.kwargs["keepalive_interval"] == 15.0
+    assert connect.call_args.kwargs["keepalive_count_max"] == 3

@@ -7,7 +7,8 @@ run through :func:`hmcpctl.ssh.transport.run_hmc_command` (a one-shot exec that 
 output until the remote command exits). :class:`ConsoleSession` holds the vterm
 on top of :func:`hmcpctl.ssh.transport.open_hmc_connection` with no duration or
 byte cap and owns its acquisition and proven release (ADR 0170), including
-mid-session suspension for a preempting hold (ADR 0173);
+mid-session suspension for a preempting hold (ADR 0173) and an opt-in
+reconnect after a dropped connection (ADR 0174);
 :func:`capture_lpar_console` is its bounded consumer and enforces issue #385's
 design contract. Every invariant below traces to a recorded observation from
 the P1-P8 live-hardware prototype on that issue (HMC V10R3 M1060); ADR 0072
@@ -29,8 +30,9 @@ records the design decision per prototype fact.
   pipe, hands mkvterm the read end, and holds the write end open without ever
   writing: no parameter, method, or code path can send a byte to the console.
 - **Client-side bounds** (P8): an idle vterm stream stays open forever and
-  carries no keepalives, so duration, max-bytes, and idle bounds are all
-  enforced here, never expected from the HMC.
+  the HMC sends no keepalives, so duration, max-bytes, and idle bounds are all
+  enforced here, never expected from the HMC. hmcpctl's own SSH keepalives
+  close a connection whose peer is gone (ADR 0174).
 
 The captured bytes are returned raw: truncation backtracks to a boundary that
 cannot split a multi-byte UTF-8 sequence or an incomplete ANSI escape
@@ -66,7 +68,17 @@ logger = logging.getLogger(__name__)
 #: requirement that "another session holds the vterm" be a distinct error.
 StopReason = Literal["duration", "max_bytes", "idle", "remote-close", "error"]
 
-_State = Literal["new", "opening", "held", "suspending", "suspended", "resuming", "unheld"]
+_State = Literal[
+    "new",
+    "opening",
+    "held",
+    "suspending",
+    "suspended",
+    "resuming",
+    "reconnecting",
+    "dropped",
+    "unheld",
+]
 
 #: The distinctive sentence of the contention message (P1). The full recorded
 #: stdout is three CRLF lines, each beginning and ending with a space::
@@ -108,6 +120,27 @@ class ConsoleHeldError(HMCError):
     """
 
 
+class ConsoleHeldAfterDropError(ConsoleHeldError):
+    """A reconnect after a dropped connection found the vterm held (ADR 0174).
+
+    Most likely the session's own leftover hold (P3), but hmcpctl cannot prove
+    it, so no ``rmvterm`` was issued. Recover with :meth:`ConsoleSession.close`
+    and a new session opened with ``take_over=True``.
+    """
+
+
+@dataclass(frozen=True)
+class ConsoleGap:
+    """Marks where console output may be missing after a reconnect (ADR 0174).
+
+    ``error`` says why the old connection counted as dropped; ``took_over`` is
+    ``True`` when ``rmvterm`` ran before re-acquisition.
+    """
+
+    error: str
+    took_over: bool
+
+
 @dataclass(frozen=True)
 class ConsoleCapture:
     """Raw captured console bytes plus the outcome facts (issue #385).
@@ -124,6 +157,12 @@ class ConsoleCapture:
     stop_reason: StopReason
     released: bool
     error: str | None = None
+
+
+def _retrieve(task: asyncio.Task[Any]) -> None:
+    """Mark a background task's outcome retrieved; its reader re-raises it."""
+    if not task.cancelled():
+        task.exception()
 
 
 def _validate_bounds(
@@ -290,6 +329,8 @@ async def _collect_output(
         except Exception as exc:  # noqa: BLE001 - a mid-capture read failure ends the capture as an error result, not a raise
             logger.error("console stream read failed mid-capture: %s", exc)
             return bytes(buf), "error", _error_detail(exc)
+        if isinstance(chunk, ConsoleGap):
+            raise TypeError("bounded capture never reconnects")
         if not chunk:
             return bytes(buf), "remote-close", None
         buf += chunk
@@ -600,6 +641,15 @@ class ConsoleSession:
     stays held, and :meth:`suspend`/:meth:`resume` release the vterm for an
     external holder and acquire it again. :meth:`read` waits while paused.
 
+    With ``reconnect=True`` (never the default; the bounded capture never sets
+    it), a dropped connection seen by the collector's read starts one
+    re-acquisition, and :meth:`read` then yields a :class:`ConsoleGap` before
+    the new stream (ADR 0174). A vterm still held after the drop raises
+    :class:`ConsoleHeldAfterDropError` with no ``rmvterm``; under P3 that is
+    the usual outcome unless ``take_over=True`` is also set, which reclaims it.
+    A drop inside :meth:`hand_over` reaches the handover's reader and is
+    reconnected after the block; a suspended session holds no connection.
+
     Process exit: the library installs no ``atexit`` hook or signal handler.
     SIGKILL, ``os._exit``, a crash, default-action SIGTERM, a second SIGINT
     under :func:`asyncio.run`, an event loop stopped or shut down before
@@ -613,10 +663,17 @@ class ConsoleSession:
     """
 
     def __init__(
-        self, hmc: HMCClient, system_name: str, lpar_name: str, *, take_over: bool = False
+        self,
+        hmc: HMCClient,
+        system_name: str,
+        lpar_name: str,
+        *,
+        take_over: bool = False,
+        reconnect: bool = False,
     ) -> None:
         self._config = hmc.config
         self._take_over = take_over
+        self._reconnect = reconnect
         self._system = system_name
         self._lpar = lpar_name
         self._state: _State = "new"
@@ -632,6 +689,8 @@ class ConsoleSession:
         self._release_proof = False
         self._settled = asyncio.Event()  # clear only while suspend() or resume() runs
         self._settled.set()
+        self._remote_closed = False  # latched: a remote close never later counts as a drop
+        self._reconnect_task: asyncio.Task[ConsoleGap] | None = None
 
     @property
     def released(self) -> bool | None:
@@ -659,7 +718,12 @@ class ConsoleSession:
     async def _acquire(self, fallback: _State, *, take_over: bool = False) -> bool:
         """Acquire the vterm; return whether cancellation arrived meanwhile."""
         stdin = self._stdin = _SealedStdin()
-        self._state = "opening" if fallback == "unheld" else "resuming"
+        transitions: dict[_State, _State] = {
+            "unheld": "opening",
+            "suspended": "resuming",
+            "dropped": "reconnecting",
+        }
+        self._state = transitions[fallback]
         command = f"mkvterm -m {shlex.quote(self._system)} -p {shlex.quote(self._lpar)}"
         try:
             if take_over:
@@ -676,6 +740,7 @@ class ConsoleSession:
             raise
         self._connection, self._stdout = connection, process.stdout
         self._state = "held"
+        self._remote_closed = False  # the latch covers one mkvterm stream
         self._pending += data
         return cancelled
 
@@ -725,15 +790,27 @@ class ConsoleSession:
             if self._inflight is read:
                 self._inflight = None
 
-    async def read(self) -> bytes:
+    async def read(self) -> bytes | ConsoleGap:
         """Return the next raw chunk, or ``b""`` once the remote end has closed.
 
         While a handover or suspension is active, the read waits and returns
         the next chunk once collection resumes, or ``b""`` if :meth:`close`
-        starts first. Transport errors propagate unwrapped; the session still
-        owes its release.
+        starts first. Without ``reconnect``, transport errors propagate
+        unwrapped; the session still owes its release. With ``reconnect``, a
+        dropped connection (ADR 0174) yields a :class:`ConsoleGap` once the
+        vterm is acquired again, and a timed-out read leaves the reconnect
+        running for the next read.
+
+        Raises:
+
+            ConsoleHeldAfterDropError: A reconnect found the vterm held; the
+                session is then dropped and :meth:`close` issues no ``rmvterm``.
+            HMCCLIError: A reconnect could not connect or acquire.
+            RuntimeError: The session is not open, or it was dropped.
         """
-        if self._state in ("new", "opening", "unheld") or self._close_task is not None:
+        if self._reconnect_task is not None:
+            return await self._reconnect_outcome(self._reconnect_task)
+        if self._state in ("new", "opening", "unheld", "dropped") or self._close_task is not None:
             raise RuntimeError("the console session is not open")
         while True:
             await self._collecting.wait()
@@ -742,9 +819,91 @@ class ConsoleSession:
             if self._pending:
                 chunk, self._pending = self._pending, b""
                 return chunk
-            chunk = await self._read_for(self)
+            chunk = await self._read_or_reconnect()
             if chunk is not None:
                 return chunk
+
+    def _may_reconnect(self) -> bool:
+        return self._reconnect and not self._remote_closed and self._close_task is None
+
+    def _paused(self) -> bool:
+        """True when a pause began while the collector's failed read was completing."""
+        return self._owner is not self or self._state != "held"
+
+    async def _read_or_reconnect(self) -> bytes | ConsoleGap | None:
+        """Read for the collector; with reconnect, a drop becomes a gap (ADR 0174)."""
+        try:
+            chunk = await self._read_for(self)
+        except (asyncssh.Error, OSError) as exc:
+            if not self._may_reconnect():
+                raise
+            if self._paused():
+                return None  # the pause's holder or resume() meets the dead connection
+            return await self._start_reconnect(_error_detail(exc))
+        if chunk == b"" and self._may_reconnect():
+            if self._paused():
+                return None
+            if self._connection.is_closed():
+                return await self._start_reconnect("the SSH connection closed")
+            self._remote_closed = True
+        return chunk
+
+    async def _start_reconnect(self, error: str) -> bytes | ConsoleGap:
+        logger.warning(
+            "console connection of %s/%s dropped (%s); reconnecting",
+            self._system,
+            self._lpar,
+            error,
+        )
+        self._state = "dropped"  # _acquire moves it on; a failure before that stays dropped
+        self._drop_channel()
+        task = self._reconnect_task = asyncio.create_task(self._reconnect_after_drop(error))
+        task.add_done_callback(_retrieve)
+        return await self._reconnect_outcome(task)
+
+    async def _reconnect_outcome(self, task: asyncio.Task[ConsoleGap]) -> bytes | ConsoleGap:
+        """Await the reconnect; a consumer's timeout leaves it and its outcome in place."""
+        gap: ConsoleGap | None = None
+        try:
+            gap = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if not task.cancelled() or (current is not None and current.cancelling()):
+                raise  # the reader's own cancellation: the next read gets the outcome
+        except BaseException:
+            self._reconnect_task = None
+            raise
+        self._reconnect_task = None
+        return b"" if gap is None or self._close_task is not None else gap
+
+    async def _reconnect_after_drop(self, error: str) -> ConsoleGap:
+        """Acquire once more after a drop (ADR 0174 rules 4 and 5)."""
+        try:
+            cancelled = await self._acquire("dropped", take_over=self._take_over)
+        except ConsoleHeldError as exc:
+            raise ConsoleHeldAfterDropError(
+                f"reconnect of {self._lpar!r} on {self._system!r} after a dropped connection "
+                f"found the console held; {self._held_after_drop_advice()} {exc}"
+            ) from exc
+        except HMCCLIError as exc:
+            raise HMCCLIError(
+                f"console reconnect of {self._lpar!r} on {self._system!r} after a dropped "
+                f"connection failed: {exc}"
+            ) from exc
+        if cancelled:
+            raise asyncio.CancelledError  # close() arrived; its teardown releases the new hold
+        return ConsoleGap(error=error, took_over=self._take_over)
+
+    def _held_after_drop_advice(self) -> str:
+        if self._take_over:
+            return (
+                "rmvterm ran first, so another holder acquired the console after it. "
+                "Whether to take it again is the caller's decision."
+            )
+        return (
+            "most likely this session's leftover hold (P3). No rmvterm was issued; "
+            "close() this session and open one with take_over=True to reclaim it."
+        )
 
     @contextlib.asynccontextmanager
     async def hand_over(self) -> AsyncIterator[ConsoleHandover]:
@@ -823,7 +982,12 @@ class ConsoleSession:
         await self._finish_acquire(cancelled)
 
     def _require_collecting(self, name: str) -> None:
-        if self._state != "held" or self._close_task is not None or self._owner is not self:
+        if (
+            self._state != "held"
+            or self._close_task is not None
+            or self._owner is not self
+            or self._reconnect_task is not None  # the consumer reads the gap first
+        ):
             raise RuntimeError(f"{name} needs an open console session with no pause active")
 
     async def close(self) -> bool:
@@ -834,7 +998,9 @@ class ConsoleSession:
         after it completes. During :meth:`suspend` or :meth:`resume` it waits
         for that call, then releases whatever it left held. A suspended
         session issues no ``rmvterm``, since the slot may now be the external
-        holder's, and reports the proof :meth:`suspend` obtained.
+        holder's, and reports the proof :meth:`suspend` obtained. A reconnect in
+        flight is cancelled first, and a hold it already acquired is released;
+        a dropped session reports ``False`` with no ``rmvterm``.
         """
         if self._state == "opening":
             raise RuntimeError(
@@ -849,6 +1015,9 @@ class ConsoleSession:
         self._collecting.set()  # a waiting collector returns b""
         self._released = False
         try:
+            if self._reconnect_task is not None:
+                self._reconnect_task.cancel()
+                await asyncio.wait({self._reconnect_task})  # completes even if never started
             await self._settled.wait()  # a suspend() or resume() in flight finishes first
             if self._state == "held":
                 self._released = await self._release_hold()
@@ -898,7 +1067,7 @@ class ConsoleSession:
     def __aiter__(self) -> Self:
         return self
 
-    async def __anext__(self) -> bytes:
+    async def __anext__(self) -> bytes | ConsoleGap:
         chunk = await self.read()
         if not chunk:
             raise StopAsyncIteration
