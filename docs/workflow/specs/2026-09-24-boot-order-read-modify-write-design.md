@@ -133,7 +133,11 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
   - The HMC response is parsed with `defusedxml`, as the existing parsers do.
 - **Actor:** an MCP client can send any string. Authorization is the existing
   `resolve_and_authorize_lpar_mutation`.
-- **Out of scope:** a compromised HMC returning a hostile document. The client trusts its HMC.
+- **Out of scope:**
+  - A compromised HMC returning a hostile document. The client trusts its HMC.
+  - The length and number of boot paths. Validation bounds their characters, not their size.
+    The caller already holds mutate authority for the partition, and the HMC rejects an
+    oversized value.
 
 ## Success
 
