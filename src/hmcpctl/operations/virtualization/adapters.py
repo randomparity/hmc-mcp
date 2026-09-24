@@ -7,6 +7,7 @@ from typing import Any
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...client.client_contracts import AdapterType, validate_adapter_type
 from ...resource_identity import resolve_lpar_uuid
@@ -16,6 +17,7 @@ from ...resource_identity import resolve_lpar_uuid
 class AdapterResult:
     lpar_uuid: str
     resource: dict[str, Any] | None
+    change_location: ChangeLocation
 
 
 async def list_adapters(
@@ -63,6 +65,7 @@ async def add_network_adapter(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     resource = await hmc.add_network_adapter(
         lpar_uuid,
         port_vlan_id,
@@ -71,7 +74,7 @@ async def add_network_adapter(
         tagged=tagged,
         mac_address=mac_address,
     )
-    return AdapterResult(lpar_uuid, resource)
+    return AdapterResult(lpar_uuid, resource, location)
 
 
 async def add_vscsi_adapter(
@@ -99,10 +102,11 @@ async def add_vscsi_adapter(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     resource = await hmc.add_vscsi_adapter(
         lpar_uuid, vios_partition_id, vios_slot, slot_number
     )
-    return AdapterResult(lpar_uuid, resource)
+    return AdapterResult(lpar_uuid, resource, location)
 
 
 async def add_vfc_adapter(
@@ -130,10 +134,11 @@ async def add_vfc_adapter(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     resource = await hmc.add_vfc_adapter(
         lpar_uuid, vios_partition_id, vios_slot, slot_number
     )
-    return AdapterResult(lpar_uuid, resource)
+    return AdapterResult(lpar_uuid, resource, location)
 
 
 async def delete_adapter(
@@ -144,8 +149,8 @@ async def delete_adapter(
     adapter_uuid: str,
     *,
     ownership_override: bool = False,
-) -> str:
-    """Authorize the LPAR and delete one virtual adapter.
+) -> ChangeLocation:
+    """Authorize the LPAR, delete one virtual adapter, and say where that lived.
 
     Raises:
         ValueError: If ``adapter_type`` is unsupported.
@@ -161,5 +166,6 @@ async def delete_adapter(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     await hmc.delete_adapter(lpar_uuid, adapter_type, adapter_uuid)
-    return adapter_uuid
+    return location
