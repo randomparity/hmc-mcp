@@ -34,8 +34,10 @@ A dropped connection closes the connection, and a lost hold does not, so the two
   hold drops only its own connection, logs a warning, issues no `rmvterm`, and returns `False`
   (unproven, like a dropped session); after `suspend()`, `resume()` then meets the taker's hold.
 - Unchanged code covers the rest. `hand_over`, `suspend`, `raw_mode`, and writes require `held`, so
-  they raise `RuntimeError` after a loss. `capture_lpar_console` reports a loss it read as
-  `stop_reason="error"`; one whose bound fired first ends with its bound and `released=False`.
+  they raise `RuntimeError` after a loss.
+- `capture_lpar_console` reports any latched loss as `stop_reason="error"` with a
+  `ConsoleHoldLostError` detail. The CLI report and the MCP tool description then drop their
+  `rmvterm` advice (surface widened by operator decision 2026-09-24; ADR 0175 exit 3 unchanged).
 
 ## Failure model
 
@@ -52,8 +54,6 @@ A dropped connection closes the connection, and a lost hold does not, so the two
      still issues `rmvterm`. Only the excluded ownership query could close that window.
    - A loss during a suspension or reconnect gap, when no stream exists, goes undetected.
    - An HMC release that rewords the message disables detection. `rmvterm` behaves as before.
-   - After a genuine loss, the CLI and MCP tool still show the `released=false` advice to run
-     `rmvterm`, which would end the taker; the error text names `ConsoleHoldLostError` (follow-up).
 4. **Covered elsewhere:** vterm ownership query → operator (excluded).
 
 ## Success
@@ -64,6 +64,8 @@ A dropped connection closes the connection, and a lost hold does not, so the two
 2. After a remote close, a transport error, or a `\r\n` sentinel, `close()` still runs `rmvterm`.
 3. A `reconnect=True` session does not reconnect after a loss.
 4. ADR 0172 and ADR 0174 each carry a `#1004` amendment with the evidence and refuted premise.
+5. After a loss, the capture reports `stop_reason="error"` naming `ConsoleHoldLostError`, and the
+   CLI and MCP tool text advise leaving the new holder alone instead of running `rmvterm`.
 
 ## Considered & rejected
 

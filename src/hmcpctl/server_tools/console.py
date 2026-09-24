@@ -35,10 +35,14 @@ def hmc_capture_lpar_console(
     prompt, or installer prompt cannot act on stray input. The partition's
     single vterm slot is held for the duration of the capture; if another
     session already holds it, the call fails with a distinct contention error
-    and never force-closes that session. On every exit path the capture runs
-    ``rmvterm`` and then *proves* the release by opening a fresh ``mkvterm``
+    and never force-closes that session. On every other exit path the capture
+    runs ``rmvterm`` and then *proves* the release by opening a fresh ``mkvterm``
     from an independent session; ``released`` is true only when that proof
-    succeeds. If it is false, the partition's console may remain held — run
+    succeeds. The exception: when another client ends the capture's hold, the
+    capture stops with ``stop_reason`` ``error``, an ``error`` naming
+    ``ConsoleHoldLostError``, ``released`` false, and no ``rmvterm``; the other
+    client now holds the console, so leave it. For any other false
+    ``released``, the partition's console may remain held — run
     ``rmvterm -m <system> -p <lpar>`` deliberately, or use the HMC UI, to
     recover it.
 

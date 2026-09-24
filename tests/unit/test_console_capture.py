@@ -2319,3 +2319,16 @@ async def test_suspend_after_unread_lost_hold_skips_rmvterm():
 
     assert release.await_count == 0
     assert opener.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_capture_reports_lost_hold_as_error_when_a_bound_fires_on_the_report():
+    capture = await _run_capture(
+        FakeConnection([FakeProcess(BANNER, LOST, None)]),
+        max_bytes=len(BANNER) + len(LOST),
+    )
+
+    assert capture.stop_reason == "error"
+    assert capture.error is not None and capture.error.startswith("ConsoleHoldLostError")
+    assert capture.released is False
+    assert capture.release_calls == []

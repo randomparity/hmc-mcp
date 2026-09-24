@@ -297,7 +297,8 @@ sequences: read them with `less -R` or a log viewer. The capture holds the parti
 console session while it runs. Exit status 1 with a message that the console is held means
 another session has it open; the command leaves that session alone. Exit status 3 means
 `released: false`: the console may still be held, so run the `rmvterm` command the line names
-on the HMC before another capture. Repeat the capture, each time to a new file, to follow the
+on the HMC before another capture. If the line instead says another client now holds the
+console (`ConsoleHoldLostError`), leave that session alone. Repeat the capture, each time to a new file, to follow the
 installer's progress. UUID selectors resolve the partition name through the HMC CLI
 `uuid,name` lookup; the 2026-09-23 run captured the console both by UUID and by name.
 

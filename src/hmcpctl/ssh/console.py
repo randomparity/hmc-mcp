@@ -1381,6 +1381,12 @@ async def capture_lpar_console(
         data, stop_reason, error = await _collect_output(
             session, duration_seconds, max_bytes, idle_timeout_seconds
         )
+    if session._state == "lost" and stop_reason != "error":
+        # A bound fired on the loss report, or the release scan found it unread.
+        stop_reason = "error"
+        error = _error_detail(
+            ConsoleHoldLostError("another client's rmvterm ended the capture's hold")
+        )
     if HELD_SENTINEL in data:
         raise ConsoleHeldError(
             f"The console of {lpar_name!r} on {system_name!r} printed the HMC "
