@@ -145,6 +145,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
+  `provision` report the partition as created, with its profile-apply step and a warning naming
+  the read-back error. Before, they reported a failed create with nothing created (#1014).
+
 - The apply-error warning from `create` and `provision` says "redo any skipped steps" instead of
   "redo any skipped assignment steps". Since #999, a failed apply during `provision` also skips
   network, vSCSI, storage, power-on and affinity-policy steps, which the old wording didn't

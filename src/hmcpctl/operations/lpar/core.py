@@ -362,6 +362,7 @@ async def create_and_stamp_lpar(
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name: str | None = None
     apply_step: WorkflowStep | None = None
+    readback_error: HMCError | None = None
     document = build_lpar_document(
         name=creation.name,
         partition_type=creation.partition_type,
@@ -391,10 +392,21 @@ async def create_and_stamp_lpar(
         )
         if creation.apply_profile is not None:
             apply_step = await _apply_created_profile(hmc, system_name, creation)
-        created_lpar = await hmc.find_partition_by_name(creation.name)
+        try:
+            created_lpar = await hmc.find_partition_by_name(creation.name)
+        except HMCError as exc:
+            created_lpar, readback_error = None, exc
     apply_warnings = _unapplied_profile_warnings(creation.name, apply_step)
 
     if created_lpar is None:
+        if creation.stamp_policy == "required" and readback_error is not None:
+            raise HMCError(
+                f"stamp_policy='required': mksyscfg created LPAR {creation.name!r} "
+                f"but its read-back failed ({readback_error}), so it was not "
+                "stamped. The LPAR still exists — re-stamp it with "
+                "set_lpar_ownership_description or delete it to release its "
+                "resources."
+            ) from readback_error
         if creation.stamp_policy == "required":
             raise HMCError(
                 "stamp_policy='required': cannot confirm the created LPAR "
@@ -403,14 +415,18 @@ async def create_and_stamp_lpar(
                 "created partition can be re-stamped with "
                 "set_lpar_ownership_description."
             )
+        skipped = (
+            "create returned no LPAR body"
+            if readback_error is None
+            else f"read-back after mksyscfg failed: {readback_error}"
+        )
         return LparCreationResult(
             resource_created=True,
             lpar=None,
             ownership_stamped=None,
             warnings=(
                 *apply_warnings,
-                (f"ownership stamp skipped for LPAR {creation.name!r}: "
-                 "create returned no LPAR body"),
+                f"ownership stamp skipped for LPAR {creation.name!r}: {skipped}",
             ),
             apply_step=apply_step,
         )
