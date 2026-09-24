@@ -38,7 +38,7 @@ New `operations/lpar/profile_sync.py` owns the policy (clean extension, no owner
 3. Accepted: a failed partition read fails an adapter or mapping command before its write.
    vFC and Ethernet placement in the profile is unobserved; if it differs, the cost is a false
    warning, never a missed one. A same-slot adapter of another type counts as present.
-4. Covered elsewhere: adapter PUT 406 on V10R3 (#935); sync default at create (#939);
+4. Covered elsewhere: adapter PUT 406 on V10R3 (#935); sync default at create (operator);
    `lpars provision` and other profile-affecting operations (operator).
 
 ## Success
