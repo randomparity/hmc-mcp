@@ -1069,6 +1069,7 @@ def test_provision_apply_error_skips_remaining_legs(monkeypatch, mock_hmc):
         ("power_on", "skipped"),
     ]
     assert "'default_profile' was not applied" in result.warnings[0]
+    assert "redo any skipped steps" in result.warnings[0]
 
 
 def test_provision_rest_create_reports_no_apply_step(monkeypatch, mock_hmc):

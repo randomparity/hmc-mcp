@@ -473,7 +473,7 @@ def _unapplied_profile_warnings(
     if apply_step.status == "error":
         warning += (
             "; apply it with chsyscfg -o apply or activate with it, then redo any "
-            "skipped assignment steps"
+            "skipped steps"
         )
     return (warning,)
 
