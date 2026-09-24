@@ -9,6 +9,9 @@ capture, the release probe, and `hmc_capture_lpar_console`. It is lifted only in
 acquisition takes becomes `source` and `adopt(process)`, a rename that leaves the acquisition and
 release logic unchanged.
 
+> **Amended by #1058** (2026-09-24): rule 2's `_ConsoleStdin` sends EOF once, at release, to end
+> the session's own `mkvterm`. See ADR 0072's `#1058` amendment.
+
 ## Context
 
 kdive (#958) needs to write to a partition console in two ways. It injects SysRq while

@@ -189,6 +189,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   with a `ConsoleHoldLostError` error, and `lpars capture-console` and `hmc_capture_lpar_console`
   no longer advise running `rmvterm` then; exit code 3 is unchanged (#1004).
 
+- A console session now releases its hold by closing `mkvterm`'s stdin instead of running
+  `rmvterm`. Live captures on V10R3 showed that stdin EOF ends only the session's own `mkvterm`
+  and leaves the other client's session intact in every captured ordering, so a loss report still in
+  transit at close no longer lets the release end a new holder's session. `ConsoleSession.close()`
+  and `suspend()`, `WritableConsoleSession`, the bounded capture and `hmc_capture_lpar_console`
+  wait about 10 s longer for the HMC to answer EOF. `rmvterm` still runs when the stream had
+  already ended or does not end within 20 s, and the independent probe still decides `released`
+  (#1058).
+
 - LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
   `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/
   `SystemName` the same way `resource_identity`'s validated readers do, instead of coercing or
