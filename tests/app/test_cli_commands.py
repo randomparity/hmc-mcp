@@ -68,6 +68,11 @@ from hmcpctl.ssh import refcodes as ssh_refcodes
 
 LPAR_NAME = "lpar1"
 
+# Shaped like the ownership stamp ``hmcpctl.ssh.lpar`` writes -- a bracketed
+# string an unescaped ``console.print`` interprets as Rich markup and drops.
+# See #965.
+OWNERSHIP_STAMP = "[hmcpctl owner:ops created:2026-09-23] [caller ci-token]"
+
 
 def _patch_ssh_command(monkeypatch, replacement) -> None:
     """Replace the transport name owned by every SSH domain used by the CLI."""
@@ -2711,6 +2716,24 @@ def test_lpars_get_description_via_ssh(monkeypatch):
     assert "my lpar description" in result.stdout
 
 
+def test_lpars_get_description_preserves_bracketed_ownership_stamp(monkeypatch):
+    """A bracketed ownership stamp round-trips intact through the CLI -- #965.
+
+    Rich's console treats an unescaped ``[...]`` segment as a markup tag and
+    drops it, so an HMC-returned description shaped like the ownership stamp
+    must reach the terminal verbatim, brackets included.
+    """
+
+    async def fake(cfg, cmd):
+        return OWNERSHIP_STAMP + "\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "get-description", "lpar1", "sys1"])
+
+    assert result.exit_code == 0
+    assert OWNERSHIP_STAMP in result.stdout
+
+
 def test_lpars_get_msp_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "1\n"
@@ -3397,6 +3420,58 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
 
     assert result.exit_code == 0, result.output
     assert all(fragment in commands[-1] for fragment in command_fragments)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["lpars", "set-description", "lpar1", "sys1", "new text", "--yes"],
+        ["lpars", "set-msp", "lpar1", "sys1", "true", "--yes"],
+        ["lpars", "set-proc-compat", "lpar1", "sys1", "POWER10", "--yes"],
+    ],
+)
+def test_destructive_ssh_commands_preserve_bracketed_result(monkeypatch, fake_hmc, args):
+    """The trailing HMC result line round-trips a bracketed stamp intact -- #965."""
+
+    async def fake(_config, command):
+        if command == "lshmc -V":
+            return "Version: 10\nRelease: 3\nService Pack: 1060\n"
+        if "-r sys" in command and "type_model" in command:
+            return "8375-42A\n"
+        if command.startswith("lssyscfg"):
+            return "vioserver\n"
+        return OWNERSHIP_STAMP + "\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+
+    result = RUNNER.invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert OWNERSHIP_STAMP in result.stdout
+
+
+def test_network_set_sriov_mode_preserves_bracketed_result(monkeypatch, fake_hmc):
+    """The trailing confirmation line round-trips a bracketed stamp intact -- #965.
+
+    ``set_sriov_adapter_mode`` never returns raw HMC stdout on the verified-
+    already-in-mode path it exercises today, so the operation is stubbed
+    directly to prove the CLI's own print call (pcie.py) escapes whatever
+    that operation returns.
+    """
+
+    async def fake_set_mode(hmc, system_name_or_uuid, adapter_id, mode):
+        return OWNERSHIP_STAMP
+
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.virtualization.pcie.set_sriov_adapter_mode",
+        fake_set_mode,
+    )
+    result = RUNNER.invoke(
+        cli.app, ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert OWNERSHIP_STAMP in result.stdout
 
 
 def test_add_vnic_cli_replaces_legacy_options():
@@ -4713,6 +4788,23 @@ def test_memory_pools_remove_with_yes(monkeypatch):
     assert result.exit_code == 0
     assert "removed" in result.stdout
     assert "pool removed" in result.stdout
+
+
+def test_memory_pools_remove_preserves_bracketed_result(monkeypatch):
+    """The trailing HMC result line round-trips a bracketed stamp intact -- #965."""
+
+    async def fake_remove(config, system_name, pool_name):
+        return OWNERSHIP_STAMP + "\n"
+
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.systems.memory_pools.remove_memory_pool", fake_remove
+    )
+    result = RUNNER.invoke(
+        cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]
+    )
+
+    assert result.exit_code == 0
+    assert OWNERSHIP_STAMP in result.stdout
 
 
 def test_memory_pools_remove_declined_confirm_aborts(monkeypatch):
