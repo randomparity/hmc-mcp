@@ -139,6 +139,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl lpars provision` and `hmc_provision_lpar` apply the new partition profile after a
+  `mksyscfg` create, as `lpars create` does, and report it as an `apply_profile` step. Before
+  this, provision's network step failed with `REST0269` on such a partition. A failed apply skips
+  the remaining steps and leaves the partition in place. There is no opt-out (#999).
+
 - `hmcpctl storage create-media-repo`, `storage create-media`, `hmc_create_media_repository` and
   `hmc_create_optical_media` convert `size_mib` to the GiB the HMC's `RepositorySize` and media
   `Size` take. They previously sent the MiB value unconverted, so `--size-mib 20480` asked for a
