@@ -16,6 +16,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   file, reports the stop reason and `released` on stderr, and exits 0, 1, 2 or 3 as ADR 0175
   states; 3 means the console may still be held. The bare-CEC recipe now captures the console
   with it. The MCP tool and the command share one selector resolver (#959).
+- `ConsoleSession` can yield the console to a preempting hold in two named modes (ADR 0173).
+  `async with session.hand_over() as handover:` moves the channel to an in-process holder while
+  the session keeps the vterm held, with no release gap. `suspend()` releases the vterm with the
+  usual `rmvterm` and probe proof for an external holder, and `resume()` acquires it again. It
+  raises `ConsoleHeldError`, issuing no `rmvterm`, if the slot was taken. The collector's
+  `read()` waits while paused. `close()` of a suspended session issues no `rmvterm`. The bounded
+  capture is unchanged (#976).
 
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
@@ -132,6 +139,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl lpars provision` and `hmc_provision_lpar` apply the new partition profile after a
+  `mksyscfg` create, as `lpars create` does, and report it as an `apply_profile` step. Before
+  this, provision's network step failed with `REST0269` on such a partition. A failed apply skips
+  the remaining steps and leaves the partition in place. There is no opt-out (#999).
+
 - `hmcpctl storage create-media-repo`, `storage create-media`, `hmc_create_media_repository` and
   `hmc_create_optical_media` convert `size_mib` to the GiB the HMC's `RepositorySize` and media
   `Size` take. They previously sent the MiB value unconverted, so `--size-mib 20480` asked for a
@@ -154,6 +166,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_delete_virtual_disk` also refuses a disk that backs a vSCSI mapping named inline by
   `DiskName`, the shape V10R3 returns; the mapped-disk check previously matched only an `href`
   the HMC does not send.
+- `hmc_create_media_repository`, `hmc_create_optical_media`, `hmc_delete_media_repository`,
+  `hmc_delete_optical_media` and their `hmcpctl storage` commands write the volume group back
+  with `If-Match` set to the read's ETag, as the virtual-disk writes do. Without it, a media
+  write racing a virtual-disk write could post the group as it was before that write, restoring a
+  deleted disk or dropping a created one. They now refuse without writing when the read carries
+  no ETag, and an HMC 412 is reported as a concurrent change with nothing written. HMC
+  enforcement of a mismatched ETag on this path is not yet live-verified (#996).
 - `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
   disk name longer than 15 characters before the create request, with a message that states the
   VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
@@ -348,6 +367,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   Service Pack comparison (ADR 0166), so a later service pack such as `10600`, or one whose
   output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
   on an environment the repository does not admit (#928).
+
+- `scripts/live_test_preflight.py`'s dedicated-arm verdict now predicts the `st36-io-slots`
+  scenario (#985) too, not only the fixture's own dedicated slot: it names the two further spare
+  slots the scenario will mutate when no DRC index is pinned, and states the scenario will SKIP
+  when one is. Previously preflight showed one mutated slot while an unpinned run touched three
+  (#1000).
 
 ### Changed
 
