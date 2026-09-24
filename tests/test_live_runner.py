@@ -702,6 +702,42 @@ async def test_lpar_lifecycle_captures_jobs_and_clears_scratch_identity() -> Non
 
 
 @pytest.mark.asyncio
+async def test_scratch_create_with_failed_apply_step_is_not_recorded_pass() -> None:
+    """A create whose apply_profile step errored must not read as a clean PASS (#997)."""
+    state = _ScriptedSriovState(
+        [
+            (
+                "hmc_create_lpar",
+                "PASS",
+                {
+                    "lpar": {"UUID": "scratch-uuid"},
+                    "workflow_completed": False,
+                    "steps": [
+                        {"step": "create", "status": "ok"},
+                        {
+                            "step": "apply_profile",
+                            "status": "error",
+                            "result": "HMCCLIError: mksyscfg refused",
+                        },
+                    ],
+                },
+            ),
+            ("hmc_get_lpar", "PASS", {"UUID": "scratch-uuid"}),
+        ]
+    )
+
+    await lpar._create_and_confirm_scratch_lpar(object(), state)
+
+    create_row = state.results[0]
+    assert create_row["status"] == "FAIL"
+    assert "apply_profile failed" in create_row["note"]
+    assert "mksyscfg refused" in create_row["note"]
+    # The partition really was created — identity tracking is unaffected by
+    # the recorded status downgrade.
+    assert state.artifacts.scratch_uuid == "scratch-uuid"
+
+
+@pytest.mark.asyncio
 async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -> None:
     state = _ScriptedSriovState(
         [
@@ -1904,6 +1940,50 @@ def test_classify_failure_reads_the_message_not_the_traceback():
 
     assert failure.http_status == 400
     assert "HTTP 500" in failure.traceback_text
+
+
+@pytest.mark.parametrize(
+    "status,data,expected_status,note_contains",
+    [
+        ("FAIL", {"steps": [{"step": "apply_profile", "status": "error"}]}, "FAIL", None),
+        ("PASS", "not a dict", "PASS", None),
+        ("PASS", {"lpar": {"UUID": "u"}}, "PASS", None),
+        (
+            "PASS",
+            {"workflow_completed": False, "steps": []},
+            "FAIL",
+            "workflow_completed is false",
+        ),
+        (
+            "PASS",
+            {
+                "workflow_completed": False,
+                "steps": [
+                    {"step": "create", "status": "ok"},
+                    {"step": "apply_profile", "status": "error", "result": "boom"},
+                ],
+            },
+            "FAIL",
+            "apply_profile failed: boom",
+        ),
+        (
+            "PASS",
+            {"workflow_completed": False, "steps": [{"step": "assign[0]", "status": "error"}]},
+            "FAIL",
+            "assign[0] failed",
+        ),
+    ],
+)
+def test_judge_create_result_reads_steps_not_call_status(
+    status, data, expected_status, note_contains
+):
+    """A failed step or workflow_completed=False downgrades PASS to FAIL (#997)."""
+    result_status, note = observation.judge_create_result(status, data)
+    assert result_status == expected_status
+    if note_contains is None:
+        assert note == ""
+    else:
+        assert note_contains in note
 
 
 @pytest.mark.asyncio

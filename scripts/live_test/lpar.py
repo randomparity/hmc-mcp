@@ -12,7 +12,7 @@ from fastmcp import Client
 from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
-from .observation import ExpectedOutcome
+from .observation import ExpectedOutcome, judge_create_result
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
@@ -66,7 +66,8 @@ async def _create_and_confirm_scratch_lpar(client: Client, state: RunState) -> N
             "max_procs": config.scratch_create_max_procs,
         },
     )
-    state.record(8, "hmc_create_lpar", status, data)
+    record_status, reason = judge_create_result(status, data)
+    state.record(8, "hmc_create_lpar", record_status, data, reason)
     if status == "PASS" and isinstance(data, dict):
         created = data.get("lpar")
         if isinstance(created, dict):

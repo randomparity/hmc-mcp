@@ -497,6 +497,18 @@ async def _run_affinity_leg(
     return True, (f"Post-activation affinity assessment: {classification}",)
 
 
+def _append_apply_step(
+    steps: list[WorkflowStep], step_names: list[str], creation: LparCreationResult
+) -> bool:
+    """Record the mksyscfg path's profile apply after ``create``; False on error."""
+    apply_step = creation.apply_step
+    if apply_step is None:
+        return True
+    step_names.insert(1, apply_step.step)
+    steps.append(apply_step)
+    return apply_step.status != "error"
+
+
 def _failed_provision_result(
     creation: LparCreationResult,
     created_uuid: str,
@@ -604,6 +616,7 @@ async def provision_lpar(
                 request.partition_type,
                 request.resources,
                 caller_token=request.caller_token,
+                apply_profile=True,
             ),
         )
     except HMCError as exc:
@@ -615,9 +628,12 @@ async def provision_lpar(
     created_uuid = (created_lpar or {}).get("UUID")
     if not isinstance(created_uuid, str) or not created_uuid:
         steps.append(WorkflowStep("create", "error", "LPAR creation returned no UUID"))
-        _skip_steps(steps, step_names[1:])
+        _append_apply_step(steps, step_names, creation)
+        _skip_steps(steps, step_names[len(steps) :])
         return _provision_result(creation, None, steps, False)
     steps.append(WorkflowStep("create", "ok", created_lpar))
+    if not _append_apply_step(steps, step_names, creation):
+        return _failed_provision_result(creation, created_uuid, steps, step_names)
 
     if not await _run_policy_leg(
         steps,
