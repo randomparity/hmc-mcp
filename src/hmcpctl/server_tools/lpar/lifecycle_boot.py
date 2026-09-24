@@ -95,10 +95,19 @@ def hmc_set_lpar_boot_order(
 ) -> dict[str, Any] | None:
     """Set the pending boot order used on the LPAR's next activation.
 
+    The write replaces ``BootListInformation/PendingBootString`` by
+    read-modify-write of the whole partition, conditioned on its ETag.
+    ``hmc_read_lpar_boot_order`` reports the paths the HMC knows in
+    ``boot_device_list``. A never-booted partition reports none and no virtual
+    CD path is ever reported: take the path from SMS or Open Firmware
+    (``devalias``), or leave the boot order unset.
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_name_or_uuid: Name or UUID of the logical partition.
-        devices: Boot device selectors in first-to-last order.
+        devices: Open Firmware device paths in first-to-last order, such as
+            ``/vdevice/v-scsi@30000002/disk@8100000000000000``; each starts with
+            ``/`` and is printable ASCII with no whitespace.
         ownership_override: Skip ownership-token validation when true.
         profile: Configured HMC profile, or the default when omitted.
     """
@@ -123,7 +132,12 @@ def hmc_clear_lpar_boot_order(
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Restore the HMC default boot order on the LPAR's next activation.
+    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126).
+
+    Meant to restore the HMC default boot order on the next activation. It
+    writes an empty ``BootListInformation/PendingBootString`` by the same
+    read-modify-write as ``hmc_set_lpar_boot_order``. A V10R3 HMC (M1060)
+    rejected that empty value with HTTP 500 ``REST0126`` on 2026-09-24 (#1048).
 
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.

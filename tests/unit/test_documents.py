@@ -19,8 +19,7 @@ from hmcpctl.documents import (
     [
         ("AUTHENTICATION_TYPES", "access"),
         ("AuthenticationType", "access"),
-        ("BOOT_DEVICE_SELECTORS", "boot"),
-        ("BootDeviceSelector", "boot"),
+        ("join_boot_device_paths", "boot"),
         ("KEYLOCK_POSITIONS", "lpar"),
         ("OS_TYPES", "lpar"),
         ("PARTITION_TYPES", "lpar"),
@@ -50,8 +49,6 @@ def test_document_facade_exports_domain_owned_objects(name, owner):
         "AUTHENTICATION_TYPES",
         "AuthenticationType",
         "ATOM_NS",
-        "BOOT_DEVICE_SELECTORS",
-        "BootDeviceSelector",
         "DET",
         "ET",
         "KEYLOCK_POSITIONS",

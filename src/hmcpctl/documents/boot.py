@@ -1,42 +1,30 @@
+"""Boot-order input validation for ``BootListInformation/PendingBootString``."""
+
 from __future__ import annotations
 
-from typing import Literal
 
-from ..xmlutil import escapes_string_arguments
-from .common import document_envelope
+def _is_joinable(path: str) -> bool:
+    """A ``/``-rooted path of printable, non-space ASCII.
 
-BootDeviceSelector = Literal["cd", "disk", "network"]
-BOOT_DEVICE_SELECTORS: tuple[BootDeviceSelector, ...] = ("cd", "disk", "network")
+    Single-space joining can then neither split nor merge it, and every
+    character is legal XML text.
+    """
+    return path.startswith("/") and all("!" <= ch <= "~" for ch in path)
 
 
-def _build_pending_boot_string(devices: list[str]) -> str:
-    """Join validated boot device selectors for ``PendingBootString``."""
-    if not devices:
-        raise ValueError("Boot order must contain at least one device")
+def join_boot_device_paths(paths: list[str]) -> str:
+    """Join Open Firmware device paths, first to last, into a ``PendingBootString`` value.
 
-    for device in devices:
-        if device not in BOOT_DEVICE_SELECTORS:
+    Not a ``build_*`` document builder: the value becomes element text through
+    ElementTree, which is its only escaping point.
+    """
+    if not paths:
+        raise ValueError("Boot order must contain at least one Open Firmware device path")
+    for path in paths:
+        if not _is_joinable(path):
             raise ValueError(
-                f"Invalid boot device selector: {device!r}. "
-                f"Must be one of: {BOOT_DEVICE_SELECTORS}"
+                f"Invalid boot device path: {path!r}. Give an Open Firmware device path "
+                "such as '/vdevice/v-scsi@30000002/disk@8100000000000000', as "
+                "read-boot-order reports, of printable ASCII with no whitespace"
             )
-
-    return " ".join(devices)
-
-
-@escapes_string_arguments
-def build_boot_order_document(devices: list[str]) -> str:
-    """Set boot-device priority for the LPAR's next activation."""
-    pending_boot_string = _build_pending_boot_string(devices)
-
-    body = f"""  <PendingBootString kb="UOO" kxe="false">{pending_boot_string}</PendingBootString>"""
-
-    return document_envelope("LogicalPartition", body)
-
-
-@escapes_string_arguments
-def build_clear_boot_order_document() -> str:
-    """Restore the HMC's default boot order on the LPAR's next activation."""
-    body = """  <PendingBootString kb="UOO" kxe="false"></PendingBootString>"""
-
-    return document_envelope("LogicalPartition", body)
+    return " ".join(paths)

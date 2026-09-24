@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 from typing import Literal, get_args
 
-from ..xmlutil import ATOM_NS, escapes_string_arguments
+from ..xmlutil import ATOM_NS, WEB_NS, escapes_string_arguments
 from .common import UOM_NS, document_envelope
 
 StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
@@ -240,49 +240,32 @@ def build_virtual_optical_media_delete_document(
     return document_envelope("VolumeGroup", body)
 
 
-# Brokered file upload / ISO import (ADR 0031)
+# Web File ISO upload (ADR 0177)
 #
-# Create:  POST /rest/api/uom/VirtualIOServer/{uuid}/VolumeGroup/{uuid}
-#          with a BrokeredFile document; the broker URI comes back in the
-#          Location header.
-# Import:  POST to the same path with a LinkedVirtualOpticalMedia document
-#          naming that broker URI.
-#
-# Neither document carries schemaVersion, so they render their own envelope
-# rather than going through an envelope helper. Both are transport
-# primitives for #203's future public API and are not exposed today.
+# Create:   PUT /rest/api/web/File with this document; the response's File
+#           carries the FileUUID.
+# Contents: PUT /rest/api/web/File/contents/{FileUUID} with the ISO bytes.
+# Release:  DELETE /rest/api/web/File/{FileUUID}.
 
 
 @escapes_string_arguments
-def build_brokered_file_document(filename: str) -> str:
-    """BrokeredFile document creating an upload handle (create POST).
+def build_web_file_document(filename: str, size_bytes: int, vios_uuid: str) -> str:
+    """File document creating a brokered ISO upload handle (ADR 0177).
 
-    ADR 0031 derived this shape from IBM's REST API documentation and the
-    existing uom patterns rather than from a live HMC, so the exact structure
-    is version-dependent and still unverified against hardware.
+    The element order is the order HMC V10R3 M1060 accepted on 2026-09-23.
     """
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<BrokeredFile xmlns="{UOM_NS}">
-  <Filename>{filename}</Filename>
-</BrokeredFile>
-"""
-
-
-@escapes_string_arguments
-def build_linked_optical_media_document(media_name: str, broker_uri: str) -> str:
-    """LinkedVirtualOpticalMedia document importing an uploaded file (POST).
-
-    ``broker_uri`` is the Location header the HMC returned from the brokered
-    file create. It is escaped like any other value: escaping is the identity
-    for a URI free of the five metacharacters, and an HMC that ever returned
-    one carrying them would otherwise break the document.
-    """
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LinkedVirtualOpticalMedia xmlns="{UOM_NS}">
-  <MediaName>{media_name}</MediaName>
-  <LinkedFileURI>{broker_uri}</LinkedFileURI>
-</LinkedVirtualOpticalMedia>
-"""
+    if size_bytes < 0:
+        raise ValueError("size_bytes must not be negative")
+    return (
+        f'<File:File xmlns:File="{WEB_NS}" xmlns="{WEB_NS}" schemaVersion="V1_0">'
+        "<Metadata><Atom/></Metadata>"
+        f"<Filename>{filename}</Filename>"
+        "<InternetMediaType>application/octet-stream</InternetMediaType>"
+        f"<ExpectedFileSizeInBytes>{size_bytes}</ExpectedFileSizeInBytes>"
+        "<FileEnumType>BROKERED_MEDIA_ISO</FileEnumType>"
+        f"<TargetVirtualIOServerUUID>{vios_uuid}</TargetVirtualIOServerUUID>"
+        "</File:File>"
+    )
 
 
 # Session logon (/rest/api/web/Logon)

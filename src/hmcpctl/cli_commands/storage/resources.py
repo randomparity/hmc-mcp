@@ -585,13 +585,15 @@ def storage_upload_iso(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
 ) -> None:
-    """Upload an ISO to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC web File API.
 
     ISO_SOURCE must be an http(s) URL; a local file path is not accepted. Its host
     must be on HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the profile) — with
     no allowlist configured every URL is refused — and redirects are not followed.
-    Computes SHA-256 and size before upload, refuses name collisions, and cleans
-    up broker resources on every outcome.
+    Computes SHA-256 and size before upload, refuses a volume group without a
+    media repository and name collisions, reports success only once the
+    repository lists the media, and releases the HMC upload handle on every
+    outcome.
     """
 
     async def _go(hmc: HMCClient) -> dict[str, Any]:

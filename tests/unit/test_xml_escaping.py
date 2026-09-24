@@ -281,8 +281,7 @@ def test_builders_are_discovered():
         # The three client.py request bodies, moved here so the harness above
         # covers them the same way it covers every other builder (#284).
         "build_logon_request_document",
-        "build_brokered_file_document",
-        "build_linked_optical_media_document",
+        "build_web_file_document",
     } <= names
     assert len(STRING_CASES) >= 40
 
@@ -472,24 +471,15 @@ def test_logon_user_cannot_add_a_second_user_id():
     assert user_ids == [username]
 
 
-def test_brokered_filename_cannot_add_a_sibling_element():
+def test_web_file_filename_cannot_add_a_sibling_element():
     filename = "a.iso</Filename><Filename>evil.iso"
-    xml = documents.build_brokered_file_document(filename=filename)
+    xml = documents.build_web_file_document(
+        filename=filename, size_bytes=1, vios_uuid="00000000-0000-0000-0000-000000000001"
+    )
 
     parsed = DET.fromstring(xml.encode("utf-8"))
     names = [el.text for el in parsed.iter() if localname(el.tag) == "Filename"]
     assert names == [filename]
-
-
-def test_linked_media_name_cannot_redirect_the_broker_uri():
-    xml = documents.build_linked_optical_media_document(
-        media_name="a.iso</MediaName><LinkedFileURI>https://evil/x<MediaName>",
-        broker_uri="https://hmc.test:12443/rest/api/uom/BrokeredFile/AUTH",
-    )
-
-    parsed = DET.fromstring(xml.encode("utf-8"))
-    uris = [el.text for el in parsed.iter() if localname(el.tag) == "LinkedFileURI"]
-    assert uris == ["https://hmc.test:12443/rest/api/uom/BrokeredFile/AUTH"]
 
 
 @pytest.mark.parametrize(

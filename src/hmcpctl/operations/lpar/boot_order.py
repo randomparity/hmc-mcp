@@ -8,16 +8,32 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
-from ...documents import (
-    BOOT_DEVICE_SELECTORS,
-    build_boot_order_document,
-    build_clear_boot_order_document,
-)
+from ...documents import join_boot_device_paths
 from ...errors import HMCError
 from ...resource_identity import optional_system_selector, resolve_lpar_uuid
 from .errors import translate_lpar_write_error
 
 _logger = logging.getLogger(__name__)
+
+
+def _boot_text(value: object) -> str | None:
+    """A boot field's text; an empty field parses as its attribute dict."""
+    if isinstance(value, dict):
+        value = value.get("text")
+    return value if isinstance(value, str) and value else None
+
+
+async def _write_pending_boot_string(
+    hmc: HMCClient, lpar_uuid: str, boot_string: str
+) -> dict[str, Any] | None:
+    try:
+        return await hmc.set_pending_boot_string(lpar_uuid, boot_string)
+    except HMCError as exc:
+        translated = translate_lpar_write_error(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
+
 
 async def read_lpar_boot_order(
     hmc: HMCClient,
@@ -31,7 +47,7 @@ async def read_lpar_boot_order(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=selector
     )
-    lpar = await hmc.get_logical_partition(lpar_uuid)
+    lpar = await hmc.get_uom("LogicalPartition", lpar_uuid, group="Advanced")
     if not lpar:
         raise ValueError(f"LPAR {lpar_uuid!r} not found")
 
@@ -41,9 +57,11 @@ async def read_lpar_boot_order(
     return {
         "lpar_uuid": lpar_uuid,
         "lpar_name": resource.get("PartitionName"),
-        "pending_boot_string": boot_list_info.get("PendingBootString"),
-        "boot_device_list": boot_list_info.get("BootDeviceList"),
-        "last_booted_device_string": boot_list_info.get("LastBootedDeviceString"),
+        "pending_boot_string": _boot_text(boot_list_info.get("PendingBootString")),
+        "boot_device_list": _boot_text(boot_list_info.get("BootDeviceList")),
+        "last_booted_device_string": _boot_text(
+            boot_list_info.get("LastBootedDeviceString")
+        ),
     }
 
 
@@ -56,16 +74,7 @@ async def set_lpar_boot_order(
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Set the pending boot order used on the LPAR's next activation."""
-    for device in devices:
-        if device not in BOOT_DEVICE_SELECTORS:
-            raise ValueError(
-                f"Invalid boot device selector: {device!r}. "
-                f"Must be one of: {BOOT_DEVICE_SELECTORS}"
-            )
-
-    if not devices:
-        raise ValueError("Boot order must contain at least one device")
-
+    boot_string = join_boot_device_paths(devices)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -73,20 +82,13 @@ async def set_lpar_boot_order(
         ownership_override=ownership_override,
     )
 
-    xml = build_boot_order_document(devices)
-    try:
-        updated = await hmc.modify_logical_partition(lpar_uuid, xml)
-    except HMCError as exc:
-        translated = translate_lpar_write_error(exc)
-        if translated is exc:
-            raise
-        raise translated from exc
+    updated = await _write_pending_boot_string(hmc, lpar_uuid, boot_string)
 
     _logger.info(
         "Set boot order for LPAR %s (%s) to: %s",
         lpar_name_or_uuid,
         lpar_uuid,
-        ", ".join(devices),
+        boot_string,
     )
 
     return updated
@@ -99,7 +101,7 @@ async def clear_lpar_boot_order(
     *,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
-    """Restore the HMC default boot order on the LPAR's next activation."""
+    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126)."""
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -107,17 +109,10 @@ async def clear_lpar_boot_order(
         ownership_override=ownership_override,
     )
 
-    xml = build_clear_boot_order_document()
-    try:
-        updated = await hmc.modify_logical_partition(lpar_uuid, xml)
-    except HMCError as exc:
-        translated = translate_lpar_write_error(exc)
-        if translated is exc:
-            raise
-        raise translated from exc
+    updated = await _write_pending_boot_string(hmc, lpar_uuid, "")
 
     _logger.info(
-        "Cleared boot order for LPAR %s (%s) (restored defaults)",
+        "Cleared pending boot order for LPAR %s (%s)",
         lpar_name_or_uuid,
         lpar_uuid,
     )

@@ -175,9 +175,26 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   read, and `close()` returns `False` without issuing `rmvterm`, including when the report
   arrived but was never read. A bounded capture that reads the report reports the loss as
   `stop_reason="error"`; one whose bound fires first reports `released=False` (#1004).
+
+- `lpars read-boot-order` and `hmc_read_lpar_boot_order` request the `Advanced` group and
+  return each boot field as a string, or `null` when empty, instead of the element's attribute
+  dict. `set-boot-order` and `clear-boot-order` (and their MCP tools) no longer POST a sparse
+  `LogicalPartition` with a misplaced `PendingBootString`, which V10R3 rejects: they read the
+  whole partition, set `BootListInformation/PendingBootString`, and POST it back with
+  `If-Match`, refusing when the read carries no ETag. The boot order is now Open Firmware
+  device paths, the form `read-boot-order` reports in `boot_device_list`, not the `cd`,
+  `disk` and `network` selectors; the CLI takes them as positional arguments. A V10R3 HMC
+  rejects the empty value `clear-boot-order` writes with HTTP 500 `REST0126`; #1048 tracks
+  it (#980).
+
 - `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
   partition body — including when the post-create read-back raises (#1014) — instead of omitting
   the requested assignment steps entirely (#1019).
+
+- `storage upload-iso` and `hmc_upload_iso` upload through the HMC web File API, which V10R3
+  accepts, instead of a `BrokeredFile` document it rejects. They report `uploaded` only once
+  the repository lists the media, and refuse a volume group without a media repository before
+  downloading (ADR 0177, #978).
 
 - `HMCError` extracts `<Message>` from the untruncated HMC error body before truncating the
   stored body to `MAX_ERROR_BODY_BYTES` (4096). Before, a body over 4096 bytes was cut first,
