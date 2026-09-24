@@ -8,6 +8,6 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_clear_lpar_boot_order` | `mutate` | `boot_order.clear` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126). |
+| `hmc_clear_lpar_boot_order` | `mutate` | `boot_order.clear` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Refuse to clear a pending boot order: no value tried on V10R3 clears it. |
 | `hmc_read_lpar_boot_order` | `read` | `boot_order.read` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read current, pending, and last-used boot-device state for an LPAR. |
 | `hmc_set_lpar_boot_order` | `mutate` | `boot_order.set` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set the pending boot order used on the LPAR's next activation. |
