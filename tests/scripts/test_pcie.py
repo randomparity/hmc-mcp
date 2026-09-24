@@ -680,6 +680,93 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
     )
 
 
+@pytest.mark.asyncio
+async def test_probe_create_with_failed_apply_step_is_recorded_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A probe create whose apply_profile step errored must not read as PASS (#997)."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_exists=True)
+    _probe_create_succeeds(responses, assignment_lands=False)
+    base_create = responses["hmc_create_lpar"]
+
+    def create_lpar(kwargs: dict[str, Any], index: int) -> Any:
+        result = base_create(kwargs, index)
+        if _is_probe(kwargs) and isinstance(result, dict):
+            result = {
+                **result,
+                "workflow_completed": False,
+                "steps": [
+                    {"step": "create", "status": "ok"},
+                    {
+                        "step": "apply_profile",
+                        "status": "error",
+                        "result": "HMCCLIError: refused",
+                    },
+                ],
+            }
+        return result
+
+    responses["hmc_create_lpar"] = create_lpar
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "PASS"}
+    )
+
+    probe_row = state.row("create-time dedicated assignment")
+    assert probe_row is not None and probe_row[2] == "FAIL"
+    # The call itself still reported PASS, so the probe is still treated as
+    # created: no false "not confirmed absent" recovery row, and the arm
+    # still proceeds to create the fixture and clean the probe up.
+    assert state.row("create-time probe partition not confirmed absent") is None
+    assert any(
+        t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "probe-uuid"
+        for t, k in state.calls
+    )
+    assert any(t == "hmc_create_lpar" and not _is_probe(k) for t, k in state.calls)
+
+
+@pytest.mark.asyncio
+async def test_fixture_create_with_failed_apply_step_is_recorded_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fixture create whose apply_profile step errored must not read as PASS (#997)."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    base_create = responses["hmc_create_lpar"]
+
+    def create_lpar(kwargs: dict[str, Any], index: int) -> Any:
+        result = base_create(kwargs, index)
+        if not _is_probe(kwargs) and isinstance(result, dict):
+            result = {
+                **result,
+                "workflow_completed": False,
+                "steps": [
+                    {"step": "create", "status": "ok"},
+                    {
+                        "step": "apply_profile",
+                        "status": "error",
+                        "result": "HMCCLIError: refused",
+                    },
+                ],
+            }
+        return result
+
+    responses["hmc_create_lpar"] = create_lpar
+    state = await _run_arm(monkeypatch, responses, holder)
+
+    fixture_row = state.row("hmc_create_lpar (fixture)")
+    assert fixture_row is not None and fixture_row[2] == "FAIL"
+    # The call itself still reported PASS, so the arm still treats the
+    # partition as created — ownership stamping still runs and cleanup
+    # deletes it, rather than the arm being SKIPped as if nothing exists.
+    stamp_row = state.row("fixture ownership stamp")
+    assert stamp_row is not None and stamp_row[2] == "PASS"
+    assert any(
+        t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "fixture-uuid"
+        for t, k in state.cleanup_calls()
+    )
+
+
 def _index_of(state: ScenarioState, predicate: Any) -> int:
     return next(i for i, (t, k) in enumerate(state.calls) if predicate(t, k))
 
