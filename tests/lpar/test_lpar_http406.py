@@ -236,7 +236,7 @@ def test_create_lpar_http_406_apply_error_stops_the_workflow(monkeypatch, mock_h
     assert "HSCL boom" in result.steps[1].result
     assert result.workflow_completed is False
     assert "'default_profile' was not applied" in result.warnings[0]
-    assert "redo any skipped assignment steps" in result.warnings[0]
+    assert "redo the skipped steps" in result.warnings[0]
 
 
 def test_apply_profile_sends_verified_chsyscfg():
