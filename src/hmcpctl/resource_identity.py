@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from hmcpctl.client.core import HMCClient
@@ -58,20 +59,35 @@ async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
     return str(entry["UUID"])
 
 
+def _resource_name(entry: dict[str, Any] | None, field: str) -> str | None:
+    resource = entry.get("Resource") if entry else None
+    name = resource.get(field) if isinstance(resource, Mapping) else None
+    return name if isinstance(name, str) and name.strip() else None
+
+
+async def system_name_from_uuid(hmc: HMCClient, system_uuid: str) -> str | None:
+    """Return the managed system's REST ``SystemName``, or None when it is unusable."""
+    return _resource_name(await hmc.get_managed_system(system_uuid), "SystemName")
+
+
+async def lpar_name_from_uuid(hmc: HMCClient, lpar_uuid: str) -> str | None:
+    """Return the partition's REST ``PartitionName``, or None when it is unusable."""
+    return _resource_name(await hmc.get_logical_partition(lpar_uuid), "PartitionName")
+
+
 async def resolve_system_name(hmc: HMCClient, value: str) -> str:
     """Pass through a system name or resolve a UUID to its SystemName."""
     if not is_uuid(value):
         return value
-    entry = await hmc.get_managed_system(value)
-    name = ((entry or {}).get("Resource") or {}).get("SystemName")
-    if not name:
+    name = await system_name_from_uuid(hmc, value)
+    if name is None:
         raise ResourceNotFoundError(
             "managed system",
             value,
             f"Managed system {value!r} has no SystemName. "
             "Use hmc_list_systems to inspect available systems.",
         )
-    return str(name)
+    return name
 
 
 async def resolve_lpar_uuid(

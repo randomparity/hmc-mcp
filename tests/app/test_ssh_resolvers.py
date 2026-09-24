@@ -21,6 +21,7 @@ import pytest
 from conftest import make_config
 
 from hmcpctl.errors import HMCError
+from hmcpctl.resource_identity import ResourceNotFoundError
 from hmcpctl.ssh.lpar import resolve_lpar_cli_name, resolve_system_cli_name
 from hmcpctl.ssh.selectors import (
     _lpar_name_from_rest,
@@ -42,8 +43,10 @@ async def test_system_rest_selector_rejects_malformed_resource(resource):
     hmc = MagicMock()
     hmc.get_managed_system = AsyncMock(return_value={"Resource": resource})
 
-    with pytest.raises(ValueError, match="Could not resolve system UUID"):
+    with pytest.raises(ValueError, match="Could not resolve system UUID") as raised:
         await _system_name_from_rest(hmc, SYSTEM_UUID)
+
+    assert not isinstance(raised.value, ResourceNotFoundError)
 
 
 @pytest.mark.asyncio
@@ -52,8 +55,10 @@ async def test_lpar_rest_selector_rejects_malformed_resource(resource):
     hmc = MagicMock()
     hmc.get_logical_partition = AsyncMock(return_value={"Resource": resource})
 
-    with pytest.raises(ValueError, match="Could not resolve LPAR UUID"):
+    with pytest.raises(ValueError, match="Could not resolve LPAR UUID") as raised:
         await _lpar_name_from_rest(hmc, LPAR_UUID)
+
+    assert not isinstance(raised.value, ResourceNotFoundError)
 
 # ``lssyscfg -r sys|lpar -F uuid,name`` output rows.
 _SYS_ROWS = f"00000000-0000-0000-0000-000000000000,other\n{SYSTEM_UUID},{SYSTEM_NAME}\n"
