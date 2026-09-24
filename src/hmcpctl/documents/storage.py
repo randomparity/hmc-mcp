@@ -22,7 +22,7 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
         for pv in physical_volumes
     )
     body = f"""  <Metadata><Atom/></Metadata>
-  <GroupName kb="CUD" kxe="false">{name}</GroupName>
+  <GroupName kb="CUR" kxe="false">{name}</GroupName>
   <PhysicalVolumes kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
 {pvs}

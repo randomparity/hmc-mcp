@@ -350,7 +350,7 @@ def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):
     )
     hmc_create_volume_group(VIOS_UUID, "vg_data", ["hdisk10", "hdisk11"])
     body = route.calls.last.request.content.decode()
-    assert '<GroupName kb="CUD" kxe="false">vg_data</GroupName>' in body
+    assert '<GroupName kb="CUR" kxe="false">vg_data</GroupName>' in body
     assert body.count("<PhysicalVolume ") == 2
     assert "hdisk10" in body and "hdisk11" in body
 

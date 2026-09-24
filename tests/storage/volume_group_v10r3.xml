@@ -1,0 +1,46 @@
+<!-- Observed V10R3 VolumeGroup entry (read-only probe, #1001), redacted: synthetic Atom UUID,
+     vg-R1 / hdisk-R1 names, REDACTED-* serial, location, device-ID and label tokens. -->
+<VolumeGroup schemaVersion="V1_0">
+    <Metadata>
+        <Atom>
+            <AtomID>00000000-0000-4000-8000-0000000000B1</AtomID>
+            <AtomCreated>0</AtomCreated>
+        </Atom>
+    </Metadata>
+    <AvailableSize kb="ROR" kxe="false">241</AvailableSize>
+    <FreeSpace kb="ROR" kxe="false">241</FreeSpace>
+    <GroupCapacity kb="CUR" kxe="false">279</GroupCapacity>
+    <GroupName kb="CUR" kxe="false">vg-R1</GroupName>
+    <GroupSerialID kxe="false" kb="ROR">REDACTED-SERIAL-VG</GroupSerialID>
+    <MaximumLogicalVolumes kxe="false" kb="ROR">256</MaximumLogicalVolumes>
+    <PhysicalVolumes kxe="false" kb="CUD" schemaVersion="V1_0">
+        <Metadata>
+            <Atom/>
+        </Metadata>
+        <PhysicalVolume schemaVersion="V1_0">
+            <Metadata>
+                <Atom/>
+            </Metadata>
+            <Description kxe="false" kb="CUD">REDACTED-DESC</Description>
+            <LocationCode kb="ROR" kxe="false">REDACTED-LOC-PV</LocationCode>
+            <ReservePolicy kb="CUD" kxe="false">NoReserve</ReservePolicy>
+            <ReservePolicyAlgorithm kxe="false" kb="CUD">Failover</ReservePolicyAlgorithm>
+            <UniqueDeviceID kxe="false" kb="ROR">REDACTED-UDID-PV</UniqueDeviceID>
+            <AvailableForUsage kxe="false" kb="CUD">false</AvailableForUsage>
+            <VolumeCapacity kb="CUR" kxe="false">286102</VolumeCapacity>
+            <VolumeName kb="CUR" kxe="false">hdisk-R1</VolumeName>
+            <VolumeState kb="ROR" kxe="false">active</VolumeState>
+            <VolumeUniqueID kxe="false" kb="ROR">REDACTED-VUID-PV</VolumeUniqueID>
+            <IsFibreChannelBacked kb="ROR" kxe="false">false</IsFibreChannelBacked>
+            <IsISCSIBacked ksv="V1_8_0" kb="ROR" kxe="false">false</IsISCSIBacked>
+            <StorageLabel ksv="V1_3_0" kb="ROR" kxe="false">REDACTED-LABEL</StorageLabel>
+            <DescriptorPage83 ksv="V1_5_0" kb="ROR" kxe="false">REDACTED-PAGE83</DescriptorPage83>
+        </PhysicalVolume>
+    </PhysicalVolumes>
+    <UniqueDeviceID kb="ROR" kxe="false">REDACTED-UDID-VG</UniqueDeviceID>
+    <VirtualDisks kxe="false" kb="CUD" schemaVersion="V1_0">
+        <Metadata>
+            <Atom/>
+        </Metadata>
+    </VirtualDisks>
+</VolumeGroup>
