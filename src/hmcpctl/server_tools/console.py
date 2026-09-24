@@ -40,8 +40,8 @@ def hmc_capture_lpar_console(
     from an independent session; ``released`` is true only when that proof
     succeeds. The exception: when another client ends the capture's hold, the
     capture stops with ``stop_reason`` ``error``, an ``error`` naming
-    ``ConsoleHoldLostError``, ``released`` false, and no ``rmvterm``; the other
-    client now holds the console, so leave it. For any other false
+    ``ConsoleHoldLostError``, ``released`` false, and no ``rmvterm``; leave the
+    other client's session alone. For any other false
     ``released``, the partition's console may remain held — run
     ``rmvterm -m <system> -p <lpar>`` deliberately, or use the HMC UI, to
     recover it.

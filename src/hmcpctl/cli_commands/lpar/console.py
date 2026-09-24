@@ -74,7 +74,10 @@ def _report(capture: ConsoleCapture) -> None:
     if capture.error:
         line += f"; error: {capture.error}"
     if capture.error and capture.error.startswith(ConsoleHoldLostError.__name__):
-        line += "; another client now holds the console: leave it, and issue no rmvterm"
+        line += (
+            "; the HMC reported that another client ended this hold, so no rmvterm "
+            "was issued: leave that client's session alone"
+        )
     elif not capture.released:
         line += (
             "; the console may still be held: run 'rmvterm -m "

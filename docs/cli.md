@@ -101,7 +101,7 @@ count and `released`. Exit codes ([ADR 0175](adr/0175-capture-console-exit-codes
 capture finished and the console was released; `1` a lookup, SSH or HMC failure, a console held
 by another session, a capture stopped by an error, or bytes that could not be written; `2` a
 usage error; `3` the release was not proven, so run `rmvterm` on the HMC before another capture,
-unless the line says another client now holds the console (`ConsoleHoldLostError`): then leave it.
+unless the line says another client ended the hold (`ConsoleHoldLostError`): leave that session.
 
 `hmcpctl lpars decommission` enforces the ADR 0011 ownership token even for
 `--dry-run`; use `--ownership-override` only after explicit operator approval.

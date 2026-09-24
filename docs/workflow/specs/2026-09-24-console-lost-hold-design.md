@@ -47,9 +47,10 @@ A dropped connection closes the connection, and a lost hold does not, so the two
    another client's live hold.
 3. **Accepted failure classes:**
    - Console output that reproduces the sentinel byte for byte leaks the session's own hold, and
-     `close()` returns `False`. Library callers recover with `take_over=True`. MCP-tool and CLI
-     users need a manual `rmvterm` (ADR 0170 rule 6); until then their captures raise
-     `ConsoleHeldError`.
+     `close()` returns `False`. Library callers recover with `take_over=True`. CLI and MCP users
+     are told another client ended the hold and to leave it; a later capture's persistent
+     `ConsoleHeldError` is theirs to diagnose, and a manual `rmvterm` recovers it (ADR 0170 rule 6).
+   - A loss found by `suspend()` is reported only as `False` and a logged warning.
    - A loss whose message has not arrived when `close()` runs (about 1.5 s of delivery latency)
      still issues `rmvterm`. Only the excluded ownership query could close that window.
    - A loss during a suspension or reconnect gap, when no stream exists, goes undetected.

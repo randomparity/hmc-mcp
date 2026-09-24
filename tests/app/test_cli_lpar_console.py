@@ -295,5 +295,5 @@ def test_lost_hold_reports_the_new_holder_without_rmvterm_advice(capture):
     result = RUNNER.invoke(cli.app, COMMAND)
 
     assert result.exit_code == 3
-    assert "another client now holds the console" in result.stderr
+    assert "another client ended this hold" in result.stderr
     assert "rmvterm -m" not in result.stderr

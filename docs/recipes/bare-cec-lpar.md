@@ -127,7 +127,7 @@ must not exist yet, and prints one line to stderr, for example
 `stop reason: idle; bytes: 2048; released: true`. The bytes carry terminal escape sequences:
 read them with `less -R` or a log viewer. Exit status 3 means `released: false`: the console
 may still be held, so run the `rmvterm` command the line names on the HMC before another capture;
-if the line says another client now holds the console (`ConsoleHoldLostError`), leave it alone.
+if the line says another client ended the hold (`ConsoleHoldLostError`), leave that session alone.
 Exit status 1 with a message that the console is held means another session has it open.
 
 ## 6. Power off

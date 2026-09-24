@@ -179,7 +179,9 @@ class ConsoleCapture:
     ``released`` is honest, not optimistic: ``True`` only when an independent
     follow-up ``mkvterm`` proved the vterm slot free after the mandatory
     ``rmvterm`` (P2). ``False`` means the caller may have left the partition's
-    console held and should treat further console access as broken.
+    console held and should treat further console access as broken, unless
+    ``error`` names :class:`ConsoleHoldLostError`: then another client ended
+    the hold and no ``rmvterm`` was issued (#1004).
     """
 
     system: str
@@ -1069,6 +1071,8 @@ class ConsoleSession:
         Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
         does, and closes the connection; like :meth:`close`, it returns
         ``False`` with no ``rmvterm`` for a hold another client ended (#1004).
+        That loss is reported only by ``False`` and a logged warning; a later
+        :meth:`resume` meets any new holder as :class:`ConsoleHeldError`.
         Cancelling the caller never interrupts the release; the cancellation is
         re-raised after it completes.
         :meth:`read` waits until :meth:`resume`. The external holder should
@@ -1354,7 +1358,9 @@ async def capture_lpar_console(
     (no byte can reach the partition console, P7), enforces the three
     client-side bounds (P8), then releases the vterm with ``rmvterm`` on
     every exit path and reports honestly whether the release was *proven*
-    (P2/P3/P4).
+    (P2/P3/P4). The exception is a hold another client's ``rmvterm`` already
+    ended (#1004): no ``rmvterm``, ``stop_reason="error"`` naming
+    :class:`ConsoleHoldLostError`, and ``released=False``.
 
     Raises:
 
