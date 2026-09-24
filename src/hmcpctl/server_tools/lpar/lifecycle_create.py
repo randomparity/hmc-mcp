@@ -39,6 +39,7 @@ def hmc_create_lpar(
     max_virtual_slots: int | None = None,
     caller_token: str | None = None,
     assignments: LparPcieAssignments = LparPcieAssignments(),
+    apply_partition_profile: bool = True,
     profile: str | None = None,
 ) -> LparPcieWorkflowResult:
     """Create a new LPAR on a managed system.
@@ -72,6 +73,10 @@ def hmc_create_lpar(
             description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
             1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
+        apply_partition_profile: When the HMC creates the partition through
+            mksyscfg (its REST create returned HTTP 406), apply the new
+            default_profile so the partition has a current configuration; the
+            ``apply_profile`` step reports it. False leaves it unapplied.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
     if caller_token is not None:
@@ -89,6 +94,7 @@ def hmc_create_lpar(
                 keylock,
                 max_virtual_slots,
                 caller_token,
+                apply_profile=apply_partition_profile,
             ),
             assignments,
         ),

@@ -492,6 +492,7 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     assert audit.EVENTS == frozenset(get_args(audit.Event))
     assert audit.EVENTS == {
         "authorization",
+        "console-write",
         "install-attempted",
         "install-submitted",
         "ownership-denied",
@@ -537,8 +538,64 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
         detail=None,
     )
     emitted.add(_one(lines)["event"])
+    lines = _capture()
+    audit.record_console_write(
+        system="s",
+        lpar="l",
+        host="hmc.test",
+        mode="shared",
+        input_kind="raw",
+        length=1,
+        agent_id="a",
+    )
+    emitted.add(_one(lines)["event"])
     emitted.add(json.loads(audit_sink._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
+
+
+def test_the_console_write_record_carries_metadata_and_no_content():
+    """ADR 0176 decision 6. A console write is recorded at WARNING before its bytes
+    are queued, and the record names the target, the mode, the input kind and the
+    length, but never the written bytes.
+    """
+    levels: list[int] = []
+
+    class _Level(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            levels.append(record.levelno)
+
+    lines = _capture()
+    logging.getLogger(audit_sink.AUDIT_LOGGER_NAME).addHandler(_Level())
+    audit.record_console_write(
+        system="sys-a",
+        lpar="lp-01",
+        host="hmc.test",
+        mode="exclusive",
+        input_kind="sysrq",
+        length=2,
+        agent_id="agent-7",
+    )
+    record = _one(lines)
+    assert list(record) == [
+        "time",
+        "event",
+        "system",
+        "lpar",
+        "host",
+        "mode",
+        "input_kind",
+        "length",
+        "attribution",
+    ]
+    assert record["event"] == "console-write"
+    assert (record["system"], record["lpar"], record["host"]) == ("sys-a", "lp-01", "hmc.test")
+    assert (record["mode"], record["input_kind"], record["length"]) == ("exclusive", "sysrq", 2)
+    assert record["attribution"] == {
+        "claim": "agent-7",
+        "source": "config:agent_id",
+        "verified": False,
+    }
+    assert levels == [logging.WARNING]
 
 
 def test_the_override_record_carries_the_hmc_host():

@@ -67,11 +67,12 @@ hmcpctl lpars state "$LPAR_NAME"
 Expected: `Created LPAR '<new-lpar-name>'` and the partition as JSON; copy its `UUID` into
 `LPAR`. `lpars state` prints `not activated`.
 
-The command writes one partition profile, `default_profile`. The HMC gives the partition a
-current configuration only when that profile is applied or the partition is activated with
-it. Until then the JSON above shows zero memory and processors. No installed command applies a
-profile without powering the partition on (#939). This recipe's path is step 4, which activates
-against the profile.
+The command writes one partition profile, `default_profile`. When the HMC creates the partition
+through `mksyscfg` (its REST create answered HTTP 406), the command then applies that profile
+without powering the partition on, and the step list shows `apply_profile` as `ok`. The partition
+then has a current configuration and an `AssociatedPartitionProfile` link, which step 4 reads.
+A partition created with `--no-apply`, or whose apply failed, shows zero memory and processors
+until the profile is applied or the partition is activated (#939).
 
 ## 3. Assign the dedicated slot
 
@@ -101,7 +102,8 @@ profile UUID. `power-on` prints `Job submitted for <lpar-uuid>` and the finished
 its status is `COMPLETED_OK`. Copy the job's `JobID` into `JOB_ID`.
 
 A PowerOn that names no profile is not a substitute. The arm records it expecting an `HSCL3680`
-refusal on a partition that has never been activated; #879 confirms that outcome.
+refusal, an expectation written before `lpars create` applied the profile (#939). On an applied
+partition the outcome is unconfirmed; #879 records it.
 
 ## 5. Observe the partition
 
@@ -110,15 +112,22 @@ JOB_ID=<job-id-from-power-on-output>
 hmcpctl jobs show "$JOB_ID"
 hmcpctl lpars state "$LPAR"
 hmcpctl lpars refcodes "$SYSTEM_NAME" "$LPAR_NAME" --count 5 --json
+CONSOLE_LOG=<new-file-for-the-console-bytes>
+hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30 \
+  --max-bytes 65536 --idle-timeout 10 --output "$CONSOLE_LOG"
 ```
 
 Expected: `jobs show` prints the same job, found, with a successful status. `lpars state`
 prints `open firmware` while the partition sits at the SMS menu, or `running`. `lpars refcodes`
 prints up to five recent reference codes for the partition.
 
-**Console capture has no installed CLI command.** The CLI form arrives with PR #777, which is
-not merged. Until then, capture the console through the MCP tool `hmc_capture_lpar_console`
-from an MCP client connected to `hmcpctl serve`, or skip this observation.
+`lpars capture-console` records the console for at most 30 seconds or 64 KiB, stopping after 10
+seconds without output, and never sends input. It writes the raw bytes to `CONSOLE_LOG`, which
+must not exist yet, and prints one line to stderr, for example
+`stop reason: idle; bytes: 2048; released: true`. The bytes carry terminal escape sequences:
+read them with `less -R` or a log viewer. Exit status 3 means `released: false`: the console
+may still be held, so run the `rmvterm` command the line names on the HMC before another capture.
+Exit status 1 with a message that the console is held means another session has it open.
 
 ## 6. Power off
 

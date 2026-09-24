@@ -1121,6 +1121,23 @@ def test_lpars_create(fake_hmc):
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
+    assert "apply_profile" not in result.stdout  # REST create: no mksyscfg apply
+
+
+@pytest.mark.parametrize(("flags", "expected"), [((), True), (("--no-apply",), False)])
+def test_lpars_create_passes_the_apply_choice(monkeypatch, fake_hmc, flags, expected):
+    create = AsyncMock(
+        return_value=LparPcieWorkflowResult(True, True, {}, True, (), ())
+    )
+    monkeypatch.setattr("hmcpctl.cli_commands.lpar.create.create_lpar", create)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "create", "newlpar", "--system", SYSTEM_UUID, *flags, "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert create.await_args.args[2].apply_profile is expected
 
 
 def test_lpars_create_declined_confirm_aborts(fake_hmc):
@@ -2345,6 +2362,22 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
     assert result.exit_code == 0
     assert "VMLibrary" in result.stdout
     assert "10240" in result.stdout
+
+
+def test_storage_get_media_repo_labels_the_size_in_gib(fake_hmc, monkeypatch):
+    """RepositorySize is GiB on the HMC (#963); the rendered unit must say so."""
+
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
+        return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "64"}}
+
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
+    )
+
+    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+
+    assert result.exit_code == 0
+    assert "Size: 64 GiB" in result.stdout
 
 
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):

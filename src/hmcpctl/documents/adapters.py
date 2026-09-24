@@ -6,26 +6,27 @@ from .common import document_envelope
 
 def _adapter_document(
     root_element: str,
-    partition_id_field: str,
-    slot_field: str,
+    partition_id_field: tuple[str, str],
+    slot_field: tuple[str, str],
     vios_partition_id: int,
     vios_slot: int,
     slot_number: int | None = None,
 ) -> str:
     """Build a virtual client adapter document from the shared skeleton.
 
-    *partition_id_field* / *slot_field* name the VIOS-side remote fields,
-    which differ per adapter type (vSCSI vs vFC). The client VirtualSlotNumber
-    is emitted only when *slot_number* is given; the HMC auto-assigns it
-    otherwise.
+    *partition_id_field* / *slot_field* are ``(element, kb)`` pairs for the
+    VIOS-side remote fields, which differ per adapter type (vSCSI vs vFC).
+    The client VirtualSlotNumber is emitted only when *slot_number* is given;
+    the HMC auto-assigns it otherwise.
     """
+    (id_name, id_kb), (slot_name, slot_kb) = partition_id_field, slot_field
     slot = ""
     if slot_number is not None:
-        slot = f'  <VirtualSlotNumber kb="CUD" kxe="false">{slot_number}</VirtualSlotNumber>\n'
+        slot = f'  <VirtualSlotNumber kb="COD" kxe="false">{slot_number}</VirtualSlotNumber>\n'
     body = f"""  <Metadata><Atom/></Metadata>
-  <AdapterType kb="CUD" kxe="false">Client</AdapterType>
-{slot}  <{partition_id_field} kb="CUD" kxe="false">{vios_partition_id}</{partition_id_field}>
-  <{slot_field} kb="CUD" kxe="false">{vios_slot}</{slot_field}>"""
+  <AdapterType kb="ROR" kxe="false">Client</AdapterType>
+{slot}  <{id_name} kb="{id_kb}" kxe="false">{vios_partition_id}</{id_name}>
+  <{slot_name} kb="{slot_kb}" kxe="false">{vios_slot}</{slot_name}>"""
     return document_envelope(root_element, body)
 
 
@@ -43,8 +44,8 @@ def build_vscsi_adapter_document(
     """
     return _adapter_document(
         "VirtualSCSIClientAdapter",
-        "RemoteLogicalPartitionID",
-        "RemoteSlotNumber",
+        ("RemoteLogicalPartitionID", "CUR"),
+        ("RemoteSlotNumber", "CUA"),
         vios_partition_id,
         vios_slot,
         slot_number,
@@ -64,8 +65,9 @@ def build_vfc_adapter_document(
     """
     return _adapter_document(
         "VirtualFibreChannelClientAdapter",
-        "ConnectingPartitionID",
-        "ConnectingVirtualSlotNumber",
+        # No live V10R3 kb value is recorded for these two fields (#961).
+        ("ConnectingPartitionID", "CUD"),
+        ("ConnectingVirtualSlotNumber", "CUD"),
         vios_partition_id,
         vios_slot,
         slot_number,
@@ -90,17 +92,17 @@ def build_client_network_adapter_document(
     parts = ["  <Metadata><Atom/></Metadata>"]
     if slot_number is not None:
         parts.append(
-            f'  <VirtualSlotNumber kb="CUD" kxe="false">{slot_number}</VirtualSlotNumber>'
+            f'  <VirtualSlotNumber kb="COD" kxe="false">{slot_number}</VirtualSlotNumber>'
         )
     if virtual_switch_id is not None:
         parts.append(
-            f'  <VirtualSwitchID kb="CUD" kxe="false">{virtual_switch_id}</VirtualSwitchID>'
+            f'  <VirtualSwitchID kb="ROR" kxe="false">{virtual_switch_id}</VirtualSwitchID>'
         )
-    parts.append(f'  <PortVLANID kb="CUD" kxe="false">{port_vlan_id}</PortVLANID>')
+    parts.append(f'  <PortVLANID kb="CUR" kxe="false">{port_vlan_id}</PortVLANID>')
     if tagged:
         parts.append('  <IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>')
     if mac_address:
-        parts.append(f'  <MACAddress kb="CUD" kxe="false">{mac_address}</MACAddress>')
+        parts.append(f'  <MACAddress kb="CUR" kxe="false">{mac_address}</MACAddress>')
     body = "\n".join(parts)
     return document_envelope("ClientNetworkAdapter", body)
 

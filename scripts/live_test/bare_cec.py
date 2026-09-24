@@ -87,15 +87,19 @@ _SETTLED_STATES = _NOT_ACTIVATED | _FIRMWARE_STATES
 
 _UUID_AT_END = re.compile(r"/([0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12})/?\Z")
 
-#: A new partition has no current configuration until a profile is applied
-#: (#939), so a PowerOn naming no profile is expected to be refused. Transient:
-#: an environment refusal, not a product gap to catalogue. The code is the one
-#: epic #871 names and is unconfirmed on hardware; #879 reconciles it.
+#: Before #939, `hmc_create_lpar` left a new partition without an applied profile, so a
+#: PowerOn naming no profile had no current configuration to activate and HSCL3680 was
+#: expected. Since #939 (PR #986) `hmc_create_lpar` applies the profile by default, so
+#: this PowerOn normally targets an applied partition, where the outcome is unconfirmed
+#: (#879 records it) — except a create whose `apply_profile` step failed
+#: (`_apply_created_profile` catches `HMCCLIError` without raising) leaves it unapplied,
+#: where HSCL3680 still applies. Transient: an environment refusal, not a product gap.
 _NO_PROFILE_ACTIVATION_REFUSED = ExpectedOutcome(
     operation="lpar.power_on",
     variant="no-current-configuration",
-    reason="a partition whose profile was never applied has no current "
-    "configuration to activate (#939) — expected on a freshly created partition",
+    reason="a PowerOn naming no profile normally targets an applied partition (#939) "
+    "with an unconfirmed outcome on hardware — #879 records it; a create whose "
+    "apply_profile step failed leaves it unapplied, where HSCL3680 still applies",
     error_codes=frozenset({"HSCL3680"}),
     transient=True,
 )
@@ -710,33 +714,6 @@ async def _unassign(client: Client, state: RunState, run: _Run) -> bool:
     return restored
 
 
-async def _name_absent(client: Client, state: RunState, fixture: pcie._DedicatedFixture) -> bool:
-    """Whether the fixture's name answers HSCL8012 after its delete.
-
-    Only a readable description carrying this run's marker means the partition
-    is still there. Any other answer — a lost connection, an SSH view lagging
-    the REST delete — is read once more after `pcie._ABSENCE_REREAD_DELAY_S`,
-    as `pcie._created_despite_failure` does (#906), before it is believed.
-    """
-
-    async def lookup() -> tuple[str, Any]:
-        return await state.call(
-            client,
-            "hmc_get_lpar_description",
-            system_name_or_uuid=fixture.config.system_name,
-            lpar_name_or_uuid=fixture.lpar_name,
-        )
-
-    st, data = await lookup()
-    if pcie.partition_not_found(st, data):
-        return True
-    if st == "PASS" and isinstance(data, str):
-        return False
-    await asyncio.sleep(pcie._ABSENCE_REREAD_DELAY_S)
-    st, data = await lookup()
-    return pcie.partition_not_found(st, data)
-
-
 async def _slot_released(
     client: Client, state: RunState, fixture: pcie._DedicatedFixture
 ) -> bool:
@@ -785,7 +762,7 @@ async def _delete(client: Client, state: RunState, run: _Run) -> bool:
         system_name_or_uuid=fixture.config.system_name,
         lpar_name_or_uuid=fixture.lpar_uuid,
     )
-    absent = await _name_absent(client, state, fixture)
+    absent = await pcie.name_absent(client, state, fixture)
     if not absent:
         state.record(_ROW, "hmc_delete_lpar (call)", st, data)
         await pcie.cleanup_dedicated(client, state, fixture)

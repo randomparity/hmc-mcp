@@ -6,6 +6,8 @@ back.  These tests verify that the correct nodes are present in the POST body
 after the mutation.
 """
 
+import re
+
 import httpx
 import pytest
 from conftest import make_config
@@ -51,7 +53,7 @@ _VG_FEED_WITH_VMLIB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <MediaRepositories>
           <VirtualMediaRepository>
             <RepositoryName>VMLibrary</RepositoryName>
-            <RepositorySize>7000</RepositorySize>
+            <RepositorySize>7</RepositorySize>
           </VirtualMediaRepository>
         </MediaRepositories>
       </VolumeGroup>
@@ -67,7 +69,7 @@ _VG_POST_RESPONSE = _VG_FEED_BARE
 async def test_create_media_repository(mock_hmc):
     """create_media_repository GETs the VG, injects VMLibrary, then POSTs."""
     vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VG_FEED_BARE))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VG_FEED_BARE, headers={"ETag": '"etag-1"'}))
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
     )
@@ -77,7 +79,26 @@ async def test_create_media_repository(mock_hmc):
     body = post_route.calls.last.request.content.decode()
     assert "VirtualMediaRepository" in body
     assert "VMLibrary" in body
-    assert "2048" in body
+    # RepositorySize is GiB on the HMC: 2048 MiB is sent as 2.
+    assert re.search(r"RepositorySize>2</", body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size_mib", [0, -1024, 1536, 1023])
+async def test_create_media_repository_refuses_a_size_that_is_not_whole_gib(
+    mock_hmc, size_mib
+):
+    """The HMC takes whole GiB; a MiB value that does not convert is refused unsent."""
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
+    get_route = mock_hmc.get(vg_path)
+    post_route = mock_hmc.post(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="size_mib must be a positive multiple of 1024"):
+            await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", size_mib)
+
+    assert not get_route.called
+    assert not post_route.called
 
 
 @pytest.mark.asyncio
@@ -90,10 +111,27 @@ async def test_create_media_repository_returns_matching_existing_repository(mock
     post_route = mock_hmc.post(vg_path)
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 7000)
+        result = await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 7168)
 
     assert result == {
-        "Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "7000"}
+        "Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "7"}
+    }
+    assert not post_route.called
+
+
+@pytest.mark.asyncio
+async def test_create_media_repository_compares_sizes_numerically_in_gib(mock_hmc):
+    """A stored "7.0" GiB is the same repository as a requested 7168 MiB."""
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
+    feed = _VG_FEED_WITH_VMLIB.replace(">7</RepositorySize>", ">7.0</RepositorySize>")
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=feed))
+    post_route = mock_hmc.post(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 7168)
+
+    assert result == {
+        "Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "7.0"}
     }
     assert not post_route.called
 
@@ -110,7 +148,7 @@ async def test_create_media_repository_refuses_to_replace_different_size(mock_hm
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(
             HMCError,
-            match="already exists with size 7000 MiB.*requested 2048 MiB",
+            match=r"already exists with size 7 GiB; requested 2048 MiB \(2 GiB\)",
         ):
             await hmc.create_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", 2048)
 
@@ -122,17 +160,31 @@ async def test_create_optical_media(mock_hmc):
     """create_optical_media GETs the VG, appends VirtualOpticalMedia, then POSTs."""
     vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(
-        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB, headers={"ETag": '"etag-1"'})
     )
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.create_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "aix.iso", 1400)
+        await hmc.create_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "aix.iso", 3072)
     body = post_route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in body
     assert "aix.iso" in body
-    assert "1400" in body
+    # The medium's Size is GiB on the HMC: 3072 MiB is sent as 3.
+    assert re.search(r"Size>3</", body)
+
+
+@pytest.mark.asyncio
+async def test_create_optical_media_refuses_a_size_that_is_not_whole_gib(mock_hmc):
+    """Blank media takes the same whole-GiB conversion, checked before any request."""
+    vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
+    get_route = mock_hmc.get(vg_path)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="size_mib must be a positive multiple of 1024"):
+            await hmc.create_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "aix.iso", 1400)
+
+    assert not get_route.called
 
 
 @pytest.mark.asyncio
@@ -140,7 +192,7 @@ async def test_delete_media_repository(mock_hmc):
     """delete_media_repository GETs the VG, removes MediaRepositories, then POSTs."""
     vg_path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
     mock_hmc.get(vg_path).mock(
-        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB)
+        return_value=httpx.Response(200, text=_VG_FEED_WITH_VMLIB, headers={"ETag": '"etag-1"'})
     )
     post_route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(200, text=_VG_POST_RESPONSE)

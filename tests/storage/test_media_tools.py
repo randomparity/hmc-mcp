@@ -86,12 +86,12 @@ def test_list_optical_media(monkeypatch, mock_hmc):
           <RepositorySize>40960</RepositorySize>
           <VirtualOpticalMedia schemaVersion="V1_0">
             <MediaName>aix.iso</MediaName>
-            <MediaSize>1400</MediaSize>
+            <Size kb="CUR">1.0801</Size>
             <MediaType>BLANK</MediaType>
           </VirtualOpticalMedia>
           <VirtualOpticalMedia schemaVersion="V1_0">
             <MediaName>linux.iso</MediaName>
-            <MediaSize>2048</MediaSize>
+            <Size kb="CUR">2</Size>
             <MediaType>BLANK</MediaType>
           </VirtualOpticalMedia>
         </VirtualMediaRepository>
@@ -113,6 +113,9 @@ def test_list_optical_media(monkeypatch, mock_hmc):
     assert len(media_list) == 2
     assert media_list[0]["name"] == "aix.iso"
     assert media_list[1]["name"] == "linux.iso"
+    # The HMC's Size is GiB; the tool reports it in MiB (#963).
+    assert media_list[0]["size_mib"] == 1106.0224
+    assert media_list[1]["size_mib"] == 2048
 
 
 def test_get_media_repository_not_found(monkeypatch, mock_hmc):
