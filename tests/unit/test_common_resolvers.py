@@ -8,6 +8,7 @@ from hmcpctl.config import HMCConfig, build_config
 from hmcpctl.resource_identity import (
     ResourceNotFoundError,
     resolve_lpar_uuid,
+    resolve_system_name,
     resolve_vios_uuid,
 )
 
@@ -92,3 +93,47 @@ async def test_lpar_resolver_preserves_no_match_guidance():
     assert raised.value.resource_kind == "LPAR"
     assert raised.value.selector == "missing"
     assert isinstance(raised.value, ValueError)
+
+
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entry",
+    [
+        None,
+        {"Resource": None},
+        {"Resource": []},
+        {"Resource": ["x"]},
+        {"Resource": {}},
+        {"Resource": {"SystemName": ""}},
+        {"Resource": {"SystemName": "   "}},
+        {"Resource": {"SystemName": 1}},
+    ],
+)
+async def test_system_name_resolver_reports_unusable_payload_as_not_found(entry):
+    hmc = AsyncMock()
+    hmc.get_managed_system.return_value = entry
+
+    with pytest.raises(
+        ResourceNotFoundError,
+        match=f"Managed system '{SYSTEM_UUID}' has no SystemName. "
+        "Use hmc_list_systems to inspect available systems.",
+    ) as raised:
+        await resolve_system_name(hmc, SYSTEM_UUID)
+
+    assert raised.value.resource_kind == "managed system"
+    assert raised.value.selector == SYSTEM_UUID
+    hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
+
+
+@pytest.mark.asyncio
+async def test_system_name_resolver_resolves_uuid_and_passes_name_through():
+    hmc = AsyncMock()
+    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys-a"}}
+
+    assert await resolve_system_name(hmc, "sys-b") == "sys-b"
+    hmc.get_managed_system.assert_not_awaited()
+    assert await resolve_system_name(hmc, SYSTEM_UUID) == "sys-a"
+    hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)

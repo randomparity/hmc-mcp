@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import overload
 
 from hmcpctl.client.core import HMCClient
 
 from ..config import HMCConfig
 from ..errors import HMCTransportError
-from ..resource_identity import is_uuid
+from ..resource_identity import is_uuid, lpar_name_from_uuid, system_name_from_uuid
 from .lpar import resolve_lpar_cli_name, resolve_system_cli_name
 
 
 async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
-    entry = await hmc.get_managed_system(system_uuid)
-    resource = entry.get("Resource") if entry else None
-    name = resource.get("SystemName") if isinstance(resource, Mapping) else None
-    if not isinstance(name, str) or not name.strip():
+    name = await system_name_from_uuid(hmc, system_uuid)
+    if name is None:
         raise ValueError(
             f"Could not resolve system UUID {system_uuid!r} to a system name. "
             "List managed systems to find the system UUID."
@@ -26,10 +23,8 @@ async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
 
 
 async def _lpar_name_from_rest(hmc: HMCClient, lpar_uuid: str) -> str:
-    entry = await hmc.get_logical_partition(lpar_uuid)
-    resource = entry.get("Resource") if entry else None
-    name = resource.get("PartitionName") if isinstance(resource, Mapping) else None
-    if not isinstance(name, str) or not name.strip():
+    name = await lpar_name_from_uuid(hmc, lpar_uuid)
+    if name is None:
         raise ValueError(
             f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
             "List logical partitions to find the partition UUID."
