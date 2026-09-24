@@ -123,6 +123,21 @@ async def test_create_refuses_to_post_without_etag_collection_or_identity(
 
 
 @pytest.mark.asyncio
+async def test_create_rejects_a_response_with_xml_entities(mock_hmc):
+    """An entity-bearing GET body raises HMCError, not a raw DefusedXmlException."""
+    document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
+    _, post = _routes(
+        mock_hmc, httpx.Response(200, text=document, headers={"ETag": '"etag-1"'})
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="not valid XML"):
+            await _map(hmc)
+
+    assert not post.called
+
+
+@pytest.mark.asyncio
 async def test_create_reports_a_concurrent_change_on_412(mock_hmc):
     _, post = _routes(mock_hmc, _ok(), post_status=412)
 
