@@ -20,15 +20,14 @@ from defusedxml import ElementTree as DET
 
 from ..documents import (
     StorageKind,
-    build_brokered_file_document,
-    build_linked_optical_media_document,
     build_virtual_disk_element,
     build_virtual_optical_mapping_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
+    build_web_file_document,
 )
 from ..errors import HMCError
-from ..xmlutil import element_to_dict, localname
+from ..xmlutil import WEB_NS, element_to_dict, localname
 from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
@@ -36,6 +35,8 @@ from .client_parse import _parse_feed
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 _MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+_WEB_FILE_PATH = "/rest/api/web/File"
+_WEB_FILE_TYPE = "application/vnd.ibm.powervm.web+xml; type=File"
 _UUID_PATTERN = _re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
 
 
@@ -318,93 +319,74 @@ async def _append_vios_mapping(
 
 
 class StorageMixin:
-    async def _broker_file_create(
-        self: StorageClient, vios_uuid: str, vg_uuid: str, filename: str
+    async def _web_file_create(
+        self: StorageClient, vios_uuid: str, filename: str, size_bytes: int
     ) -> str:
-        """Create the storage broker handle used to import an ISO."""
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        response = await self._request_with_uuid_path_arguments(
-            "POST",
-            path,
-            uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-            content=build_brokered_file_document(filename=filename),
-            headers={"Content-Type": _MEDIA_UOM, "Accept": _MEDIA_UOM},
+        """Create the web File an ISO upload streams into; return its FileUUID (ADR 0177)."""
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        response = await self._request(
+            "PUT",
+            _WEB_FILE_PATH,
+            content=build_web_file_document(
+                filename=filename, size_bytes=size_bytes, vios_uuid=vios_uuid
+            ),
+            headers=self._web_headers({"Content-Type": _WEB_FILE_TYPE, "Accept": "*/*"}),
         )
         if response.status_code not in (200, 201):
             raise HMCError(
-                f"Brokered file create failed for {filename}",
-                response.status_code,
-                response.text,
+                f"Web File create failed for {filename}", response.status_code, response.text
             )
-        location = response.headers.get("Location")
-        if not location:
+        try:
+            identities = DET.fromstring(response.text).findall(f".//{{{WEB_NS}}}FileUUID")
+        except ET.ParseError as exc:
             raise HMCError(
-                "Brokered file create missing Location header",
+                "Web File create response is not XML", response.status_code, response.text
+            ) from exc
+        file_uuid = (identities[0].text or "").strip() if len(identities) == 1 else ""
+        if not _UUID_PATTERN.match(file_uuid):
+            raise HMCError(
+                "Web File create response must carry exactly one UUID FileUUID",
                 response.status_code,
                 response.text,
             )
-        return location
+        return file_uuid
 
-    async def _broker_file_upload(
+    async def _web_file_upload(
         self: StorageClient,
-        broker_uri: str,
+        file_uuid: str,
         content: AsyncIterator[bytes],
         content_length: int,
-    ) -> str:
-        """Stream bounded ISO content into a storage broker handle."""
-        response = await self._request(
+    ) -> None:
+        """Stream bounded ISO content into a web File; never buffer it (ADR 0052)."""
+        response = await self._request_with_uuid_path_arguments(
             "PUT",
-            broker_uri,
+            f"{_WEB_FILE_PATH}/contents/{file_uuid}",
+            uuid_path_arguments={"file_uuid": file_uuid},
             content=content,
-            headers={
-                "Content-Type": "application/octet-stream",
-                "Content-Length": str(content_length),
-                "Accept": _MEDIA_UOM,
-            },
-        )
-        if response.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"Brokered file upload failed to {broker_uri}",
-                response.status_code,
-                response.text,
-            )
-        return response.text or ""
-
-    async def _broker_iso_import(
-        self: StorageClient,
-        vios_uuid: str,
-        vg_uuid: str,
-        media_name: str,
-        broker_uri: str,
-    ) -> str:
-        """Import a brokered ISO into a VIOS media repository."""
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        document = build_linked_optical_media_document(
-            media_name=media_name, broker_uri=broker_uri
-        )
-        response = await self._reconcile_storage_mutation(
-            "broker_iso_import",
-            lambda: self.get_volume_group(vios_uuid, vg_uuid),
-            lambda: self._post(
-                path,
-                document,
-                resource_type="VolumeGroup",
-                uuid_path_arguments={"vios_uuid": vios_uuid, "vg_uuid": vg_uuid},
-                fallback_to_generic_uom_on_406=True,
+            headers=self._web_headers(
+                {
+                    "Content-Type": "application/octet-stream",
+                    "Content-Length": str(content_length),
+                    "Accept": "*/*",
+                }
             ),
         )
-        return response or ""
+        if response.status_code not in (200, 201, 202, 204):
+            raise HMCError(
+                f"Web File upload failed for {file_uuid}", response.status_code, response.text
+            )
 
-    async def _broker_file_cleanup(self: StorageClient, broker_uri: str) -> None:
-        """Release a storage broker handle after an ISO upload."""
-        response = await self._request(
-            "DELETE", broker_uri, headers={"Accept": _MEDIA_UOM}
+    async def _web_file_delete(self: StorageClient, file_uuid: str) -> None:
+        """Release a web File after an ISO upload; an absent File is already released."""
+        response = await self._request_with_uuid_path_arguments(
+            "DELETE",
+            f"{_WEB_FILE_PATH}/{file_uuid}",
+            uuid_path_arguments={"file_uuid": file_uuid},
+            headers=self._web_headers({"Accept": "*/*"}),
         )
         if response.status_code not in (200, 202, 204, 404):
             raise HMCError(
-                f"Brokered file cleanup failed for {broker_uri}",
-                response.status_code,
-                response.text,
+                f"Web File delete failed for {file_uuid}", response.status_code, response.text
             )
 
     # Virtual storage (children of VirtualIOServer)

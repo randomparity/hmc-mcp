@@ -704,15 +704,17 @@ def hmc_upload_iso(
     profile: str | None = None,  # HMC profile name (uses default if omitted)
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
-    """Upload an ISO to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC web File API.
 
     The ISO is downloaded from an http(s) URL, which is the only accepted source:
     a path on the MCP server's filesystem is refused. The download runs from the
     MCP server's network position, so the URL's host must be on the operator's
     allowlist (`HMC_ISO_URL_ALLOWLIST`); with no allowlist configured every URL
     is refused, and redirects are never followed. Computes SHA-256 and size
-    before upload, refuses name collisions, and cleans up broker resources on
-    every outcome. Returns staged result data including the imported media entry.
+    before upload, refuses a volume group without a media repository and name
+    collisions, reports success only once the repository lists the media, and
+    releases the HMC upload handle on every outcome. Returns the result data,
+    including the repository's media entry.
 
     Args:
         vios_name_or_uuid: VIOS name or UUID to target.
@@ -729,10 +731,12 @@ def hmc_upload_iso(
         Dict with upload status, media details, SHA-256 checksum, and size.
 
     Raises:
-        HMCError: For HMC API errors during broker operations or import.
+        HMCError: For HMC API errors during the upload, or when the repository
+            does not list the media after it.
         ValueError: If iso_source is not an http(s) URL, if its host is not on
-            the operator's allowlist, if the server answers with a redirect, or
-            if the download exceeds the size bound.
+            the operator's allowlist, if the server answers with a redirect, if
+            the download exceeds the size bound, or if the volume group holds no
+            media repository.
         FileExistsError: If media_name already exists in the repository.
     """
 

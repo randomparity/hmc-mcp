@@ -205,6 +205,14 @@ DEFAULT_CHUNK_SIZE = 8192
 # for the whole payload. 8 KiB would make a 20 GiB ISO 2.6 million writes.
 # 64 KiB is httpx's own streaming unit (`AsyncIteratorByteStream.CHUNK_SIZE`).
 UPLOAD_CHUNK_SIZE = 64 * 1024
+# The 2026-09-23 upload was listed on the first poll; the bound keeps a lost
+# import from holding the call open (ADR 0177).
+VISIBILITY_POLLS = 12
+VISIBILITY_POLL_SECONDS = 5.0
+_ACCEPTED_NOTE = (
+    "The HMC accepted the ISO bytes; the media may or may not reach the repository. "
+    "Check list-optical-media before retrying."
+)
 
 
 async def list_volume_groups(
@@ -803,38 +811,53 @@ async def list_optical_media(
     return [_optical_media(entry) for entry in await hmc.list_optical_media(vios_uuid, vg_uuid)]
 
 
-async def _upload_iso_via_broker(
+async def _wait_for_media(
+    hmc: HMCClient, vios_uuid: str, vg_uuid: str, media_name: str
+) -> dict[str, Any]:
+    """Return the repository entry for *media_name* once the HMC lists it."""
+    try:
+        for poll in range(VISIBILITY_POLLS):
+            if poll:
+                await asyncio.sleep(VISIBILITY_POLL_SECONDS)
+            for media in await hmc.list_optical_media(vios_uuid, vg_uuid):
+                if media.get("MediaName") == media_name:
+                    return media
+    except HMCError as exc:
+        exc.add_note(_ACCEPTED_NOTE)
+        raise
+    raise HMCError(
+        f"ISO {media_name!r} was uploaded, but volume group {vg_uuid} did not list it "
+        f"after {VISIBILITY_POLLS} checks. {_ACCEPTED_NOTE}"
+    )
+
+
+async def _upload_iso_via_web_file(
     hmc: HMCClient,
     vios_uuid: str,
     vg_uuid: str,
     media_name: str,
     iso_path: Path,
     file_size: int,
-) -> dict[str, Any] | None:
-    """Run the HMC broker allocation, upload, import, and release transaction."""
-    broker_uri: str | None = None
+) -> dict[str, Any]:
+    """Create a web File, stream the ISO into it, wait for the media, release the File."""
+    file_uuid: str | None = None
     try:
-        broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
+        file_uuid = await hmc._web_file_create(vios_uuid, media_name, file_size)
         with iso_path.open("rb") as handle:
-            await hmc._broker_file_upload(
-                broker_uri, _aiter_file_chunks(handle), file_size
-            )
-        await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
-
-        updated_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-        return next(
-            (media for media in updated_media if media.get("MediaName") == media_name),
-            None,
-        )
+            await hmc._web_file_upload(file_uuid, _aiter_file_chunks(handle), file_size)
+        return await _wait_for_media(hmc, vios_uuid, vg_uuid, media_name)
     finally:
         primary_error = sys.exception()
-        if broker_uri:
+        if file_uuid:
             try:
-                await hmc._broker_file_cleanup(broker_uri)
-            except Exception:
+                await hmc._web_file_delete(file_uuid)
+            except Exception as exc:
                 if primary_error is None:
+                    exc.add_note(
+                        f"ISO {media_name!r} is in the repository; only the release failed."
+                    )
                     raise
-                logger.exception("broker cleanup failed for ISO upload %s", broker_uri)
+                logger.exception("web File delete failed for ISO upload %s", file_uuid)
 
 
 async def upload_iso(
@@ -846,18 +869,19 @@ async def upload_iso(
     *,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
-    """Upload an ISO to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC web File API (ADR 0177).
 
     ``iso_source`` must be an ``http`` or ``https`` URL whose host the operator
     has put on ``iso_url_allowlist`` (``HMC_ISO_URL_ALLOWLIST``), and both
     conditions are checked before any other work happens. **With no allowlist
     configured every URL is refused** — see ``_require_allowlisted_iso_url`` and
-    ADR 0050. The media name is then validated against HMC's FileName.Pattern
-    and refused on collision with existing media before any transfer begins;
-    the ISO is downloaded with explicit timeout and size bounds and without
-    following redirects, with SHA-256 and size computed from the download; and
-    both the local temp file and the HMC broker resources are cleaned up on
-    every outcome.
+    ADR 0050. The media name is then validated against HMC's FileName.Pattern,
+    the volume group must hold a media repository, and a name that collides with
+    existing media is refused, all before any transfer begins. The ISO is
+    downloaded with explicit timeout and size bounds and without following
+    redirects, with SHA-256 and size computed from the download. It is reported
+    uploaded only once the repository lists it. The local temp file and the HMC
+    web File are both released on every outcome.
 
     Args:
         hmc: HMC client instance.
@@ -874,16 +898,17 @@ async def upload_iso(
         - 'media_name': Name of the media in the repository.
         - 'media_size_bytes': Size of the uploaded ISO.
         - 'sha256': SHA-256 checksum of the uploaded ISO.
-        - 'media': Full uploaded media entry dict, or None when the HMC's
-          post-import inventory does not include it.
+        - 'media': The repository's entry for the uploaded media.
 
     Raises:
-        HMCError: For malformed ISO URLs or HMC API errors during broker operations
-                  or import.
+        HMCError: For malformed ISO URLs, HMC API errors during the web File
+                  requests, or a repository that does not list the media after
+                  the upload.
         ValueError: If ``iso_source`` is not an http(s) URL, if its host is not
                    on the operator's allowlist (including the unset allowlist,
                    which permits nothing), if the server answers with a
-                   redirect, or if the download exceeds the size bound.
+                   redirect, if the download exceeds the size bound, or if the
+                   volume group holds no media repository.
         FileExistsError: If media_name already exists in the repository.
     """
     iso_url = _require_allowlisted_iso_url(
@@ -899,6 +924,12 @@ async def upload_iso(
             f"media_name {media_name!r} is invalid. "
             "HMC only accepts filenames matching [A-Za-z0-9_.]{1,79} "
             "(no hyphens, spaces, or other special characters)."
+        )
+
+    if await hmc.get_media_repository(vios_uuid, vg_uuid) is None:
+        raise ValueError(
+            f"Volume group {vg_uuid} on VIOS {vios_uuid} holds no media repository. "
+            "Pass the volume group that holds it, or create one with create-media-repo."
         )
 
     # Check for name collision before downloading anything — the check needs
@@ -920,7 +951,7 @@ async def upload_iso(
         ) from exc
 
     try:
-        uploaded_media_entry = await _upload_iso_via_broker(
+        uploaded_media_entry = await _upload_iso_via_web_file(
             hmc, vios_uuid, vg_uuid, media_name, iso_path, file_size
         )
 
