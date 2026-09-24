@@ -163,5 +163,5 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
 Focused tests: `tests/lpar/test_boot_order.py` covers criteria 1-3 through a respx-mocked client
 and a redacted live-shaped `LogicalPartition` entry built in that module. `tests/app/test_cli_commands.py`
 covers the CLI. `tests/test_live_runner.py` covers the ST20 migration. The guardrails are
-`just verify` and `uv run --no-sync prek run --all-files`. Live acceptance runs on minimus, as
+`just verify` and `uv run --no-sync prek run --all-files`. Live acceptance runs on the operator's live-test host, as
 `docs/live-testing.md` and the campaign lock describe.
