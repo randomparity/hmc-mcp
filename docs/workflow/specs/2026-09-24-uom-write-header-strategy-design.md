@@ -11,9 +11,11 @@ untyped `Accept` (`*/*`) and a typed `Content-Type`; with them the vSCSI adapter
 and its DELETE 204. The VIOS mapping and VolumeGroup writes already send that shape by hand
 (ADR 0169, ADR 0171); the shared helpers do not.
 
-LPAR create depends on the 406: `create_lpar` (`src/hmcpctl/operations/lpar/core.py`) falls
-back to `mksyscfg` only on a 406. With the header fixed the probe saw a 400 `REST0001` schema
-rejection instead, which escapes as an unhandled error.
+LPAR create depends on the 406: `create_and_stamp_lpar` (`src/hmcpctl/operations/lpar/core.py`)
+falls back to `mksyscfg` only on a 406. With the header fixed, V10R3 answers 400 `REST0001`: on
+`PartitionMemoryConfiguration` in the 2026-09-23 probe (fixed since by #961), and on
+`PartitionProcessorConfiguration` in a 2026-09-24 check with this design's headers, which created
+nothing. That 400 escapes as an unhandled error.
 
 ## Scope
 
@@ -22,11 +24,15 @@ rejection instead, which escapes as an unhandled error.
    `fallback_to_generic_uom_on_406` parameter is deleted from `_put`, `_post`, `_write_uom`, the
    `client_contracts` protocol, and its one caller, `create_volume_group`.
 2. `_delete` sends `Accept: */*`, keeping the `X-HMC-Schema-Version` rule.
-3. `create_lpar` falls back to `mksyscfg` on a 406 as today, and also on a 400 whose body
-   contains `REST0001`. Any other status still raises.
+3. `create_and_stamp_lpar` falls back to `mksyscfg` on a 406 as today, and also on a 400 whose
+   body contains `REST0001`. Any other status still raises. The processor-wrapper builder is left
+   as #961 left it, so V10R3 keeps the `mksyscfg` path and its profile apply (#939).
 4. GETs are unchanged. Hand-built writes (mapping, VolumeGroup, partition RMW, web API) are
    unchanged.
-5. ADR 0178 records the strategy; CHANGELOG gets one `Fixed` line.
+5. ADR 0178 records the strategy; CHANGELOG gets one `Fixed` line. Prose that names the 406 as
+   the fallback trigger or blames a too-generic media type is corrected where it describes these
+   paths (`docs/compatibility.md`, `docs/cli.md`, the create tool parameter, the two 406
+   translations).
 
 No ownership transition: the shared transport keeps header negotiation and the operation keeps
 the create fallback decision.
@@ -46,8 +52,9 @@ the create fallback decision.
      the only negotiating HMC in evidence.
    - a 400 `REST0001` caused by a caller-supplied value rather than the builder now runs
      `mksyscfg`, whose own validation reports the value. The cost is a different error text.
-   - a REST create that V10R3 accepts takes the REST path and no `mksyscfg` profile apply;
-     that is the pre-V10R3 REST behaviour and is recorded live.
+   - an HMC level that accepts the REST create takes the REST path, which applies no profile.
+     Not reachable on V10R3: the 2026-09-24 check got 400 `REST0001` with the current builder.
+     Unchanged by this design on other levels; raised as a follow-up candidate.
 4. Covered elsewhere:
    - builder `kb`/attribute conformance: #961 (closed);
    - mapping and VolumeGroup RMW writes: ADR 0169, ADR 0171;
@@ -59,7 +66,8 @@ the create fallback decision.
    `Content-Type`, one request, and a 406 is raised without a retry.
 2. A `_delete` sends `Accept: */*`.
 3. `create_child` sends the same headers and no `X-HMC-Schema-Version`.
-4. `create_lpar` runs `mksyscfg` after a 400 carrying `REST0001`, and re-raises a 400 without it.
+4. `create_and_stamp_lpar` runs `mksyscfg` after a 400 carrying `REST0001`, and re-raises a 400
+   without it.
 5. `rg fallback_to_generic_uom_on_406 src tests` returns nothing.
 6. Live, on the authorized lab partition: an adapter PUT and its DELETE succeed with the new
    headers, and an LPAR create check leaves no new partition behind, confirmed by read-back.
@@ -71,4 +79,6 @@ the create fallback decision.
 - Success 4: `Mode: focused-test`, `tests/lpar/test_lpar_http406.py`, a 400-`REST0001` case and a
   plain-400 case beside the 406 case.
 - Success 5: `Mode: focused-test`, the `rg` command above exits 1.
-- Success 6: `Mode: task-test-not-applicable`: needs the lab HMC; run under docs/live-testing.md.
+- Success 6: `Mode: task-test-not-applicable`: needs the lab HMC. Direct `hmcpctl` commands under
+  the campaign live lock, with HMC CLI baselines before and after; no runner arm, because every
+  arm mutates beyond the operator's authorization for this issue.
