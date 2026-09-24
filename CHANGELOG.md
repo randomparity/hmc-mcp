@@ -167,7 +167,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   whole partition, set `BootListInformation/PendingBootString`, and POST it back with
   `If-Match`, refusing when the read carries no ETag. The boot order is now Open Firmware
   device paths, the form `read-boot-order` reports in `boot_device_list`, not the `cd`,
-  `disk` and `network` selectors; the CLI takes them as positional arguments (#980).
+  `disk` and `network` selectors; the CLI takes them as positional arguments. A V10R3 HMC
+  rejects the empty value `clear-boot-order` writes with HTTP 500 `REST0126` (#980).
 - When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
   `provision` report the partition as created, with its profile-apply step and a warning naming
   the read-back error. Before, they reported a failed create with nothing created (#1014).
