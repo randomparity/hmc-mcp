@@ -4019,6 +4019,110 @@ async def test_malformed_vlan_inventory_blocks_network_mutation(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nettest_lpar_create_captures_nested_uuid_shape(monkeypatch):
+    """ST9 accepts the nested `lpar` create-result shape ST8 uses, not just top-level (#969)."""
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        if tool == "hmc_create_lpar":
+            return "PASS", {"lpar": {"UUID": "nettest-uuid"}}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    created = await network._create_network_and_nettest_lpar(None, state, 0)
+
+    assert created is True
+    assert state.artifacts.nettest_uuid == "nettest-uuid"
+
+
+@pytest.mark.asyncio
+async def test_nettest_cleanup_deletes_by_name_when_identity_unresolved(monkeypatch):
+    """A PASS create with no identifiable UUID is still cleaned up by name, not SKIPped (#969)."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.test_vlan_id = 3100
+
+    await runner.mutate_virtual_networking(None, state)
+
+    assert state.artifacts.nettest_uuid is None
+    delete_call = next(item for item in calls if item[0] == "hmc_delete_lpar")
+    assert delete_call[1] == {
+        "system_name_or_uuid": state.config.system_name,
+        "lpar_name_or_uuid": state.config.nettest_name,
+    }
+    result = next(
+        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
+    )
+    assert result["status"] == "PASS"
+
+
+@pytest.mark.asyncio
+async def test_nettest_cleanup_fails_with_manual_recovery_when_delete_fails(monkeypatch):
+    """A PASS create that can't be cleaned up records FAIL with manual recovery, not SKIP (#969)."""
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        if tool == "hmc_create_lpar":
+            return "PASS", {}
+        if tool == "hmc_delete_lpar":
+            return "FAIL", "boom"
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.test_vlan_id = 3100
+
+    await runner.mutate_virtual_networking(None, state)
+
+    result = next(
+        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
+    )
+    assert result["status"] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in result["data"]
+    assert "rmsyscfg -r lpar -m" in result["data"]
+    assert state.config.nettest_name in result["data"]
+
+
+@pytest.mark.asyncio
+async def test_nettest_cleanup_manual_recovery_omits_call_failure_traceback(
+    monkeypatch,
+):
+    """The manual-recovery message shows a CallFailure's message, never its traceback."""
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        if tool == "hmc_create_lpar":
+            return "PASS", {}
+        if tool == "hmc_delete_lpar":
+            return "FAIL", observation.CallFailure(
+                "TimeoutError",
+                "TimeoutError: connection lost",
+                "Traceback (most recent call last):\n  <secret-stack-frame>\n",
+                None,
+                False,
+            )
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.test_vlan_id = 3100
+
+    await runner.mutate_virtual_networking(None, state)
+
+    result = next(
+        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
+    )
+    assert result["status"] == "FAIL"
+    assert "TimeoutError: connection lost" in result["data"]
+    assert "secret-stack-frame" not in result["data"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("workflow", "configure", "expected_tool"),
     [
