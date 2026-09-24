@@ -137,7 +137,7 @@ def hmc_clear_lpar_boot_order(
     Meant to restore the HMC default boot order on the next activation. It
     writes an empty ``BootListInformation/PendingBootString`` by the same
     read-modify-write as ``hmc_set_lpar_boot_order``. A V10R3 HMC (M1060)
-    rejected that empty value with HTTP 500 ``REST0126`` on 2026-09-24.
+    rejected that empty value with HTTP 500 ``REST0126`` on 2026-09-24 (#1048).
 
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.

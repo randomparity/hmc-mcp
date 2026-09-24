@@ -281,7 +281,7 @@ is `COMPLETED_OK`. `jobs show` prints the same job. `lpars state` prints `runnin
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
 is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
 Firmware device paths, and a never-booted partition reports none. On V10R3, `clear-boot-order` fails
-with HTTP 500 `REST0126`, so a pending boot order, once set, cannot be cleared with it.
+with HTTP 500 `REST0126`, so a pending boot order, once set, cannot be cleared with it (#1048).
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes

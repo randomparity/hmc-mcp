@@ -79,7 +79,7 @@ Callers of the changed contract:
   paths instead, splitting the saved pending string on whitespace. It skips the step when the
   list is empty, and when the baseline pending string is empty or not a valid path list, because
   only a set can restore it on V10R3. Since no observed partition carries a pending string,
-  routine ST20 runs do not exercise set-boot-order until the clear follow-up lands.
+  routine ST20 runs do not exercise set-boot-order until #1048 lands.
 
 The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
 
@@ -119,7 +119,7 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
      `PendingBootString` rejected with HTTP 500 `REST0126`, and the HMC CLI's
      `boot_string=""` stored a literal `"` instead of clearing. By operator decision
      (2026-09-24, relayed by the campaign) clear keeps its chartered contract: the rejection
-     is documented, and how an HMC clears a pending boot string is a follow-up.
+     is documented, and #1048 tracks how an HMC clears a pending boot string.
 4. **Covered elsewhere:**
    - The UOM write header strategy: #935.
    - The sparse POSTs from rename and DLPAR: the plan's Task 4 records a per-caller verdict for
@@ -156,7 +156,7 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
 5. Live: the Advanced-group read on the authorized partition. The write, under the campaign
    lock, either round-trips, with `pending_boot_string` read back equal to the joined input and
    then cleared, or is recorded against #935 with the format left unverified. Live acceptance on 2026-09-24
-   round-tripped set, and clear was rejected as the failure model records.
+   round-tripped set, and clear was rejected as the failure model records (#1048).
 
 ## Validation
 
