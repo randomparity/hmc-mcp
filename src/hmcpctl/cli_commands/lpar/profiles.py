@@ -83,12 +83,15 @@ def lpars_clear_boot_order(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
 ) -> None:
-    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126).
+    """Refuse to clear a pending boot order: the HMC accepts no clearing value.
+
+    Authorizes, then exits 1 without writing. A profile activation consumed the
+    pending boot order when observed on V10R3; set-boot-order replaces it.
 
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
-    result = with_client(
+    with_client(
         lambda hmc: clear_lpar_boot_order(
             hmc,
             system_name_or_uuid=system_name,
@@ -96,9 +99,6 @@ def lpars_clear_boot_order(
             ownership_override=ownership_override,
         )
     )
-
-    console.print("[green]Pending boot order cleared[/green]")
-    print_json(result)
 
 
 def register_commands(group: typer.Typer) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, NoReturn
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
@@ -14,6 +14,13 @@ from ...resource_identity import optional_system_selector, resolve_lpar_uuid
 from .errors import translate_lpar_write_error
 
 _logger = logging.getLogger(__name__)
+
+_CLEAR_REFUSAL = (
+    "Refusing to clear the pending boot order: the HMC accepts no value that clears it "
+    "(an empty value fails with REST0126 on V10R3), so nothing was written. A profile "
+    "activation consumed the pending boot order when observed on V10R3; other activation "
+    "paths are unverified. Replace it with set-boot-order."
+)
 
 
 def _boot_text(value: object) -> str | None:
@@ -100,21 +107,15 @@ async def clear_lpar_boot_order(
     lpar_name_or_uuid: str,
     *,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
-    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126)."""
-    lpar_uuid = await resolve_and_authorize_lpar_mutation(
+) -> NoReturn:
+    """Refuse to clear the LPAR's pending boot order after authorizing the caller.
+
+    V10R3 accepts no clearing value; the probes are in the #1048 design spec.
+    """
+    await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-
-    updated = await _write_pending_boot_string(hmc, lpar_uuid, "")
-
-    _logger.info(
-        "Cleared pending boot order for LPAR %s (%s)",
-        lpar_name_or_uuid,
-        lpar_uuid,
-    )
-
-    return updated
+    raise HMCError(_CLEAR_REFUSAL)
