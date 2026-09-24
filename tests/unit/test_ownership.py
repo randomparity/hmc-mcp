@@ -260,6 +260,30 @@ def test_required_system_rejects_partition_uuid_from_another_system():
     authorize.assert_not_awaited()
 
 
+# Issue #1026: _partition_name and resolve_lpar_ownership_names read
+# PartitionName through resource_identity.lpar_name_from_uuid, which rejects a
+# non-string or whitespace-only name instead of coercing it with str().
+
+
+def test_partition_name_rejects_whitespace_only_name():
+    hmc = AsyncMock()
+    hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "   "}}
+    with pytest.raises(ValueError, match="No LPAR 'lpar-selector' found"):
+        asyncio.run(lpar_ownership._partition_name(hmc, "lpar-uuid", "lpar-selector"))
+
+
+def test_resolve_lpar_ownership_names_rejects_whitespace_only_partition_name():
+    hmc = AsyncMock()
+    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys1"}}
+    hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "  "}}
+    with pytest.raises(ValueError, match="LPAR 'lpar-uuid' has no partition name"):
+        asyncio.run(
+            lpar_ownership.resolve_lpar_ownership_names(
+                hmc, "sys-uuid", "sys1", "lpar-uuid"
+            )
+        )
+
+
 def test_optional_system_rejects_partition_uuid_from_another_system():
     hmc = AsyncMock()
     hmc.list_logical_partitions.return_value = [
