@@ -316,6 +316,30 @@ record is not proof that no submission occurred.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
 
+### `event: "console-write"`
+
+Emitted immediately **before** a `WritableConsoleSession` queues bytes for a partition console,
+one record per write. It is always `WARNING`. No MCP tool or CLI command writes to a console, so
+only a Python API consumer produces this record, and no access policy gates it. The decision is
+[ADR 0176](adr/0176-console-input-and-exclusive-raw-mode.md).
+
+```json
+{"time":"2026-09-23T18:00:00+00:00","event":"console-write","system":"sys-a","lpar":"lp-01","host":"hmc-a.example","mode":"shared","input_kind":"sysrq","length":2,"attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`system` and `lpar` are the HMC CLI names the session was opened with, and `host` is the
+`HMCConfig.host` of its client. `mode` is `"shared"` for a write made while the collector keeps
+reading and `"exclusive"` for a write inside raw mode. `input_kind` is `"raw"` for caller bytes
+and `"sysrq"` for a framed SysRq request. `length` is the byte count. **The written bytes are
+never recorded**, not even a SysRq key, because console input can hold credentials.
+`attribution.claim` is `HMC_AGENT_ID`, or `hmcpctl` when that is unset, as it is for the install
+records.
+
+The record is emitted before the write, so a write that then fails is still recorded. The record
+proves an attempt, not delivery.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
+
 ### `event: "power-ownership-guard"`
 
 Emitted once at `serve` startup for every connection the selected access policy can route.

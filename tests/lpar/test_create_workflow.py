@@ -11,6 +11,7 @@ import pytest
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.assignments import (
     AssignmentResult,
+    DedicatedPcieAssignment,
     LparPcieAssignments,
 )
 from hmcpctl.operations.lpar.core import LparCreation, LparCreationResult
@@ -85,3 +86,40 @@ async def test_create_lpar_appends_assignment_steps(monkeypatch):
         WorkflowStep("vnic[0]", "ok", {"slot": 4}),
     )
     apply.assert_awaited_once_with(hmc, "sys1", "app-lpar", assignments)
+
+
+@pytest.mark.asyncio
+async def test_create_lpar_skips_assignments_after_apply_error(monkeypatch):
+    hmc = cast(HMCClient, object())
+    assignments = LparPcieAssignments(
+        dedicated=(DedicatedPcieAssignment("default_profile", "21010010"),)
+    )
+    lpar = {"UUID": "lpar-1"}
+    apply_step = WorkflowStep("apply_profile", "error", "HSCL boom")
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.workflows.prevalidate_lpar_pcie_assignments",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.workflows.create_and_stamp_lpar",
+        AsyncMock(
+            return_value=LparCreationResult(True, lpar, True, ("w",), apply_step)
+        ),
+    )
+    apply = AsyncMock()
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.workflows.apply_validated_lpar_pcie_assignments",
+        apply,
+    )
+
+    result = await create_lpar(hmc, "sys1", _creation(), assignments)
+
+    assert result.workflow_completed is False
+    assert result.lpar is lpar
+    assert result.steps == (
+        WorkflowStep("create", "ok", lpar),
+        apply_step,
+        WorkflowStep("dedicated[0]", "skipped"),
+    )
+    assert result.warnings == ("w",)
+    apply.assert_not_awaited()

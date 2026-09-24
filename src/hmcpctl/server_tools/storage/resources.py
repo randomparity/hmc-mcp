@@ -256,8 +256,9 @@ def hmc_map_storage_to_lpar(
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
-    The LPAR must already have a vSCSI adapter
-    paired to this VIOS — see hmc_add_vscsi_adapter.
+    The HMC creates the vSCSI client/server adapter pair for the mapping, so
+    do not add one first with hmc_add_vscsi_adapter; that adapter stays
+    unpaired. The VIOS's existing mappings are preserved.
     ``storage_kind`` is 'VirtualDisk' (a logical volume created with
     hmc_create_virtual_disk) or 'PhysicalVolume' (a whole hdisk). storage_name
     is the DiskName / device name. target_device optionally pins the vtscsi
@@ -304,13 +305,14 @@ def hmc_create_media_repository(
     """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
 
     The repository holds file-backed ISO images for client partitions; only one
-    can exist per VIOS. size_mib is RepositorySize measured in MiB.
+    can exist per VIOS. size_mib is MiB; the HMC's RepositorySize is GiB, so
+    size_mib must be a multiple of 1024 and is sent as size_mib / 1024.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
-        size_mib: Repository capacity in mebibytes.
+        size_mib: Repository capacity in mebibytes, a multiple of 1024.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
@@ -338,14 +340,15 @@ def hmc_create_optical_media(
     """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
 
     Only blank media can be created via the API; media_name is the file name
-    (e.g. 'aix.iso'), size_mib is MediaSize measured in MiB.
+    (e.g. 'aix.iso'). size_mib is MiB; the HMC's media Size is GiB, so
+    size_mib must be a multiple of 1024 and is sent as size_mib / 1024.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         system_name_or_uuid: Optional managed system that scopes a VIOS name.
         vg_uuid: Volume-group UUID containing the media repository.
         media_name: ISO container file name, such as ``aix.iso``.
-        size_mib: Blank media capacity in mebibytes.
+        size_mib: Blank media capacity in mebibytes, a multiple of 1024.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
@@ -433,7 +436,7 @@ def hmc_get_media_repository(
 ) -> dict[str, Any] | None:
     """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
 
-    Returns the repository with capacity (RepositorySize) and optionally
+    Returns the repository with capacity (RepositorySize, in GiB) and optionally
     embedded VirtualOpticalMedia entries if present.
 
     Args:
@@ -461,8 +464,8 @@ def hmc_list_optical_media(
     """List Virtual Optical Media in the Virtual Media Repository.
 
     Returns a list of optical media entries (ISO containers) with their
-    MediaName, MediaSize, and MediaType. The repository must exist
-    (VMLibrary on the specified Volume Group).
+    name, size_mib (converted from the HMC's GiB Size), and media_type.
+    The repository must exist (VMLibrary on the specified Volume Group).
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.

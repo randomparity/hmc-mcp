@@ -1398,31 +1398,19 @@ async def test_create_volume_group(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_create_virtual_disk(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
-    ).mock(return_value=httpx.Response(200, text=VG_FEED))
-    route = mock_hmc.post(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222222222"
-    ).mock(return_value=httpx.Response(200, text=VG_ENTRY))
-    async with HMCClient(make_config()) as hmc:
-        await hmc.create_virtual_disk("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "lv_boot", 51200)
-    body = route.calls.last.request.content.decode()
-    assert "VirtualDisks" in body and "lv_boot" in body and "50" in body
-
-
-@pytest.mark.asyncio
 async def test_map_storage_to_lpar(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"
-    ).mock(return_value=httpx.Response(200, text=VG_FEED))
-    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111").mock(
-        return_value=httpx.Response(200, text=VIOS_ENTRY)
+    path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"
+    vios = (
+        '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
+        "<UUID>11111111-1111-1111-1111-111111111111</UUID><VirtualSCSIMappings/></VirtualIOServer>"
     )
+    mock_hmc.get(path).mock(return_value=httpx.Response(200, text=vios, headers={"ETag": "e1"}))
+    route = mock_hmc.post(path).mock(return_value=httpx.Response(200, text=VIOS_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        await hmc.map_storage_to_lpar(
+        result = await hmc.map_storage_to_lpar(
             "11111111-1111-1111-1111-111111111111", "VirtualDisk", "lv_boot", _PARENT_UUID
         )
+    assert result is not None and result["Resource"]["PartitionName"] == "vios1"
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body
@@ -2496,6 +2484,40 @@ async def test_list_operations_unknown_type_raises_hmc_error_with_status(mock_hm
 
     assert raised.value.status_code == 400
     assert "Unrecognized root REST type of NoSuchType" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_create_child_400_surfaces_hmc_schema_message(mock_hmc):
+    """A 400 REST0001 schema rejection reports the HMC's message, not a generic failure (#961).
+
+    The body uses the HttpErrorResponse shape of the INVALID_URL test above. The message text
+    is the one #961 recorded; whether V10R3 puts the schema detail in <Message> is unobserved.
+    """
+    lpar = "00000000-0000-4000-8000-000000000001"
+    path = f"/rest/api/uom/LogicalPartition/{lpar}/VirtualSCSIClientAdapter"
+    mock_hmc.put(path).mock(
+        return_value=httpx.Response(
+            400,
+            text=(
+                '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+                '/firmware/web/mc/2012_10/">'
+                "<HTTPStatus>400</HTTPStatus>"
+                f"<RequestURI>{path}</RequestURI>"
+                "<ReasonCode>Unknown internal error.</ReasonCode>"
+                "<Message>REST0001 Failed to unmarshal input payload. Value 'CUD' is not "
+                "facet-valid with respect to enumeration '[ROR]'.</Message>"
+                "</HttpErrorResponse>"
+            ),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.create_child("LogicalPartition", lpar, "VirtualSCSIClientAdapter", "<x/>")
+
+    assert raised.value.status_code == 400
+    assert "enumeration '[ROR]'" in str(raised.value)
+    assert "<Message>" not in str(raised.value)
 
 
 @pytest.mark.asyncio

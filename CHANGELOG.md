@@ -10,6 +10,44 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `WritableConsoleSession`, a `ConsoleSession` subclass, writes to a partition console
+  (ADR 0176). `write(data)` sends raw bytes while collection keeps running. `send_sysrq(key,
+  prefix=...)` sends a caller-supplied prefix plus the key as one write; hmcpctl ships no SysRq
+  sequence until #879 verifies one. `async with session.raw_mode() as channel:` gives a
+  preempting holder, such as KGDB, exclusive reads and writes while the vterm stays held, and
+  returns the channel to the collector afterwards. Every write first emits a `console-write`
+  audit record that carries the length and never the bytes. `ConsoleSession`, the bounded
+  capture and `hmc_capture_lpar_console` keep sealed stdin, and no MCP tool or CLI command
+  writes (#958).
+- Console connections send SSH keepalives, so a dead but idle channel is detected within about
+  60 s (ADR 0174). `ConsoleSession(..., reconnect=True)` then acquires the console again and
+  yields a `ConsoleGap` marker before the new stream. A console still held after the drop raises
+  `ConsoleHeldAfterDropError`, a `ConsoleHeldError`, with no `rmvterm`; with `take_over=True`
+  the reconnect reclaims it. The bounded capture never reconnects, but on a dead idle channel it
+  now ends with `stop_reason="error"` instead of waiting for its idle or duration bound (#977).
+- `hmcpctl lpars capture-console LPAR --system SYSTEM` takes the same bounded, input-free console
+  capture as the MCP tool `hmc_capture_lpar_console`, with the same `--duration`, `--max-bytes`
+  and `--idle-timeout` defaults and limits. It writes raw bytes to stdout or to a new `--output`
+  file, reports the stop reason and `released` on stderr, and exits 0, 1, 2 or 3 as ADR 0175
+  states; 3 means the console may still be held. The bare-CEC recipe now captures the console
+  with it. The MCP tool and the command share one selector resolver (#959).
+- `ConsoleSession` can yield the console to a preempting hold in two named modes (ADR 0173).
+  `async with session.hand_over() as handover:` moves the channel to an in-process holder while
+  the session keeps the vterm held, with no release gap. `suspend()` releases the vterm with the
+  usual `rmvterm` and probe proof for an external holder, and `resume()` acquires it again. It
+  raises `ConsoleHeldError`, issuing no `rmvterm`, if the slot was taken. The collector's
+  `read()` waits while paused. `close()` of a suspended session issues no `rmvterm`. The bounded
+  capture is unchanged (#976).
+
+- `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
+  duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
+  the same `rmvterm` and independent-probe proof as the bounded capture and reports `released`.
+  The session runs the release to completion when cancelled. ADR 0170 states which process
+  exits leave the console held. `capture_lpar_console` is now built on the session with the same
+  signature and results. One exception: if its task is cancelled during the final release, the
+  capture now raises `CancelledError` after the release, as ADR 0072 documents. It is a
+  pre-release domain-module API, not a `hmcpctl.api` export (#974).
+
 - A bare-CEC LPAR recipe, `docs/recipes/bare-cec-lpar.md`: create a partition, assign a
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
@@ -116,6 +154,62 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
+  `provision` report the partition as created, with its profile-apply step and a warning naming
+  the read-back error. Before, they reported a failed create with nothing created (#1014).
+
+- The apply-error warning from `create` and `provision` says "redo any skipped steps" instead of
+  "redo any skipped assignment steps". Since #999, a failed apply during `provision` also skips
+  network, vSCSI, storage, power-on and affinity-policy steps, which the old wording didn't
+  cover (#1013).
+
+- `hmcpctl lpars provision` and `hmc_provision_lpar` apply the new partition profile after a
+  `mksyscfg` create, as `lpars create` does, and report it as an `apply_profile` step. Before
+  this, provision's network step failed with `REST0269` on such a partition. A failed apply skips
+  the remaining steps and leaves the partition in place. There is no opt-out (#999).
+
+- `hmc_create_volume_group` and `hmcpctl storage create-vg` send `GroupName` with `kb="CUR"`,
+  the value a live V10R3 `VolumeGroup` carries, instead of `kb="CUD"`. A test pins the create
+  document against a redacted V10R3 `VolumeGroup` capture (#1001).
+- `hmcpctl storage create-media-repo`, `storage create-media`, `hmc_create_media_repository` and
+  `hmc_create_optical_media` convert `size_mib` to the GiB the HMC's `RepositorySize` and media
+  `Size` take. They previously sent the MiB value unconverted, so `--size-mib 20480` asked for a
+  20 TiB repository. A size that is not a multiple of 1024 MiB is now refused before the volume
+  group is read or changed.
+  The existing-repository check compares in GiB, `get-media-repo` labels the size GiB, and
+  `list-optical-media` reads the medium's `Size` element, which the HMC reports in GiB, instead
+  of the absent `MediaSize`, and returns it as `size_mib`. The short live-test repository default
+  (`LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB`) is now 1024, and the live-test runner refuses
+  either repository size at config load when it is not a multiple of 1024 (#963).
+
+- `hmc_create_virtual_disk`, `hmc_delete_virtual_disk` and `hmcpctl storage create-disk` /
+  `delete-disk` no longer POST a sparse `VolumeGroup` document, which V10R3 rejects at schema
+  validation and which omitted the group's existing disks and physical volumes. Both now read the
+  volume group, add or remove exactly one virtual disk, and write the whole group back with
+  `If-Match` set to the read's ETag. They refuse without writing when the read carries no ETag,
+  when create names a disk the group already holds, or when delete matches no disk or several. An
+  HMC 412 (stale ETag) is reported as a concurrent change with nothing written. HMC enforcement of
+  a mismatched ETag and delete by omission are not yet live-verified (#936).
+  `hmc_delete_virtual_disk` also refuses a disk that backs a vSCSI mapping named inline by
+  `DiskName`, the shape V10R3 returns; the mapped-disk check previously matched only an `href`
+  the HMC does not send.
+- `hmc_create_media_repository`, `hmc_create_optical_media`, `hmc_delete_media_repository`,
+  `hmc_delete_optical_media` and their `hmcpctl storage` commands write the volume group back
+  with `If-Match` set to the read's ETag, as the virtual-disk writes do. Without it, a media
+  write racing a virtual-disk write could post the group as it was before that write, restoring a
+  deleted disk or dropping a created one. They now refuse without writing when the read carries
+  no ETag, and an HMC 412 is reported as a concurrent change with nothing written. HMC
+  enforcement of a mismatched ETag on this path is not yet live-verified (#996).
+- `hmc_delete_media_repository` and `hmcpctl storage delete-media-repo` refuse, with nothing
+  written, when the read they write from still holds a `VirtualOpticalMedia`. The prior check
+  read the repository once to confirm it was empty and read it again to delete it; a medium
+  created between those two reads was deleted along with the repository without the refusal ever
+  firing. The second read now carries its own refusal, closing that window (#1012).
+- `hmcpctl storage create-disk`, `storage attach-disk` and `hmc_create_virtual_disk` refuse a
+  disk name longer than 15 characters before the create request, with a message that states the
+  VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
+  reported as a possible side effect (#964).
+
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
   adapter and target device (`id`, for example `vhost0/vtscsi0`; `null` when the VIOS does not
@@ -144,6 +238,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `add-vscsi`, `add-vfc`, `delete`) accept `--system/-s` and pass it to the operation. They had no
   way to scope the LPAR lookup, so the mutating paths walked every managed system for the LPAR's
   parent, which on a large HMC can hit the 30 s parent-discovery bound (#937).
+
+- SR-IOV logical-port assign and unassign no longer report an HMC refusal as "could not be
+  verified". When the dispatched `chhwres`/`chsyscfg` command errors and the immediate readback
+  matches the pre-mutation state exactly, `SriovLogicalPortPartialError` now reports the HMC's own
+  failure text as a refusal; a missing, mismatched, or unreadable readback (or a command error
+  whose readback also changed) keeps the existing "could not be verified" wording, since the
+  state there is genuinely uncertain (ADR 0056, #966).
 
 - `hmcpctl lpars summary`, the LPM commands `lpars migrate`, `migrate-affinity`,
   `migrate-validate`, `migrate-abort` and `migrate-recover`, and `hmcpctl vios power-on` /
@@ -248,6 +349,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   storage quantity, so a digit string long enough to exhaust `int()` or saturate
   `float()` to `inf` is rejected as malformed rather than parsed (#762).
 
+- The live-test runner restores the test partition's description, and with it the ownership
+  stamp, after ST10 and ST15. The baseline kept the CLI read's trailing newline, which the
+  restore refused as non-printable, so the partition lost its stamp and every
+  ownership-guarded command then refused it. The baseline now drops one trailing line
+  terminator. A description that cannot be written back through the CLI now fails the run
+  with a `MANUAL RECOVERY REQUIRED` row naming the `chsyscfg` restore, not a SKIP (#968).
+
 - The live-test runner no longer rejects `LIVE_TEST_SRIOV_PHYSICAL_PORT_ID=0`. Physical
   port IDs are zero-indexed on Power SR-IOV hardware, so port 0 is the first and most
   common port, but it was covered by a strictly-positive check that aborted the run
@@ -292,7 +400,29 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
   on an environment the repository does not admit (#928).
 
+- `scripts/live_test_preflight.py`'s dedicated-arm verdict now predicts the `st36-io-slots`
+  scenario (#985) too, not only the fixture's own dedicated slot: it names the two further spare
+  slots the scenario will mutate when no DRC index is pinned, and states the scenario will SKIP
+  when one is. Previously preflight showed one mutated slot while an unpinned run touched three
+  (#1000).
+
 ### Changed
+
+- Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
+  type. `ConsoleSession(..., take_over=True)` is a new, explicit option: it issues `rmvterm`
+  and then acquires with proven acquisition. The default is `False`, and neither the capture nor
+  the MCP tool sets it. `capture_lpar_console` no longer leaks its own proven hold when console
+  output quotes the contention sentence: it releases the hold, then raises `ConsoleHeldError`
+  as before. A contention sentence that follows the acquisition banner in the same read now
+  counts as console content, both at open and in the release probe (#975, ADR 0172).
+
+- `hmcpctl lpars create` and `hmc_create_lpar` apply the new partition profile, `default_profile`,
+  when the HMC creates the partition through `mksyscfg` (its REST create returned HTTP 406). The
+  apply is `chsyscfg -r lpar -o apply` and leaves the partition not activated. Before this, such a
+  partition had no current configuration: REST adapter writes failed with `REST0269` and the
+  create result showed zero memory and processors. The result reports an `apply_profile` step; a
+  failed apply stops the remaining steps and leaves the partition in place. `--no-apply` /
+  `apply_partition_profile=false` skips it and returns a warning instead (#939).
 
 - The distribution, console script, Python package and configuration directory are renamed
   from `hmc-mcp` / `hmc_mcp` to `hmcpctl`, with no compatibility alias: the facade is now

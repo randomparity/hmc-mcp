@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
@@ -17,7 +19,61 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _virtual_disks(resource: dict[str, Any]) -> list[dict[str, Any]]:
+@dataclass(frozen=True)
+class ConfiguredVolumeGroup:
+    """The listed volume group named by ``LIVE_TEST_VDISK_VOLUME_GROUP_NAME``."""
+
+    uuid: str
+    resource: Mapping[str, Any]
+    free_space_mib: int | None
+
+
+def _free_space_mib(entry: Mapping[str, Any], resource: Mapping[str, Any]) -> int | None:
+    """Convert the HMC's GiB free-space figure to MiB; None when unknown."""
+    gib = entry.get("free_space_gib")
+    if gib is None:
+        gib = resource.get("FreeSpace")
+    try:
+        return None if gib is None else int(float(gib) * 1024)
+    except (TypeError, ValueError):
+        return None
+
+
+def resolve_configured_volume_group(
+    state: RunState, stage: int, data: object, dependents: Sequence[str]
+) -> ConfiguredVolumeGroup | None:
+    """Return the configured volume group from a listing, or SKIP ``dependents``.
+
+    The VIOS lists volume groups in no fixed order, so selection is by name
+    only; a missing group is never replaced by another one (issue #967).
+    """
+    artifacts = state.artifacts
+    name = state.config.vdisk_volume_group_name
+    for entry in entries(data):
+        resource = get_resource(entry)
+        uuid = entry.get("uuid") or entry.get("UUID")
+        listed_name = entry.get("name") or resource.get("GroupName")
+        if listed_name == name and isinstance(uuid, str) and uuid:
+            artifacts.vg_uuid, artifacts.vdisk_vg_name = uuid, name
+            return ConfiguredVolumeGroup(uuid, resource, _free_space_mib(entry, resource))
+    artifacts.vg_uuid = artifacts.vdisk_vg_name = None
+    for dependent in dependents:
+        state.skip(stage, dependent, f"configured volume group {name!r} not listed")
+    return None
+
+
+def configured_vg_uuid(state: RunState) -> str | None:
+    """Return ``vg_uuid`` only when the resolver recorded it for the configured group.
+
+    A results document restored for a subset run can carry another group's UUID.
+    """
+    artifacts = state.artifacts
+    if artifacts.vdisk_vg_name != state.config.vdisk_volume_group_name:
+        return None
+    return artifacts.vg_uuid
+
+
+def _virtual_disks(resource: Mapping[str, Any]) -> list[dict[str, Any]]:
     disks = resource.get("VirtualDisks") or resource.get("virtual_disks") or []
     if isinstance(disks, dict):
         disks = disks.get("VirtualDisk") or []
@@ -51,18 +107,13 @@ def _capture_disk_capacity(state: RunState, disk: dict[str, Any]) -> bool:
 
 
 def _capture_volume_group(state: RunState, data: Any) -> None:
-    artifacts = state.artifacts
-    for volume_group in entries(data):
-        resource = get_resource(volume_group)
-        found_target = any(
-            _capture_disk_capacity(state, disk) for disk in _virtual_disks(resource)
-        )
-        if found_target or not artifacts.vg_uuid:
-            artifacts.vg_uuid = volume_group.get("UUID") or volume_group.get("uuid")
-            artifacts.vdisk_vg_name = (
-                resource.get("GroupName") or resource.get("group_name") or ""
-            )
-        if found_target:
+    group = resolve_configured_volume_group(
+        state, 3, data, ("select configured volume group",)
+    )
+    if group is None:
+        return
+    for disk in _virtual_disks(group.resource):
+        if _capture_disk_capacity(state, disk):
             break
 
 
