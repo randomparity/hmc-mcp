@@ -15,7 +15,9 @@ default 60 s timeout, through `_upload_iso_via_web_file` unchanged:
 | 1,048,627,200 | 343.9 s | 6.7 s | 0.53 s |
 | 4,194,355,200 | 1,540.1 s | 14.8 s | 1.96 s |
 
-Both uploads succeeded and were listed on the first visibility poll. The response wait grows with
+Both uploads succeeded and were listed on the first visibility poll. Each run created the media
+repository, then removed the media and the repository; the before and after repository and
+volume-group listings match. The response wait grows with
 size: a line through the two points (about 4.0 s plus 2.6 s per GB) crosses 60 s near 21.6 GB,
 and reaches about 282 s at the 100 GiB download ceiling (`MAX_DOWNLOAD_SIZE_BYTES`). A larger ISO
 therefore fails with default configuration while the HMC may still import it.
@@ -28,8 +30,8 @@ therefore fails with default configuration while the HMC may still import it.
    `httpx.Timeout(config.timeout, read=max(config.timeout, config.upload_timeout))`. Connect,
    write and pool waits keep `HMC_TIMEOUT`: the measured write gaps are under 2 s. The `max`
    keeps an operator who already raised `HMC_TIMEOUT` above 600 s from getting a shorter wait.
-3. A read timeout on that PUT raises `HMCTransportError` saying the ISO was sent, no response came
-   within the read timeout, the HMC may still import it (check `list-optical-media` before
+3. A read timeout on that PUT raises `HMCTransportError` saying no complete response came within
+   the read timeout after the ISO was streamed, the HMC may still import it (check `list-optical-media` before
    retrying), and to raise `HMC_UPLOAD_TIMEOUT`. The generic "Increase HMC_TIMEOUT" message would
    name the wrong setting. Other timeouts keep the generic message.
 4. ADR 0177 gets an "Amended by #1055" Status block recording the measurement and this timeout.
