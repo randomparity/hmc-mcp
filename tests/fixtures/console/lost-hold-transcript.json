@@ -1,0 +1,263 @@
+{
+ "record_kind": "live-capture",
+ "evidence_kind": "live-capture",
+ "hmc_release": "V10R3 M1060",
+ "system_model": "8375-42A",
+ "captured": "2026-09-24",
+ "source_url": "https://github.com/randomparity/hmc-mcp/issues/1004",
+ "claim_summary": "Holder A opens mkvterm on a not-activated partition; client B, over a separate SSH connection, runs `rmvterm -m SYSTEM -p PARTITION` (taker `rmvterm`) or opens ConsoleSession(take_over=True), which runs rmvterm then mkvterm (taker `take_over`). About 1.5 s later A's stream receives one 98-byte message; A's mkvterm channel then stays open and silent with no EOF, exit status, or channel close for 40 s, and A's SSH connection stays open and runs another command. Run 3 closes A's connection after the loss: B's stream stays open, an independent probe finds the vterm held, and B's own close proves release.",
+ "redaction": "system and partition names replaced by <SYS-R1> and <LPAR-1>; host identities omitted",
+ "event_times": "seconds since A started connecting",
+ "runs": [
+  {
+   "taker": "rmvterm",
+   "events": [
+    {
+     "t": 1.436,
+     "event": "A-process-created"
+    },
+    {
+     "t": 1.488,
+     "event": "A-acquire-outcome",
+     "outcome": "acquired",
+     "data": "\r\n Open in progress  \r\n ",
+     "nbytes": 24
+    },
+    {
+     "t": 1.988,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 4.489,
+     "event": "A-still-open-before-B",
+     "stdout_done": false,
+     "connection_closed": false
+    },
+    {
+     "t": 4.489,
+     "event": "B-start",
+     "arm": "rmvterm"
+    },
+    {
+     "t": 5.971,
+     "event": "A-stdout-chunk",
+     "nbytes": 98,
+     "data": "\r\n Connection has closed \r\n\r\n\r\n This session is no longer connected. Please close this window.\n\n\n "
+    },
+    {
+     "t": 6.04,
+     "event": "B-rmvterm-returned",
+     "stdout": "Close command sent"
+    },
+    {
+     "t": 36.041,
+     "event": "A-readers-after-wait",
+     "stdout_done": false,
+     "stderr_done": false
+    },
+    {
+     "t": 46.043,
+     "event": "A-channel-not-closed-within-10s"
+    },
+    {
+     "t": 46.043,
+     "event": "A-exit",
+     "exit_status": null,
+     "exit_signal": "None",
+     "returncode": null,
+     "connection_closed": false
+    },
+    {
+     "t": 48.046,
+     "event": "A-connection-after-2s",
+     "connection_closed": false
+    },
+    {
+     "t": 48.29,
+     "event": "A-connection-reuse",
+     "exit_status": 0,
+     "stdout_bytes": 236
+    },
+    {
+     "t": 51.51,
+     "event": "post-probe-released",
+     "released": true
+    }
+   ]
+  },
+  {
+   "taker": "take_over",
+   "events": [
+    {
+     "t": 1.473,
+     "event": "A-process-created"
+    },
+    {
+     "t": 1.491,
+     "event": "A-acquire-outcome",
+     "outcome": "acquired",
+     "data": "\r\n Open in progress  \r\n ",
+     "nbytes": 24
+    },
+    {
+     "t": 2.001,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 4.493,
+     "event": "A-still-open-before-B",
+     "stdout_done": false,
+     "connection_closed": false
+    },
+    {
+     "t": 4.493,
+     "event": "B-start",
+     "arm": "takeover"
+    },
+    {
+     "t": 6.007,
+     "event": "A-stdout-chunk",
+     "nbytes": 98,
+     "data": "\r\n Connection has closed \r\n\r\n\r\n This session is no longer connected. Please close this window.\n\n\n "
+    },
+    {
+     "t": 7.599,
+     "event": "B-takeover-open-returned"
+    },
+    {
+     "t": 37.6,
+     "event": "A-readers-after-wait",
+     "stdout_done": false,
+     "stderr_done": false
+    },
+    {
+     "t": 47.605,
+     "event": "A-channel-not-closed-within-10s"
+    },
+    {
+     "t": 47.605,
+     "event": "A-exit",
+     "exit_status": null,
+     "exit_signal": "None",
+     "returncode": null,
+     "connection_closed": false
+    },
+    {
+     "t": 49.606,
+     "event": "A-connection-after-2s",
+     "connection_closed": false
+    },
+    {
+     "t": 49.815,
+     "event": "A-connection-reuse",
+     "exit_status": 0,
+     "stdout_bytes": 236
+    },
+    {
+     "t": 54.618,
+     "event": "B-taker-closed",
+     "released": true
+    }
+   ]
+  },
+  {
+   "taker": "take_over",
+   "events": [
+    {
+     "t": 1.462,
+     "event": "A-process-created"
+    },
+    {
+     "t": 1.486,
+     "event": "A-acquire-outcome",
+     "outcome": "acquired",
+     "data": "\r\n Open in progress  \r\n ",
+     "nbytes": 24
+    },
+    {
+     "t": 1.986,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 4.488,
+     "event": "A-still-open-before-B",
+     "stdout_done": false,
+     "connection_closed": false
+    },
+    {
+     "t": 4.488,
+     "event": "B-start",
+     "arm": "takeover"
+    },
+    {
+     "t": 6.03,
+     "event": "A-stdout-chunk",
+     "nbytes": 98,
+     "data": "\r\n Connection has closed \r\n\r\n\r\n This session is no longer connected. Please close this window.\n\n\n "
+    },
+    {
+     "t": 7.596,
+     "event": "B-takeover-open-returned"
+    },
+    {
+     "t": 37.597,
+     "event": "A-readers-after-wait",
+     "stdout_done": false,
+     "stderr_done": false
+    },
+    {
+     "t": 47.598,
+     "event": "A-channel-not-closed-within-10s"
+    },
+    {
+     "t": 47.598,
+     "event": "A-exit",
+     "exit_status": null,
+     "exit_signal": "None",
+     "returncode": null,
+     "connection_closed": false
+    },
+    {
+     "t": 49.599,
+     "event": "A-connection-after-2s",
+     "connection_closed": false
+    },
+    {
+     "t": 49.803,
+     "event": "A-connection-reuse",
+     "exit_status": 0,
+     "stdout_bytes": 236
+    },
+    {
+     "t": 49.805,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 55.808,
+     "event": "B-reads-after-A-closed",
+     "chunks": [
+      "\r\n Open in progress  \r\n ",
+      "\r\n Open Completed. \r\n  ",
+      "<timeout: B stream open and silent>"
+     ]
+    },
+    {
+     "t": 57.631,
+     "event": "C-probe-while-B-holds",
+     "probe_released": false
+    },
+    {
+     "t": 62.835,
+     "event": "B-taker-closed",
+     "released": true
+    }
+   ]
+  }
+ ]
+}

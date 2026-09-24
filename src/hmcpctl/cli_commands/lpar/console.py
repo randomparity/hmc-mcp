@@ -12,7 +12,12 @@ from typing import BinaryIO
 import typer
 
 from hmcpctl.operations.lpar.console import capture_lpar_console_by_selector
-from hmcpctl.ssh.console import MAX_CAPTURE_BYTES, MAX_CAPTURE_SECONDS, ConsoleCapture
+from hmcpctl.ssh.console import (
+    MAX_CAPTURE_BYTES,
+    MAX_CAPTURE_SECONDS,
+    ConsoleCapture,
+    ConsoleHoldLostError,
+)
 
 from ..output import err_console, fail, usage_error
 from ..runtime import with_client
@@ -68,7 +73,12 @@ def _report(capture: ConsoleCapture) -> None:
     )
     if capture.error:
         line += f"; error: {capture.error}"
-    if not capture.released:
+    if capture.error and capture.error.startswith(ConsoleHoldLostError.__name__):
+        line += (
+            "; the HMC reported that another client ended this hold, so no rmvterm "
+            "was issued: leave that client's session alone"
+        )
+    elif not capture.released:
         line += (
             "; the console may still be held: run 'rmvterm -m "
             f"{shlex.quote(capture.system)} -p {shlex.quote(capture.lpar)}' "

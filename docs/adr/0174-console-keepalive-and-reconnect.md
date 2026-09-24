@@ -10,6 +10,11 @@ that ADR 0173 assigned to #977, and the leftover-hold question that ADR 0170 rul
 left to #977: hmcpctl cannot tell its own leftover hold from another holder, so a drop that
 meets a held vterm raises a typed error, and only `take_over=True` reclaims it.
 
+> **Amended by #1004** (2026-09-24): decision 2's premise is refuted. Another client's `rmvterm`
+> leaves the holder's channel and connection open, so a lost hold is neither a drop nor a remote
+> close, and the Consequences bullet on a lost hold whose connection also closes did not occur in
+> three runs. See ADR 0172's amendment.
+
 ## Context
 
 A continuous collector (#957) must survive a dropped connection, including an idle channel whose
