@@ -304,7 +304,6 @@ class StorageClient(Protocol):
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
-        fallback_to_generic_uom_on_406: bool = False,
     ) -> str: ...
 
     async def _put(
@@ -315,7 +314,6 @@ class StorageClient(Protocol):
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
-        fallback_to_generic_uom_on_406: bool = False,
     ) -> str: ...
 
     async def _delete(
