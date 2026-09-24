@@ -165,6 +165,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   the repository lists the media, and refuse a volume group without a media repository before
   downloading (ADR 0177, #978).
 
+- `HMCError` extracts `<Message>` from the untruncated HMC error body before truncating the
+  stored body to `MAX_ERROR_BODY_BYTES` (4096). Before, a body over 4096 bytes was cut first,
+  which could leave malformed XML with the `<Message>` element past the cut, so the message was
+  lost and the fallback printed an unhelpful body prefix instead (#982).
+
 - When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
   `provision` report the partition as created, with its profile-apply step and a warning naming
   the read-back error. Before, they reported a failed create with nothing created (#1014).

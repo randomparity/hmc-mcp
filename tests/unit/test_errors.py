@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from hmcpctl.errors import HMCError
+from hmcpctl.errors import MAX_ERROR_BODY_BYTES, HMCError
+
+
+def test_hmc_error_extracts_message_past_4096_byte_truncation_cutoff() -> None:
+    padding = "x" * 4200
+    body = f"<Error><Padding>{padding}</Padding><Message>schema violation</Message></Error>"
+    assert len(body.encode("utf-8")) > MAX_ERROR_BODY_BYTES
+
+    error = HMCError("request failed", 500, body)
+
+    assert str(error) == "request failed (HTTP 500): schema violation"
+    assert len(error.body.encode("utf-8")) == MAX_ERROR_BODY_BYTES
 
 
 def test_hmc_error_extracts_message_from_xml_body() -> None:
