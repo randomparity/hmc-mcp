@@ -338,26 +338,26 @@ async def test_set_lpar_boot_order_authorizes_then_writes_the_joined_paths():
 
 
 @pytest.mark.asyncio
-async def test_clear_lpar_boot_order_writes_an_empty_string():
+async def test_clear_lpar_boot_order_refuses_after_authorization():
     hmc = AsyncMock()
-    hmc.set_pending_boot_string.return_value = None
 
     with patch(
         "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
         new=AsyncMock(return_value=LPAR),
-    ) as authorize:
-        result = await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
+    ) as authorize, pytest.raises(HMCError, match="REST0126") as exc_info:
+        await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
 
     authorize.assert_awaited_once_with(
         hmc, "system-1", "lpar-1", ownership_override=False
     )
-    hmc.set_pending_boot_string.assert_awaited_once_with(LPAR, "")
-    assert result is None
+    assert hmc.mock_calls == []
+    assert exc_info.value.status_code is None
+    assert "set-boot-order" in str(exc_info.value)
+    assert "activation" in str(exc_info.value)
 
 
-@pytest.mark.parametrize("operation", ["set", "clear"])
 @pytest.mark.asyncio
-async def test_boot_order_mutations_translate_hmc_not_acceptable(operation: str):
+async def test_set_lpar_boot_order_translates_hmc_not_acceptable():
     body = "<Error><Message>schema mismatch</Message></Error>"
     hmc = AsyncMock()
     hmc.set_pending_boot_string.side_effect = HMCError(
@@ -368,10 +368,7 @@ async def test_boot_order_mutations_translate_hmc_not_acceptable(operation: str)
         "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
         new=AsyncMock(return_value=LPAR),
     ), pytest.raises(HMCError, match="Not Acceptable") as exc_info:
-        if operation == "set":
-            await set_lpar_boot_order(hmc, "system-1", "lpar-1", [DISK])
-        else:
-            await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
+        await set_lpar_boot_order(hmc, "system-1", "lpar-1", [DISK])
 
     assert exc_info.value.status_code == 406
     assert exc_info.value.body == body
