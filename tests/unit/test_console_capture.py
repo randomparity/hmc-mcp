@@ -401,7 +401,7 @@ async def test_late_contention_sentence_releases_own_hold_then_raises():
         )
     assert "after acquisition" in str(excinfo.value)
     assert "released=True" in str(excinfo.value)
-    assert release.await_count == 2  # ours plus the probe's teardown
+    assert release.await_count == 1  # ours; the probe released through EOF
     assert stream.closed
 
 
@@ -488,21 +488,23 @@ async def test_transport_error_detail_is_single_line_and_bounded():
 @pytest.mark.asyncio
 async def test_release_proven_by_clean_probe_mkterm():
     # Capture ends by remote close; the probe's mkvterm gets the banner (no
-    # sentinel) -> slot free -> released True. Both rmvterm calls happen.
+    # sentinel) -> slot free -> released True. Only our rmvterm runs: the probe
+    # releases its own hold through stdin EOF (#1072).
     connection = FakeConnection([FakeProcess(BANNER), FakeProcess(BANNER)])
     capture = await _run_capture(connection)
     assert capture.stop_reason == "remote-close"
     assert capture.released is True
     commands = [call.args[1] for call in capture.release_calls]
     assert any(cmd.startswith("rmvterm -m sys1") for cmd in commands)
-    assert len(commands) == 2  # our release + the probe session's teardown
+    assert len(commands) == 1  # our release; the probe released through EOF
 
 
 @pytest.mark.asyncio
 async def test_release_probe_teardown_failure_is_not_reported_as_released():
     from hmcpctl.ssh.transport import HMCCLIError
 
-    connection = FakeConnection([FakeProcess(BANNER), FakeProcess(BANNER)])
+    # The probe's stream ignores its EOF, so its teardown falls back to rmvterm.
+    connection = FakeConnection([FakeProcess(BANNER), FakeProcess(BANNER, None)])
     release = AsyncMock(
         side_effect=["Close command sent", HMCCLIError("probe teardown failed")]
     )
@@ -950,7 +952,7 @@ async def test_session_streams_past_capture_ceiling_and_releases():
     assert len(received) == count * len(chunk) > MAX_CAPTURE_BYTES
     assert session.released is True
     commands = [call.args[1] for call in release.await_args_list]
-    assert commands == ["rmvterm -m sys1 -p lp1"] * 2  # ours + the probe's teardown
+    assert commands == ["rmvterm -m sys1 -p lp1"]  # ours; the probe released through EOF
     assert stream.close_calls == 1
 
 
@@ -1000,7 +1002,7 @@ async def test_sentence_after_banner_in_one_read_is_acquisition():
         await capture_lpar_console(
             _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.2)
         )
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1028,7 +1030,7 @@ async def test_probe_sentence_after_banner_is_acquisition_and_torn_down():
             assert await session.read() == BANNER
 
     assert session.released is True
-    assert release.await_count == 2  # ours plus the probe's teardown
+    assert release.await_count == 1  # ours; the probe released through EOF
 
 
 @pytest.mark.asyncio
@@ -1094,7 +1096,7 @@ async def test_session_yields_late_sentinel_as_data():
 
     assert received == [BANNER, CONTENTION]
     assert session.released is True
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1118,7 +1120,7 @@ async def test_session_read_error_propagates_and_close_still_releases():
             await session.read()
         assert await session.close() is True
 
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1183,7 +1185,7 @@ async def test_session_close_during_open_is_refused():
         await opening
         assert await session.close() is True
 
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1207,7 +1209,7 @@ async def test_session_cancellation_releases_before_propagating():
             await task
 
     assert session.released is True
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1343,7 +1345,7 @@ async def test_hand_over_keeps_the_hold_and_moves_the_channel():
             with pytest.raises(RuntimeError, match="handover has ended"):
                 await handover.read()
 
-    assert release.await_count == 2  # close() only: rmvterm plus the probe's teardown
+    assert release.await_count == 1  # close() only: rmvterm; the probe released through EOF
     assert len(stream.create_process_calls) == 1
     assert session.released is True
 
@@ -1406,7 +1408,7 @@ async def test_suspend_releases_and_resume_reacquires():
             collector = asyncio.create_task(session.read())
             await _started(collector, blocked)
             assert await session.suspend() is True
-            assert release.await_count == 2
+            assert release.await_count == 1
             assert first.closed
             await asyncio.sleep(0)
             assert not collector.done()
@@ -1415,7 +1417,7 @@ async def test_suspend_releases_and_resume_reacquires():
             assert await session.read() == b"more"
 
     assert session.released is True
-    assert release.await_count == 4
+    assert release.await_count == 2  # both releases; each probe released through EOF
 
 
 @pytest.mark.asyncio
@@ -1429,7 +1431,7 @@ async def test_resume_contention_stays_suspended_and_close_skips_rmvterm():
         await session.open()
         assert await session.read() == BANNER
         assert await session.suspend() is True
-        after_takeover_rmvterm = release.await_count  # 3: takeover, ours, probe's
+        after_takeover_rmvterm = release.await_count  # 2: takeover, ours
         waiting = asyncio.create_task(session.read())
         with pytest.raises(ConsoleHeldError):
             await session.resume()
@@ -1439,7 +1441,7 @@ async def test_resume_contention_stays_suspended_and_close_skips_rmvterm():
         assert await session.close() is True
         assert await asyncio.wait_for(waiting, timeout=5) == b""
 
-    assert release.await_count == after_takeover_rmvterm == 3
+    assert release.await_count == after_takeover_rmvterm == 2
     assert all(connection.closed for connection in taken)
 
 
@@ -1463,7 +1465,7 @@ async def test_cancel_inside_hand_over_releases():
             await task
 
     assert session.released is True
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -1535,7 +1537,7 @@ async def test_cancelled_resume_releases_new_hold():
             await resuming
 
     assert session.released is True
-    assert release.await_count == 4
+    assert release.await_count == 2
     assert second.closed
 
 
@@ -1561,7 +1563,7 @@ async def test_close_during_resume_releases_new_hold():
             await resuming
         assert await closing is True
 
-    assert release.await_count == 4
+    assert release.await_count == 2
     assert second.closed
 
 
@@ -1651,7 +1653,7 @@ async def test_reconnect_after_eof_on_closed_connection():
             assert await session.read() == ConsoleGap("the SSH connection closed", False)
             assert await session.read() == BANNER
 
-    assert release.await_count == 2  # close() and its probe only
+    assert release.await_count == 1  # close() only; its probe released through EOF
 
 
 @pytest.mark.asyncio
@@ -1704,7 +1706,7 @@ async def test_reconnect_with_take_over_reclaims_and_reports_it():
             assert await session.read() == BANNER
 
     assert gap == ConsoleGap(KEEPALIVE_GAP.error, took_over=True)
-    assert release.await_count == 4
+    assert release.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -1770,7 +1772,7 @@ async def test_close_during_reconnect_releases_the_new_hold():
         assert await closing is True
         assert await asyncio.wait_for(reading, timeout=5) == b""
 
-    assert release.await_count == 2
+    assert release.await_count == 1
     assert second.closed
 
 
@@ -1838,7 +1840,7 @@ async def test_drop_inside_hand_over_reaches_holder_then_collector_reconnects():
             assert isinstance(await session.read(), ConsoleGap)
             assert await session.read() == BANNER
 
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -2330,7 +2332,7 @@ async def test_relayed_lost_hold_text_keeps_rmvterm():
             assert await session.read() == relayed
 
     assert session.released is True
-    assert release.await_count == 2  # close() and its probe
+    assert release.await_count == 1  # close(); its probe released through EOF
 
 
 @pytest.mark.asyncio
@@ -2344,7 +2346,7 @@ async def test_release_survives_a_failing_scan():
             assert await session.read() == BANNER
 
     assert session.released is True
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -2450,7 +2452,7 @@ async def test_close_releases_through_eof_without_rmvterm(kind):
 
     assert process.eof.is_set()
     commands = [call.args[1] for call in release.await_args_list]
-    assert commands == ["rmvterm -m sys1 -p lp1"]  # the probe's own teardown only
+    assert commands == []  # the session and its probe both released through EOF
 
 
 @pytest.mark.asyncio
@@ -2466,7 +2468,7 @@ async def test_suspend_releases_through_eof():
         assert await session.close() is True
 
     assert process.eof.is_set()
-    assert release.await_count == 1
+    assert release.await_count == 0
 
 
 @pytest.mark.asyncio
@@ -2493,7 +2495,7 @@ async def test_eof_timeout_falls_back_to_rmvterm():
         await session.open()
         assert await session.close() is True
 
-    assert release.await_count == 2  # ours after the EOF wait, then the probe's
+    assert release.await_count == 1  # ours after the EOF wait; the probe released through EOF
 
 
 @pytest.mark.asyncio
@@ -2507,7 +2509,7 @@ async def test_eof_read_error_falls_back_to_rmvterm():
         await session.open()
         assert await session.close() is True
 
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -2522,7 +2524,7 @@ async def test_stream_ended_before_release_uses_rmvterm():
         assert await session.read() == b""
         assert await session.close() is True
 
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -2537,7 +2539,7 @@ async def test_connection_closed_during_eof_drain_falls_back_to_rmvterm():
         stream.closed = True  # the stream ends because the connection dropped
         assert await session.close() is True
 
-    assert release.await_count == 2
+    assert release.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -2552,9 +2554,75 @@ async def test_resume_after_an_ended_stream_releases_through_eof_again():
     with connect, run_command as release, probe_seconds:
         session = ConsoleSession(_client(), "sys1", "lp1")
         await session.open()
-        assert await session.suspend() is True  # ended stream: rmvterm, then the probe's
+        assert await session.suspend() is True  # ended stream: rmvterm, then the probe
         await session.resume()
         assert await session.close() is True
 
     assert resumed.eof.is_set()
-    assert release.await_count == 3
+    assert release.await_count == 1  # the suspend's; the resumed hold and every probe used EOF
+
+
+# ---------------------------------------------------------------------------
+# The release probe's own teardown through stdin EOF (issue #1072)
+# ---------------------------------------------------------------------------
+
+
+async def _probe(
+    *processes: FakeProcess, closed: bool = False
+) -> tuple[bool, AsyncMock, FakeConnection]:
+    connection = FakeConnection(list(processes))
+    connection.closed = closed
+    release = AsyncMock(return_value="Close command sent")
+    with (
+        patch("hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        patch("hmcpctl.ssh.console.run_hmc_command", release),
+        patch("hmcpctl.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    ):
+        released = await _probe_released(make_config(), "sys1", "lp1")
+    return released, release, connection
+
+
+@pytest.mark.asyncio
+async def test_release_probe_tears_down_through_eof_without_rmvterm():
+    process = EofProcess(BANNER)
+    released, release, connection = await _probe(process)
+
+    assert released is True
+    assert process.eof.is_set()
+    release.assert_not_awaited()
+    assert connection.closed is True
+
+
+@pytest.mark.asyncio
+async def test_release_probe_eof_timeout_falls_back_to_rmvterm():
+    released, release, _ = await _probe(FakeProcess(BANNER, None))
+
+    assert released is True
+    assert [call.args[1] for call in release.await_args_list] == ["rmvterm -m sys1 -p lp1"]
+
+
+@pytest.mark.asyncio
+async def test_release_probe_eof_read_error_falls_back_to_rmvterm():
+    released, release, _ = await _probe(EofProcess(BANNER, after_eof=(OSError("channel lost"),)))
+
+    assert released is True
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_release_probe_closed_connection_falls_back_to_rmvterm():
+    released, release, _ = await _probe(EofProcess(BANNER), closed=True)
+
+    assert released is True
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_release_probe_lost_hold_during_eof_skips_rmvterm():
+    # Another client's rmvterm ended the probe's hold; the stream then stays silent (#1004).
+    split = len(LOST_HOLD_SENTINEL) // 2
+    process = FakeProcess(BANNER, LOST[:split], LOST[split:], None)
+    released, release, _ = await _probe(process)
+
+    assert released is True
+    release.assert_not_awaited()
