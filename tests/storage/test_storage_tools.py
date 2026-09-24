@@ -14,9 +14,11 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY
+from conftest import JOB_ENTRY, mock_change_location
 
 from hmcpctl.client.client_contracts import ADAPTER_TYPES
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation
+from hmcpctl.operations.storage.resources import StorageMapResult
 from hmcpctl.server_tools.storage.resources import (
     hmc_create_logical_unit,
     hmc_create_media_repository,
@@ -31,6 +33,7 @@ from hmcpctl.server_tools.storage.resources import (
     hmc_list_shared_storage_pools,
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
+    hmc_mount_optical_media,
 )
 from hmcpctl.server_tools.virtualization.adapters import (
     hmc_add_network_adapter,
@@ -166,6 +169,7 @@ def _mapping(target: str, lpar_link: str = _LPAR_LINK) -> str:
 
 
 def _mock_detach_reads(mock_hmc, mappings: str):
+    mock_change_location(mock_hmc, LPAR_UUID)
     parent = f"""<VirtualIOServer xmlns="{_UOM}">
       <UUID>{VIOS_UUID}</UUID>
       <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
@@ -193,7 +197,14 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
     with patch(
         "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
     ):
-        assert hmc_detach_storage_mapping(VIOS_UUID, "vhost0/vtscsi0") == "vhost0/vtscsi0"
+        assert hmc_detach_storage_mapping(VIOS_UUID, "vhost0/vtscsi0") == {
+            "mapping_id": "vhost0/vtscsi0",
+            "change_location": {
+                "current_profile_sync": "Disabled",
+                "lives_in": "current-configuration",
+                "profile_name": None,
+            },
+        }
 
     guard.assert_awaited_once_with(
         ANY,
@@ -239,6 +250,7 @@ def test_detach_storage_mapping_fails_closed_before_authorizing(
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     """hmc_add_network_adapter maps its args into a ClientNetworkAdapter doc."""
     _hmc_env(monkeypatch)
+    read = mock_change_location(mock_hmc, LPAR_UUID, "On")
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     ).mock(
@@ -263,11 +275,19 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     assert '<IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>' in body
     assert '<MACAddress kb="CUR" kxe="false">00:11:22:33:44:55</MACAddress>' in body
     assert result["UUID"] == ADAPTER_UUID
+    # #981: the resource keeps its top-level keys; the location rides beside them.
+    assert result["change_location"] == {
+        "current_profile_sync": "On",
+        "lives_in": "current-configuration-and-profile",
+        "profile_name": None,
+    }
+    assert read.calls[0].request.url.path == f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
 
 
 def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):
     """hmc_add_vscsi_adapter maps vios_partition_id/vios_slot into the doc."""
     _hmc_env(monkeypatch)
+    mock_change_location(mock_hmc, LPAR_UUID)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
     ).mock(
@@ -275,7 +295,10 @@ def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):
             201, text=_feed(ADAPTER_UUID, "VirtualSCSIClientAdapter")
         )
     )
-    hmc_add_vscsi_adapter(LPAR_UUID, vios_partition_id=7, vios_slot=11, slot_number=4)
+    result = hmc_add_vscsi_adapter(
+        LPAR_UUID, vios_partition_id=7, vios_slot=11, slot_number=4
+    )
+    assert result["change_location"]["lives_in"] == "current-configuration"
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIClientAdapter" in body
     assert (
@@ -289,6 +312,7 @@ def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):
 def test_add_vfc_adapter_builds_xml(monkeypatch, mock_hmc):
     """hmc_add_vfc_adapter maps vios_partition_id/vios_slot into the doc."""
     _hmc_env(monkeypatch)
+    mock_change_location(mock_hmc, LPAR_UUID)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualFibreChannelClientAdapter"
     ).mock(
@@ -296,7 +320,8 @@ def test_add_vfc_adapter_builds_xml(monkeypatch, mock_hmc):
             201, text=_feed(ADAPTER_UUID, "VirtualFibreChannelClientAdapter")
         )
     )
-    hmc_add_vfc_adapter(LPAR_UUID, vios_partition_id=7, vios_slot=11)
+    result = hmc_add_vfc_adapter(LPAR_UUID, vios_partition_id=7, vios_slot=11)
+    assert result["change_location"]["current_profile_sync"] == "Disabled"
     body = route.calls.last.request.content.decode()
     assert "<VirtualFibreChannelClientAdapter" in body
     assert (
@@ -311,12 +336,16 @@ def test_add_vfc_adapter_builds_xml(monkeypatch, mock_hmc):
 def test_delete_adapter_returns_confirmation(monkeypatch, mock_hmc):
     """hmc_delete_adapter DELETEs the adapter and returns a confirmation."""
     _hmc_env(monkeypatch)
+    mock_change_location(mock_hmc, LPAR_UUID)
     route = mock_hmc.delete(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter/{ADAPTER_UUID}"
     ).mock(return_value=httpx.Response(204))
     result = hmc_delete_adapter(LPAR_UUID, "VirtualSCSIClientAdapter", ADAPTER_UUID)
     assert route.called
-    assert result == f"Deleted VirtualSCSIClientAdapter {ADAPTER_UUID} from {LPAR_UUID}"
+    assert result.startswith(
+        f"Deleted VirtualSCSIClientAdapter {ADAPTER_UUID} from {LPAR_UUID}. "
+        "CurrentProfileSync is Disabled: the change lives only in the current configuration"
+    )
 
 
 # ---------------------------------------------------------------------- #
@@ -382,6 +411,7 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
 
 def _mapping_routes(mock_hmc):
     """Grouped VIOS GET (empty mapping set, with ETag) and the POST back to it."""
+    mock_change_location(mock_hmc, LPAR_UUID)
     path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
     mock_hmc.get(path).mock(
         return_value=httpx.Response(
@@ -400,7 +430,8 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     """hmc_map_storage_to_lpar maps the default VirtualDisk storage_kind."""
     _hmc_env(monkeypatch)
     route = _mapping_routes(mock_hmc)
-    hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID)
+    result = hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID)
+    assert result["change_location"]["lives_in"] == "current-configuration"
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIMapping" in body
     # storage_kind lands as the element name; storage_name is DiskName.
@@ -428,12 +459,14 @@ def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
 
 
 def test_map_storage_invalid_kind_raises(monkeypatch, mock_hmc):
-    """An invalid storage_kind is rejected before any request is sent."""
+    """An invalid storage_kind is rejected before any write is sent."""
     _hmc_env(monkeypatch)
+    route = _mapping_routes(mock_hmc)
     with pytest.raises(
         ValueError, match="storage_kind must be PhysicalVolume or VirtualDisk"
     ):
         hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID, storage_kind="Bogus")
+    assert not route.called
 
 
 # ---------------------------------------------------------------------- #
@@ -686,3 +719,49 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     assert submit_route.called
     assert poll_route.called
     assert result["Resource"]["Status"] == "COMPLETED"
+
+
+def test_mount_optical_media_keeps_the_mapping_keys_beside_its_location(
+    monkeypatch, mock_hmc
+):
+    """#981: scripts/live_test reads the mapping identity from top-level keys."""
+    _hmc_env(monkeypatch)
+    location = ChangeLocation("Disabled", "current-configuration")
+    mount = AsyncMock(
+        return_value=StorageMapResult(LPAR_UUID, {"UUID": "mapping-1"}, location)
+    )
+    monkeypatch.setattr(
+        "hmcpctl.server_tools.storage.resources.mount_optical_media", mount
+    )
+
+    result = hmc_mount_optical_media(VIOS_UUID, "install.iso", LPAR_UUID)
+
+    assert result == {
+        "UUID": "mapping-1",
+        "change_location": {
+            "current_profile_sync": "Disabled",
+            "lives_in": "current-configuration",
+            "profile_name": None,
+        },
+    }
+
+
+def test_mount_optical_media_without_a_resource_still_reports_its_location(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    location = ChangeLocation(None, "unknown")
+    monkeypatch.setattr(
+        "hmcpctl.server_tools.storage.resources.mount_optical_media",
+        AsyncMock(return_value=StorageMapResult(LPAR_UUID, None, location)),
+    )
+
+    result = hmc_mount_optical_media(VIOS_UUID, "install.iso", LPAR_UUID)
+
+    assert result == {
+        "change_location": {
+            "current_profile_sync": None,
+            "lives_in": "unknown",
+            "profile_name": None,
+        }
+    }

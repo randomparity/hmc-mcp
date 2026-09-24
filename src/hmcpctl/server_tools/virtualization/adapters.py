@@ -7,6 +7,7 @@ from typing import Any
 from ..._app import run_limited_collection, with_client
 from ...client.client_contracts import AdapterType
 from ...client.core import HMCClient
+from ...operations.lpar.profile_sync import resource_with_change_location
 from ...operations.virtualization.adapters import (
     add_network_adapter,
     add_vfc_adapter,
@@ -60,8 +61,12 @@ def hmc_add_network_adapter(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC.
+
+    Returns the adapter plus ``change_location``: the partition's
+    CurrentProfileSync and whether the adapter lives only in the current
+    configuration (a profile activation then drops it) or in its profile too.
 
     Args:
         lpar_name_or_uuid: Partition name or UUID; discover partitions with
@@ -79,19 +84,18 @@ def hmc_add_network_adapter(
     """
 
     async def operation(hmc: HMCClient):
-        return (
-            await add_network_adapter(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                port_vlan_id,
-                slot_number=slot_number,
-                virtual_switch_id=virtual_switch_id,
-                tagged=tagged,
-                mac_address=mac_address,
-                ownership_override=ownership_override,
-            )
-        ).resource
+        result = await add_network_adapter(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            port_vlan_id,
+            slot_number=slot_number,
+            virtual_switch_id=virtual_switch_id,
+            tagged=tagged,
+            mac_address=mac_address,
+            ownership_override=ownership_override,
+        )
+        return resource_with_change_location(result.resource, result.change_location)
 
     return with_client(operation, profile=profile)
 
@@ -114,8 +118,10 @@ def hmc_add_vscsi_adapter(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Add a virtual SCSI client adapter paired to a VIOS server slot.
+
+    Returns the adapter plus ``change_location``, as ``hmc_add_network_adapter``.
 
     Args:
         lpar_name_or_uuid: Client partition name or UUID.
@@ -129,17 +135,16 @@ def hmc_add_vscsi_adapter(
     """
 
     async def operation(hmc: HMCClient):
-        return (
-            await add_vscsi_adapter(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                vios_partition_id,
-                vios_slot,
-                slot_number=slot_number,
-                ownership_override=ownership_override,
-            )
-        ).resource
+        result = await add_vscsi_adapter(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            vios_partition_id,
+            vios_slot,
+            slot_number=slot_number,
+            ownership_override=ownership_override,
+        )
+        return resource_with_change_location(result.resource, result.change_location)
 
     return with_client(operation, profile=profile)
 
@@ -162,8 +167,10 @@ def hmc_add_vfc_adapter(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Add an NPIV virtual Fibre Channel client adapter to an LPAR.
+
+    Returns the adapter plus ``change_location``, as ``hmc_add_network_adapter``.
 
     Args:
         lpar_name_or_uuid: Client partition name or UUID.
@@ -177,17 +184,16 @@ def hmc_add_vfc_adapter(
     """
 
     async def operation(hmc: HMCClient):
-        return (
-            await add_vfc_adapter(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                vios_partition_id,
-                vios_slot,
-                slot_number=slot_number,
-                ownership_override=ownership_override,
-            )
-        ).resource
+        result = await add_vfc_adapter(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            vios_partition_id,
+            vios_slot,
+            slot_number=slot_number,
+            ownership_override=ownership_override,
+        )
+        return resource_with_change_location(result.resource, result.change_location)
 
     return with_client(operation, profile=profile)
 
@@ -203,7 +209,8 @@ def hmc_delete_adapter(
 ) -> str:
     """Remove an adapter by UUID, detaching its network or storage path.
 
-    Confirm the adapter is no longer required before deletion.
+    Confirm the adapter is no longer required before deletion. The message
+    ends with where the deletion lives (the partition's CurrentProfileSync).
 
     Args:
         lpar_name_or_uuid: Partition name or UUID containing the adapter.
@@ -216,7 +223,7 @@ def hmc_delete_adapter(
     """
 
     async def operation(hmc: HMCClient):
-        await delete_adapter(
+        location = await delete_adapter(
             hmc,
             system_name_or_uuid,
             lpar_name_or_uuid,
@@ -224,6 +231,9 @@ def hmc_delete_adapter(
             adapter_uuid,
             ownership_override=ownership_override,
         )
-        return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
+        return (
+            f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}. "
+            f"{location.summary()}"
+        )
 
     return with_client(operation, profile=profile)

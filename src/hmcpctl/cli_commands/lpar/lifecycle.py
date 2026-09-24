@@ -183,6 +183,8 @@ def _power_lpar(
         return
     console.print(f"[green]Job submitted[/green] for {uuid}")
     print_json(job)
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning: {warning}[/yellow]")
 
 
 def lpars_delete(

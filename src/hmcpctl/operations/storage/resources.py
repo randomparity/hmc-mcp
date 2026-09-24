@@ -20,6 +20,7 @@ import httpx
 from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...config import ISO_URL_ALLOWLIST_HELP
 from ...documents import StorageKind
@@ -31,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class StorageMapResult:
-    """Authorized LPAR identity and the resulting VIOS storage resource."""
+    """Authorized LPAR identity, the resulting VIOS storage resource, and where it lives."""
 
     lpar_uuid: str
     resource: dict[str, Any] | None
+    change_location: ChangeLocation
 
 
 @dataclass(frozen=True)
@@ -381,10 +383,11 @@ async def map_storage(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     resource = await hmc.map_storage_to_lpar(
         vios_uuid, kind, storage_name, lpar_uuid, target
     )
-    return StorageMapResult(lpar_uuid, resource)
+    return StorageMapResult(lpar_uuid, resource, location)
 
 
 async def create_media_repository(
@@ -458,7 +461,7 @@ async def detach_storage_mapping(
     *,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
-) -> None:
+) -> ChangeLocation:
     """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
 
     ``mapping_id`` is the exact ``<server adapter>/<target device>`` identity
@@ -499,7 +502,9 @@ async def detach_storage_mapping(
         lpar_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     await hmc.delete_storage_mapping(vios_uuid, mapping_id, lpar_uuid)
+    return location
 
 
 async def delete_media_repository(
@@ -1025,12 +1030,13 @@ async def mount_optical_media(
     media_name: str,
     target_device: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> StorageMapResult:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
     Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
     to a client LPAR. The media_name must exist in the VIOS media repository.
-    target_device optionally pins the vtscsi name. Returns the created mapping resource.
+    target_device optionally pins the vtscsi name. Returns the created mapping
+    resource and where the HMC-created client adapter lives (#981).
 
     Raises:
         ResourceNotFoundError: If a supplied VIOS, LPAR, or managed-system selector
@@ -1048,9 +1054,11 @@ async def mount_optical_media(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    return await hmc.create_optical_mapping(
+    location = await read_change_location(hmc, lpar_uuid)
+    resource = await hmc.create_optical_mapping(
         vios_uuid, media_name, lpar_uuid, target_device
     )
+    return StorageMapResult(lpar_uuid, resource, location)
 
 
 async def unmount_optical_media(
@@ -1061,7 +1069,7 @@ async def unmount_optical_media(
     system_name_or_uuid: str | None = None,
     media_name: str,
     ownership_override: bool = False,
-) -> None:
+) -> ChangeLocation:
     """Remove the VirtualSCSIMapping for an optical device (unmount).
 
     Resolves the LPAR-scoped optical inventory entry whose ``MediaName`` equals
@@ -1131,4 +1139,6 @@ async def unmount_optical_media(
     mapping_id = storage_mapping_id(matches[0])
     if mapping_id is None:
         raise HMCError("VirtualSCSIMapping has no adapter/target identity")
+    location = await read_change_location(hmc, lpar_uuid)
     await hmc.delete_storage_mapping(vios_uuid, mapping_id, lpar_uuid)
+    return location
