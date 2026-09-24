@@ -53,6 +53,21 @@ async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
         assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "fallback"
 
 
+@pytest.mark.asyncio
+async def test_system_name_falls_back_on_whitespace_only_rest_name():
+    """Issue #1026. A whitespace-only ``SystemName`` is truthy under the old
+    ``if name:`` check, so it slipped through unrejected; the shared helper's
+    ``.strip()`` treats it as absent and diverts to the SSH lookup instead."""
+    hmc = AsyncMock()
+    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "   "}}
+
+    with patch(
+        "hmcpctl.operations.lpar.ownership.resolve_system_cli_name",
+        new=AsyncMock(return_value="cli-name"),
+    ):
+        assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "cli-name"
+
+
 EMPTY_FEED = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>'
 
 LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

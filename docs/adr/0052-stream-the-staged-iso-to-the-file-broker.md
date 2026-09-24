@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-08-20)
+Accepted (2026-08-20). Amended 2026-09-24 by
+[ADR 0177](0177-iso-upload-through-the-web-file-api.md): the stream now goes to the web File
+contents PUT (`_web_file_upload`); the decision is unchanged.
 
 ## Context
 

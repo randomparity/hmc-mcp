@@ -20,6 +20,7 @@ from hmcpctl.operations.lpar.ownership import (
     resolve_and_authorize_lpar_mutation,
     stamp_created_lpar_ownership,
 )
+from hmcpctl.operations.lpar.profile_sync import profile_adapter_warnings
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
 
@@ -188,6 +189,7 @@ class LparPowerResult:
 
     lpar_uuid: str
     job: dict[str, Any] | None
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -198,6 +200,7 @@ class LparPowerOnOutcome:
     job: dict[str, Any] | None
     message: str | None
     affinity_assessment: LparAffinityAssessmentOutcome
+    warnings: tuple[str, ...]
 
 
 def power_on_outcome(
@@ -217,6 +220,7 @@ def power_on_outcome(
                 "skipped",
                 "No activation was observed because the LPAR was already running.",
             ),
+            warnings=result.warnings,
         )
     return LparPowerOnOutcome(
         already_running=False,
@@ -226,6 +230,7 @@ def power_on_outcome(
         or affinity_not_measured(
             "skipped", "Post-activation assessment was not requested."
         ),
+        warnings=result.warnings,
     )
 
 
@@ -525,7 +530,7 @@ async def delete_lpar(
 
 async def _require_contained_partition_profile(
     hmc: HMCClient, lpar_uuid: str, partition_profile_uuid: str
-) -> str:
+) -> dict[str, Any]:
     """Refuse a partition profile the target partition does not contain.
 
     ADR 0039: ``hmc_power_on_lpar`` declares ``exhaustive_targets``, which means
@@ -540,9 +545,9 @@ async def _require_contained_partition_profile(
     kind of classification on the premise that the HMC would reject the value,
     so the check is made here rather than assumed of the remote end.
 
-    Returns the partition's own spelling of the profile, because the match is
-    casefolded: echoing the caller's string would put a value on the wire that
-    this check never compared.
+    Returns the partition's own profile entry, whose ``UUID`` is the spelling
+    to send, because the match is casefolded: echoing the caller's string would
+    put a value on the wire that this check never compared.
     """
     profiles = await hmc.list_child(
         "LogicalPartition", lpar_uuid, "LogicalPartitionProfile"
@@ -558,9 +563,8 @@ async def _require_contained_partition_profile(
             "LogicalPartitionProfile on the HMC to confirm the feed"
         )
     for profile in profiles:
-        contained = str(profile.get("UUID") or "")
-        if contained.casefold() == wanted:
-            return contained
+        if str(profile.get("UUID") or "").casefold() == wanted:
+            return profile
     raise ValueError(
         "partition profile is not a profile of the target partition; "
         "read /rest/api/uom/LogicalPartition/<uuid>/LogicalPartitionProfile on "
@@ -694,10 +698,13 @@ async def power_lpar(
                     ),
                 },
             )
+    warnings: tuple[str, ...] = ()
     if power_on and partition_profile_uuid:
-        partition_profile_uuid = await _require_contained_partition_profile(
+        profile = await _require_contained_partition_profile(
             hmc, lpar_uuid, partition_profile_uuid
         )
+        partition_profile_uuid = str(profile["UUID"])
+        warnings = await profile_adapter_warnings(hmc, lpar_uuid, profile)
     # Named for the ``/do/{operation}`` path segment ADR 0158 governs, and kept
     # distinct from the PowerOff job parameter that now owns the name ``operation``.
     path_operation = "PowerOn" if power_on else "PowerOff"
@@ -724,7 +731,7 @@ async def power_lpar(
     selected_job = await wait_for_submitted_job(
         hmc, job, wait, timeout_seconds, poll_interval
     )
-    return LparPowerResult(lpar_uuid, selected_job)
+    return LparPowerResult(lpar_uuid, selected_job, warnings)
 
 
 async def rename_lpar(

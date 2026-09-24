@@ -25,6 +25,7 @@ from hmcpctl.operations.lpar.migration import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation
 from hmcpctl.operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from hmcpctl.operations.storage.resources import (
     map_storage,
@@ -426,7 +427,7 @@ def test_mcp_config_tools_forward_ownership_override(
 
 
 @pytest.mark.asyncio
-async def test_delete_adapter_returns_deleted_adapter_uuid(
+async def test_delete_adapter_returns_where_the_deletion_lives(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     guard = AsyncMock(return_value=LPAR)
@@ -434,12 +435,16 @@ async def test_delete_adapter_returns_deleted_adapter_uuid(
         "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", guard
     )
     hmc = AsyncMock()
+    hmc.get_logical_partition.return_value = {
+        "Resource": {"CurrentProfileSync": "Disabled"}
+    }
 
     result = await delete_adapter(
         hmc, None, LPAR, "ClientNetworkAdapter", "adapter-uuid"
     )
 
-    assert result == "adapter-uuid"
+    assert result == ChangeLocation("Disabled", "current-configuration")
+    hmc.get_logical_partition.assert_awaited_once_with(LPAR)
     hmc.delete_adapter.assert_awaited_once_with(
         LPAR, "ClientNetworkAdapter", "adapter-uuid"
     )

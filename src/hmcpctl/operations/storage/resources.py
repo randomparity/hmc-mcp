@@ -20,6 +20,7 @@ import httpx
 from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...config import ISO_URL_ALLOWLIST_HELP
 from ...documents import StorageKind
@@ -31,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class StorageMapResult:
-    """Authorized LPAR identity and the resulting VIOS storage resource."""
+    """Authorized LPAR identity, the resulting VIOS storage resource, and where it lives."""
 
     lpar_uuid: str
     resource: dict[str, Any] | None
+    change_location: ChangeLocation
 
 
 @dataclass(frozen=True)
@@ -205,6 +207,14 @@ DEFAULT_CHUNK_SIZE = 8192
 # for the whole payload. 8 KiB would make a 20 GiB ISO 2.6 million writes.
 # 64 KiB is httpx's own streaming unit (`AsyncIteratorByteStream.CHUNK_SIZE`).
 UPLOAD_CHUNK_SIZE = 64 * 1024
+# The 2026-09-23 upload was listed on the first poll; the bound keeps a lost
+# import from holding the call open (ADR 0177).
+VISIBILITY_POLLS = 12
+VISIBILITY_POLL_SECONDS = 5.0
+_ACCEPTED_NOTE = (
+    "The HMC accepted the ISO bytes; the media may or may not reach the repository. "
+    "Check list-optical-media before retrying."
+)
 
 
 async def list_volume_groups(
@@ -373,10 +383,11 @@ async def map_storage(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     resource = await hmc.map_storage_to_lpar(
         vios_uuid, kind, storage_name, lpar_uuid, target
     )
-    return StorageMapResult(lpar_uuid, resource)
+    return StorageMapResult(lpar_uuid, resource, location)
 
 
 async def create_media_repository(
@@ -450,7 +461,7 @@ async def detach_storage_mapping(
     *,
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
-) -> None:
+) -> ChangeLocation:
     """Authorize the mapped LPAR, then detach its VirtualSCSIMapping.
 
     ``mapping_id`` is the exact ``<server adapter>/<target device>`` identity
@@ -491,7 +502,9 @@ async def detach_storage_mapping(
         lpar_uuid,
         ownership_override=ownership_override,
     )
+    location = await read_change_location(hmc, lpar_uuid)
     await hmc.delete_storage_mapping(vios_uuid, mapping_id, lpar_uuid)
+    return location
 
 
 async def delete_media_repository(
@@ -803,38 +816,73 @@ async def list_optical_media(
     return [_optical_media(entry) for entry in await hmc.list_optical_media(vios_uuid, vg_uuid)]
 
 
-async def _upload_iso_via_broker(
+async def _refuse_existing_media(
+    hmc: HMCClient, vios_uuid: str, vg_uuid: str, media_name: str
+) -> None:
+    """Refuse a media name the repository already lists."""
+    for media in await hmc.list_optical_media(vios_uuid, vg_uuid):
+        if media.get("MediaName") == media_name:
+            raise FileExistsError(
+                f"Media name '{media_name}' already exists in repository. "
+                "Use a different name or delete the existing media first."
+            )
+
+
+async def _wait_for_media(
+    hmc: HMCClient, vios_uuid: str, vg_uuid: str, media_name: str
+) -> dict[str, Any]:
+    """Return the repository entry for *media_name* once the HMC lists it."""
+    try:
+        for poll in range(VISIBILITY_POLLS):
+            if poll:
+                await asyncio.sleep(VISIBILITY_POLL_SECONDS)
+            for media in await hmc.list_optical_media(vios_uuid, vg_uuid):
+                if media.get("MediaName") == media_name:
+                    return media
+    except HMCError as exc:
+        exc.add_note(_ACCEPTED_NOTE)
+        raise
+    raise HMCError(
+        f"ISO {media_name!r} was uploaded, but volume group {vg_uuid} did not list it "
+        f"after {VISIBILITY_POLLS} checks. {_ACCEPTED_NOTE}"
+    )
+
+
+async def _upload_iso_via_web_file(
     hmc: HMCClient,
     vios_uuid: str,
     vg_uuid: str,
     media_name: str,
     iso_path: Path,
     file_size: int,
-) -> dict[str, Any] | None:
-    """Run the HMC broker allocation, upload, import, and release transaction."""
-    broker_uri: str | None = None
+) -> dict[str, Any]:
+    """Create a web File, stream the ISO into it, wait for the media, release the File."""
+    file_uuid: str | None = None
     try:
-        broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
+        # Again after the download: the visibility check matches by name, so a
+        # same-named media added meanwhile would pass for this upload.
+        await _refuse_existing_media(hmc, vios_uuid, vg_uuid, media_name)
+        file_uuid = await hmc._web_file_create(vios_uuid, media_name, file_size)
         with iso_path.open("rb") as handle:
-            await hmc._broker_file_upload(
-                broker_uri, _aiter_file_chunks(handle), file_size
-            )
-        await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
-
-        updated_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-        return next(
-            (media for media in updated_media if media.get("MediaName") == media_name),
-            None,
-        )
+            try:
+                await hmc._web_file_upload(file_uuid, _aiter_file_chunks(handle), file_size)
+            except HMCError as exc:
+                if exc.status_code is not None and exc.status_code >= 500:
+                    exc.add_note(_ACCEPTED_NOTE)
+                raise
+        return await _wait_for_media(hmc, vios_uuid, vg_uuid, media_name)
     finally:
         primary_error = sys.exception()
-        if broker_uri:
+        if file_uuid:
             try:
-                await hmc._broker_file_cleanup(broker_uri)
-            except Exception:
+                await hmc._web_file_delete(file_uuid)
+            except Exception as exc:
                 if primary_error is None:
+                    exc.add_note(
+                        f"ISO {media_name!r} is in the repository; only the release failed."
+                    )
                     raise
-                logger.exception("broker cleanup failed for ISO upload %s", broker_uri)
+                logger.exception("web File delete failed for ISO upload %s", file_uuid)
 
 
 async def upload_iso(
@@ -846,18 +894,19 @@ async def upload_iso(
     *,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
-    """Upload an ISO to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC web File API (ADR 0177).
 
     ``iso_source`` must be an ``http`` or ``https`` URL whose host the operator
     has put on ``iso_url_allowlist`` (``HMC_ISO_URL_ALLOWLIST``), and both
     conditions are checked before any other work happens. **With no allowlist
     configured every URL is refused** — see ``_require_allowlisted_iso_url`` and
-    ADR 0050. The media name is then validated against HMC's FileName.Pattern
-    and refused on collision with existing media before any transfer begins;
-    the ISO is downloaded with explicit timeout and size bounds and without
-    following redirects, with SHA-256 and size computed from the download; and
-    both the local temp file and the HMC broker resources are cleaned up on
-    every outcome.
+    ADR 0050. The media name is then validated against HMC's FileName.Pattern,
+    the volume group must hold a media repository, and a name that collides with
+    existing media is refused, all before any transfer begins. The ISO is
+    downloaded with explicit timeout and size bounds and without following
+    redirects, with SHA-256 and size computed from the download. It is reported
+    uploaded only once the repository lists it. The local temp file and the HMC
+    web File are both released on every outcome.
 
     Args:
         hmc: HMC client instance.
@@ -874,16 +923,17 @@ async def upload_iso(
         - 'media_name': Name of the media in the repository.
         - 'media_size_bytes': Size of the uploaded ISO.
         - 'sha256': SHA-256 checksum of the uploaded ISO.
-        - 'media': Full uploaded media entry dict, or None when the HMC's
-          post-import inventory does not include it.
+        - 'media': The repository's entry for the uploaded media.
 
     Raises:
-        HMCError: For malformed ISO URLs or HMC API errors during broker operations
-                  or import.
+        HMCError: For malformed ISO URLs, HMC API errors during the web File
+                  requests, or a repository that does not list the media after
+                  the upload.
         ValueError: If ``iso_source`` is not an http(s) URL, if its host is not
                    on the operator's allowlist (including the unset allowlist,
                    which permits nothing), if the server answers with a
-                   redirect, or if the download exceeds the size bound.
+                   redirect, if the download exceeds the size bound, or if the
+                   volume group holds no media repository.
         FileExistsError: If media_name already exists in the repository.
     """
     iso_url = _require_allowlisted_iso_url(
@@ -901,16 +951,16 @@ async def upload_iso(
             "(no hyphens, spaces, or other special characters)."
         )
 
+    if await hmc.get_media_repository(vios_uuid, vg_uuid) is None:
+        raise ValueError(
+            f"Volume group {vg_uuid} on VIOS {vios_uuid} holds no media repository. "
+            "Pass the volume group that holds it, or create one with create-media-repo."
+        )
+
     # Check for name collision before downloading anything — the check needs
     # only vios_uuid and vg_uuid, so a taken name is refused without the
     # transfer (#325).
-    existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-    for media in existing_media:
-        if media.get("MediaName") == media_name:
-            raise FileExistsError(
-                f"Media name '{media_name}' already exists in repository. "
-                "Use a different name or delete the existing media first."
-            )
+    await _refuse_existing_media(hmc, vios_uuid, vg_uuid, media_name)
 
     try:
         iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
@@ -920,7 +970,7 @@ async def upload_iso(
         ) from exc
 
     try:
-        uploaded_media_entry = await _upload_iso_via_broker(
+        uploaded_media_entry = await _upload_iso_via_web_file(
             hmc, vios_uuid, vg_uuid, media_name, iso_path, file_size
         )
 
@@ -980,12 +1030,13 @@ async def mount_optical_media(
     media_name: str,
     target_device: str | None = None,
     ownership_override: bool = False,
-) -> dict[str, Any] | None:
+) -> StorageMapResult:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
     Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
     to a client LPAR. The media_name must exist in the VIOS media repository.
-    target_device optionally pins the vtscsi name. Returns the created mapping resource.
+    target_device optionally pins the vtscsi name. Returns the created mapping
+    resource and where the HMC-created client adapter lives (#981).
 
     Raises:
         ResourceNotFoundError: If a supplied VIOS, LPAR, or managed-system selector
@@ -1003,9 +1054,11 @@ async def mount_optical_media(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    return await hmc.create_optical_mapping(
+    location = await read_change_location(hmc, lpar_uuid)
+    resource = await hmc.create_optical_mapping(
         vios_uuid, media_name, lpar_uuid, target_device
     )
+    return StorageMapResult(lpar_uuid, resource, location)
 
 
 async def unmount_optical_media(
@@ -1016,7 +1069,7 @@ async def unmount_optical_media(
     system_name_or_uuid: str | None = None,
     media_name: str,
     ownership_override: bool = False,
-) -> None:
+) -> ChangeLocation:
     """Remove the VirtualSCSIMapping for an optical device (unmount).
 
     Resolves the LPAR-scoped optical inventory entry whose ``MediaName`` equals
@@ -1086,4 +1139,6 @@ async def unmount_optical_media(
     mapping_id = storage_mapping_id(matches[0])
     if mapping_id is None:
         raise HMCError("VirtualSCSIMapping has no adapter/target identity")
+    location = await read_change_location(hmc, lpar_uuid)
     await hmc.delete_storage_mapping(vios_uuid, mapping_id, lpar_uuid)
+    return location

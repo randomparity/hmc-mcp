@@ -11,6 +11,7 @@ from rich.table import Table
 from hmcpctl.client.core import HMCClient
 
 from ...documents import StorageKind
+from ...operations.lpar.profile_sync import ChangeLocation
 from ...operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
 from ...operations.storage.resources import (
     StorageMapResult,
@@ -251,6 +252,7 @@ def storage_map(
 
     console.print(f"[green]Mapped '{disk}'[/green] to {result.lpar_uuid}")
     print_json(asdict(result))
+    console.print(result.change_location.summary())
 
 
 def storage_create_media_repo(
@@ -451,7 +453,8 @@ def storage_mount_optical_media(
         )
     )
     console.print(f"[green]Mounted optical media '{media_name}' on LPAR {lpar}[/green]")
-    print_json(result)
+    print_json(result.resource)
+    console.print(result.change_location.summary())
 
 
 def storage_unmount_optical_media(
@@ -475,8 +478,8 @@ def storage_unmount_optical_media(
     ):
         raise typer.Abort()
 
-    async def _go(hmc: HMCClient) -> None:
-        await unmount_optical_media(
+    async def _go(hmc: HMCClient) -> ChangeLocation:
+        return await unmount_optical_media(
             hmc,
             vios,
             lpar,
@@ -485,11 +488,12 @@ def storage_unmount_optical_media(
             system_name_or_uuid=system,
         )
 
-    with_client(_go)
+    location = with_client(_go)
     console.print(
         f"[green]Unmounted optical media '{media_name}' from LPAR {lpar}; "
         "backing ISO remains[/green]"
     )
+    console.print(location.summary())
 
 
 def storage_list_mappings(
@@ -551,8 +555,8 @@ def storage_detach_mapping(
             abort=True,
         )
 
-    async def _go(hmc: HMCClient) -> None:
-        await detach_storage_mapping(
+    async def _go(hmc: HMCClient) -> ChangeLocation:
+        return await detach_storage_mapping(
             hmc,
             vios,
             mapping_id,
@@ -560,8 +564,9 @@ def storage_detach_mapping(
             ownership_override=ownership_override,
         )
 
-    with_client(_go)
+    location = with_client(_go)
     console.print(f"[green]Deleted storage mapping {mapping_id}[/green]")
+    console.print(location.summary())
 
 
 def storage_upload_iso(
@@ -580,13 +585,15 @@ def storage_upload_iso(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
 ) -> None:
-    """Upload an ISO to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC web File API.
 
     ISO_SOURCE must be an http(s) URL; a local file path is not accepted. Its host
     must be on HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the profile) — with
     no allowlist configured every URL is refused — and redirects are not followed.
-    Computes SHA-256 and size before upload, refuses name collisions, and cleans
-    up broker resources on every outcome.
+    Computes SHA-256 and size before upload, refuses a volume group without a
+    media repository and name collisions, reports success only once the
+    repository lists the media, and releases the HMC upload handle on every
+    outcome.
     """
 
     async def _go(hmc: HMCClient) -> dict[str, Any]:

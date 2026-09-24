@@ -168,7 +168,7 @@ async def test_upload_reply_is_bounded(make_client):
         yield b"iso"
 
     with pytest.raises(HMCError, match="declared.*limit 8 bytes"):
-        await client._broker_file_upload(PATH, content(), 3)
+        await client._web_file_upload(UUID, content(), 3)
     assert stream.yielded == 0
     assert stream.closed
 
@@ -306,8 +306,8 @@ async def test_cancellation_during_successful_close_is_preserved(make_client):
     ("_delete", (PATH,)), ("_web_get", (PATH,)), ("_web_post", (PATH, "")),
     ("_web_delete", (PATH,)), ("raw_get", (PATH,)), ("raw_post", (PATH, "")),
     ("submit_job", (PATH, "")), ("_templates_get", (PATH,)),
-    ("_get_remote_access_xml", (PATH,)), ("_broker_file_create", (UUID, UUID, "test.iso")),
-    ("_broker_file_cleanup", (PATH,)), ("_post_pcm", (PATH, "")),
+    ("_get_remote_access_xml", (PATH,)), ("_web_file_create", (UUID, "test.iso", 1)),
+    ("_web_file_delete", (UUID,)), ("_post_pcm", (PATH, "")),
     ("fetch_json", (PATH,)), ("submit_platform_update", (UUID, {})),
     ("_logon_once", ("",)), ("logoff", ()),
 ])
