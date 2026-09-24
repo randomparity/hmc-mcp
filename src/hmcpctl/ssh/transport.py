@@ -108,6 +108,12 @@ def _asyncssh_error(error: asyncssh.Error) -> HMCCLIError:
     return HMCCLIError(f"SSH command failed: {detail.strip()}")
 
 
+#: SSH keepalive on every console connection (ADR 0174): asyncssh closes the
+#: connection with ``ConnectionLost`` once 3 requests sent 15 s apart go unanswered.
+KEEPALIVE_INTERVAL_SECONDS = 15.0
+KEEPALIVE_COUNT_MAX = 3
+
+
 async def open_hmc_connection(config: HMCConfig) -> asyncssh.SSHClientConnection:
     """Open one long-lived SSH connection hosting a streaming HMC process.
 
@@ -116,8 +122,11 @@ async def open_hmc_connection(config: HMCConfig) -> asyncssh.SSHClientConnection
     process that never exits on its own (the partition console). The caller
     owns the lifetime and must close the connection. The connect itself stays
     bounded by ``config.ssh_timeout`` so an unreachable HMC fails actionably.
+    It sends SSH keepalives, so a dead peer closes it (ADR 0174).
     """
     connect_kwargs = _connect_kwargs(config)
+    connect_kwargs["keepalive_interval"] = KEEPALIVE_INTERVAL_SECONDS
+    connect_kwargs["keepalive_count_max"] = KEEPALIVE_COUNT_MAX
     try:
         async with asyncio.timeout(config.ssh_timeout):
             return await asyncssh.connect(**connect_kwargs)
