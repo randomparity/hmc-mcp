@@ -113,6 +113,11 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
    - Whether the HMC enforces `If-Match` and applies the whole-element POST as sent is unverified
      on `LogicalPartition` until criterion 6's live write runs, as ADR 0171 records for
      VolumeGroup.
+   - Clear fails on V10R3. Live acceptance (2026-09-24, V10R3 M1060) showed the empty
+     `PendingBootString` rejected with HTTP 500 `REST0126`, and the HMC CLI's
+     `boot_string=""` stored a literal `"` instead of clearing. By operator decision
+     (2026-09-24, relayed by the campaign) clear keeps its chartered contract: the rejection
+     is documented, and how an HMC clears a pending boot string is a follow-up.
 4. **Covered elsewhere:**
    - The UOM write header strategy: #935.
    - The sparse POSTs from rename and DLPAR: the plan's Task 4 records a per-caller verdict for
@@ -144,7 +149,8 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
    against #935.
 5. Live: the Advanced-group read on the authorized partition. The write, under the campaign
    lock, either round-trips, with `pending_boot_string` read back equal to the joined input and
-   then cleared, or is recorded against #935 with the format left unverified.
+   then cleared, or is recorded against #935 with the format left unverified. Live acceptance on 2026-09-24
+   round-tripped set, and clear was rejected as the failure model records.
 
 ## Validation
 
