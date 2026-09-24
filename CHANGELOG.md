@@ -173,7 +173,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `take_over=True` session, no longer ends that client's session when it closes. The session
   recognizes the HMC's report of the loss, raises the new `ConsoleHoldLostError` on the next
   read, and `close()` returns `False` without issuing `rmvterm`, including when the report
-  arrived but was never read. A bounded capture reports the loss as `stop_reason="error"`
+  arrived but was never read; a report still in transit when the session closes (about 1.5 s
+  on V10R3) is not seen. A bounded capture reports the loss as `stop_reason="error"`
   with a `ConsoleHoldLostError` error, and `lpars capture-console` and `hmc_capture_lpar_console`
   no longer advise running `rmvterm` then; exit code 3 is unchanged (#1004).
 
