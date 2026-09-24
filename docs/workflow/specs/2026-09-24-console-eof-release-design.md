@@ -48,7 +48,8 @@ The probe's own teardown keeps `rmvterm`.
 Documentation that the change falsifies moves with it. ADR 0072 gets an "Amended by #1058" Status
 block covering P5, P7 (the write end now closes at release, to end the stream), P8, and
 decision 1. ADR 0170 rule 4, ADR 0172 rule 3, and ADR 0176 rule 2 each
-get a one-line pointer to it. The module and method docstrings and `CHANGELOG.md` change too.
+get a one-line pointer to it. The module and method docstrings, the `hmc_capture_lpar_console` tool description (and the
+generated `docs/tools/` page), and `CHANGELOG.md` change too.
 
 ## Failure model
 
