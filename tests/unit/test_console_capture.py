@@ -2522,3 +2522,38 @@ async def test_stream_ended_before_release_uses_rmvterm():
         assert await session.close() is True
 
     assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_connection_closed_during_eof_drain_falls_back_to_rmvterm():
+    stream = FakeConnection([EofProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(
+        stream, FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        stream.closed = True  # the stream ends because the connection dropped
+        assert await session.close() is True
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_resume_after_an_ended_stream_releases_through_eof_again():
+    resumed = EofProcess(BANNER)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER)]),
+        FakeConnection([FakeProcess(BANNER)]),
+        FakeConnection([resumed]),
+        FakeConnection([FakeProcess(BANNER)]),
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.suspend() is True  # ended stream: rmvterm, then the probe's
+        await session.resume()
+        assert await session.close() is True
+
+    assert resumed.eof.is_set()
+    assert release.await_count == 3
