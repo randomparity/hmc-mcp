@@ -2153,3 +2153,35 @@ async def test_writes_are_refused_after_a_reconnect_meets_a_held_console():
         assert await session.close() is False
 
     record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_drop_in_raw_mode_reaches_the_raw_holder_and_reconnects_after_the_block():
+    first = FakeProcess(BANNER, DROP)
+    second = FakeProcess(BANNER, None)
+
+    def broken(data: bytes) -> None:
+        raise BrokenPipeError("channel closed")
+
+    first.stdin.write = broken
+    dead = FakeConnection([first])
+    connect, run_command, probe_seconds = _session_patches(
+        dead, FakeConnection([second]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect as opener, run_command as release, probe_seconds, _audited():
+        async with _writable(reconnect=True) as session:
+            assert await session.read() == BANNER
+            async with session.raw_mode() as channel:
+                with pytest.raises(asyncssh.ConnectionLost):
+                    await channel.read()
+                with pytest.raises(BrokenPipeError):
+                    await channel.write(b"$g#67")  # unwrapped, and no reconnect starts
+                assert opener.await_count == 1
+                dead.closed = True
+            assert await session.read() == ConsoleGap("the SSH connection closed", False)
+            await session.write(b"y")
+            with pytest.raises(RuntimeError):
+                await channel.write(b"late")
+            assert release.await_count == 0
+
+    assert second.stdin.written == [b"y"]
