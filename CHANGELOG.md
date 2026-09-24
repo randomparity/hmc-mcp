@@ -145,6 +145,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The apply-error warning from `create` and `provision` says "redo any skipped steps" instead of
+  "redo any skipped assignment steps". Since #999, a failed apply during `provision` also skips
+  network, vSCSI, storage, power-on and affinity-policy steps, which the old wording didn't
+  cover (#1013).
+
 - `hmcpctl lpars provision` and `hmc_provision_lpar` apply the new partition profile after a
   `mksyscfg` create, as `lpars create` does, and report it as an `apply_profile` step. Before
   this, provision's network step failed with `REST0269` on such a partition. A failed apply skips
