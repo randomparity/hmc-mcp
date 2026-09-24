@@ -4,8 +4,8 @@
 > creation through cleanup, on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into its
 > installer. The run used a build patched for #935 and #979, and imported the ISO outside
 > `hmcpctl` (#978). Unpatched, the recipe stops at `adapters add-network` with HTTP 406 (#935).
-> These issues must land before the recipe runs on `main`: #935, #978 and #979; #981 needs the
-> HMC CLI step in section 5 until it lands. Each step that depends on an open issue names it.
+> These issues must land before the recipe runs on `main`: #935, #978 and #979. Each step that
+> depends on an open issue names it.
 
 This recipe creates one powered-off LPAR, gives it a virtual network adapter and a VIOS-backed
 virtual disk, puts an installation ISO in the VIOS media repository, mounts it, and boots the
@@ -195,7 +195,9 @@ hmcpctl storage map "$VIOS" --lpar "$LPAR" --disk "$DISK_NAME" --system "$SYSTEM
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
-Expected: `adapters list` shows the new network adapter on `VLAN_ID`. `--capacity-mib` must be
+Expected: `add-network` and `storage map` each end with a `CurrentProfileSync is ...` line that
+says whether the new adapter lives only in the current configuration; step 5 depends on it.
+`adapters list` shows the new network adapter on `VLAN_ID`. `--capacity-mib` must be
 a positive multiple of 1024; the CLI converts it to the whole GiB the HMC takes. The second
 `list-vgs` shows the new disk in `VG`. `storage map` creates its own vSCSI client and server
 adapter pair, so do not add a vSCSI adapter first: `adapters add-vscsi` would leave an unused
@@ -242,10 +244,13 @@ and the new optical mapping, and nothing else changed.
 
 ## 5. Boot from the ISO and observe
 
-The adapters from steps 3 and 4 exist only in the partition's current configuration. A power-on
-with `--partition-profile` activates the profile and drops them, and the firmware stops at SMS
-with no boot devices (#981). Until #981 lands, write them into the profile on the HMC CLI first.
-List the partition's virtual SCSI and Ethernet adapters:
+When steps 3 and 4 printed `CurrentProfileSync is Disabled` (or `Suspended`), their adapters
+exist only in the partition's current configuration. A power-on with `--partition-profile`
+activates the profile and drops them, and the firmware stops at SMS with no boot devices.
+`power-on` prints one `Warning:` line for each current adapter the profile lacks, but still
+activates. When sync is `On` the HMC already wrote them to the profile; skip to the power-on.
+Otherwise write them into the profile on the HMC CLI first. List the partition's virtual SCSI
+and Ethernet adapters:
 
 ```text
 lshwres -r virtualio --rsubtype scsi -m <managed-system-name> --level lpar --filter lpar_names=<lpar-name>
@@ -277,7 +282,9 @@ hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30
 ```
 
 Expected: `power-on` prints `Job submitted for <lpar-uuid>` and the finished job, whose status
-is `COMPLETED_OK`. `jobs show` prints the same job. `lpars state` prints `running` or
+is `COMPLETED_OK`, and no `Warning:` line. A warning names an adapter the profile lacked, which
+the activation removed: power the partition off, re-run the step 3 or 4 command that created
+it, write it into the profile as above from the new listing, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
 is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
 Firmware device paths, and a never-booted partition reports none. On V10R3, `clear-boot-order` fails

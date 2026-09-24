@@ -4,10 +4,11 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import make_config, mock_change_location
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.profile_sync import ChangeLocation
 from hmcpctl.operations.storage.resources import (
     get_media_repository,
     list_optical_media,
@@ -211,6 +212,7 @@ def _posted_document(post_route) -> str:
 
 
 def _mock_unmount_reads(mock_hmc, document=VIOS_DOC_WITH_OPTICAL_MAPPINGS):
+    mock_change_location(mock_hmc, LPAR_UUID)
     mock_hmc.get(_MAPPINGS_GET_PATH).mock(
         return_value=httpx.Response(200, text=document)
     )
@@ -223,6 +225,7 @@ def _mock_unmount_reads(mock_hmc, document=VIOS_DOC_WITH_OPTICAL_MAPPINGS):
 async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
     """LPAR-scoped inventory resolves MediaName by equality, never subtree text."""
     hmc = AsyncMock()
+    hmc.get_logical_partition.return_value = None
     hmc.list_optical_mappings.return_value = [
         {
             "ServerAdapter": {"AdapterName": "vhost0"},
@@ -349,7 +352,7 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
                 hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
-    assert result is None
+    assert result == ChangeLocation("Disabled", "current-configuration")
     body = _posted_document(post)
     assert "vtopt0" not in body
     assert "vtscsi0" in body

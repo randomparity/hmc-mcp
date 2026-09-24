@@ -83,7 +83,10 @@ When the HMC creates the partition through `mksyscfg` (its REST create answered 
 the partition on, and reports an `apply_profile` step. Until a profile is applied or the partition
 is activated, it has no current configuration and REST adapter writes fail. `--no-apply` skips
 the apply. Adapter changes made through REST after the apply live only in the current
-configuration; a later power-on with the profile does not keep them (#981).
+configuration unless the partition's `CurrentProfileSync` is `On`. The adapter and mapping
+commands print which after their result. `lpars power-on --partition-profile` warns once for
+each current virtual SCSI, Fibre Channel or Ethernet client adapter the profile lacks, because
+activating that profile removes it; the job is still submitted (#981).
 
 A bounded console capture reads an LPAR's virtual console without sending it input:
 
