@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from .observation import ExpectedOutcome
+from .observation import CallFailure, ExpectedOutcome
 from .results import entries
 from .results import resource as get_resource
 
@@ -197,15 +197,20 @@ async def _cleanup_network_mutation(
             state.record(9, "hmc_delete_lpar (nettest)", st, data)
             artifacts.nettest_uuid = None
         else:
+            # The failure rides as `data`, but only its message is ever shown:
+            # a `CallFailure`'s `traceback_text` is deliberately excluded from
+            # persisted results (see `RunState.record`), and interpolating the
+            # raw object here would leak it back in.
             system = shlex.quote(config.system_name)
             name = shlex.quote(config.nettest_name)
+            detail = data.message if isinstance(data, CallFailure) else data
             state.record(
                 9,
                 "hmc_delete_lpar (nettest)",
                 "FAIL",
                 "MANUAL RECOVERY REQUIRED: partition "
                 f"{config.nettest_name!r} on {config.system_name!r} was created "
-                f"(PASS) but could not be deleted ({data!r}); it was NOT removed. "
+                f"(PASS) but could not be deleted ({detail!r}); it was NOT removed. "
                 f"Run `rmsyscfg -r lpar -m {system} -n {name}` by hand.",
             )
     else:

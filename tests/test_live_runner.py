@@ -3682,6 +3682,39 @@ async def test_nettest_cleanup_fails_with_manual_recovery_when_delete_fails(monk
 
 
 @pytest.mark.asyncio
+async def test_nettest_cleanup_manual_recovery_omits_call_failure_traceback(
+    monkeypatch,
+):
+    """The manual-recovery message shows a CallFailure's message, never its traceback."""
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        if tool == "hmc_create_lpar":
+            return "PASS", {}
+        if tool == "hmc_delete_lpar":
+            return "FAIL", observation.CallFailure(
+                "TimeoutError",
+                "TimeoutError: connection lost",
+                "Traceback (most recent call last):\n  <secret-stack-frame>\n",
+                None,
+                False,
+            )
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.test_vlan_id = 3100
+
+    await runner.mutate_virtual_networking(None, state)
+
+    result = next(
+        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
+    )
+    assert result["status"] == "FAIL"
+    assert "TimeoutError: connection lost" in result["data"]
+    assert "secret-stack-frame" not in result["data"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("workflow", "configure", "expected_tool"),
     [
