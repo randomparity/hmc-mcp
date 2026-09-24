@@ -240,9 +240,10 @@ async def _discover_virtual_switch(client: Client, state: RunState) -> None:
             artifacts.test_vswitch_id = 0
 
 
-def _unused_vlan(data: Any, start: int, end: int) -> tuple[int | None, list[object]]:
-    used_vlans: set[int] = set()
-    malformed_vlans: list[object] = []
+def listed_vlans(data: Any) -> tuple[set[int], list[object]]:
+    """Return the VLAN IDs a virtual-network listing names, and any it cannot parse."""
+    vlans: set[int] = set()
+    malformed: list[object] = []
     for entry in entries(data):
         resource = get_resource(entry)
         vlan = (
@@ -252,9 +253,14 @@ def _unused_vlan(data: Any, start: int, end: int) -> tuple[int | None, list[obje
         )
         if vlan is not None:
             try:
-                used_vlans.add(int(vlan))
+                vlans.add(int(vlan))
             except (TypeError, ValueError):
-                malformed_vlans.append(vlan)
+                malformed.append(vlan)
+    return vlans, malformed
+
+
+def _unused_vlan(data: Any, start: int, end: int) -> tuple[int | None, list[object]]:
+    used_vlans, malformed_vlans = listed_vlans(data)
     available = None
     if not malformed_vlans:
         available = next(

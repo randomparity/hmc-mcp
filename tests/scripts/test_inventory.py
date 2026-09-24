@@ -36,7 +36,6 @@ class ScenarioState:
             vios_partition_id=None,
             test_vswitch_id=None,
             test_vlan_id=None,
-            vdisk_size_mib=None,
             vg_uuid=None,
             vdisk_vg_name=None,
         )
@@ -99,6 +98,18 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
     assert "lpar_names=lp three" in command
 
 
+def test_listed_vlans_parses_each_form_and_keeps_malformed_values() -> None:
+    listing = [
+        {"Resource": {"NetworkVLANID": "1"}},
+        {"Resource": {"VLANId": 20}},
+        {"vlan_id": 300},
+        {"Resource": {"NetworkVLANID": "trunk"}},
+        {"Resource": {}},
+    ]
+
+    assert network.listed_vlans(listing) == ({1, 20, 300}, ["trunk"])
+
+
 @pytest.mark.asyncio
 async def test_network_inventory_selects_unused_vlan_and_switch() -> None:
     state = ScenarioState(
@@ -126,7 +137,7 @@ async def test_network_inventory_selects_unused_vlan_and_switch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
+async def test_storage_inventory_resolves_the_owning_group() -> None:
     state = ScenarioState(
         {
             "hmc_list_volume_groups": [
@@ -137,7 +148,7 @@ async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
                         "VirtualDisks": {
                             "VirtualDisk": {
                                 "DiskName": "disk-one",
-                                "DiskCapacity": "8",
+                                "DiskCapacity": "not-a-size",
                             }
                         },
                     },
@@ -151,7 +162,7 @@ async def test_storage_inventory_finds_disk_capacity_and_owning_group() -> None:
 
     assert state.artifacts.vg_uuid == "vg-uuid"
     assert state.artifacts.vdisk_vg_name == "rootvg"
-    assert state.artifacts.vdisk_size_mib == 8192
+    assert not any(tool == "parse virtual disk capacity" for _, tool, _, _ in state.results)
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_volume_groups",
         "hmc_list_clusters",

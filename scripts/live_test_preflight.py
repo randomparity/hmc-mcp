@@ -3,9 +3,10 @@
 The runner already validates configuration and credentials before its first
 dispatch. What it cannot do is answer the question without being the run. This
 script asks the same validators the runner gates on, so there is one definition
-of a valid configuration, and adds the two facts the runner never establishes:
-what a selected arm will create, mutate and delete, and whether the managed
-system is inside the ADR 0053 admitted envelope.
+of a valid configuration, and adds the facts the runner never establishes
+before dispatch: what a selected arm will create, mutate and delete, whether the
+managed system is inside the ADR 0053 admitted envelope, and whether round2's
+provision VLAN has a virtual network.
 
 Usage:
     uv run --no-sync python scripts/live_test_preflight.py [--group NAME]
@@ -17,7 +18,10 @@ named in the output.
 **Configuration is blocking; hardware is advisory.** An unreachable HMC or an
 out-of-envelope managed system is reported as a predicted SKIP and does not
 change the exit status: the arm already SKIPs correctly on both, and a blocking
-check here would be a second copy of an admission rule ADR 0053 moves.
+check here would be a second copy of an admission rule ADR 0053 moves. A
+provision VLAN with no virtual network is reported the same way: subtask 14
+refuses it before deleting anything, and the HMC can gain the network between
+preflight and the run.
 
 The per-arm verdict is a prediction. An arm decides for itself at run time and
 may SKIP where preflight said RUNNABLE.
@@ -42,10 +46,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_test_runner as runner
 from live_test import bare_cec, pcie
 
+from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
+from hmcpctl.operations.lpar.provision import _check_vlan_exists
 from hmcpctl.operations.virtualization.pcie import (
     require_admitted_environment,
 )
+from hmcpctl.resource_identity import resolve_system_uuid
 
 #: The credential names the runner needs resolved before it dispatches. Reported
 #: as present or absent and never by value: this output is meant to be pasted
@@ -206,6 +213,28 @@ async def _probe_environment(system_name: str) -> str:
     return "admitted (ADR 0053 envelope)"
 
 
+async def _probe_provision_vlan(system_name: str, vlan_id: int) -> str:
+    """Report whether ST13/ST14's configured VLAN has a virtual network (#970).
+
+    Asks `_check_vlan_exists`, the predicate `hmc_provision_lpar` refuses on, so
+    preflight cannot pass a VLAN the provision rejects. Advisory, like the envelope:
+    any failure other than the predicate's own refusal is reported as unknown.
+    """
+    try:
+        async with HMCClient(HMCConfig()) as hmc:
+            system_uuid = await resolve_system_uuid(hmc, system_name)
+            try:
+                await _check_vlan_exists(hmc, system_uuid, vlan_id)
+            except ValueError:
+                return (
+                    f"no virtual network on VLAN {vlan_id} — ST13 and ST14 will fail; "
+                    "set LIVE_TEST_PROVISION_VLAN_ID to a VLAN with a virtual network"
+                )
+    except Exception as exc:  # noqa: BLE001 - every hardware failure is advisory
+        return f"unknown ({type(exc).__name__})"
+    return f"{vlan_id} has a virtual network"
+
+
 def _check_configuration() -> tuple[runner.LiveTestConfig | None, str]:
     """Run the runner's own `.env` validator and report its verdict."""
     try:
@@ -231,7 +260,9 @@ def _check_credentials() -> tuple[bool, dict[str, bool]]:
     return resolved, {key: env_var_value(key) is not None for key in _CREDENTIAL_KEYS}
 
 
-def _print_arms(verdicts: tuple[ArmVerdict, ...], envelopes: dict[str, str]) -> None:
+def _print_arms(
+    verdicts: tuple[ArmVerdict, ...], envelopes: dict[str, str], provision_vlan: str | None
+) -> None:
     print("\npredicted arms — the run decides; a RUNNABLE arm may still SKIP")
     for verdict in verdicts:
         state = "RUNNABLE" if verdict.runnable else "SKIP"
@@ -241,6 +272,8 @@ def _print_arms(verdicts: tuple[ArmVerdict, ...], envelopes: dict[str, str]) -> 
         envelope = envelopes.get(verdict.system_name or "")
         if envelope is not None:
             print(f"    envelope:    {envelope}")
+        if verdict.group == "round2" and provision_vlan is not None:
+            print(f"    provision VLAN: {provision_vlan}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -264,10 +297,15 @@ def main(argv: list[str] | None = None) -> int:
     verdicts = arm_verdicts(config, args.group) if config is not None else ()
 
     envelopes: dict[str, str] = {}
-    if verdicts and credentials_ok and not args.skip_hardware:
+    provision_vlan: str | None = None
+    if config is not None and credentials_ok and not args.skip_hardware:
         systems = {v.system_name for v in verdicts if v.system_name and v.runnable}
         for system in sorted(systems):
             envelopes[system] = asyncio.run(_probe_environment(system))
+        if any(v.group == "round2" for v in verdicts):
+            provision_vlan = asyncio.run(
+                _probe_provision_vlan(config.system_name, config.provision_vlan_id)
+            )
 
     print("live-test preflight")
     print("=" * 60)
@@ -286,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         "so a run's evidence names its request environment (docs/compatibility.md)"
     )
     if verdicts:
-        _print_arms(verdicts, envelopes)
+        _print_arms(verdicts, envelopes, provision_vlan)
 
     if config is None or not credentials_ok:
         print("\nthe runner would not start — fix the FAIL rows above")

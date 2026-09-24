@@ -427,3 +427,126 @@ def test_no_hmc_is_contacted_when_credentials_are_unresolved(workspace, monkeypa
     _credentials(monkeypatch, resolved=False)
 
     assert preflight.main(["--group", "dedicated"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# The provision VLAN is a hardware fact: reported, never gated (#970)
+# ---------------------------------------------------------------------------
+
+
+async def _none() -> None:
+    return None
+
+
+def _stub_hardware(monkeypatch, vlan_probe) -> list[tuple[str, int]]:
+    """Admit every system and route the VLAN probe through `vlan_probe`."""
+    probed: list[tuple[str, int]] = []
+
+    async def admitted(_config, _system):
+        return None
+
+    async def probe(system_name, vlan_id):
+        probed.append((system_name, vlan_id))
+        return await vlan_probe(system_name, vlan_id)
+
+    monkeypatch.setattr(preflight, "require_admitted_environment", admitted)
+    monkeypatch.setattr(preflight, "_probe_provision_vlan", probe)
+    return probed
+
+
+@pytest.mark.parametrize("group", [["--group", "round2"], []], ids=["round2", "every-arm"])
+def test_the_provision_vlan_is_reported_under_round2(workspace, monkeypatch, capsys, group):
+    async def present(_system, vlan_id):
+        return f"{vlan_id} has a virtual network"
+
+    probed = _stub_hardware(monkeypatch, present)
+    (workspace / ".env").write_text(
+        _env_text(**_DEDICATED, LIVE_TEST_PROVISION_VLAN_ID="42"), encoding="utf-8"
+    )
+    _credentials(monkeypatch)
+
+    assert preflight.main(group) == 0
+
+    output = capsys.readouterr().out
+    assert probed == [(runner.LiveTestConfig().system_name, 42)]
+    round2 = output.index("  round2 ")
+    assert output.index("    provision VLAN: 42 has a virtual network") > round2
+
+
+def test_a_vlan_with_no_virtual_network_does_not_change_the_exit_status(
+    workspace, monkeypatch, capsys
+):
+    """ST13/ST14 will fail, but preflight predicts; hardware findings stay advisory."""
+
+    async def check(_hmc, _system_uuid, vlan_id):
+        raise ValueError(f"No VirtualNetwork with VLAN ID {vlan_id} found")
+
+    class FakeClient:
+        def __init__(self, _config):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return None
+
+    async def resolve(_hmc, _system):
+        return "system-uuid"
+
+    monkeypatch.setattr(preflight, "require_admitted_environment", lambda *_: _none())
+    monkeypatch.setattr(preflight, "HMCClient", FakeClient)
+    monkeypatch.setattr(preflight, "HMCConfig", lambda: object())
+    monkeypatch.setattr(preflight, "resolve_system_uuid", resolve)
+    monkeypatch.setattr(preflight, "_check_vlan_exists", check)
+    (workspace / ".env").write_text(_env_text(), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "round2"]) == 0
+
+    output = capsys.readouterr().out
+    assert "provision VLAN: no virtual network on VLAN 1" in output
+    assert "LIVE_TEST_PROVISION_VLAN_ID" in output
+    assert "the runner would start" in output
+
+
+def test_an_unreachable_hmc_reports_the_provision_vlan_as_unknown(
+    workspace, monkeypatch, capsys
+):
+    class Unreachable:
+        def __init__(self, _config):
+            pass
+
+        async def __aenter__(self):
+            raise OSError("no route to host")
+
+        async def __aexit__(self, *_exc):
+            return None
+
+    monkeypatch.setattr(preflight, "require_admitted_environment", lambda *_: _none())
+    monkeypatch.setattr(preflight, "HMCClient", Unreachable)
+    monkeypatch.setattr(preflight, "HMCConfig", lambda: object())
+    (workspace / ".env").write_text(_env_text(), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "round2"]) == 0
+    assert "provision VLAN: unknown (OSError)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["--skip-hardware"], ["--group", "dedicated"]],
+    ids=["skip-hardware", "other-arm"],
+)
+def test_the_provision_vlan_is_not_probed_without_round2_hardware(
+    workspace, monkeypatch, argv
+):
+    async def forbidden(*_args):
+        raise AssertionError("probed the provision VLAN")
+
+    probed = _stub_hardware(monkeypatch, forbidden)
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(argv) == 0
+    assert probed == []

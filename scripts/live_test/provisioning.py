@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
+from .network import listed_vlans
 from .observation import ExpectedOutcome
 from .results import resource as get_resource
 from .storage import configured_vg_uuid
@@ -40,17 +41,14 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
     artifacts = state.artifacts
     print("\n=== ST13: Provision Dry Run ===")
 
-    # Prefer lp3's own PVID (always present on the system); fall back to test VLAN
-    pvid = artifacts.lp3_baseline.get("pvid") or artifacts.test_vlan_id
     vios_uuid = artifacts.vios_uuid
     vios_pid = artifacts.vios_partition_id or artifacts.lp3_baseline.get(
         "vios_partition_id"
     )
     vios_slot = artifacts.lp3_baseline.get("vios_slot") or config.dry_run_vios_slot
 
-    if not vios_uuid or not pvid:
-        reason = "no VIOS UUID" if not vios_uuid else "no PVID or test VLAN ID"
-        state.skip(13, "hmc_provision_lpar (dry_run)", reason)
+    if not vios_uuid:
+        state.skip(13, "hmc_provision_lpar (dry_run)", "no VIOS UUID")
         return
 
     st, data = await state.call(
@@ -60,7 +58,7 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
         system_name_or_uuid=config.system_name,
         name=config.dry_run_lpar_name,
         adapters={
-            "port_vlan_id": int(pvid),
+            "port_vlan_id": config.provision_vlan_id,
             "vios_partition_id": int(vios_pid or config.dry_run_vios_partition_id),
             "vios_slot": int(vios_slot),
         },
@@ -253,6 +251,32 @@ def _baseline_provision_resources(state: RunState) -> dict[str, int]:
     }
 
 
+async def _provision_vlan_refusal(client: Client, state: RunState) -> str | None:
+    """Say why the configured VLAN cannot be provisioned on, or None when it can.
+
+    The VLAN is operator-configured rather than the test partition's own, and
+    `hmc_provision_lpar` checks it only after ST14 has deleted the partition and
+    disk, so ST14 checks it first (#970).
+    """
+    vlan_id = state.config.provision_vlan_id
+    status, data = await state.call(
+        client, "hmc_list_virtual_networks", system_name_or_uuid=state.config.system_name
+    )
+    state.record(14, "hmc_list_virtual_networks (provision VLAN)", status, data)
+    fix = "set LIVE_TEST_PROVISION_VLAN_ID to a VLAN with a virtual network"
+    if status != "PASS":
+        return f"hmc_list_virtual_networks returned {status}; cannot confirm VLAN {vlan_id}"
+    vlans, malformed = listed_vlans(data)
+    if vlan_id in vlans:
+        return None
+    note = (
+        f" (unparsable VLAN identifiers: {', '.join(repr(v) for v in malformed)})"
+        if malformed
+        else ""
+    )
+    return f"no virtual network on VLAN {vlan_id}{note}; {fix}"
+
+
 async def exercise_storage_provisioning(client: Client, state: RunState) -> None:
     config = state.config
     artifacts = state.artifacts
@@ -261,8 +285,6 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     baseline = artifacts.lp3_baseline
     vios_uuid = artifacts.vios_uuid
     vg_uuid = configured_vg_uuid(state)
-    vdisk_size_mib = artifacts.vdisk_size_mib
-    pvid = baseline.get("pvid")
     vios_slot = baseline.get("vios_slot")
     vios_pid = artifacts.vios_partition_id or baseline.get("vios_partition_id")
 
@@ -271,21 +293,18 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         for k, v in {
             "vios_uuid": vios_uuid,
             "vg_uuid": vg_uuid,
-            "pvid": pvid,
             "vios_slot": vios_slot,
             "vios_pid": vios_pid,
-            "vdisk_size_mib": vdisk_size_mib,
         }.items()
         if not v
     ]
-    if missing:
-        state.record(
-            14,
-            "pre-flight check",
-            "FAIL",
-            f"Missing required context keys: {missing}. "
-            f"Re-run ST0 and ST3 before ST14.",
-        )
+    refusal = (
+        f"Missing required context keys: {missing}. Re-run ST0 and ST3 before ST14."
+        if missing
+        else await _provision_vlan_refusal(client, state)
+    )
+    if refusal:
+        state.record(14, "pre-flight check", "FAIL", refusal)
         for name in [
             "hmc_power_off_lpar",
             "hmc_delete_lpar",
@@ -302,8 +321,9 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         14,
         "pre-flight check",
         "PASS",
-        f"vios_uuid={vios_uuid} vg_uuid={vg_uuid} pvid={pvid} "
-        f"vios_slot={vios_slot} vios_pid={vios_pid} vdisk_mib={vdisk_size_mib}",
+        f"vios_uuid={vios_uuid} vg_uuid={vg_uuid} vlan={config.provision_vlan_id} "
+        f"vios_slot={vios_slot} vios_pid={vios_pid} "
+        f"vdisk_mib={config.provision_disk_mib}",
     )
 
     await _remove_previous_test_lpar(client, state)
@@ -312,14 +332,14 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         state,
         str(vios_uuid),
         str(vg_uuid),
-        int(vdisk_size_mib),
+        config.provision_disk_mib,
     )
     await _provision_from_baseline(
         client,
         state,
         vios_uuid=str(vios_uuid),
         vg_uuid=str(vg_uuid),
-        pvid=int(pvid),
+        pvid=config.provision_vlan_id,
         vios_slot=int(vios_slot),
         vios_pid=int(vios_pid),
     )

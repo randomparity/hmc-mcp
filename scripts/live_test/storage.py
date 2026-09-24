@@ -73,50 +73,6 @@ def configured_vg_uuid(state: RunState) -> str | None:
     return artifacts.vg_uuid
 
 
-def _virtual_disks(resource: Mapping[str, Any]) -> list[dict[str, Any]]:
-    disks = resource.get("VirtualDisks") or resource.get("virtual_disks") or []
-    if isinstance(disks, dict):
-        disks = disks.get("VirtualDisk") or []
-    if isinstance(disks, dict):
-        return [disks]
-    return disks if isinstance(disks, list) else []
-
-
-def _capture_disk_capacity(state: RunState, disk: dict[str, Any]) -> bool:
-    config = state.config
-    artifacts = state.artifacts
-    resource = get_resource(disk)
-    if resource.get("DiskName") != config.vdisk_name:
-        return False
-    raw = resource.get("DiskCapacity") or resource.get("disk_capacity")
-    try:
-        gib = int(float(raw))
-        if gib <= 0:
-            raise ValueError("capacity must be positive")
-        artifacts.vdisk_size_mib = gib * 1024
-    except (TypeError, ValueError):
-        artifacts.vdisk_size_mib = None
-        state.record(
-            3,
-            "parse virtual disk capacity",
-            "FAIL",
-            f"Disk {config.vdisk_name!r} has invalid DiskCapacity {raw!r}; "
-            "storage mutation will be skipped",
-        )
-    return True
-
-
-def _capture_volume_group(state: RunState, data: Any) -> None:
-    group = resolve_configured_volume_group(
-        state, 3, data, ("select configured volume group",)
-    )
-    if group is None:
-        return
-    for disk in _virtual_disks(group.resource):
-        if _capture_disk_capacity(state, disk):
-            break
-
-
 async def _discover_volume_group(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
     if not artifacts.vios_uuid:
@@ -131,8 +87,10 @@ async def _discover_volume_group(client: Client, state: RunState) -> None:
     )
     state.record(3, "hmc_list_volume_groups", st, data)
     if st == "PASS":
-        _capture_volume_group(state, data)
-    print(f"  VG UUID: {artifacts.vg_uuid}  vdisk_size_mib: {artifacts.vdisk_size_mib}")
+        resolve_configured_volume_group(
+            state, 3, data, ("select configured volume group",)
+        )
+    print(f"  VG UUID: {artifacts.vg_uuid}")
 
 
 async def _record_storage_collections(client: Client, state: RunState) -> None:

@@ -286,6 +286,10 @@ class LiveTestConfig:
     provision_max_memory_mib: int = 6144
     provision_desired_vcpus: int = 3
     provision_max_vcpus: int = 6
+    # ST13/ST14's client-adapter VLAN (it must already have a virtual network) and
+    # test-disk size: set explicitly because a fresh lab has neither fixture (#970).
+    provision_vlan_id: int = 1
+    provision_disk_mib: int = 10240
     protected_lpar_names: tuple[str, ...] = (
         "example-lt-609-protected-a",
         "example-lt-609-protected-b",
@@ -357,6 +361,8 @@ class LiveTestConfig:
         "LIVE_TEST_PROVISION_MAX_MEMORY_MIB": "provision_max_memory_mib",
         "LIVE_TEST_PROVISION_DESIRED_VCPUS": "provision_desired_vcpus",
         "LIVE_TEST_PROVISION_MAX_VCPUS": "provision_max_vcpus",
+        "LIVE_TEST_PROVISION_VLAN_ID": "provision_vlan_id",
+        "LIVE_TEST_PROVISION_DISK_MIB": "provision_disk_mib",
         "LIVE_TEST_PROTECTED_LPAR_NAMES": "protected_lpar_names",
         "LIVE_TEST_SRIOV_ADAPTER_ID": "sriov_adapter_id",
         "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID": "sriov_physical_port_id",
@@ -476,6 +482,8 @@ class LiveTestConfig:
             "provision_max_memory_mib",
             "provision_desired_vcpus",
             "provision_max_vcpus",
+            "provision_vlan_id",
+            "provision_disk_mib",
             "sriov_adapter_id",
             "sriov_logical_port_id",
             "sriov_capacity_percent",
@@ -500,13 +508,17 @@ class LiveTestConfig:
             invalid.append("LIVE_TEST_PROTECTED_LPAR_NAMES")
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
-        # The HMC's RepositorySize is whole GiB; hmc_create_media_repository refuses
-        # anything else, which would otherwise surface mid-ST17 after a delete (#963).
+        if parsed["provision_vlan_id"] > 4094:
+            invalid.append("LIVE_TEST_PROVISION_VLAN_ID")
+        # The HMC's RepositorySize and DiskCapacity are whole GiB; the create tools
+        # refuse anything else, which would otherwise surface mid-arm after a delete
+        # (#963, #970).
         invalid += [
             f"{key} must be a multiple of 1024"
             for key in (
                 "LIVE_TEST_VMEDIA_REPOSITORY_SIZE_MIB",
                 "LIVE_TEST_VMEDIA_SHORT_REPOSITORY_SIZE_MIB",
+                "LIVE_TEST_PROVISION_DISK_MIB",
             )
             if parsed[cls._CONFIG_FIELDS[key]] % 1024
         ]
@@ -556,7 +568,6 @@ class LiveTestArtifacts:
     job_uuid_sample: str | None = None
     vg_uuid: str | None = None
     vdisk_vg_name: str | None = None
-    vdisk_size_mib: int | None = None
     lp3_baseline: dict[str, Any] = field(default_factory=dict)
     vmedia_repo_created: bool = False
     vmedia_iso_name: str | None = None
@@ -1247,7 +1258,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
     }
 )
 _ARTIFACT_NULLABLE_INTS = frozenset(
-    {"vios_partition_id", "test_vlan_id", "test_vswitch_id", "vdisk_size_mib"}
+    {"vios_partition_id", "test_vlan_id", "test_vswitch_id"}
 )
 
 
