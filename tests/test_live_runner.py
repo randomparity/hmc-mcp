@@ -3563,6 +3563,11 @@ def test_vmedia_behavioral_inventory_covers_every_registered_stage():
             [],
             "no boot device list",
         ),
+        (
+            {"pending_boot_string": "cd disk", "boot_device_list": _BOOT_DISK},
+            [],
+            "cannot be restored",
+        ),
     ],
 )
 @pytest.mark.asyncio

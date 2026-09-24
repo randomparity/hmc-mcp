@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from fastmcp import Client
 
 from hmcpctl.config import env_var_value
+from hmcpctl.documents import join_boot_device_paths
 
 from .observation import ExpectedOutcome
 from .results import entries
@@ -790,6 +791,11 @@ async def _configure_boot_order(
             _SET_BOOT_ORDER_STEP,
             "no boot device list reported (a never-booted partition has none)",
         )
+        return
+    try:
+        join_boot_device_paths(pending)
+    except ValueError as exc:
+        state.skip(20, _SET_BOOT_ORDER_STEP, f"baseline pending boot order cannot be restored: {exc}")
         return
     artifacts.vmedia_orig_boot_order = pending
     status, data = await state.call(
