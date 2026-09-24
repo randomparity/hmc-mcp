@@ -4,7 +4,7 @@
 > creation through cleanup, on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into its
 > installer. The run used a build patched for #935 and #979, and imported the ISO outside
 > `hmcpctl` (#978). Unpatched, the recipe stops at `adapters add-network` with HTTP 406 (#935).
-> These issues must land before the recipe runs on `main`: #935 and #979. Each step that
+> This issue must land before the recipe runs on `main`: #935. Each step that
 > depends on an open issue names it.
 
 This recipe creates one powered-off LPAR, gives it a virtual network adapter and a VIOS-backed
@@ -77,15 +77,14 @@ shows.
 
 ## HMC CLI steps
 
-Two things in this recipe have no working `hmcpctl` command yet. Run them in an SSH session on
+One thing in this recipe has no working `hmcpctl` command yet. Run it in an SSH session on
 the HMC, as the HMC user in your connection profile:
 
-- writing the adapters that `hmcpctl` adds into the partition's profile before a profile power-on, until
-  #981;
-- reading the partition description for the ownership checks. `lpars get-description` prints a
-  blank line in place of the stamp until #965 is fixed.
+- writing the adapters that `hmcpctl` adds into the partition's profile before a profile
+  power-on, when `CurrentProfileSync` is `Disabled` or `Suspended` (see step 5). `hmcpctl`
+  reports the sync state but does not yet write the profile itself.
 
-The HMC CLI blocks below use `<angle-bracket>` placeholders, not shell variables. Fill them in
+The HMC CLI block below uses `<angle-bracket>` placeholders, not shell variables. Fill it in
 from the same values.
 
 ## Prerequisites
@@ -172,10 +171,10 @@ adapter writes in step 3 and the profile power-on in step 5 need. `lpars state` 
 `not activated`. If `lpars create` warns that it could not stamp ownership, or that the profile
 was not applied, stop.
 
-Then check the ownership stamp on the HMC CLI:
+Then check the ownership stamp:
 
-```text
-lssyscfg -r lpar -m <managed-system-name> --filter lpar_names=<lpar-name> -F description
+```bash
+hmcpctl lpars get-description "$LPAR_NAME" "$SYSTEM_NAME"
 ```
 
 The description carries the ownership stamp and `[caller <run-unique-token>]`.
@@ -324,8 +323,7 @@ Expected: the second `list-mappings` shows the optical mapping gone and the disk
 unchanged. The ISO stays in the repository. The 2026-09-23 run powered off gracefully from the
 installer and then unmounted, in this order.
 
-`unmount-optical-media` and `detach-mapping` refuse on a live HMC until #979 lands. Unmount
-only after power-off. On a running partition an earlier 2026-09-23 run got HTTP 500 HSCL2957 (no RMC
+Unmount only after power-off. On a running partition an earlier 2026-09-23 run got HTTP 500 HSCL2957 (no RMC
 connection to the partition), after the VIOS had already removed the optical device and its
 server adapter. The client adapter stayed on the partition. If that happens, treat it as a
 partial change: compare `list-mappings` and `adapters list` with the state you expect.
@@ -338,11 +336,11 @@ Run this section only to tear the partition down. Every command in it destroys s
 Run each one by hand and check the identity it names before you confirm. The partition must be
 powered off, as in step 6.
 
-Detach the disk mapping (#979). First check on the HMC CLI that the description still carries
+Detach the disk mapping. First check that the description still carries
 `[caller <run-unique-token>]`:
 
-```text
-lssyscfg -r lpar -m <managed-system-name> --filter lpar_names=<lpar-name> -F description
+```bash
+hmcpctl lpars get-description "$LPAR_NAME" "$SYSTEM_NAME"
 ```
 
 ```bash
@@ -366,7 +364,7 @@ hmcpctl storage list-optical-media "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
 hmcpctl storage delete-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --yes
 ```
 
-Delete the partition last, after the same description check on the HMC CLI; stop if it no
+Delete the partition last, after the same description check; stop if it no
 longer carries your caller token.
 
 ```bash
