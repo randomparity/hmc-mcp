@@ -170,6 +170,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `disk` and `network` selectors; the CLI takes them as positional arguments. A V10R3 HMC
   rejects the empty value `clear-boot-order` writes with HTTP 500 `REST0126` (#980).
 
+- `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
+  partition body — including when the post-create read-back raises (#1014) — instead of omitting
+  the requested assignment steps entirely (#1019).
+
 - `HMCError` extracts `<Message>` from the untruncated HMC error body before truncating the
   stored body to `MAX_ERROR_BODY_BYTES` (4096). Before, a body over 4096 bytes was cut first,
   which could leave malformed XML with the `<Message>` element past the cut, so the message was
