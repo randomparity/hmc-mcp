@@ -30,9 +30,9 @@ Excluded (operator 2026-09-24 "Approve all"): adding or widening any
 
 1. Actors: hmcpctl operator/automation calling an LPAR mutation or
    ownership-inspection tool against a live HMC.
-2. Invariants: none new — this only narrows accepted name shapes, so a
-   malformed name can only become today's existing "not found" error, never
-   the reverse.
+2. Invariants: none new — for the two `ValueError` sites a malformed name can
+   only become today's "not found" error, never the reverse; `_resolve_system_name`
+   diverts to its existing SSH/selector fallback instead, not a new error path.
 3. Accepted: a whitespace-only/non-string name is treated as absent, per the
    helpers' contract from #1002, adopted here rather than invented.
 4. Covered elsewhere: helper validation/tests are owned by
@@ -41,20 +41,20 @@ Excluded (operator 2026-09-24 "Approve all"): adding or widening any
 ## Success
 
 - All three reads call `lpar_name_from_uuid` or `system_name_from_uuid`.
-- Each site's message, exception type, and (for `_resolve_system_name`)
-  fallback/logging are unchanged.
-- `_partition_name`'s 404 propagation is unchanged.
+- Each site's message/exception type, `_resolve_system_name`'s fallback and
+  logging, and `_partition_name`'s 404 propagation stay unchanged.
 - `just verify` passes with no `HMC_*` exported.
 
 ## Validation
 
 - Contract: `_partition_name` raises `ValueError` on a missing/whitespace-only
-  name, 404 propagates. Mode: focused-test — `tests/unit/test_ownership.py`,
-  new whitespace-only case; existing 404 case retained.
+  name, 404 propagates. Mode: focused-test — new whitespace-only case in
+  `tests/unit/test_ownership.py`; missing-name/404 already covered indirectly
+  in `tests/lpar/test_dlpar_operations.py`.
 - Contract: the inline read in `resolve_lpar_ownership_names` raises
   `ValueError` on a missing/whitespace-only name. Mode: focused-test —
   `tests/unit/test_ownership.py`, new whitespace-only case.
 - Contract: `_resolve_system_name` returns the REST name when usable, else
-  SSH, else the caller's selector. Mode: focused-test —
-  `tests/unit/test_ownership.py`, new whitespace-only case exercising the SSH
-  fallback; existing `HMCError`/SSH-failure cases retained.
+  SSH, else the caller's selector. Mode: focused-test — new whitespace-only
+  case in `tests/lpar/test_lpar_http406.py`, beside its existing
+  HMCError/SSH-failure cases (not in `test_ownership.py`).
