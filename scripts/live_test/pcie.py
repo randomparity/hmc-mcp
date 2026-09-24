@@ -77,7 +77,7 @@ from hmcpctl.ssh.profiles import (
 )
 from hmcpctl.ssh.transport import HMCCLIError
 
-from .observation import Assertion, CallFailure
+from .observation import Assertion, CallFailure, judge_create_result
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -1524,7 +1524,10 @@ async def _probe_create_time_assignment(
             ]
         },
     )
-    state.record(30, "hmc_create_lpar (create-time dedicated assignment)", st, data)
+    record_status, reason = judge_create_result(st, data)
+    state.record(
+        30, "hmc_create_lpar (create-time dedicated assignment)", record_status, data, reason
+    )
     if st == "PASS":
         fixture.probe_created = True
         if isinstance(data, dict) and isinstance(data.get("lpar"), dict):
@@ -1653,7 +1656,8 @@ async def create_fixture_partition(
             caller_token=fixture.run_marker,
             resources=resources,
         )
-    state.record(30, "hmc_create_lpar (fixture)", st, data)
+    record_status, reason = judge_create_result(st, data)
+    state.record(30, "hmc_create_lpar (fixture)", record_status, data, reason)
     if st != "PASS":
         # Same invariant as the probe above: confirm the partition is really
         # absent rather than assuming a failed create created nothing.

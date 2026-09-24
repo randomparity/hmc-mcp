@@ -139,6 +139,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl lpars provision` and `hmc_provision_lpar` apply the new partition profile after a
+  `mksyscfg` create, as `lpars create` does, and report it as an `apply_profile` step. Before
+  this, provision's network step failed with `REST0269` on such a partition. A failed apply skips
+  the remaining steps and leaves the partition in place. There is no opt-out (#999).
+
 - `hmc_create_volume_group` and `hmcpctl storage create-vg` send `GroupName` with `kb="CUR"`,
   the value a live V10R3 `VolumeGroup` carries, instead of `kb="CUD"`. A test pins the create
   document against a redacted V10R3 `VolumeGroup` capture (#1001).
@@ -365,6 +370,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   Service Pack comparison (ADR 0166), so a later service pack such as `10600`, or one whose
   output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
   on an environment the repository does not admit (#928).
+
+- `scripts/live_test_preflight.py`'s dedicated-arm verdict now predicts the `st36-io-slots`
+  scenario (#985) too, not only the fixture's own dedicated slot: it names the two further spare
+  slots the scenario will mutate when no DRC index is pinned, and states the scenario will SKIP
+  when one is. Previously preflight showed one mutated slot while an unpinned run touched three
+  (#1000).
 
 ### Changed
 

@@ -25,7 +25,7 @@ from hmcpctl.operations.affinity.rest import (
     validate_affinity_request,
 )
 from hmcpctl.operations.lpar.assignments import WorkflowStep
-from hmcpctl.operations.lpar.core import LparPowerResult
+from hmcpctl.operations.lpar.core import LparCreationResult, LparPowerResult
 from hmcpctl.operations.lpar.provision import (
     ProvisionAdapters,
     ProvisionAffinityAssessment,
@@ -986,3 +986,123 @@ def test_provision_applies_explicit_fail_policy_before_network(monkeypatch, mock
         "network",
     ]
     setter.assert_awaited_once_with(ANY, SYSTEM_UUID, "web01", policy)
+
+
+# ---------------------------------------------------------------------- #
+# mksyscfg create path applies the profile before the network leg (#999)
+# ---------------------------------------------------------------------- #
+
+
+def _provision_via_406(mock_hmc, apply: AsyncMock, order: list[str]):
+    """Run provision down the mksyscfg fallback, recording call order."""
+    searches = iter([EMPTY_FEED, EMPTY_FEED, CREATED_LPAR_FEED])
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==web01)").mock(
+        side_effect=lambda request: httpx.Response(200, text=next(searches))
+    )
+    _mock_execution_steps(mock_hmc).mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+    network = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
+    ).mock(
+        side_effect=lambda request: (
+            order.append("network"),
+            httpx.Response(201, text=NETWORK_ADAPTER_FEED),
+        )[1]
+    )
+
+    async def _mksyscfg(*args, **kwargs):
+        order.append("mksyscfg")
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_cli_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.core.create_lpar_via_cli",
+            new=AsyncMock(side_effect=_mksyscfg),
+        ),
+        patch("hmcpctl.operations.lpar.core.apply_lpar_profile_via_cli", new=apply),
+    ):
+        result = hmc_provision_lpar(**_provision_args())
+    return result, network
+
+
+def test_provision_mksyscfg_path_applies_profile_before_network(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    order: list[str] = []
+
+    async def _apply(*args, **kwargs):
+        order.append("apply")
+
+    apply = AsyncMock(side_effect=_apply)
+    result, _ = _provision_via_406(mock_hmc, apply, order)
+
+    assert apply.await_args.args[1:] == ("sys1", "web01")
+    assert order == ["mksyscfg", "apply", "network"]
+    assert [s.step for s in result.steps][:3] == ["create", "apply_profile", "network"]
+    assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
+    assert result.workflow_completed is True
+
+
+def test_provision_apply_error_skips_remaining_legs(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    order: list[str] = []
+    apply = AsyncMock(side_effect=HMCCLIError("HSCL boom"))
+
+    result, network = _provision_via_406(mock_hmc, apply, order)
+
+    assert not network.called
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar_uuid == LPAR_UUID
+    assert result.steps[1].step == "apply_profile"
+    assert result.steps[1].status == "error"
+    assert "HSCL boom" in result.steps[1].result
+    assert [(s.step, s.status) for s in result.steps[2:]] == [
+        ("network", "skipped"),
+        ("vscsi", "skipped"),
+        ("storage", "skipped"),
+        ("power_on", "skipped"),
+    ]
+    assert "'default_profile' was not applied" in result.warnings[0]
+
+
+def test_provision_rest_create_reports_no_apply_step(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    apply = AsyncMock()
+
+    with patch("hmcpctl.operations.lpar.core.apply_lpar_profile_via_cli", new=apply):
+        result = hmc_provision_lpar(**_provision_args())
+
+    apply.assert_not_awaited()
+    assert "apply_profile" not in [s.step for s in result.steps]
+    assert result.workflow_completed is True
+
+
+def test_provision_reports_apply_step_when_create_returns_no_uuid(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    apply_step = WorkflowStep("apply_profile", "ok", "default_profile")
+    creation = LparCreationResult(True, None, None, (), apply_step)
+
+    with patch(
+        "hmcpctl.operations.lpar.provision.create_and_stamp_lpar",
+        new=AsyncMock(return_value=creation),
+    ):
+        result = hmc_provision_lpar(**_provision_args())
+
+    assert [(s.step, s.status) for s in result.steps] == [
+        ("create", "error"),
+        ("apply_profile", "ok"),
+        ("network", "skipped"),
+        ("vscsi", "skipped"),
+        ("storage", "skipped"),
+        ("power_on", "skipped"),
+    ]
+    assert result.workflow_completed is False

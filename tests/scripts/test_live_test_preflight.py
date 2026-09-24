@@ -246,6 +246,44 @@ def test_the_dedicated_verdict_names_system_prefix_and_slot(
     assert "RUNNABLE" in output
 
 
+def test_a_pinned_slot_predicts_the_io_slots_scenario_will_skip(
+    workspace, monkeypatch, capsys
+):
+    """#1000. `_DEDICATED` pins a DRC index, leaving no room for the scenario's
+    two further slots — the same gate `pcie._io_slots_scenario` uses."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "dedicated", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "io_slots scenario: SKIP" in output
+    assert "LIVE_TEST_DEDICATED_PCIE_DRC_INDEX pins one slot" in output
+
+
+def test_an_unpinned_slot_predicts_the_io_slots_scenario_will_mutate_two_spares(
+    workspace, monkeypatch, capsys
+):
+    """#1000. With no DRC index pinned, the scenario takes two further spare
+    slots (#985/PR #992), beyond the fixture's own auto-selected slot."""
+    (workspace / ".env").write_text(
+        _env_text(
+            LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME="sys-R1",
+            LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX="live-pcie-",
+        ),
+        encoding="utf-8",
+    )
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "dedicated", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert f"io_slots scenario: two further spare slots {preflight.pcie.AUTO_SELECTED_SLOT}" in (
+        output
+    )
+
+
 def test_an_unconfigured_dedicated_arm_is_predicted_skip_not_a_failure(
     workspace, monkeypatch, capsys
 ):
