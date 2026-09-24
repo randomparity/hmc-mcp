@@ -2564,6 +2564,7 @@ async def test_resume_after_an_ended_stream_releases_through_eof_again():
     assert resumed.eof.is_set()
     assert release.await_count == 3
 
+
 # ---------------------------------------------------------------------------
 # The release probe's own teardown through stdin EOF (issue #1072)
 # ---------------------------------------------------------------------------

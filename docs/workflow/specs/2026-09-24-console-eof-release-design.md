@@ -76,7 +76,8 @@ generated `docs/tools/` page), and `CHANGELOG.md` change too.
    - A firmware whose EOF does not end `mkvterm` within 20 s gets today's behaviour.
    - A stream that ends during the drain without releasing the hold gets no `rmvterm`, and
      `close()` returns the probe's `False`: in every captured run the exit after EOF meant release
-     or a reported loss, and an `rmvterm` here could end another holder.
+     or a reported loss, and an `rmvterm` here could end another holder. The probe's own EOF
+     wait is in the same class (#1072).
 4. **Covered elsewhere:** vterm ownership query → operator; SysRq and `~.` → #879.
 
 ## Success
