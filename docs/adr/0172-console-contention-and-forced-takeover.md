@@ -7,6 +7,17 @@ disown hook), and amends ADR 0072 in part (the clause "no `rmvterm` is ever issu
 contention path"). `rmvterm` is withheld on contention only while hmcpctl cannot prove the
 hold is its own.
 
+> **Amended by #1004** (2026-09-24): a live session no longer undoes a takeover. When another
+> client runs `rmvterm`, the HMC sends the holder one fixed in-band message
+> (`LOST_HOLD_SENTINEL`); the `mkvterm` channel then stays open and silent, with no EOF and no
+> exit status (redacted capture: `tests/fixtures/console/lost-hold-transcript.json`). A `held`
+> session that reads that exact message becomes `lost`: later reads raise `ConsoleHoldLostError`,
+> and `close()` issues no `rmvterm` and returns `False`. Rule 3's "`close()` always issues
+> `rmvterm` for a session that proved its hold" now excludes a lost hold. Partition output that
+> reproduces the message byte for byte leaks the session's own hold, reported as `False` and
+> recoverable with `take_over=True`. Design and alternatives:
+> `docs/workflow/specs/2026-09-24-console-lost-hold-design.md`.
+
 ## Context
 
 ADR 0072 and ADR 0170 rule 2 never issue `rmvterm` on contention, because it would close the
