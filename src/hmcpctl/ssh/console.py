@@ -184,8 +184,9 @@ class ConsoleCapture:
 
     ``released`` is honest, not optimistic: ``True`` only when an independent
     follow-up ``mkvterm`` proved the vterm slot free after the mandatory
-    release, stdin EOF or ``rmvterm`` (P2, #1058). ``False`` means the caller may have left the partition's
-    console held and should treat further console access as broken, unless
+    release, stdin EOF or ``rmvterm`` (P2, #1058). ``False`` means the caller
+    may have left the partition's console held and should treat further
+    console access as broken, unless
     ``error`` names :class:`ConsoleHoldLostError`: then another client ended
     the hold and no ``rmvterm`` was issued (#1004).
     """
@@ -1411,9 +1412,10 @@ async def capture_lpar_console(
     Runs ``mkvterm`` over a dedicated SSH process session with stdin sealed
     (no byte can reach the partition console, P7), enforces the three
     client-side bounds (P8), then releases the vterm on every exit path, with
-    stdin EOF or, when that does not finish, ``rmvterm`` (#1058), and reports honestly whether the release was *proven*
-    (P2/P3/P4). The exception is a hold another client's ``rmvterm`` already
-    ended (#1004): no ``rmvterm``, ``stop_reason="error"`` naming
+    stdin EOF or, when that does not finish, ``rmvterm`` (#1058), and reports
+    honestly whether the release was *proven* (P2/P3/P4). The exception is a
+    hold another client's ``rmvterm`` already ended (#1004): no ``rmvterm``,
+    ``stop_reason="error"`` naming
     :class:`ConsoleHoldLostError`, and ``released=False``.
 
     Raises:

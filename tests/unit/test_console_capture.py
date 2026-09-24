@@ -2413,7 +2413,8 @@ _EOF_TRANSCRIPT = json.loads(
 
 def test_eof_release_transcript_records_eof_exit_and_survival():
     runs = _EOF_TRANSCRIPT["runs"]
-    assert {run["arm"] for run in runs} == {"single", "single-fast", "takeover", "race", "eof-first"}
+    arms = {run["arm"] for run in runs}
+    assert arms == {"single", "single-fast", "takeover", "race", "eof-first"}
     for run in runs:
         assert _holder_chunks(run)[-1] == EXITED
         events = {event["event"]: event for event in run["events"]}
