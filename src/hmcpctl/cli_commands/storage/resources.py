@@ -93,7 +93,9 @@ def storage_create_vg(
 def storage_create_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
-    name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
+    name: str = typer.Option(
+        ..., "--name", "-n", help="Virtual disk name (at most 15 characters)"
+    ),
     capacity_mib: int = typer.Option(
         ..., "--capacity-mib", help="Virtual disk capacity in MiB"
     ),
@@ -146,7 +148,9 @@ def storage_attach_disk(
     lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
     vios: str = typer.Option(..., "--vios", help="VIOS UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
-    name: str = typer.Option(..., "--name", "-n", help="New virtual disk name"),
+    name: str = typer.Option(
+        ..., "--name", "-n", help="New virtual disk name (at most 15 characters)"
+    ),
     capacity_mib: int = typer.Option(
         ..., "--capacity-mib", help="Disk capacity in MiB"
     ),
@@ -252,7 +256,11 @@ def storage_map(
 def storage_create_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
-    size_mib: int = typer.Option(..., "--size-mib", help="Repository size in MiB"),
+    size_mib: int = typer.Option(
+        ...,
+        "--size-mib",
+        help="Repository size in MiB, a multiple of 1024 (sent to the HMC as whole GiB)",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -278,7 +286,11 @@ def storage_create_media(
     name: str = typer.Option(
         ..., "--name", "-n", help="Media file name (e.g. aix.iso)"
     ),
-    size_mib: int = typer.Option(..., "--size-mib", help="Media size in MiB"),
+    size_mib: int = typer.Option(
+        ...,
+        "--size-mib",
+        help="Media size in MiB, a multiple of 1024 (sent to the HMC as whole GiB)",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -362,7 +374,7 @@ def storage_get_media_repo(
         repo_name = resource.get("RepositoryName", "N/A")
         repo_size = resource.get("RepositorySize", "N/A")
         console.print(f"  Name: {repo_name}")
-        console.print(f"  Size: {repo_size} MiB")
+        console.print(f"  Size: {repo_size} GiB")
     else:
         console.print("[yellow]No media repository found[/yellow]")
 

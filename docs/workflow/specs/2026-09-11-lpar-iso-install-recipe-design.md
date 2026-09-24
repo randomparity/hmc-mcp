@@ -9,8 +9,8 @@
 
 Publish a copy-and-adapt operator recipe that starts with HMC connection configuration and ends with
 a booted, inspected LPAR whose installation media is detached and boot order is restored. Add only
-the missing optical mapping and bounded console-capture CLI adapters needed to make every step
-executable through the installed CLI.
+the missing optical mapping CLI adapters needed to make every step executable through the
+installed CLI; console capture uses `hmcpctl lpars capture-console` from #959.
 
 The recipe must satisfy issue #776's eleven lifecycle steps, use stable placeholders for related
 resources, identify names versus UUIDs, and explain confirmations, ownership, available dry runs,
@@ -50,19 +50,9 @@ without mutation.
 
 ### Bounded console capture
 
-`hmcpctl lpars capture-console LPAR SYSTEM` accepts `--duration`, `--max-bytes`,
-`--idle-timeout`, and `--json`. Defaults and bounds remain the existing capture contract: 30 seconds,
-65,536 bytes, 10 seconds idle, with maximums enforced below the adapter.
-
-A shared async operation resolves system and LPAR selectors to CLI names, then calls the existing
-sealed-stdin capture. The MCP wrapper and CLI both use it, preserving UUID resolution, contention,
-duration/size/idle stops, mandatory release, and honest `released` reporting.
-
-JSON output is an object with `system`, `partition`, `stop_reason`, `released`, `error`,
-`bytes_captured`, and `data_base64`. Human output prints the metadata and captured data as escaped
-UTF-8-with-backslash-replacement text. It never writes captured bytes or interpreted ANSI sequences
-directly to the terminal. A false `released` value is visibly warned because the vterm may still be
-held.
+The recipe uses `hmcpctl lpars capture-console LPAR --system SYSTEM` from #959 (ADR 0175) with
+`--duration 30 --max-bytes 65536 --idle-timeout 10 --output FILE`. This change adds no capture
+code.
 
 ## Recipe structure
 
@@ -102,8 +92,7 @@ values where Click type parsing requires them. This is structural command-contra
 snapshot of prose.
 
 Separate focused CLI tests patch the operation boundary and prove both optical commands' argument
-forwarding and decline paths, console selector/bound forwarding, base64 JSON shape, safe terminal
-escaping, false-release warning, and the new help surfaces.
+forwarding and decline paths and the new help surfaces. #959 owns the capture command's tests.
 
 ## Errors and recovery
 
@@ -112,9 +101,6 @@ escaping, false-release warning, and the new help surfaces.
 - An optical unmount that cannot identify exactly one matching mapping performs no POST. Its caller
   must serialize other VIOS mapping writers and verify fresh pre- and post-call inventories because
   the parent-document write has a known lost-update window.
-- A held vterm fails distinctly and never releases another session's console.
-- Capture cleanup remains mandatory; `released=false` tells the operator to recover deliberately via
-  the HMC UI or the documented underlying command reference.
 - The recipe never promises rollback. Each completed command is durable and must be inspected before
   retrying or cleaning up.
 
@@ -123,9 +109,8 @@ escaping, false-release warning, and the new help surfaces.
 ### Boundary inventory
 
 - **Added:** local CLI selectors and options cross into existing REST and SSH operations.
-- **Added:** LPAR-controlled console bytes cross into a local terminal or JSON consumer.
-- **Widened:** existing optical mount/unmount and bounded capture become reachable from the installed
-  CLI in addition to MCP.
+- **Widened:** existing optical mount/unmount becomes reachable from the installed CLI in addition
+  to MCP.
 
 ### Actors and trust
 
@@ -137,13 +122,9 @@ does not add a remote listener or multi-tenant boundary.
 
 - Existing resolvers constrain system, VIOS, LPAR, and mapping identity; storage operations enforce
   ownership and fail closed on ambiguity.
-- Existing document builders and HTTP client paths encode REST values; console SSH commands retain
-  existing `shlex.quote` construction and bounded arguments.
+- Existing document builders and HTTP client paths encode REST values.
 - Confirmation gates precede optical mutation; overrides are explicit and named.
-- Console stdin remains sealed, all capture dimensions stay bounded, another holder is never evicted,
-  and release is independently proven.
-- JSON base64-encodes arbitrary bytes. Human output escapes rather than interprets all captured
-  control bytes. Errors use the existing escaped CLI error path.
+- Errors use the existing escaped CLI error path.
 
 ### Explicitly out of scope
 
@@ -163,7 +144,7 @@ release. Those are existing deployment and operation contracts, not widened by t
 
 The recipe ran live on 2026-09-23 (HMC V10R3 M1060) on a build patched for #935, #936, #961, #962
 and #979; PR #777 comment 5801497281 records each step. This revision changes the recipe and the
-capture resolver to match that run. Product fixes stay with their issues.
+SSH UUID-to-name lookups to match that run. Product fixes stay with their issues.
 
 ### Recipe
 
@@ -197,12 +178,8 @@ capture resolver to match that run. Product fixes stay with their issues.
 
 ### Console capture by UUID
 
-`capture_lpar_console_by_selector` resolves a partition UUID to its name with the REST partition
-read (`PartitionName`), the same way it already resolves a system UUID. It no longer needs SSH for
-name resolution.
-The REST read is not scoped to a managed system and partition names are unique only within one,
-so the operation then resolves that name on the named system and refuses the capture unless it
-maps back to the same UUID.
+`capture_lpar_console_by_selector` (#959) resolves a partition UUID with the system-scoped
+`resolve_lpar_uuid` and then the SSH lookup `resolve_lpar_cli_name`.
 
 The SSH UUID-to-name lookups in `ssh/lpar.py` sent `-F UUID,PartitionName` and
 `-F UUID,SystemName`. Those are REST element names, and the HMC rejects `UUID` as an invalid
@@ -218,7 +195,6 @@ lookup commands and assert that no REST element name reaches `-F`.
 
 - `tests/app/test_lpar_iso_recipe.py` matches the recipe's `hmcpctl` command set, including the
   removal of `add-vscsi` and the boot-order commands.
-- A focused test proves UUID capture resolves through REST and never calls the SSH lookup; the
-  SSH lookup tests pin `-F uuid,name`.
+- The SSH lookup tests pin `-F uuid,name` and assert that no REST element name reaches `-F`.
 - Live confirmation of the revised recipe belongs to the operator's re-run; this revision claims
   no live arm of its own.

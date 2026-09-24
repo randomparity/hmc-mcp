@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import base64
 import inspect
 import json
 import textwrap
@@ -34,7 +33,6 @@ from hmcpctl.cli_commands import metrics as cli_metrics
 from hmcpctl.cli_commands import runtime as cli_runtime
 from hmcpctl.cli_commands import snapshot as cli_snapshot
 from hmcpctl.cli_commands.lpar import config as cli_lpars
-from hmcpctl.cli_commands.lpar import console as cli_lpar_console
 from hmcpctl.cli_commands.lpar import decommission as cli_lpar_decommission
 from hmcpctl.cli_commands.lpar import inventory as cli_lpar_inventory
 from hmcpctl.cli_commands.lpar import lifecycle as cli_lpar_lifecycle
@@ -68,7 +66,6 @@ from hmcpctl.ssh import io_inventory, sriov, vnic
 from hmcpctl.ssh import lpar as ssh_lpar
 from hmcpctl.ssh import profiles as ssh_profiles
 from hmcpctl.ssh import refcodes as ssh_refcodes
-from hmcpctl.ssh.console import ConsoleCapture
 
 LPAR_NAME = "lpar1"
 
@@ -1125,6 +1122,23 @@ def test_lpars_create(fake_hmc):
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
+    assert "apply_profile" not in result.stdout  # REST create: no mksyscfg apply
+
+
+@pytest.mark.parametrize(("flags", "expected"), [((), True), (("--no-apply",), False)])
+def test_lpars_create_passes_the_apply_choice(monkeypatch, fake_hmc, flags, expected):
+    create = AsyncMock(
+        return_value=LparPcieWorkflowResult(True, True, {}, True, (), ())
+    )
+    monkeypatch.setattr("hmcpctl.cli_commands.lpar.create.create_lpar", create)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "create", "newlpar", "--system", SYSTEM_UUID, *flags, "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert create.await_args.args[2].apply_profile is expected
 
 
 def test_lpars_create_declined_confirm_aborts(fake_hmc):
@@ -2459,125 +2473,6 @@ def test_storage_optical_media_command_help():
     assert "--confirm" in help_text
 
 
-def _patch_lpar_console_capture(monkeypatch, capture: AsyncMock) -> None:
-    monkeypatch.setattr(cli_lpar_console, "capture_lpar_console_by_selector", capture)
-
-
-def _console_capture() -> ConsoleCapture:
-    return ConsoleCapture(
-        system="system-a",
-        lpar="aix-db",
-        data=b"boot\n\x1b[31m\xff",
-        stop_reason="error",
-        released=False,
-        error="channel reset",
-    )
-
-
-def test_lpars_capture_console_forwards_bounds(fake_hmc, monkeypatch):
-    capture = AsyncMock(return_value=_console_capture())
-    _patch_lpar_console_capture(monkeypatch, capture)
-
-    result = RUNNER.invoke(
-        cli.app,
-        [
-            "lpars",
-            "capture-console",
-            "aix-db",
-            "system-a",
-            "--duration",
-            "12.5",
-            "--max-bytes",
-            "4096",
-            "--idle-timeout",
-            "3.5",
-        ],
-    )
-
-    assert result.exit_code == 0
-    capture.assert_awaited_once_with(
-        fake_hmc,
-        "aix-db",
-        "system-a",
-        duration_seconds=12.5,
-        max_bytes=4096,
-        idle_timeout_seconds=3.5,
-    )
-
-
-def test_lpars_capture_console_json_preserves_bytes(fake_hmc, monkeypatch):
-    capture = AsyncMock(return_value=_console_capture())
-    _patch_lpar_console_capture(monkeypatch, capture)
-
-    result = RUNNER.invoke(
-        cli.app, ["lpars", "capture-console", "aix-db", "system-a", "--json"]
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout) == {
-        "system": "system-a",
-        "partition": "aix-db",
-        "stop_reason": "error",
-        "released": False,
-        "error": "channel reset",
-        "bytes_captured": 11,
-        "data_base64": base64.b64encode(b"boot\n\x1b[31m\xff").decode("ascii"),
-    }
-    assert "vterm may still be held" in result.stderr
-
-
-def test_lpars_capture_console_text_escapes_controls_and_warns(fake_hmc, monkeypatch):
-    capture = AsyncMock(return_value=_console_capture())
-    _patch_lpar_console_capture(monkeypatch, capture)
-
-    result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "aix-db", "system-a"])
-
-    assert result.exit_code == 0
-    assert "system: system-a" in result.stdout
-    assert "partition: aix-db" in result.stdout
-    assert "stop reason: error" in result.stdout
-    assert "released: False" in result.stdout
-    assert "error: channel reset" in result.stdout
-    assert "bytes captured: 11" in result.stdout
-    assert "\\x1b[31m" in result.stdout
-    assert "\\\\xff" in result.stdout
-    assert "\x1b" not in result.stdout
-    assert "WARNING" in result.stderr
-    assert "vterm may still be held" in result.stderr
-
-
-def test_lpars_capture_console_text_keeps_console_bytes_literal(fake_hmc, monkeypatch):
-    data = b":warning: " + b"x" * 300
-    capture = AsyncMock(
-        return_value=ConsoleCapture(
-            system="system-a",
-            lpar="aix-db",
-            data=data,
-            stop_reason="idle",
-            released=True,
-        )
-    )
-    _patch_lpar_console_capture(monkeypatch, capture)
-
-    result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "aix-db", "system-a"])
-
-    assert result.exit_code == 0
-    assert repr(data.decode("ascii")) in result.stdout
-
-
-def test_lpars_capture_console_help():
-    result = RUNNER.invoke(cli.app, ["lpars", "capture-console", "--help"])
-
-    assert result.exit_code == 0
-    help_text = click.unstyle(result.stdout)
-    assert "LPAR" in help_text
-    assert "SYSTEM" in help_text
-    assert "--duration" in help_text
-    assert "--max-bytes" in help_text
-    assert "--idle-timeout" in help_text
-    assert "--json" in help_text
-
-
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
     async def fake_get(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
@@ -2592,6 +2487,22 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
     assert result.exit_code == 0
     assert "VMLibrary" in result.stdout
     assert "10240" in result.stdout
+
+
+def test_storage_get_media_repo_labels_the_size_in_gib(fake_hmc, monkeypatch):
+    """RepositorySize is GiB on the HMC (#963); the rendered unit must say so."""
+
+    async def fake_get(_hmc, _vios, _vg, *, system_name_or_uuid=None):
+        return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "64"}}
+
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
+    )
+
+    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+
+    assert result.exit_code == 0
+    assert "Size: 64 GiB" in result.stdout
 
 
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):

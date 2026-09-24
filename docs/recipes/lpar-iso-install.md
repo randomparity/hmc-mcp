@@ -280,8 +280,9 @@ hmcpctl lpars power-on "$LPAR" --system "$SYSTEM" --partition-profile "$PROFILE_
 JOB_ID=<job-id-from-power-on-output>
 hmcpctl jobs show "$JOB_ID"
 hmcpctl lpars state "$LPAR"
-hmcpctl lpars capture-console "$LPAR_NAME" "$SYSTEM_NAME" --duration 30 --max-bytes 65536 \
-  --idle-timeout 10 --json
+CONSOLE_LOG=<new-file-for-the-console-bytes>
+hmcpctl lpars capture-console "$LPAR_NAME" --system "$SYSTEM_NAME" --duration 30 \
+  --max-bytes 65536 --idle-timeout 10 --output "$CONSOLE_LOG"
 ```
 
 Expected: `power-on` prints `Job submitted for <lpar-uuid>` and the finished job, whose status
@@ -291,15 +292,16 @@ is blank. The boot-order commands (`lpars read-boot-order`, `set-boot-order`,
 `clear-boot-order`) are blocked by #980 and this path does not need them.
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
-after `--idle-timeout` seconds without output. It never sends input to the partition. With
-`--json` the console bytes are base64 in `data_base64`. Without it, control bytes are printed
-escaped. Decode `data_base64` only in a log viewer, never straight into a terminal. The capture
-holds the partition's single console session while it runs. If another session already holds
-the console, the command fails and leaves that session alone. The command exits 0 even when
-`stop_reason` is `error`, so read the result. If `released` is `false`, it also prints a warning
-on stderr: the console may still be held, so release it deliberately from the HMC before
-another capture. Repeat the capture to follow the installer's progress. The live run captured
-the console by partition and system name; this version also resolves UUIDs.
+after `--idle-timeout` seconds without output. It never sends input to the partition. It writes
+the raw bytes to `CONSOLE_LOG`, which must not exist yet, and prints one line to stderr, for
+example `stop reason: idle; bytes: 2048; released: true`. The bytes carry terminal escape
+sequences: read them with `less -R` or a log viewer. The capture holds the partition's single
+console session while it runs. Exit status 1 with a message that the console is held means
+another session has it open; the command leaves that session alone. Exit status 3 means
+`released: false`: the console may still be held, so run the `rmvterm` command the line names
+on the HMC before another capture. Repeat the capture, each time to a new file, to follow the
+installer's progress. The live run captured the console by partition and system name; UUID
+selectors resolve through the `uuid,name` lookup, which has not yet run live.
 
 ## 6. After installation: power off and unmount the ISO
 

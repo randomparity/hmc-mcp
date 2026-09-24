@@ -1,77 +1,162 @@
-"""Bounded, non-interactive LPAR console capture command."""
+"""Bounded, input-free LPAR console capture command (issue #959, ADR 0175)."""
 
 from __future__ import annotations
 
+import contextlib
+import math
+import os
+import shlex
+from pathlib import Path
+from typing import BinaryIO
+
 import typer
 
-from hmcpctl.operations.lpar.console import (
-    capture_lpar_console_by_selector,
-    console_capture_payload,
-)
-from hmcpctl.ssh.console import ConsoleCapture
+from hmcpctl.operations.lpar.console import capture_lpar_console_by_selector
+from hmcpctl.ssh.console import MAX_CAPTURE_BYTES, MAX_CAPTURE_SECONDS, ConsoleCapture
 
-from ..output import console, err_console, print_json
+from ..output import err_console, fail, usage_error
 from ..runtime import with_client
 
+#: ADR 0175: ``released`` false means the vterm may still be held; it outranks 1.
+RELEASE_UNPROVEN = 3
 
-def _print_capture_text(capture: ConsoleCapture) -> None:
-    metadata = (
-        f"system: {capture.system}\n"
-        f"partition: {capture.lpar}\n"
-        f"stop reason: {capture.stop_reason}\n"
-        f"released: {capture.released}\n"
-        f"error: {capture.error}\n"
-        f"bytes captured: {len(capture.data)}"
+
+def _stdout_is_terminal() -> bool:
+    return typer.get_text_stream("stdout").isatty()
+
+
+def _check_bounds(duration: float, max_bytes: int, idle_timeout: float) -> None:
+    if not 0 < duration <= MAX_CAPTURE_SECONDS:
+        usage_error(
+            f"--duration must be above 0 and at most {MAX_CAPTURE_SECONDS:.0f}, got {duration}"
+        )
+    if not 0 < max_bytes <= MAX_CAPTURE_BYTES:
+        usage_error(
+            f"--max-bytes must be above 0 and at most {MAX_CAPTURE_BYTES}, got {max_bytes}"
+        )
+    if not 0 < idle_timeout < math.inf:
+        usage_error(
+            f"--idle-timeout must be a finite number above 0, got {idle_timeout}"
+        )
+
+
+def _open_sink(output: Path | None) -> BinaryIO:
+    if output is None:
+        if _stdout_is_terminal():
+            usage_error(
+                "stdout is a terminal and console bytes carry escape sequences; "
+                "redirect stdout or pass --output FILE"
+            )
+        return typer.get_binary_stream("stdout")
+    try:
+        return _create_exclusive(output)
+    except FileExistsError:
+        usage_error(f"--output {output} already exists; choose a new path")
+    except OSError as exc:
+        fail(exc)
+
+
+def _create_exclusive(path: Path) -> BinaryIO:
+    """Create *path* owner-only, refusing an existing file, as the snapshot writer does."""
+    return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb")
+
+
+def _report(capture: ConsoleCapture) -> None:
+    line = (
+        f"stop reason: {capture.stop_reason}; bytes: {len(capture.data)}; "
+        f"released: {str(capture.released).lower()}"
     )
-    console.print(metadata, markup=False, highlight=False, emoji=False)
-    console.print(
-        ascii(capture.data.decode("utf-8", errors="backslashreplace")),
-        markup=False,
-        highlight=False,
-        emoji=False,
-        soft_wrap=True,
-    )
+    if capture.error:
+        line += f"; error: {capture.error}"
+    if not capture.released:
+        line += (
+            "; the console may still be held: run 'rmvterm -m "
+            f"{shlex.quote(capture.system)} -p {shlex.quote(capture.lpar)}' "
+            "on the HMC before another capture"
+        )
+    err_console.print(line, markup=False, highlight=False, soft_wrap=True)
+
+
+def _exit_code(capture: ConsoleCapture, *, write_failed: bool) -> int:
+    if not capture.released:
+        return RELEASE_UNPROVEN
+    return 1 if write_failed or capture.stop_reason == "error" else 0
 
 
 def lpars_capture_console(
     lpar_name_or_uuid: str = typer.Argument(
         ..., metavar="LPAR", help="LPAR name or UUID"
     ),
-    system_name_or_uuid: str = typer.Argument(
-        ..., metavar="SYSTEM", help="Managed system name or UUID"
+    system_name_or_uuid: str = typer.Option(
+        ..., "--system", "-s", help="Managed system name or UUID hosting the LPAR"
     ),
     duration_seconds: float = typer.Option(
-        30.0, "--duration", help="Maximum capture duration in seconds"
+        30.0, "--duration", help="Maximum capture duration in seconds (at most 3600)"
     ),
     max_bytes: int = typer.Option(
-        65_536, "--max-bytes", help="Maximum number of bytes to capture"
+        65_536, "--max-bytes", help="Maximum bytes to capture (at most 1048576)"
     ),
     idle_timeout_seconds: float = typer.Option(
         10.0, "--idle-timeout", help="Stop after this many seconds without output"
     ),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write the bytes to this new file; never overwrites"
+    ),
 ) -> None:
-    """Capture a bounded snapshot of an LPAR's virtual console."""
-    capture = with_client(
-        lambda hmc: capture_lpar_console_by_selector(
-            hmc,
-            lpar_name_or_uuid,
-            system_name_or_uuid,
-            duration_seconds=duration_seconds,
-            max_bytes=max_bytes,
-            idle_timeout_seconds=idle_timeout_seconds,
+    """Capture a bounded snapshot of an LPAR's virtual console (mkvterm).
+
+    Writes the raw console bytes to stdout, or to --output, and never sends input to
+    the partition. One stderr line reports the stop reason, byte count and whether
+    the console release was proven.
+
+    Exit codes (ADR 0175): 0 the capture finished and the console was released;
+    1 lookup, SSH or HMC failure, the console held by another session, a capture
+    stopped by an error, or bytes that could not be written; 2 a usage error,
+    including an out-of-range bound, an existing --output file, or a terminal
+    stdout without --output; 3 the release was not proven, so the console may
+    still be held.
+    """
+    _check_bounds(duration_seconds, max_bytes, idle_timeout_seconds)
+    sink = _open_sink(output)
+    try:
+        capture = with_client(
+            lambda hmc: capture_lpar_console_by_selector(
+                hmc,
+                lpar_name_or_uuid,
+                system_name_or_uuid,
+                duration_seconds=duration_seconds,
+                max_bytes=max_bytes,
+                idle_timeout_seconds=idle_timeout_seconds,
+            )
         )
-    )
-    if as_json:
-        print_json(console_capture_payload(capture))
-    else:
-        _print_capture_text(capture)
-    if not capture.released:
-        err_console.print(
-            "WARNING: console release was not proven; the vterm may still be held.",
-            markup=False,
-            highlight=False,
-        )
+    except BaseException:
+        _discard(sink, output)
+        raise
+    _report(capture)
+    try:
+        sink.write(capture.data)
+        sink.flush()
+        if output is not None:
+            sink.close()
+    except BaseException as exc:
+        _discard(sink, output)
+        if not isinstance(exc, OSError):
+            raise
+        err_console.print(f"Error: could not write console bytes: {exc}", markup=False)
+        raise typer.Exit(_exit_code(capture, write_failed=True)) from exc
+    code = _exit_code(capture, write_failed=False)
+    if code:
+        raise typer.Exit(code)
+
+
+def _discard(sink: BinaryIO, output: Path | None) -> None:
+    if output is None:
+        return
+    try:
+        with contextlib.suppress(OSError):
+            sink.close()
+    finally:
+        output.unlink(missing_ok=True)
 
 
 def register_commands(group: typer.Typer) -> None:

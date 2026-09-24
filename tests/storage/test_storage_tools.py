@@ -55,6 +55,7 @@ def _authorize_lpar_mutations(monkeypatch):
 
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "22222222-2222-2222-2222-222222220001"
 ADAPTER_UUID = "44444444-4444-4444-4444-444444440001"
@@ -349,7 +350,7 @@ def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):
     )
     hmc_create_volume_group(VIOS_UUID, "vg_data", ["hdisk10", "hdisk11"])
     body = route.calls.last.request.content.decode()
-    assert '<GroupName kb="CUD" kxe="false">vg_data</GroupName>' in body
+    assert '<GroupName kb="CUR" kxe="false">vg_data</GroupName>' in body
     assert body.count("<PhysicalVolume ") == 2
     assert "hdisk10" in body and "hdisk11" in body
 
@@ -361,11 +362,17 @@ def test_create_volume_group_declares_hmc_resource_result() -> None:
 
 
 def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
-    """hmc_create_virtual_disk POSTs a VolumeGroup doc with a VirtualDisk."""
+    """hmc_create_virtual_disk POSTs the fetched VolumeGroup with a new VirtualDisk."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
+    path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200, text=_feed(VG_UUID, "VolumeGroup"), headers={"ETag": '"etag-1"'}
+        )
+    )
+    route = mock_hmc.post(path).mock(
+        return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
+    )
     hmc_create_virtual_disk(VIOS_UUID, VG_UUID, "lv_boot", 51200)
     body = route.calls.last.request.content.decode()
     assert "<VirtualDisks" in body
@@ -373,12 +380,26 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
     assert '<DiskCapacity kb="CUR" kxe="false">50</DiskCapacity>' in body
 
 
+def _mapping_routes(mock_hmc):
+    """Grouped VIOS GET (empty mapping set, with ETag) and the POST back to it."""
+    path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200,
+            text=f'<VirtualIOServer xmlns="{UOM_NS}"><UUID>{VIOS_UUID}</UUID>'
+            "<VirtualSCSIMappings/></VirtualIOServer>",
+            headers={"ETag": "etag-1"},
+        )
+    )
+    return mock_hmc.post(path).mock(
+        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
+    )
+
+
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     """hmc_map_storage_to_lpar maps the default VirtualDisk storage_kind."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
-    )
+    route = _mapping_routes(mock_hmc)
     hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID)
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIMapping" in body
@@ -391,9 +412,7 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
 def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
     """PhysicalVolume storage_kind uses VolumeName and emits TargetDevice."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
-        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
-    )
+    route = _mapping_routes(mock_hmc)
     hmc_map_storage_to_lpar(
         VIOS_UUID,
         "hdisk5",
@@ -459,7 +478,7 @@ def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_BARE_VG_FEED))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_BARE_VG_FEED, headers={"ETag": '"etag-1"'}))
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )
@@ -467,7 +486,7 @@ def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "VirtualMediaRepository" in body
     assert "VMLibrary" in body
-    assert "40960" in body
+    assert "RepositorySize>40</" in body  # 40960 MiB is 40 GiB
 
 
 def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
@@ -477,7 +496,7 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}))
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )
@@ -485,7 +504,7 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in body
     assert "aix.iso" in body
-    assert "4096" in body
+    assert "Size>4</" in body  # 4096 MiB is 4 GiB
     assert "MountType" in body
 
 
@@ -498,7 +517,7 @@ def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     # Both list_optical_media and delete_media_repository GET the same path.
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}))
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )

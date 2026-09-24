@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncssh
 import pytest
 from conftest import make_config
 
@@ -23,8 +24,13 @@ from hmcpctl.ssh.console import (
     MAX_CAPTURE_BYTES,
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
+    ConsoleGap,
+    ConsoleHandover,
+    ConsoleHeldAfterDropError,
     ConsoleHeldError,
+    ConsoleRawChannel,
     ConsoleSession,
+    WritableConsoleSession,
     _acquire_capture_stream,
     _open_capture_stream,
     _probe_released,
@@ -49,11 +55,11 @@ CONTENTION = (
 
 
 class FakeStdout:
-    """Replays scripted reads; a final ``None`` means 'never returns'."""
+    """Replays scripted reads; ``None`` never returns, an exception is raised."""
 
     def __init__(
         self,
-        *chunks: bytes | None,
+        *chunks: bytes | Exception | None,
         blocked_read_started: asyncio.Event | None = None,
     ):
         self._chunks = list(chunks)
@@ -67,19 +73,40 @@ class FakeStdout:
             if self._blocked_read_started is not None:
                 self._blocked_read_started.set()
             await asyncio.Event().wait()  # cancelled by the caller's timeout
+        if isinstance(chunk, Exception):
+            raise chunk
         return chunk
+
+
+class FakeStdin:
+    """Records what a writable session sends through asyncssh's stdin writer."""
+
+    def __init__(self) -> None:
+        self.written: list[bytes] = []
+        self.drains = 0
+        self.eof = False
+
+    def write(self, data: bytes) -> None:
+        self.written.append(bytes(data))
+
+    async def drain(self) -> None:
+        self.drains += 1
+
+    def write_eof(self) -> None:
+        self.eof = True
 
 
 class FakeProcess:
     def __init__(
         self,
-        *chunks: bytes | None,
+        *chunks: bytes | Exception | None,
         blocked_read_started: asyncio.Event | None = None,
     ):
         self.stdout = FakeStdout(
             *chunks,
             blocked_read_started=blocked_read_started,
         )
+        self.stdin = FakeStdin()
 
 
 class FakeConnection:
@@ -100,6 +127,9 @@ class FakeConnection:
     def close(self) -> None:
         self.closed = True
         self.close_calls += 1
+
+    def is_closed(self) -> bool:
+        return self.closed
 
 
 class FailingProcessConnection(FakeConnection):
@@ -271,7 +301,7 @@ async def test_contention_sentinel_raises_distinct_error_and_never_releases():
         await capture_lpar_console(
             _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.05)
         )
-    assert "already holds" in str(excinfo.value)
+    assert HELD_SENTINEL.decode() in str(excinfo.value)
     # Exit code was 0 on the real HMC; only the sentinel detects this. And
     # since we never held the vterm, releasing would close the other holder.
     release_mock.assert_not_awaited()
@@ -283,27 +313,25 @@ def test_sentinel_matches_the_recorded_p1_bytes():
 
 
 @pytest.mark.asyncio
-async def test_contention_is_detected_when_it_arrives_midstream():
-    # The sentinel may only show up after other bytes; detection must not
-    # depend on it being the first chunk.
-    connection = FakeConnection([FakeProcess(BANNER, CONTENTION)])
+async def test_late_contention_sentence_releases_own_hold_then_raises():
+    # ADR 0172 rule 4: after proven acquisition the hold is the capture's own,
+    # so the sentence in console output still raises, but only after release.
+    stream = FakeConnection([FakeProcess(BANNER, CONTENTION)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
     with (
-        patch(
-            "hmcpctl.ssh.console.open_hmc_connection",
-            AsyncMock(return_value=connection),
-        ),
-        patch("hmcpctl.ssh.console.run_hmc_command", AsyncMock()) as release_mock,
-        pytest.raises(ConsoleHeldError),
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError) as excinfo,
     ):
         await capture_lpar_console(
-            _client(),
-            "sys1",
-            "lp1",
-            **_capture_kwargs(duration_seconds=0.2, idle_timeout_seconds=0.2),
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.2)
         )
-    # ADR 0170 rule 7: the capture keeps ADR 0072's no-rmvterm contention path.
-    release_mock.assert_not_awaited()
-    assert connection.closed
+    assert "after acquisition" in str(excinfo.value)
+    assert "released=True" in str(excinfo.value)
+    assert release.await_count == 2  # ours plus the probe's teardown
+    assert stream.closed
 
 
 # ---------------------------------------------------------------------------
@@ -728,172 +756,39 @@ def test_base64_round_trip_preserves_raw_bytes():
     assert base64.b64decode(encoded) == raw
 
 
-@pytest.mark.asyncio
-async def test_capture_lpar_console_by_selector_resolves_names():
-    from hmcpctl.operations.lpar import console as lpar_console
-
-    client = MagicMock()
-    client.get_logical_partition = AsyncMock()
-    resolve_system_uuid = AsyncMock(return_value="system-uuid")
-    resolve_lpar_uuid = AsyncMock(return_value="lpar-uuid")
-    resolve_system_name = AsyncMock()
-    ssh_command = AsyncMock()
-    capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
-
-    with (
-        patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
-        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
-        patch.object(lpar_console, "resolve_system_name", resolve_system_name),
-        patch("hmcpctl.ssh.lpar.run_hmc_command", ssh_command),
-        patch.object(lpar_console, "capture_lpar_console", capture),
-    ):
-        result = await lpar_console.capture_lpar_console_by_selector(
-            client,
-            "aix-db",
-            "system-a",
-            duration_seconds=12.5,
-            max_bytes=4096,
-            idle_timeout_seconds=3.5,
-        )
-
-    resolve_system_uuid.assert_awaited_once_with(client, "system-a")
-    resolve_lpar_uuid.assert_awaited_once_with(
-        client, "aix-db", system_name_or_uuid="system-uuid"
-    )
-    resolve_system_name.assert_not_awaited()
-    client.get_logical_partition.assert_not_awaited()
-    ssh_command.assert_not_awaited()
-    capture.assert_awaited_once_with(
-        client,
-        "system-a",
-        "aix-db",
-        duration_seconds=12.5,
-        max_bytes=4096,
-        idle_timeout_seconds=3.5,
-    )
-    assert result is capture.return_value
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "rest_uuid",
-    ["aaaaaaaa-2222-2222-2222-222222222222", "AAAAAAAA-2222-2222-2222-222222222222"],
-)
-async def test_capture_lpar_console_by_selector_resolves_uuids(rest_uuid):
-    from hmcpctl.operations.lpar import console as lpar_console
-
-    system_uuid = "11111111-1111-1111-1111-111111111111"
-    lpar_uuid = "aaaaaaaa-2222-2222-2222-222222222222"
-    client = MagicMock()
-    client.get_logical_partition = AsyncMock(
-        return_value={"Resource": {"PartitionName": "resolved-lpar"}}
-    )
-    resolve_system_uuid = AsyncMock(return_value=system_uuid)
-    resolve_lpar_uuid = AsyncMock(side_effect=[lpar_uuid, rest_uuid])
-    resolve_system_name = AsyncMock(return_value="resolved-system")
-    ssh_command = AsyncMock()
-    capture = AsyncMock(return_value=MagicMock(spec=ConsoleCapture))
-
-    with (
-        patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
-        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
-        patch.object(lpar_console, "resolve_system_name", resolve_system_name),
-        patch("hmcpctl.ssh.lpar.run_hmc_command", ssh_command),
-        patch.object(lpar_console, "capture_lpar_console", capture),
-    ):
-        result = await lpar_console.capture_lpar_console_by_selector(
-            client,
-            lpar_uuid,
-            system_uuid,
-            duration_seconds=12.5,
-            max_bytes=4096,
-            idle_timeout_seconds=3.5,
-        )
-
-    resolve_system_uuid.assert_awaited_once_with(client, system_uuid)
-    assert resolve_lpar_uuid.await_args_list == [
-        call(client, lpar_uuid, system_name_or_uuid=system_uuid),
-        call(client, "resolved-lpar", system_name_or_uuid=system_uuid),
-    ]
-    resolve_system_name.assert_awaited_once_with(client, system_uuid)
-    client.get_logical_partition.assert_awaited_once_with(lpar_uuid)
-    ssh_command.assert_not_awaited()
-    capture.assert_awaited_once_with(
-        client,
-        "resolved-system",
-        "resolved-lpar",
-        duration_seconds=12.5,
-        max_bytes=4096,
-        idle_timeout_seconds=3.5,
-    )
-    assert result is capture.return_value
-
-
-@pytest.mark.asyncio
-async def test_capture_lpar_console_by_selector_refuses_uuid_without_partition_name():
-    from hmcpctl.operations.lpar import console as lpar_console
-    from hmcpctl.resource_identity import ResourceNotFoundError
-
-    lpar_uuid = "22222222-2222-2222-2222-222222222222"
-    client = MagicMock()
-    client.get_logical_partition = AsyncMock(return_value={"Resource": {}})
-    capture = AsyncMock()
-
-    with (
-        patch.object(lpar_console, "resolve_system_uuid", AsyncMock()),
-        patch.object(
-            lpar_console, "resolve_lpar_uuid", AsyncMock(return_value=lpar_uuid)
+    ("system_selector", "lpar_selector", "system_name", "lpar_name"),
+    [
+        ("system-a", "aix-db", "system-a", "aix-db"),
+        (
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+            "resolved-system",
+            "resolved-lpar",
         ),
-        patch.object(lpar_console, "capture_lpar_console", capture),
-        pytest.raises(ResourceNotFoundError, match="no PartitionName"),
-    ):
-        await lpar_console.capture_lpar_console_by_selector(
-            client, lpar_uuid, "system-a"
-        )
-
-    capture.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_capture_lpar_console_by_selector_refuses_uuid_on_another_system():
-    """A UUID whose name belongs to a different partition on SYSTEM is refused."""
+    ],
+)
+def test_capture_tool_resolves_identity_and_forwards_bounds(
+    system_selector: str,
+    lpar_selector: str,
+    system_name: str,
+    lpar_name: str,
+):
     from hmcpctl.operations.lpar import console as lpar_console
-    from hmcpctl.resource_identity import ResourceNotFoundError
 
-    lpar_uuid = "22222222-2222-2222-2222-222222222222"
-    client = MagicMock()
-    client.get_logical_partition = AsyncMock(
-        return_value={"Resource": {"PartitionName": "shared-name"}}
-    )
-    resolve_lpar_uuid = AsyncMock(
-        side_effect=[lpar_uuid, "33333333-3333-3333-3333-333333333333"]
-    )
-    capture = AsyncMock()
-
-    with (
-        patch.object(lpar_console, "resolve_system_uuid", AsyncMock()),
-        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
-        patch.object(lpar_console, "resolve_system_name", AsyncMock()),
-        patch.object(lpar_console, "capture_lpar_console", capture),
-        pytest.raises(ResourceNotFoundError, match="not on managed system"),
-    ):
-        await lpar_console.capture_lpar_console_by_selector(
-            client, lpar_uuid, "system-b"
-        )
-
-    capture.assert_not_awaited()
-
-
-def test_capture_tool_preserves_payload_and_profile():
     client = MagicMock()
     client.config = MagicMock()
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=client)
     context.__aexit__ = AsyncMock(return_value=False)
+    resolve_system_uuid = AsyncMock(return_value="system-uuid")
+    resolve_lpar_uuid = AsyncMock(return_value="lpar-uuid")
+    resolve_system_name = AsyncMock(return_value="resolved-system")
+    resolve_lpar_name = AsyncMock(return_value="resolved-lpar")
     capture = AsyncMock(
         return_value=ConsoleCapture(
-            system="resolved-system",
-            lpar="resolved-lpar",
+            system=system_name,
+            lpar=lpar_name,
             data=b"\x00console\xff",
             stop_reason="idle",
             released=True,
@@ -902,11 +797,15 @@ def test_capture_tool_preserves_payload_and_profile():
 
     with (
         patch("hmcpctl._app.client_from_env", return_value=context) as factory,
-        patch.object(server_console, "capture_lpar_console_by_selector", capture),
+        patch.object(lpar_console, "resolve_system_uuid", resolve_system_uuid),
+        patch.object(lpar_console, "resolve_lpar_uuid", resolve_lpar_uuid),
+        patch.object(lpar_console, "resolve_system_name", resolve_system_name),
+        patch.object(lpar_console, "resolve_lpar_cli_name", resolve_lpar_name),
+        patch.object(lpar_console, "capture_lpar_console", capture),
     ):
         result = server_console.hmc_capture_lpar_console(
-            "lpar-selector",
-            "system-selector",
+            lpar_selector,
+            system_selector,
             duration_seconds=12.5,
             max_bytes=4096,
             idle_timeout_seconds=3.5,
@@ -914,18 +813,24 @@ def test_capture_tool_preserves_payload_and_profile():
         )
 
     factory.assert_called_once_with("lab")
+    resolve_system_uuid.assert_awaited_once_with(client, system_selector)
+    resolve_lpar_uuid.assert_awaited_once_with(
+        client, lpar_selector, system_name_or_uuid="system-uuid"
+    )
     capture.assert_awaited_once_with(
         client,
-        "lpar-selector",
-        "system-selector",
+        system_name,
+        lpar_name,
         duration_seconds=12.5,
         max_bytes=4096,
         idle_timeout_seconds=3.5,
     )
     context.__aexit__.assert_awaited_once()
+    assert resolve_system_name.await_count == int(system_selector != system_name)
+    assert resolve_lpar_name.await_count == int(lpar_selector != lpar_name)
     assert result == {
-        "system": "resolved-system",
-        "partition": "resolved-lpar",
+        "system": system_name,
+        "partition": lpar_name,
         "stop_reason": "idle",
         "released": True,
         "error": None,
@@ -996,7 +901,7 @@ async def test_session_contention_at_open_never_releases():
     connect, run_command, probe_seconds = _session_patches(stream)
     with connect, run_command as release, probe_seconds:
         session = ConsoleSession(_client(), "sys1", "lp1")
-        with pytest.raises(ConsoleHeldError):
+        with pytest.raises(ConsoleHeldError) as excinfo:
             await session.open()
         assert await session.close() is False
         never_opened = ConsoleSession(_client(), "sys1", "lp1")
@@ -1004,6 +909,107 @@ async def test_session_contention_at_open_never_releases():
 
     release.assert_not_awaited()
     assert stream.closed
+    assert "mkvterm -m sys1 -p lp1" in str(excinfo.value)
+    assert "Only one open session is allowed" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_sentence_after_banner_in_one_read_is_acquisition():
+    # ADR 0172 rule 3: the banner proves the hold, so a sentence after it in
+    # the same read is console content and the capture releases its own hold.
+    stream = FakeConnection([FakeProcess(BANNER + CONTENTION)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError, match="after acquisition"),
+    ):
+        await capture_lpar_console(
+            _client(), "sys1", "lp1", **_capture_kwargs(idle_timeout_seconds=0.2)
+        )
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_sentence_before_banner_in_one_read_is_contention():
+    stream = FakeConnection([FakeProcess(CONTENTION + BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream)
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        pytest.raises(ConsoleHeldError),
+    ):
+        await ConsoleSession(_client(), "sys1", "lp1").open()
+
+    release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_probe_sentence_after_banner_is_acquisition_and_torn_down():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER + CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+
+    assert session.released is True
+    assert release.await_count == 2  # ours plus the probe's teardown
+
+
+@pytest.mark.asyncio
+async def test_session_take_over_rmvterms_then_acquires():
+    events: list[str] = []
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+
+    async def connect(config):
+        events.append("connect")
+        return [stream, probe][events.count("connect") - 1]
+
+    async def rmvterm(config, command):
+        events.append(command)
+        return "Close command sent"
+
+    with (
+        patch("hmcpctl.ssh.console.open_hmc_connection", connect),
+        patch("hmcpctl.ssh.console.run_hmc_command", rmvterm),
+        patch("hmcpctl.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    ):
+        async with ConsoleSession(_client(), "sys1", "lp1", take_over=True) as session:
+            assert await session.read() == BANNER
+
+    assert events[:2] == ["rmvterm -m sys1 -p lp1", "connect"]
+    assert session.released is True
+
+
+@pytest.mark.asyncio
+async def test_session_take_over_contended_raises_after_one_rmvterm():
+    stream = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1", take_over=True)
+        with pytest.raises(ConsoleHeldError):
+            await session.open()
+        assert await session.close() is False
+
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_session_take_over_survives_failed_rmvterm():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    release = AsyncMock(side_effect=[HMCCLIError("rc 1"), "Close command sent", "ok"])
+    connect, run_command, probe_seconds = _session_patches(stream, probe, release=release)
+    with connect, run_command, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1", take_over=True) as session:
+            assert await session.read() == BANNER
+
+    assert session.released is True
 
 
 @pytest.mark.asyncio
@@ -1231,3 +1237,951 @@ def test_session_has_no_write_surface():
         for name in dir(session)
         if not name.startswith("_")
     )
+
+
+# ---------------------------------------------------------------------------
+# Mid-session suspension (issue #976, ADR 0173)
+# ---------------------------------------------------------------------------
+
+
+async def _started(task: asyncio.Task, event: asyncio.Event) -> None:
+    """Wait until *task* is blocked on the fake stream behind *event*."""
+    await asyncio.wait_for(event.wait(), timeout=5)
+    assert not task.done()
+
+
+@pytest.mark.asyncio
+async def test_hand_over_keeps_the_hold_and_moves_the_channel():
+    blocked = asyncio.Event()
+    stream = FakeConnection(
+        [FakeProcess(BANNER, None, b"kgdb", b"after", None, blocked_read_started=blocked)]
+    )
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+            collector = asyncio.create_task(session.read())
+            await _started(collector, blocked)
+            async with session.hand_over() as handover:
+                assert await handover.read() == b"kgdb"
+                await asyncio.sleep(0)
+                assert not collector.done()
+            assert await asyncio.wait_for(collector, timeout=5) == b"after"
+            assert release.await_count == 0
+            with pytest.raises(RuntimeError, match="handover has ended"):
+                await handover.read()
+
+    assert release.await_count == 2  # close() only: rmvterm plus the probe's teardown
+    assert len(stream.create_process_calls) == 1
+    assert session.released is True
+
+
+@pytest.mark.asyncio
+async def test_empty_hand_over_does_not_cancel_collector():
+    blocked = asyncio.Event()
+    stream = FakeConnection(
+        [FakeProcess(BANNER, None, b"next", None, blocked_read_started=blocked)]
+    )
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+            collector = asyncio.create_task(session.read())
+            await _started(collector, blocked)
+            async with session.hand_over():
+                pass
+            assert await asyncio.wait_for(collector, timeout=5) == b"next"
+
+
+@pytest.mark.asyncio
+async def test_suspension_state_errors():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        with pytest.raises(RuntimeError):
+            await session.suspend()
+        with pytest.raises(RuntimeError):
+            await session.resume()
+        with pytest.raises(RuntimeError):
+            async with session.hand_over():
+                pass
+        async with session:
+            with pytest.raises(RuntimeError):
+                await session.resume()
+            async with session.hand_over():
+                with pytest.raises(RuntimeError):
+                    await session.suspend()
+                with pytest.raises(RuntimeError):
+                    async with session.hand_over():
+                        pass
+
+
+@pytest.mark.asyncio
+async def test_suspend_releases_and_resume_reacquires():
+    blocked = asyncio.Event()
+    first = FakeConnection([FakeProcess(BANNER, None, blocked_read_started=blocked)])
+    second = FakeConnection([FakeProcess(BANNER, b"more", None)])
+    probes = [FakeConnection([FakeProcess(BANNER)]) for _ in range(2)]
+    connect, run_command, probe_seconds = _session_patches(
+        first, probes[0], second, probes[1]
+    )
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+            collector = asyncio.create_task(session.read())
+            await _started(collector, blocked)
+            assert await session.suspend() is True
+            assert release.await_count == 2
+            assert first.closed
+            await asyncio.sleep(0)
+            assert not collector.done()
+            await session.resume()
+            assert await asyncio.wait_for(collector, timeout=5) == BANNER
+            assert await session.read() == b"more"
+
+    assert session.released is True
+    assert release.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_resume_contention_stays_suspended_and_close_skips_rmvterm():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    taken = [FakeConnection([FakeProcess(CONTENTION)]) for _ in range(2)]
+    connect, run_command, probe_seconds = _session_patches(stream, probe, *taken)
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1", take_over=True)
+        await session.open()
+        assert await session.read() == BANNER
+        assert await session.suspend() is True
+        after_takeover_rmvterm = release.await_count  # 3: takeover, ours, probe's
+        waiting = asyncio.create_task(session.read())
+        with pytest.raises(ConsoleHeldError):
+            await session.resume()
+        assert release.await_count == after_takeover_rmvterm  # resume never rmvterms
+        with pytest.raises(ConsoleHeldError):
+            await session.resume()
+        assert await session.close() is True
+        assert await asyncio.wait_for(waiting, timeout=5) == b""
+
+    assert release.await_count == after_takeover_rmvterm == 3
+    assert all(connection.closed for connection in taken)
+
+
+@pytest.mark.asyncio
+async def test_cancel_inside_hand_over_releases():
+    blocked = asyncio.Event()
+    stream = FakeConnection([FakeProcess(BANNER, None, blocked_read_started=blocked)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    session = ConsoleSession(_client(), "sys1", "lp1")
+
+    async def hold() -> None:
+        async with session, session.hand_over() as handover:
+            await handover.read()
+
+    with connect, run_command as release, probe_seconds:
+        task = asyncio.create_task(hold())
+        await _started(task, blocked)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert session.released is True
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cancelled_suspend_completes_release():
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls: list[tuple] = []
+
+    async def slow_release(*args) -> bool:
+        calls.append(args)
+        started.set()
+        await finish.wait()
+        return True
+
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    with (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=stream)
+        ),
+        patch("hmcpctl.ssh.console._release_and_verify", slow_release),
+    ):
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        suspending = asyncio.create_task(session.suspend())
+        await asyncio.wait_for(started.wait(), timeout=5)
+        suspending.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await suspending
+        assert await session.close() is True
+
+    assert calls == [(make_config(), "sys1", "lp1")]
+    assert stream.closed
+
+
+def _blocked_resume_stream() -> tuple[FakeConnection, asyncio.Event, asyncio.Event]:
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+    stream = FakeConnection([])
+
+    async def blocked_create_process(command: str, **kwargs):
+        entered.set()
+        await finish.wait()
+        return FakeProcess(BANNER, None)
+
+    stream.create_process = blocked_create_process
+    return stream, entered, finish
+
+
+@pytest.mark.asyncio
+async def test_cancelled_resume_releases_new_hold():
+    first = FakeConnection([FakeProcess(BANNER, None)])
+    second, entered, finish = _blocked_resume_stream()
+    probes = [FakeConnection([FakeProcess(BANNER)]) for _ in range(2)]
+    connect, run_command, probe_seconds = _session_patches(
+        first, probes[0], second, probes[1]
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.suspend() is True
+        resuming = asyncio.create_task(session.resume())
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        resuming.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await resuming
+
+    assert session.released is True
+    assert release.await_count == 4
+    assert second.closed
+
+
+@pytest.mark.asyncio
+async def test_close_during_resume_releases_new_hold():
+    first = FakeConnection([FakeProcess(BANNER, None)])
+    second, entered, finish = _blocked_resume_stream()
+    probes = [FakeConnection([FakeProcess(BANNER)]) for _ in range(2)]
+    connect, run_command, probe_seconds = _session_patches(
+        first, probes[0], second, probes[1]
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.suspend() is True
+        resuming = asyncio.create_task(session.resume())
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        closing = asyncio.create_task(session.close())
+        await asyncio.sleep(0)
+        assert not closing.done()
+        finish.set()
+        with pytest.raises(RuntimeError, match="closed during resume"):
+            await resuming
+        assert await closing is True
+
+    assert release.await_count == 4
+    assert second.closed
+
+
+
+@pytest.mark.asyncio
+async def test_close_during_suspend_waits_and_reports_its_proof():
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls: list[tuple] = []
+
+    async def slow_release(*args) -> bool:
+        calls.append(args)
+        started.set()
+        await finish.wait()
+        return True
+
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    with (
+        patch(
+            "hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=stream)
+        ),
+        patch("hmcpctl.ssh.console._release_and_verify", slow_release),
+    ):
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        waiting = asyncio.create_task(session.read())
+        suspending = asyncio.create_task(session.suspend())
+        await asyncio.wait_for(started.wait(), timeout=5)
+        closing = asyncio.create_task(session.close())
+        await asyncio.sleep(0)
+        assert not closing.done()
+        finish.set()
+        assert await suspending is True
+        assert await closing is True
+        assert await asyncio.wait_for(waiting, timeout=5) == b""
+
+    assert calls == [(make_config(), "sys1", "lp1")]
+    assert stream.closed
+
+def test_handover_has_no_write_surface():
+    assert not any(
+        name.startswith(("write", "send"))
+        for name in dir(ConsoleHandover)
+        if not name.startswith("_")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Drop detection and opt-in reconnect (issue #977, ADR 0174)
+# ---------------------------------------------------------------------------
+
+DROP = asyncssh.ConnectionLost("Server not responding to keepalive")
+KEEPALIVE_GAP = ConsoleGap("ConnectionLost: Server not responding to keepalive", False)
+
+
+def _reconnecting(take_over: bool = False) -> ConsoleSession:
+    return ConsoleSession(_client(), "sys1", "lp1", take_over=take_over, reconnect=True)
+
+
+@pytest.mark.asyncio
+async def test_reconnect_after_transport_error_yields_gap_then_new_stream():
+    first = FakeConnection([FakeProcess(BANNER, b"before", DROP)])
+    second = FakeConnection([FakeProcess(BANNER, b"after", None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command as release, probe_seconds:
+        async with _reconnecting() as session:
+            items = [await session.read() for _ in range(5)]
+            assert release.await_count == 0
+            assert first.closed
+
+    assert items == [BANNER, b"before", KEEPALIVE_GAP, BANNER, b"after"]
+    assert session.released is True
+
+
+@pytest.mark.asyncio
+async def test_reconnect_after_eof_on_closed_connection():
+    first = FakeConnection([FakeProcess(BANNER)])
+    second = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command as release, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            first.closed = True  # asyncssh closed the connection before the reader resumed
+            assert await session.read() == ConsoleGap("the SSH connection closed", False)
+            assert await session.read() == BANNER
+
+    assert release.await_count == 2  # close() and its probe only
+
+
+@pytest.mark.asyncio
+async def test_eof_on_open_connection_is_latched_remote_close():
+    stream = FakeConnection([FakeProcess(BANNER)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect as opener, run_command, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            assert await session.read() == b""
+            stream.closed = True  # a lost hold's connection closing later is not a drop
+            assert await session.read() == b""
+        assert opener.await_count == 2  # the stream and the release probe
+
+
+@pytest.mark.asyncio
+async def test_reconnect_into_held_vterm_raises_typed_error_without_rmvterm():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    held = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(first, held)
+    with connect, run_command as release, probe_seconds:
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(ConsoleHeldAfterDropError, match="take_over=True") as caught:
+            await session.read()
+        assert isinstance(caught.value, ConsoleHeldError)
+        with pytest.raises(RuntimeError):
+            await session.read()
+        with pytest.raises(RuntimeError):
+            await session.suspend()
+        assert await session.close() is False
+
+    assert release.await_count == 0
+    assert held.closed
+
+
+@pytest.mark.asyncio
+async def test_reconnect_with_take_over_reclaims_and_reports_it():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    second = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command as release, probe_seconds:
+        async with _reconnecting(take_over=True) as session:
+            assert await session.read() == BANNER
+            gap = await session.read()
+            assert release.await_count == 2  # the takeover at open, then at reconnect
+            assert await session.read() == BANNER
+
+    assert gap == ConsoleGap(KEEPALIVE_GAP.error, took_over=True)
+    assert release.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_failed_reconnect_raises_hmccli_error():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    connect, run_command, probe_seconds = _session_patches(first)
+    with connect as opener, run_command as release, probe_seconds:
+        opener.side_effect = [first, HMCCLIError("SSH connection timed out")]
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(HMCCLIError, match="reconnect .* timed out"):
+            await session.read()
+        assert await session.close() is False
+
+    assert release.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_read_timeout_during_reconnect_keeps_the_gap():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    second, entered, finish = _blocked_resume_stream()
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(session.read(), 0.05)
+            assert entered.is_set()
+            with pytest.raises(RuntimeError):
+                async with session.hand_over():
+                    pass
+            finish.set()
+            reconnect = session._reconnect_task
+            assert reconnect is not None
+            while not reconnect.done():
+                await asyncio.sleep(0)
+            with pytest.raises(RuntimeError):
+                await session.suspend()  # the unread gap comes first
+            assert await asyncio.wait_for(session.read(), 5) == KEEPALIVE_GAP
+            assert await session.read() == BANNER
+
+    assert session.released is True
+
+
+@pytest.mark.asyncio
+async def test_close_during_reconnect_releases_the_new_hold():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    second, entered, finish = _blocked_resume_stream()
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command as release, probe_seconds:
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        reading = asyncio.create_task(session.read())
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        closing = asyncio.create_task(session.close())
+        await asyncio.sleep(0)
+        assert not closing.done()
+        finish.set()
+        assert await closing is True
+        assert await asyncio.wait_for(reading, timeout=5) == b""
+
+    assert release.await_count == 2
+    assert second.closed
+
+
+class _GatedDropStdout:
+    """Yields the banner, then raises DROP once *gate* is set."""
+
+    def __init__(self, gate: asyncio.Event) -> None:
+        self._gate = gate
+        self._banner_sent = False
+
+    async def read(self, size: int) -> bytes:
+        if not self._banner_sent:
+            self._banner_sent = True
+            return BANNER
+        await self._gate.wait()
+        raise DROP
+
+
+@pytest.mark.asyncio
+async def test_drop_during_close_starts_no_reconnect():
+    gate, started, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    process = FakeProcess()
+    process.stdout = _GatedDropStdout(gate)  # type: ignore[assignment]
+    stream = FakeConnection([process])
+
+    async def slow_release(*args) -> bool:
+        started.set()
+        await finish.wait()
+        return True
+
+    opener = AsyncMock(side_effect=[stream])
+    with (
+        patch("hmcpctl.ssh.console.open_hmc_connection", opener),
+        patch("hmcpctl.ssh.console._release_and_verify", slow_release),
+    ):
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        reading = asyncio.create_task(session.read())
+        await asyncio.sleep(0)
+        closing = asyncio.create_task(session.close())
+        await asyncio.wait_for(started.wait(), timeout=5)
+        gate.set()
+        with pytest.raises(asyncssh.ConnectionLost):
+            await asyncio.wait_for(reading, timeout=5)
+        finish.set()
+        assert await closing is True
+
+    assert opener.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_drop_inside_hand_over_reaches_holder_then_collector_reconnects():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    second = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command as release, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            async with session.hand_over() as handover:
+                with pytest.raises(asyncssh.ConnectionLost):
+                    await handover.read()
+            assert not second.create_process_calls  # no reconnect under the holder
+            first.closed = True
+            assert isinstance(await session.read(), ConsoleGap)
+            assert await session.read() == BANNER
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_resume_on_reconnect_session_raises_plain_contention():
+    stream = FakeConnection([FakeProcess(BANNER, None)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    taken = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe, taken)
+    with connect, run_command, probe_seconds:
+        session = _reconnecting()
+        await session.open()
+        assert await session.suspend() is True
+        with pytest.raises(ConsoleHeldError) as caught:
+            await session.resume()
+        assert not isinstance(caught.value, ConsoleHeldAfterDropError)
+        assert await session.close() is True
+
+
+@pytest.mark.asyncio
+async def test_reader_cancelled_as_reconnect_completes_keeps_the_gap():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    second, entered, finish = _blocked_resume_stream()
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(first, second, probe)
+    with connect, run_command, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            reading = asyncio.create_task(session.read())
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            reconnect = session._reconnect_task
+            assert reconnect is not None
+            finish.set()
+            while not reconnect.done():
+                await asyncio.sleep(0)
+            reading.cancel()  # the consumer's timeout lands in the same tick
+            with pytest.raises(asyncio.CancelledError):
+                await reading
+            assert await session.read() == KEEPALIVE_GAP
+            assert await session.read() == BANNER
+
+
+@pytest.mark.asyncio
+async def test_take_over_reconnect_into_held_vterm_says_rmvterm_ran():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    held = FakeConnection([FakeProcess(CONTENTION)])
+    connect, run_command, probe_seconds = _session_patches(first, held)
+    with connect, run_command as release, probe_seconds:
+        session = _reconnecting(take_over=True)
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(ConsoleHeldAfterDropError, match="rmvterm ran first"):
+            await session.read()
+        assert await session.close() is False
+
+    assert release.await_count == 2  # the takeovers at open and at reconnect
+
+
+@pytest.mark.asyncio
+async def test_drop_as_suspend_starts_reconnects_nothing():
+    gate = asyncio.Event()
+    process = FakeProcess()
+    process.stdout = _GatedDropStdout(gate)  # type: ignore[assignment]
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect as opener, run_command, probe_seconds:
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        reading = asyncio.create_task(session.read())
+        await asyncio.sleep(0)  # the collector blocks on the stream
+        gate.set()
+        await asyncio.sleep(0)  # the stream read fails; the collector has not resumed
+        assert await session.suspend() is True
+        await asyncio.sleep(0)
+        assert not reading.done()  # the collector waits while suspended
+        assert opener.await_count == 2  # the stream and the release probe, no reconnect
+        assert await session.close() is True
+        assert await asyncio.wait_for(reading, timeout=5) == b""
+
+
+@pytest.mark.asyncio
+async def test_reconnect_pipe_failure_leaves_session_dropped():
+    first = FakeConnection([FakeProcess(BANNER, DROP)])
+    connect, run_command, probe_seconds = _session_patches(first)
+    pipes = [_SealedStdin, OSError(24, "Too many open files")]
+
+    def next_pipe():
+        made = pipes.pop(0)
+        if isinstance(made, OSError):
+            raise made
+        return made()
+
+    with (
+        connect,
+        run_command as release,
+        probe_seconds,
+        patch("hmcpctl.ssh.console._SealedStdin", side_effect=next_pipe),
+    ):
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(OSError, match="Too many open files"):
+            await session.read()
+        with pytest.raises(RuntimeError):
+            await asyncio.wait_for(session.read(), timeout=5)
+        assert await session.close() is False
+
+    assert release.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_remote_close_latch_ends_with_its_stream():
+    stream = FakeConnection([FakeProcess(BANNER)])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    resumed = FakeConnection([FakeProcess(BANNER, DROP)])
+    after = FakeConnection([FakeProcess(BANNER, None)])
+    probe2 = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(
+        stream, probe, resumed, after, probe2
+    )
+    with connect, run_command, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            assert await session.read() == b""  # latched remote close
+            assert await session.suspend() is True
+            await session.resume()
+            assert await session.read() == BANNER
+            assert await session.read() == KEEPALIVE_GAP
+            assert await session.read() == BANNER
+
+
+# ---------------------------------------------------------------------------
+# Console input: writable session, SysRq, exclusive raw mode (issue #958, ADR 0176)
+# ---------------------------------------------------------------------------
+
+
+def _writable(**kwargs) -> WritableConsoleSession:
+    return WritableConsoleSession(_client(), "sys1", "lp1", **kwargs)
+
+
+def _audited():
+    """Patch the console-write emitter; its calls are the audit trail under test."""
+    return patch("hmcpctl.ssh.console.audit.record_console_write")
+
+
+@pytest.mark.parametrize("surface", [ConsoleSession, ConsoleHandover, _SealedStdin])
+def test_read_only_surfaces_have_no_write_surface(surface):
+    assert not any(
+        name.startswith(("write", "send"))
+        for name in dir(surface)
+        if not name.startswith("_")
+    )
+
+
+@pytest.mark.asyncio
+async def test_writable_session_writes_through_a_private_pipe_and_never_sends_eof():
+    process = FakeProcess(BANNER, None)
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable() as session:
+            await session.write(b"x")
+            assert not hasattr(session, "stdin")
+        assert session.released is True
+
+    assert stream.create_process_calls[0]["stdin"] == asyncssh.PIPE
+    assert process.stdin.written == [b"x"]
+    assert process.stdin.drains == 1
+    assert process.stdin.eof is False
+
+
+@pytest.mark.asyncio
+async def test_every_write_is_audited_first_and_carries_no_content():
+    process = FakeProcess(BANNER, None)
+    order: list[str] = []
+    process.stdin.write = lambda data: order.append("write")
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        record.side_effect = lambda **_: order.append("audit")
+        async with _writable() as session:
+            await session.write(b"secret-password\r")
+            await session.send_sysrq("c", prefix=b"\x0f")
+
+    assert order == ["audit", "write", "audit", "write"]
+    first, second = (call.kwargs for call in record.call_args_list)
+    assert first == {
+        "system": "sys1",
+        "lpar": "lp1",
+        "host": make_config().host,
+        "mode": "shared",
+        "input_kind": "raw",
+        "length": 16,
+        "agent_id": "hmcpctl",
+    }
+    assert (second["input_kind"], second["length"]) == ("sysrq", 2)
+    assert "secret" not in repr(record.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_send_sysrq_is_one_write_of_prefix_and_key():
+    process = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable() as session:
+            await session.send_sysrq("c", prefix=b"\x0f")
+
+    assert process.stdin.written == [b"\x0fc"]
+
+
+@pytest.mark.parametrize(
+    ("key", "prefix", "error"),
+    [
+        ("", b"\x0f", ValueError),
+        ("cc", b"\x0f", ValueError),
+        (" ", b"\x0f", ValueError),
+        ("\u00e9", b"\x0f", ValueError),
+        ("c", b"", ValueError),
+        ("c", "\x0f", TypeError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_send_sysrq_rejects_a_bad_key_or_prefix_before_auditing(key, prefix, error):
+    process = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        async with _writable() as session:
+            with pytest.raises(error):
+                await session.send_sysrq(key, prefix=prefix)
+
+    record.assert_not_called()
+    assert process.stdin.written == []
+
+
+@pytest.mark.parametrize(("data", "error"), [(b"", ValueError), ("x", TypeError)])
+@pytest.mark.asyncio
+async def test_write_rejects_empty_or_non_bytes_data(data, error):
+    process = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        async with _writable() as session:
+            with pytest.raises(error):
+                await session.write(data)
+
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_raw_mode_is_exclusive_and_returns_to_collection():
+    process = FakeProcess(BANNER, b"$OK#9a", b"after", None)
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect as opener, run_command as release, probe_seconds, _audited() as record:
+        async with _writable() as session:
+            assert await session.read() == BANNER
+            async with session.raw_mode() as channel:
+                assert isinstance(channel, ConsoleRawChannel)
+                collector = asyncio.create_task(session.read())
+                assert await channel.read() == b"$OK#9a"
+                await channel.write(b"$g#67")
+                with pytest.raises(RuntimeError):
+                    await session.write(b"x")
+                with pytest.raises(RuntimeError):
+                    await session.send_sysrq("c", prefix=b"\x0f")
+                await asyncio.sleep(0)
+                assert not collector.done()
+                assert release.await_count == 0
+            assert await asyncio.wait_for(collector, 5) == b"after"
+            with pytest.raises(RuntimeError):
+                await channel.write(b"late")
+            await session.write(b"y")
+        assert opener.await_count == 2  # the stream and the release probe only
+
+    assert process.stdin.written == [b"$g#67", b"y"]
+    modes = [call.kwargs["mode"] for call in record.call_args_list]
+    assert modes == ["exclusive", "shared"]
+
+
+@pytest.mark.asyncio
+async def test_raw_mode_refuses_while_another_pause_is_active():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, None)]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable() as session:
+            async with session.hand_over():
+                with pytest.raises(RuntimeError):
+                    async with session.raw_mode():
+                        pass
+
+
+@pytest.mark.asyncio
+async def test_writes_are_refused_inside_hand_over_while_suspended_and_after_close():
+    first = FakeProcess(BANNER, None)
+    second = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([first]),
+        FakeConnection([FakeProcess(BANNER)]),  # suspend()'s release probe
+        FakeConnection([second]),
+        FakeConnection([FakeProcess(BANNER)]),  # close()'s release probe
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        session = _writable()
+        await session.open()
+        async with session.hand_over():
+            with pytest.raises(RuntimeError):
+                await session.write(b"x")
+        assert await session.suspend() is True
+        with pytest.raises(RuntimeError):
+            await session.write(b"x")
+        await session.resume()
+        await session.write(b"z")  # a resumed session writes to its new stream
+        assert await session.close() is True
+        with pytest.raises(RuntimeError):
+            await session.write(b"x")
+
+    assert record.call_count == 1
+    assert first.stdin.written == []
+    assert second.stdin.written == [b"z"]
+
+
+@pytest.mark.asyncio
+async def test_writes_are_refused_while_dropped_and_follow_a_reconnect():
+    first = FakeProcess(BANNER, DROP)
+    second = FakeProcess(BANNER, None)
+    gate = asyncio.Event()
+
+    class GatedConnection(FakeConnection):
+        async def create_process(self, command: str, **kwargs):
+            process = await super().create_process(command, **kwargs)
+            await gate.wait()
+            return process
+
+    reconnecting = GatedConnection([second])
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([first]), reconnecting, FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable(reconnect=True) as session:
+            assert await session.read() == BANNER
+            with pytest.raises(TimeoutError):  # the reconnect keeps running for the next read
+                await asyncio.wait_for(session.read(), 0.05)
+            with pytest.raises(RuntimeError):
+                await session.write(b"x")  # the reconnect is in flight
+            gate.set()
+            async with asyncio.timeout(5):
+                while session._state != "held":
+                    await asyncio.sleep(0)
+            with pytest.raises(RuntimeError):
+                await session.write(b"x")  # held again, but the gap is still unread
+            assert await session.read() == KEEPALIVE_GAP
+            await session.write(b"y")
+
+    assert first.stdin.written == []
+    assert second.stdin.written == [b"y"]
+
+
+@pytest.mark.asyncio
+async def test_writes_are_refused_after_a_reconnect_meets_a_held_console():
+    first = FakeProcess(BANNER, DROP)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([first]), FakeConnection([FakeProcess(CONTENTION)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        session = _writable(reconnect=True)
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(ConsoleHeldAfterDropError):
+            await session.read()
+        with pytest.raises(RuntimeError):
+            await session.write(b"x")
+        assert await session.close() is False
+
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_drop_in_raw_mode_reaches_the_raw_holder_and_reconnects_after_the_block():
+    first = FakeProcess(BANNER, DROP)
+    second = FakeProcess(BANNER, None)
+
+    def broken(data: bytes) -> None:
+        raise BrokenPipeError("channel closed")
+
+    first.stdin.write = broken
+    dead = FakeConnection([first])
+    connect, run_command, probe_seconds = _session_patches(
+        dead, FakeConnection([second]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect as opener, run_command as release, probe_seconds, _audited():
+        async with _writable(reconnect=True) as session:
+            assert await session.read() == BANNER
+            async with session.raw_mode() as channel:
+                with pytest.raises(asyncssh.ConnectionLost):
+                    await channel.read()
+                with pytest.raises(BrokenPipeError):
+                    await channel.write(b"$g#67")  # unwrapped, and no reconnect starts
+                assert opener.await_count == 1
+                dead.closed = True
+            assert await session.read() == ConsoleGap("the SSH connection closed", False)
+            await session.write(b"y")
+            with pytest.raises(RuntimeError):
+                await channel.write(b"late")
+            assert release.await_count == 0
+
+    assert second.stdin.written == [b"y"]

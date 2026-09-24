@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import traceback
 from dataclasses import dataclass, field
+from typing import Any
 
 #: Every value an observation's ``cleanup`` disposition may take. This ``not-run``
 #: means cleanup did not run; it is unrelated to ADR 0126's deleted ``not-run``
@@ -107,3 +108,36 @@ def classify_failure(exc: BaseException) -> CallFailure:
         http_status=int(status.group(1)) if status else None,
         denied=_DENIAL_RE.search(str(exc)) is not None,
     )
+
+
+def judge_create_result(status: str, data: Any) -> tuple[str, str]:
+    """Judge an ``hmc_create_lpar`` result by its steps, not the call status alone.
+
+    On the mksyscfg path, ``hmc_create_lpar`` returns normally (``status`` "PASS")
+    even when its ``apply_profile`` step, or a later PCIe-assignment step, reports
+    ``status: "error"`` (#939, PR #986): the partition exists but
+    ``workflow_completed`` is False and it carries no current configuration.
+    Recording that call's PASS/FAIL row from ``status`` alone hides the real
+    outcome and leaves every later REST failure on the misconfigured partition
+    unexplained (#997).
+
+    Returns the ``(status, note)`` a caller should pass to ``RunState.record`` —
+    "FAIL" with the failed step's reason in place of a masked PASS, or the
+    original ``status`` and an empty note when nothing in the steps disagrees.
+    This never overrides a non-"PASS" call status, and it does not speak to
+    whether the partition was actually created — a caller that tracks that
+    separately keeps using the original ``status`` for its own control flow.
+    """
+    if status != "PASS" or not isinstance(data, dict):
+        return status, ""
+    steps = data.get("steps")
+    if isinstance(steps, list):
+        for step in steps:
+            if isinstance(step, dict) and step.get("status") == "error":
+                name = step.get("step", "step")
+                result = step.get("result")
+                reason = f"{name} failed: {result}" if result else f"{name} failed"
+                return "FAIL", reason
+    if data.get("workflow_completed") is False:
+        return "FAIL", "workflow_completed is false"
+    return status, ""

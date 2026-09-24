@@ -16,7 +16,9 @@ from hmcpctl import documents
 from hmcpctl.documents.common import UOM_NS
 from hmcpctl.xmlutil import localname
 
-FIXTURE = DET.parse(Path(__file__).parents[1] / "storage" / "vscsi_mapping_v10r3.xml").getroot()
+STORAGE_FIXTURES = Path(__file__).parents[1] / "storage"
+FIXTURE = DET.parse(STORAGE_FIXTURES / "vscsi_mapping_v10r3.xml").getroot()
+VOLUME_GROUP = DET.parse(STORAGE_FIXTURES / "volume_group_v10r3.xml").getroot()
 
 
 def _tree(xml: str):
@@ -86,7 +88,7 @@ def test_recorded_kb_values(xml: str, expected: dict[str, str]) -> None:
 
 
 def test_virtual_disk_create_matches_fixture() -> None:
-    built = _first(_tree(documents.build_virtual_disk_document("lv1", 2048)), "VirtualDisk")
+    built = _first(_tree(documents.build_virtual_disk_element("lv1", 2048)), "VirtualDisk")
     live = _first(FIXTURE, "VirtualDisk")
     assert _kbx(built) == _kbx(live)
     names = [n for n in _children(built) if n != "Metadata"]
@@ -148,14 +150,24 @@ def test_mapping_without_target_device_omits_it() -> None:
     ]
 
 
+def _assert_matches_live(built, live) -> None:
+    """Built children, repeats collapsed, are a live subsequence with live kb/kxe/schemaVersion."""
+    assert _kbx(built) == _kbx(live), localname(built.tag)
+    names = list(dict.fromkeys(_children(built)))
+    assert _is_subsequence(names, _children(live)), (localname(built.tag), names)
+    for child in built:
+        _assert_matches_live(child, _first(live, localname(child.tag)))
+
+
+def test_volume_group_create_matches_fixture() -> None:
+    built = _tree(documents.build_volume_group_document("vg1", ["hdisk1", "hdisk2"]))
+    assert _children(_first(built, "PhysicalVolumes")).count("PhysicalVolume") == 2
+    _assert_matches_live(built, VOLUME_GROUP)
+
+
 def test_volume_group_physical_volume_attributes() -> None:
     root = _tree(documents.build_volume_group_document("vg1", ["hdisk1"]))
     assert _first(root, "PhysicalVolume").attrib == {"schemaVersion": "V1_0"}
-
-
-def test_virtual_disk_delete_virtual_disk_attributes() -> None:
-    root = _tree(documents.build_virtual_disk_delete_document("lv1"))
-    assert _first(root, "VirtualDisk").attrib == {"schemaVersion": "V1_0"}
 
 
 RESOURCES = documents.LparResources(
@@ -169,7 +181,7 @@ BUILT = {
         1, 2, 0, True, "02:00:00:00:00:01"
     ),
     "volume-group": documents.build_volume_group_document("vg1", ["hdisk1"]),
-    "virtual-disk": documents.build_virtual_disk_document("lv1", 1024),
+    "virtual-disk": documents.build_virtual_disk_element("lv1", 1024),
     "vscsi-mapping": documents.build_vscsi_mapping_document(
         "PhysicalVolume", "hdisk1", LINK, "vt1"
     ),
@@ -179,7 +191,6 @@ BUILT = {
     "optical-media-delete": documents.build_virtual_optical_media_delete_document(
         "a.iso", "vg1"
     ),
-    "virtual-disk-delete": documents.build_virtual_disk_delete_document("lv1"),
     "brokered-file": documents.build_brokered_file_document("a.iso"),
     "linked-optical-media": documents.build_linked_optical_media_document("a.iso", LINK),
     "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from .._app import with_client
-from ..operations.lpar.console import (
-    capture_lpar_console_by_selector,
-    console_capture_payload,
-)
+from ..operations.lpar.console import capture_lpar_console_by_selector
 from ..tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
@@ -74,6 +72,14 @@ def hmc_capture_lpar_console(
             max_bytes=max_bytes,
             idle_timeout_seconds=idle_timeout_seconds,
         )
-        return console_capture_payload(capture)
+        return {
+            "system": capture.system,
+            "partition": capture.lpar,
+            "stop_reason": capture.stop_reason,
+            "released": capture.released,
+            "error": capture.error,
+            "bytes_captured": len(capture.data),
+            "data_base64": base64.b64encode(capture.data).decode("ascii"),
+        }
 
     return with_client(capture_console_result, profile=profile)
