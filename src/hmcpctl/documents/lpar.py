@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from ..xmlutil import escapes_string_arguments
-from .common import document_envelope
+from .common import UOM_NS, document_envelope
 
 PARTITION_TYPES: tuple[PartitionType, ...] = ("AIX/Linux", "OS400", "Virtual IO Server")
 OS_TYPES = ("aix", "linux", "ibmi")
@@ -324,7 +324,6 @@ def build_vios_document(
     )
 
 
-_UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _PPC = "PartitionProcessorConfiguration"
 _RESOURCE_NUMBERS = (
     "min_memory",
@@ -342,10 +341,6 @@ _MODE_SWITCH_REFUSAL = (
     "partition read carries no configuration for the other mode, so nothing was written. "
     "Omit `dedicated`, or pass the partition's current mode."
 )
-
-
-def _changed(pairs: tuple[tuple[str, object], ...]) -> dict[str, str]:
-    return {path: str(value) for path, value in pairs if value is not None}
 
 
 def _dedicated_updates(resources: LparResources) -> dict[str, str]:
@@ -369,17 +364,29 @@ def _dedicated_updates(resources: LparResources) -> dict[str, str]:
                 "a whole number. Nothing was written."
             )
     config = f"{_PPC}/DedicatedProcessorConfiguration"
-    return _changed(
-        tuple(
-            (f"{config}/{name}", None if value is None else int(value))
-            for name, value in fields
-        )
+    return {f"{config}/{name}": str(int(value)) for name, value in fields if value is not None}
+
+
+def _shared_updates(resources: LparResources) -> dict[str, str]:
+    config = f"{_PPC}/SharedProcessorConfiguration"
+    units = (
+        ("DesiredProcessingUnits", resources.desired_procs),
+        ("MaximumProcessingUnits", resources.max_procs),
+        ("MinimumProcessingUnits", resources.min_procs),
     )
+    vcpus = (
+        ("DesiredVirtualProcessors", resources.desired_vcpus),
+        ("MaximumVirtualProcessors", resources.max_vcpus),
+        ("MinimumVirtualProcessors", resources.min_vcpus),
+    )
+    updates = {f"{config}/{name}": _render_units(v) for name, v in units if v is not None}
+    updates |= {f"{config}/{name}": str(v) for name, v in vcpus if v is not None}
+    return updates
 
 
 def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, str]:
     _validate_sharing_mode(resources.sharing_mode)
-    current = lpar.findtext(f"{{{_UOM_NS}}}{_PPC}/{{{_UOM_NS}}}HasDedicatedProcessors")
+    current = lpar.findtext(f"{{{UOM_NS}}}{_PPC}/{{{UOM_NS}}}HasDedicatedProcessors")
     dedicated = current == "true" if current is not None else bool(resources.dedicated)
     if resources.dedicated is not None and resources.dedicated != dedicated:
         raise ValueError(_MODE_SWITCH_REFUSAL)
@@ -387,22 +394,7 @@ def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, 
         updates = _dedicated_updates(resources)
         mode = resources.sharing_mode
     else:
-        config = f"{_PPC}/SharedProcessorConfiguration"
-        updates = _changed(
-            tuple(
-                (f"{config}/{name}", None if value is None else _render_units(value))
-                for name, value in (
-                    ("DesiredProcessingUnits", resources.desired_procs),
-                    ("MaximumProcessingUnits", resources.max_procs),
-                    ("MinimumProcessingUnits", resources.min_procs),
-                )
-            )
-            + (
-                (f"{config}/DesiredVirtualProcessors", resources.desired_vcpus),
-                (f"{config}/MaximumVirtualProcessors", resources.max_vcpus),
-                (f"{config}/MinimumVirtualProcessors", resources.min_vcpus),
-            )
-        )
+        updates = _shared_updates(resources)
         mode = _shared_sharing_mode(resources)
     if mode:
         updates[f"{_PPC}/SharingMode"] = mode
@@ -435,12 +427,15 @@ def partition_updates(
             raise ValueError(
                 f"{number}={value} must be a finite, non-negative number. Nothing was written."
             )
-    updates = {} if name is None else {"PartitionName": name}
-    updates |= _changed(
-        (
-            ("PartitionMemoryConfiguration/DesiredMemory", resources.desired_memory),
-            ("PartitionMemoryConfiguration/MaximumMemory", resources.max_memory),
-            ("PartitionMemoryConfiguration/MinimumMemory", resources.min_memory),
-        )
+    memory = (
+        ("DesiredMemory", resources.desired_memory),
+        ("MaximumMemory", resources.max_memory),
+        ("MinimumMemory", resources.min_memory),
     )
+    updates = {} if name is None else {"PartitionName": name}
+    updates |= {
+        f"PartitionMemoryConfiguration/{field_name}": str(value)
+        for field_name, value in memory
+        if value is not None
+    }
     return updates | _processor_updates(lpar, resources)
