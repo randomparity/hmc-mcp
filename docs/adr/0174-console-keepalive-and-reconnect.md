@@ -6,7 +6,9 @@ Accepted (2026-09-23). Extends ADR 0170 within ADR 0172 and ADR 0173. It amends 
 in part: a transport error still propagates unwrapped unless the caller opted into reconnect.
 It amends ADR 0072's P8 rule in part: the HMC still sends no keepalives, but hmcpctl now sends
 SSH keepalives on every console connection. It settles the reconnect-while-paused interaction
-that ADR 0173 assigned to #977.
+that ADR 0173 assigned to #977, and the leftover-hold question that ADR 0170 rule 6 and ADR 0172
+left to #977: hmcpctl cannot tell its own leftover hold from another holder, so a drop that
+meets a held vterm raises a typed error, and only `take_over=True` reclaims it.
 
 ## Context
 
