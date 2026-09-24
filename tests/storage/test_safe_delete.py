@@ -177,6 +177,35 @@ async def test_delete_media_repository_succeeds_when_empty(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_delete_media_repository_refuses_medium_that_appeared_since_the_check(
+    mock_hmc,
+):
+    """A medium created between the operation's check and the client's own read is
+    still refused, with nothing written (#1012).
+
+    delete_media_repository's list_optical_media emptiness check and the client's
+    read-modify-write GET are two independent reads. This drives that interleaving
+    literally rather than a single static GET: the first GET (the operation's own
+    check) sees an empty repository, and the second GET (the client's own read)
+    sees one that has since gained a medium.
+    """
+    mock_hmc.get(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(200, text=EMPTY_REPO_FEED),
+            httpx.Response(200, text=MEDIA_VG_FEED, headers={"ETag": '"etag-1"'}),
+        ]
+    )
+    post_route = mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
+
+    config = make_config()
+    async with HMCClient(config) as hmc:
+        with pytest.raises(HMCError, match=r"contains 1 image\(s\): 'test-image\.iso'"):
+            await delete_media_repository(hmc, VIOS_UUID, VG_UUID)
+
+    assert not post_route.called
+
+
+@pytest.mark.asyncio
 async def test_delete_optical_media_refuses_when_mounted(mock_hmc):
     """delete_optical_media raises when media is mounted to an LPAR."""
     mock_hmc.get(VIOS_PATH).mock(
