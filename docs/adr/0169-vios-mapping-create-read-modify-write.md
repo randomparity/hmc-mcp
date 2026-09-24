@@ -1,4 +1,4 @@
-# ADR 0169: Create VIOS mappings by read-modify-write of the ViosSCSIMapping group
+# ADR 0169: VIOS mapping writes by read-modify-write of the ViosSCSIMapping group
 
 ## Status
 
