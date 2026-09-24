@@ -158,6 +158,11 @@ class HMCConfig(BaseSettings):
     )
     verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
+    upload_timeout: float = Field(
+        default=600.0, gt=0,
+        description="Seconds the ISO upload waits for the HMC's response after the last byte "
+        "(HMC_UPLOAD_TIMEOUT); the wait is never shorter than HMC_TIMEOUT",
+    )
     max_response_bytes: int = Field(
         default=32 * 1024 * 1024, gt=0,
         description="Maximum HMC REST response size in bytes (HMC_MAX_RESPONSE_BYTES)",
