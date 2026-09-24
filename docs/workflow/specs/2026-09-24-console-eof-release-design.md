@@ -40,12 +40,14 @@ them, a session whose stream has not ended releases this way:
 
 A session whose stream already ended before release keeps today's `rmvterm` and probe path. That
 covers a remote close seen by a read or by the unread scan. The flag `_stream_ended` records that
-end and resets on each acquisition.
+end and resets on each acquisition. It is separate from `_remote_closed`, which gates
+`_may_reconnect()` and is set only on the reconnect path.
 
 The probe's own teardown keeps `rmvterm`.
 
 Documentation that the change falsifies moves with it. ADR 0072 gets an "Amended by #1058" Status
-block covering P5, P8, and decision 1. ADR 0170 rule 4, ADR 0172 rule 3, and ADR 0176 rule 2 each
+block covering P5, P7 (the write end now closes at release, to end the stream), P8, and
+decision 1. ADR 0170 rule 4, ADR 0172 rule 3, and ADR 0176 rule 2 each
 get a one-line pointer to it. The module and method docstrings and `CHANGELOG.md` change too.
 
 ## Failure model
@@ -61,6 +63,9 @@ get a one-line pointer to it. The module and method docstrings and `CHANGELOG.md
      window on those paths only.
    - The probe's teardown `rmvterm` keeps its own window after it acquires.
    - A firmware whose EOF does not end `mkvterm` within 20 s gets today's behaviour.
+   - A stream that ends during the drain without releasing the hold gets no `rmvterm`, and
+     `close()` returns the probe's `False`: in every captured run the exit after EOF meant release
+     or a reported loss, and an `rmvterm` here could end another holder.
 4. **Covered elsewhere:** vterm ownership query → operator; SysRq and `~.` → #879.
 
 ## Success
