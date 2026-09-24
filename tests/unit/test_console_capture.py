@@ -28,7 +28,9 @@ from hmcpctl.ssh.console import (
     ConsoleHandover,
     ConsoleHeldAfterDropError,
     ConsoleHeldError,
+    ConsoleRawChannel,
     ConsoleSession,
+    WritableConsoleSession,
     _acquire_capture_stream,
     _open_capture_stream,
     _probe_released,
@@ -76,6 +78,24 @@ class FakeStdout:
         return chunk
 
 
+class FakeStdin:
+    """Records what a writable session sends through asyncssh's stdin writer."""
+
+    def __init__(self) -> None:
+        self.written: list[bytes] = []
+        self.drains = 0
+        self.eof = False
+
+    def write(self, data: bytes) -> None:
+        self.written.append(bytes(data))
+
+    async def drain(self) -> None:
+        self.drains += 1
+
+    def write_eof(self) -> None:
+        self.eof = True
+
+
 class FakeProcess:
     def __init__(
         self,
@@ -86,6 +106,7 @@ class FakeProcess:
             *chunks,
             blocked_read_started=blocked_read_started,
         )
+        self.stdin = FakeStdin()
 
 
 class FakeConnection:
@@ -1878,3 +1899,257 @@ async def test_remote_close_latch_ends_with_its_stream():
             assert await session.read() == BANNER
             assert await session.read() == KEEPALIVE_GAP
             assert await session.read() == BANNER
+
+
+# ---------------------------------------------------------------------------
+# Console input: writable session, SysRq, exclusive raw mode (issue #958, ADR 0176)
+# ---------------------------------------------------------------------------
+
+
+def _writable(**kwargs) -> WritableConsoleSession:
+    return WritableConsoleSession(_client(), "sys1", "lp1", **kwargs)
+
+
+def _audited():
+    """Patch the console-write emitter; its calls are the audit trail under test."""
+    return patch("hmcpctl.ssh.console.audit.record_console_write")
+
+
+@pytest.mark.parametrize("surface", [ConsoleSession, ConsoleHandover, _SealedStdin])
+def test_read_only_surfaces_have_no_write_surface(surface):
+    assert not any(
+        name.startswith(("write", "send"))
+        for name in dir(surface)
+        if not name.startswith("_")
+    )
+
+
+@pytest.mark.asyncio
+async def test_writable_session_writes_through_a_private_pipe_and_never_sends_eof():
+    process = FakeProcess(BANNER, None)
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable() as session:
+            await session.write(b"x")
+            assert not hasattr(session, "stdin")
+        assert session.released is True
+
+    assert stream.create_process_calls[0]["stdin"] == asyncssh.PIPE
+    assert process.stdin.written == [b"x"]
+    assert process.stdin.drains == 1
+    assert process.stdin.eof is False
+
+
+@pytest.mark.asyncio
+async def test_every_write_is_audited_first_and_carries_no_content():
+    process = FakeProcess(BANNER, None)
+    order: list[str] = []
+    process.stdin.write = lambda data: order.append("write")
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        record.side_effect = lambda **_: order.append("audit")
+        async with _writable() as session:
+            await session.write(b"secret-password\r")
+            await session.send_sysrq("c", prefix=b"\x0f")
+
+    assert order == ["audit", "write", "audit", "write"]
+    first, second = (call.kwargs for call in record.call_args_list)
+    assert first == {
+        "system": "sys1",
+        "lpar": "lp1",
+        "host": make_config().host,
+        "mode": "shared",
+        "input_kind": "raw",
+        "length": 16,
+        "agent_id": "hmcpctl",
+    }
+    assert (second["input_kind"], second["length"]) == ("sysrq", 2)
+    assert "secret" not in repr(record.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_send_sysrq_is_one_write_of_prefix_and_key():
+    process = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable() as session:
+            await session.send_sysrq("c", prefix=b"\x0f")
+
+    assert process.stdin.written == [b"\x0fc"]
+
+
+@pytest.mark.parametrize(
+    ("key", "prefix", "error"),
+    [
+        ("", b"\x0f", ValueError),
+        ("cc", b"\x0f", ValueError),
+        (" ", b"\x0f", ValueError),
+        ("\u00e9", b"\x0f", ValueError),
+        ("c", b"", ValueError),
+        ("c", "\x0f", TypeError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_send_sysrq_rejects_a_bad_key_or_prefix_before_auditing(key, prefix, error):
+    process = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        async with _writable() as session:
+            with pytest.raises(error):
+                await session.send_sysrq(key, prefix=prefix)
+
+    record.assert_not_called()
+    assert process.stdin.written == []
+
+
+@pytest.mark.parametrize(("data", "error"), [(b"", ValueError), ("x", TypeError)])
+@pytest.mark.asyncio
+async def test_write_rejects_empty_or_non_bytes_data(data, error):
+    process = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        async with _writable() as session:
+            with pytest.raises(error):
+                await session.write(data)
+
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_raw_mode_is_exclusive_and_returns_to_collection():
+    process = FakeProcess(BANNER, b"$OK#9a", b"after", None)
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect as opener, run_command as release, probe_seconds, _audited() as record:
+        async with _writable() as session:
+            assert await session.read() == BANNER
+            async with session.raw_mode() as channel:
+                assert isinstance(channel, ConsoleRawChannel)
+                collector = asyncio.create_task(session.read())
+                assert await channel.read() == b"$OK#9a"
+                await channel.write(b"$g#67")
+                with pytest.raises(RuntimeError):
+                    await session.write(b"x")
+                with pytest.raises(RuntimeError):
+                    await session.send_sysrq("c", prefix=b"\x0f")
+                await asyncio.sleep(0)
+                assert not collector.done()
+                assert release.await_count == 0
+            assert await asyncio.wait_for(collector, 5) == b"after"
+            with pytest.raises(RuntimeError):
+                await channel.write(b"late")
+            await session.write(b"y")
+        assert opener.await_count == 2  # the stream and the release probe only
+
+    assert process.stdin.written == [b"$g#67", b"y"]
+    modes = [call.kwargs["mode"] for call in record.call_args_list]
+    assert modes == ["exclusive", "shared"]
+
+
+@pytest.mark.asyncio
+async def test_raw_mode_refuses_while_another_pause_is_active():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, None)]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable() as session:
+            async with session.hand_over():
+                with pytest.raises(RuntimeError):
+                    async with session.raw_mode():
+                        pass
+
+
+@pytest.mark.asyncio
+async def test_writes_are_refused_inside_hand_over_while_suspended_and_after_close():
+    first = FakeProcess(BANNER, None)
+    second = FakeProcess(BANNER, None)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([first]),
+        FakeConnection([FakeProcess(BANNER)]),  # suspend()'s release probe
+        FakeConnection([second]),
+        FakeConnection([FakeProcess(BANNER)]),  # close()'s release probe
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        session = _writable()
+        await session.open()
+        async with session.hand_over():
+            with pytest.raises(RuntimeError):
+                await session.write(b"x")
+        assert await session.suspend() is True
+        with pytest.raises(RuntimeError):
+            await session.write(b"x")
+        await session.resume()
+        await session.write(b"z")  # a resumed session writes to its new stream
+        assert await session.close() is True
+        with pytest.raises(RuntimeError):
+            await session.write(b"x")
+
+    assert record.call_count == 1
+    assert first.stdin.written == []
+    assert second.stdin.written == [b"z"]
+
+
+@pytest.mark.asyncio
+async def test_writes_are_refused_while_dropped_and_follow_a_reconnect():
+    first = FakeProcess(BANNER, DROP)
+    second = FakeProcess(BANNER, None)
+    gate = asyncio.Event()
+
+    class GatedConnection(FakeConnection):
+        async def create_process(self, command: str, **kwargs):
+            process = await super().create_process(command, **kwargs)
+            await gate.wait()
+            return process
+
+    reconnecting = GatedConnection([second])
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([first]), reconnecting, FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command, probe_seconds, _audited():
+        async with _writable(reconnect=True) as session:
+            assert await session.read() == BANNER
+            with pytest.raises(TimeoutError):  # the reconnect keeps running for the next read
+                await asyncio.wait_for(session.read(), 0.05)
+            with pytest.raises(RuntimeError):
+                await session.write(b"x")  # the reconnect is in flight
+            gate.set()
+            async with asyncio.timeout(5):
+                while session._state != "held":
+                    await asyncio.sleep(0)
+            with pytest.raises(RuntimeError):
+                await session.write(b"x")  # held again, but the gap is still unread
+            assert await session.read() == KEEPALIVE_GAP
+            await session.write(b"y")
+
+    assert first.stdin.written == []
+    assert second.stdin.written == [b"y"]
+
+
+@pytest.mark.asyncio
+async def test_writes_are_refused_after_a_reconnect_meets_a_held_console():
+    first = FakeProcess(BANNER, DROP)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([first]), FakeConnection([FakeProcess(CONTENTION)])
+    )
+    with connect, run_command, probe_seconds, _audited() as record:
+        session = _writable(reconnect=True)
+        await session.open()
+        assert await session.read() == BANNER
+        with pytest.raises(ConsoleHeldAfterDropError):
+            await session.read()
+        with pytest.raises(RuntimeError):
+            await session.write(b"x")
+        assert await session.close() is False
+
+    record.assert_not_called()

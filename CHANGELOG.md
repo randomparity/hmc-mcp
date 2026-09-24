@@ -10,6 +10,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `WritableConsoleSession`, a `ConsoleSession` subclass, writes to a partition console
+  (ADR 0176). `write(data)` sends raw bytes while collection keeps running. `send_sysrq(key,
+  prefix=...)` sends a caller-supplied prefix plus the key as one write; hmcpctl ships no SysRq
+  sequence until #879 verifies one. `async with session.raw_mode() as channel:` gives a
+  preempting holder, such as KGDB, exclusive reads and writes while the vterm stays held, and
+  returns the channel to the collector afterwards. Every write first emits a `console-write`
+  audit record that carries the length and never the bytes. `ConsoleSession`, the bounded
+  capture and `hmc_capture_lpar_console` keep sealed stdin, and no MCP tool or CLI command
+  writes (#958).
 - Console connections send SSH keepalives, so a dead but idle channel is detected within about
   60 s (ADR 0174). `ConsoleSession(..., reconnect=True)` then acquires the console again and
   yields a `ConsoleGap` marker before the new stream. A console still held after the drop raises

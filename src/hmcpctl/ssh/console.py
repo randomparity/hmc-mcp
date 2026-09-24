@@ -1,4 +1,4 @@
-"""Read-only LPAR console sessions and bounded capture over the HMC ``mkvterm`` CLI.
+"""LPAR console sessions and bounded capture over the HMC ``mkvterm`` CLI.
 
 The HMC exposes exactly one virtual terminal (vterm) per partition through the
 ``mkvterm``/``rmvterm`` CLI pair over SSH. ``mkvterm`` never exits on its own:
@@ -29,6 +29,9 @@ records the design decision per prototype fact.
   partition console, and EOF on it terminates the vterm. The capture opens a
   pipe, hands mkvterm the read end, and holds the write end open without ever
   writing: no parameter, method, or code path can send a byte to the console.
+  :class:`WritableConsoleSession` is the one exception (ADR 0176): it keeps a
+  private stdin writer that never sends EOF, and only its typed, audited write
+  methods reach it.
 - **Client-side bounds** (P8): an idle vterm stream stays open forever and
   the HMC sends no keepalives, so duration, max-bytes, and idle bounds are all
   enforced here, never expected from the HMC. hmcpctl's own SSH keepalives
@@ -51,12 +54,13 @@ import shlex
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, TypeVar
 
 import asyncssh
 
 from hmcpctl.client.core import HMCClient
 
+from ..audit import records as audit
 from ..config import HMCConfig
 from ..errors import HMCError
 from .transport import HMCCLIError, open_hmc_connection, run_hmc_command
@@ -205,11 +209,11 @@ class _SealedStdin:
         self._read_fd, self._write_fd = os.pipe()
 
     @property
-    def read_fd(self) -> int:
-        """The read end handed to the remote process."""
+    def source(self) -> int:
+        """What ``create_process(stdin=...)`` receives: the pipe's read end."""
         return self._read_fd
 
-    def transfer_read_end(self) -> None:
+    def adopt(self, process: Any) -> None:
         """Record that asyncssh adopted the read end (it closes it now)."""
         self._read_fd = -1
 
@@ -229,6 +233,40 @@ class _SealedStdin:
                 if exc.errno != errno.EBADF:
                     raise
             self._write_fd = -1
+
+
+class _ConsoleStdin:
+    """A writable session's private stdin writer (ADR 0176).
+
+    asyncssh's stdin pipe replaces the sealed OS pipe, and :meth:`adopt` keeps
+    the process's writer. Nothing here sends EOF, which would end the vterm (P5):
+    :meth:`close` only drops the reference.
+    """
+
+    __slots__ = ("_writer",)
+
+    source = asyncssh.PIPE
+
+    def __init__(self) -> None:
+        self._writer: Any = None
+
+    def adopt(self, process: Any) -> None:
+        """Keep the process's stdin writer."""
+        self._writer = process.stdin
+
+    async def write(self, data: bytes) -> None:
+        """Queue *data* on the channel and wait for asyncssh to drain it."""
+        if self._writer is None:
+            raise RuntimeError("the console stdin is closed")
+        self._writer.write(data)
+        await self._writer.drain()
+
+    def close(self) -> None:
+        """Drop the writer without sending EOF."""
+        self._writer = None
+
+
+_Stdin = _SealedStdin | _ConsoleStdin
 
 
 def _utf8_safe_cut(data: bytes, cut: int) -> int:
@@ -491,7 +529,7 @@ async def _read_release_probe(
 
 
 async def _open_capture_stream(
-    config: HMCConfig, command: str, stdin: _SealedStdin
+    config: HMCConfig, command: str, stdin: _Stdin
 ) -> tuple[Any, Any]:
     """Open the connection and the sealed-stdin ``mkvterm`` process.
 
@@ -501,7 +539,7 @@ async def _open_capture_stream(
     connection = await open_hmc_connection(config)
     try:
         process = await connection.create_process(
-            command, stdin=stdin.read_fd, encoding=None
+            command, stdin=stdin.source, encoding=None
         )
     except (asyncssh.Error, OSError) as exc:
         connection.close()
@@ -511,12 +549,12 @@ async def _open_capture_stream(
     except BaseException:
         connection.close()
         raise
-    stdin.transfer_read_end()  # asyncssh adopted the read end via fdopen
+    stdin.adopt(process)
     return connection, process
 
 
 async def _acquire_capture_stream(
-    config: HMCConfig, command: str, stdin: _SealedStdin
+    config: HMCConfig, command: str, stdin: _Stdin
 ) -> tuple[Any, Any, bytes]:
     """Open ``mkvterm`` and wait for proof that this caller acquired the slot."""
     connection, process = await _open_capture_stream(config, command, stdin)
@@ -558,7 +596,7 @@ async def _acquire_capture_stream(
 
 
 async def _await_acquisition(
-    config: HMCConfig, command: str, stdin: _SealedStdin
+    config: HMCConfig, command: str, stdin: _Stdin
 ) -> tuple[Any, Any, bytes, bool]:
     """Shield the ownership handshake and report whether cancellation arrived."""
     task = asyncio.create_task(_acquire_capture_stream(config, command, stdin))
@@ -620,6 +658,33 @@ class ConsoleHandover:
         return chunk
 
 
+_Handover = TypeVar("_Handover", bound=ConsoleHandover)
+
+
+class ConsoleRawChannel(ConsoleHandover):
+    """Exclusive raw access to a writable session's channel (ADR 0176).
+
+    Yielded by :meth:`WritableConsoleSession.raw_mode`. It reads like a
+    :class:`ConsoleHandover` and adds :meth:`write`. While it is active, the
+    session's own writes raise.
+    """
+
+    __slots__ = ("_writable",)
+
+    def __init__(self, session: WritableConsoleSession) -> None:
+        super().__init__(session)
+        self._writable = session
+
+    async def write(self, data: bytes) -> None:
+        """Send raw *data*; audited as an ``exclusive`` ``raw`` write.
+
+        Raises:
+
+            RuntimeError: Raw mode has ended, or the session cannot write.
+        """
+        await self._writable._write_for(self, data, mode="exclusive", input_kind="raw")
+
+
 class ConsoleSession:
     """A read-only hold on one partition's vterm with no duration or byte cap.
 
@@ -659,7 +724,8 @@ class ConsoleSession:
     -p <partition>`` recovers the console.
 
     stdin is sealed by construction (:class:`_SealedStdin`, P5/P7): no
-    attribute or method of a session writes to the partition console.
+    attribute or method of a session writes to the partition console. Only
+    :class:`WritableConsoleSession` can write (ADR 0176).
     """
 
     def __init__(
@@ -677,7 +743,7 @@ class ConsoleSession:
         self._system = system_name
         self._lpar = lpar_name
         self._state: _State = "new"
-        self._stdin: _SealedStdin | None = None
+        self._stdin: _Stdin | None = None
         self._connection: Any = None
         self._stdout: Any = None  # only the read side of the process is kept
         self._pending = b""
@@ -717,7 +783,7 @@ class ConsoleSession:
 
     async def _acquire(self, fallback: _State, *, take_over: bool = False) -> bool:
         """Acquire the vterm; return whether cancellation arrived meanwhile."""
-        stdin = self._stdin = _SealedStdin()
+        stdin = self._stdin = self._new_stdin()
         transitions: dict[_State, _State] = {
             "unheld": "opening",
             "suspended": "resuming",
@@ -743,6 +809,9 @@ class ConsoleSession:
         self._remote_closed = False  # the latch covers one mkvterm stream
         self._pending += data
         return cancelled
+
+    def _new_stdin(self) -> _Stdin:
+        return _SealedStdin()
 
     async def _finish_acquire(self, cancelled: bool) -> None:
         """Hand the channel to the collector, or release a cancelled acquisition."""
@@ -919,8 +988,12 @@ class ConsoleSession:
             RuntimeError: The session is not held, or a handover or suspension
                 is already active.
         """
-        self._require_collecting("hand_over()")
-        handover = ConsoleHandover(self)
+        async with self._handed_over(ConsoleHandover(self), "hand_over()") as handover:
+            yield handover
+
+    @contextlib.asynccontextmanager
+    async def _handed_over(self, handover: _Handover, name: str) -> AsyncIterator[_Handover]:
+        self._require_collecting(name)
         self._give_channel(handover)
         try:
             yield handover
@@ -1072,6 +1145,118 @@ class ConsoleSession:
         if not chunk:
             raise StopAsyncIteration
         return chunk
+
+
+class WritableConsoleSession(ConsoleSession):
+    """A console session that can write to the partition console (ADR 0176).
+
+    Constructing one is the authorization gate: hmcpctl never builds one on a
+    caller's behalf, and the MCP tool, the CLI and :func:`capture_lpar_console`
+    use the sealed :class:`ConsoleSession`. The stdin writer stays private, never
+    sends EOF, and is replaced on every acquisition (open, resume, reconnect).
+    Every write emits a ``console-write`` audit record carrying no written bytes
+    before the bytes are queued.
+
+    A write needs a held session whose channel the writer owns: :meth:`write`
+    and :meth:`send_sysrq` while the collector owns it, the
+    :class:`ConsoleRawChannel` inside :meth:`raw_mode`. Otherwise, including
+    while suspended, dropped, reconnecting, or closing, it raises
+    ``RuntimeError``. Writes never start or wait for a reconnect; a transport
+    error on a write propagates, and the collector's read detects the drop.
+    A write that returns was handed to the SSH channel, which does not prove
+    the partition received it. ``~.`` in written bytes may end the vterm session
+    (the ``mkvterm`` manual page).
+    """
+
+    def _new_stdin(self) -> _Stdin:
+        return _ConsoleStdin()
+
+    async def write(self, data: bytes) -> None:
+        """Send raw *data* while collection keeps running.
+
+        Raises:
+
+            TypeError: *data* is not ``bytes``.
+            ValueError: *data* is empty.
+            RuntimeError: The session cannot write now (see the class docstring).
+        """
+        await self._write_for(self, data, mode="shared", input_kind="raw")
+
+    async def send_sysrq(self, key: str, *, prefix: bytes) -> None:
+        """Send ``prefix`` followed by the SysRq *key* as one write.
+
+        hmcpctl ships no SysRq sequence: the HMC documents none, and the
+        caller-supplied *prefix* stays unverified until live evidence exists
+        (#879). Linux's hvc console treats ``b"\\x0f"`` (Ctrl-O) as the prefix
+        on the guest side (ADR 0176).
+
+        Raises:
+
+            TypeError: *prefix* is not ``bytes``.
+            ValueError: *key* is not one printable ASCII character, or
+                *prefix* is empty.
+            RuntimeError: The session cannot write now (see the class docstring).
+        """
+        if not (isinstance(key, str) and len(key) == 1 and "!" <= key <= "~"):
+            raise ValueError(f"SysRq key must be one printable ASCII character, got {key!r}")
+        if not isinstance(prefix, bytes):
+            raise TypeError(f"SysRq prefix must be bytes, got {type(prefix).__name__}")
+        if not prefix:
+            raise ValueError("SysRq prefix must not be empty; hmcpctl ships no default")
+        await self._write_for(
+            self, prefix + key.encode("ascii"), mode="shared", input_kind="sysrq"
+        )
+
+    @contextlib.asynccontextmanager
+    async def raw_mode(self) -> AsyncIterator[ConsoleRawChannel]:
+        """Exclusive raw mode for a preempting holder: ADR 0173 mode (a) plus writes.
+
+        The vterm stays held and no ``rmvterm`` or ``mkvterm`` runs. The
+        collector's :meth:`read` waits, the session's own writes raise, and
+        leaving the block returns the channel to the collector. A drop inside
+        the block reaches the channel's reader; the session reconnects after it.
+
+        Raises:
+
+            RuntimeError: The session is not held, or a pause is already active.
+        """
+        async with self._handed_over(ConsoleRawChannel(self), "raw_mode()") as channel:
+            yield channel
+
+    async def _write_for(
+        self,
+        owner: object,
+        data: bytes,
+        *,
+        mode: audit.ConsoleWriteMode,
+        input_kind: audit.ConsoleInputKind,
+    ) -> None:
+        """The one write path: validate, check ownership, audit, then write."""
+        if not isinstance(data, bytes):
+            raise TypeError(f"console input must be bytes, got {type(data).__name__}")
+        if not data:
+            raise ValueError("console input must not be empty")
+        stdin = self._stdin
+        if (
+            self._state != "held"
+            or self._close_task is not None
+            or self._reconnect_task is not None
+            or self._owner is not owner
+            or not isinstance(stdin, _ConsoleStdin)
+        ):
+            raise RuntimeError(
+                "console write needs a held session whose channel this writer owns"
+            )
+        audit.record_console_write(
+            system=self._system,
+            lpar=self._lpar,
+            host=self._config.host,
+            mode=mode,
+            input_kind=input_kind,
+            length=len(data),
+            agent_id=self._config.agent_id or "hmcpctl",
+        )
+        await stdin.write(data)
 
 
 async def capture_lpar_console(
