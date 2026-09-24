@@ -34,8 +34,8 @@ A dropped connection closes the connection, and a lost hold does not, so the two
   hold drops only its own connection, logs a warning, issues no `rmvterm`, and returns `False`
   (unproven, like a dropped session); after `suspend()`, `resume()` then meets the taker's hold.
 - Unchanged code covers the rest. `hand_over`, `suspend`, `raw_mode`, and writes require `held`, so
-  they raise `RuntimeError` after a loss. `capture_lpar_console` reports the loss as
-  `stop_reason="error"` with `released=False`.
+  they raise `RuntimeError` after a loss. `capture_lpar_console` reports a loss it read as
+  `stop_reason="error"`; one whose bound fired first ends with its bound and `released=False`.
 
 ## Failure model
 
@@ -52,6 +52,8 @@ A dropped connection closes the connection, and a lost hold does not, so the two
      still issues `rmvterm`. Only the excluded ownership query could close that window.
    - A loss during a suspension or reconnect gap, when no stream exists, goes undetected.
    - An HMC release that rewords the message disables detection. `rmvterm` behaves as before.
+   - After a genuine loss, the CLI and MCP tool still show the `released=false` advice to run
+     `rmvterm`, which would end the taker; the error text names `ConsoleHoldLostError` (follow-up).
 4. **Covered elsewhere:** vterm ownership query → operator (excluded).
 
 ## Success

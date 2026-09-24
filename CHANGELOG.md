@@ -173,8 +173,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `take_over=True` session, no longer ends that client's session when it closes. The session
   recognizes the HMC's report of the loss, raises the new `ConsoleHoldLostError` on the next
   read, and `close()` returns `False` without issuing `rmvterm`, including when the report
-  arrived but was never read. A bounded capture reports the loss as `stop_reason="error"`
-  (#1004).
+  arrived but was never read. A bounded capture that reads the report reports the loss as
+  `stop_reason="error"`; one whose bound fires first reports `released=False` (#1004).
 - `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
   partition body — including when the post-create read-back raises (#1014) — instead of omitting
   the requested assignment steps entirely (#1019).
