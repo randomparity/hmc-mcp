@@ -107,7 +107,7 @@ def hmc_set_lpar_boot_order(
         lpar_name_or_uuid: Name or UUID of the logical partition.
         devices: Open Firmware device paths in first-to-last order, such as
             ``/vdevice/v-scsi@30000002/disk@8100000000000000``; each starts with
-            ``/`` and holds no whitespace or control characters.
+            ``/`` and is printable ASCII with no whitespace.
         ownership_override: Skip ownership-token validation when true.
         profile: Configured HMC profile, or the default when omitted.
     """

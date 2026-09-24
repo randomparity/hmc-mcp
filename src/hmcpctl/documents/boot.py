@@ -4,10 +4,12 @@ from __future__ import annotations
 
 
 def _is_joinable(path: str) -> bool:
-    """A path that single-space joining can neither split nor merge with its neighbour."""
-    return path.startswith("/") and not any(
-        ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in path
-    )
+    """A ``/``-rooted path of printable, non-space ASCII.
+
+    Single-space joining can then neither split nor merge it, and every
+    character is legal XML text.
+    """
+    return path.startswith("/") and all("!" <= ch <= "~" for ch in path)
 
 
 def join_boot_device_paths(paths: list[str]) -> str:
@@ -23,6 +25,6 @@ def join_boot_device_paths(paths: list[str]) -> str:
             raise ValueError(
                 f"Invalid boot device path: {path!r}. Give an Open Firmware device path "
                 "such as '/vdevice/v-scsi@30000002/disk@8100000000000000', as "
-                "read-boot-order reports, with no whitespace or control characters"
+                "read-boot-order reports, of printable ASCII with no whitespace"
             )
     return " ".join(paths)
