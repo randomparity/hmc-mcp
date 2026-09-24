@@ -1390,6 +1390,40 @@ def test_live_config_rejects_a_media_repository_size_that_is_not_whole_gib(
         runner.LiveTestConfig.from_env_file(config_path)
 
 
+def test_live_config_reads_the_provision_fixture_settings(tmp_path) -> None:
+    """#970: ST13/ST14's VLAN and disk size come from `.env`, not lab fixtures."""
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_PROVISION_VLAN_ID", "4094")
+
+    config = runner.LiveTestConfig.from_env_file(config_path)
+
+    assert config.provision_vlan_id == 4094
+    assert config.provision_disk_mib == 10240
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "match"),
+    [
+        ("LIVE_TEST_PROVISION_VLAN_ID", "", "LIVE_TEST_PROVISION_VLAN_ID"),
+        ("LIVE_TEST_PROVISION_VLAN_ID", "0", "provision_vlan_id"),
+        ("LIVE_TEST_PROVISION_VLAN_ID", "4095", "LIVE_TEST_PROVISION_VLAN_ID"),
+        ("LIVE_TEST_PROVISION_DISK_MIB", "", "LIVE_TEST_PROVISION_DISK_MIB"),
+        ("LIVE_TEST_PROVISION_DISK_MIB", "0", "provision_disk_mib"),
+        (
+            "LIVE_TEST_PROVISION_DISK_MIB",
+            "1536",
+            "LIVE_TEST_PROVISION_DISK_MIB must be a multiple of 1024",
+        ),
+    ],
+)
+def test_live_config_rejects_unusable_provision_fixture_settings(
+    tmp_path, key, value, match
+) -> None:
+    config_path = _example_env_with(tmp_path, key, value)
+
+    with pytest.raises(ValueError, match=match):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+
 def test_live_config_rejects_negative_sriov_physical_port_id(tmp_path) -> None:
     config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_PHYSICAL_PORT_ID", "-1")
 
