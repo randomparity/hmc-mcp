@@ -5,7 +5,7 @@ name or by UUID.  Names pass through untouched; UUIDs are resolved to their
 CLI names via REST, falling back to an ``lssyscfg`` name lookup over SSH
 when the REST transport is unreachable.  These tests pin that contract:
 
-- the SSH lookup primitives parse ``lssyscfg -F UUID,<name>`` output;
+- the SSH lookup primitives send ``lssyscfg -F uuid,name`` and parse its output;
 - a name argument never touches REST or SSH;
 - a transport failure (``httpx.HTTPError``) triggers the SSH fallback;
 - a REST status error (``HMCError``) does *not* — REST answered, so the
@@ -55,7 +55,7 @@ async def test_lpar_rest_selector_rejects_malformed_resource(resource):
     with pytest.raises(ValueError, match="Could not resolve LPAR UUID"):
         await _lpar_name_from_rest(hmc, LPAR_UUID)
 
-# ``lssyscfg -F UUID,SystemName`` / ``-F UUID,PartitionName`` output rows.
+# ``lssyscfg -r sys|lpar -F uuid,name`` output rows.
 _SYS_ROWS = f"00000000-0000-0000-0000-000000000000,other\n{SYSTEM_UUID},{SYSTEM_NAME}\n"
 _LPAR_ROWS = f"{LPAR_UUID},{LPAR_NAME}\n"
 
@@ -79,7 +79,7 @@ def _make_ssh_mock(stdout: str = "") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_ssh_system_name_parses_matching_row():
-    """resolve_system_cli_name returns the name on the matching UUID,SystemName row."""
+    """resolve_system_cli_name returns the name on the matching uuid,name row."""
     conn = _make_ssh_mock(_SYS_ROWS)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
@@ -87,7 +87,7 @@ async def test_ssh_system_name_parses_matching_row():
 
     assert name == SYSTEM_NAME
     cmd = conn.run.call_args[0][0]
-    assert "lssyscfg -r sys -F UUID,SystemName" in cmd
+    assert cmd == "lssyscfg -r sys -F uuid,name"
 
 
 @pytest.mark.asyncio
@@ -114,9 +114,7 @@ async def test_resolve_lpar_cli_name_scopes_to_system():
 
     assert name == LPAR_NAME
     cmd = conn.run.call_args[0][0]
-    assert f"-m {SYSTEM_NAME}" in cmd
-    assert "lssyscfg -r lpar" in cmd
-    assert " -F UUID,PartitionName" in cmd
+    assert cmd == f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name"
 
 
 @pytest.mark.asyncio
@@ -129,7 +127,34 @@ async def test_resolve_lpar_cli_name_unscoped_without_system():
 
     assert name == LPAR_NAME
     cmd = conn.run.call_args[0][0]
-    assert "-m " not in cmd
+    assert cmd == "lssyscfg -r lpar -F uuid,name"
+
+
+# REST element names the HMC CLI rejects as "An invalid attribute was entered"
+# (live 2026-09-23, V10R3 M1060, for UUID). docs/hmc-cli-cheatsheet.md records
+# the CLI attribute names: lower-case ``uuid`` and ``name``.
+_REST_ELEMENT_NAMES = {"UUID", "SystemName", "PartitionName"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lookup",
+    [
+        lambda: resolve_system_cli_name(make_config(), SYSTEM_UUID),
+        lambda: resolve_lpar_cli_name(make_config(), LPAR_UUID, SYSTEM_NAME),
+        lambda: resolve_lpar_cli_name(make_config(), LPAR_UUID),
+    ],
+)
+async def test_ssh_lookups_send_only_hmc_cli_attributes(lookup):
+    """No REST element name reaches an ``lssyscfg -F`` attribute list."""
+    conn = _make_ssh_mock(_SYS_ROWS + _LPAR_ROWS)
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
+        await lookup()
+
+    attributes = conn.run.call_args[0][0].split(" -F ", 1)[1].split(",")
+    assert attributes == ["uuid", "name"]
+    assert not _REST_ELEMENT_NAMES & set(attributes)
 
 
 # ---------------------------------------------------------------------- #

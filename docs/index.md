@@ -9,6 +9,7 @@ an HMC, and use the CLI or an MCP client.
 |-------|----------|
 | [Configuration](configuration.md) | TOML profiles, nicknames, environment precedence, TLS, and REST ports |
 | [CLI](cli.md) | Inventory, LPAR lifecycle, storage, adapters, and snapshots |
+| [LPAR ISO installation recipe](recipes/lpar-iso-install.md) | Resumable provisioning and optical-boot lifecycle |
 | [MCP server](mcp-server.md) | Access policies, client setup, HTTP transport, migration, and diagnostics |
 | [Python library](python-api.md) | Installation, example usage, typing, and the supported API contract |
 | [HMC compatibility](compatibility.md) | HMC versions and firmware write-path limitations |

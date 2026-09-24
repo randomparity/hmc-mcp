@@ -355,16 +355,16 @@ def _require_max_units_fit_vcpus(
 
 
 async def resolve_system_cli_name(config: HMCConfig, system_uuid: str) -> str:
-    """Look up a managed-system UUID's CLI SystemName over SSH.
+    """Look up a managed-system UUID's CLI name over SSH.
 
-    Runs ``lssyscfg -r sys -F UUID,SystemName`` and returns the row whose
+    Runs ``lssyscfg -r sys -F uuid,name`` and returns the row whose
     UUID column matches. Used as the fallback by the REST-based system-name
     resolver in :mod:`hmcpctl._app` when the REST API is unreachable.
 
     Raises:
         HMCCLIError: If no row matches *system_uuid* in the command output.
     """
-    raw = await run_hmc_command(config, "lssyscfg -r sys -F UUID,SystemName")
+    raw = await run_hmc_command(config, "lssyscfg -r sys -F uuid,name")
     return _match_uuid_name(raw, system_uuid, "system")
 
 
@@ -373,9 +373,9 @@ async def resolve_lpar_cli_name(
     lpar_uuid: str,
     system_name: str | None = None,
 ) -> str:
-    """Look up an LPAR UUID's CLI PartitionName over SSH.
+    """Look up an LPAR UUID's CLI name over SSH.
 
-    Runs ``lssyscfg -r lpar [-m <system_name>] -F UUID,PartitionName``, scoped
+    Runs ``lssyscfg -r lpar [-m <system_name>] -F uuid,name``, scoped
     to *system_name* when given and across all managed systems otherwise. Used
     as the fallback by the REST-based LPAR-name resolver in :mod:`hmcpctl._app`
     when the REST API is unreachable.
@@ -386,13 +386,13 @@ async def resolve_lpar_cli_name(
     cmd = "lssyscfg -r lpar"
     if system_name:
         cmd += f" -m {shlex.quote(system_name)}"
-    cmd += " -F UUID,PartitionName"
+    cmd += " -F uuid,name"
     raw = await run_hmc_command(config, cmd)
     return _match_uuid_name(raw, lpar_uuid, "LPAR")
 
 
 def _match_uuid_name(raw: str, uuid: str, what: str) -> str:
-    """Return the name on the ``UUID,<name>`` line matching *uuid*.
+    """Return the name on the ``uuid,name`` line matching *uuid*.
 
     Non-matching lines are skipped; a matching line with an empty name column
     (malformed row) is not returned.
@@ -405,5 +405,5 @@ def _match_uuid_name(raw: str, uuid: str, what: str) -> str:
                 return name
     raise HMCCLIError(
         f"Could not resolve {what} UUID {uuid!r} to a CLI name over SSH. "
-        "No matching row in the lssyscfg UUID,name output."
+        "No matching row in the lssyscfg uuid,name output."
     )

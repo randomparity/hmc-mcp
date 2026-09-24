@@ -38,6 +38,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   raises `ConsoleHeldError`, issuing no `rmvterm`, if the slot was taken. The collector's
   `read()` waits while paused. `close()` of a suspended session issues no `rmvterm`. The bounded
   capture is unchanged (#976).
+- `hmcpctl storage mount-optical-media` and `unmount-optical-media` mount and unmount an ISO
+  from a VIOS media repository on an LPAR. The LPAR ISO installation recipe,
+  `docs/recipes/lpar-iso-install.md`, uses them with `hmcpctl lpars capture-console` to create,
+  provision, ISO-boot, observe, and clean up an LPAR. The ISO recipe ran live on 2026-09-23 on
+  a patched build; it names the open issues that block it on `main` and the three HMC CLI steps
+  it still needs (#776).
 
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with
@@ -209,6 +215,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   disk name longer than 15 characters before the create request, with a message that states the
   VIOS backing-device limit. Such a name previously reached the VIOS, failed with HTTP 500 and was
   reported as a possible side effect (#964).
+
+- The SSH UUID-to-name lookups behind `hmc_capture_lpar_console` and `hmcpctl lpars
+  capture-console`, the SSH selector fallbacks, VIOS install, and the `lpars create` and
+  ownership name fallbacks send the HMC CLI attributes `uuid,name`. They sent
+  `UUID,PartitionName` or `UUID,SystemName`, which the HMC rejects as invalid attributes, so a
+  partition UUID selector failed (#776).
 
 - `hmcpctl storage list-mappings` and `hmc_list_storage_mappings` no longer fail with "no usable
   UUID" on a real VIOS: the HMC sends no mapping `UUID`. A mapping is identified by its server
