@@ -95,9 +95,26 @@ def _dedicated_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
             f"partitions named {resolved.lpar_prefix}* (created, then deleted)",
             f"profile {resolved.profile_name} io_slots (assigned, then restored)",
             f"dedicated slot {resolved.drc_index or pcie.AUTO_SELECTED_SLOT}",
+            _io_slots_scenario_line(resolved),
         ),
         resolved.system_name,
     )
+
+
+def _io_slots_scenario_line(resolved: pcie._DedicatedConfig) -> str:
+    """Predict `pcie._io_slots_scenario`'s (#985) effect on the dedicated arm.
+
+    Mirrors the scenario's own gate (`fixture.config.drc_index is not None`):
+    a pinned slot leaves no room for the two further slots the scenario needs,
+    so it SKIPs; otherwise it takes two more unowned, profile-unlisted slots
+    beyond the fixture's own.
+    """
+    if resolved.drc_index is not None:
+        return (
+            "io_slots scenario: SKIP (LIVE_TEST_DEDICATED_PCIE_DRC_INDEX pins one slot; "
+            "the scenario needs two more)"
+        )
+    return f"io_slots scenario: two further spare slots {pcie.AUTO_SELECTED_SLOT}"
 
 
 def _bare_cec_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
