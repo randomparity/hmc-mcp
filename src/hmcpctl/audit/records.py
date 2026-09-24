@@ -70,6 +70,7 @@ REASONS: frozenset[str] = frozenset(get_args(Reason))
 
 Event = Literal[
     "authorization",
+    "console-write",
     "install-attempted",
     "install-submitted",
     "ownership-denied",
@@ -102,6 +103,12 @@ OwnershipDenial = Literal["malformed-token", "foreign-owner"]
 
 #: Closed ownership-denial vocabulary.
 OWNERSHIP_DENIALS: frozenset[str] = frozenset(get_args(OwnershipDenial))
+
+#: Whether a console write shared the channel with the collector or held it exclusively.
+ConsoleWriteMode = Literal["shared", "exclusive"]
+
+#: What a console write sent: caller bytes, or a framed SysRq request.
+ConsoleInputKind = Literal["raw", "sysrq"]
 
 _DENY_LEVEL: Final = logging.WARNING
 _ALLOW_LEVEL: Final = logging.INFO
@@ -343,6 +350,39 @@ def record_install_submitted(
             "pid": pid,
             "log_path": _bounded_audit_text(log_path),
             "host": _bounded_audit_text(host),
+            "attribution": _attribution(agent_id, "config:agent_id"),
+        }
+
+    emit(_DENY_LEVEL, build)
+
+
+def record_console_write(
+    *,
+    system: str,
+    lpar: str,
+    host: str,
+    mode: ConsoleWriteMode,
+    input_kind: ConsoleInputKind,
+    length: int,
+    agent_id: str,
+) -> None:
+    """Emit one partition-console write before its bytes are queued (ADR 0176).
+
+    The record never carries the written bytes, which can hold credentials;
+    ``length`` is their count.
+    """
+
+    def build() -> dict[str, Any]:
+        event: Event = "console-write"
+        return {
+            "time": datetime.now(UTC).isoformat(),
+            "event": event,
+            "system": _bounded_audit_text(system),
+            "lpar": _bounded_audit_text(lpar),
+            "host": _bounded_audit_text(host),
+            "mode": mode,
+            "input_kind": input_kind,
+            "length": length,
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 
