@@ -83,7 +83,7 @@ def lpars_clear_boot_order(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
 ) -> None:
-    """Restore the HMC default boot order on the LPAR's next activation.
+    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126).
 
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001

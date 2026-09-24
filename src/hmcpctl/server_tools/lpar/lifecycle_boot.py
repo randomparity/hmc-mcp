@@ -132,9 +132,10 @@ def hmc_clear_lpar_boot_order(
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Restore the HMC default boot order on the LPAR's next activation.
+    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126).
 
-    Writes an empty ``BootListInformation/PendingBootString`` by the same
+    Meant to restore the HMC default boot order on the next activation. It
+    writes an empty ``BootListInformation/PendingBootString`` by the same
     read-modify-write as ``hmc_set_lpar_boot_order``. A V10R3 HMC (M1060)
     rejected that empty value with HTTP 500 ``REST0126`` on 2026-09-24.
 
