@@ -116,11 +116,10 @@ def _profile_slots(profile: dict[str, Any]) -> set[str]:
     for subclass in _as_list(adapters.get("ProfileVirtualIOAdapterSubclass")):
         if not isinstance(subclass, dict):
             continue
-        for name, value in subclass.items():
-            adapters_of_type = [] if name == "@attrs" else _as_list(value)
+        for value in subclass.values():
             slots.update(
                 slot
-                for adapter in adapters_of_type
+                for adapter in _as_list(value)
                 if isinstance(adapter, dict)
                 and (slot := _text(adapter.get("VirtualSlotNumber"))) is not None
             )
