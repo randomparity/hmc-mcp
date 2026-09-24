@@ -16,6 +16,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   file, reports the stop reason and `released` on stderr, and exits 0, 1, 2 or 3 as ADR 0175
   states; 3 means the console may still be held. The bare-CEC recipe now captures the console
   with it. The MCP tool and the command share one selector resolver (#959).
+- `ConsoleSession` can yield the console to a preempting hold in two named modes (ADR 0173).
+  `async with session.hand_over() as handover:` moves the channel to an in-process holder while
+  the session keeps the vterm held, with no release gap. `suspend()` releases the vterm with the
+  usual `rmvterm` and probe proof for an external holder, and `resume()` acquires it again. It
+  raises `ConsoleHeldError`, issuing no `rmvterm`, if the slot was taken. The collector's
+  `read()` waits while paused. `close()` of a suspended session issues no `rmvterm`. The bounded
+  capture is unchanged (#976).
 
 - `hmcpctl.ssh.console.ConsoleSession`, a read-only hold on one partition's console with no
   duration or byte cap: `open()`, iterate raw bytes, `close()`. `close()` releases the vterm with

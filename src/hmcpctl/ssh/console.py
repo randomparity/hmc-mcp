@@ -6,7 +6,8 @@ it streams the partition console until torn down, so it structurally cannot
 run through :func:`hmcpctl.ssh.transport.run_hmc_command` (a one-shot exec that collects
 output until the remote command exits). :class:`ConsoleSession` holds the vterm
 on top of :func:`hmcpctl.ssh.transport.open_hmc_connection` with no duration or
-byte cap and owns its acquisition and proven release (ADR 0170);
+byte cap and owns its acquisition and proven release (ADR 0170), including
+mid-session suspension for a preempting hold (ADR 0173);
 :func:`capture_lpar_console` is its bounded consumer and enforces issue #385's
 design contract. Every invariant below traces to a recorded observation from
 the P1-P8 live-hardware prototype on that issue (HMC V10R3 M1060); ADR 0072
@@ -39,11 +40,13 @@ sequence, but decoding remains the caller's decision (issue #385).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import errno
 import logging
 import math
 import os
 import shlex
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Literal, Self
@@ -62,6 +65,8 @@ logger = logging.getLogger(__name__)
 #: reason: it raises :class:`ConsoleHeldError` instead, per issue #385's
 #: requirement that "another session holds the vterm" be a distinct error.
 StopReason = Literal["duration", "max_bytes", "idle", "remote-close", "error"]
+
+_State = Literal["new", "opening", "held", "suspending", "suspended", "resuming", "unheld"]
 
 #: The distinctive sentence of the contention message (P1). The full recorded
 #: stdout is three CRLF lines, each beginning and ending with a space::
@@ -532,6 +537,48 @@ async def _await_acquisition(
         return connection, process, data, cancelled
 
 
+async def _await_uninterrupted(task: asyncio.Task[bool]) -> bool:
+    """Await *task* to completion even if the caller is cancelled, then re-raise that."""
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done():
+                task.result()  # the task itself was cancelled
+            cancelled = True
+            continue
+        if cancelled:
+            raise asyncio.CancelledError
+        return result
+
+
+class ConsoleHandover:
+    """Exclusive read access to a held session's channel (ADR 0173 mode a).
+
+    Yielded by :meth:`ConsoleSession.hand_over`. The session keeps the vterm
+    held; like the session, a handover has no write surface.
+    """
+
+    __slots__ = ("_session",)
+
+    def __init__(self, session: ConsoleSession) -> None:
+        self._session = session
+
+    async def read(self) -> bytes:
+        """Return the next raw chunk, or ``b""`` once the remote end has closed.
+
+        Raises:
+
+            RuntimeError: The handover has ended, including a read still
+                pending when the ``hand_over()`` block exits.
+        """
+        chunk = await self._session._read_for(self)
+        if chunk is None:
+            raise RuntimeError("the console handover has ended")
+        return chunk
+
+
 class ConsoleSession:
     """A read-only hold on one partition's vterm with no duration or byte cap.
 
@@ -542,10 +589,16 @@ class ConsoleSession:
     to end whatever holds the vterm, then acquires as usual (ADR 0172). :meth:`read`
     returns raw chunks, the acquisition bytes first and ``b""`` after the
     remote end closes; the session enforces no bound, so consumers wrap reads
-    in their own timeouts. :meth:`close` is the only release: ``rmvterm``, an
-    independent-session probe, then local teardown, run to completion even
-    when the caller is cancelled (P2/P3/P4). Use the session as an async
-    context manager so every exit that unwinds the owning coroutine closes it.
+    in their own timeouts. :meth:`close` and :meth:`suspend` are the only
+    releases: ``rmvterm``, an independent-session probe, then local teardown,
+    run to completion even when the caller is cancelled (P2/P3/P4). Use the
+    session as an async context manager so every exit that unwinds the owning
+    coroutine closes it.
+
+    A preempting hold pauses collection in one of two modes (ADR 0173):
+    :meth:`hand_over` moves the channel to an in-process holder while the vterm
+    stays held, and :meth:`suspend`/:meth:`resume` release the vterm for an
+    external holder and acquire it again. :meth:`read` waits while paused.
 
     Process exit: the library installs no ``atexit`` hook or signal handler.
     SIGKILL, ``os._exit``, a crash, default-action SIGTERM, a second SIGINT
@@ -566,13 +619,19 @@ class ConsoleSession:
         self._take_over = take_over
         self._system = system_name
         self._lpar = lpar_name
-        self._state: Literal["new", "opening", "held", "unheld"] = "new"
+        self._state: _State = "new"
         self._stdin: _SealedStdin | None = None
         self._connection: Any = None
         self._stdout: Any = None  # only the read side of the process is kept
         self._pending = b""
         self._close_task: asyncio.Task[bool] | None = None
         self._released: bool | None = None
+        self._owner: object | None = None  # the session itself, a handover, or None
+        self._collecting = asyncio.Event()  # set only while the session owns the channel
+        self._inflight: asyncio.Future[bytes] | None = None
+        self._release_proof = False
+        self._settled = asyncio.Event()  # clear only while suspend() or resume() runs
+        self._settled.set()
 
     @property
     def released(self) -> bool | None:
@@ -595,25 +654,33 @@ class ConsoleSession:
         """
         if self._state != "new" or self._close_task is not None:
             raise RuntimeError("a console session opens once and never after close()")
-        self._stdin = _SealedStdin()
-        self._state = "opening"
+        await self._finish_acquire(await self._acquire("unheld", take_over=self._take_over))
+
+    async def _acquire(self, fallback: _State, *, take_over: bool = False) -> bool:
+        """Acquire the vterm; return whether cancellation arrived meanwhile."""
+        stdin = self._stdin = _SealedStdin()
+        self._state = "opening" if fallback == "unheld" else "resuming"
         command = f"mkvterm -m {shlex.quote(self._system)} -p {shlex.quote(self._lpar)}"
         try:
-            if self._take_over:
+            if take_over:
                 logger.warning(
                     "forced takeover of the console of %s/%s", self._system, self._lpar
                 )
                 await _rmvterm(self._config, self._system, self._lpar)
             connection, process, data, cancelled = await _await_acquisition(
-                self._config, command, self._stdin
+                self._config, command, stdin
             )
         except BaseException:
-            self._state = "unheld"
-            self._stdin.close()
+            self._state = fallback
+            stdin.close()
             raise
         self._connection, self._stdout = connection, process.stdout
         self._state = "held"
-        self._pending = data
+        self._pending += data
+        return cancelled
+
+    async def _finish_acquire(self, cancelled: bool) -> None:
+        """Hand the channel to the collector, or release a cancelled acquisition."""
         if cancelled:
             released = await self.close()
             logger.warning(
@@ -623,25 +690,151 @@ class ConsoleSession:
                 released,
             )
             raise asyncio.CancelledError
+        self._give_channel(self)
+
+    def _give_channel(self, owner: object | None) -> None:
+        """Make *owner* the only reader, preempting a read in flight."""
+        self._owner = owner
+        if self._inflight is not None:
+            self._inflight.cancel()
+        if owner is self:
+            self._collecting.set()
+        else:
+            self._collecting.clear()
+
+    async def _read_for(self, owner: object) -> bytes | None:
+        """Read one chunk for *owner*; ``None`` if it does not own the channel.
+
+        A read that :meth:`_give_channel` cancelled returns ``None`` so the reader
+        re-checks ownership. asyncssh blocks only before it consumes data, so the
+        cancelled read drops no byte (ADR 0173). A read whose own task is being
+        cancelled re-raises.
+        """
+        if self._owner is not owner:
+            return None
+        read = asyncio.ensure_future(self._stdout.read(_CHUNK))
+        self._inflight = read
+        try:
+            return await read
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            return None
+        finally:
+            if self._inflight is read:
+                self._inflight = None
 
     async def read(self) -> bytes:
         """Return the next raw chunk, or ``b""`` once the remote end has closed.
 
-        Transport errors propagate unwrapped; the session still owes its release.
+        While a handover or suspension is active, the read waits and returns
+        the next chunk once collection resumes, or ``b""`` if :meth:`close`
+        starts first. Transport errors propagate unwrapped; the session still
+        owes its release.
         """
-        if self._state != "held" or self._close_task is not None:
+        if self._state in ("new", "opening", "unheld") or self._close_task is not None:
             raise RuntimeError("the console session is not open")
-        if self._pending:
-            chunk, self._pending = self._pending, b""
-            return chunk
-        return await self._stdout.read(_CHUNK)
+        while True:
+            await self._collecting.wait()
+            if self._close_task is not None:
+                return b""
+            if self._pending:
+                chunk, self._pending = self._pending, b""
+                return chunk
+            chunk = await self._read_for(self)
+            if chunk is not None:
+                return chunk
+
+    @contextlib.asynccontextmanager
+    async def hand_over(self) -> AsyncIterator[ConsoleHandover]:
+        """Mode (a): move the channel to an in-process holder; the vterm stays held.
+
+        No ``rmvterm`` or ``mkvterm`` runs on entry or exit. :meth:`read` waits
+        inside the block, and a pending collector read is preempted without
+        losing bytes. Leaving the block returns the channel to the collector.
+        Cancelling the block's task leaves the release to :meth:`close`.
+
+        Raises:
+
+            RuntimeError: The session is not held, or a handover or suspension
+                is already active.
+        """
+        self._require_collecting("hand_over()")
+        handover = ConsoleHandover(self)
+        self._give_channel(handover)
+        try:
+            yield handover
+        finally:
+            if self._owner is handover:
+                self._give_channel(self)
+
+    async def suspend(self) -> bool:
+        """Mode (b): release the vterm for an external holder; return the proof.
+
+        Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
+        does, and closes the connection. Cancelling the caller never interrupts
+        the release; the cancellation is re-raised after it completes.
+        :meth:`read` waits until :meth:`resume`. The external holder should
+        acquire only after this returns: the probe holds the slot briefly, and
+        a holder that acquires before the probe makes this return ``False``
+        although the slot was handed over.
+
+        Raises:
+
+            RuntimeError: The session is not held, or a handover or suspension
+                is already active.
+        """
+        self._require_collecting("suspend()")
+        self._state = "suspending"
+        self._settled.clear()
+        self._give_channel(None)
+        try:
+            return await _await_uninterrupted(asyncio.create_task(self._release_hold()))
+        finally:
+            self._state = "suspended"
+            self._settled.set()
+
+    async def resume(self) -> None:
+        """Mode (b): acquire the vterm again after :meth:`suspend`.
+
+        Never issues ``rmvterm``, even with ``take_over=True``: that would end
+        the holder the session made way for. Cancellation after acquisition
+        releases the new hold before ``CancelledError`` propagates.
+
+        Raises:
+
+            ConsoleHeldError: The slot was taken meanwhile; the session stays
+                suspended and :meth:`resume` may be retried.
+            HMCCLIError: ``mkvterm`` could not start or never confirmed acquisition.
+            RuntimeError: The session is not suspended, or :meth:`close` began
+                while this call ran (the new hold is then released).
+        """
+        if self._state != "suspended" or self._close_task is not None:
+            raise RuntimeError("resume() needs a suspended console session")
+        self._settled.clear()
+        try:
+            cancelled = await self._acquire("suspended")
+        finally:
+            self._settled.set()
+        if not cancelled and self._close_task is not None:
+            await self.close()  # the teardown releases the hold this call acquired
+            raise RuntimeError("the console session was closed during resume()")
+        await self._finish_acquire(cancelled)
+
+    def _require_collecting(self, name: str) -> None:
+        if self._state != "held" or self._close_task is not None or self._owner is not self:
+            raise RuntimeError(f"{name} needs an open console session with no pause active")
 
     async def close(self) -> bool:
         """Release the vterm once and report whether the release was proven.
 
         Later and concurrent calls await the same release. Cancelling the
         caller never interrupts the release; the cancellation is re-raised
-        after it completes.
+        after it completes. During :meth:`suspend` or :meth:`resume` it waits
+        for that call, then releases whatever it left held. A suspended
+        session issues no ``rmvterm``, since the slot may now be the external
+        holder's, and reports the proof :meth:`suspend` obtained.
         """
         if self._state == "opening":
             raise RuntimeError(
@@ -649,32 +842,39 @@ class ConsoleSession:
             )
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._teardown())
-        cancelled = False
-        while True:
-            try:
-                released = await asyncio.shield(self._close_task)
-            except asyncio.CancelledError:
-                if self._close_task.done():
-                    self._close_task.result()  # the release itself was cancelled
-                cancelled = True
-                continue
-            if cancelled:
-                raise asyncio.CancelledError
-            return released
+        return await _await_uninterrupted(self._close_task)
 
     async def _teardown(self) -> bool:
+        self._owner = None
+        self._collecting.set()  # a waiting collector returns b""
         self._released = False
         try:
+            await self._settled.wait()  # a suspend() or resume() in flight finishes first
             if self._state == "held":
-                self._released = await _release_and_verify(
-                    self._config, self._system, self._lpar
-                )
+                self._released = await self._release_hold()
+            elif self._state == "suspended":
+                self._released = self._release_proof
             return self._released
         finally:
-            if self._connection is not None:
-                self._connection.close()
-            if self._stdin is not None:
-                self._stdin.close()
+            self._drop_channel()
+
+    async def _release_hold(self) -> bool:
+        """Release with proof (ADR 0170 rule 4), then drop the channel."""
+        self._release_proof = False
+        try:
+            self._release_proof = await _release_and_verify(
+                self._config, self._system, self._lpar
+            )
+        finally:
+            self._drop_channel()
+        return self._release_proof
+
+    def _drop_channel(self) -> None:
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+        if self._stdin is not None:
+            self._stdin.close()
 
     async def __aenter__(self) -> Self:
         await self.open()
