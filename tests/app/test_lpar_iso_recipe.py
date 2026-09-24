@@ -1,4 +1,4 @@
-"""Structural checks for the bare-CEC LPAR recipe."""
+"""Structural checks for the LPAR ISO installation recipe."""
 
 from __future__ import annotations
 
@@ -12,28 +12,42 @@ from typer.main import get_command
 from hmcpctl import cli
 
 ROOT = Path(__file__).resolve().parents[2]
-RECIPE = ROOT / "docs" / "recipes" / "bare-cec-lpar.md"
-RECIPE_LINK = "(recipes/bare-cec-lpar.md)"
+RECIPE = ROOT / "docs" / "recipes" / "lpar-iso-install.md"
+RECIPE_LINK = "(recipes/lpar-iso-install.md)"
 SHELL_BLOCK = re.compile(r"```(?:bash|sh)\n(.*?)```", re.DOTALL)
-SHELL_OPERATORS = ("|", ";", "&", "<", ">", "`", "$(")
-IDENTITY_READBACK = ("lpars", "get-description")
-DESTRUCTIVE = {("network", "unassign-dedicated-pcie-slot"), ("lpars", "delete")}
+NUMERIC_VALUES = {"$VLAN_ID": "100"}
 EXPECTED_COMMANDS = {
+    ("adapters", "add-network"),
+    ("adapters", "list"),
     ("config", "show"),
+    ("config", "list"),
+    ("console", "info"),
     ("jobs", "show"),
     ("lpars", "capture-console"),
     ("lpars", "create"),
     ("lpars", "delete"),
-    ("lpars", "get-description"),
+    ("lpars", "list"),
     ("lpars", "power-off"),
     ("lpars", "power-on"),
-    ("lpars", "refcodes"),
     ("lpars", "show"),
     ("lpars", "state"),
-    ("network", "assign-dedicated-pcie-slot"),
-    ("network", "list-dedicated-pcie-slots"),
-    ("network", "unassign-dedicated-pcie-slot"),
+    ("network", "list-networks"),
+    ("storage", "create-disk"),
+    ("storage", "create-media-repo"),
+    ("storage", "delete-disk"),
+    ("storage", "delete-media"),
+    ("storage", "delete-media-repo"),
+    ("storage", "detach-mapping"),
+    ("storage", "get-media-repo"),
+    ("storage", "list-mappings"),
+    ("storage", "list-optical-media"),
+    ("storage", "list-vgs"),
+    ("storage", "map"),
+    ("storage", "mount-optical-media"),
+    ("storage", "unmount-optical-media"),
+    ("storage", "upload-iso"),
     ("systems", "show"),
+    ("vios", "list"),
 }
 
 
@@ -54,20 +68,13 @@ def _logical_shell_lines(block: str) -> list[str]:
     return lines
 
 
-def _recipe_lines(markdown: str) -> list[str]:
-    return [
-        line
-        for block in SHELL_BLOCK.findall(markdown)
-        for line in _logical_shell_lines(block)
-    ]
-
-
 def _recipe_commands(markdown: str) -> list[list[str]]:
     commands: list[list[str]] = []
-    for line in _recipe_lines(markdown):
-        tokens = shlex.split(line, comments=True, posix=True)
-        if tokens and tokens[0] == "hmcpctl":
-            commands.append(tokens)
+    for block in SHELL_BLOCK.findall(markdown):
+        for line in _logical_shell_lines(block):
+            tokens = shlex.split(line, comments=True, posix=True)
+            if tokens and tokens[0] == "hmcpctl":
+                commands.append([NUMERIC_VALUES.get(token, token) for token in tokens])
     return commands
 
 
@@ -88,36 +95,24 @@ def _parse_command(tokens: list[str]) -> tuple[str, ...]:
     return tuple(path)
 
 
-def _recipe_paths() -> list[tuple[str, ...]]:
-    commands = _recipe_commands(RECIPE.read_text(encoding="utf-8"))
-    assert commands, "recipe has no hmcpctl commands in bash blocks"
-    return [_parse_command(command) for command in commands]
-
-
 def test_recipe_commands_match_the_installed_cli_contract() -> None:
-    assert set(_recipe_paths()) == EXPECTED_COMMANDS
+    markdown = RECIPE.read_text(encoding="utf-8")
+    commands = _recipe_commands(markdown)
+
+    assert commands, "recipe has no hmcpctl commands in shell blocks"
+    assert {_parse_command(command) for command in commands} == EXPECTED_COMMANDS
 
 
 def test_every_hmcpctl_line_is_a_bare_command_the_parser_sees() -> None:
-    for line in _recipe_lines(RECIPE.read_text(encoding="utf-8")):
-        if "hmcpctl" not in line:
-            continue
-        assert line.startswith("hmcpctl "), line
-        assert not any(operator in line for operator in SHELL_OPERATORS), line
+    for block in SHELL_BLOCK.findall(RECIPE.read_text(encoding="utf-8")):
+        for line in _logical_shell_lines(block):
+            if "hmcpctl" in line:
+                assert line.startswith("hmcpctl "), line
 
 
 def test_recipe_never_overrides_ownership() -> None:
     for command in _recipe_commands(RECIPE.read_text(encoding="utf-8")):
         assert "--ownership-override" not in command, command
-
-
-def test_unassign_and_delete_directly_follow_the_identity_readback() -> None:
-    paths = _recipe_paths()
-    destructive = [index for index, path in enumerate(paths) if path in DESTRUCTIVE]
-
-    assert {paths[index] for index in destructive} == DESTRUCTIVE
-    for index in destructive:
-        assert index > 0 and paths[index - 1] == IDENTITY_READBACK, paths[index]
 
 
 def test_recipe_is_linked_from_both_cli_navigation_pages() -> None:

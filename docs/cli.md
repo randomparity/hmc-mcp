@@ -104,6 +104,8 @@ usage error; `3` the release was not proven, so run `rmvterm` on the HMC before 
 
 ### End-to-end: give an LPAR a bootable disk
 
+For the complete ISO provisioning and optical-boot lifecycle, see the [LPAR ISO installation recipe](recipes/lpar-iso-install.md).
+
 ```bash
 # 1. create the partition
 hmcpctl lpars create web01 --system <sys-uuid> --mem 8192 --vcpus 2 --procs 0.2
