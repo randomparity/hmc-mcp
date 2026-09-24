@@ -633,7 +633,7 @@ async def test_escape_hatch_uses_only_bounded_commands() -> None:
 
 
 @pytest.mark.asyncio
-async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
+async def test_provision_dry_run_requires_vios_and_uses_configured_vlan() -> None:
     missing = _ScriptedSriovState([])
     await provisioning.validate_provisioning_dry_run(object(), missing)
     assert missing.calls == []
@@ -643,7 +643,7 @@ async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
         [("hmc_provision_lpar", "PASS", {"steps": [{"status": "dry_run"}]})]
     )
     state.artifacts.vios_uuid = "vios-uuid"
-    state.artifacts.lp3_baseline["pvid"] = 99
+    state.artifacts.test_vlan_id = 3100
     state.artifacts.vios_partition_id = 4
     state.artifacts.lp3_baseline["vios_slot"] = 6
     await provisioning.validate_provisioning_dry_run(object(), state)
@@ -655,7 +655,7 @@ async def test_provision_dry_run_requires_vios_and_uses_baseline_vlan() -> None:
                 "system_name_or_uuid": state.config.system_name,
                 "name": state.config.dry_run_lpar_name,
                 "adapters": {
-                    "port_vlan_id": 99,
+                    "port_vlan_id": state.config.provision_vlan_id,
                     "vios_partition_id": 4,
                     "vios_slot": 6,
                 },
@@ -4167,7 +4167,7 @@ async def test_nettest_cleanup_manual_recovery_omits_call_failure_traceback(
         ),
         (
             runner.validate_provisioning_dry_run,
-            lambda context: setattr(context, "test_vlan_id", 100),
+            lambda _context: None,
             "hmc_provision_lpar (dry_run)",
         ),
         (
@@ -4199,46 +4199,6 @@ async def test_mutating_workflows_stop_when_inventory_context_is_missing(
 
 
 @pytest.mark.asyncio
-async def test_malformed_inventory_capacity_blocks_storage_mutation(monkeypatch):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_list_volume_groups":
-            return "PASS", [
-                {
-                    "UUID": "vg-uuid",
-                    "Resource": {
-                        "GroupName": "example-lt-609-vg",
-                        "VirtualDisks": {
-                            "VirtualDisk": {
-                                "DiskName": "example-lt-609-disk",
-                                "DiskCapacity": "not-a-capacity",
-                            }
-                        },
-                    },
-                }
-            ]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.vios_uuid = "vios-uuid"
-
-    await runner.inventory_storage(None, state)
-    await runner.exercise_storage_provisioning(None, state)
-
-    failure = next(
-        result
-        for result in state.results
-        if result["tool"] == "parse virtual disk capacity"
-    )
-    assert failure["status"] == "FAIL"
-    assert state.artifacts.vdisk_size_mib is None
-    assert not any(tool == "hmc_create_virtual_disk" for tool, _ in calls)
-
-
-@pytest.mark.asyncio
 async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     monkeypatch,
 ):
@@ -4250,6 +4210,8 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
             return "PASS", {"uuid": "recreated-lp3"}
         if tool == "hmc_provision_lpar":
             return "PASS", {"steps": [{"step": "create", "status": "ok"}]}
+        if tool == "hmc_list_virtual_networks":
+            return "PASS", _listed_networks(state.config.provision_vlan_id)
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -4258,9 +4220,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     state.artifacts.vios_partition_id = 7
-    state.artifacts.vdisk_size_mib = 2048
     state.artifacts.lp3_baseline = {
-        "pvid": 3101,
         "vios_slot": 11,
         "lpars": {
             "Resource": {
@@ -4276,6 +4236,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     await runner.exercise_storage_provisioning(None, state)
 
     assert [tool for tool, _ in calls] == [
+        "hmc_list_virtual_networks",
         "hmc_get_lpar",
         "hmc_power_off_lpar",
         "hmc_delete_lpar",
@@ -4288,12 +4249,14 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "hmc_get_lpar",
         "hmc_lpar_summary",
     ]
-    provision = calls[8][1]
+    assert calls[0][1] == {"system_name_or_uuid": state.config.system_name}
+    assert calls[7][1]["capacity_mib"] == state.config.provision_disk_mib
+    provision = calls[9][1]
     assert provision == {
         "system_name_or_uuid": state.config.system_name,
         "name": state.config.lp3_name,
         "adapters": {
-            "port_vlan_id": 3101,
+            "port_vlan_id": state.config.provision_vlan_id,
             "vios_partition_id": 7,
             "vios_slot": 11,
         },
@@ -4314,10 +4277,53 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "power_on": True,
         "dry_run": False,
     }
-    assert calls[9][1] == {"lpar_name_or_uuid": state.config.lp3_name}
-    assert f"-vg {state.config.vdisk_volume_group_name} " in calls[5][1]["cmd"]
     assert calls[10][1] == {"lpar_name_or_uuid": state.config.lp3_name}
+    assert f"-vg {state.config.vdisk_volume_group_name} " in calls[6][1]["cmd"]
+    assert calls[11][1] == {"lpar_name_or_uuid": state.config.lp3_name}
     assert state.artifacts.lp3_uuid == "recreated-lp3"
+
+
+def _listed_networks(*vlans: object) -> list[dict[str, object]]:
+    return [{"Resource": {"NetworkVLANID": vlan}} for vlan in vlans]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("listing", "reason"),
+    [
+        (("PASS", _listed_networks(2, 3)), "no virtual network on VLAN 1"),
+        (("FAIL", "HMC unavailable"), "hmc_list_virtual_networks returned FAIL"),
+        (("PASS", _listed_networks("trunk")), "unparsable VLAN identifiers: 'trunk'"),
+    ],
+    ids=["unlisted", "listing-failed", "malformed"],
+)
+async def test_storage_provisioning_refuses_an_unlisted_vlan_before_deleting(
+    monkeypatch, listing, reason
+):
+    """#970: a configured VLAN is not the partition's own, so check it before any delete."""
+    calls = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        return listing if tool == "hmc_list_virtual_networks" else ("PASS", {})
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+    state.artifacts.vios_partition_id = 7
+    state.artifacts.lp3_baseline = {"vios_slot": 11}
+    assert state.config.provision_vlan_id == 1
+
+    await runner.exercise_storage_provisioning(None, state)
+
+    assert calls == ["hmc_list_virtual_networks"]
+    preflight = next(r for r in state.results if r["tool"] == "pre-flight check")
+    assert preflight["status"] == "FAIL"
+    assert reason in str(preflight)
+    # Only a listing that answered can blame the setting.
+    assert ("LIVE_TEST_PROVISION_VLAN_ID" in str(preflight)) == (listing[0] == "PASS")
 
 
 @pytest.mark.asyncio
@@ -4335,8 +4341,7 @@ async def test_storage_provisioning_refuses_untrusted_volume_group(monkeypatch):
     state.artifacts.vg_uuid = "first-listed-vg"
     state.artifacts.vdisk_vg_name = ""
     state.artifacts.vios_partition_id = 7
-    state.artifacts.vdisk_size_mib = 2048
-    state.artifacts.lp3_baseline = {"pvid": 3101, "vios_slot": 11}
+    state.artifacts.lp3_baseline = {"vios_slot": 11}
 
     await runner.exercise_storage_provisioning(None, state)
 

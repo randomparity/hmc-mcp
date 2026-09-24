@@ -568,7 +568,6 @@ class LiveTestArtifacts:
     job_uuid_sample: str | None = None
     vg_uuid: str | None = None
     vdisk_vg_name: str | None = None
-    vdisk_size_mib: int | None = None
     lp3_baseline: dict[str, Any] = field(default_factory=dict)
     vmedia_repo_created: bool = False
     vmedia_iso_name: str | None = None
@@ -1259,7 +1258,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
     }
 )
 _ARTIFACT_NULLABLE_INTS = frozenset(
-    {"vios_partition_id", "test_vlan_id", "test_vswitch_id", "vdisk_size_mib"}
+    {"vios_partition_id", "test_vlan_id", "test_vswitch_id"}
 )
 
 
