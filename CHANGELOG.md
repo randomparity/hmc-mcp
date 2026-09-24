@@ -173,6 +173,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- REST writes and deletes no longer fail with HTTP 406 on HMC V10R3. Shared UOM `PUT`/`POST`
+  writes now send `Accept: */*` with the typed `Content-Type`, and shared `DELETE`s send
+  `Accept: */*`, so `adapters add-network`, `add-vscsi`, `add-vfc` and `adapters delete`
+  reach the HMC (ADR 0178). `lpars create` and `lpars provision` still fall back to `mksyscfg`
+  when V10R3 now answers the REST create with a 400 `REST0001` schema rejection instead of the
+  406 (#935).
+
 - LPAR rename (`hmc_rename_lpar`), DLPAR processor and memory changes (`hmc_dlpar_proc`,
   `hmc_dlpar_mem`) and `lpars modify` / `hmc_modify_lpar` now write on V10R3. Each reads the
   whole partition and writes it back under `If-Match` with only the requested fields changed,

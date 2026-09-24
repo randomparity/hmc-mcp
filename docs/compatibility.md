@@ -56,17 +56,13 @@ supported variables.
 
 ### Firmware write-path compatibility
 
-Some HMC V10 firmware builds return HTTP 406 for all UOM write paths — even
-without the schema-version header — for child-resource endpoints such as
-`ClientNetworkAdapter` and `VirtualSCSIClientAdapter` PUT. On those builds:
+HMC V10R3 answers a UOM write with HTTP 406 when its `Accept` header names a uom
+media type, and with 415 when its `Content-Type` does not name the resource type.
+Shared UOM writes therefore send `Accept: */*` with a typed `Content-Type`, and
+shared deletes send `Accept: */*` ([ADR 0178](adr/0178-uom-writes-send-untyped-accept.md)).
 
-- **LPAR creation** (`hmc_create_lpar`, `hmc_provision_lpar`): automatically
-  falls back to `mksyscfg` over SSH. `HMC_PASSWORD` (or `HMC_SSH_KEY_FILE`)
-  must be set for SSH auth; the fallback is transparent to the caller.
-- **Virtual adapter attachment** (`hmc_add_network_adapter`,
-  `hmc_add_vscsi_adapter`): no automatic fallback. Configure adapter profiles
-  via the HMC GUI, the HMC CLI (`chhwres`), or the opt-in `hmc_run_command`
-  escape hatch if this affects your firmware.
-- **Virtual disk creation** (`hmc_create_virtual_disk`): no automatic fallback.
-  The disk can be created directly on the VIOS with `mkbdsp` and then mapped
-  with `hmc_map_storage_to_lpar`.
+LPAR creation (`hmc_create_lpar`, `hmc_provision_lpar`) falls back to `mksyscfg`
+over SSH when the REST create is refused with a 406 or with a 400 `REST0001`
+schema rejection, which V10R3 returns for the current create document.
+`HMC_PASSWORD` (or `HMC_SSH_KEY_FILE`) must be set for SSH auth; the fallback is
+transparent to the caller.
