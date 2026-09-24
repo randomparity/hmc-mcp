@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Generic, Literal, NoReturn, TypeVar
 
 from hmcpctl.client.core import HMCClient
@@ -647,6 +647,21 @@ async def _read_sriov_assignment_inventory(
     return physical[0], rows, before
 
 
+def _eth_capacity_granularity(row: dict[str, str]) -> Decimal | None:
+    """Return the port's Ethernet capacity granularity, or None when it reports none."""
+    value = row.get("min_eth_capacity_granularity", "")
+    if value in {"", "null"}:
+        return None
+    try:
+        granularity = Decimal(value)
+    except InvalidOperation:
+        granularity = Decimal("NaN")
+    # A two-decimal capacity from 1 to 100 can only be a multiple of 0.01 through 100.
+    if not granularity.is_finite() or not Decimal("0.01") <= granularity <= 100:
+        raise HMCCLIError(f"malformed physical-port capacity granularity: {value!r}")
+    return granularity
+
+
 async def _require_sriov_assignment_capacity_and_state(
     config: HMCConfig,
     system_name: str,
@@ -659,6 +674,12 @@ async def _require_sriov_assignment_capacity_and_state(
     capacity: Decimal,
 ) -> None:
     """Require an available logical port, sufficient capacity, and mutable LPAR state."""
+    granularity = _eth_capacity_granularity(physical_port)
+    if granularity is not None and capacity % granularity:
+        raise ValueError(
+            f"capacity_percent {capacity} is not a multiple of the physical port's "
+            f"capacity granularity {granularity}%"
+        )
     candidates = await list_sriov_unconfigured_logical_port_rows(config, system_name)
     port_location = physical_port["phys_port_loc"] + "-S"
     if not any(
@@ -1117,7 +1138,7 @@ async def list_sriov_physical_ports(
                     availability,
                     row["phys_port_loc"],
                     None,
-                    None,
+                    _eth_capacity_granularity(row),
                     None,
                     None,
                 )

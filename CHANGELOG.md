@@ -10,6 +10,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- SR-IOV logical-port assignment refuses a capacity that is not a multiple of the physical
+  port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
+  naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
+  inventory now fills `minimum_capacity_granularity_percent` (#1035).
 - `lpars provision` and `hmc_provision_lpar` report where the network adapter, vSCSI adapter,
   and storage mapping they add now live: a `change_location` result field, read once after
   those steps rather than through the standalone adapter/storage operations, in the same shape
