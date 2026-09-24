@@ -16,6 +16,7 @@ import pytest
 from hmcpctl.config import HMCConfig
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.ownership import _resolve_system_name as _system_name
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.server_tools.lpar.lifecycle import (
@@ -126,10 +127,17 @@ def _unowned_partition():
 # ---------------------------------------------------------------------- #
 
 
-def _mock_create_406(mock_hmc, order: list[str] | None = None) -> None:
+def _mock_create_406(
+    mock_hmc,
+    order: list[str] | None = None,
+    readback: httpx.Response | None = None,
+) -> None:
     """REST create answers 406; the name search is empty before, found after."""
     search_responses = iter(
-        [httpx.Response(200, text=EMPTY_FEED), httpx.Response(200, text=LPAR_ENTRY)]
+        [
+            httpx.Response(200, text=EMPTY_FEED),
+            readback or httpx.Response(200, text=LPAR_ENTRY),
+        ]
     )
 
     def _search(request):
@@ -237,6 +245,56 @@ def test_create_lpar_http_406_apply_error_stops_the_workflow(monkeypatch, mock_h
     assert result.workflow_completed is False
     assert "'default_profile' was not applied" in result.warnings[0]
     assert "redo any skipped steps" in result.warnings[0]
+
+
+def test_create_lpar_http_406_readback_error_still_reports_the_create(
+    monkeypatch, mock_hmc
+):
+    """A failed read-back after mksyscfg keeps the create and apply result (#1014)."""
+    _hmc_env(monkeypatch)
+    _mock_create_406(mock_hmc, readback=httpx.Response(500, text="<error>boom</error>"))
+    apply = AsyncMock(return_value="")
+
+    result, _ = _create_via_406(apply)
+
+    assert result.resource_created is True
+    assert result.lpar is None
+    assert result.ownership_stamped is None
+    assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
+    assert len(result.warnings) == 1
+    assert "read-back after mksyscfg failed" in result.warnings[0]
+    assert "HTTP 500" in result.warnings[0]
+
+
+def test_required_stamp_policy_raises_on_readback_error_after_mksyscfg():
+    """Under 'required' a failed read-back raises, naming the created partition."""
+    hmc = AsyncMock()
+    hmc.find_partition_by_name.side_effect = [None, HMCError("boom", status_code=500)]
+    hmc.create_logical_partition.side_effect = HMCError("nope", status_code=406)
+    creation = LparCreation(
+        "new-lpar", "AIX/Linux", LparResources(), stamp_policy="required"
+    )
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_uuid",
+            new=AsyncMock(return_value=SYSTEM_UUID),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_cli_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
+        patch("hmcpctl.operations.lpar.core.create_lpar_via_cli", new=AsyncMock()),
+        pytest.raises(HMCError) as exc_info,
+    ):
+        asyncio.run(create_and_stamp_lpar(hmc, SYSTEM_UUID, creation))
+
+    message = str(exc_info.value)
+    assert "'new-lpar'" in message
+    assert "mksyscfg" in message
+    assert "still exists" in message
+    assert "HTTP 500" in message
+    assert isinstance(exc_info.value.__cause__, HMCError)
 
 
 def test_apply_profile_sends_verified_chsyscfg():

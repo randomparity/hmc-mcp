@@ -993,11 +993,22 @@ def test_provision_applies_explicit_fail_policy_before_network(monkeypatch, mock
 # ---------------------------------------------------------------------- #
 
 
-def _provision_via_406(mock_hmc, apply: AsyncMock, order: list[str]):
+def _provision_via_406(
+    mock_hmc,
+    apply: AsyncMock,
+    order: list[str],
+    readback: httpx.Response | None = None,
+):
     """Run provision down the mksyscfg fallback, recording call order."""
-    searches = iter([EMPTY_FEED, EMPTY_FEED, CREATED_LPAR_FEED])
+    searches = iter(
+        [
+            httpx.Response(200, text=EMPTY_FEED),
+            httpx.Response(200, text=EMPTY_FEED),
+            readback or httpx.Response(200, text=CREATED_LPAR_FEED),
+        ]
+    )
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==web01)").mock(
-        side_effect=lambda request: httpx.Response(200, text=next(searches))
+        side_effect=lambda request: next(searches)
     )
     _mock_execution_steps(mock_hmc).mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
@@ -1045,6 +1056,32 @@ def test_provision_mksyscfg_path_applies_profile_before_network(monkeypatch, moc
     assert [s.step for s in result.steps][:3] == ["create", "apply_profile", "network"]
     assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
     assert result.workflow_completed is True
+
+
+def test_provision_readback_error_after_mksyscfg_reports_the_create(
+    monkeypatch, mock_hmc
+):
+    """A failed read-back after mksyscfg is a created resource, not a failed create."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    order: list[str] = []
+    readback = httpx.Response(500, text="<error>boom</error>")
+
+    result, network = _provision_via_406(mock_hmc, AsyncMock(), order, readback)
+
+    assert not network.called
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar_uuid is None
+    assert [(s.step, s.status) for s in result.steps] == [
+        ("create", "error"),
+        ("apply_profile", "ok"),
+        ("network", "skipped"),
+        ("vscsi", "skipped"),
+        ("storage", "skipped"),
+        ("power_on", "skipped"),
+    ]
+    assert any("read-back after mksyscfg failed" in w for w in result.warnings)
 
 
 def test_provision_apply_error_skips_remaining_legs(monkeypatch, mock_hmc):
