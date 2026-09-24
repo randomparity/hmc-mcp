@@ -123,6 +123,9 @@ def test_join_boot_device_paths_joins_in_order_with_single_spaces():
         (["/a\nb"], "Invalid boot device path"),
         (["/a\x00"], "Invalid boot device path"),
         (["/a\x7f"], "Invalid boot device path"),
+        (["/a\ufffe"], "Invalid boot device path"),
+        (["/a\ud800"], "Invalid boot device path"),
+        (["/caf\u00e9"], "Invalid boot device path"),
         ([""], "Invalid boot device path"),
     ],
 )
