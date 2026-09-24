@@ -233,8 +233,8 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   adapter `PUT` opt out, and so do many — **not all** — of the VolumeGroup and
   VirtualIOServer storage paths, reads included. Every `/rest/api/web/` request
   carries it. Requests that build their own headers never do: the `Accept: */*`
-  discovery reads (ADR 0139 records that omission deliberately), the
-  storage-broker ISO calls, and every `do/{Operation}` job, so LPAR power
+  discovery reads (ADR 0139 records that omission deliberately) and every
+  `do/{Operation}` job, so LPAR power
   operations are unaffected either way. See
   [`docs/compatibility.md`](compatibility.md) for the firmware context.
 

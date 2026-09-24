@@ -160,6 +160,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `storage upload-iso` and `hmc_upload_iso` upload through the HMC web File API, which V10R3
+  accepts, instead of a `BrokeredFile` document it rejects. They report `uploaded` only once
+  the repository lists the media, and refuse a volume group without a media repository before
+  downloading (ADR 0177, #978).
+
 - When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
   `provision` report the partition as created, with its profile-apply step and a warning naming
   the read-back error. Before, they reported a failed create with nothing created (#1014).

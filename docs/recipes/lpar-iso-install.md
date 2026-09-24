@@ -4,7 +4,7 @@
 > creation through cleanup, on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into its
 > installer. The run used a build patched for #935 and #979, and imported the ISO outside
 > `hmcpctl` (#978). Unpatched, the recipe stops at `adapters add-network` with HTTP 406 (#935).
-> These issues must land before the recipe runs on `main`: #935, #978 and #979; #981 needs the
+> These issues must land before the recipe runs on `main`: #935 and #979; #981 needs the
 > HMC CLI step in section 5 until it lands. Each step that depends on an open issue names it.
 
 This recipe creates one powered-off LPAR, gives it a virtual network adapter and a VIOS-backed
@@ -221,10 +221,9 @@ and reaches the HMC as whole GiB, so the command below creates a 20 GiB reposito
 hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
 ```
 
-Put the ISO in the repository and mount it on the partition. **`upload-iso` is blocked by
-#978:** it sends a `BrokeredFile` element HMC V10R3 does not recognise. The 2026-09-23 run
-imported the ISO through the HMC REST web File API outside `hmcpctl`; this recipe does not
-document that path. `mount-optical-media` needs #935.
+Put the ISO in the repository and mount it on the partition. `upload-iso` sends the ISO
+through the HMC web File API and reports `uploaded` once the repository lists it.
+`mount-optical-media` needs #935.
 
 ```bash
 hmcpctl storage upload-iso "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
