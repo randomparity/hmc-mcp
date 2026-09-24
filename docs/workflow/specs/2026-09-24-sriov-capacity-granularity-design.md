@@ -17,6 +17,10 @@ Read-only probes on the authorized lab HMC (V10R3 M1060, 2026-09-24):
 - A bogus-attribute control is refused at both levels ("An invalid attribute was entered"), so
   acceptance is attribute validation, not silence. The attribute does not appear in the default
   (no `-F`) listing.
+- The branch's exact nine-field commands were run read-only at both levels for one RoCE adapter
+  (8375-42A, the admitted model) and one ethc adapter (9119-MHE, outside admission, parser
+  evidence only). The new fixture is that output with only location codes and system names
+  redacted.
 - The IBM `chhwres` reference binds an `eth` logical port's capacity to
   `min_eth_capacity_granularity` and a RoCE logical port's to `min_roce_capacity_granularity`.
   The assignment always creates `logical_port_type=eth`, so only the Ethernet attribute governs.
@@ -27,8 +31,9 @@ Read-only probes on the authorized lab HMC (V10R3 M1060, 2026-09-24):
    `min_eth_capacity_granularity` to its projection at both levels. The roce/ethc exclusivity and
    adapter-id checks are unchanged.
 2. `pcie.py` gains `_eth_capacity_granularity(row) -> Decimal | None`: a missing key, empty value,
-   or `null` is `None` (not reported); otherwise the value must parse as a finite `Decimal`
-   greater than 0, or `HMCCLIError("malformed physical-port capacity granularity: ...")`.
+   or `null` is `None` (not reported); otherwise the value must parse as a `Decimal` from 0.01
+   through 100 (the range a two-decimal capacity can be a multiple of), or
+   `HMCCLIError("malformed physical-port capacity granularity: ...")`.
 3. `list_sriov_physical_ports` fills `minimum_capacity_granularity_percent` from that helper.
 4. `_require_sriov_assignment_capacity_and_state` first checks
    `capacity % granularity != 0` when the helper returns a value, and raises
@@ -44,26 +49,28 @@ captures stay byte-identical; their survey assertions still hold.
 
 ## Failure model
 
-1. Actors and deployments: an MCP client or CLI operator assigning SR-IOV logical ports through
-   the admitted SR-IOV environment (V10R3/V11R2, ADR 0053).
+1. Actors and deployments: an MCP client or CLI operator using SR-IOV assignment or inventory
+   inside `require_admitted_environment` (HMC V10R3 M1060, model 8375-42A).
 2. Invariants and assets: no HMC mutation for a capacity the port will refuse; a port without a
    reported granularity behaves exactly as before; the physport exclusivity check.
 3. Accepted failure classes:
-   - An HMC release that rejects the new attribute fails the physport read with an HMC error
-     rather than silently skipping; accepted because the admitted environment is V10R3/V11R2
-     and the attribute is documented in both command references.
+   - An HMC release that rejects the new attribute fails the physport read, and with it
+     assignment, SR-IOV inventory, and vNIC backing preflight (`vnic.py`), with an HMC error
+     rather than silently skipping; accepted because the attribute was live-probed inside the
+     admitted envelope, and widening admission (#667/#668) must re-probe it.
    - RoCE logical ports are not assigned by this tool, so `min_roce_capacity_granularity` is
      not read.
 4. Covered elsewhere: widening SR-IOV admission (#667/#668, #871 non-goal); post-dispatch
-   HSCL1294 reporting (#966).
+   HSCL1294 reporting (#966). vNIC backing capacity and the live runner's 7.5 default SR-IOV
+   capacity are follow-up candidates, not this change.
 
 ## Validation
 
 - `focused-test`: physport projection includes the attribute at both levels —
   `tests/unit/test_sriov_ssh_contract.py`, replaying the new capture.
 - `focused-test`: refuse (7.5 at 1.0, no `chhwres`), accept (4 at 2.0), absent (7.5 with no
-  attribute reaches `chhwres`) — `tests/unit/test_sriov_logical_port_operations.py`.
-- `focused-test`: malformed granularity (`abc`, `0`) raises `HMCCLIError` and inventory reports
+  attribute, and with `null`, reaches `chhwres`) — `tests/unit/test_sriov_logical_port_operations.py`.
+- `focused-test`: malformed granularity (`abc`, `0`, `1E-27`, `101`) raises `HMCCLIError` and inventory reports
   the parsed value — `tests/unit/test_sriov_logical_port_operations.py`,
   `tests/system/test_normalized_pcie_inventory.py`.
 - Live: re-run the read-only physport probe with the branch's exact commands.
