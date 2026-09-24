@@ -9,6 +9,7 @@ from conftest import JOB_ENTRY, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig
+from hmcpctl.errors import HMCError
 from hmcpctl.jobs import (
     BOOT_MODES,
     POWER_OFF_OPERATIONS,
@@ -689,3 +690,115 @@ async def test_power_lpar_refuses_an_invalid_boot_mode_on_the_already_running_pa
         await power_lpar(hmc, None, LPAR_UUID, power_on=True, boot_mode="warp")
 
     hmc.submit_job.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------- #
+# #981: a partition profile that lacks current adapters is warned about
+# --------------------------------------------------------------------------- #
+
+
+def _profile_power_client(profile_slots: list[str], current: dict) -> AsyncMock:
+    hmc = _power_client()
+    subclasses = [
+        {"ProfileVirtualSCSIClientAdapter": {"VirtualSlotNumber": slot}}
+        for slot in profile_slots
+    ]
+    hmc.list_child.return_value = [
+        {
+            "UUID": PROFILE_UUID,
+            "Resource": {
+                "ProfileVirtualIOAdapters": {
+                    "ProfileVirtualIOAdapterSubclass": subclasses
+                }
+            },
+        }
+    ]
+
+    async def list_adapters(lpar_uuid, adapter_type):
+        return [
+            {"Resource": {"VirtualSlotNumber": slot}}
+            for slot in current.get(adapter_type, [])
+        ]
+
+    hmc.list_adapters.side_effect = list_adapters
+    return hmc
+
+
+async def _power_on_with_profile(hmc: AsyncMock) -> LparPowerResult:
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        return await power_lpar(
+            hmc, None, LPAR_UUID, power_on=True, partition_profile_uuid=PROFILE_UUID
+        )
+
+
+@pytest.mark.asyncio
+async def test_power_on_warns_for_each_current_adapter_the_profile_lacks():
+    hmc = _profile_power_client(
+        ["2"],
+        {"VirtualSCSIClientAdapter": ["2", "3"], "ClientNetworkAdapter": ["4"]},
+    )
+
+    result = await _power_on_with_profile(hmc)
+
+    assert len(result.warnings) == 2
+    assert "VirtualSCSIClientAdapter in virtual slot 3" in result.warnings[0]
+    assert "ClientNetworkAdapter in virtual slot 4" in result.warnings[1]
+    # Warn, not refuse: the activation is still submitted with the profile.
+    _, document = hmc.submit_job.await_args.args
+    assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
+
+
+@pytest.mark.asyncio
+async def test_power_on_does_not_warn_when_the_profile_has_every_adapter():
+    hmc = _profile_power_client(["2", "3"], {"VirtualSCSIClientAdapter": ["2", "3"]})
+
+    result = await _power_on_with_profile(hmc)
+
+    assert result.warnings == ()
+    hmc.submit_job.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_power_on_submits_with_a_warning_when_an_adapter_feed_read_fails():
+    hmc = _profile_power_client([], {})
+    hmc.list_adapters.side_effect = HMCError("GET adapters failed", 500)
+
+    result = await _power_on_with_profile(hmc)
+
+    assert result.warnings == (
+        "Partition profile adapter check not run: GET adapters failed (HTTP 500)",
+    )
+    hmc.submit_job.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_power_on_without_a_profile_reads_no_adapter_feed():
+    hmc = _profile_power_client([], {"VirtualSCSIClientAdapter": ["2"]})
+
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        result = await power_lpar(hmc, None, LPAR_UUID, power_on=True)
+
+    assert result.warnings == ()
+    hmc.list_adapters.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_power_on_lpar_outcome_carries_the_profile_warnings():
+    hmc = _profile_power_client([], {"VirtualSCSIClientAdapter": ["2"]})
+
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        outcome = await power_on_lpar(
+            hmc, LPAR_UUID, partition_profile_uuid=PROFILE_UUID
+        )
+
+    assert len(outcome.warnings) == 1
+    assert "virtual slot 2" in outcome.warnings[0]

@@ -139,16 +139,18 @@ def adapters_delete(
     ):
         raise typer.Abort()
 
-    deleted_uuid = with_client(lambda hmc: delete_adapter(
+    location = with_client(lambda hmc: delete_adapter(
         hmc, system, lpar, adapter_type, adapter_uuid,
         ownership_override=ownership_override))
 
-    console.print(f"[green]Deleted {adapter_type} {deleted_uuid}[/green] from {lpar}")
+    console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {lpar}")
+    console.print(location.summary())
 
 
 def _adapter_mutation(result: AdapterResult, lpar: str, kind: str) -> None:
     console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
     print_json(result.resource)
+    console.print(result.change_location.summary())
 
 
 def register_commands(group: typer.Typer) -> None:

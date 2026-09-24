@@ -298,16 +298,27 @@ def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc
             200, text=PARTITION_PROFILE_FEED.format(uuid=PARTITION_PROFILE_UUID)
         )
     )
+    # #981: the profile check reads the current client adapters; none here.
+    for adapter_type in (
+        "VirtualSCSIClientAdapter",
+        "VirtualFibreChannelClientAdapter",
+        "ClientNetworkAdapter",
+    ):
+        mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/{adapter_type}").mock(
+            return_value=httpx.Response(204)
+        )
     route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
 
-    hmc_power_on_lpar(
+    outcome = hmc_power_on_lpar(
         LPAR_UUID,
         boot_mode="sms",
         partition_profile_uuid=PARTITION_PROFILE_UUID,
         operation_type="activate",
     )
+
+    assert outcome.warnings == ()
 
     body = route.calls.last.request.content.decode()
     assert ">bootmode</ParameterName>" in body

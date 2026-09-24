@@ -338,6 +338,10 @@ def hmc_power_on_lpar(
     configured HMC connection to use. ``partition_profile_uuid`` selects the
     partition profile the partition activates against.
 
+    With ``partition_profile_uuid``, ``warnings`` lists each current virtual
+    SCSI, Fibre Channel or Ethernet client adapter whose slot that profile lacks:
+    activating the profile removes it. The job is still submitted.
+
     If the partition is already in the 'running' state, ``already_running`` is
     true, ``job`` is null, and ``message`` explains that no job was submitted.
     Pass force=True to skip this check and submit PowerOn unconditionally.
