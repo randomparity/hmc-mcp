@@ -134,19 +134,26 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     roce_probe = next(
         probe for probe in capture["probes"] if probe["name"] == "physical-ports"
     )
-    run = AsyncMock(side_effect=["No results were found.", "No results were found."])
+    # The capture predates #1035, which appended one attribute to the projection;
+    # its rows still parse under the fields it was captured with, and the #1035
+    # capture of the current projection is what the reader must accept.
+    assert {
+        row["phys_port_type"]
+        for row in parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
+    } == {"eth"}
+    current = json.loads(
+        (ROOT / "tests" / "fixtures" / "sriov" / "sriov-physport-granularity-v10r3.json").read_text()
+    )["selection_cases"][0]
+    run = AsyncMock(side_effect=[current["roce"]["stdout"], current["ethc"]["stdout"]])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
-    await list_sriov_physical_port_rows(
+    rows = await list_sriov_physical_port_rows(
         HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"}),
         "system-a",
         "1",
     )
 
-    # The capture predates #1035, which appended one attribute to the projection;
-    # its rows still parse under the fields it was captured with.
-    rows = parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
-    assert {row["phys_port_type"] for row in rows} == {"eth"}
+    assert rows == current["expected_rows"]
     roce_command = run.await_args_list[0].args[1]
     assert roce_command == roce_probe["command"].replace(
         "curr_eth_logical_ports --header",
