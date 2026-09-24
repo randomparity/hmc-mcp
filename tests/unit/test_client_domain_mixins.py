@@ -434,7 +434,9 @@ async def test_storage_mixin_uses_active_base_in_optical_mapping():
     vios_uuid = "11111111-1111-1111-1111-111111111111"
     vios = (
         '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/'
-        f'mc/2012_10/"><UUID>{vios_uuid}</UUID><VirtualSCSIMappings/></VirtualIOServer>'
+        f'mc/2012_10/"><Metadata><Atom><AtomID>{vios_uuid}</AtomID></Atom></Metadata>'
+        f'<PartitionUUID kb="ROO">{vios_uuid}</PartitionUUID>'
+        "<VirtualSCSIMappings/></VirtualIOServer>"
     )
     client._request_with_uuid_path_arguments = AsyncMock(
         side_effect=[

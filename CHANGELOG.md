@@ -169,6 +169,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `storage detach-mapping` and `storage unmount-optical-media` (and mapping/optical-mapping
+  create) no longer refuse on a live HMC. The VIOS identity check read a `<UUID>` child no
+  observed HMC response carries; it now reads `Metadata/Atom/AtomID`, cross-checking
+  `PartitionUUID` when present, and still refuses a document naming a different VIOS or more
+  than one (#979).
+
 - A `ConsoleSession` whose hold another client ended, with a manual `rmvterm` or a
   `take_over=True` session, no longer ends that client's session when it closes. The session
   recognizes the HMC's report of the loss, raises the new `ConsoleHoldLostError` on the next

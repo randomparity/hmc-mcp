@@ -1,0 +1,20 @@
+<!-- Observed V10R3 VirtualIOServer identity (read-only probe, #979:
+     `GET /rest/api/uom/VirtualIOServer/<uuid>?group=ViosSCSIMapping`), redacted: synthetic
+     Atom/PartitionUUID and AssociatedManagedSystem UUIDs, hmc.example.invalid. A live VIOS
+     document carries no <UUID> child; its identity is Metadata/Atom/AtomID, with
+     PartitionUUID alongside carrying the same value. Unrelated fields trimmed. -->
+<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+                  schemaVersion="V1_0">
+    <Metadata>
+        <Atom>
+            <AtomID>00000000-0000-0000-0000-000000000003</AtomID>
+            <AtomCreated>1789983032792</AtomCreated>
+        </Atom>
+    </Metadata>
+    <PartitionState kxe="false" kb="ROO">running</PartitionState>
+    <PartitionType kxe="false" kb="COD">Virtual IO Server</PartitionType>
+    <PartitionUUID kb="ROO" kxe="false">00000000-0000-0000-0000-000000000003</PartitionUUID>
+    <AssociatedManagedSystem kb="CUD" kxe="false"
+        href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/00000000-0000-0000-0000-000000000004"
+        rel="related"/>
+</VirtualIOServer>

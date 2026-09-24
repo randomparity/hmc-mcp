@@ -147,7 +147,9 @@ VIOS_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 VIOS_MAPPINGS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
 VIOS_MAPPINGS_ENTRY = f"""<VirtualIOServer
   xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-  <UUID>{VIOS_UUID}</UUID><VirtualSCSIMappings/>
+  <Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>
+  <PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>
+  <VirtualSCSIMappings/>
 </VirtualIOServer>"""
 
 VG_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

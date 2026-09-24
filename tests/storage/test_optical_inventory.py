@@ -140,7 +140,9 @@ async def test_create_optical_mapping_submits_document(mock_hmc):
     mock_hmc.get(VIOS_PATH).mock(
         return_value=httpx.Response(
             200,
-            text=f'<VirtualIOServer xmlns="{UOM_NS}"><UUID>{VIOS_UUID}</UUID>'
+            text=f'<VirtualIOServer xmlns="{UOM_NS}">'
+            f"<Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>"
+            f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>'
             "<VirtualSCSIMappings/></VirtualIOServer>",
             headers={"ETag": "etag-1"},
         )
