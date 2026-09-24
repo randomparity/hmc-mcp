@@ -201,9 +201,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   whole partition, set `BootListInformation/PendingBootString`, and POST it back with
   `If-Match`, refusing when the read carries no ETag. The boot order is now Open Firmware
   device paths, the form `read-boot-order` reports in `boot_device_list`, not the `cd`,
-  `disk` and `network` selectors; the CLI takes them as positional arguments. A V10R3 HMC
-  rejects the empty value `clear-boot-order` writes with HTTP 500 `REST0126`; #1048 tracks
-  it (#980).
+  `disk` and `network` selectors; the CLI takes them as positional arguments (#980).
+  `clear-boot-order` now refuses instead (#1048).
 
 - `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
   partition body — including when the post-create read-back raises (#1014) — instead of omitting

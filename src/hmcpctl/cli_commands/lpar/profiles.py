@@ -83,7 +83,7 @@ def lpars_clear_boot_order(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
 ) -> None:
-    """Refuse to clear a pending boot order: the HMC accepts no clearing value.
+    """Refuse to clear a pending boot order: a V10R3 HMC accepts no clearing value.
 
     Authorizes, then exits 1 without writing. A profile activation consumed the
     pending boot order when observed on V10R3; set-boot-order replaces it.
