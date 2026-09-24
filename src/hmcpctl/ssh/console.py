@@ -256,8 +256,6 @@ class _ConsoleStdin:
 
     async def write(self, data: bytes) -> None:
         """Queue *data* on the channel and wait for asyncssh to drain it."""
-        if self._writer is None:
-            raise RuntimeError("the console stdin is closed")
         self._writer.write(data)
         await self._writer.drain()
 
@@ -531,7 +529,7 @@ async def _read_release_probe(
 async def _open_capture_stream(
     config: HMCConfig, command: str, stdin: _Stdin
 ) -> tuple[Any, Any]:
-    """Open the connection and the sealed-stdin ``mkvterm`` process.
+    """Open the connection and the ``mkvterm`` process on *stdin*.
 
     Returns ``(connection, process)`` with ownership transferred to the
     caller. Any failure closes what was opened and re-raises.
