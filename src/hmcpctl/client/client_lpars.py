@@ -100,8 +100,7 @@ class LparsMixin:
         to /rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition and
         returns the created partition entry.
 
-        Omits X-HMC-Schema-Version header — some HMC firmware versions return
-        HTTP 406 for this PUT when the schema-version header is present.
+        Omits the X-HMC-Schema-Version header; the write headers follow ADR 0178.
         """
         _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"

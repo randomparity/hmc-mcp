@@ -173,10 +173,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
-- REST writes and deletes no longer fail with HTTP 406 on HMC V10R3. Shared UOM `PUT`/`POST`
-  writes now send `Accept: */*` with the typed `Content-Type`, and shared `DELETE`s send
-  `Accept: */*`, so `adapters add-network`, `add-vscsi`, `add-vfc` and `adapters delete`
-  reach the HMC (ADR 0178). `lpars create` and `lpars provision` still fall back to `mksyscfg`
+- Shared UOM `PUT`/`POST` writes now send `Accept: */*` with the typed `Content-Type`, and
+  shared `DELETE`s send `Accept: */*`, the header shape HMC V10R3 accepts; it answered the old
+  typed `Accept` with HTTP 406 (ADR 0178). `adapters add-vscsi` and `adapters delete` were
+  verified on V10R3; the other shared writes were not probed. `lpars create` and `lpars provision` still fall back to `mksyscfg`
   when V10R3 now answers the REST create with a 400 `REST0001` schema rejection instead of the
   406 (#935).
 

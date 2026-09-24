@@ -1391,8 +1391,7 @@ class HMCClient(
     ) -> dict[str, Any] | None:
         """PUT a child resource (e.g. a virtual adapter) under a parent.
 
-        Omits X-HMC-Schema-Version header — the HMC returns HTTP 406 on adapter
-        PUT endpoints when this header is present (same as VolumeGroup and LPAR).
+        Omits the X-HMC-Schema-Version header; the write headers follow ADR 0178.
         """
         _reject_unknown_uom_type("parent_type", parent_type)
         _reject_unknown_uom_type("child_type", child_type)
