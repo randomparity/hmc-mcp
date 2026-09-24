@@ -10,6 +10,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `lpars provision` and `hmc_provision_lpar` report where the network adapter, vSCSI adapter,
+  and storage mapping they add now live: a `change_location` result field, read once after
+  those steps rather than through the standalone adapter/storage operations, in the same shape
+  and CLI rendering as `adapters add-network` (#1056).
 - Adapter and mapping commands say where their change lives. `adapters add-network`,
   `add-vscsi`, `add-vfc` and `delete`, and `storage map`, `mount-optical-media`, `detach-mapping`
   and `unmount-optical-media`, read the partition's `CurrentProfileSync` before the write and
@@ -169,6 +173,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The live-test runner's ST18 asserts a same-name ISO re-upload is refused with a name
+  collision, instead of expecting a `status: "existing"` dedup hit `hmc_upload_iso` has never
+  returned. The re-upload reuses the ST18 name, so the collision guard
+  (`_refuse_existing_media`) refuses it before any download — no second multi-GiB transfer —
+  and a successful upload now records FAIL instead of a PASS row whose note contradicted it.
+  The unused `LIVE_TEST_ISO_HTTP_MEDIA_NAME` setting is removed (#1053).
+
 - Three `client_storage` XML parse sites (VIOS mapping read-modify-write, storage-mapping
   delete, and VolumeGroup read) now catch `DefusedXmlException` alongside `ParseError`, so an
   HMC body carrying a DTD, entity, or external reference raises `HMCError` naming the request
@@ -203,6 +214,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `SystemName` the same way `resource_identity`'s validated readers do, instead of coercing or
   passing it through by hand (#1026).
 
+- `lpars clear-boot-order` and `hmc_clear_lpar_boot_order` refuse after authorization and
+  write nothing, instead of sending an empty `PendingBootString` that V10R3 rejects with HTTP 500
+  `REST0126`. No REST or `chsyscfg` form tried on V10R3 clears it. A profile activation consumed
+  the pending boot order when observed; `set-boot-order` replaces it (#1048).
+
 - `lpars read-boot-order` and `hmc_read_lpar_boot_order` request the `Advanced` group and
   return each boot field as a string, or `null` when empty, instead of the element's attribute
   dict. `set-boot-order` and `clear-boot-order` (and their MCP tools) no longer POST a sparse
@@ -210,9 +226,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   whole partition, set `BootListInformation/PendingBootString`, and POST it back with
   `If-Match`, refusing when the read carries no ETag. The boot order is now Open Firmware
   device paths, the form `read-boot-order` reports in `boot_device_list`, not the `cd`,
-  `disk` and `network` selectors; the CLI takes them as positional arguments. A V10R3 HMC
-  rejects the empty value `clear-boot-order` writes with HTTP 500 `REST0126`; #1048 tracks
-  it (#980).
+  `disk` and `network` selectors; the CLI takes them as positional arguments (#980).
+  `clear-boot-order` now refuses instead (#1048).
 
 - `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
   partition body — including when the post-create read-back raises (#1014) — instead of omitting

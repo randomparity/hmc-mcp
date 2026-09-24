@@ -156,6 +156,8 @@ def _render_provision_result(
     console.print(table)
     for warning in result.warnings:
         console.print(f"[yellow]Warning: {warning}[/yellow]")
+    if result.change_location is not None:
+        console.print(result.change_location.summary())
 
 
 # LPAR Boot Order Commands
