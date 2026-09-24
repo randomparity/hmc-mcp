@@ -16,8 +16,8 @@ from .errors import translate_lpar_write_error
 _logger = logging.getLogger(__name__)
 
 _CLEAR_REFUSAL = (
-    "Refusing to clear the pending boot order: a V10R3 HMC accepts no value that clears "
-    "it (an empty value fails with REST0126), so nothing was written. A profile "
+    "Refusing to clear the pending boot order: no value tried on a V10R3 HMC clears it "
+    "(an empty value fails with REST0126), so nothing was written. A profile "
     "activation consumed the pending boot order when observed on V10R3; other activation "
     "paths are unverified. Replace it with set-boot-order."
 )

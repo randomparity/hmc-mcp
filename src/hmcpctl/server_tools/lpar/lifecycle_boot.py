@@ -132,7 +132,7 @@ def hmc_clear_lpar_boot_order(
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Refuse to clear a pending boot order: a V10R3 HMC accepts no clearing value.
+    """Refuse to clear a pending boot order: no value tried on V10R3 clears it.
 
     Authorizes the caller, then raises without writing. A V10R3 HMC (M1060)
     rejects an empty ``PendingBootString`` with HTTP 500 ``REST0126`` and its CLI

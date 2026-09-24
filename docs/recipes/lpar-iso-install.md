@@ -286,7 +286,7 @@ the activation removed: power the partition off, re-run the step 3 or 4 command 
 it, write it into the profile as above from the new listing, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
 is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
-Firmware device paths, and a never-booted partition reports none. A V10R3 HMC accepts no value that
+Firmware device paths, and a never-booted partition reports none. No value tried on a V10R3 HMC
 clears a pending boot order, so `clear-boot-order` refuses and writes nothing (#1048). A pending
 boot order, once set, is replaced with `set-boot-order`. A profile activation (`chsysstate -o on`)
 consumed it when observed on V10R3; whether this recipe's `power-on` job does is unverified.
