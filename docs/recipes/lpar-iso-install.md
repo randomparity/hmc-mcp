@@ -1,13 +1,11 @@
 # LPAR ISO installation recipe
 
-> **Status: exercised live, not yet runnable on `main`.** An earlier order of these steps ran
-> from creation through cleanup on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into
-> its installer. This version follows what that run found; where its order differs from the run,
-> the step says so. That run used a build patched for #935, #936, #961, #962 and #979.
-> Unpatched, it stops at
-> `adapters add-network` with HTTP 406 (#935). These issues must land before the recipe runs on
-> `main`: #935, #936, #961, #962, #963, #978, #979, #980 and #981. #961 has since landed. Each
-> step that depends on an open issue names it.
+> **Status: exercised live, not yet runnable on `main`.** These steps ran in this order, from
+> creation through cleanup, on 2026-09-23 against HMC V10R3 M1060, and the ISO booted into its
+> installer. The run used a build patched for #935 and #979, and imported the ISO outside
+> `hmcpctl` (#978). Unpatched, the recipe stops at `adapters add-network` with HTTP 406 (#935).
+> These issues must land before the recipe runs on `main`: #935, #978 and #979; #981 needs the
+> HMC CLI step in section 5 until it lands. Each step that depends on an open issue names it.
 
 This recipe creates one powered-off LPAR, gives it a virtual network adapter and a VIOS-backed
 virtual disk, puts an installation ISO in the VIOS media repository, mounts it, and boots the
@@ -73,18 +71,16 @@ shows.
 - Every `--vg`, `VG`, and `MEDIA_VG` argument is a volume-group **UUID**.
 - The HMC CLI commands take the managed-system **name** and the partition **name**.
 - Every other `--system`, VIOS, and LPAR selector accepts a name or a UUID.
-- The VIOS rejects a virtual-disk name longer than 15 characters, and `create-disk` does not
-  check it yet (#964). `upload-iso` refuses a `MEDIA_NAME` with any other character, a hyphen
+- The VIOS rejects a virtual-disk name longer than 15 characters, and `create-disk`
+  refuses a longer one. `upload-iso` refuses a `MEDIA_NAME` with any other character, a hyphen
   included.
 
 ## HMC CLI steps
 
-Three things in this recipe have no working `hmcpctl` command yet. Run them in an SSH session on
+Two things in this recipe have no working `hmcpctl` command yet. Run them in an SSH session on
 the HMC, as the HMC user in your connection profile:
 
-- applying the new partition's profile after `lpars create`, until #939 makes `lpars create`
-  do it;
-- writing the adapters that `hmcpctl` adds into that profile before a profile power-on, until
+- writing the adapters that `hmcpctl` adds into the partition's profile before a profile power-on, until
   #981;
 - reading the partition description for the ownership checks. `lpars get-description` prints a
   blank line in place of the stamp until #965 is fixed.
@@ -170,24 +166,23 @@ hmcpctl lpars state "$LPAR"
 ```
 
 Expected: `Created LPAR '<new-lpar-name>'` and the partition as JSON; copy its `UUID` into
-`LPAR`. `lpars state` prints `not activated`. If `lpars create` warns that it could not stamp
-ownership, stop: the later guarded commands will refuse the partition.
+`LPAR`. The output's `steps` include `apply_profile` with status `ok`, and the partition has an
+`AssociatedPartitionProfile`: `lpars create` applies the new profile itself (#939), which the
+adapter writes in step 3 and the profile power-on in step 5 need. `lpars state` prints
+`not activated`. If `lpars create` warns that it could not stamp ownership, or that the profile
+was not applied, stop.
 
-Then, on the HMC CLI, apply the new profile and check the ownership stamp:
+Then check the ownership stamp on the HMC CLI:
 
 ```text
-chsyscfg -r lpar -m <managed-system-name> -o apply -p <lpar-name> -n default_profile
 lssyscfg -r lpar -m <managed-system-name> --filter lpar_names=<lpar-name> -F description
 ```
 
-`-p` names the partition and `-n` the profile; `-f` would name a file. Without this step the
-adapter writes in step 3 fail with REST0269, and the partition has no
-`AssociatedPartitionProfile` for step 5 (#939). The description carries the ownership stamp and
-`[caller <run-unique-token>]`.
+The description carries the ownership stamp and `[caller <run-unique-token>]`.
 
 ## 3. Network adapter and virtual disk
 
-`add-network` needs #935 and #961. `create-disk` needs #936, and `storage map` needs #962.
+`add-network`, `create-disk` and `storage map` need #935.
 
 ```bash
 hmcpctl adapters add-network "$LPAR" --vlan "$VLAN_ID" --system "$SYSTEM" --yes
@@ -218,22 +213,18 @@ MEDIA_VG=<volume-group-uuid-holding-the-media-repository>
 hmcpctl storage get-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
 ```
 
-**Creating a repository is blocked by #963.** The HMC's `RepositorySize` is in GiB, but
-`create-media-repo` sends the `--size-mib` value unconverted, so the command below asks for a
-20 TiB repository today. Its confirmation prompt still says MiB. Until #963 lands, use a VIOS
-that already has a repository, or create one outside `hmcpctl`. The command below means a
-20 GiB repository (20480 MiB). #963 decides whether the option stays in MiB or changes unit;
-use the unit it ships. The command carries no `--yes`, so it prompts: do not confirm it until
-#963 lands.
+If `get-media-repo` shows no repository, create one. `--size-mib` must be a multiple of 1024
+and reaches the HMC as whole GiB, so the command below creates a 20 GiB repository. It needs
+#935.
 
 ```bash
-hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM"
+hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
 ```
 
 Put the ISO in the repository and mount it on the partition. **`upload-iso` is blocked by
 #978:** it sends a `BrokeredFile` element HMC V10R3 does not recognise. The 2026-09-23 run
 imported the ISO through the HMC REST web File API outside `hmcpctl`; this recipe does not
-document that path. `mount-optical-media` needs #962.
+document that path. `mount-optical-media` needs #935.
 
 ```bash
 hmcpctl storage upload-iso "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
@@ -261,8 +252,8 @@ lshwres -r virtualio --rsubtype scsi -m <managed-system-name> --level lpar --fil
 lshwres -r virtualio --rsubtype eth -m <managed-system-name> --level lpar --filter lpar_names=<lpar-name>
 ```
 
-The 2026-09-23 run first powered on without this step, stopped at SMS, then wrote the profile
-and powered on again. Write every adapter those listings show, both vSCSI client adapters and the Ethernet
+An earlier 2026-09-23 run first powered on without this step, stopped at SMS, then wrote the
+profile and powered on again. Write every adapter those listings show, both vSCSI client adapters and the Ethernet
 adapter, into the profile. Take each field from the listing; the `chsyscfg` help on the HMC
 gives the field order for both attributes:
 
@@ -300,8 +291,8 @@ console session while it runs. Exit status 1 with a message that the console is 
 another session has it open; the command leaves that session alone. Exit status 3 means
 `released: false`: the console may still be held, so run the `rmvterm` command the line names
 on the HMC before another capture. Repeat the capture, each time to a new file, to follow the
-installer's progress. The live run captured the console by partition and system name; UUID
-selectors resolve through the `uuid,name` lookup, which has not yet run live.
+installer's progress. UUID selectors resolve the partition name through the HMC CLI
+`uuid,name` lookup; the 2026-09-23 run captured the console both by UUID and by name.
 
 ## 6. After installation: power off and unmount the ISO
 
@@ -322,11 +313,11 @@ hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
 Expected: the second `list-mappings` shows the optical mapping gone and the disk mapping
-unchanged. The ISO stays in the repository. The 2026-09-23 run unmounted while the partition was
-running; unmounting after power-off is the recommended order but has not run live.
+unchanged. The ISO stays in the repository. The 2026-09-23 run powered off gracefully from the
+installer and then unmounted, in this order.
 
 `unmount-optical-media` and `detach-mapping` refuse on a live HMC until #979 lands. Unmount
-only after power-off. On a running partition the 2026-09-23 run got HTTP 500 HSCL2957 (no RMC
+only after power-off. On a running partition an earlier 2026-09-23 run got HTTP 500 HSCL2957 (no RMC
 connection to the partition), after the VIOS had already removed the optical device and its
 server adapter. The client adapter stayed on the partition. If that happens, treat it as a
 partial change: compare `list-mappings` and `adapters list` with the state you expect.
@@ -353,7 +344,7 @@ hmcpctl storage detach-mapping "$VIOS" "$MAPPING_ID" --system "$SYSTEM" --confir
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
-Delete the virtual disk (#936), then the ISO. `delete-disk` refuses a disk that is still mapped.
+Delete the virtual disk, then the ISO. `delete-disk` refuses a disk that is still mapped.
 
 ```bash
 hmcpctl storage delete-disk "$VIOS" --vg "$VG" --name "$DISK_NAME" --system "$SYSTEM" --yes

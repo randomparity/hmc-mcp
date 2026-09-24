@@ -184,7 +184,8 @@ SSH UUID-to-name lookups to match that run. Product fixes stay with their issues
 The SSH UUID-to-name lookups in `ssh/lpar.py` sent `-F UUID,PartitionName` and
 `-F UUID,SystemName`. Those are REST element names, and the HMC rejects `UUID` as an invalid
 attribute. They now send the HMC CLI attributes `uuid,name`, as `docs/hmc-cli-cheatsheet.md`
-records. That form is documented but has not yet run live; the operator's re-run covers it.
+records. Both forms ran live on 2026-09-23: `lpars create`'s `mksyscfg` fallback resolved a
+system UUID, and `capture-console` resolved a partition UUID.
 
 The fix reaches every caller of the lookups: the SSH selector fallbacks (`ssh/selectors.py`),
 VIOS install, the `lpars create` 406 `mksyscfg` fallback and the ownership system-name fallback.
