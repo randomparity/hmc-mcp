@@ -38,7 +38,8 @@ Out of scope, per the WORK:SCOPE exclusions: a `SHA256` element (operator), the
 ## Behaviour
 
 0. A volume group without a media repository is refused before anything is downloaded.
-1. The operation creates the File and gets a `FileUUID`. A create that fails leaves nothing to
+1. After the download it repeats the name-collision check, because the visibility check matches
+   by name. Then it creates the File and gets a `FileUUID`. A create that fails leaves nothing to
    delete. It raises `HMCError` for a status other than 200 or 201, or for a response without
    exactly one UUID-shaped `FileUUID`.
 2. It streams the staged file with `_aiter_file_chunks` and `Content-Length: file_size`. Any

@@ -67,8 +67,8 @@ def _web_file_routes(mock_hmc) -> WebFileRoutes:
 
 
 def _visible_after_upload() -> AsyncMock:
-    """Inventory reads: empty for the collision check, then listing the upload."""
-    return AsyncMock(side_effect=[[], [VISIBLE]])
+    """Inventory reads: empty for both collision checks, then listing the upload."""
+    return AsyncMock(side_effect=[[], [], [VISIBLE]])
 
 
 def _web_file_client(**client_mocks) -> MagicMock:
@@ -408,6 +408,20 @@ async def test_upload_iso_releases_the_file_when_the_upload_fails(mock_hmc, stag
 
 
 @pytest.mark.asyncio
+async def test_upload_iso_refuses_a_name_taken_during_the_download(stage_download):
+    """A same-named media that appears while the ISO downloads is not mistaken for it."""
+    download = stage_download()
+    hmc = _web_file_client(list_optical_media=AsyncMock(side_effect=[[], [VISIBLE]]))
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+
+    hmc._web_file_create.assert_not_awaited()
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
 async def test_upload_iso_create_failure_deletes_nothing(stage_download):
     """A File that was never created has no FileUUID to release."""
     stage_download()
@@ -435,8 +449,8 @@ async def test_upload_iso_fails_when_the_repository_never_lists_the_media(
 
     assert "list-optical-media" in str(raised.value)
     assert raised.value.status_code is None
-    # One collision check before the transfer, then the bounded polls.
-    assert hmc.list_optical_media.await_count == 1 + VISIBILITY_POLLS
+    # Collision checks before the download and before the create, then the polls.
+    assert hmc.list_optical_media.await_count == 2 + VISIBILITY_POLLS
     assert sleeps.await_count == VISIBILITY_POLLS - 1
     hmc._web_file_delete.assert_awaited_once_with(FILE_UUID)
 
@@ -447,7 +461,7 @@ async def test_upload_iso_waits_for_the_media_to_appear(stage_download, sleeps):
     stage_download()
     other = {"MediaName": "other.iso"}
     hmc = _web_file_client(
-        list_optical_media=AsyncMock(side_effect=[[], [], [other], [other, VISIBLE]])
+        list_optical_media=AsyncMock(side_effect=[[], [], [], [other], [other, VISIBLE]])
     )
 
     result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
@@ -463,7 +477,7 @@ async def test_upload_iso_notes_that_the_bytes_landed_when_a_poll_fails(stage_do
     stage_download()
     hmc = _web_file_client(
         list_optical_media=AsyncMock(
-            side_effect=[[], HMCError("GET VolumeGroup failed", 500, "")]
+            side_effect=[[], [], HMCError("GET VolumeGroup failed", 500, "")]
         )
     )
 
@@ -1080,9 +1094,7 @@ async def test_upload_iso_uploads_from_an_allowlisted_url_end_to_end(
         requests = _install_iso_transport(
             monkeypatch, lambda _request: httpx.Response(200, content=TEST_CONTENT)
         )
-        hmc.list_optical_media = AsyncMock(
-            side_effect=[[], [{"MediaName": MEDIA_NAME, "MediaSize": len(TEST_CONTENT)}]]
-        )
+        hmc.list_optical_media = _visible_after_upload()
         result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
 
     assert result["status"] == "uploaded"

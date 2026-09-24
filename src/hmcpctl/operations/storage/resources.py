@@ -811,6 +811,18 @@ async def list_optical_media(
     return [_optical_media(entry) for entry in await hmc.list_optical_media(vios_uuid, vg_uuid)]
 
 
+async def _refuse_existing_media(
+    hmc: HMCClient, vios_uuid: str, vg_uuid: str, media_name: str
+) -> None:
+    """Refuse a media name the repository already lists."""
+    for media in await hmc.list_optical_media(vios_uuid, vg_uuid):
+        if media.get("MediaName") == media_name:
+            raise FileExistsError(
+                f"Media name '{media_name}' already exists in repository. "
+                "Use a different name or delete the existing media first."
+            )
+
+
 async def _wait_for_media(
     hmc: HMCClient, vios_uuid: str, vg_uuid: str, media_name: str
 ) -> dict[str, Any]:
@@ -842,6 +854,9 @@ async def _upload_iso_via_web_file(
     """Create a web File, stream the ISO into it, wait for the media, release the File."""
     file_uuid: str | None = None
     try:
+        # Again after the download: the visibility check matches by name, so a
+        # same-named media added meanwhile would pass for this upload.
+        await _refuse_existing_media(hmc, vios_uuid, vg_uuid, media_name)
         file_uuid = await hmc._web_file_create(vios_uuid, media_name, file_size)
         with iso_path.open("rb") as handle:
             await hmc._web_file_upload(file_uuid, _aiter_file_chunks(handle), file_size)
@@ -935,13 +950,7 @@ async def upload_iso(
     # Check for name collision before downloading anything — the check needs
     # only vios_uuid and vg_uuid, so a taken name is refused without the
     # transfer (#325).
-    existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-    for media in existing_media:
-        if media.get("MediaName") == media_name:
-            raise FileExistsError(
-                f"Media name '{media_name}' already exists in repository. "
-                "Use a different name or delete the existing media first."
-            )
+    await _refuse_existing_media(hmc, vios_uuid, vg_uuid, media_name)
 
     try:
         iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
