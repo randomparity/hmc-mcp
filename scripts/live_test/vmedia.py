@@ -756,7 +756,10 @@ async def _configure_boot_order(
 
     The boot order takes Open Firmware device paths (#980). No path is reported for
     the virtual CD, so the step no longer forces a CD-first boot: it writes back the
-    paths the HMC reports, which exercises the write, and skips on an empty list.
+    paths the HMC reports, which exercises the write. It writes only when the baseline
+    pending boot order is non-empty, because only a set can restore it: V10R3 rejects
+    the empty value a clear writes (HTTP 500 REST0126), which would leave the write
+    behind.
     """
     config = state.config
     artifacts = state.artifacts
@@ -767,11 +770,20 @@ async def _configure_boot_order(
         lpar_name_or_uuid=lpar_uuid,
     )
     state.record(20, "hmc_read_lpar_boot_order (baseline)", status, data)
+    pending: list[str] = []
     boot_devices: list[str] = []
     if status == "PASS" and isinstance(data, dict):
-        artifacts.vmedia_orig_boot_order = (data.get("pending_boot_string") or "").split()
+        pending = (data.get("pending_boot_string") or "").split()
         boot_devices = (data.get("boot_device_list") or "").split()
 
+    if not pending:
+        state.skip(
+            20,
+            _SET_BOOT_ORDER_STEP,
+            "baseline pending boot order is empty; V10R3 rejects the empty value that "
+            "would restore it (HTTP 500 REST0126)",
+        )
+        return
     if not boot_devices:
         state.skip(
             20,
@@ -779,6 +791,7 @@ async def _configure_boot_order(
             "no boot device list reported (a never-booted partition has none)",
         )
         return
+    artifacts.vmedia_orig_boot_order = pending
     status, data = await state.call(
         client,
         "hmc_set_lpar_boot_order",
@@ -852,16 +865,11 @@ async def _restore_boot_configuration(
             lpar_name_or_uuid=lpar_uuid,
             devices=artifacts.vmedia_orig_boot_order,
         )
+        state.record(20, "hmc_set_lpar_boot_order (restore)", status, data)
+        if status == "PASS":
+            artifacts.vmedia_orig_boot_order = []
     else:
-        status, data = await state.call(
-            client,
-            "hmc_clear_lpar_boot_order",
-            system_name_or_uuid=config.system_name,
-            lpar_name_or_uuid=lpar_uuid,
-        )
-    state.record(20, "hmc_set_lpar_boot_order (restore)", status, data)
-    if status == "PASS":
-        artifacts.vmedia_orig_boot_order = []
+        state.skip(20, "hmc_set_lpar_boot_order (restore)", "no boot order was set")
 
     status, data = await state.call(
         client,
