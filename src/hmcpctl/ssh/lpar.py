@@ -11,6 +11,9 @@ from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
 from .transport import HMCCLIError, run_hmc_command
 
+# The one partition profile create_lpar_via_cli writes and the create path applies.
+DEFAULT_PROFILE_NAME = "default_profile"
+
 # mksyscfg's dedicated-processor sharing_mode values (hmc-commands-p10 mksyscfg).
 _DEDICATED_SHARING_MODES = (
     "keep_idle_procs",
@@ -120,7 +123,7 @@ async def create_lpar_via_cli(
     partition_type: str = "AIX/Linux",
     resources: LparResources = LparResources(),
     max_virtual_slots: int | None = None,
-    profile_name: str = "default_profile",
+    profile_name: str = DEFAULT_PROFILE_NAME,
 ) -> str:
     """Create an LPAR via ``mksyscfg`` over SSH.
 
@@ -137,9 +140,10 @@ async def create_lpar_via_cli(
 
     Returns the raw ``mksyscfg`` stdout (typically empty on success).
     Raises :class:`HMCCLIError` on non-zero exit, and before any command when
-    more than one virtual processor is requested without processing units, or
-    a dedicated request carries a fractional count or a shared-only
-    ``sharing_mode``.
+    more than one virtual processor is requested without processing units,
+    when the guessed ``max_proc_units`` default would exceed the requested
+    max vCPUs, or a dedicated request carries a fractional count or a
+    shared-only ``sharing_mode``.
     """
     config_pairs: list[tuple[str, object]] = [
         ("name", name),
@@ -155,6 +159,27 @@ async def create_lpar_via_cli(
     # strips the quotes before the HMC ever sees the text.
     config_str = build_attribute_record(config_pairs)
     cmd = f"mksyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(config_str)}"
+    return await run_hmc_command(config, cmd)
+
+
+async def apply_lpar_profile_via_cli(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    profile_name: str = DEFAULT_PROFILE_NAME,
+) -> str:
+    """Apply *profile_name* to *lpar_name* without powering it on (#939).
+
+    ``mksyscfg`` writes only a partition profile; until it is applied or the
+    partition is activated, the partition has no current configuration and
+    REST adapter writes fail (``REST0269``). ``-p`` names the partition and
+    ``-n`` the profile; ``-f`` would name a file. Raises :class:`HMCCLIError`
+    on a non-zero exit or a transport failure.
+    """
+    cmd = (
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -o apply "
+        f"-p {shlex.quote(lpar_name)} -n {shlex.quote(profile_name)}"
+    )
     return await run_hmc_command(config, cmd)
 
 
@@ -273,6 +298,7 @@ def _shared_processor_pairs(resources: LparResources) -> list[tuple[str, object]
     _require_units_for_vcpus(
         resources.desired_procs, _des_vp, "desired_procs", "--procs"
     )
+    _require_max_units_fit_vcpus(resources.max_procs, _max_pu, _max_vp)
 
     return [
         ("proc_mode", "shared"),
@@ -300,6 +326,28 @@ def _require_units_for_vcpus(
             f"{vcpus} virtual processors need explicit processing units: pass "
             f"{field} ({option} on the CLI). The 0.1-unit default covers one "
             "virtual processor only."
+        )
+
+
+def _require_max_units_fit_vcpus(
+    max_units: float | None, computed_max: float, max_vcpus: int
+) -> None:
+    """Refuse a guessed ``max_proc_units`` default a virtual processor cannot use.
+
+    A virtual processor can use at most 1.0 processing unit, so
+    ``max(desired, 2.0)`` is only a safe guess when ``max_vcpus`` covers it.
+    Mirrors :func:`_require_units_for_vcpus`'s refuse-rather-than-guess stance
+    for #938, applied to the opposite (upper) bound (#949). A large
+    ``max_vcpus`` is not refused here: the per-processor *minimum* ratio is
+    platform-specific and not recorded in this repository (#938), so no
+    default is derived from it.
+    """
+    if max_units is None and computed_max > max_vcpus:
+        raise HMCCLIError(
+            f"{max_vcpus} maximum virtual processors cannot use "
+            f"{computed_max} maximum processing units: pass max_procs "
+            "(--max-procs on the CLI). A virtual processor uses at most 1.0 "
+            "processing unit."
         )
 
 

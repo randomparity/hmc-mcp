@@ -12,7 +12,7 @@ from fastmcp import Client
 from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
-from .observation import ExpectedOutcome
+from .observation import ExpectedOutcome, judge_create_result
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
@@ -66,7 +66,8 @@ async def _create_and_confirm_scratch_lpar(client: Client, state: RunState) -> N
             "max_procs": config.scratch_create_max_procs,
         },
     )
-    state.record(8, "hmc_create_lpar", status, data)
+    record_status, reason = judge_create_result(status, data)
+    state.record(8, "hmc_create_lpar", record_status, data, reason)
     if status == "PASS" and isinstance(data, dict):
         created = data.get("lpar")
         if isinstance(created, dict):
@@ -158,7 +159,7 @@ def _unrestorable_description(text: str) -> str | None:
     Defers to the server's own validator rather than restating its rules, so a
     baseline description the CLI cannot round-trip (non-ASCII, a control
     character, or a character the HMC's ``-i`` attribute record treats as
-    structure — ADR 0045) is skipped rather than failing the restore.
+    structure — ADR 0045) is refused before the restore call is attempted.
     """
     if not text:
         return None
@@ -178,17 +179,28 @@ def _baseline_description(state: RunState) -> str:
 
 
 async def _restore_description(client: Client, state: RunState, scenario: int) -> None:
-    """Restore the captured description when the CLI can represent it."""
+    """Restore the captured description, or fail with a manual-recovery row.
+
+    The baseline carries the partition's ownership stamp, so a description the
+    CLI cannot write back is a FAIL, not a SKIP: every ownership-guarded command
+    refuses the partition until someone restores it (#968).
+    """
     description = _baseline_description(state)
     blocked = _unrestorable_description(description)
+    config = state.config
     if blocked:
-        state.skip(
+        state.record(
             scenario,
             "hmc_set_lpar_description (restore)",
-            f"original description cannot be restored via CLI: {blocked}",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: chsyscfg -r lpar -m {config.system_name} "
+            f'-i "name={config.lp3_name},description=<original>" (or the HMC GUI where '
+            "the CLI record cannot carry it); the unredacted original is "
+            "artifacts.lp3_baseline.description in the results file. "
+            f"ST{scenario} left its probe description because the original cannot be "
+            f"written back via CLI: {blocked}",
         )
         return
-    config = state.config
     status, data = await state.call(
         client,
         "hmc_set_lpar_description",

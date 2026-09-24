@@ -100,7 +100,7 @@ def _memory_config(resources: LparResources) -> str:
     if all(value is None for _, value in fields):
         return ""
     parts = [
-        '  <PartitionMemoryConfiguration kb="CUD" kxe="false">',
+        '  <PartitionMemoryConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
         "    <Metadata><Atom/></Metadata>",
     ]
     parts.extend(
@@ -272,7 +272,7 @@ def build_lpar_document(
 
     if os_type is not None:
         body_parts.append(
-            f'  <OperatingSystemType kb="CUD" kxe="false">{os_type}</OperatingSystemType>'
+            f'  <OperatingSystemType kb="ROR" kxe="false">{os_type}</OperatingSystemType>'
         )
 
     proc = _processor_config(resources)

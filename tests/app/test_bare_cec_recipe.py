@@ -25,6 +25,7 @@ DESTRUCTIVE = {("network", "unassign-dedicated-pcie-slot"), ("lpars", "delete")}
 EXPECTED_COMMANDS = {
     ("config", "show"),
     ("jobs", "show"),
+    ("lpars", "capture-console"),
     ("lpars", "create"),
     ("lpars", "delete"),
     ("lpars", "get-description"),

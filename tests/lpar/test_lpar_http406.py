@@ -16,14 +16,16 @@ import pytest
 from hmcpctl.config import HMCConfig
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.ownership import _resolve_system_name as _system_name
+from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
     hmc_modify_lpar,
 )
 from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
-from hmcpctl.ssh.lpar import create_lpar_via_cli
+from hmcpctl.ssh.lpar import apply_lpar_profile_via_cli, create_lpar_via_cli
 from hmcpctl.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -125,34 +127,43 @@ def _unowned_partition():
 # ---------------------------------------------------------------------- #
 
 
-def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
-    """hmc_create_lpar falls back to mksyscfg CLI when REST returns 406.
+def _mock_create_406(
+    mock_hmc,
+    order: list[str] | None = None,
+    readback: httpx.Response | None = None,
+) -> None:
+    """REST create answers 406; the name search is empty before, found after."""
+    search_responses = iter(
+        [
+            httpx.Response(200, text=EMPTY_FEED),
+            readback or httpx.Response(200, text=LPAR_ENTRY),
+        ]
+    )
 
-    The CLI fallback calls create_lpar_via_cli (SSH) instead of raising.
-    After the CLI creates the partition, the tool fetches the new entry
-    via REST and returns it.
-    """
-    _hmc_env(monkeypatch)
+    def _search(request):
+        if order is not None:
+            order.append("search")
+        return next(search_responses)
 
-    # Round 1: no existing LPAR with this name (pre-create check)
-    # Round 2: LPAR exists after CLI creation (post-create fetch)
-    search_responses = [
-        httpx.Response(200, text=EMPTY_FEED),
-        httpx.Response(200, text=LPAR_ENTRY),
-    ]
     mock_hmc.get(
         "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
-    ).mock(side_effect=search_responses)
-    # system UUID resolution
+    ).mock(side_effect=_search)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
-    # create returns 406 → triggers CLI fallback
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    # Patch CLI helpers and the stamp (stamp makes SSH call that would fail here).
+
+def _create_via_406(apply: AsyncMock, order: list[str] | None = None, **kwargs):
+    """Run hmc_create_lpar down the mksyscfg fallback with SSH calls patched."""
+
+    async def _mksyscfg(*args, **kw):
+        if order is not None:
+            order.append("mksyscfg")
+        return ""
+
     with (
         patch(
             "hmcpctl.operations.lpar.core.resolve_system_cli_name",
@@ -160,23 +171,141 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
         ),
         patch(
             "hmcpctl.operations.lpar.core.create_lpar_via_cli",
-            new=AsyncMock(return_value=""),
+            new=AsyncMock(side_effect=_mksyscfg),
         ) as create_via_cli,
+        patch("hmcpctl.operations.lpar.core.apply_lpar_profile_via_cli", new=apply),
         patch(
             "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
         ),
     ):
-        result = hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar")
+        result = hmc_create_lpar(
+            system_name_or_uuid=SYSTEM_UUID, name="new-lpar", **kwargs
+        )
+    return result, create_via_cli
 
-    # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
-    assert result is not None
+
+def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
+    """hmc_create_lpar falls back to mksyscfg, applies the profile, then reads back.
+
+    The read-back follows the apply, so the returned LPAR is the applied
+    partition rather than the empty profile-only one (#939).
+    """
+    _hmc_env(monkeypatch)
+    order: list[str] = []
+    _mock_create_406(mock_hmc, order)
+
+    async def _apply(*args, **kwargs):
+        order.append("apply")
+        return ""
+
+    apply = AsyncMock(side_effect=_apply)
+    result, create_via_cli = _create_via_406(apply, order)
+
     assert result.lpar.get("UUID") == LPAR_UUID
     create_via_cli.assert_awaited_once()
     resources = create_via_cli.await_args.kwargs["resources"]
     assert isinstance(resources, LparResources)
     assert resources.desired_memory == 4096
     assert resources.desired_vcpus == 1
+    assert apply.await_args.args[1:] == ("sys1", "new-lpar")
+    assert order == ["search", "mksyscfg", "apply", "search"]
+    assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
+    assert result.workflow_completed is True
+    assert result.warnings == ()
+
+
+def test_create_lpar_http_406_no_apply_leaves_profile_unapplied(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_create_406(mock_hmc)
+    apply = AsyncMock(return_value="")
+
+    result, _ = _create_via_406(apply, apply_partition_profile=False)
+
+    apply.assert_not_awaited()
+    assert result.steps[1] == WorkflowStep("apply_profile", "skipped")
+    assert result.workflow_completed is True
+    assert len(result.warnings) == 1
+    assert "'default_profile' was not applied" in result.warnings[0]
+    assert "no current configuration" in result.warnings[0]
+
+
+def test_create_lpar_http_406_apply_error_stops_the_workflow(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_create_406(mock_hmc)
+    apply = AsyncMock(side_effect=HMCCLIError("HSCL boom"))
+
+    result, _ = _create_via_406(apply)
+
+    assert result.resource_created is True
+    assert result.lpar.get("UUID") == LPAR_UUID
+    assert result.steps[1].step == "apply_profile"
+    assert result.steps[1].status == "error"
+    assert "HSCL boom" in result.steps[1].result
+    assert result.workflow_completed is False
+    assert "'default_profile' was not applied" in result.warnings[0]
+    assert "redo any skipped steps" in result.warnings[0]
+
+
+def test_create_lpar_http_406_readback_error_still_reports_the_create(
+    monkeypatch, mock_hmc
+):
+    """A failed read-back after mksyscfg keeps the create and apply result (#1014)."""
+    _hmc_env(monkeypatch)
+    _mock_create_406(mock_hmc, readback=httpx.Response(500, text="<error>boom</error>"))
+    apply = AsyncMock(return_value="")
+
+    result, _ = _create_via_406(apply)
+
+    assert result.resource_created is True
+    assert result.lpar is None
+    assert result.ownership_stamped is None
+    assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
+    assert len(result.warnings) == 1
+    assert "read-back after mksyscfg failed" in result.warnings[0]
+    assert "HTTP 500" in result.warnings[0]
+
+
+def test_required_stamp_policy_raises_on_readback_error_after_mksyscfg():
+    """Under 'required' a failed read-back raises, naming the created partition."""
+    hmc = AsyncMock()
+    hmc.find_partition_by_name.side_effect = [None, HMCError("boom", status_code=500)]
+    hmc.create_logical_partition.side_effect = HMCError("nope", status_code=406)
+    creation = LparCreation(
+        "new-lpar", "AIX/Linux", LparResources(), stamp_policy="required"
+    )
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_uuid",
+            new=AsyncMock(return_value=SYSTEM_UUID),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_cli_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
+        patch("hmcpctl.operations.lpar.core.create_lpar_via_cli", new=AsyncMock()),
+        pytest.raises(HMCError) as exc_info,
+    ):
+        asyncio.run(create_and_stamp_lpar(hmc, SYSTEM_UUID, creation))
+
+    message = str(exc_info.value)
+    assert "'new-lpar'" in message
+    assert "mksyscfg" in message
+    assert "still exists" in message
+    assert "HTTP 500" in message
+    assert isinstance(exc_info.value.__cause__, HMCError)
+
+
+def test_apply_profile_sends_verified_chsyscfg():
+    """The #879-verified form: -p names the partition, -n the profile; no -f."""
+    with patch(
+        "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+    ) as run:
+        asyncio.run(apply_lpar_profile_via_cli(HMCConfig(host="hmc.test"), "sys 1", "lp1"))
+    assert run.await_args.args[1] == (
+        "chsyscfg -r lpar -m 'sys 1' -o apply -p lp1 -n default_profile"
+    )
 
 
 # ---------------------------------------------------------------------- #
@@ -330,6 +459,37 @@ def test_cli_create_sends_explicit_units_with_several_vcpus():
 def test_cli_create_keeps_unit_defaults_for_one_vcpu():
     command = _cli_create(LparResources(desired_vcpus=1)).await_args.args[1]
     assert "min_proc_units=0.1,desired_proc_units=0.1,max_proc_units=2.0" in command
+
+
+# ---------------------------------------------------------------------- #
+# create_lpar_via_cli — max_proc_units default vs. --max-vcpus (#949)
+# ---------------------------------------------------------------------- #
+
+
+def test_cli_create_refuses_max_default_exceeding_max_vcpus():
+    """A single max vCPU cannot use the max(desired, 2.0) processing-unit default."""
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match="--max-procs"),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"),
+                "sys1",
+                "lp1",
+                resources=LparResources(max_vcpus=1),
+            )
+        )
+    run.assert_not_awaited()
+
+
+def test_cli_create_keeps_max_default_for_large_max_vcpus():
+    """A large --max-vcpus keeps the 2.0-unit default; no minimum is derived (#949)."""
+    command = _cli_create(LparResources(max_vcpus=100)).await_args.args[1]
+    assert "max_proc_units=2.0" in command
+    assert "max_procs=100" in command
 
 
 # ---------------------------------------------------------------------- #

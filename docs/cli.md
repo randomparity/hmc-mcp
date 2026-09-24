@@ -78,6 +78,27 @@ Capture refuses to overwrite an existing local file. Validation and inspection a
 perform no HMC I/O. Snapshots do not expose a replay command; observation data is diagnostic and
 never part of the replayable profile configuration.
 
+When the HMC creates the partition through `mksyscfg` (its REST create answered HTTP 406),
+`lpars create` then applies the new `default_profile` with `chsyscfg -o apply`, without powering
+the partition on, and reports an `apply_profile` step. Until a profile is applied or the partition
+is activated, it has no current configuration and REST adapter writes fail. `--no-apply` skips
+the apply. Adapter changes made through REST after the apply live only in the current
+configuration; a later power-on with the profile does not keep them (#981).
+
+A bounded console capture reads an LPAR's virtual console without sending it input:
+
+```bash
+hmcpctl lpars capture-console aix1 --system sys1 --duration 30 --output aix1.console.log
+```
+
+It stops at `--duration` seconds (at most 3600), `--max-bytes` (at most 1048576), or
+`--idle-timeout` seconds of silence, writes the raw bytes to `--output` or to a redirected stdout,
+and refuses an existing file or a terminal stdout. One stderr line reports the stop reason, byte
+count and `released`. Exit codes ([ADR 0175](adr/0175-capture-console-exit-codes.md)): `0` the
+capture finished and the console was released; `1` a lookup, SSH or HMC failure, a console held
+by another session, a capture stopped by an error, or bytes that could not be written; `2` a
+usage error; `3` the release was not proven, so run `rmvterm` on the HMC before another capture.
+
 `hmcpctl lpars decommission` enforces the ADR 0011 ownership token even for
 `--dry-run`; use `--ownership-override` only after explicit operator approval.
 
@@ -87,24 +108,23 @@ never part of the replayable profile configuration.
 # 1. create the partition
 hmcpctl lpars create web01 --system <sys-uuid> --mem 8192 --vcpus 2 --procs 0.2
 
-# 2. give it a vSCSI adapter paired to the VIOS (find IDs via `vios list`)
-hmcpctl adapters add-vscsi web01 --vios-id 1 --vios-slot 5
-
-# 3. carve a virtual disk out of a VIOS volume group
+# 2. carve a virtual disk out of a VIOS volume group
 hmcpctl storage list-vgs <vios-uuid>                       # find the VG + free space
 hmcpctl storage create-disk <vios-uuid> --vg <vg-uuid> --name web01_root --capacity-mib 51200
 
-# 4. map the disk to the partition
+# 3. map the disk to the partition (the HMC creates the vSCSI adapter pair)
 hmcpctl storage map <vios-uuid> --lpar web01 --disk web01_root
 
-# 5. (optionally) network + power on
+# 4. (optionally) network + power on
 hmcpctl adapters add-network web01 --vlan 100
 hmcpctl lpars power-on web01
 ```
 
-> **Note on the storage model**: an LPAR's vSCSI/vFC *adapter* (added with
-> `adapters add-vscsi` / `add-vfc`) is just plumbing — it pairs the partition
-> with a VIOS server slot. The actual *disk* lives on the VIOS or in a Shared
+> **Note on the storage model**: an LPAR's vSCSI/vFC *adapter* is just
+> plumbing — it pairs the partition with a VIOS server slot. `storage map`
+> creates its own vSCSI client/server adapter pair, so do not run
+> `adapters add-vscsi` first; an adapter added that way is left unpaired. The
+> actual *disk* lives on the VIOS or in a Shared
 > Storage Pool: carve it out of a Volume Group (`storage create-disk`) or a
 > Cluster/SSP (`cluster create-lu`), then connect it with a mapping
 > (`storage map`). Both the VIOS **Volume Group / Virtual Disk** model and the

@@ -20,6 +20,7 @@ from hmcpctl.operations.lpar.ownership import (
     resolve_and_authorize_lpar_mutation,
     stamp_created_lpar_ownership,
 )
+from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
 
 from ...documents import (
@@ -52,6 +53,8 @@ from ...resource_identity import (
     resolve_system_uuid,
 )
 from ...ssh.lpar import (
+    DEFAULT_PROFILE_NAME,
+    apply_lpar_profile_via_cli,
     create_lpar_via_cli,
     resolve_system_cli_name,
     validate_caller_token,
@@ -163,6 +166,9 @@ class LparCreation:
     max_virtual_slots: int | None = None
     caller_token: str | None = None
     stamp_policy: Literal["best-effort", "required"] = "best-effort"
+    # mksyscfg path only (#939): True applies the created profile, False
+    # reports a skipped apply step, None (not requested) adds no step.
+    apply_profile: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -173,6 +179,7 @@ class LparCreationResult:
     lpar: dict[str, Any] | None
     ownership_stamped: bool | None
     warnings: tuple[str, ...]
+    apply_step: WorkflowStep | None = None
 
 
 @dataclass(frozen=True)
@@ -354,6 +361,8 @@ async def create_and_stamp_lpar(
         )
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name: str | None = None
+    apply_step: WorkflowStep | None = None
+    readback_error: HMCError | None = None
     document = build_lpar_document(
         name=creation.name,
         partition_type=creation.partition_type,
@@ -381,9 +390,23 @@ async def create_and_stamp_lpar(
             resources=resources,
             max_virtual_slots=creation.max_virtual_slots,
         )
-        created_lpar = await hmc.find_partition_by_name(creation.name)
+        if creation.apply_profile is not None:
+            apply_step = await _apply_created_profile(hmc, system_name, creation)
+        try:
+            created_lpar = await hmc.find_partition_by_name(creation.name)
+        except HMCError as exc:
+            created_lpar, readback_error = None, exc
+    apply_warnings = _unapplied_profile_warnings(creation.name, apply_step)
 
     if created_lpar is None:
+        if creation.stamp_policy == "required" and readback_error is not None:
+            raise HMCError(
+                f"stamp_policy='required': mksyscfg created LPAR {creation.name!r} "
+                f"but its read-back failed ({readback_error}), so it was not "
+                "stamped. The LPAR still exists — re-stamp it with "
+                "set_lpar_ownership_description or delete it to release its "
+                "resources."
+            ) from readback_error
         if creation.stamp_policy == "required":
             raise HMCError(
                 "stamp_policy='required': cannot confirm the created LPAR "
@@ -392,14 +415,20 @@ async def create_and_stamp_lpar(
                 "created partition can be re-stamped with "
                 "set_lpar_ownership_description."
             )
+        skipped = (
+            "create returned no LPAR body"
+            if readback_error is None
+            else f"read-back after mksyscfg failed: {readback_error}"
+        )
         return LparCreationResult(
             resource_created=True,
             lpar=None,
             ownership_stamped=None,
             warnings=(
-                (f"ownership stamp skipped for LPAR {creation.name!r}: "
-                 "create returned no LPAR body"),
+                *apply_warnings,
+                f"ownership stamp skipped for LPAR {creation.name!r}: {skipped}",
             ),
+            apply_step=apply_step,
         )
     ownership_stamped, warnings = await stamp_created_lpar_ownership(
         hmc,
@@ -420,7 +449,49 @@ async def create_and_stamp_lpar(
             "set_lpar_ownership_description (issue #376) or delete it to "
             "release its resources."
         )
-    return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
+    return LparCreationResult(
+        True,
+        created_lpar,
+        ownership_stamped,
+        (*apply_warnings, *warnings),
+        apply_step,
+    )
+
+
+async def _apply_created_profile(
+    hmc: HMCClient, system_name: str, creation: LparCreation
+) -> WorkflowStep:
+    """Apply the mksyscfg-created profile, reporting the outcome as a step.
+
+    An apply failure is reported, not raised: the partition already exists and
+    is not rolled back.
+    """
+    if creation.apply_profile is False:
+        return WorkflowStep("apply_profile", "skipped")
+    try:
+        await apply_lpar_profile_via_cli(hmc.config, system_name, creation.name)
+    except HMCCLIError as exc:
+        return WorkflowStep("apply_profile", "error", str(exc))
+    return WorkflowStep("apply_profile", "ok", DEFAULT_PROFILE_NAME)
+
+
+def _unapplied_profile_warnings(
+    name: str, apply_step: WorkflowStep | None
+) -> tuple[str, ...]:
+    """Say that a skipped or failed apply left the partition unconfigured."""
+    if apply_step is None or apply_step.status == "ok":
+        return ()
+    warning = (
+        f"partition profile {DEFAULT_PROFILE_NAME!r} was not applied: {name!r} has "
+        "no current configuration, so its current memory and processors read as "
+        "zero until the profile is applied or the partition is activated"
+    )
+    if apply_step.status == "error":
+        warning += (
+            "; apply it with chsyscfg -o apply or activate with it, then redo any "
+            "skipped steps"
+        )
+    return (warning,)
 
 
 async def delete_lpar(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from typing import Literal, get_args
 
 from ..xmlutil import ATOM_NS, escapes_string_arguments
@@ -7,20 +8,21 @@ from .common import UOM_NS, document_envelope
 
 StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
 STORAGE_KINDS = frozenset(get_args(StorageKind))
+VIRTUAL_DISK_NAME_MAX = 15
 
 
 @escapes_string_arguments
 def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     """Document to create a Volume Group from a set of physical volumes."""
     pvs = "\n".join(
-        f'    <PhysicalVolume kb="CUD" kxe="false" schemaVersion="V1_0">\n'
+        f'    <PhysicalVolume schemaVersion="V1_0">\n'
         f"      <Metadata><Atom/></Metadata>\n"
-        f'      <VolumeName kb="CUD" kxe="false">{pv}</VolumeName>\n'
+        f'      <VolumeName kb="CUR" kxe="false">{pv}</VolumeName>\n'
         f"    </PhysicalVolume>"
         for pv in physical_volumes
     )
     body = f"""  <Metadata><Atom/></Metadata>
-  <GroupName kb="CUD" kxe="false">{name}</GroupName>
+  <GroupName kb="CUR" kxe="false">{name}</GroupName>
   <PhysicalVolumes kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
 {pvs}
@@ -29,21 +31,67 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
 
 
 @escapes_string_arguments
-def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
-    """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
+def build_virtual_disk_element(disk_name: str, capacity_mib: int) -> str:
+    """One VirtualDisk for insertion into a fetched VolumeGroup (read-modify-write, #936).
+
+    V10R3 rejects ``kb`` on VirtualDisk and requires DiskCapacity (GiB) before DiskName.
+    """
+    name_length = len(html.unescape(disk_name))  # the decorator escaped disk_name
+    if name_length > VIRTUAL_DISK_NAME_MAX:
+        raise ValueError(
+            f"disk_name is {name_length} characters; the VIOS limits "
+            f"backing-device names to {VIRTUAL_DISK_NAME_MAX} characters"
+        )
     if capacity_mib <= 0 or capacity_mib % 1024:
         raise ValueError("capacity_mib must be a positive multiple of 1024")
     capacity_gib = capacity_mib // 1024
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
+    return f"""<VirtualDisk xmlns="{UOM_NS}" schemaVersion="V1_0">
+  <Metadata><Atom/></Metadata>
+  <DiskCapacity kb="CUR" kxe="false">{capacity_gib}</DiskCapacity>
+  <DiskName kb="CUR" kxe="false">{disk_name}</DiskName>
+</VirtualDisk>"""
+
+
+_TARGET_DEVICE_ELEMENTS = {
+    "PhysicalVolume": "PhysicalVolumeVirtualTargetDevice",
+    "VirtualDisk": "LogicalVolumeVirtualTargetDevice",
+    "VirtualOpticalMedia": "VirtualOpticalTargetDevice",
+}
+
+
+def _target_device(element: str, name: str | None) -> str:
+    """Typed V10R3 TargetDevice pinning the vtscsi name; empty when *name* is unset."""
+    if not name:
+        return ""
+    return f"""
+      <TargetDevice kb="CUR" kxe="false">
+        <{element} schemaVersion="V1_0">
+          <Metadata><Atom/></Metadata>
+          <TargetName kb="CUR" kxe="false">{name}</TargetName>
+        </{element}>
+      </TargetDevice>"""
+
+
+def _mapping_document(storage_xml: str, target_xml: str, lpar_link: str) -> str:
+    """VirtualIOServer document with one VirtualSCSIMapping, in the V10R3 child order.
+
+    Arguments are already escaped by the public builders; this helper adds no values.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
+  <Metadata><Atom/></Metadata>
+  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_0">
+    <VirtualSCSIMapping schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
-      <DiskName kb="CUD" kxe="false">{disk_name}</DiskName>
-      <DiskCapacity kb="CUD" kxe="false">{capacity_gib}</DiskCapacity>
-    </VirtualDisk>
-  </VirtualDisks>"""
-    return document_envelope("VolumeGroup", body)
+      <AssociatedLogicalPartition kb="CUR" kxe="false" href="{lpar_link}" rel="related"/>
+      <Storage kb="CUR" kxe="false">
+{storage_xml}
+      </Storage>{target_xml}
+    </VirtualSCSIMapping>
+  </VirtualSCSIMappings>
+</VirtualIOServer>
+"""
 
 
 @escapes_string_arguments
@@ -53,7 +101,10 @@ def build_vscsi_mapping_document(
     lpar_link: str,
     target_device: str | None = None,
 ) -> str:
-    """A VirtualIOServer document carrying a VirtualSCSIMapping (for POST).
+    """A VirtualIOServer document carrying the one new VirtualSCSIMapping.
+
+    The client appends that mapping to the VIOS's fetched mapping group before
+    posting, never this sparse document itself (ADR 0169).
 
     storage_kind is "PhysicalVolume" (whole disk) or "VirtualDisk" (a logical
     volume from a VG). storage_name is the device/disk name (e.g. hdisk5 or
@@ -69,30 +120,12 @@ def build_vscsi_mapping_document(
             f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"
         )
     name_field = "VolumeName" if storage_kind == "PhysicalVolume" else "DiskName"
-    target = ""
-    if target_device:
-        target = (
-            f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
-        )
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
-  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <Storage kb="CUD" kxe="false" schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <{storage_kind} kb="CUD" kxe="false" schemaVersion="V1_0">
+    storage = f"""        <{storage_kind} schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
-          <{name_field} kb="CUD" kxe="false">{storage_name}</{name_field}>
-        </{storage_kind}>
-      </Storage>
-{target}      <AssociatedLogicalPartition xmlns="{ATOM_NS}" rel="related" href="{lpar_link}"/>
-    </VirtualSCSIMapping>
-  </VirtualSCSIMappings>
-</VirtualIOServer>
-"""
+          <{name_field} kb="CUR" kxe="false">{storage_name}</{name_field}>
+        </{storage_kind}>"""
+    target = _target_device(_TARGET_DEVICE_ELEMENTS[storage_kind], target_device)
+    return _mapping_document(storage, target, lpar_link)
 
 
 @escapes_string_arguments
@@ -101,36 +134,21 @@ def build_virtual_optical_mapping_document(
     lpar_link: str,
     target_device: str | None = None,
 ) -> str:
-    """A VirtualIOServer document carrying a VirtualSCSIMapping for optical media (for POST).
+    """A VirtualIOServer document carrying one new optical-media VirtualSCSIMapping.
+
+    Like build_vscsi_mapping_document, the client appends the mapping to the
+    VIOS's fetched mapping group rather than posting this document (ADR 0169).
 
     media_name is the MediaName of the VirtualOpticalMedia (ISO container) to mount.
     lpar_link is the Atom SELF href of the client LPAR the optical media is mapped to.
     target_device optionally pins the vtscsi name. This creates a read-only optical mapping.
     """
-    target = ""
-    if target_device:
-        target = (
-            f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
-        )
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
-  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <Storage kb="CUD" kxe="false" schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <VirtualOpticalMedia kb="CUD" kxe="false" schemaVersion="V1_0">
+    storage = f"""        <VirtualOpticalMedia schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
-          <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
-        </VirtualOpticalMedia>
-      </Storage>
-{target}      <AssociatedLogicalPartition xmlns="{ATOM_NS}" rel="related" href="{lpar_link}"/>
-    </VirtualSCSIMapping>
-  </VirtualSCSIMappings>
-</VirtualIOServer>
-"""
+          <MediaName kb="CUR" kxe="false">{media_name}</MediaName>
+        </VirtualOpticalMedia>"""
+    target = _target_device(_TARGET_DEVICE_ELEMENTS["VirtualOpticalMedia"], target_device)
+    return _mapping_document(storage, target, lpar_link)
 
 
 # Virtual Network (child of ManagedSystem)
@@ -165,9 +183,9 @@ def build_virtual_network_document(
 <VirtualNetwork xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
 {assoc}  <NetworkName kb="CUD" kxe="false">{name}</NetworkName>
-  <NetworkVLANID kb="CUD" kxe="false">{vlan_id}</NetworkVLANID>
-  <VswitchID kb="CUD" kxe="false">{virtual_switch_id}</VswitchID>
-  <TaggedNetwork kb="CUD" kxe="false">{tagged_str}</TaggedNetwork>
+  <NetworkVLANID kb="COD" kxe="false">{vlan_id}</NetworkVLANID>
+  <VswitchID kb="ROR" kxe="false">{virtual_switch_id}</VswitchID>
+  <TaggedNetwork kb="COD" kxe="false">{tagged_str}</TaggedNetwork>
 </VirtualNetwork>
 """
 
@@ -219,20 +237,6 @@ def build_virtual_optical_media_delete_document(
       </VirtualOpticalMedia>
     </VirtualMediaRepository>
   </MediaRepositories>"""
-    return document_envelope("VolumeGroup", body)
-
-
-@escapes_string_arguments
-def build_virtual_disk_delete_document(disk_name: str) -> str:
-    """VolumeGroup document marking a VirtualDisk for deletion (POST)."""
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualDisks schemaVersion="V1_0" kb="CUD">
-    <Metadata><Atom/></Metadata>
-    <VirtualDisk kb="CUD">
-      <Metadata><Atom/></Metadata>
-      <VolumeGroupName kb="CUD" kxe="false">{disk_name}</VolumeGroupName>
-    </VirtualDisk>
-  </VirtualDisks>"""
     return document_envelope("VolumeGroup", body)
 
 
