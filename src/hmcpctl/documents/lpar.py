@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET  # nosec B405 - reads an element the caller parsed with defusedxml
 from dataclasses import dataclass, field
 from typing import Literal, get_args
@@ -325,6 +326,17 @@ def build_vios_document(
 
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _PPC = "PartitionProcessorConfiguration"
+_RESOURCE_NUMBERS = (
+    "min_memory",
+    "desired_memory",
+    "max_memory",
+    "min_procs",
+    "desired_procs",
+    "max_procs",
+    "min_vcpus",
+    "desired_vcpus",
+    "max_vcpus",
+)
 _MODE_SWITCH_REFUSAL = (
     "Refusing to switch the partition between dedicated and shared processors: the "
     "partition read carries no configuration for the other mode, so nothing was written. "
@@ -417,6 +429,12 @@ def partition_updates(
     it as 0 on uncapping.
     """
     resources = resources or LparResources()
+    for number in _RESOURCE_NUMBERS:
+        value = getattr(resources, number)
+        if value is not None and not (math.isfinite(value) and value >= 0):
+            raise ValueError(
+                f"{number}={value} must be a finite, non-negative number. Nothing was written."
+            )
     updates = {} if name is None else {"PartitionName": name}
     updates |= _changed(
         (

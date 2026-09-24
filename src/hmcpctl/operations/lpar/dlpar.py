@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from hmcpctl.client.core import HMCClient
@@ -197,7 +198,7 @@ async def set_lpar_processors(
     return await _apply_dlpar_change(
         hmc,
         lpar_name_or_uuid,
-        resources,
+        replace(resources, min_memory=None, desired_memory=None, max_memory=None),
         "the processor configuration",
         system_name_or_uuid,
         ownership_override,

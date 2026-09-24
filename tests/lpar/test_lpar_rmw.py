@@ -307,7 +307,9 @@ def test_partition_updates_names_has_dedicated_for_a_mode_only_request():
         (True, LparResources(uncapped=True), "shared-processor partition"),
         (True, LparResources(desired_procs=1.5), "DesiredProcessors=1.5 is not a whole"),
         (True, LparResources(min_procs=0.5), "MinimumProcessors=0.5 is not a whole"),
-        (True, LparResources(max_procs=float("inf")), "MaximumProcessors=inf is not a whole"),
+        (True, LparResources(max_procs=float("inf")), "max_procs=inf must be a finite"),
+        (False, LparResources(desired_procs=float("nan")), "desired_procs=nan must be a finite"),
+        (False, LparResources(desired_vcpus=-1), "desired_vcpus=-1 must be a finite"),
         (False, LparResources(sharing_mode="bogus"), "sharing_mode must be one of"),  # type: ignore[arg-type]
     ],
 )
@@ -483,4 +485,18 @@ async def test_dlpar_memory_writes_only_memory_fields(mock_hmc, authorized):
     assert b"PartitionType" in body  # the partition's own read-back value, unchanged
     assert _canonical(_lpar(body)) == _expected(
         _entry(), {"PartitionMemoryConfiguration/MaximumMemory": "8192"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_dlpar_processors_write_only_processor_fields(mock_hmc, authorized):
+    _, post = _routes(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        await set_lpar_processors(
+            hmc, SYSTEM, LPAR, LparResources(desired_procs=0.4, desired_memory=8192)
+        )
+
+    assert _canonical(_lpar(post.calls.last.request.content)) == _expected(
+        _entry(), {f"{SHARED}/DesiredProcessingUnits": "0.4"}
     )

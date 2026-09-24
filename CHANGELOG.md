@@ -183,7 +183,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   counts, `uncapped` or a fractional processor count on a dedicated partition. `UncappedWeight` is no longer set on capping,
   because V10R3 drops it; uncapping a capped partition leaves the weight 0, and no parameter
   sets it. A name containing a character XML 1.0 cannot carry is refused before any request,
-  and a DLPAR call with no processor or memory field is refused. `HMCClient.modify_logical_partition`,
+  a negative or non-finite memory or processor value is refused before the write, a DLPAR
+  call with no processor or memory field is refused, and the processor DLPAR ignores memory
+  fields as the memory DLPAR ignores processor fields. `HMCClient.modify_logical_partition`,
   `build_dlpar_proc_document` and `build_dlpar_mem_document` are removed (#1057).
 
 - The live-test runner's ST18 asserts a same-name ISO re-upload is refused with a name
