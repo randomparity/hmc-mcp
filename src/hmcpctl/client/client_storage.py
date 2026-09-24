@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
@@ -27,7 +28,7 @@ from ..documents import (
     build_vscsi_mapping_document,
     build_web_file_document,
 )
-from ..errors import HMCError
+from ..errors import HMCError, HMCTransportError
 from ..xmlutil import WEB_NS, element_to_dict, localname
 from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
@@ -368,20 +369,36 @@ class StorageMixin:
         content: AsyncIterator[bytes],
         content_length: int,
     ) -> None:
-        """Stream bounded ISO content into a web File; never buffer it (ADR 0052)."""
-        response = await self._request_with_uuid_path_arguments(
-            "PUT",
-            f"{_WEB_FILE_PATH}/contents/{file_uuid}",
-            uuid_path_arguments={"file_uuid": file_uuid},
-            content=content,
-            headers=self._web_headers(
-                {
-                    "Content-Type": "application/octet-stream",
-                    "Content-Length": str(content_length),
-                    "Accept": "*/*",
-                }
-            ),
-        )
+        """Stream bounded ISO content into a web File; never buffer it (ADR 0052).
+
+        The HMC answers only once it has taken the whole file, later the larger
+        the ISO, so the read wait is ``upload_timeout`` (ADR 0177, #1055).
+        """
+        read = max(self.config.timeout, self.config.upload_timeout)
+        path = f"{_WEB_FILE_PATH}/contents/{file_uuid}"
+        try:
+            response = await self._request_with_uuid_path_arguments(
+                "PUT",
+                path,
+                uuid_path_arguments={"file_uuid": file_uuid},
+                content=content,
+                headers=self._web_headers(
+                    {
+                        "Content-Type": "application/octet-stream",
+                        "Content-Length": str(content_length),
+                        "Accept": "*/*",
+                    }
+                ),
+                timeout=httpx.Timeout(self.config.timeout, read=read),
+            )
+        except HMCTransportError as exc:
+            if not isinstance(exc.__cause__, httpx.ReadTimeout):
+                raise
+            raise HMCTransportError(
+                f"PUT {path} got no complete response within {read:g}s after streaming "
+                "the ISO. The HMC may still import it; check list-optical-media before "
+                f"retrying. Increase HMC_UPLOAD_TIMEOUT above {read:g} for a slower HMC."
+            ) from exc
         if response.status_code not in (200, 201, 202, 204):
             raise HMCError(
                 f"Web File upload failed for {file_uuid}", response.status_code, response.text

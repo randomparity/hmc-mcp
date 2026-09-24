@@ -36,6 +36,26 @@ from hmcpctl.config import (
 )
 
 # ---------------------------------------------------------------------------
+# ISO upload response timeout (#1055)
+# ---------------------------------------------------------------------------
+
+
+def test_upload_timeout_default():
+    assert HMCConfig.from_mapping({}).upload_timeout == 600.0
+
+
+def test_upload_timeout_reads_the_environment(monkeypatch):
+    monkeypatch.setenv("HMC_UPLOAD_TIMEOUT", "900")
+    assert HMCConfig().upload_timeout == 900.0
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_upload_timeout_refuses_a_non_positive_value(value):
+    with pytest.raises(ValueError, match="upload_timeout"):
+        HMCConfig.from_mapping({"upload_timeout": value})
+
+
+# ---------------------------------------------------------------------------
 # Response ceiling
 # ---------------------------------------------------------------------------
 
@@ -1315,6 +1335,7 @@ def test_from_mapping_applies_every_supplied_key():
         "ssh_verify_host_key": False,
         "verify_ssl": True,
         "timeout": 15.0,
+        "upload_timeout": 450.0,
         "max_response_bytes": 67108864,
         "ssh_timeout": 30.0,
         "audit_memento": "hmcpctl",
