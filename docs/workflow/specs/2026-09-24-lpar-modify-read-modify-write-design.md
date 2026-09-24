@@ -26,7 +26,7 @@ before and after:
   returns 200:
   - `PartitionName`, `PartitionMemoryConfiguration/{Desired,Minimum}Memory`,
     `SharedProcessorConfiguration/{DesiredProcessingUnits,DesiredVirtualProcessors}` and
-    `SharingMode` all round-tripped.
+    `PartitionProcessorConfiguration/SharingMode` all round-tripped.
   - Each changed only the edited fields, their read-only `Current*`/`Runtime*` mirrors, and
     the volatile `MigrationStorageViosDataStatus`.
 - **Sharing mode.** Setting `SharingMode=capped` removes `SharedProcessorConfiguration/
@@ -49,7 +49,8 @@ validation, not applied as a partial update or a replacement.
    `PartitionMemoryConfiguration/DesiredMemory`) to new text. The helper looks up each path
    under the partition element. A missing element is refused before any POST with
    `GET <path> has no <field>; refusing to write <subject>`. The code never creates an element.
-   An exception raised by `updates` also propagates before any POST.
+   An exception raised by `updates` also propagates before any POST. An empty mapping raises
+   `ValueError` (`nothing to write for <subject>`) before any POST.
 3. Only those elements' text changes. Every attribute, sibling and ordering stays as read.
 4. The helper POSTs to the same URL with `Accept: */*`, a typed `Content-Type` and `If-Match`.
    A 412 means nothing was written. Any status other than 200, 201 or 202 raises `HMCError`.
@@ -61,23 +62,26 @@ last callers and is removed.
 
 **The field mapping lives with the documents.** `documents/lpar.py` gains
 `partition_updates(lpar, *, name=None, resources=None) -> dict[str, str]`. It is not named
-`build_*`, because it builds no XML string. It maps:
+`build_*`, because it builds no XML string. Every path below is relative to the
+`LogicalPartition` element; `PPC` abbreviates `PartitionProcessorConfiguration`, which nests the
+processor elements in the live read and in the create builder. It maps:
 
 - `name` → `PartitionName`.
 - Memory values → `PartitionMemoryConfiguration/{Desired,Maximum,Minimum}Memory`, as integers.
-- Processor values. The partition's mode is read from
-  `PartitionProcessorConfiguration/HasDedicatedProcessors`. It is always written back
-  unchanged, so a read missing it is refused. The requested `dedicated` value must match that
-  mode. A different value raises `ValueError`, because switching needs a configuration element
-  the read does not carry.
-  - Dedicated partitions: `DedicatedProcessorConfiguration/{Desired,Maximum,Minimum}Processors`,
-    as integers. A virtual-processor count raises `ValueError`.
-  - Shared partitions: `SharedProcessorConfiguration/{Desired,Maximum,Minimum}ProcessingUnits`,
+- Processor values. The partition's mode is read from `PPC/HasDedicatedProcessors`. The
+  requested `dedicated` value must match that mode. A different value raises `ValueError`,
+  because switching needs a configuration element the read does not carry. `dedicated` alone
+  maps nothing.
+  - Dedicated partitions: `PPC/DedicatedProcessorConfiguration/{Desired,Maximum,Minimum}Processors`,
+    as integers. A virtual-processor count or `uncapped` raises `ValueError`.
+  - Shared partitions: `PPC/SharedProcessorConfiguration/{Desired,Maximum,Minimum}ProcessingUnits`,
     rendered as the create builder renders them, plus `{...}VirtualProcessors`.
-  - `SharingMode` follows the create builder's rule: dedicated partitions use `sharing_mode`;
-    shared partitions use `uncapped` if `uncapped` is set, else `sharing_mode`, else `capped`
-    when `uncapped=False`. An invalid `sharing_mode` raises `ValueError`. `UncappedWeight` is
-    never written.
+  - `PPC/SharingMode` follows the create builder's rule: dedicated partitions use
+    `sharing_mode`; shared partitions use `uncapped` if `uncapped` is set, else `sharing_mode`,
+    else `capped` when `uncapped=False`. An invalid `sharing_mode` raises `ValueError`.
+    `UncappedWeight` is never written.
+  - Whenever the processor mapping is non-empty it also writes `PPC/HasDedicatedProcessors`
+    back unchanged, so a read missing that element is refused by the helper.
 
 `build_dlpar_proc_document` and `build_dlpar_mem_document` are removed. `build_lpar_document`
 becomes create-only; its docstring stops offering modify. `PartitionType` therefore reaches no
@@ -85,18 +89,29 @@ modify write.
 
 **Operations.** Each operation authorizes first, as today. Then:
 
+- `rename_lpar` and `modify_lpar` pass a new name through `escape_xml` before authorization,
+  so a character XML 1.0 cannot carry is refused with ADR 0042's message before any request.
+  ElementTree does not reject those characters.
 - `rename_lpar` and `modify_lpar`'s rename leg call the helper with `name` and subject
-  `"the partition name"`.
+  `"the partition name"`. `rename_lpar` translates errors; the modify rename leg stays
+  untranslated, as today.
 - The modify workflow's resources leg makes one call with `resources` and subject
-  `"the partition resources"`. It keeps its step records and error translation.
+  `"the partition resources"`. It keeps its step records and error translation, and treats a
+  `ValueError` from the call like an `HMCError`: after a successful rename it records a
+  `resources` error step and returns the partial result, so the caller still sees the rename.
 - `set_lpar_processors` and `set_lpar_memory` refuse before authorization or any request when
-  `resources` carries none of their fields. They call the helper with subjects
-  `"the processor configuration"` and `"the memory configuration"`. The memory call passes only
-  the memory fields.
-- `translate_lpar_write_error` still wraps each call.
+  `resources` carries none of their fields. Processor fields are `dedicated`, `min_procs`,
+  `desired_procs`, `max_procs`, `min_vcpus`, `desired_vcpus`, `max_vcpus`, `sharing_mode`
+  and `uncapped`; memory fields are `min_memory`, `desired_memory` and `max_memory`. They call
+  the helper with subjects `"the processor configuration"` and `"the memory configuration"`,
+  and translate errors. The memory call passes only the memory fields.
 
-The two DLPAR tool docstrings stop describing a minimal document, and `docs/tools/` is
-regenerated. `CHANGELOG.md` records the fix and the narrowed processor contract.
+Docs follow the narrowed contract: the DLPAR tool docstrings stop describing a minimal
+document; `set_lpar_processors`, `hmc_dlpar_proc`, `hmc_modify_lpar`, the CLI `--dedicated`
+help and `LparResources.dedicated` say the value must match the partition's mode; the processor
+docstrings and `CHANGELOG.md` say that uncapping a capped partition leaves `UncappedWeight` 0
+(no spare-capacity share on PowerVM) and that no parameter sets the weight. `docs/tools/` is
+regenerated.
 
 ## Considered & rejected
 
@@ -125,8 +140,13 @@ regenerated. `CHANGELOG.md` records the fix and the narrowed processor contract.
      refused before any POST. They wrote nothing on V10R3 before this change either.
    - Capping drops `UncappedWeight`, and uncapping a capped partition leaves weight `0`. That is
      HMC behaviour. No weight parameter exists, and adding one is out of scope.
-   - An invalid `sharing_mode`, or a mode mismatch, is found after the GET and before the POST.
-     This costs one read, and nothing is written.
+   - An invalid `sharing_mode`, a mode mismatch, or an empty mapping is found after the GET and
+     before that call's POST. This costs one read, and that call writes nothing; in
+     `modify_lpar` a rename already applied stays applied and is reported as its `ok` step.
+   - A 412 on the modify resources leg after a successful rename says to re-run the
+     operation. The `rename` `ok` step tells the caller the partition now has the new name.
+   - The dedicated leg and the `Maximum*`/`Minimum*` processor fields are unit-tested but not
+     live-probed: the lab partition is shared-processor. The HMC's answer is reported.
    - DLPAR on a *running* partition was not probed. The partition stayed not activated, and
      activation was not required to show which fields change. A running partition may reject
      or defer the change. The HMC's answer is reported.
@@ -135,8 +155,9 @@ regenerated. `CHANGELOG.md` records the fix and the narrowed processor contract.
 
 ### Threat model
 
-- **Boundaries:** caller names and numbers enter XML text nodes. ElementTree escapes them once,
-  and `LparResources` types bound them. The HMC response is parsed with `defusedxml`.
+- **Boundaries:** caller names and numbers enter XML text nodes. ElementTree escapes them once;
+  `escape_xml` refuses a name with a character XML 1.0 cannot carry before authorization, and
+  `LparResources` types bound the numbers. The HMC response is parsed with `defusedxml`.
 - **Actor:** an MCP client can send any value. Authorization is the existing
   `resolve_and_authorize_lpar_mutation`, and it runs before the GET.
 - **Out of scope:** a hostile HMC response. The client trusts its HMC.
@@ -147,12 +168,16 @@ regenerated. `CHANGELOG.md` records the fix and the narrowed processor contract.
    one GET `?group=Advanced`, then one POST with `If-Match`, `Accept: */*`, and the fixture
    partition with only the mapped fields' text changed.
 2. The helper refuses without a POST on a missing ETag, a missing mapped element, a non-200
-   GET, invalid XML, and a mode mismatch. It reports a 412 as nothing written.
+   GET, invalid XML, an empty mapping and a mode mismatch. It reports a 412 as nothing written.
+   A rename followed by a mode-mismatched resources leg returns `rename` ok and `resources`
+   error. A name containing U+0001 is refused with no request.
 3. No request body from the operations in 1 contains `PartitionType`.
 4. The existing `tests/lpar/test_boot_order.py` passes unchanged.
 5. Live: the new code renames and restores the partition, and changes and restores memory and
-   processor values. Before/after full reads diff only the target fields and their mirrors. The
-   final read equals the baseline.
+   processor values, including a maximum-memory change. Before/after full reads diff only the
+   target fields, their `Current*`/`Runtime*` mirrors and the volatile
+   `MigrationStorageViosDataStatus`. The final read equals the baseline apart from that
+   volatile field.
 
 ## Validation
 
