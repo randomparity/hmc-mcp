@@ -6,14 +6,46 @@ domain mixin; this module only defines methods for lpars.
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET  # nosec B405 - serializes a defusedxml-parsed tree
 from typing import Any
 
+from defusedxml import ElementTree as DET
+
+from ..errors import HMCError
+from ..xmlutil import localname
 from .client_contracts import LparsClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
     ambiguous_parent_details,
 )
+
+_UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+_MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+
+
+def _logical_partition_element(root: ET.Element, path: str, raw: str) -> ET.Element:
+    """The partition element: the document root or an Atom entry's content child."""
+    if localname(root.tag) == "LogicalPartition":
+        return root
+    found = root.find(f"{{{_ATOM_NS}}}content/{{{_UOM_NS}}}LogicalPartition")
+    if found is None:
+        raise HMCError(f"GET {path} contains no LogicalPartition element", 200, raw[:500])
+    return found
+
+
+def _pending_boot_string_element(lpar: ET.Element, path: str, raw: str) -> ET.Element:
+    """The existing ``BootListInformation/PendingBootString``; never one made up."""
+    found = lpar.find(f"{{{_UOM_NS}}}BootListInformation/{{{_UOM_NS}}}PendingBootString")
+    if found is None:
+        raise HMCError(
+            f"GET {path} has no BootListInformation/PendingBootString; refusing to "
+            "write the boot order",
+            200,
+            raw[:500],
+        )
+    return found
 
 
 class LparsMixin:
@@ -115,6 +147,68 @@ class LparsMixin:
             include_schema_version=False,
         )
         entries = _parse_feed(xml, path) if xml else []
+        return entries[0] if entries else None
+
+    async def set_pending_boot_string(
+        self: LparsClient, lpar_uuid: str, boot_string: str
+    ) -> dict[str, Any] | None:
+        """Set ``BootListInformation/PendingBootString`` by read-modify-write.
+
+        GETs the whole partition in the ``Advanced`` group, replaces only that
+        element's text, and POSTs the element back to the same URL with
+        ``If-Match`` set to the GET's ETag, on the terms ADR 0171 sets for
+        VolumeGroup writes. Refuses before any POST when the GET carries no ETag
+        or the partition has no ``BootListInformation/PendingBootString``.
+        """
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
+        path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}?group=Advanced"
+        got = await self._request_with_uuid_path_arguments(
+            "GET",
+            path,
+            uuid_path_arguments={"lpar_uuid": lpar_uuid},
+            headers=self._uom_headers("LogicalPartition", include_schema_version=False),
+        )
+        if got.status_code != 200:
+            raise HMCError(f"GET {path} failed", got.status_code, got.text)
+        etag = got.headers.get("ETag")
+        if not etag:
+            raise HMCError(
+                f"GET {path} returned no ETag; refusing a whole-partition write "
+                "that could overwrite a concurrent change",
+                200,
+                got.text[:500],
+            )
+        # The HMC rejects auto-generated ns0/ns1 prefixes despite equivalent URIs.
+        ET.register_namespace("", _UOM_NS)
+        ET.register_namespace("atom", _ATOM_NS)
+        try:
+            root = DET.fromstring(got.text)
+        except DET.ParseError as exc:
+            raise HMCError(f"GET {path} response is not valid XML", 200, got.text[:500]) from exc
+        lpar = _logical_partition_element(root, path, got.text)
+        _pending_boot_string_element(lpar, path, got.text).text = boot_string or None
+
+        response = await self._request_with_uuid_path_arguments(
+            "POST",
+            path,
+            uuid_path_arguments={"lpar_uuid": lpar_uuid},
+            content=ET.tostring(lpar, encoding="unicode"),
+            headers={
+                "Accept": "*/*",
+                "Content-Type": f"{_MEDIA_UOM}; type=LogicalPartition",
+                "If-Match": etag,
+            },
+        )
+        if response.status_code == 412:
+            raise HMCError(
+                f"POST {path} refused: the partition changed since it was read "
+                "(If-Match mismatch). Nothing was written; re-run the operation.",
+                412,
+                response.text,
+            )
+        if response.status_code not in (200, 201, 202):
+            raise HMCError(f"POST {path} failed", response.status_code, response.text)
+        entries = _parse_feed(response.text, path) if response.text else []
         return entries[0] if entries else None
 
     async def delete_logical_partition(self: LparsClient, lpar_uuid: str) -> None:

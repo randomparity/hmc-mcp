@@ -160,6 +160,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `lpars read-boot-order` and `hmc_read_lpar_boot_order` request the `Advanced` group and
+  return each boot field as a string, or `null` when empty, instead of the element's attribute
+  dict. `set-boot-order` and `clear-boot-order` (and their MCP tools) no longer POST a sparse
+  `LogicalPartition` with a misplaced `PendingBootString`, which V10R3 rejects: they read the
+  whole partition, set `BootListInformation/PendingBootString`, and POST it back with
+  `If-Match`, refusing when the read carries no ETag. The boot order is now Open Firmware
+  device paths, the form `read-boot-order` reports in `boot_device_list`, not the `cd`,
+  `disk` and `network` selectors; the CLI takes them as positional arguments (#980).
 - When the HMC read-back of a partition fails after an `mksyscfg` create, `create` and
   `provision` report the partition as created, with its profile-apply step and a warning naming
   the read-back error. Before, they reported a failed create with nothing created (#1014).
