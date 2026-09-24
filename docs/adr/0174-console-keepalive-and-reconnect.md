@@ -54,7 +54,9 @@ the leftover hold from another client's hold.
    exits, the collector's next read finds the closed connection and reconnects. Mode (b): a
    suspended session holds no connection and cannot drop. `resume()` stays the only
    re-acquisition, never issues `rmvterm`, and raises plain `ConsoleHeldError`. A reconnect in
-   progress or a dropped session refuses both modes.
+   progress, a reconnect outcome not yet read, or a dropped session refuses both modes. A drop
+   that the collector's read reports after a pause began starts no reconnect; the pause's holder
+   or `resume()` meets the dead connection.
 
 ## Consequences
 

@@ -825,6 +825,10 @@ class ConsoleSession:
     def _may_reconnect(self) -> bool:
         return self._reconnect and not self._remote_closed and self._close_task is None
 
+    def _paused(self) -> bool:
+        """True when a pause began while the collector's failed read was completing."""
+        return self._owner is not self or self._state != "held"
+
     async def _read_or_reconnect(self) -> bytes | ConsoleGap | None:
         """Read for the collector; with reconnect, a drop becomes a gap (ADR 0174)."""
         try:
@@ -832,8 +836,12 @@ class ConsoleSession:
         except (asyncssh.Error, OSError) as exc:
             if not self._may_reconnect():
                 raise
+            if self._paused():
+                return None  # the pause's holder or resume() meets the dead connection
             return await self._start_reconnect(_error_detail(exc))
         if chunk == b"" and self._may_reconnect():
+            if self._paused():
+                return None
             if self._connection.is_closed():
                 return await self._start_reconnect("the SSH connection closed")
             self._remote_closed = True
@@ -973,7 +981,12 @@ class ConsoleSession:
         await self._finish_acquire(cancelled)
 
     def _require_collecting(self, name: str) -> None:
-        if self._state != "held" or self._close_task is not None or self._owner is not self:
+        if (
+            self._state != "held"
+            or self._close_task is not None
+            or self._owner is not self
+            or self._reconnect_task is not None  # the consumer reads the gap first
+        ):
             raise RuntimeError(f"{name} needs an open console session with no pause active")
 
     async def close(self) -> bool:

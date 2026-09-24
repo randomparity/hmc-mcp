@@ -1647,6 +1647,12 @@ async def test_read_timeout_during_reconnect_keeps_the_gap():
                 async with session.hand_over():
                     pass
             finish.set()
+            reconnect = session._reconnect_task
+            assert reconnect is not None
+            while not reconnect.done():
+                await asyncio.sleep(0)
+            with pytest.raises(RuntimeError):
+                await session.suspend()  # the unread gap comes first
             assert await asyncio.wait_for(session.read(), 5) == KEEPALIVE_GAP
             assert await session.read() == BANNER
 
@@ -1797,3 +1803,27 @@ async def test_take_over_reconnect_into_held_vterm_says_rmvterm_ran():
         assert await session.close() is False
 
     assert release.await_count == 2  # the takeovers at open and at reconnect
+
+
+@pytest.mark.asyncio
+async def test_drop_as_suspend_starts_reconnects_nothing():
+    gate = asyncio.Event()
+    process = FakeProcess()
+    process.stdout = _GatedDropStdout(gate)  # type: ignore[assignment]
+    stream = FakeConnection([process])
+    probe = FakeConnection([FakeProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(stream, probe)
+    with connect as opener, run_command, probe_seconds:
+        session = _reconnecting()
+        await session.open()
+        assert await session.read() == BANNER
+        reading = asyncio.create_task(session.read())
+        await asyncio.sleep(0)  # the collector blocks on the stream
+        gate.set()
+        await asyncio.sleep(0)  # the stream read fails; the collector has not resumed
+        assert await session.suspend() is True
+        await asyncio.sleep(0)
+        assert not reading.done()  # the collector waits while suspended
+        assert opener.await_count == 2  # the stream and the release probe, no reconnect
+        assert await session.close() is True
+        assert await asyncio.wait_for(reading, timeout=5) == b""
