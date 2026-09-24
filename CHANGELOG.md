@@ -363,6 +363,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   output still lists an `M1060` fix line, SKIPs the arm instead of running profile mutations
   on an environment the repository does not admit (#928).
 
+- `scripts/live_test_preflight.py`'s dedicated-arm verdict now predicts the `st36-io-slots`
+  scenario (#985) too, not only the fixture's own dedicated slot: it names the two further spare
+  slots the scenario will mutate when no DRC index is pinned, and states the scenario will SKIP
+  when one is. Previously preflight showed one mutated slot while an unpinned run touched three
+  (#1000).
+
 ### Changed
 
 - Console contention now quotes what the HMC printed in `ConsoleHeldError`, with the same error
