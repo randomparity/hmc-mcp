@@ -351,7 +351,7 @@ def _dedicated_updates(resources: LparResources) -> dict[str, str]:
         ("MinimumProcessors", resources.min_procs),
     )
     for name, value in fields:
-        if value is not None and value != int(value):
+        if value is not None and not float(value).is_integer():
             raise ValueError(
                 f"A dedicated-processor partition takes whole CPUs; {name}={value} is not "
                 "a whole number. Nothing was written."

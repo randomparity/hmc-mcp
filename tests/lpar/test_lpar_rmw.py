@@ -307,6 +307,7 @@ def test_partition_updates_names_has_dedicated_for_a_mode_only_request():
         (True, LparResources(uncapped=True), "shared-processor partition"),
         (True, LparResources(desired_procs=1.5), "DesiredProcessors=1.5 is not a whole"),
         (True, LparResources(min_procs=0.5), "MinimumProcessors=0.5 is not a whole"),
+        (True, LparResources(max_procs=float("inf")), "MaximumProcessors=inf is not a whole"),
         (False, LparResources(sharing_mode="bogus"), "sharing_mode must be one of"),  # type: ignore[arg-type]
     ],
 )
