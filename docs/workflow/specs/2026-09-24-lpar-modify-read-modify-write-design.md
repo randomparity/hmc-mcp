@@ -29,6 +29,11 @@ before and after:
     `PartitionProcessorConfiguration/SharingMode` all round-tripped.
   - Each changed only the edited fields, their read-only `Current*`/`Runtime*` mirrors, and
     the volatile `MigrationStorageViosDataStatus`.
+- **Create-only elements.** The read carries four `kb="COD"` elements: `PartitionID`,
+  `PartitionType`, `AssignAllResources` and `BootMode`. The same read-modify-write with those
+  four removed got 400 `REST0001`: `PartitionType` is expected before `PartitionUUID`. V10R3's
+  schema therefore requires the partition's own `PartitionType` in every `LogicalPartition`
+  POST, and the #980 boot write already echoes it.
 - **Sharing mode.** Setting `SharingMode=capped` removes `SharedProcessorConfiguration/
   UncappedWeight`, with or without an explicit weight of 0. Setting `uncapped` on a capped
   partition recreates the element with weight `0`.
@@ -84,8 +89,12 @@ processor elements in the live read and in the create builder. It maps:
     back unchanged, so a read missing that element is refused by the helper.
 
 `build_dlpar_proc_document` and `build_dlpar_mem_document` are removed. `build_lpar_document`
-becomes create-only; its docstring stops offering modify. `PartitionType` therefore reaches no
-modify write.
+becomes create-only; its docstring stops offering modify. No modify write sets or changes a
+create-only element any more: the old rename and resources legs injected the create builder's
+default `PartitionType` (`AIX/Linux`, wrong for a VIOS or IBM i partition), while the
+read-modify-write echoes the partition's own create-only values unchanged, because V10R3
+requires `PartitionType` (probe above). This reading of "modify documents carry no create-only
+fields" was put to the operator through the campaign (2026-09-24).
 
 **Operations.** Each operation authorizes first, as today. Then:
 
@@ -171,7 +180,8 @@ regenerated.
    GET, invalid XML, an empty mapping and a mode mismatch. It reports a 412 as nothing written.
    A rename followed by a mode-mismatched resources leg returns `rename` ok and `resources`
    error. A name containing U+0001 is refused with no request.
-3. No request body from the operations in 1 contains `PartitionType`.
+3. No operation in 1 changes a create-only element: the posted `LogicalPartition` equals the
+   read apart from the mapped fields, so its `kb="COD"` elements are the partition's own.
 4. The existing `tests/lpar/test_boot_order.py` passes unchanged.
 5. Live: the new code renames and restores the partition, and changes and restores memory and
    processor values, including a maximum-memory change. Before/after full reads diff only the
