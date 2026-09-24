@@ -160,6 +160,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `lpars create` reports each requested PCIe assignment as `skipped` when the create returns no
+  partition body — including when the post-create read-back raises (#1014) — instead of omitting
+  the requested assignment steps entirely (#1019).
+
 - `storage upload-iso` and `hmc_upload_iso` upload through the HMC web File API, which V10R3
   accepts, instead of a `BrokeredFile` document it rejects. They report `uploaded` only once
   the repository lists the media, and refuse a volume group without a media repository before

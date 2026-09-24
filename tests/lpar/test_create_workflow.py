@@ -123,3 +123,38 @@ async def test_create_lpar_skips_assignments_after_apply_error(monkeypatch):
     )
     assert result.warnings == ("w",)
     apply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_lpar_skips_assignments_when_no_lpar_body(monkeypatch):
+    hmc = cast(HMCClient, object())
+    assignments = LparPcieAssignments(
+        dedicated=(DedicatedPcieAssignment("default_profile", "21010010"),)
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.workflows.prevalidate_lpar_pcie_assignments",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.workflows.create_and_stamp_lpar",
+        AsyncMock(
+            return_value=LparCreationResult(True, None, False, ("no body",))
+        ),
+    )
+    apply = AsyncMock()
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.workflows.apply_validated_lpar_pcie_assignments",
+        apply,
+    )
+
+    result = await create_lpar(hmc, "sys1", _creation(), assignments)
+
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar is None
+    assert result.steps == (
+        WorkflowStep("create", "ok", None),
+        WorkflowStep("dedicated[0]", "skipped"),
+    )
+    assert result.warnings == ("no body",)
+    apply.assert_not_awaited()
