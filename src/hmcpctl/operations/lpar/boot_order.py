@@ -101,7 +101,7 @@ async def clear_lpar_boot_order(
     *,
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
-    """Restore the HMC default boot order on the LPAR's next activation."""
+    """Clear the LPAR's pending boot order; a V10R3 HMC rejects it (REST0126)."""
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -112,7 +112,7 @@ async def clear_lpar_boot_order(
     updated = await _write_pending_boot_string(hmc, lpar_uuid, "")
 
     _logger.info(
-        "Cleared boot order for LPAR %s (%s) (restored defaults)",
+        "Cleared pending boot order for LPAR %s (%s)",
         lpar_name_or_uuid,
         lpar_uuid,
     )
