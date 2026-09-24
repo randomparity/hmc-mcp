@@ -30,8 +30,9 @@ A dropped connection closes the connection, and a lost hold does not, so the two
     `asyncssh.Error`, so it never triggers a reconnect.
 - `_release_hold` (behind `close()` and `suspend()`) first cancels and awaits any read in flight,
   then scans bytes already received but unread (reads of at most 0.1 s, 1 s in total). A message
-  the caller never read still latches `lost`. A `lost` hold drops only its own connection, logs a
-  warning, issues no `rmvterm`, and returns `False` (unproven, like a dropped session).
+  the caller never read still latches `lost`. Any scan error falls through to `rmvterm`. A `lost`
+  hold drops only its own connection, logs a warning, issues no `rmvterm`, and returns `False`
+  (unproven, like a dropped session); after `suspend()`, `resume()` then meets the taker's hold.
 - Unchanged code covers the rest. `hand_over`, `suspend`, `raw_mode`, and writes require `held`, so
   they raise `RuntimeError` after a loss. `capture_lpar_console` reports the loss as
   `stop_reason="error"` with `released=False`.
@@ -49,7 +50,7 @@ A dropped connection closes the connection, and a lost hold does not, so the two
      `ConsoleHeldError`.
    - A loss whose message has not arrived when `close()` runs (about 1.5 s of delivery latency)
      still issues `rmvterm`. Only the excluded ownership query could close that window.
-   - A loss during `suspend()`'s release or a suspension/reconnect gap goes undetected (as today).
+   - A loss during a suspension or reconnect gap, when no stream exists, goes undetected.
    - An HMC release that rewords the message disables detection. `rmvterm` behaves as before.
 4. **Covered elsewhere:** vterm ownership query → operator (excluded).
 
@@ -67,8 +68,8 @@ A dropped connection closes the connection, and a lost hold does not, so the two
 - **Do nothing.** judgment: fit. #1004 asks that a takeover survive the earlier session's close.
 - **Use the channel's end or exit status as the signal.** verified: none of the three fixture runs
   saw EOF, an exit status, or a channel close within 40 s of the `rmvterm`.
-- **Probe before `rmvterm` at close.** verified: fixture run 3's probe answered "held" while the
-  taker held the vterm. That is the same answer the session's own hold gives (ADR 0174).
+- **Probe before `rmvterm` at close.** verified: fixture run 3's probe did not prove release while
+  the taker held the vterm, the same answer the session's own hold gives (ADR 0174).
 - **Match only "This session is no longer connected."** judgment: fit. It widens the spoof class
   to any guest or relayed session that prints the sentence.
 - **Release through stdin EOF instead.** judgment: cost. ADR 0072 P5 records that EOF ends the

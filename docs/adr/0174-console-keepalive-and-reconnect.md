@@ -12,7 +12,8 @@ meets a held vterm raises a typed error, and only `take_over=True` reclaims it.
 
 > **Amended by #1004** (2026-09-24): decision 2's premise is refuted. Another client's `rmvterm`
 > leaves the holder's channel and connection open, so a lost hold is neither a drop nor a remote
-> close. See ADR 0172's amendment.
+> close, and the Consequences bullet on a lost hold whose connection also closes did not occur in
+> three runs. See ADR 0172's amendment.
 
 ## Context
 
