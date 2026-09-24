@@ -76,8 +76,10 @@ Callers of the changed contract:
 - The CLI `set-boot-order` takes paths as positional arguments, not a comma list. Network paths
   contain commas.
 - Live-test ST20 can no longer set `cd,network,disk`. It sets the baseline `boot_device_list`
-  paths instead. It skips that step when the list is empty, and splits the saved pending string
-  on whitespace.
+  paths instead, splitting the saved pending string on whitespace. It skips the step when the
+  list is empty, and when the baseline pending string is empty or not a valid path list, because
+  only a set can restore it on V10R3. Since no observed partition carries a pending string,
+  routine ST20 runs do not exercise set-boot-order until the clear follow-up lands.
 
 The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
 

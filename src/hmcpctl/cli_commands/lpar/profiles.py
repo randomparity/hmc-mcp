@@ -97,7 +97,7 @@ def lpars_clear_boot_order(
         )
     )
 
-    console.print("[green]Boot order cleared (restored defaults)[/green]")
+    console.print("[green]Pending boot order cleared[/green]")
     print_json(result)
 
 
