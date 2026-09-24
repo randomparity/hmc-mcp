@@ -285,8 +285,9 @@ is `COMPLETED_OK`, and no `Warning:` line. A warning names an adapter the profil
 the activation removed: power the partition off, re-run the step 3 or 4 command that created
 it, write it into the profile as above from the new listing, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
 `open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
-is blank. The boot-order commands (`lpars read-boot-order`, `set-boot-order`,
-`clear-boot-order`) are blocked by #980 and this path does not need them.
+is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
+Firmware device paths, and a never-booted partition reports none. On V10R3, `clear-boot-order` fails
+with HTTP 500 `REST0126`, so a pending boot order, once set, cannot be cleared with it (#1048).
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes

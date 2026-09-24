@@ -325,6 +325,7 @@ _UUID_PATH_BUILDERS = {
         "list_child": ("parent_uuid",),
         "create_child": ("parent_uuid",),
         "delete_child": ("parent_uuid", "child_uuid"),
+        "set_pending_boot_string": ("lpar_uuid",),
     },
     "StorageMixin": {
         "list_volume_groups": ("vios_uuid",),
@@ -956,6 +957,7 @@ _UUID_UOM_REQUEST_SITES = {
     "client_lpars.LparsMixin.delete_logical_partition": "lpar_uuid",
     "client_lpars.LparsMixin.list_logical_partitions": "system_uuid",
     "client_lpars.LparsMixin.modify_logical_partition": "lpar_uuid",
+    "client_lpars.LparsMixin.set_pending_boot_string": "lpar_uuid",
     "client_lpm.LpmMixin._lpar_job": "lpar_uuid",
     "client_network.NetworkMixin.create_virtual_network": "system_uuid",
     "client_network.NetworkMixin.delete_virtual_network": "system_uuid network_uuid",

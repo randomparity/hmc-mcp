@@ -139,6 +139,19 @@ def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:
 class LparsClient(Protocol):
     """Host operations required by :class:`client_lpars.LparsMixin`."""
 
+    async def _request_with_uuid_path_arguments(
+        self,
+        method: str,
+        path: str,
+        *,
+        uuid_path_arguments: Mapping[str, str],
+        **kwargs: Any,
+    ) -> Any: ...
+
+    def _uom_headers(
+        self, resource_type: str | None, include_schema_version: bool = True
+    ) -> dict[str, str]: ...
+
     async def _get(
         self,
         path: str,
