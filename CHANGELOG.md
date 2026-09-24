@@ -169,10 +169,20 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- A `ConsoleSession` whose hold another client ended, with a manual `rmvterm` or a
+  `take_over=True` session, no longer ends that client's session when it closes. The session
+  recognizes the HMC's report of the loss, raises the new `ConsoleHoldLostError` on the next
+  read, and `close()` returns `False` without issuing `rmvterm`, including when the report
+  arrived but was never read; a report still in transit when the session closes (about 1.5 s
+  on V10R3) is not seen. A bounded capture reports the loss as `stop_reason="error"`
+  with a `ConsoleHoldLostError` error, and `lpars capture-console` and `hmc_capture_lpar_console`
+  no longer advise running `rmvterm` then; exit code 3 is unchanged (#1004).
+
 - LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
   `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/
   `SystemName` the same way `resource_identity`'s validated readers do, instead of coercing or
   passing it through by hand (#1026).
+
 - `lpars read-boot-order` and `hmc_read_lpar_boot_order` request the `Advanced` group and
   return each boot field as a string, or `null` when empty, instead of the element's attribute
   dict. `set-boot-order` and `clear-boot-order` (and their MCP tools) no longer POST a sparse

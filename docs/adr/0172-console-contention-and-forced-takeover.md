@@ -7,6 +7,12 @@ disown hook), and amends ADR 0072 in part (the clause "no `rmvterm` is ever issu
 contention path"). `rmvterm` is withheld on contention only while hmcpctl cannot prove the
 hold is its own.
 
+> **Amended by #1004** (2026-09-24): rule 3's "`close()` always issues `rmvterm` for a session
+> that proved its hold" now excludes a hold the HMC reported lost to another client's `rmvterm`,
+> refuting the Consequences premise that such a session always undoes a takeover. A loss still in
+> transit when `close()` runs is not seen. Evidence, mechanism, and residual risks:
+> `docs/workflow/specs/2026-09-24-console-lost-hold-design.md`.
+
 ## Context
 
 ADR 0072 and ADR 0170 rule 2 never issue `rmvterm` on contention, because it would close the
