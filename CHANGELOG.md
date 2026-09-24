@@ -180,7 +180,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   documents, so these operations wrote nothing. Rename and the modify workflow no longer send
   the create builder's default `PartitionType`. Processor changes now refuse, before any write:
   a `dedicated` value that differs from the partition's current mode, and virtual processor
-  counts or `uncapped` on a dedicated partition. `UncappedWeight` is no longer set on capping,
+  counts, `uncapped` or a fractional processor count on a dedicated partition. `UncappedWeight` is no longer set on capping,
   because V10R3 drops it; uncapping a capped partition leaves the weight 0, and no parameter
   sets it. A name containing a character XML 1.0 cannot carry is refused before any request,
   and a DLPAR call with no processor or memory field is refused. `HMCClient.modify_logical_partition`,

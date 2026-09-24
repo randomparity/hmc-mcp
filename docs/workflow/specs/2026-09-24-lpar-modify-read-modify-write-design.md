@@ -78,7 +78,7 @@ processor elements in the live read and in the create builder. It maps:
   because switching needs a configuration element the read does not carry. `dedicated` alone
   maps nothing.
   - Dedicated partitions: `PPC/DedicatedProcessorConfiguration/{Desired,Maximum,Minimum}Processors`,
-    as integers. A virtual-processor count or `uncapped` raises `ValueError`.
+    as integers. A virtual-processor count, `uncapped` or a fractional count raises `ValueError`.
   - Shared partitions: `PPC/SharedProcessorConfiguration/{Desired,Maximum,Minimum}ProcessingUnits`,
     rendered as the create builder renders them, plus `{...}VirtualProcessors`.
   - `PPC/SharingMode` follows the create builder's rule: dedicated partitions use

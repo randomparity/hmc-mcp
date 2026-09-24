@@ -336,6 +336,35 @@ def _changed(pairs: tuple[tuple[str, object], ...]) -> dict[str, str]:
     return {path: str(value) for path, value in pairs if value is not None}
 
 
+def _dedicated_updates(resources: LparResources) -> dict[str, str]:
+    if resources.uncapped is not None or any(
+        value is not None
+        for value in (resources.min_vcpus, resources.desired_vcpus, resources.max_vcpus)
+    ):
+        raise ValueError(
+            "Virtual processor counts and capping apply only to a shared-processor "
+            "partition; this partition has dedicated processors. Nothing was written."
+        )
+    fields = (
+        ("DesiredProcessors", resources.desired_procs),
+        ("MaximumProcessors", resources.max_procs),
+        ("MinimumProcessors", resources.min_procs),
+    )
+    for name, value in fields:
+        if value is not None and value != int(value):
+            raise ValueError(
+                f"A dedicated-processor partition takes whole CPUs; {name}={value} is not "
+                "a whole number. Nothing was written."
+            )
+    config = f"{_PPC}/DedicatedProcessorConfiguration"
+    return _changed(
+        tuple(
+            (f"{config}/{name}", None if value is None else int(value))
+            for name, value in fields
+        )
+    )
+
+
 def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, str]:
     _validate_sharing_mode(resources.sharing_mode)
     current = lpar.findtext(f"{{{_UOM_NS}}}{_PPC}/{{{_UOM_NS}}}HasDedicatedProcessors")
@@ -343,25 +372,7 @@ def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, 
     if resources.dedicated is not None and resources.dedicated != dedicated:
         raise ValueError(_MODE_SWITCH_REFUSAL)
     if dedicated:
-        if resources.uncapped is not None or any(
-            value is not None
-            for value in (resources.min_vcpus, resources.desired_vcpus, resources.max_vcpus)
-        ):
-            raise ValueError(
-                "Virtual processor counts and capping apply only to a shared-processor "
-                "partition; this partition has dedicated processors. Nothing was written."
-            )
-        config = f"{_PPC}/DedicatedProcessorConfiguration"
-        updates = _changed(
-            tuple(
-                (f"{config}/{name}", None if value is None else int(value))
-                for name, value in (
-                    ("DesiredProcessors", resources.desired_procs),
-                    ("MaximumProcessors", resources.max_procs),
-                    ("MinimumProcessors", resources.min_procs),
-                )
-            )
-        )
+        updates = _dedicated_updates(resources)
         mode = resources.sharing_mode
     else:
         config = f"{_PPC}/SharedProcessorConfiguration"
