@@ -3545,19 +3545,29 @@ def test_vmedia_behavioral_inventory_covers_every_registered_stage():
 
 
 @pytest.mark.parametrize(
-    ("reported", "set_devices", "restore_tool"),
+    ("reported", "sets", "skip_reason"),
     [
         (
             {"pending_boot_string": _BOOT_LAN, "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}"},
-            [_BOOT_DISK, _BOOT_LAN],
-            "hmc_set_lpar_boot_order",
+            [[_BOOT_DISK, _BOOT_LAN], [_BOOT_LAN]],
+            None,
         ),
-        ({"pending_boot_string": None, "boot_device_list": None}, None, "hmc_clear_lpar_boot_order"),
+        (
+            {"pending_boot_string": None, "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}"},
+            [],
+            "REST0126",
+        ),
+        ({"pending_boot_string": None, "boot_device_list": None}, [], "REST0126"),
+        (
+            {"pending_boot_string": _BOOT_LAN, "boot_device_list": None},
+            [],
+            "no boot device list",
+        ),
     ],
 )
 @pytest.mark.asyncio
-async def test_vmedia_boot_order_sets_reported_paths_and_restores_the_pending_string(
-    monkeypatch, reported, set_devices, restore_tool
+async def test_vmedia_boot_order_writes_only_what_it_can_restore(
+    monkeypatch, reported, sets, skip_reason
 ):
     calls = []
 
@@ -3581,18 +3591,20 @@ async def test_vmedia_boot_order_sets_reported_paths_and_restores_the_pending_st
 
     await runner.vmedia_boot_verification(None, state)
 
-    sets = [kwargs["devices"] for tool, kwargs in calls if tool == "hmc_set_lpar_boot_order"]
-    if set_devices is None:
-        assert sets == []
-        assert any(
-            entry["tool"] == "hmc_set_lpar_boot_order (boot device list)"
-            and entry["status"] == "SKIP"
-            for entry in state.results
-        )
+    assert [
+        kwargs["devices"] for tool, kwargs in calls if tool == "hmc_set_lpar_boot_order"
+    ] == sets
+    assert "hmc_clear_lpar_boot_order" not in [tool for tool, _ in calls]
+    skipped = [
+        entry for entry in state.results
+        if entry["tool"] == "hmc_set_lpar_boot_order (boot device list)"
+        and entry["status"] == "SKIP"
+    ]
+    if skip_reason is None:
+        assert skipped == []
+        assert state.artifacts.vmedia_orig_boot_order == []
     else:
-        assert sets == [set_devices, [_BOOT_LAN]]
-    assert restore_tool in [tool for tool, _ in calls]
-    assert state.artifacts.vmedia_orig_boot_order == []
+        assert len(skipped) == 1 and skip_reason in str(skipped[0])
 
 
 @pytest.mark.asyncio
