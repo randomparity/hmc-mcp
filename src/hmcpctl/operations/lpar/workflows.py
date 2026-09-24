@@ -35,13 +35,15 @@ async def create_lpar(
     steps = [WorkflowStep("create", "ok", created.lpar)]
     if created.apply_step is not None:
         steps.append(created.apply_step)
-    # A failed apply stops the ordered workflow; the partition stays created.
+    # A failed apply, or a create that returns no partition body to apply against,
+    # stops the ordered workflow; the partition (if created) stays created.
     apply_failed = created.apply_step is not None and created.apply_step.status == "error"
-    if apply_failed:
+    assignments_skipped = created.lpar is None or apply_failed
+    if assignments_skipped:
         steps.extend(
             WorkflowStep(name, "skipped") for name in assignment_step_names(assignments)
         )
-    if created.lpar is None or apply_failed:
+    if assignments_skipped:
         return LparPcieWorkflowResult(
             True,
             False,
