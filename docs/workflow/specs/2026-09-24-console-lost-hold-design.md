@@ -20,16 +20,18 @@ A dropped connection closes the connection, and a lost hold does not, so the two
 
 ## Design
 
-- `LOST_HOLD_SENTINEL` is the recorded chunk minus its trailing space. Its bare `\n\n\n` is not
-  reproduced by text relayed through a guest tty, which translates `\n` to `\r\n`.
+- `LOST_HOLD_SENTINEL` is the recorded chunk minus its trailing space (judgment: its bare
+  `\n\n\n` makes text relayed through a guest tty with `onlcr` unlikely to match).
 - Every channel read (collector, handover, raw channel) passes through `_read_for`.
   - Match the sentinel against that chunk plus the last `len(LOST_HOLD_SENTINEL) - 1` bytes of the
     same stream. `_acquire` resets those bytes.
   - A match while `held` sets the state to `lost`, and that read still returns its chunk.
   - Later `_read_for` calls raise `ConsoleHoldLostError(HMCError)`. That is not an
     `asyncssh.Error`, so it never triggers a reconnect.
-- `_teardown` already issues `rmvterm` only when the state is `held`. A `lost` session therefore
-  closes only its own connection, and `close()` returns `False` (unproven, like a dropped session).
+- `_release_hold` (behind `close()` and `suspend()`) first cancels and awaits any read in flight,
+  then scans bytes already received but unread (reads of at most 0.1 s, 1 s in total). A message
+  the caller never read still latches `lost`. A `lost` hold drops only its own connection, logs a
+  warning, issues no `rmvterm`, and returns `False` (unproven, like a dropped session).
 - Unchanged code covers the rest. `hand_over`, `suspend`, `raw_mode`, and writes require `held`, so
   they raise `RuntimeError` after a loss. `capture_lpar_console` reports the loss as
   `stop_reason="error"` with `released=False`.
@@ -41,16 +43,21 @@ A dropped connection closes the connection, and a lost hold does not, so the two
 2. **Invariants and assets:** ADR 0170's release guarantee for a hold the session still owns, and
    another client's live hold.
 3. **Accepted failure classes:**
-   - Console output that reproduces the sentinel byte for byte leaks the session's own hold. The
-     cost is bounded: `close()` returns `False`, and `take_over=True` recovers the hold.
+   - Console output that reproduces the sentinel byte for byte leaks the session's own hold, and
+     `close()` returns `False`. Library callers recover with `take_over=True`. MCP-tool and CLI
+     users need a manual `rmvterm` (ADR 0170 rule 6); until then their captures raise
+     `ConsoleHeldError`.
+   - A loss whose message has not arrived when `close()` runs (about 1.5 s of delivery latency)
+     still issues `rmvterm`. Only the excluded ownership query could close that window.
    - A loss during `suspend()`'s release or a suspension/reconnect gap goes undetected (as today).
    - An HMC release that rewords the message disables detection. `rmvterm` behaves as before.
-4. **Covered elsewhere:** vterm ownership query → operator (excluded); stdin-EOF release → follow-up.
+4. **Covered elsewhere:** vterm ownership query → operator (excluded).
 
 ## Success
 
-1. When a `held` session's stream carries the sentinel, whole or split across reads, `read` returns
-   that chunk and then raises `ConsoleHoldLostError`, and `close()` returns `False` with no `rmvterm`.
+1. A `held` session whose received stream carries the sentinel, whole or split across reads,
+   meets two conditions. `read` returns that chunk, then raises `ConsoleHoldLostError`.
+   `close()` returns `False` with no `rmvterm`, including when the chunk was never read.
 2. After a remote close, a transport error, or a `\r\n` sentinel, `close()` still runs `rmvterm`.
 3. A `reconnect=True` session does not reconnect after a loss.
 4. ADR 0172 and ADR 0174 each carry a `#1004` amendment with the evidence and refuted premise.

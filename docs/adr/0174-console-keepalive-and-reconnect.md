@@ -10,12 +10,9 @@ that ADR 0173 assigned to #977, and the leftover-hold question that ADR 0170 rul
 left to #977: hmcpctl cannot tell its own leftover hold from another holder, so a drop that
 meets a held vterm raises a typed error, and only `take_over=True` reclaims it.
 
-> **Amended by #1004** (2026-09-24): live evidence refutes decision 2's premise that a lost hold
-> ends `mkvterm` as a remote close. Another client's `rmvterm` leaves the holder's channel and
-> connection open, with no `b""`, after one in-band message, and the session reports it as
-> `ConsoleHoldLostError`, never as a drop or a remote close. The consequence "a lost hold whose
-> SSH connection also closes would be treated as a drop" did not occur in the capture: the
-> connection stayed open. See ADR 0172's amendment.
+> **Amended by #1004** (2026-09-24): decision 2's premise is refuted. Another client's `rmvterm`
+> leaves the holder's channel and connection open, so a lost hold is neither a drop nor a remote
+> close. See ADR 0172's amendment.
 
 ## Context
 
