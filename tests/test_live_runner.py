@@ -3396,6 +3396,21 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         if tool == "hmc_list_optical_media":
             return "PASS", [{"MediaName": "test.iso"}]
         if tool == "hmc_upload_iso":
+            if workflow is runner.vmedia_upload_iso and counts[tool] == 2:
+                # ST18's same-name re-upload check: the collision guard refuses it,
+                # as it does for real (src/hmcpctl/operations/storage/resources.py
+                # `_refuse_existing_media`).
+                return "FAIL", observation.CallFailure(
+                    exception_type="FileExistsError",
+                    message=(
+                        "FileExistsError: Media name 'test.iso' already exists in "
+                        "repository. Use a different name or delete the existing "
+                        "media first."
+                    ),
+                    traceback_text="",
+                    http_status=None,
+                    denied=False,
+                )
             return "PASS", {"status": "uploaded", "media_name": "test.iso"}
         if tool == "hmc_mount_optical_media":
             return "PASS", {"mapping_uuid": "mapping"}
@@ -3425,6 +3440,63 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
     assert [tool for tool, _ in calls] == expected_tools
     assert {kwargs["vg_uuid"] for _, kwargs in calls if "vg_uuid" in kwargs} <= {"vg"}
     assert not [result for result in state.results if result["status"] == "FAIL"]
+
+
+@pytest.mark.asyncio
+async def test_vmedia_dedup_step_skips_when_reupload_is_refused(monkeypatch):
+    """ST18 records SKIP, not PASS, when the name-collision guard refuses the re-upload.
+
+    ``upload_iso`` has never returned a ``status: "existing"`` dedup hit (#1053); the
+    guard refusing a same-name re-upload is the real behaviour this step checks.
+    """
+
+    async def scripted_call(_state, _client, tool, **_kwargs):
+        if tool == "hmc_upload_iso":
+            return "FAIL", observation.CallFailure(
+                exception_type="FileExistsError",
+                message=(
+                    "FileExistsError: Media name 'test.iso' already exists in "
+                    "repository. Use a different name or delete the existing "
+                    "media first."
+                ),
+                traceback_text="",
+                http_status=None,
+                denied=False,
+            )
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "vg_uuid": "vg"})
+
+    await vmedia._verify_iso_reupload_refused(None, state)
+
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_upload_iso (same-name reupload)"
+    )
+    assert row["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_vmedia_dedup_step_fails_when_reupload_is_not_refused(monkeypatch):
+    """ST18 records FAIL when a same-name re-upload succeeds instead of being refused."""
+
+    async def scripted_call(_state, _client, tool, **_kwargs):
+        if tool == "hmc_upload_iso":
+            return "PASS", {"status": "uploaded", "media_name": "test.iso"}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "vg_uuid": "vg"})
+
+    await vmedia._verify_iso_reupload_refused(None, state)
+
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_upload_iso (same-name reupload)"
+    )
+    assert row["status"] == "FAIL"
+    assert "collision guard did not fire" in row["note"]
 
 
 @pytest.mark.asyncio

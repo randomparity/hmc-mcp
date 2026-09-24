@@ -20,6 +20,13 @@ from .results import entries
 from .results import resource as get_resource
 from .storage import configured_vg_uuid, resolve_configured_volume_group
 
+_MEDIA_NAME_COLLISION = ExpectedOutcome(
+    operation="media.upload_iso",
+    variant="reupload-same-name",
+    transient=True,
+    reason="same-name re-upload refused as expected (upload_iso has no dedup status)",
+    error_codes=frozenset({"already exists in repository"}),
+)
 _ALREADY_POWERED_OFF = ExpectedOutcome(
     operation="lpar.power_off",
     variant="pre-boot-power-off",
@@ -420,35 +427,40 @@ async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
         artifacts.vmedia_iso_name = data[0].get("MediaName") or config.iso_media_name
 
 
-async def _verify_iso_deduplication(client: Client, state: RunState) -> None:
-    """Re-upload the ST18 content and verify the broker deduplicates it."""
+async def _verify_iso_reupload_refused(client: Client, state: RunState) -> None:
+    """Re-upload under the same name and verify the repository refuses it.
+
+    ``upload_iso`` has never returned a ``status: "existing"`` dedup hit; its only
+    duplicate handling is the name-collision guard
+    (``_refuse_existing_media``, src/hmcpctl/operations/storage/resources.py),
+    which raises before any download. A same-name re-upload therefore needs no
+    second multi-GiB transfer either way, so checking the guard tests real
+    behaviour cheaply (#1053). A successful upload here means the guard did not
+    fire, which is the failure.
+    """
     config = state.config
     artifacts = state.artifacts
-    print(f"  ⏳ Uploading ISO via HTTP ({config.iso_url}) again — expect dedup hit…")
-    st_http, data_http = await state.call(
+    print(f"  ⏳ Re-uploading {config.iso_media_name} — expect the name collision to be refused…")
+    st, data = await state.call(
         client,
         "hmc_upload_iso",
         vios_name_or_uuid=artifacts.vios_uuid,
         vg_uuid=artifacts.vg_uuid,
-        media_name=config.iso_http_media_name,
+        media_name=config.iso_media_name,
         iso_source=config.iso_url,
+        expected=[_MEDIA_NAME_COLLISION],
     )
-    http_status = data_http.get("status") if isinstance(data_http, dict) else ""
-    if st_http == "PASS" and http_status == "existing":
+    if st == "PASS":
         state.record(
             18,
-            "hmc_upload_iso (http dedup)",
-            "PASS",
-            data_http,
-            "status=existing — deduplication fired as expected",
+            "hmc_upload_iso (same-name reupload)",
+            "FAIL",
+            data,
+            "collision guard did not fire — upload succeeded for a name already in the repository",
         )
     else:
-        state.record(
-            18,
-            "hmc_upload_iso (http dedup)",
-            st_http,
-            data_http,
-            f"expected status=existing, got status={http_status!r}",
+        state.record_with_expected(
+            18, "hmc_upload_iso (same-name reupload)", st, data, [_MEDIA_NAME_COLLISION]
         )
 
     st, data = await state.call(
@@ -457,7 +469,7 @@ async def _verify_iso_deduplication(client: Client, state: RunState) -> None:
         vios_name_or_uuid=artifacts.vios_uuid,
         vg_uuid=artifacts.vg_uuid,
     )
-    state.record(18, "hmc_list_optical_media (post-http)", st, data)
+    state.record(18, "hmc_list_optical_media (post-reupload)", st, data)
 
 
 async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None:
@@ -503,8 +515,8 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     skip_names = [
         "hmc_upload_iso (http)",
         "hmc_list_optical_media (post-upload)",
-        "hmc_upload_iso (http dedup)",
-        "hmc_list_optical_media (post-http)",
+        "hmc_upload_iso (same-name reupload)",
+        "hmc_list_optical_media (post-reupload)",
         "hmc_delete_optical_media",
         "hmc_list_optical_media (confirm empty)",
         "hmc_upload_iso (re-upload for ST19)",
@@ -514,7 +526,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
 
     await _upload_and_discover_iso(client, state)
 
-    await _verify_iso_deduplication(client, state)
+    await _verify_iso_reupload_refused(client, state)
     await _reset_iso_for_mount_scenario(client, state)
 
 

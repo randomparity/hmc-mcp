@@ -16,7 +16,6 @@ from pathlib import Path
 import httpx
 import pytest
 from conftest import make_config
-from defusedxml.common import EntitiesForbidden
 
 from hmcpctl.client.client_parse import _parse_feed
 from hmcpctl.client.client_storage import lpar_uuid_from_href, storage_mapping_id
@@ -396,13 +395,14 @@ async def test_delete_storage_mapping_rejects_malformed_parent(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_storage_mapping_rejects_xml_entities(mock_hmc):
+    """An entity-bearing parent body raises HMCError, not a raw DefusedXmlException."""
     document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
     mock_hmc.get(VIOS_PARENT_PATH).mock(
         return_value=httpx.Response(200, text=document)
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(EntitiesForbidden):
+        with pytest.raises(HMCError, match="not valid XML"):
             await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
 
