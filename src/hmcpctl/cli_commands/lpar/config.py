@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from hmcpctl.operations.lpar.ownership import set_lpar_ownership_description
@@ -308,7 +309,7 @@ def lpars_get_description(
     """Get the description field of an LPAR (HMC CLI via SSH)."""
     result = run_cli_coroutine(lambda: get_lpar_description(ssh_config(), system_name, lpar_name))
 
-    console.print(result.strip() or "(no description set)")
+    console.print(escape(result.strip()) or "(no description set)")
 
 
 def lpars_set_description(
@@ -344,7 +345,7 @@ def lpars_set_description(
 
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
     if result.strip():
-        console.print(result.strip())
+        console.print(escape(result.strip()))
 
 
 def lpars_get_msp(
@@ -372,7 +373,7 @@ def lpars_set_msp(
 
     console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
     if result.strip():
-        console.print(result.strip())
+        console.print(escape(result.strip()))
 
 
 def lpars_get_proc_compat_modes(
@@ -427,7 +428,7 @@ def lpars_set_proc_compat(
         f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]"
     )
     if result.strip():
-        console.print(result.strip())
+        console.print(escape(result.strip()))
 
 
 def register_commands(group: typer.Typer) -> None:

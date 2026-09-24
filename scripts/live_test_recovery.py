@@ -53,8 +53,17 @@ from hmcpctl.ssh.transport import HMCCLIError
 #: to review: the whole point of the script is that it cannot make things worse
 #: while checking whether they are bad.
 _READ_ONLY_TOOLS = frozenset(
-    {"hmc_list_dedicated_pcie_slots", "hmc_get_lpar_description", "hmc_run_command"}
+    {
+        "hmc_list_dedicated_pcie_slots",
+        "hmc_get_lpar_description",
+        "hmc_get_lpar_state",
+        "hmc_run_command",
+    }
 )
+
+#: The HMC refuses `rmsyscfg` on a partition outside this state; a survivor
+#: found in any other state needs a shutdown first (#950).
+_NOT_ACTIVATED = "Not Activated"
 
 #: `hmc_run_command` is read-only only for the command given. `lssyscfg` lists;
 #: `chsyscfg` would mutate, and shares the tool.
@@ -204,11 +213,29 @@ async def _surviving_fixture(call, inputs: RecoveryInputs) -> Finding | None:
                 "re-run the check from the run's tested commit"
             )
         return None
+    state_status, state = await call(
+        "hmc_get_lpar_state",
+        system_name_or_uuid=inputs.system_name,
+        lpar_name_or_uuid=inputs.fixture_lpar,
+    )
+    if state_status != "PASS" or not isinstance(state, str):
+        raise StateUnreadable(
+            f"could not read the state of {inputs.fixture_lpar} on "
+            f"{inputs.system_name} ({state_status}), so its remedy cannot be chosen"
+        )
+    remedy = f"hmc rmsyscfg -m {inputs.system_name} -r lpar -n {inputs.fixture_lpar}"
+    if state != _NOT_ACTIVATED:
+        # The HMC refuses to delete a partition outside Not Activated (#950): a
+        # run interrupted while its fixture is running needs a shutdown first.
+        remedy = (
+            f"hmc chsysstate -m {inputs.system_name} -r lpar -n {inputs.fixture_lpar} "
+            f"-o shutdown --immed; once it is {_NOT_ACTIVATED}, {remedy}"
+        )
     return Finding(
         "surviving partition",
-        f"{inputs.fixture_lpar} on {inputs.system_name} still exists and carries "
-        f"this run's marker {inputs.run_marker}",
-        f"hmc rmsyscfg -m {inputs.system_name} -r lpar -n {inputs.fixture_lpar}",
+        f"{inputs.fixture_lpar} on {inputs.system_name} still exists in state "
+        f"{state!r} and carries this run's marker {inputs.run_marker}",
+        remedy,
     )
 
 

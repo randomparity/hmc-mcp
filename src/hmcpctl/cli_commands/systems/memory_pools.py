@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from ...ssh.memory import list_memory_pools, remove_memory_pool
@@ -53,7 +54,7 @@ def memory_pools_remove(
         f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"
     )
     if result.strip():
-        console.print(result.strip())
+        console.print(escape(result.strip()))
 
 
 def register_commands(group: typer.Typer) -> None:
