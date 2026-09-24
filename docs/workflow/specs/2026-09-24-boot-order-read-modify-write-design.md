@@ -22,14 +22,21 @@ Evidence, all V10R3 M1060, private #879 capture (2026-09-23) and a read-only pro
   or `/vdevice/l-lan@30000002:speed=auto,...`. None holds a CD path. None has a populated
   `PendingBootString`.
 - A single-partition GET returns an `ETag` header equal to the entry's `etag:etag`.
+- A single-partition GET with and without `?group=Advanced` returns the same document apart from
+  its `SELF` link, which keeps the query. The only extended-group attribute in it is
+  `group="Advanced"`, so the RMW GET leaves no other group's elements as placeholders.
 
 ## Decision
 
 **The input is Open Firmware device paths, not selectors.** The CLI and the MCP tool take an
 ordered list of paths. The write joins them with single spaces. Each path must start with `/` and
 must not contain whitespace or control characters, so joining cannot merge two paths or split
-one. `hmcpctl` does not map selectors to paths. `read-boot-order` reports the paths the HMC
-knows, and the docs point there.
+one. The space-joined `PendingBootString` format is inferred from `BootDeviceList`, the only
+multi-path boot string observed; live acceptance reads it back. `hmcpctl` does not map selectors
+to paths. `read-boot-order` reports the paths the HMC knows, and the docs point there. The docs
+also say that it reports none on a never-booted partition and never a virtual-CD path. In that
+case the path comes from firmware (SMS or Open Firmware `devalias`), or the boot order is left
+unset, as the ISO recipe does.
 
 **Set and clear read, modify, and write the whole partition.** This follows ADR 0171, the
 VolumeGroup precedent, applied to one more resource.
@@ -42,7 +49,8 @@ VolumeGroup precedent, applied to one more resource.
    child. If any of these is missing, refuse. The code never makes an element up.
 4. Replace only the text of `PendingBootString`. Clear sets it to empty. Every attribute and
    sibling stays as the HMC sent it.
-5. POST the element to `/rest/api/uom/LogicalPartition/<uuid>`. Headers: `Accept: */*`, typed
+5. POST the element to the same `?group=Advanced` URL, the `SELF` link the GET returns (the
+   ADR 0169 mapping write also posts to the grouped URL it read). Headers: `Accept: */*`, typed
    `Content-Type`, and `If-Match` set to the ETag. A 412 means a concurrent change and nothing
    was written. Any status other than 200, 201 or 202 raises `HMCError`.
 
@@ -55,8 +63,10 @@ write joins. The output keys do not change.
 
 Ownership:
 
-- `documents/boot.py` validates and joins paths. `build_pending_boot_string` replaces
+- `documents/boot.py` validates and joins paths. `join_boot_device_paths` replaces
   `BOOT_DEVICE_SELECTORS`, `BootDeviceSelector`, and both sparse builders, which are removed.
+  It is not named `build_*`: `tests/unit/test_xml_escaping.py` treats `build_*` functions as
+  XML builders, and ElementTree stays the single escaping point.
 - The client mixin owns the HTTP read-modify-write.
 - `operations/lpar/boot_order.py` validates, then authorizes, then calls the client. It still
   translates errors with `translate_lpar_write_error`.
@@ -100,9 +110,13 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
      error.
    - A partition whose GET has no ETag cannot have its boot order set. The error names the
      missing ETag.
+   - Whether the HMC enforces `If-Match` and applies the whole-element POST as sent is unverified
+     on `LogicalPartition` until criterion 6's live write runs, as ADR 0171 records for
+     VolumeGroup.
 4. **Covered elsewhere:**
    - The UOM write header strategy: #935.
-   - The sparse POSTs from rename and DLPAR: a follow-up candidate, not fixed here.
+   - The sparse POSTs from rename and DLPAR: the plan's Task 4 records a per-caller verdict for
+     the PR body, and the campaign orchestrator routes any follow-up.
 
 ### Threat model
 
@@ -125,10 +139,12 @@ The ISO recipe's blocker note and `CHANGELOG.md` describe the new contract.
 3. Path validation rejects an empty list, a path that does not start with `/`, and a path
    containing whitespace or a control character. Validation runs before authorization or any
    request.
-4. The CLI and tool help describe Open Firmware paths, and the recipe note no longer calls the
-   commands blocked by #980.
+4. The CLI and tool help describe Open Firmware paths and the case with no reported path. The
+   recipe note no longer names #980. It names #935 for set and clear if the live write is recorded
+   against #935.
 5. Live: the Advanced-group read on the authorized partition. The write, under the campaign
-   lock, either round-trips or is recorded against #935.
+   lock, either round-trips, with `pending_boot_string` read back equal to the joined input and
+   then cleared, or is recorded against #935 with the format left unverified.
 
 ## Validation
 
