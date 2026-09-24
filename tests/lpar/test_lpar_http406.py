@@ -297,6 +297,44 @@ def test_required_stamp_policy_raises_on_readback_error_after_mksyscfg():
     assert isinstance(exc_info.value.__cause__, HMCError)
 
 
+def test_required_stamp_policy_readback_error_includes_apply_warning():
+    """A required-policy read-back-failed raise also reports a failed apply (#1020)."""
+    hmc = AsyncMock()
+    hmc.find_partition_by_name.side_effect = [None, HMCError("boom", status_code=500)]
+    hmc.create_logical_partition.side_effect = HMCError("nope", status_code=406)
+    creation = LparCreation(
+        "new-lpar",
+        "AIX/Linux",
+        LparResources(),
+        stamp_policy="required",
+        apply_profile=True,
+    )
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_uuid",
+            new=AsyncMock(return_value=SYSTEM_UUID),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_system_cli_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
+        patch("hmcpctl.operations.lpar.core.create_lpar_via_cli", new=AsyncMock()),
+        patch(
+            "hmcpctl.operations.lpar.core.apply_lpar_profile_via_cli",
+            new=AsyncMock(side_effect=HMCCLIError("HSCL boom")),
+        ),
+        pytest.raises(HMCError) as exc_info,
+    ):
+        asyncio.run(create_and_stamp_lpar(hmc, SYSTEM_UUID, creation))
+
+    message = str(exc_info.value)
+    assert "'new-lpar'" in message
+    assert "still exists" in message
+    assert "'default_profile' was not applied" in message
+    assert "redo any skipped steps" in message
+
+
 def test_apply_profile_sends_verified_chsyscfg():
     """The #879-verified form: -p names the partition, -n the profile; no -f."""
     with patch(

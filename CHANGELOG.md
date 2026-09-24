@@ -164,6 +164,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   partition body — including when the post-create read-back raises (#1014) — instead of omitting
   the requested assignment steps entirely (#1019).
 
+- `create_and_stamp_lpar` under `stamp_policy='required'` includes the unapplied-profile warning
+  in each raised error — read-back failed, no body, and stamp not confirmed — instead of omitting
+  whether the preceding profile apply succeeded (#1020).
+
 - `HMCError` extracts `<Message>` from the untruncated HMC error body before truncating the
   stored body to `MAX_ERROR_BODY_BYTES` (4096). Before, a body over 4096 bytes was cut first,
   which could leave malformed XML with the `<Message>` element past the cut, so the message was

@@ -397,22 +397,23 @@ async def create_and_stamp_lpar(
         except HMCError as exc:
             created_lpar, readback_error = None, exc
     apply_warnings = _unapplied_profile_warnings(creation.name, apply_step)
+    apply_note = f" {'; '.join(apply_warnings)}" if apply_warnings else ""
 
     if created_lpar is None:
         if creation.stamp_policy == "required" and readback_error is not None:
             raise HMCError(
                 f"stamp_policy='required': mksyscfg created LPAR {creation.name!r} "
                 f"but its read-back failed ({readback_error}), so it was not "
-                "stamped. The LPAR still exists — re-stamp it with "
+                f"stamped.{apply_note} The LPAR still exists — re-stamp it with "
                 "set_lpar_ownership_description or delete it to release its "
                 "resources."
             ) from readback_error
         if creation.stamp_policy == "required":
             raise HMCError(
                 "stamp_policy='required': cannot confirm the created LPAR "
-                f"exists — the create returned no body for {creation.name!r}. "
-                "Verify whether the partition was created before retrying; a "
-                "created partition can be re-stamped with "
+                f"exists — the create returned no body for {creation.name!r}."
+                f"{apply_note} Verify whether the partition was created before "
+                "retrying; a created partition can be re-stamped with "
                 "set_lpar_ownership_description."
             )
         skipped = (
@@ -444,9 +445,9 @@ async def create_and_stamp_lpar(
         identity = f"{name!r} (UUID {uuid!r})" if uuid else f"{name!r} (UUID unknown)"
         raise HMCError(
             "stamp_policy='required': ownership stamping did not succeed for "
-            f"LPAR {identity}. {'; '.join(warnings)} The LPAR still exists — "
-            "the create is not rolled back. Re-stamp it with "
-            "set_lpar_ownership_description (issue #376) or delete it to "
+            f"LPAR {identity}. {'; '.join((*apply_warnings, *warnings))} The "
+            "LPAR still exists — the create is not rolled back. Re-stamp it "
+            "with set_lpar_ownership_description (issue #376) or delete it to "
             "release its resources."
         )
     return LparCreationResult(
