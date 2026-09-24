@@ -1,0 +1,546 @@
+{
+ "record_kind": "live-capture",
+ "evidence_kind": "live-capture",
+ "hmc_release": "V10R3 M1060",
+ "system_model": "8375-42A",
+ "captured": "2026-09-24",
+ "source_url": "https://github.com/randomparity/hmc-mcp/issues/1058",
+ "claim_summary": "Holder A opens mkvterm on a not-activated partition with a sealed stdin pipe (hmcpctl's _SealedStdin) and later closes the pipe's write end, so the HMC sees stdin EOF. Arm `single`/`single-fast`: A alone; about 10.1-10.5 s after EOF A receives ' The write socket has closed. Exiting.\\n', its stream ends and mkvterm exits 0, and a probe C (a fresh mkvterm on an independent connection) then acquires while A's SSH connection is still open; in `single-fast` a probe started 1 s after EOF found the vterm still held. Arms `takeover`, `race`, `eof-first`: client B takes the vterm (ConsoleSession(take_over=True), or a bare rmvterm then ConsoleSession) and A sends EOF after B holds, between B's rmvterm and B's mkvterm, or 2 s before B's takeover. A exits the same way, B's stream stays open and silent for 10 s after A's exit, C finds the vterm held, and B's own close proves release. Every run starts and ends with the partition Not Activated and the console slot free (baseline, restore-check probes).",
+ "redaction": "system and partition names never recorded; host identities omitted",
+ "event_times": "seconds since the run started (before the baseline state read)",
+ "runs": [
+  {
+   "arm": "single",
+   "events": [
+    {
+     "t": 1.458,
+     "event": "baseline-state",
+     "state": [
+      "Not Activated"
+     ]
+    },
+    {
+     "t": 4.589,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 6.07,
+     "event": "A-acquired",
+     "nbytes": 24,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 6.573,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 9.072,
+     "event": "A-stdin-eof"
+    },
+    {
+     "t": 19.074,
+     "event": "A-channel-open-after",
+     "seconds": 10,
+     "exit_status": null,
+     "exit_signal": "None"
+    },
+    {
+     "t": 19.074,
+     "event": "A-connection",
+     "closed": false
+    },
+    {
+     "t": 19.538,
+     "event": "A-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 19.539,
+     "event": "A-stdout-eof"
+    },
+    {
+     "t": 22.129,
+     "event": "C-probe",
+     "released": true
+    },
+    {
+     "t": 22.129,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 27.272,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 28.706,
+     "event": "after-state",
+     "state": [
+      "Not Activated"
+     ]
+    }
+   ]
+  },
+  {
+   "arm": "single",
+   "events": [
+    {
+     "t": 1.472,
+     "event": "baseline-state",
+     "state": [
+      "Not Activated"
+     ]
+    },
+    {
+     "t": 4.713,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 6.353,
+     "event": "A-acquired",
+     "nbytes": 24,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 6.848,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 9.355,
+     "event": "A-stdin-eof"
+    },
+    {
+     "t": 19.549,
+     "event": "A-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 19.553,
+     "event": "A-stdout-eof"
+    },
+    {
+     "t": 19.554,
+     "event": "A-channel-closed",
+     "exit_status": 0,
+     "exit_signal": "None"
+    },
+    {
+     "t": 19.554,
+     "event": "A-connection",
+     "closed": false
+    },
+    {
+     "t": 22.619,
+     "event": "C-probe",
+     "released": true
+    },
+    {
+     "t": 22.62,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 27.772,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 29.217,
+     "event": "after-state",
+     "state": [
+      "Not Activated"
+     ]
+    }
+   ]
+  },
+  {
+   "arm": "single-fast",
+   "events": [
+    {
+     "t": 1.445,
+     "event": "baseline-state",
+     "state": [
+      "Not Activated"
+     ]
+    },
+    {
+     "t": 4.685,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 6.186,
+     "event": "A-acquired",
+     "nbytes": 24,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 6.689,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 9.188,
+     "event": "A-stdin-eof"
+    },
+    {
+     "t": 11.665,
+     "event": "C-early-probe",
+     "released": false
+    },
+    {
+     "t": 19.286,
+     "event": "A-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 19.298,
+     "event": "A-stdout-eof"
+    },
+    {
+     "t": 19.298,
+     "event": "A-channel-closed",
+     "exit_status": 0,
+     "exit_signal": "None"
+    },
+    {
+     "t": 19.298,
+     "event": "A-connection",
+     "closed": false
+    },
+    {
+     "t": 22.511,
+     "event": "C-probe",
+     "released": true
+    },
+    {
+     "t": 22.512,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 27.632,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 29.127,
+     "event": "after-state",
+     "state": [
+      "Not Activated"
+     ]
+    }
+   ]
+  },
+  {
+   "arm": "takeover",
+   "events": [
+    {
+     "t": 1.44,
+     "event": "baseline-state",
+     "state": [
+      "Not Activated"
+     ]
+    },
+    {
+     "t": 4.532,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 6.119,
+     "event": "A-acquired",
+     "nbytes": 24,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 6.653,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 9.12,
+     "event": "B-takeover-start"
+    },
+    {
+     "t": 10.643,
+     "event": "A-stdout-chunk",
+     "nbytes": 98,
+     "data": "\r\n Connection has closed \r\n\r\n\r\n This session is no longer connected. Please close this window.\n\n\n "
+    },
+    {
+     "t": 12.155,
+     "event": "B-takeover-open-returned"
+    },
+    {
+     "t": 13.157,
+     "event": "A-stdin-eof"
+    },
+    {
+     "t": 23.254,
+     "event": "A-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 23.258,
+     "event": "A-stdout-eof"
+    },
+    {
+     "t": 23.258,
+     "event": "A-channel-closed",
+     "exit_status": 0,
+     "exit_signal": "None"
+    },
+    {
+     "t": 33.26,
+     "event": "B-reads-after-A-eof",
+     "chunks": [
+      "\r\n Open in progress  \r\n ",
+      "\r\n Open Completed. \r\n  ",
+      "<timeout: B stream open and silent>"
+     ],
+     "b_state": "held"
+    },
+    {
+     "t": 34.778,
+     "event": "C-probe",
+     "released": false
+    },
+    {
+     "t": 34.778,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 39.594,
+     "event": "B-closed",
+     "released": true
+    },
+    {
+     "t": 44.711,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 46.194,
+     "event": "after-state",
+     "state": [
+      "Not Activated"
+     ]
+    }
+   ]
+  },
+  {
+   "arm": "race",
+   "events": [
+    {
+     "t": 1.471,
+     "event": "baseline-state",
+     "state": [
+      "Not Activated"
+     ]
+    },
+    {
+     "t": 4.564,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 6.011,
+     "event": "A-acquired",
+     "nbytes": 24,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 6.814,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 9.013,
+     "event": "B-rmvterm-start"
+    },
+    {
+     "t": 10.582,
+     "event": "A-stdout-chunk",
+     "nbytes": 98,
+     "data": "\r\n Connection has closed \r\n\r\n\r\n This session is no longer connected. Please close this window.\n\n\n "
+    },
+    {
+     "t": 10.656,
+     "event": "B-rmvterm-returned",
+     "stdout": "Close command sent"
+    },
+    {
+     "t": 10.656,
+     "event": "A-stdin-eof"
+    },
+    {
+     "t": 12.171,
+     "event": "B-open-returned"
+    },
+    {
+     "t": 20.752,
+     "event": "A-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 20.757,
+     "event": "A-stdout-eof"
+    },
+    {
+     "t": 20.758,
+     "event": "A-channel-closed",
+     "exit_status": 0,
+     "exit_signal": "None"
+    },
+    {
+     "t": 30.759,
+     "event": "B-reads-after-A-eof",
+     "chunks": [
+      "\r\n Open in progress  \r\n ",
+      "\r\n Open Completed. \r\n  ",
+      "<timeout: B stream open and silent>"
+     ],
+     "b_state": "held"
+    },
+    {
+     "t": 32.319,
+     "event": "C-probe",
+     "released": false
+    },
+    {
+     "t": 32.32,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 37.107,
+     "event": "B-closed",
+     "released": true
+    },
+    {
+     "t": 42.436,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 43.913,
+     "event": "after-state",
+     "state": [
+      "Not Activated"
+     ]
+    }
+   ]
+  },
+  {
+   "arm": "eof-first",
+   "events": [
+    {
+     "t": 1.481,
+     "event": "baseline-state",
+     "state": [
+      "Not Activated"
+     ]
+    },
+    {
+     "t": 4.498,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 5.992,
+     "event": "A-acquired",
+     "nbytes": 24,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 6.497,
+     "event": "A-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 8.993,
+     "event": "A-stdin-eof"
+    },
+    {
+     "t": 10.994,
+     "event": "B-takeover-start"
+    },
+    {
+     "t": 12.535,
+     "event": "A-stdout-chunk",
+     "nbytes": 98,
+     "data": "\r\n Connection has closed \r\n\r\n\r\n This session is no longer connected. Please close this window.\n\n\n "
+    },
+    {
+     "t": 14.098,
+     "event": "B-takeover-open-returned"
+    },
+    {
+     "t": 19.086,
+     "event": "A-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 19.089,
+     "event": "A-stdout-eof"
+    },
+    {
+     "t": 19.089,
+     "event": "A-channel-closed",
+     "exit_status": 0,
+     "exit_signal": "None"
+    },
+    {
+     "t": 29.09,
+     "event": "B-reads-after-A-eof",
+     "chunks": [
+      "\r\n Open in progress  \r\n ",
+      "\r\n Open Completed. \r\n  ",
+      "<timeout: B stream open and silent>"
+     ],
+     "b_state": "held"
+    },
+    {
+     "t": 30.54,
+     "event": "C-probe",
+     "released": false
+    },
+    {
+     "t": 30.54,
+     "event": "A-connection-closed-locally"
+    },
+    {
+     "t": 35.335,
+     "event": "B-closed",
+     "released": true
+    },
+    {
+     "t": 40.391,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 41.828,
+     "event": "after-state",
+     "state": [
+      "Not Activated"
+     ]
+    }
+   ]
+  }
+ ]
+}

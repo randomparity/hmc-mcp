@@ -195,6 +195,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and a successful upload now records FAIL instead of a PASS row whose note contradicted it.
   The unused `LIVE_TEST_ISO_HTTP_MEDIA_NAME` setting is removed (#1053).
 
+- The ISO upload no longer times out while the HMC finishes taking a large ISO. The HMC answers
+  the web File contents PUT only after it has taken the whole file: 14.8 s after the last byte of a
+  4.2 GB ISO, longer for a larger one. That response now gets its own wait, `HMC_UPLOAD_TIMEOUT`
+  (TOML `upload_timeout`, default 600 s, never shorter than `HMC_TIMEOUT`). A timeout there says the
+  HMC may still import the ISO (#1055).
+
 - Three `client_storage` XML parse sites (VIOS mapping read-modify-write, storage-mapping
   delete, and VolumeGroup read) now catch `DefusedXmlException` alongside `ParseError`, so an
   HMC body carrying a DTD, entity, or external reference raises `HMCError` naming the request
@@ -214,6 +220,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   on V10R3) is not seen. A bounded capture reports the loss as `stop_reason="error"`
   with a `ConsoleHoldLostError` error, and `lpars capture-console` and `hmc_capture_lpar_console`
   no longer advise running `rmvterm` then; exit code 3 is unchanged (#1004).
+
+- A console session now releases its hold by closing `mkvterm`'s stdin instead of running
+  `rmvterm`. Live captures on V10R3 showed that stdin EOF ends only the session's own `mkvterm`
+  and leaves the other client's session intact in every captured ordering, so a loss report still in
+  transit at close no longer lets the release end a new holder's session. `ConsoleSession.close()`
+  and `suspend()`, `WritableConsoleSession`, the bounded capture and `hmc_capture_lpar_console`
+  wait about 10 s longer for the HMC to answer EOF. `rmvterm` still runs when the stream had
+  already ended or does not end within 20 s, and the independent probe still decides `released`
+  (#1058).
 
 - LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
   `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/

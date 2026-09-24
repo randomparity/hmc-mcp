@@ -13,6 +13,10 @@ hold is its own.
 > transit when `close()` runs is not seen. Evidence, mechanism, and residual risks:
 > `docs/workflow/specs/2026-09-24-console-lost-hold-design.md`.
 
+> **Amended by #1058** (2026-09-24): rule 3's `close()` releases a proven hold through stdin EOF,
+> and it issues `rmvterm` only when the stream had ended or does not end in time. See ADR 0072's
+> `#1058` amendment.
+
 ## Context
 
 ADR 0072 and ADR 0170 rule 2 never issue `rmvterm` on contention, because it would close the

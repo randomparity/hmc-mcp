@@ -20,20 +20,22 @@ records the design decision per prototype fact.
   No ``rmvterm`` is issued on that path — it would release the *other* holder's
   session — unless the caller explicitly asked for a forced takeover (ADR 0172).
 - **Mandatory release** (P2/P3/P4): the HMC does not auto-release a vterm,
-  not after an abrupt disconnect and not after a graceful close. ``rmvterm``
+  not after an abrupt disconnect and not after a graceful close. A release
   therefore runs on every exit path, cancellation included, and runs to
-  completion before cancellation propagates. ``released`` is ``True`` only
-  after an independent-session ``mkvterm`` probe proves the slot is free;
-  ``rmvterm``'s own exit code is not proof (P2). The one exception is a hold
-  another client's ``rmvterm`` already ended (#1004): the HMC reports it in
-  band, and releasing would end the new holder's session.
+  completion before cancellation propagates. It sends stdin EOF, which ends
+  only this session's own ``mkvterm`` about 10 s later (#1058), and issues
+  ``rmvterm`` only when the stream had already ended or did not end in time.
+  ``released`` is ``True`` only after an independent-session ``mkvterm`` probe
+  proves the slot is free; ``rmvterm``'s own exit code is not proof (P2). A
+  hold another client's ``rmvterm`` already ended gets no release (#1004): the
+  HMC reports it in band, and ``rmvterm`` would end the new holder's session.
 - **Sealed stdin** (P5/P7): mkvterm's stdin is the write socket to the
   partition console, and EOF on it terminates the vterm. The capture opens a
   pipe, hands mkvterm the read end, and holds the write end open without ever
-  writing: no parameter, method, or code path can send a byte to the console.
-  :class:`WritableConsoleSession` is the one exception (ADR 0176): it keeps a
-  private stdin writer that never sends EOF, and only its typed, audited write
-  methods reach it.
+  writing until the release closes it: no parameter, method, or code path can
+  send a byte to the console. :class:`WritableConsoleSession` is the one
+  exception (ADR 0176): it keeps a private stdin writer that sends EOF only at
+  release, and only its typed, audited write methods reach it.
 - **Client-side bounds** (P8): an idle vterm stream stays open forever and
   the HMC sends no keepalives, so duration, max-bytes, and idle bounds are all
   enforced here, never expected from the HMC. hmcpctl's own SSH keepalives
@@ -117,6 +119,10 @@ _RELEASE_PROBE_SECONDS = 10.0
 _UNREAD_READ_SECONDS = 0.1
 _UNREAD_SCAN_SECONDS = 1.0
 
+#: How long a release waits for ``mkvterm`` to exit after its stdin reaches EOF
+#: (#1058). V10R3 M1060 answered EOF in 10.1-10.5 s over six recorded runs.
+_EOF_RELEASE_SECONDS = 20.0
+
 #: The states in which :meth:`ConsoleSession._release_hold` runs: close() and suspend().
 _RELEASABLE: tuple[_State, ...] = ("held", "suspending")
 
@@ -178,8 +184,9 @@ class ConsoleCapture:
 
     ``released`` is honest, not optimistic: ``True`` only when an independent
     follow-up ``mkvterm`` proved the vterm slot free after the mandatory
-    ``rmvterm`` (P2). ``False`` means the caller may have left the partition's
-    console held and should treat further console access as broken, unless
+    release, stdin EOF or ``rmvterm`` (P2, #1058). ``False`` means the caller
+    may have left the partition's console held and should treat further
+    console access as broken, unless
     ``error`` names :class:`ConsoleHoldLostError`: then another client ended
     the hold and no ``rmvterm`` was issued (#1004).
     """
@@ -228,8 +235,9 @@ class _SealedStdin:
     it terminates the vterm (P5) — which is why ``DEVNULL`` cannot be used.
     The pipe's read end is handed to the remote process and its write end is
     held open here, never written. The descriptor pair is private, no method
-    sends data, and only :meth:`close` touches them: there is no API surface
-    through which a byte could reach the console.
+    sends data, and only :meth:`release` and :meth:`close` touch them: there is
+    no API surface through which a byte could reach the console. :meth:`release`
+    closes the write end so the HMC ends this session's ``mkvterm`` (#1058).
     """
 
     __slots__ = ("_read_fd", "_write_fd")
@@ -245,6 +253,10 @@ class _SealedStdin:
     def adopt(self, process: Any) -> None:
         """Record that asyncssh adopted the read end (it closes it now)."""
         self._read_fd = -1
+
+    def release(self) -> None:
+        """Send EOF by closing the write end: the HMC then ends this ``mkvterm``."""
+        self.close()
 
     def close(self) -> None:
         """Close both ends. The read end is skipped once asyncssh owns it."""
@@ -268,8 +280,9 @@ class _ConsoleStdin:
     """A writable session's private stdin writer (ADR 0176).
 
     asyncssh's stdin pipe replaces the sealed OS pipe, and :meth:`adopt` keeps
-    the process's writer. Nothing here sends EOF, which would end the vterm (P5):
-    :meth:`close` only drops the reference.
+    the process's writer. EOF ends the vterm (P5), so only :meth:`release`, which
+    the session's release calls, sends it (#1058); :meth:`close` only drops the
+    reference.
     """
 
     __slots__ = ("_writer",)
@@ -287,6 +300,10 @@ class _ConsoleStdin:
         """Queue *data* on the channel and wait for asyncssh to drain it."""
         self._writer.write(data)
         await self._writer.drain()
+
+    def release(self) -> None:
+        """Send EOF: the HMC then ends this session's ``mkvterm`` (#1058)."""
+        self._writer.write_eof()
 
     def close(self) -> None:
         """Drop the writer without sending EOF."""
@@ -724,8 +741,9 @@ class ConsoleSession:
     returns raw chunks, the acquisition bytes first and ``b""`` after the
     remote end closes; the session enforces no bound, so consumers wrap reads
     in their own timeouts. :meth:`close` and :meth:`suspend` are the only
-    releases: ``rmvterm``, an independent-session probe, then local teardown,
-    run to completion even when the caller is cancelled (P2/P3/P4). Use the
+    releases: stdin EOF (``rmvterm`` if the stream does not end within
+    ``_EOF_RELEASE_SECONDS``, #1058), an independent-session probe, then local
+    teardown, run to completion even when the caller is cancelled (P2/P3/P4). Use the
     session as an async context manager so every exit that unwinds the owning
     coroutine closes it.
 
@@ -785,6 +803,9 @@ class ConsoleSession:
         self._settled.set()
         self._remote_closed = False  # latched: a remote close never later counts as a drop
         self._tail = b""  # the stream's last bytes, for a sentinel split across reads
+        # The unread scan found the stream ended; unlike _remote_closed, it does not
+        # depend on the reconnect path.
+        self._stream_ended = False
         self._reconnect_task: asyncio.Task[ConsoleGap] | None = None
 
     @property
@@ -836,6 +857,7 @@ class ConsoleSession:
         self._connection, self._stdout = connection, process.stdout
         self._state = "held"
         self._remote_closed = False  # the latch covers one mkvterm stream
+        self._stream_ended = False
         self._tail = b""
         self._pending += data
         return cancelled
@@ -917,6 +939,7 @@ class ConsoleSession:
                         self._stdout.read(_CHUNK), _UNREAD_READ_SECONDS
                     )
                     if not chunk:
+                        self._stream_ended = True
                         return
                     self._watch_for_lost_hold(chunk)
 
@@ -1068,8 +1091,8 @@ class ConsoleSession:
     async def suspend(self) -> bool:
         """Mode (b): release the vterm for an external holder; return the proof.
 
-        Runs ``rmvterm`` and the independent probe exactly as :meth:`close`
-        does, and closes the connection; like :meth:`close`, it returns
+        Sends stdin EOF (or ``rmvterm``) and runs the independent probe exactly
+        as :meth:`close` does, and closes the connection; like :meth:`close`, it returns
         ``False`` with no ``rmvterm`` for a hold another client ended (#1004).
         That loss is reported only by ``False`` and a logged warning; a later
         :meth:`resume` meets any new holder as :class:`ConsoleHeldError`.
@@ -1136,7 +1159,10 @@ class ConsoleSession:
 
         Later and concurrent calls await the same release. Cancelling the
         caller never interrupts the release; the cancellation is re-raised
-        after it completes. During :meth:`suspend` or :meth:`resume` it waits
+        after it completes. The release sends stdin EOF and waits, about 10 s on
+        the recorded HMC, for ``mkvterm`` to exit; ``rmvterm`` runs instead when
+        the stream had ended or does not end in time (#1058). During
+        :meth:`suspend` or :meth:`resume` it waits
         for that call, then releases whatever it left held. A suspended
         session issues no ``rmvterm``, since the slot may now be the external
         holder's, and reports the proof :meth:`suspend` obtained. A reconnect in
@@ -1173,10 +1199,15 @@ class ConsoleSession:
     async def _release_hold(self) -> bool:
         """Release with proof (ADR 0170 rule 4), then drop the channel.
 
-        A hold another client's ``rmvterm`` ended gets no ``rmvterm`` (#1004).
+        A hold another client's ``rmvterm`` ended gets no ``rmvterm`` (#1004). An
+        open stream is released through stdin EOF, which ends only this session's
+        own ``mkvterm`` (#1058); ``rmvterm`` runs only when that does not finish.
         """
         self._release_proof = False
         await self._scan_unread()
+        eof_released = (
+            self._state != "lost" and not self._stream_ended and await self._release_by_eof()
+        )
         if self._state == "lost":
             logger.warning(
                 "another client ended the console hold on %s/%s; no rmvterm issued",
@@ -1186,12 +1217,36 @@ class ConsoleSession:
             self._drop_channel()
             return False
         try:
-            self._release_proof = await _release_and_verify(
-                self._config, self._system, self._lpar
-            )
+            if eof_released:
+                self._release_proof = await _probe_released(
+                    self._config, self._system, self._lpar
+                )
+            else:
+                self._release_proof = await _release_and_verify(
+                    self._config, self._system, self._lpar
+                )
         finally:
             self._drop_channel()
         return self._release_proof
+
+    async def _release_by_eof(self) -> bool:
+        """Send stdin EOF and read until ``mkvterm`` exits; ``True`` once it did (#1058).
+
+        A lost-hold report read meanwhile still latches ``lost``. A failure to send
+        EOF or read, the bound, or a closed connection returns ``False``, and the
+        caller falls back to ``rmvterm``.
+        """
+        if self._stdin is None:
+            return False
+        with contextlib.suppress(Exception):
+            self._stdin.release()
+            async with asyncio.timeout(_EOF_RELEASE_SECONDS):
+                while self._state in _RELEASABLE:
+                    chunk = await self._stdout.read(_CHUNK)
+                    if not chunk:
+                        return not self._connection.is_closed()
+                    self._watch_for_lost_hold(chunk)
+        return False
 
     def _drop_channel(self) -> None:
         if self._connection is not None:
@@ -1234,8 +1289,8 @@ class WritableConsoleSession(ConsoleSession):
 
     Constructing one is the authorization gate: hmcpctl never builds one on a
     caller's behalf, and the MCP tool, the CLI and :func:`capture_lpar_console`
-    use the sealed :class:`ConsoleSession`. The stdin writer stays private, never
-    sends EOF, and is replaced on every acquisition (open, resume, reconnect).
+    use the sealed :class:`ConsoleSession`. The stdin writer stays private, sends EOF
+    only at release (#1058), and is replaced on every acquisition (open, resume, reconnect).
     Every write emits a ``console-write`` audit record carrying no written bytes
     before the bytes are queued.
 
@@ -1356,10 +1411,11 @@ async def capture_lpar_console(
 
     Runs ``mkvterm`` over a dedicated SSH process session with stdin sealed
     (no byte can reach the partition console, P7), enforces the three
-    client-side bounds (P8), then releases the vterm with ``rmvterm`` on
-    every exit path and reports honestly whether the release was *proven*
-    (P2/P3/P4). The exception is a hold another client's ``rmvterm`` already
-    ended (#1004): no ``rmvterm``, ``stop_reason="error"`` naming
+    client-side bounds (P8), then releases the vterm on every exit path, with
+    stdin EOF or, when that does not finish, ``rmvterm`` (#1058), and reports
+    honestly whether the release was *proven* (P2/P3/P4). The exception is a
+    hold another client's ``rmvterm`` already ended (#1004): no ``rmvterm``,
+    ``stop_reason="error"`` naming
     :class:`ConsoleHoldLostError`, and ``released=False``.
 
     Raises:
@@ -1397,7 +1453,7 @@ async def capture_lpar_console(
         raise ConsoleHeldError(
             f"The console of {lpar_name!r} on {system_name!r} printed the HMC "
             f"contention sentence {HELD_SENTINEL.decode()!r} after acquisition; "
-            f"rmvterm was issued for the capture's own hold "
+            f"a release of the capture's own hold ran "
             f"(released={session.released is True})."
         )
     return ConsoleCapture(

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,7 +60,10 @@ CONTENTION = (
 
 
 class FakeStdout:
-    """Replays scripted reads; ``None`` never returns, an exception is raised."""
+    """Replays scripted reads; ``None`` blocks until cancelled, an exception is raised.
+
+    A trailing ``None`` blocks every later read too, like a silent live stream.
+    """
 
     def __init__(
         self,
@@ -76,7 +80,12 @@ class FakeStdout:
         if chunk is None:
             if self._blocked_read_started is not None:
                 self._blocked_read_started.set()
-            await asyncio.Event().wait()  # cancelled by the caller's timeout
+            try:
+                await asyncio.Event().wait()  # cancelled by the caller's timeout
+            except asyncio.CancelledError:
+                if not self._chunks:
+                    self._chunks.append(None)  # a trailing None: the stream stays silent
+                raise
         if isinstance(chunk, Exception):
             raise chunk
         return chunk
@@ -113,6 +122,54 @@ class FakeProcess:
         self.stdin = FakeStdin()
 
 
+#: What ``mkvterm`` sends about 10 s after its stdin reaches EOF (#1058).
+EXITED = b" The write socket has closed. Exiting.\n"
+
+
+class EofStdout(FakeStdout):
+    """Replays its chunks, then waits for stdin EOF and exits like the HMC (#1058)."""
+
+    def __init__(
+        self, *chunks: bytes, eof: asyncio.Event, after_eof: tuple[bytes | Exception, ...]
+    ):
+        super().__init__(*chunks)
+        self._eof = eof
+        self._exit = [*after_eof, EXITED]
+
+    async def read(self, size: int) -> bytes:
+        if self._chunks:
+            return await super().read(size)
+        await self._eof.wait()
+        chunk = self._exit.pop(0) if self._exit else b""
+        if isinstance(chunk, Exception):
+            raise chunk
+        return chunk
+
+
+class EofProcess(FakeProcess):
+    """A ``mkvterm`` whose stdin EOF ends it, as recorded live (#1058)."""
+
+    def __init__(self, *chunks: bytes, after_eof: tuple[bytes | Exception, ...] = ()):
+        super().__init__()
+        self.eof = asyncio.Event()
+        self.stdout = EofStdout(*chunks, eof=self.eof, after_eof=after_eof)
+        self.stdin.write_eof = self.eof.set
+
+    def watch(self, source: object) -> None:
+        """Set :attr:`eof` once a sealed pipe's write end closes."""
+        if source == asyncssh.PIPE:  # a writable session: write_eof sets it
+            return
+        loop = asyncio.get_running_loop()
+
+        def readable() -> None:
+            if not os.read(source, 1):
+                loop.remove_reader(source)
+                os.close(source)
+                self.eof.set()
+
+        loop.add_reader(source, readable)
+
+
 class FakeConnection:
     """Hands out scripted processes and records what was asked of it."""
 
@@ -126,7 +183,10 @@ class FakeConnection:
         self.create_process_calls.append({"command": command, **kwargs})
         if not self._processes:
             raise AssertionError("unexpected extra create_process call")
-        return self._processes.pop(0)
+        process = self._processes.pop(0)
+        if isinstance(process, EofProcess):
+            process.watch(kwargs.get("stdin"))
+        return process
 
     def close(self) -> None:
         self.closed = True
@@ -148,6 +208,13 @@ class FailingStdout:
 
 class FailingReadProcess:
     stdout = FailingStdout()
+
+
+@pytest.fixture(autouse=True)
+def _short_eof_release():
+    """Streams scripted to end in ``None`` ignore EOF, so their release falls back fast."""
+    with patch("hmcpctl.ssh.console._EOF_RELEASE_SECONDS", 0.2):
+        yield
 
 
 def _capture_kwargs(**overrides):
@@ -1928,7 +1995,7 @@ def test_read_only_surfaces_have_no_write_surface(surface):
 
 
 @pytest.mark.asyncio
-async def test_writable_session_writes_through_a_private_pipe_and_never_sends_eof():
+async def test_writable_session_writes_through_a_private_pipe_and_sends_eof_only_at_release():
     process = FakeProcess(BANNER, None)
     stream = FakeConnection([process])
     probe = FakeConnection([FakeProcess(BANNER)])
@@ -1937,12 +2004,13 @@ async def test_writable_session_writes_through_a_private_pipe_and_never_sends_eo
         async with _writable() as session:
             await session.write(b"x")
             assert not hasattr(session, "stdin")
+            assert process.stdin.eof is False
         assert session.released is True
 
     assert stream.create_process_calls[0]["stdin"] == asyncssh.PIPE
     assert process.stdin.written == [b"x"]
     assert process.stdin.drains == 1
-    assert process.stdin.eof is False
+    assert process.stdin.eof is True
 
 
 @pytest.mark.asyncio
@@ -2268,7 +2336,7 @@ async def test_relayed_lost_hold_text_keeps_rmvterm():
 @pytest.mark.asyncio
 async def test_release_survives_a_failing_scan():
     connect, run_command, probe_seconds = _session_patches(
-        FakeConnection([FakeProcess(BANNER, RuntimeError("in-band signal"))]),
+        FakeConnection([FakeProcess(BANNER, RuntimeError("in-band signal"), None)]),
         FakeConnection([FakeProcess(BANNER)]),
     )
     with connect, run_command as release, probe_seconds:
@@ -2332,3 +2400,161 @@ async def test_capture_reports_lost_hold_as_error_when_a_bound_fires_on_the_repo
     assert capture.error is not None and capture.error.startswith("ConsoleHoldLostError")
     assert capture.released is False
     assert capture.release_calls == []
+
+
+# ---------------------------------------------------------------------------
+# Release through stdin EOF (issue #1058)
+# ---------------------------------------------------------------------------
+
+_EOF_TRANSCRIPT = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "console" / "eof-release-transcript.json").read_text()
+)
+
+
+def test_eof_release_transcript_records_eof_exit_and_survival():
+    runs = _EOF_TRANSCRIPT["runs"]
+    arms = {run["arm"] for run in runs}
+    assert arms == {"single", "single-fast", "takeover", "race", "eof-first"}
+    for run in runs:
+        assert _holder_chunks(run)[-1] == EXITED
+        events = {event["event"]: event for event in run["events"]}
+        if run["arm"].startswith("single"):
+            assert events["C-probe"]["released"] is True
+        else:
+            assert events["C-probe"]["released"] is False
+            assert events["B-reads-after-A-eof"]["chunks"][-1] == (
+                "<timeout: B stream open and silent>"
+            )
+            assert events["B-closed"]["released"] is True
+
+
+def _session_kind(kind: str) -> ConsoleSession:
+    if kind == "writable":
+        return _writable()
+    return ConsoleSession(_client(), "sys1", "lp1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["sealed", "writable"])
+async def test_close_releases_through_eof_without_rmvterm(kind):
+    process = EofProcess(BANNER)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command as release, probe_seconds:
+        session = _session_kind(kind)
+        await session.open()
+        assert await session.read() == BANNER
+        assert not process.eof.is_set()
+        assert await session.close() is True
+
+    assert process.eof.is_set()
+    commands = [call.args[1] for call in release.await_args_list]
+    assert commands == ["rmvterm -m sys1 -p lp1"]  # the probe's own teardown only
+
+
+@pytest.mark.asyncio
+async def test_suspend_releases_through_eof():
+    process = EofProcess(BANNER)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.suspend() is True
+        assert await session.close() is True
+
+    assert process.eof.is_set()
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_lost_hold_during_eof_drain_skips_rmvterm():
+    process = EofProcess(BANNER, after_eof=(LOST,))
+    connect, run_command, probe_seconds = _session_patches(FakeConnection([process]))
+    with connect as opener, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.close() is False
+
+    assert process.eof.is_set()
+    assert release.await_count == 0
+    assert opener.await_count == 1  # no probe after a loss
+
+
+@pytest.mark.asyncio
+async def test_eof_timeout_falls_back_to_rmvterm():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, None)]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.close() is True
+
+    assert release.await_count == 2  # ours after the EOF wait, then the probe's
+
+
+@pytest.mark.asyncio
+async def test_eof_read_error_falls_back_to_rmvterm():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([EofProcess(BANNER, after_eof=(OSError("channel lost"),))]),
+        FakeConnection([FakeProcess(BANNER)]),
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.close() is True
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_stream_ended_before_release_uses_rmvterm():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER)]), FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        assert await session.read() == b""
+        assert await session.close() is True
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_connection_closed_during_eof_drain_falls_back_to_rmvterm():
+    stream = FakeConnection([EofProcess(BANNER)])
+    connect, run_command, probe_seconds = _session_patches(
+        stream, FakeConnection([FakeProcess(BANNER)])
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        stream.closed = True  # the stream ends because the connection dropped
+        assert await session.close() is True
+
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_resume_after_an_ended_stream_releases_through_eof_again():
+    resumed = EofProcess(BANNER)
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER)]),
+        FakeConnection([FakeProcess(BANNER)]),
+        FakeConnection([resumed]),
+        FakeConnection([FakeProcess(BANNER)]),
+    )
+    with connect, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.suspend() is True  # ended stream: rmvterm, then the probe's
+        await session.resume()
+        assert await session.close() is True
+
+    assert resumed.eof.is_set()
+    assert release.await_count == 3

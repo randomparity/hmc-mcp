@@ -7,6 +7,9 @@ proven-release, sealed-stdin, and byte-integrity rules stand. Only the rule that
 console hold is bounded changes. The mechanism ADR 0072 names for its rule 1,
 `_release_uncancellable`, is replaced by `ConsoleSession.close()`.
 
+> **Amended by #1058** (2026-09-24): rule 4's release sends stdin EOF first, and `close()` runs
+> `rmvterm` only when the stream does not end. See ADR 0072's `#1058` amendment.
+
 ## Context
 
 ADR 0072 made console access a bounded capture: at most 3600 s and 1 MiB, then release.

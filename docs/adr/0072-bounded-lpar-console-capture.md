@@ -4,6 +4,18 @@
 
 Accepted
 
+> **Amended by #1058** (2026-09-24): live capture on HMC V10R3 M1060 (six runs,
+> `tests/fixtures/console/eof-release-transcript.json`). P5: stdin EOF ends only the sender's own
+> `mkvterm`. About 10.1-10.5 s after EOF the holder receives `The write socket has closed.
+> Exiting.`, its stream ends, `mkvterm` exits 0, and the slot is free. When another client had
+> taken the vterm first, EOF left that client's session held. P7: the release now closes the
+> sealed pipe's write end on purpose, before the stream ends. P8: after the banner the HMC also
+> sends `\r\n Open Completed. \r\n  ` (23 bytes, about 0.5 s later). Design consequence 1:
+> a held session releases through stdin EOF, and `rmvterm` runs only when the stream had already
+> ended, or did not end within 20 s. The independent probe still decides `released`. Design,
+> failure model, and residual windows:
+> `docs/workflow/specs/2026-09-24-console-eof-release-design.md`.
+
 ## Context
 
 When a NIM install fails, the only place the reason exists is the partition
