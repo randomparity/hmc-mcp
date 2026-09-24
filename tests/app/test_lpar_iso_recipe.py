@@ -26,6 +26,7 @@ EXPECTED_COMMANDS = {
     ("lpars", "capture-console"),
     ("lpars", "create"),
     ("lpars", "delete"),
+    ("lpars", "get-description"),
     ("lpars", "list"),
     ("lpars", "power-off"),
     ("lpars", "power-on"),
