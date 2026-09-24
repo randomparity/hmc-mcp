@@ -191,8 +191,9 @@ BUILT = {
     "optical-media-delete": documents.build_virtual_optical_media_delete_document(
         "a.iso", "vg1"
     ),
-    "brokered-file": documents.build_brokered_file_document("a.iso"),
-    "linked-optical-media": documents.build_linked_optical_media_document("a.iso", LINK),
+    "web-file": documents.build_web_file_document(
+        "a.iso", 1, "00000000-0000-0000-0000-000000000001"
+    ),
     "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
