@@ -41,6 +41,13 @@ SKIP reason go. It still SKIPs when there is no VIOS UUID.
 list; `vios_uuid`, `vg_uuid`, `vios_slot` and `vios_pid` stay. `vg_uuid` still comes only
 from `storage.configured_vg_uuid`, #967's resolver. No second volume-group lookup is added.
 
+ST14's VLAN used to be the test partition's own, so it always had a virtual network. A
+configured one may not, and `hmc_provision_lpar` checks it only after ST14 has deleted the
+test partition and disk. So ST14's pre-flight now calls `hmc_list_virtual_networks` and
+FAILs before any delete unless the configured VLAN is listed. A failed listing or an
+unparsable VLAN identifier FAILs it too. The parsing is `network.listed_vlans(data)`,
+extracted from ST2's `_unused_vlan` so both read VLANs one way.
+
 **Dead path removed.** Nothing reads `artifacts.vdisk_size_mib` after this, so the field,
 its entry in `_ARTIFACT_NULLABLE_INTS`, ST3's disk-capacity capture (`_virtual_disks`,
 `_capture_disk_capacity`, the `parse virtual disk capacity` FAIL row) and their tests go.
@@ -67,11 +74,13 @@ configuration is blocking and hardware is advisory; this is a hardware fact.
 1. **Actors and deployments:** a local operator running `live_test_preflight.py` and
    `live_test_runner.py` against one authorized HMC. CI runs the offline tests only.
 2. **Invariants and assets at stake:** ST14 deletes and recreates the test partition and
-   disk; it must not start that sequence with a VLAN or size it did not get from `.env`.
-   Preflight prints no `HMC_*` value.
+   disk; it must not start that sequence unless the configured VLAN is listed on the managed
+   system at ST14's own pre-flight. Preflight prints no `HMC_*` value.
 3. **Accepted failure classes:**
-   - A VLAN that preflight saw but that is gone at run time: ST13/ST14 FAIL on the
-     provision tool's own check. Bounded; preflight predicts, the run decides.
+   - A VLAN removed between ST14's pre-flight listing and its provision call: the provision
+     FAILs after the delete. The window is seconds within one operator's run.
+   - The test partition has no vSCSI client adapter: ST14 still stops at pre-flight on
+     `vios_slot`. The issue reports only `pvid` and `vdisk_size_mib`; follow-up candidate.
    - A disk size larger than the volume group's free space: the create FAILs at run time.
      Preflight does not check it (exclusion: preflight checks beyond the planned VLAN one).
    - A results document written before this change no longer restores (its config and
@@ -87,6 +96,8 @@ configuration is blocking and hardware is advisory; this is a hardware fact.
 | `from_env_file` loads both keys; rejects a missing key, VLAN 0 or 4095, disk size 0 or not a multiple of 1024 | focused-test | `tests/test_live_runner.py` |
 | ST13 sends the configured VLAN with no baseline PVID and no `test_vlan_id` | focused-test | `tests/test_live_runner.py` |
 | ST14 runs its full sequence with no `pvid` baseline and no `vdisk_size_mib`, sending the configured VLAN and size | focused-test | `tests/test_live_runner.py` |
+| ST14 pre-flight FAILs with no power-off or delete when the VLAN is not listed, the listing fails, or a VLAN is unparsable | focused-test | `tests/test_live_runner.py` |
+| `listed_vlans` returns the parsed set and malformed values; ST2 still picks the first unused VLAN | focused-test | `tests/scripts/test_inventory.py` |
 | ST3 no longer records disk capacity | focused-test | `tests/scripts/test_inventory.py` |
 | Preflight reports present, missing and unknown VLAN, keeps exit 0, and makes no HMC call under `--skip-hardware` or for a non-round2 group | focused-test | `tests/scripts/test_live_test_preflight.py` |
 | `.env.example` carries both keys with loadable values | focused-test | existing `test_live_config_reads_the_complete_example_and_ignores_exports`, red until the keys are added |
