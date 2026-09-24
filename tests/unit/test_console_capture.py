@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
@@ -21,6 +23,7 @@ from hmcpctl.client.core import HMCClient
 from hmcpctl.server_tools import console as server_console
 from hmcpctl.ssh.console import (
     HELD_SENTINEL,
+    LOST_HOLD_SENTINEL,
     MAX_CAPTURE_BYTES,
     MAX_CAPTURE_SECONDS,
     ConsoleCapture,
@@ -28,6 +31,7 @@ from hmcpctl.ssh.console import (
     ConsoleHandover,
     ConsoleHeldAfterDropError,
     ConsoleHeldError,
+    ConsoleHoldLostError,
     ConsoleRawChannel,
     ConsoleSession,
     WritableConsoleSession,
@@ -1592,7 +1596,7 @@ async def test_eof_on_open_connection_is_latched_remote_close():
         async with _reconnecting() as session:
             assert await session.read() == BANNER
             assert await session.read() == b""
-            stream.closed = True  # a lost hold's connection closing later is not a drop
+            stream.closed = True  # a connection closing after a remote close is not a drop
             assert await session.read() == b""
         assert opener.await_count == 2  # the stream and the release probe
 
@@ -1741,10 +1745,9 @@ async def test_drop_during_close_starts_no_reconnect():
         reading = asyncio.create_task(session.read())
         await asyncio.sleep(0)
         closing = asyncio.create_task(session.close())
+        assert await asyncio.wait_for(reading, timeout=5) == b""  # close() preempts it (#1004)
+        gate.set()  # the drop meets close()'s scan of unread bytes
         await asyncio.wait_for(started.wait(), timeout=5)
-        gate.set()
-        with pytest.raises(asyncssh.ConnectionLost):
-            await asyncio.wait_for(reading, timeout=5)
         finish.set()
         assert await closing is True
 
@@ -2185,3 +2188,118 @@ async def test_a_drop_in_raw_mode_reaches_the_raw_holder_and_reconnects_after_th
             assert release.await_count == 0
 
     assert second.stdin.written == [b"y"]
+
+
+# ---------------------------------------------------------------------------
+# Lost hold: another client's rmvterm (issue #1004)
+# ---------------------------------------------------------------------------
+
+_TRANSCRIPT = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "console" / "lost-hold-transcript.json").read_text()
+)
+
+
+def _holder_chunks(run: dict) -> list[bytes]:
+    return [
+        event["data"].encode("latin-1")
+        for event in run["events"]
+        if event["event"] == "A-stdout-chunk"
+    ]
+
+
+LOST = _holder_chunks(_TRANSCRIPT["runs"][0])[-1]
+
+
+def test_sentinel_matches_recorded_transcript():
+    assert [_holder_chunks(run)[-1] for run in _TRANSCRIPT["runs"]] == [
+        LOST_HOLD_SENTINEL + b" "
+    ] * 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunks", [(LOST,), (LOST[:40], LOST[40:])], ids=["whole", "split"])
+async def test_lost_hold_raises_and_close_skips_rmvterm(chunks):
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, *chunks, None)])
+    )
+    with connect as opener, run_command as release, probe_seconds:
+        session = ConsoleSession(_client(), "sys1", "lp1")
+        await session.open()
+        assert await session.read() == BANNER
+        assert b"".join([await session.read() for _ in chunks]) == LOST
+        with pytest.raises(ConsoleHoldLostError, match="close\\(\\) issued no rmvterm"):
+            await asyncio.wait_for(session.read(), 1)
+        assert await session.close() is False
+
+    assert release.await_count == 0
+    assert opener.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unread_lost_hold_still_skips_rmvterm():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, LOST, None)])
+    )
+    with connect as opener, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+
+    assert session.released is False
+    assert release.await_count == 0
+    assert opener.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_relayed_lost_hold_text_keeps_rmvterm():
+    relayed = LOST.replace(b"\n", b"\r\n")
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, relayed, None)]),
+        FakeConnection([FakeProcess(BANNER)]),
+    )
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+            assert await session.read() == relayed
+
+    assert session.released is True
+    assert release.await_count == 2  # close() and its probe
+
+
+@pytest.mark.asyncio
+async def test_release_survives_a_failing_scan():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, RuntimeError("in-band signal"))]),
+        FakeConnection([FakeProcess(BANNER)]),
+    )
+    with connect, run_command as release, probe_seconds:
+        async with ConsoleSession(_client(), "sys1", "lp1") as session:
+            assert await session.read() == BANNER
+
+    assert session.released is True
+    assert release.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_lost_hold_never_reconnects():
+    connect, run_command, probe_seconds = _session_patches(
+        FakeConnection([FakeProcess(BANNER, LOST, None)])
+    )
+    with connect as opener, run_command as release, probe_seconds:
+        async with _reconnecting() as session:
+            assert await session.read() == BANNER
+            assert await session.read() == LOST
+            with pytest.raises(ConsoleHoldLostError):
+                await asyncio.wait_for(session.read(), 1)
+        assert opener.await_count == 1
+
+    assert release.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_capture_reports_lost_hold_as_error_without_rmvterm():
+    capture = await _run_capture(FakeConnection([FakeProcess(BANNER, LOST, None)]))
+
+    assert capture.stop_reason == "error"
+    assert capture.error is not None and "ConsoleHoldLostError" in capture.error
+    assert capture.released is False
+    assert capture.release_calls == []
