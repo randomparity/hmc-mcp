@@ -73,10 +73,6 @@ def configured_vg_uuid(state: RunState) -> str | None:
     return artifacts.vg_uuid
 
 
-def _capture_volume_group(state: RunState, data: Any) -> None:
-    resolve_configured_volume_group(state, 3, data, ("select configured volume group",))
-
-
 async def _discover_volume_group(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
     if not artifacts.vios_uuid:
@@ -91,7 +87,9 @@ async def _discover_volume_group(client: Client, state: RunState) -> None:
     )
     state.record(3, "hmc_list_volume_groups", st, data)
     if st == "PASS":
-        _capture_volume_group(state, data)
+        resolve_configured_volume_group(
+            state, 3, data, ("select configured volume group",)
+        )
     print(f"  VG UUID: {artifacts.vg_uuid}")
 
 

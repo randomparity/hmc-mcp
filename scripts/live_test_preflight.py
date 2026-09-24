@@ -15,11 +15,13 @@ Usage:
 Exit 0 means the runner would start. Non-zero means it would not, for a reason
 named in the output.
 
-**Configuration is blocking; hardware is advisory.** An unreachable HMC, an
-out-of-envelope managed system, or a provision VLAN with no virtual network is
-reported and does not
+**Configuration is blocking; hardware is advisory.** An unreachable HMC or an
+out-of-envelope managed system is reported as a predicted SKIP and does not
 change the exit status: the arm already SKIPs correctly on both, and a blocking
-check here would be a second copy of an admission rule ADR 0053 moves.
+check here would be a second copy of an admission rule ADR 0053 moves. A
+provision VLAN with no virtual network is reported the same way: subtask 14
+refuses it before deleting anything, and the HMC can gain the network between
+preflight and the run.
 
 The per-arm verdict is a prediction. An arm decides for itself at run time and
 may SKIP where preflight said RUNNABLE.
