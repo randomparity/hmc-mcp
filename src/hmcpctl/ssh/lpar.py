@@ -128,8 +128,8 @@ async def create_lpar_via_cli(
     """Create an LPAR via ``mksyscfg`` over SSH.
 
     Uses the HMC CLI (SSH) instead of the REST API because some HMC firmware
-    versions return HTTP 406 for ``PUT ManagedSystem/{uuid}/LogicalPartition``
-    regardless of schema-version headers.  This is the same approach used by
+    versions refuse ``PUT ManagedSystem/{uuid}/LogicalPartition``: HTTP 406, or
+    on V10R3 a 400 ``REST0001`` schema rejection (ADR 0178).  This is the same approach used by
     the IBM ansible-power-hmc collection and IBM internal provisioning toolkits.
 
     When no explicit resource values (memory/proc/vcpu) are provided, the
