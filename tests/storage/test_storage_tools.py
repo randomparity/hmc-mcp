@@ -478,7 +478,7 @@ def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_BARE_VG_FEED))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_BARE_VG_FEED, headers={"ETag": '"etag-1"'}))
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )
@@ -496,7 +496,7 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}))
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )
@@ -517,7 +517,7 @@ def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     # Both list_optical_media and delete_media_repository GET the same path.
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED))
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}))
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )

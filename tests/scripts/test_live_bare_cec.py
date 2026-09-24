@@ -364,6 +364,13 @@ def test_expected_refusals_arriving_as_failed_jobs_record_skip(schemas):
     assert state.gaps == [], "an environment refusal is not a product gap"
 
 
+def test_no_profile_reason_does_not_claim_the_profile_was_never_applied():
+    reason = bare_cec._NO_PROFILE_ACTIVATION_REFUSED.reason
+    assert "never applied" not in reason
+    assert "unconfirmed" in reason
+    assert "#879" in reason
+
+
 def test_a_raised_refusal_matching_the_declaration_records_skip(schemas):
     world, state = World(), _state(schemas)
     world.overrides["hmc_power_on_lpar"] = lambda kwargs: (
