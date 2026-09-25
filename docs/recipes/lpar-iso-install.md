@@ -293,14 +293,16 @@ twice (#1068). Other activation paths are unverified.
 
 `set-boot-order` does not take firmware boot keywords such as `cd/dvd-all`, which another REST
 deployer writes into `PendingBootString` (#1068). On V10R3 M1060 with partition firmware
-FW950.00, the HMC stored every value tried and answered HTTP 200, including a made-up
-`no-such-keyword`, so a successful write does not show that firmware accepts a value. At
-activation the firmware copied the pending string, keyword or path, into `BootDeviceList`.
-With `cd/dvd-all` pending and a Debian 13.7 ppc64el netinst ISO mounted on the partition's
-vSCSI adapter, the partition stopped at the SMS main menu with reference codes `AA06000E` and
-`AA06000B`: no operating system was found in the boot list. The explicit CD path
-(`/vdevice/v-scsi@30000002/cdrom@8200000000000000`) stopped the same way, so these runs cannot
-say whether the firmware honours the keyword. The boot order stays path-only.
+FW950.00, the HMC accepted and stored every value tried, including a made-up
+`no-such-keyword`, so a successful write does not show that firmware accepts a value. After
+each activation `PendingBootString` read back empty and `BootDeviceList` read back as the value
+that had been pending. With `cd/dvd-all` pending and a Debian 13.7 ppc64el netinst ISO mounted
+on the partition's vSCSI adapter, the partition stopped at the SMS main menu with reference
+codes `AA06000E` and `AA06000B`; IBM documents `AA06000B` as no operating system found on any
+device in the boot list. The explicit CD path
+(`/vdevice/v-scsi@30000002/cdrom@8200000000000000`) stopped the same way. Neither run booted
+the ISO and the cause was not found, so whether the firmware honours `cd/dvd-all` remains
+open. The boot order stays path-only.
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes
