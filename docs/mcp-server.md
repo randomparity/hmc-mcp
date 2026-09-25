@@ -263,9 +263,11 @@ Four rules explain why:
   selectors do not name:
   `hmc_provision_lpar` mutates a VIOS chosen inside its `storage` argument, the
   LPAR-profile backup and restore pair write an arbitrary path on the HMC's own
-  filesystem, three adapter tools take a VIOS *partition ID* (a slot number
+  filesystem, two adapter tools take a VIOS *partition ID* (a slot number
   reused on every system in the fleet), and the two job tools accept a
-  `job_href` whose path replaces the job UUID outright. Each of those needs a
+  `job_href` whose path replaces the job UUID outright. `hmc_attach_disk_to_lpar`
+  no longer takes a partition ID, but stays among them until a separate
+  decision lets a table bound it. Each of those needs a
   grant whose targets are `"all-targets"`. So do `hmc_effective_permissions` and
   `hmc_list_configured_hosts`, which read local state rather than an HMC and so
   have nothing a table could bind either. `hmc_effective_permissions` reports

@@ -14,8 +14,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
   naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
   inventory now fills `minimum_capacity_granularity_percent` (#1035).
-- `lpars provision` and `hmc_provision_lpar` report where the network adapter, vSCSI adapter,
-  and storage mapping they add now live: a `change_location` result field, read once after
+- `lpars provision` and `hmc_provision_lpar` report where the network adapter and storage
+  mapping they add now live: a `change_location` result field, read once after
   those steps rather than through the standalone adapter/storage operations, in the same shape
   and CLI rendering as `adapters add-network` (#1056).
 - Adapter and mapping commands say where their change lives. `adapters add-network`,
@@ -177,6 +177,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `lpars provision`/`hmc_provision_lpar` and `storage attach-disk`/`hmc_attach_disk_to_lpar` no
+  longer add a vSCSI client adapter before mapping the disk. The mapping makes the HMC create
+  its own client/server adapter pair (ADR 0169), so the added adapter was left unpaired on
+  every run. Their `steps` no longer include `vscsi` (#1030).
 - Shared UOM `PUT`/`POST` writes now send `Accept: */*` with the typed `Content-Type`, and
   shared `DELETE`s send `Accept: */*`, the header shape HMC V10R3 accepts; it answered the old
   typed `Accept` with HTTP 406 (ADR 0178). `adapters add-vscsi` and `adapters delete` were
@@ -1045,6 +1049,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Removed
 
+- The inputs that only fed the removed `vscsi` step (#1030): `vios_partition_id` and
+  `vios_slot` on `hmc_attach_disk_to_lpar` and `attach_disk_to_lpar`, `--vios-id` and
+  `--vios-slot` on `storage attach-disk`, `ProvisionAdapters.vios_partition_id` and
+  `.vios_slot` (the `adapters.vios_partition_id` and `adapters.vios_slot` keys of
+  `hmc_provision_lpar`, which MCP now ignores rather than rejects), `--vios-partition-id` and
+  `--vios-slot` on `lpars provision`, and the live-test settings
+  `LIVE_TEST_DRY_RUN_VIOS_SLOT` and `LIVE_TEST_DRY_RUN_VIOS_PARTITION_ID`.
 - `hmc_detach_optical_mapping` MCP tool and its `media.detach_mapping` operation name, plus the
   `detach_optical_mapping` operation behind them (#362). Both duplicated
   `hmc_unmount_optical_media` / `media.unmount` byte for byte. As this client implements optical
