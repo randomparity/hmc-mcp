@@ -197,6 +197,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   link must name the authorized LPAR. `_append_vios_mapping` is generalized into `_rmw_vios_mapping`,
   shared by both the create and detach paths (#1037).
 
+- `storage map` and `mount-optical-media` now build a new mapping's client-LPAR href
+  system-scoped (`.../ManagedSystem/<sys>/LogicalPartition/<lpar>`), matching every href the HMC
+  itself has been observed to emit (ADR 0179), instead of the root-scoped form the HMC never
+  emits. The managed-system UUID comes from the grouped VIOS GET the read-modify-write already
+  performs; a VIOS response missing that link fails the create closed, before any POST (#1036).
+
 - LPAR rename (`hmc_rename_lpar`), DLPAR processor and memory changes (`hmc_dlpar_proc`,
   `hmc_dlpar_mem`) and `lpars modify` / `hmc_modify_lpar` now write on V10R3. Each reads the
   whole partition and writes it back under `If-Match` with only the requested fields changed,

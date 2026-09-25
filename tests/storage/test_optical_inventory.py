@@ -10,6 +10,7 @@ from hmcpctl.errors import HMCError
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 
 OPTICAL_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -143,6 +144,8 @@ async def test_create_optical_mapping_submits_document(mock_hmc):
             text=f'<VirtualIOServer xmlns="{UOM_NS}">'
             f"<Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>"
             f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>'
+            f'<AssociatedManagedSystem kb="CUD" kxe="false" rel="related" '
+            f'href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>'
             "<VirtualSCSIMappings/></VirtualIOServer>",
             headers={"ETag": "etag-1"},
         )

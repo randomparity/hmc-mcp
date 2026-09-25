@@ -414,28 +414,36 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
 
 
 def _mapping_routes(mock_hmc):
-    """Grouped VIOS GET (empty mapping set, with ETag) and the POST back to it."""
+    """Grouped VIOS GET (empty mapping set, with ETag) and the POST back to it.
+
+    Returns ``(get, post)``: the GET carries an ``AssociatedManagedSystem`` link, the
+    same shape a real V10R3 VIOS response carries (ADR 0179), so the href the POST
+    builds is system-scoped.
+    """
     mock_change_location(mock_hmc, LPAR_UUID)
     path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
-    mock_hmc.get(path).mock(
+    get = mock_hmc.get(path).mock(
         return_value=httpx.Response(
             200,
             text=f'<VirtualIOServer xmlns="{UOM_NS}">'
             f"<Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>"
             f'<PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>'
+            f'<AssociatedManagedSystem kb="CUD" kxe="false" rel="related" '
+            f'href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>'
             "<VirtualSCSIMappings/></VirtualIOServer>",
             headers={"ETag": "etag-1"},
         )
     )
-    return mock_hmc.post(path).mock(
+    post = mock_hmc.post(path).mock(
         return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
     )
+    return get, post
 
 
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     """hmc_map_storage_to_lpar maps the default VirtualDisk storage_kind."""
     _hmc_env(monkeypatch)
-    route = _mapping_routes(mock_hmc)
+    _, route = _mapping_routes(mock_hmc)
     result = hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID)
     assert result["change_location"]["lives_in"] == "current-configuration"
     body = route.calls.last.request.content.decode()
@@ -443,13 +451,13 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     # storage_kind lands as the element name; storage_name is DiskName.
     assert '<VirtualDisk schemaVersion="V1_0">' in body
     assert '<DiskName kb="CUR" kxe="false">lv_boot</DiskName>' in body
-    assert f"/rest/api/uom/LogicalPartition/{LPAR_UUID}" in body
+    assert f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}" in body
 
 
 def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
     """PhysicalVolume storage_kind uses VolumeName and emits TargetDevice."""
     _hmc_env(monkeypatch)
-    route = _mapping_routes(mock_hmc)
+    _, route = _mapping_routes(mock_hmc)
     hmc_map_storage_to_lpar(
         VIOS_UUID,
         "hdisk5",
@@ -461,18 +469,19 @@ def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
     assert '<PhysicalVolume schemaVersion="V1_0">' in body
     assert '<VolumeName kb="CUR" kxe="false">hdisk5</VolumeName>' in body
     assert '<TargetName kb="CUR" kxe="false">vtscsi0</TargetName>' in body
-    assert f"/rest/api/uom/LogicalPartition/{LPAR_UUID}" in body
+    assert f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}" in body
 
 
 def test_map_storage_invalid_kind_raises(monkeypatch, mock_hmc):
-    """An invalid storage_kind is rejected before any write is sent."""
+    """An invalid storage_kind is rejected before any write is sent, GET included."""
     _hmc_env(monkeypatch)
-    route = _mapping_routes(mock_hmc)
+    get, post = _mapping_routes(mock_hmc)
     with pytest.raises(
         ValueError, match="storage_kind must be PhysicalVolume or VirtualDisk"
     ):
         hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID, storage_kind="Bogus")
-    assert not route.called
+    assert not get.called
+    assert not post.called
 
 
 # ---------------------------------------------------------------------- #

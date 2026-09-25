@@ -126,17 +126,26 @@ def test_new_uuid_builders_preserve_mixed_case_paths(method, args, argument, pos
 def test_lpar_document_link_refuses_an_ordinary_name_without_io():
     client, requested = _recording_client()
     with pytest.raises(ValueError) as error:
-        client.get_lpar_link("ordinary-partition-name")
+        client.get_lpar_link(UUID_A, "ordinary-partition-name")
     assert "lpar_uuid" in str(error.value)
     assert "ordinary-partition-name" not in str(error.value)
+    assert requested == []
+
+
+def test_lpar_document_link_refuses_an_ordinary_system_name():
+    client, requested = _recording_client()
+    with pytest.raises(ValueError) as error:
+        client.get_lpar_link("ordinary-system-name", UUID_A)
+    assert "system_uuid" in str(error.value)
+    assert "ordinary-system-name" not in str(error.value)
     assert requested == []
 
 
 def test_lpar_document_link_preserves_mixed_case():
     client = _client()
     mixed = "aBcDeFaB-cDeF-CdEf-cDEF-AbCdEfABCdef"
-    assert client.get_lpar_link(mixed) == (
-        f"{client._rest_base_url}/rest/api/uom/LogicalPartition/{mixed}"
+    assert client.get_lpar_link(UUID_A, mixed) == (
+        f"{client._rest_base_url}/rest/api/uom/ManagedSystem/{UUID_A}/LogicalPartition/{mixed}"
     )
 
 
@@ -995,6 +1004,7 @@ _UUID_UOM_SITES = {
 } | {
     ("client_network", "NetworkMixin.create_virtual_network", "system_uuid", "document-link"),
     ("client_storage", "StorageMixin.get_lpar_link", "lpar_uuid", "document-link"),
+    ("client_storage", "StorageMixin.get_lpar_link", "system_uuid", "document-link"),
 }
 _CLASSIFIED_UOM_SITES = _UUID_UOM_SITES | {
     (*owner.split(".", 1), name, "request")
