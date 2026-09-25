@@ -1,7 +1,7 @@
 """Presentation-neutral LPAR provisioning workflow.
 
-Composes create_logical_partition + add_network_adapter + add_vscsi_adapter +
-map_storage_to_lpar + power-on into a single call with a structured per-step
+Composes create_logical_partition + add_network_adapter + map_storage_to_lpar +
+power-on into a single call with a structured per-step
 result and an optional dry-run that validates preconditions only.
 """
 
@@ -51,18 +51,12 @@ from .workflow_contract import WorkflowStep
 
 @dataclass(frozen=True)
 class ProvisionAdapters:
-    """Virtual Ethernet and vSCSI attachment inputs."""
+    """Virtual Ethernet attachment inputs."""
 
     port_vlan_id: int = field(
         metadata={
             "description": "VLAN identifier for the client virtual Ethernet adapter."
         }
-    )
-    vios_partition_id: int = field(
-        metadata={"description": "Partition ID of the VIOS that serves storage."}
-    )
-    vios_slot: int = field(
-        metadata={"description": "Virtual slot number for the VIOS-side vSCSI adapter."}
     )
 
 
@@ -131,7 +125,7 @@ class ProvisionResult:
         default=None,
         metadata={
             "description": (
-                "Where the network, vSCSI, and storage changes now live: the "
+                "Where the network and storage changes now live: the "
                 "partition's CurrentProfileSync and whether the change reaches "
                 "its current profile too. Null when no adapter or mapping step "
                 "ran, or when the read failed (see warnings)."
@@ -218,7 +212,7 @@ async def _record_hmc_step(
 async def _read_change_location(
     hmc: HMCClient, lpar_uuid: str
 ) -> tuple[ChangeLocation | None, tuple[str, ...]]:
-    """Where the network, vSCSI, and storage changes just made now live.
+    """Where the network and storage changes just made now live.
 
     Advisory, like ``profile_adapter_warnings``: a failed read becomes a
     warning rather than failing provisioning that already succeeded.
@@ -240,20 +234,6 @@ async def _add_network(
         tagged=False,
         mac_address=None,
     )
-
-
-async def _add_vscsi(
-    hmc: HMCClient,
-    lpar_uuid: str,
-    vios_partition_id: int,
-    vios_slot: int,
-) -> dict[str, Any]:
-    await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, None)
-    return {
-        "lpar_uuid": lpar_uuid,
-        "vios_partition_id": vios_partition_id,
-        "vios_slot": vios_slot,
-    }
 
 
 async def _map_storage(
@@ -333,26 +313,21 @@ async def _run_storage_leg(
     lpar_uuid: str,
     storage: ProvisionStorage,
     *,
-    vios_partition_id: int,
-    vios_slot: int,
     disk_capacity_mib: int | None = None,
 ) -> tuple[list[WorkflowStep], bool]:
-    """Run the shared ordered vSCSI storage workflow."""
+    """Run the shared ordered vSCSI storage workflow.
+
+    No client adapter is added first: the mapping makes the HMC create its own
+    client/server adapter pair, and one added beforehand is left unpaired
+    (ADR 0169, #1030).
+    """
     steps: list[WorkflowStep] = []
     operations: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
     if disk_capacity_mib is not None:
         operations.append(
             ("create_disk", lambda: _create_disk(hmc, storage, disk_capacity_mib))
         )
-    operations.extend(
-        (
-            (
-                "vscsi",
-                lambda: _add_vscsi(hmc, lpar_uuid, vios_partition_id, vios_slot),
-            ),
-            ("storage", lambda: _map_storage(hmc, storage, lpar_uuid)),
-        )
-    )
+    operations.append(("storage", lambda: _map_storage(hmc, storage, lpar_uuid)))
     for index, (name, operation) in enumerate(operations):
         if not await _record_hmc_step(steps, name, operation()):
             _skip_steps(steps, [step_name for step_name, _ in operations[index + 1 :]])
@@ -367,8 +342,6 @@ async def attach_disk_to_lpar(
     storage: ProvisionStorage,
     *,
     capacity_mib: int,
-    vios_partition_id: int,
-    vios_slot: int,
     dry_run: bool = False,
     ownership_override: bool = False,
 ) -> AttachDiskResult:
@@ -382,7 +355,7 @@ async def attach_disk_to_lpar(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
     await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
-    step_names = ["create_disk", "vscsi", "storage"]
+    step_names = ["create_disk", "storage"]
     if dry_run:
         return AttachDiskResult(
             workflow_completed=False,
@@ -403,8 +376,6 @@ async def attach_disk_to_lpar(
         hmc,
         lpar_uuid,
         storage,
-        vios_partition_id=vios_partition_id,
-        vios_slot=vios_slot,
         disk_capacity_mib=capacity_mib,
     )
     return AttachDiskResult(
@@ -594,7 +565,7 @@ def _provision_step_names(
     names = ["create"]
     if request.minimum_affinity_policy is not None:
         names.append("minimum_affinity_policy")
-    names.extend(["network", "vscsi", "storage", *assignment_step_names(request.assignments)])
+    names.extend(["network", "storage", *assignment_step_names(request.assignments)])
     if request.power_on:
         names.append("power_on")
     if request.affinity_assessment is not None:
@@ -684,11 +655,7 @@ async def provision_lpar(
     change_location, location_warnings = await _read_change_location(hmc, created_uuid)
 
     storage_steps, storage_completed = await _run_storage_leg(
-        hmc,
-        created_uuid,
-        request.storage,
-        vios_partition_id=request.adapters.vios_partition_id,
-        vios_slot=request.adapters.vios_slot,
+        hmc, created_uuid, request.storage
     )
     steps.extend(storage_steps)
     if not storage_completed:

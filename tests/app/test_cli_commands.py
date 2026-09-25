@@ -1248,10 +1248,6 @@ def test_lpars_provision_rejects_invalid_vocabulary_before_client_call(
             "100",
             "--vios-uuid",
             VIOS_UUID,
-            "--vios-partition-id",
-            "2",
-            "--vios-slot",
-            "10",
             "--storage-name",
             "rootvg",
             option,
@@ -1292,10 +1288,6 @@ def test_lpars_provision_passes_nondefault_request_to_operation(monkeypatch, fak
             "200",
             "--vios-uuid",
             VIOS_UUID,
-            "--vios-partition-id",
-            "3",
-            "--vios-slot",
-            "12",
             "--storage-name",
             "hdisk7",
             "--storage-kind",
@@ -1328,7 +1320,6 @@ def test_lpars_provision_passes_nondefault_request_to_operation(monkeypatch, fak
     assert request.name == "newlpar"
     assert request.partition_type == "OS400"
     assert request.adapters.port_vlan_id == 200
-    assert (request.adapters.vios_partition_id, request.adapters.vios_slot) == (3, 12)
     assert request.storage.vios_uuid == VIOS_UUID
     assert (
         request.storage.storage_name,
@@ -1378,10 +1369,6 @@ def test_lpars_provision_renders_change_location(monkeypatch, fake_hmc):
             "100",
             "--vios-uuid",
             VIOS_UUID,
-            "--vios-partition-id",
-            "2",
-            "--vios-slot",
-            "10",
             "--storage-name",
             "rootvg",
             "--yes",
@@ -1848,7 +1835,7 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
             [
                 "storage", "attach-disk", "--vios", VIOS_UUID, "--vg", VG_UUID,
                 "--name", "bootvol", "--capacity-mib", "1024",
-                "--vios-id", "2", "--vios-slot", "10", "--dry-run",
+                "--dry-run",
             ],
             None,
         ),
@@ -2023,10 +2010,6 @@ def test_storage_attach_disk_runs_workflow(fake_hmc):
             "bootvol",
             "--capacity-mib",
             "1024",
-            "--vios-id",
-            "2",
-            "--vios-slot",
-            "10",
             "--yes",
         ],
     )
@@ -2038,11 +2021,7 @@ def test_storage_attach_disk_runs_workflow(fake_hmc):
         for name, _, _ in fake_hmc.calls
         if name in {"create_virtual_disk", "add_vscsi_adapter", "map_storage_to_lpar"}
     ]
-    assert mutations == [
-        "create_virtual_disk",
-        "add_vscsi_adapter",
-        "map_storage_to_lpar",
-    ]
+    assert mutations == ["create_virtual_disk", "map_storage_to_lpar"]
 
 
 def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
@@ -2060,10 +2039,6 @@ def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
             "bootvol",
             "--capacity-mib",
             "1024",
-            "--vios-id",
-            "2",
-            "--vios-slot",
-            "10",
             "--dry-run",
         ],
     )
@@ -2075,7 +2050,7 @@ def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
 
 
 def test_storage_attach_disk_partial_failure_is_visible_and_nonzero(fake_hmc):
-    fake_hmc.fail_on = "add_vscsi_adapter"
+    fake_hmc.fail_on = "map_storage_to_lpar"
 
     result = RUNNER.invoke(
         cli.app,
@@ -2091,21 +2066,16 @@ def test_storage_attach_disk_partial_failure_is_visible_and_nonzero(fake_hmc):
             "bootvol",
             "--capacity-mib",
             "1024",
-            "--vios-id",
-            "2",
-            "--vios-slot",
-            "10",
             "--yes",
         ],
     )
 
     assert result.exit_code == 1
     assert "create_disk" in result.stdout
-    assert "vscsi" in result.stdout
-    assert "error" in result.stdout
-    assert "simulated add_vscsi_adapter failure" in result.stdout
+    assert "vscsi" not in result.stdout
     assert "storage" in result.stdout
-    assert "skipped" in result.stdout
+    assert "error" in result.stdout
+    assert "simulated map_storage_to_lpar failure" in result.stdout
 
 
 def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
@@ -2117,7 +2087,7 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
     branch ran, which ``CliRunner`` also reports as exit 1 -- so the JSON body,
     not the exit code, is what proves this branch executed.
     """
-    fake_hmc.fail_on = "add_vscsi_adapter"
+    fake_hmc.fail_on = "map_storage_to_lpar"
 
     result = RUNNER.invoke(
         cli.app,
@@ -2133,10 +2103,6 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
             "bootvol",
             "--capacity-mib",
             "1024",
-            "--vios-id",
-            "2",
-            "--vios-slot",
-            "10",
             "--yes",
             "--json",
         ],

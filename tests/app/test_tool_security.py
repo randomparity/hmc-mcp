@@ -303,18 +303,18 @@ def test_lpm_tools_declare_their_source_system(tool_name):
 
 
 def test_provision_lpar_declares_its_nested_selectors():
-    """#260: the VIOS identities one level below the signature are declared.
+    """#260: the VIOS identity one level below the signature is declared.
 
-    Extraction, the audit record, and denial messages see them; the tool stays
-    non-exhaustive because the slot number is still an identity no table can
-    bound. Pinning the containers too, since a dotted extra that lost its
-    container would silently stop extracting anything.
+    Extraction, the audit record, and denial messages see it. #1030 removed the
+    nested slot-number selector with the vSCSI step it fed; the tool stays
+    non-exhaustive because widening its grant is a separate decision. Pinning
+    the container too, since a dotted extra that lost its container would
+    silently stop extracting anything.
     """
     security = TOOL_SECURITY["hmc_provision_lpar"]
     assert security.exhaustive_targets is False
     assert [(t.kind, t.path, t.required) for t in security.targets] == [
         ("managed_system", "system_name_or_uuid", True),
-        ("vios", "adapters.vios_partition_id", True),
         ("vios", "storage.vios_uuid", True),
     ]
 
@@ -1235,11 +1235,13 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_restore_lpar_profiles",
         "hmc_restore_vios",
         "hmc_provision_lpar",
+        # Its slot-number selector went with the vSCSI step (#1030); whether a
+        # table may now grant it is a separate decision, so it stays here.
+        "hmc_attach_disk_to_lpar",
         # Selectors, but one of them is a per-system slot number the fleet-wide
         # `vios` allowlist cannot pin down.
         "hmc_add_vfc_adapter",
         "hmc_add_vscsi_adapter",
-        "hmc_attach_disk_to_lpar",
         # A declared selector that a second argument overrides outright.
         "hmc_get_job",
         "hmc_wait_for_job",
@@ -1415,12 +1417,8 @@ def test_the_declared_set_is_exactly_what_the_check_finds():
     assert found == {
         "hmc_add_vfc_adapter": ["vios_partition_id"],
         "hmc_add_vscsi_adapter": ["vios_partition_id"],
-        "hmc_attach_disk_to_lpar": ["vios_partition_id"],
         "hmc_backup_lpar_profiles": ["file_path"],
         "hmc_get_job": ["job_href"],
-        # storage.vios_uuid is declared now (#260); the slot number remains an
-        # identity no table can bound, so it stays in this set.
-        "hmc_provision_lpar": ["adapters.vios_partition_id"],
         "hmc_restore_lpar_profiles": ["file_path"],
         "hmc_run_command": ["cmd"],
         "hmc_wait_for_job": ["job_href"],

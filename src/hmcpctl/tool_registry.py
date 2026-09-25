@@ -102,7 +102,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 #
 # This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`
 # is in both, deliberately. It is a declared selector — so it is extracted and
-# compared under `all-targets`, which is what keeps three live tools working —
+# compared under `all-targets`, which is what keeps two live tools working —
 # *and* an identity no table can bound. The two tables answer different
 # questions about the same name and must not be merged.
 #

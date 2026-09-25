@@ -114,10 +114,10 @@ def hmc_create_volume_group(
     return with_client(operation, profile=profile)
 
 
-# Not exhaustive for the same reason as the adapter pair, and one more: it
-# declares both `vios_uuid` and `vios_partition_id` as `vios` selectors and
-# nothing checks that they name the same VIOS, so the partition ID is a second,
-# unverified identity the allowlist cannot bound.
+# Not exhaustive: this declaration predates #1030, which removed the
+# `vios_partition_id` selector that made the tool unboundable. Whether a
+# `targets` table may now grant it is a policy decision that removal does not
+# make, so only `targets = "all-targets"` grants it.
 @tool(
     effect="mutate",
     operation="storage.attach_disk",
@@ -130,8 +130,6 @@ def hmc_attach_disk_to_lpar(
     vg_uuid: str,
     disk_name: str,
     capacity_mib: int,
-    vios_partition_id: int,
-    vios_slot: int,
     dry_run: bool = False,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
@@ -140,7 +138,8 @@ def hmc_attach_disk_to_lpar(
     """Create and attach a virtual disk to an existing LPAR.
 
     Validates the LPAR and volume group before mutation. The execution order is
-    create disk, add the paired vSCSI client adapter, then map the disk. Set
+    create disk, then map it; the mapping makes the HMC create the vSCSI
+    client/server adapter pair, so no adapter is added beforehand. Set
     dry_run=True to validate only. Expected HMC failures are returned per step;
     completed steps are ``ok`` and unattempted steps are ``skipped``.
 
@@ -150,8 +149,6 @@ def hmc_attach_disk_to_lpar(
         vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
         disk_name: Name for the new virtual disk.
         capacity_mib: New disk capacity in mebibytes.
-        vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
-        vios_slot: Server-side virtual SCSI slot on the VIOS.
         dry_run: Validate all selectors and prerequisites without mutating the HMC.
         ownership_override: Bypass LPAR ownership rejection after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
@@ -166,8 +163,6 @@ def hmc_attach_disk_to_lpar(
             lpar_name_or_uuid,
             ProvisionStorage(vios_uuid, disk_name, vg_uuid=vg_uuid),
             capacity_mib=capacity_mib,
-            vios_partition_id=vios_partition_id,
-            vios_slot=vios_slot,
             dry_run=dry_run,
             ownership_override=ownership_override,
         ),

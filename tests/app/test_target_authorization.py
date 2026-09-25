@@ -362,11 +362,12 @@ def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound(tool
 
 
 def test_a_table_grant_still_never_reaches_provision_lpar():
-    """#260 declared the nested selectors; the slot number still cannot bound.
+    """The tool stays non-exhaustive, so no table grant reaches it.
 
-    A well-formed call now extracts all three identities and denies under
-    target-unboundable anyway, because `adapters.vios_partition_id` is an
-    identity no table can write precisely. A call whose structured arguments
+    A well-formed call extracts both identities and still denies under
+    target-unboundable: #1030 removed `adapters.vios_partition_id`, the slot
+    number no table could write precisely, but kept `exhaustive_targets=False`
+    because widening the grant is a separate decision. A call whose structured arguments
     are None is malformed rather than narrow: the second extraction rule reads
     it UNREADABLE, which denies under `all-targets` too.
     """
@@ -380,7 +381,7 @@ def test_a_table_grant_still_never_reaches_provision_lpar():
     well_formed = {
         "system_name_or_uuid": "sys-1",
         "name": "new-lpar",
-        "adapters": ProvisionAdapters(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
+        "adapters": ProvisionAdapters(port_vlan_id=1),
         "storage": ProvisionStorage(vios_uuid="vios-uuid-1", storage_name="rootvg"),
         "profile": "lab",
     }
