@@ -134,7 +134,17 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     roce_probe = next(
         probe for probe in capture["probes"] if probe["name"] == "physical-ports"
     )
-    run = AsyncMock(side_effect=[roce_probe["stdout"], "No results were found."])
+    # The capture predates #1035, which appended one attribute to the projection;
+    # its rows still parse under the fields it was captured with, and the #1035
+    # capture of the current projection is what the reader must accept.
+    assert {
+        row["phys_port_type"]
+        for row in parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
+    } == {"eth"}
+    current = json.loads(
+        (ROOT / "tests" / "fixtures" / "sriov" / "sriov-physport-granularity-v10r3.json").read_text()
+    )["selection_cases"][0]
+    run = AsyncMock(side_effect=[current["roce"]["stdout"], current["ethc"]["stdout"]])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     rows = await list_sriov_physical_port_rows(
@@ -143,19 +153,15 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
         "1",
     )
 
-    assert rows == parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
-    assert {row["phys_port_type"] for row in rows} == {"eth"}
-    assert run.await_count == 2
-    assert [call.args[1] for call in run.await_args_list] == [
-        ("lshwres -r sriov --rsubtype physport -m system-a --level roce "
-         "--filter adapter_ids=1 -F "
-         "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
-         "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header"),
-        ("lshwres -r sriov --rsubtype physport -m system-a --level ethc "
-         "--filter adapter_ids=1 -F "
-         "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,"
-         "config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header"),
-    ]
+    assert rows == current["expected_rows"]
+    roce_command = run.await_args_list[0].args[1]
+    assert roce_command == roce_probe["command"].replace(
+        "curr_eth_logical_ports --header",
+        "curr_eth_logical_ports,min_eth_capacity_granularity --header",
+    )
+    assert run.await_args_list[1].args[1] == roce_command.replace(
+        "--level roce", "--level ethc"
+    )
     fixture_sha256 = "67910d8a6d60bf4bb6bc5e64c890d3486789beaca547742706dce09fe2a42965"  # pragma: allowlist secret -- pinned fixture checksum
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
     assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
