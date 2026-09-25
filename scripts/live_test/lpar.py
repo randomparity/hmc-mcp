@@ -170,9 +170,16 @@ def _unrestorable_description(text: str) -> str | None:
     return None
 
 
-def _baseline_description(state: RunState) -> str:
-    """Return the captured description in the writable string form."""
-    description = state.artifacts.lp3_baseline.get("description", "")
+def _baseline_description(state: RunState) -> str | None:
+    """Return the captured description in the writable string form.
+
+    ``None`` means ST0 never captured a baseline for this key — the read
+    failed, or the key is absent from a resumed results file — distinct from
+    a baseline that really was empty (#1038).
+    """
+    if "description" not in state.artifacts.lp3_baseline:
+        return None
+    description = state.artifacts.lp3_baseline["description"]
     if isinstance(description, dict):
         description = description.get("description") or ""
     return str(description) if description else ""
@@ -183,11 +190,29 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
 
     The baseline carries the partition's ownership stamp, so a description the
     CLI cannot write back is a FAIL, not a SKIP: every ownership-guarded command
-    refuses the partition until someone restores it (#968).
+    refuses the partition until someone restores it (#968). An absent baseline
+    takes the same FAIL path rather than silently writing an empty description
+    (#1038).
     """
     description = _baseline_description(state)
-    blocked = _unrestorable_description(description)
     config = state.config
+    if description is None:
+        state.record(
+            scenario,
+            "hmc_set_lpar_description (restore)",
+            "FAIL",
+            "MANUAL RECOVERY REQUIRED: no baseline description was captured for "
+            "this run (the ST0 read failed, or the key is absent from a resumed "
+            "results file), so the original value is not available from the "
+            "results file or anywhere else this harness recorded. Recover it "
+            "out of band (CMDB, HMC audit log, or the partition owner) and write "
+            f'it back with chsyscfg -r lpar -m {config.system_name} '
+            f'-i "name={config.lp3_name},description=<original>" or the HMC GUI '
+            f"where the CLI record cannot carry it. ST{scenario} left its probe "
+            "description in place.",
+        )
+        return
+    blocked = _unrestorable_description(description)
     if blocked:
         state.record(
             scenario,

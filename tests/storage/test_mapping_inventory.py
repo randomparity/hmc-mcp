@@ -23,7 +23,6 @@ from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 HMC_SYSTEM_UUID = "00000000-0000-4000-8000-000000000001"
@@ -103,8 +102,6 @@ OPTICAL_MAPPINGS_FEED = vios_feed(
 )
 
 VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
-VIOS_PARENT_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
-VIOS_POST_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
 DISK_ID = "vhost0/vtscsi0"
 UNIDENTIFIABLE_MAPPING = f"""<VirtualSCSIMapping>
       <AssociatedLogicalPartition href="{lpar_href(LPAR_A)}" rel="related"/>
@@ -115,7 +112,6 @@ VIOS_PARENT = f"""<VirtualIOServer
   <Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>
   <PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>
   <UnrelatedLink href="/rest/api/uom/ManagedSystem/11111111-1111-1111-1111-111111111111"/>
-  <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
   <VirtualSCSIMappings>
     {mapping_xml(LPAR_A, "vhost0", "<VirtualDisk><DiskName>lv_boot</DiskName></VirtualDisk>",
                  "LogicalVolumeVirtualTargetDevice", "vtscsi0")}
@@ -125,6 +121,11 @@ VIOS_PARENT = f"""<VirtualIOServer
   </VirtualSCSIMappings>
   <ResourceMonitoringControlState>active</ResourceMonitoringControlState>
 </VirtualIOServer>"""
+
+
+def _vios_parent_response(document: str = VIOS_PARENT, etag: str | None = '"etag-1"'):
+    headers = {"ETag": etag} if etag else {}
+    return httpx.Response(200, text=document, headers=headers)
 
 
 @pytest.mark.asyncio
@@ -295,14 +296,15 @@ def test_lpar_uuid_from_href_is_none_when_malformed(href):
 
 
 @pytest.mark.asyncio
-async def test_delete_storage_mapping_posts_parent_without_exact_mapping(mock_hmc):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=VIOS_PARENT))
-    posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+async def test_delete_storage_mapping_posts_grouped_url_under_if_match(mock_hmc):
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response())
+    posted = mock_hmc.post(VIOS_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
     request = posted.calls[0].request
+    assert request.headers["If-Match"] == '"etag-1"'
     assert request.headers["content-type"].endswith("type=VirtualIOServer")
     root = ET.fromstring(request.content)
     ns = {"uom": UOM_NS}
@@ -323,17 +325,17 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
         from hmcpctl.client.client_storage import StorageMixin
 
         class FakeClient(StorageMixin):
-            async def _get(self, *_args, **_kwargs):
-                return {VIOS_PARENT!r}
-
-            async def _request(self, *_args, **kwargs):
-                print(kwargs["content"])
-                return SimpleNamespace(status_code=200)
-
             async def _request_with_uuid_path_arguments(
-                self, *args, uuid_path_arguments, **kwargs
+                self, method, *_args, uuid_path_arguments, **kwargs
             ):
-                return await self._request(*args, **kwargs)
+                if method == "GET":
+                    return SimpleNamespace(
+                        status_code=200,
+                        text={VIOS_PARENT!r},
+                        headers={{"ETag": '"etag-1"'}},
+                    )
+                print(kwargs["content"])
+                return SimpleNamespace(status_code=200, text="", headers={{}})
 
         asyncio.run(
             FakeClient().delete_storage_mapping({VIOS_UUID!r}, {DISK_ID!r}, {LPAR_A!r})
@@ -376,8 +378,8 @@ def test_delete_storage_mapping_serializes_default_uom_namespace_in_fresh_proces
 async def test_delete_storage_mapping_fails_closed_without_post(
     mock_hmc, mapping_id, document, lpar_uuid, message
 ):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
-    posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response(document))
+    posted = mock_hmc.post(VIOS_PATH).mock(return_value=httpx.Response(200, text=""))
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match=message):
@@ -386,8 +388,30 @@ async def test_delete_storage_mapping_fails_closed_without_post(
 
 
 @pytest.mark.asyncio
+async def test_delete_storage_mapping_refuses_to_post_without_etag(mock_hmc):
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response(etag=None))
+    posted = mock_hmc.post(VIOS_PATH).mock(return_value=httpx.Response(200, text=""))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="no ETag"):
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
+    assert not posted.called
+
+
+@pytest.mark.asyncio
+async def test_delete_storage_mapping_reports_a_concurrent_change_on_412(mock_hmc):
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response())
+    mock_hmc.post(VIOS_PATH).mock(return_value=httpx.Response(412, text="etag stale"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="changed since they were read") as raised:
+            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
+    assert raised.value.status_code == 412
+
+
+@pytest.mark.asyncio
 async def test_delete_storage_mapping_rejects_malformed_parent(mock_hmc):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text="<broken>"))
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response("<broken>"))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not valid XML"):
             await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
@@ -397,9 +421,7 @@ async def test_delete_storage_mapping_rejects_malformed_parent(mock_hmc):
 async def test_delete_storage_mapping_rejects_xml_entities(mock_hmc):
     """An entity-bearing parent body raises HMCError, not a raw DefusedXmlException."""
     document = '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>'
-    mock_hmc.get(VIOS_PARENT_PATH).mock(
-        return_value=httpx.Response(200, text=document)
-    )
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response(document))
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not valid XML"):
@@ -408,8 +430,8 @@ async def test_delete_storage_mapping_rejects_xml_entities(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_storage_mapping_propagates_parent_post_failure(mock_hmc):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=VIOS_PARENT))
-    mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(409, text="parent changed"))
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response())
+    mock_hmc.post(VIOS_PATH).mock(return_value=httpx.Response(409, text="parent changed"))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as raised:
             await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
@@ -419,35 +441,11 @@ async def test_delete_storage_mapping_propagates_parent_post_failure(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_storage_mapping_rejects_empty_selector(mock_hmc):
-    fetched = mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=VIOS_PARENT))
+    fetched = mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response())
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ValueError, match="must not be empty"):
             await hmc.delete_storage_mapping(VIOS_UUID, "", LPAR_A)
     assert not fetched.called
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "document",
-    [
-        VIOS_PARENT.replace("AssociatedManagedSystem", "WrongAssociation"),
-        VIOS_PARENT.replace(
-            "<AssociatedManagedSystem",
-            "<AssociatedManagedSystem href=\"/rest/api/uom/ManagedSystem/"
-            f"{SYSTEM_UUID}\"/><AssociatedManagedSystem",
-        ),
-        VIOS_PARENT.replace(SYSTEM_UUID, "not-a-uuid"),
-        VIOS_PARENT.replace(SYSTEM_UUID, "------------------------------------"),
-        VIOS_PARENT.replace(SYSTEM_UUID, "a" * 36),
-    ],
-)
-async def test_delete_storage_mapping_rejects_untrusted_system_link(
-    mock_hmc, document
-):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="AssociatedManagedSystem"):
-            await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)
 
 
 @pytest.mark.asyncio
@@ -480,8 +478,8 @@ async def test_delete_storage_mapping_rejects_untrusted_system_link(
 async def test_delete_storage_mapping_rejects_ambiguous_vios_document(
     mock_hmc, document
 ):
-    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
-    posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.get(VIOS_PATH).mock(return_value=_vios_parent_response(document))
+    posted = mock_hmc.post(VIOS_PATH).mock(return_value=httpx.Response(200, text=""))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="VIOS resources|identity does not match"):
             await hmc.delete_storage_mapping(VIOS_UUID, DISK_ID, LPAR_A)

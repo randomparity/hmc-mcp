@@ -26,7 +26,8 @@ records the design decision per prototype fact.
   only this session's own ``mkvterm`` about 10 s later (#1058), and issues
   ``rmvterm`` only when the stream had already ended or did not end in time.
   ``released`` is ``True`` only after an independent-session ``mkvterm`` probe
-  proves the slot is free; ``rmvterm``'s own exit code is not proof (P2). A
+  proves the slot is free; ``rmvterm``'s own exit code is not proof (P2). The
+  probe releases its own hold the same way, through stdin EOF (#1072). A
   hold another client's ``rmvterm`` already ended gets no release (#1004): the
   HMC reports it in band, and ``rmvterm`` would end the new holder's session.
 - **Sealed stdin** (P5/P7): mkvterm's stdin is the write socket to the
@@ -468,8 +469,9 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
     - sentinel seen → still held → ``False`` (no ``rmvterm``: it would close
       whoever holds it);
     - the probe's ``mkvterm`` starts and stays alive → slot proven free →
-      ``True``; the probe then tears its own session down — connection closed
-      plus an ``rmvterm``, since the HMC does not auto-release (P3);
+      ``True``; the probe then tears its own session down, since the HMC does
+      not auto-release (P3): stdin EOF, then ``rmvterm`` only when its stream
+      does not end in time (#1072, :func:`_release_probe_by_eof`);
     - timeout with no output → state unknown → ``False``; no destructive cleanup
       is attempted because ownership of the slot was never established;
     - clean EOF without the sentinel → the remote ``mkvterm`` exited without
@@ -495,8 +497,11 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
                 exc,
             )
             return False
+        eof_released = False
         try:
             outcome = await _read_release_probe(process)
+            if outcome == "acquired":
+                eof_released = await _release_probe_by_eof(stdin, process, connection)
         finally:
             stdin.close()
             connection.close()
@@ -510,6 +515,8 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
             )
             return False
         if outcome == "acquired":
+            if eof_released:
+                return True
             try:
                 await run_hmc_command(config, rmvterm_command)
             except HMCCLIError as exc:
@@ -535,6 +542,33 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         return False
     finally:
         stdin.close()
+
+
+async def _release_probe_by_eof(stdin: _SealedStdin, process: Any, connection: Any) -> bool:
+    """Send the probe's stdin EOF and read until its ``mkvterm`` exits (#1072).
+
+    ``True`` once the stream ended on an open connection, or the HMC reported that
+    another client's ``rmvterm`` ended the probe's hold (#1004): either way nothing
+    of the probe's is left held, and an ``rmvterm`` could end another client's
+    session. A stream that had already ended before EOF, the bound, a failure to
+    send EOF or read, or a closed connection return ``False``, and the caller
+    falls back to ``rmvterm``, as a session's release does (#1058).
+    """
+    if process.stdout.at_eof():
+        return False
+    tail = b""
+    with contextlib.suppress(Exception):
+        stdin.release()
+        async with asyncio.timeout(_EOF_RELEASE_SECONDS):
+            while True:
+                chunk = await process.stdout.read(_CHUNK)
+                if not chunk:
+                    return not connection.is_closed()
+                window = tail + chunk
+                if LOST_HOLD_SENTINEL in window:
+                    return True
+                tail = window[-(len(LOST_HOLD_SENTINEL) - 1) :]
+    return False
 
 
 def _acquisition_outcome(data: bytes | bytearray) -> Literal["acquired", "held"] | None:
@@ -1161,7 +1195,9 @@ class ConsoleSession:
         caller never interrupts the release; the cancellation is re-raised
         after it completes. The release sends stdin EOF and waits, about 10 s on
         the recorded HMC, for ``mkvterm`` to exit; ``rmvterm`` runs instead when
-        the stream had ended or does not end in time (#1058). During
+        the stream had ended or does not end in time (#1058). The probe that
+        proves the release waits the same way for its own ``mkvterm`` (#1072),
+        so a release takes about 22 s there. During
         :meth:`suspend` or :meth:`resume` it waits
         for that call, then releases whatever it left held. A suspended
         session issues no ``rmvterm``, since the slot may now be the external
