@@ -175,6 +175,19 @@ async def test_create_fails_closed_without_associated_managed_system(mock_hmc, c
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("create", [_map, _mount], ids=["map_storage_to_lpar", "create_optical_mapping"])
+async def test_create_fails_closed_with_malformed_associated_managed_system(mock_hmc, create):
+    """A present but non-UUID AssociatedManagedSystem segment fails closed too."""
+    _, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid="not-a-uuid")))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="AssociatedManagedSystem"):
+            await create(hmc)
+
+    assert not post.called
+
+
+@pytest.mark.asyncio
 async def test_detach_unaffected_without_associated_managed_system(mock_hmc):
     """A detach never builds a client-LPAR href, so a missing link doesn't block it."""
     get, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid=None)))

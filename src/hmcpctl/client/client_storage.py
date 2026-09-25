@@ -30,6 +30,7 @@ from ..documents import (
     build_web_file_document,
 )
 from ..errors import HMCError, HMCTransportError
+from ..resource_identity import is_uuid
 from ..xmlutil import WEB_NS, element_to_dict, localname
 from .client_contracts import StorageClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
@@ -258,10 +259,10 @@ def _append_mapping(
     """
 
     def _mutate(mappings: ET.Element, system_uuid: str | None) -> None:
-        if system_uuid is None:
+        if system_uuid is None or not is_uuid(system_uuid):
             raise HMCError(
-                f"{operation}: VIOS has no AssociatedManagedSystem link; refusing to "
-                "build a mapping's client-LPAR href without a managed-system UUID"
+                f"{operation}: VIOS has no usable AssociatedManagedSystem link; refusing "
+                "to build a mapping's client-LPAR href without a managed-system UUID"
             )
         mappings.append(
             DET.fromstring(document_factory(system_uuid)).find(
