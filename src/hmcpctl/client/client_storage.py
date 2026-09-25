@@ -499,7 +499,6 @@ class StorageMixin:
                 resource_type="VolumeGroup",
                 include_schema_version=False,
                 uuid_path_arguments={"vios_uuid": vios_uuid},
-                fallback_to_generic_uom_on_406=True,
             ),
         )
         entries = _parse_feed(resp, path) if resp else []

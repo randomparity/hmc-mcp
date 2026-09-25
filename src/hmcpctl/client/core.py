@@ -644,7 +644,6 @@ class HMCClient(
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
-        fallback_to_generic_uom_on_406: bool = False,
     ) -> str:
         return await self._write_uom(
             "POST",
@@ -654,7 +653,6 @@ class HMCClient(
             include_schema_version,
             uuid_path_arguments,
             (200, 201, 202),
-            fallback_to_generic_uom_on_406,
         )
 
     async def _put(
@@ -665,7 +663,6 @@ class HMCClient(
         include_schema_version: bool = True,
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
-        fallback_to_generic_uom_on_406: bool = False,
     ) -> str:
         return await self._write_uom(
             "PUT",
@@ -675,7 +672,6 @@ class HMCClient(
             include_schema_version,
             uuid_path_arguments,
             (200, 201, 202, 204),
-            fallback_to_generic_uom_on_406,
         )
 
     async def _write_uom(
@@ -687,11 +683,15 @@ class HMCClient(
         include_schema_version: bool,
         uuid_path_arguments: Mapping[str, str] | None,
         success_codes: tuple[int, ...],
-        fallback_to_generic_uom_on_406: bool,
     ) -> str:
-        """Send a UOM write, retrying 406 negotiation only when requested."""
+        """Send a UOM write with an untyped Accept and a typed Content-Type (ADR 0178).
+
+        V10R3 answers a typed or generic uom Accept on writes with 406, and a
+        generic Content-Type with 415.
+        """
         headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
+        headers["Accept"] = "*/*"
         resp = await self._request_with_uuid_path_arguments(
             method,
             path,
@@ -699,18 +699,6 @@ class HMCClient(
             content=body,
             headers=headers,
         )
-        if resp.status_code == 406 and fallback_to_generic_uom_on_406:
-            retry_headers = dict(headers)
-            retry_headers["Accept"] = self._uom_headers(
-                None, include_schema_version
-            )["Accept"]
-            resp = await self._request_with_uuid_path_arguments(
-                method,
-                path,
-                uuid_path_arguments=uuid_path_arguments or {},
-                content=body,
-                headers=retry_headers,
-            )
         if resp.status_code not in success_codes:
             raise HMCError(f"{method} {path} failed", resp.status_code, resp.text)
         return resp.text
@@ -721,11 +709,13 @@ class HMCClient(
         *,
         uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> None:
+        headers = self._uom_headers(None)
+        headers["Accept"] = "*/*"  # V10R3 answers a generic uom Accept with 406 (ADR 0178).
         resp = await self._request_with_uuid_path_arguments(
             "DELETE",
             path,
             uuid_path_arguments=uuid_path_arguments or {},
-            headers=self._uom_headers(None),
+            headers=headers,
         )
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
@@ -1401,8 +1391,7 @@ class HMCClient(
     ) -> dict[str, Any] | None:
         """PUT a child resource (e.g. a virtual adapter) under a parent.
 
-        Omits X-HMC-Schema-Version header — the HMC returns HTTP 406 on adapter
-        PUT endpoints when this header is present (same as VolumeGroup and LPAR).
+        Omits the X-HMC-Schema-Version header; the write headers follow ADR 0178.
         """
         _reject_unknown_uom_type("parent_type", parent_type)
         _reject_unknown_uom_type("child_type", child_type)

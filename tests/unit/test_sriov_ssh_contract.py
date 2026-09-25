@@ -29,6 +29,7 @@ _PHYSICAL_FIELDS = (
     "config_logical_ports",
     "phys_port_max_logical_ports",
     "curr_eth_logical_ports",
+    "min_eth_capacity_granularity",
 )
 
 _EVIDENCE_PATH = (
@@ -38,6 +39,9 @@ _EVIDENCE_PATH = (
     / "sriov-physport-selection-v10r3-v11r2.json"
 )
 _EVIDENCE = json.loads(_EVIDENCE_PATH.read_text())
+_GRANULARITY_EVIDENCE = json.loads(
+    (_EVIDENCE_PATH.parent / "sriov-physport-granularity-v10r3.json").read_text()
+)
 
 
 def test_physical_port_evidence_preserves_live_verification_contract():
@@ -123,14 +127,14 @@ def test_physical_port_evidence_preserves_live_verification_contract():
 def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str:
     return (
         f"{','.join(_PHYSICAL_FIELDS)}\n"
-        f"{adapter_id},0,{port_type},U-T1,1,0,60,0\n"
+        f"{adapter_id},0,{port_type},U-T1,1,0,60,0,1.0\n"
     )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "case",
-    _EVIDENCE["selection_cases"],
+    _GRANULARITY_EVIDENCE["selection_cases"],
     ids=lambda case: case["name"],
 )
 async def test_physical_port_selects_the_sole_populated_level(
@@ -140,7 +144,7 @@ async def test_physical_port_selects_the_sole_populated_level(
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     assert await list_sriov_physical_port_rows(
-        _config(), "sys", case["adapter_id"]
+        _config(), case["system"], case["adapter_id"]
     ) == case["expected_rows"]
     commands = [call.args[1] for call in run.await_args_list]
     assert len(commands) == 2
@@ -155,6 +159,25 @@ async def test_physical_port_selects_the_sole_populated_level(
     )
     assert "--level roce" in commands[0]
     assert "--level ethc" in commands[1]
+    assert commands == [
+        case["roce"]["command"],
+        case["ethc"]["command"],
+    ]
+
+
+def test_granularity_evidence_pins_the_captured_projection_and_attribute_control():
+    evidence = _GRANULARITY_EVIDENCE
+
+    assert tuple(evidence["fields"]) == _PHYSICAL_FIELDS
+    assert (evidence["hmc_release"], evidence["hmc_build"]) == ("V10R3 M1060", "2408210051")
+    assert {
+        case["name"]: {row["min_eth_capacity_granularity"] for row in case["expected_rows"]}
+        for case in evidence["selection_cases"]
+    } == {"v10r3-roce-granularity": {"1.0"}, "v10r3-ethc-granularity": {"2.0"}}
+    control = evidence["attribute_validation"]
+    assert control["levels"] == ["roce", "ethc"]
+    assert control["exit_status"] == 1
+    assert "An invalid attribute was entered." in control["stdout"]
 
 
 @pytest.mark.asyncio
@@ -265,7 +288,7 @@ async def test_exact_sriov_read_and_mutation_commands(monkeypatch):
     run = AsyncMock(
         side_effect=[
             "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status\n1,2,sriov,1,U,2,120,120,running\n",
-            "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports\n1,0,roce,U-T1,1,0,60,0\n",
+            "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity\n1,0,roce,U-T1,1,0,60,0,1.0\n",
             "No results were found.",
             "",
             "",

@@ -328,6 +328,15 @@ async def power_on_lpar(
     )
 
 
+def _rest_create_refused(exc: HMCError) -> bool:
+    """Whether the HMC refused the REST create before creating anything (ADR 0178).
+
+    A 406 is a negotiation refusal; a 400 ``REST0001`` is V10R3 rejecting the
+    document against its schema. Either leaves ``mksyscfg`` as the way to create.
+    """
+    return exc.status_code == 406 or (exc.status_code == 400 and "REST0001" in (exc.body or ""))
+
+
 async def create_and_stamp_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -382,7 +391,7 @@ async def create_and_stamp_lpar(
     try:
         created_lpar = await hmc.create_logical_partition(system_uuid, document)
     except HMCError as exc:
-        if exc.status_code != 406:
+        if not _rest_create_refused(exc):
             raise
         try:
             system_name = await resolve_system_cli_name(hmc.config, system_uuid)

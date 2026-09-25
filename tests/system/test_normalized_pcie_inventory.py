@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -248,6 +249,7 @@ async def test_sriov_physical_inventory_normalizes_port_state() -> None:
             "phys_port_id": "p1",
             "state": "1",
             "phys_port_loc": "U1-T1",
+            "min_eth_capacity_granularity": "0.25",
         },
         {
             "adapter_id": "a1",
@@ -273,6 +275,10 @@ async def test_sriov_physical_inventory_normalizes_port_state() -> None:
         result = await list_sriov_physical_ports(_hmc(), "system-uuid", "a1")
 
     assert [port.availability for port in result.items] == ["up", "down"]
+    assert [port.minimum_capacity_granularity_percent for port in result.items] == [
+        Decimal("0.25"),
+        None,
+    ]
 
 
 @pytest.mark.asyncio

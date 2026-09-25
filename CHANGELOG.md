@@ -10,6 +10,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- SR-IOV logical-port assignment refuses a capacity that is not a multiple of the physical
+  port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
+  naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
+  inventory now fills `minimum_capacity_granularity_percent` (#1035).
 - `lpars provision` and `hmc_provision_lpar` report where the network adapter, vSCSI adapter,
   and storage mapping they add now live: a `change_location` result field, read once after
   those steps rather than through the standalone adapter/storage operations, in the same shape
@@ -172,6 +176,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+
+- Shared UOM `PUT`/`POST` writes now send `Accept: */*` with the typed `Content-Type`, and
+  shared `DELETE`s send `Accept: */*`, the header shape HMC V10R3 accepts; it answered the old
+  typed `Accept` with HTTP 406 (ADR 0178). `adapters add-vscsi` and `adapters delete` were
+  verified on V10R3; the other shared writes were not probed. `lpars create` and `lpars provision` still fall back to `mksyscfg`
+  when V10R3 now answers the REST create with a 400 `REST0001` schema rejection instead of the
+  406 (#935).
 
 - LPAR rename (`hmc_rename_lpar`), DLPAR processor and memory changes (`hmc_dlpar_proc`,
   `hmc_dlpar_mem`) and `lpars modify` / `hmc_modify_lpar` now write on V10R3. Each reads the

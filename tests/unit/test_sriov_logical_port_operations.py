@@ -11,6 +11,7 @@ from hmcpctl.operations.virtualization.pcie import (
     assign_sriov_logical_port,
     unassign_sriov_logical_port,
 )
+from hmcpctl.ssh.transport import HMCCLIError
 
 
 def _hmc() -> AsyncMock:
@@ -19,7 +20,17 @@ def _hmc() -> AsyncMock:
     return hmc
 
 
-def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()):
+def _common(
+    monkeypatch, *, state="Not Activated", rmc="inactive", configured=(), granularity=None
+):
+    physical = {
+        "adapter_id": "1",
+        "phys_port_id": "0",
+        "state": "1",
+        "phys_port_loc": "U-P1-C4-T1",
+    }
+    if granularity is not None:
+        physical["min_eth_capacity_granularity"] = granularity
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.resolve_and_authorize_lpar_names",
         AsyncMock(return_value=("sys", "lpar")),
@@ -43,16 +54,7 @@ def _common(monkeypatch, *, state="Not Activated", rmc="inactive", configured=()
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.list_sriov_physical_port_rows",
-        AsyncMock(
-            return_value=[
-                {
-                    "adapter_id": "1",
-                    "phys_port_id": "0",
-                    "state": "1",
-                    "phys_port_loc": "U-P1-C4-T1",
-                }
-            ]
-        ),
+        AsyncMock(return_value=[physical]),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",
@@ -192,6 +194,91 @@ async def test_assign_rejects_capacity_and_unsupported_running_state(monkeypatch
             Decimal("0.5"),
             profile_name="prof",
         )
+
+
+def _dynamic_mutation(monkeypatch) -> AsyncMock:
+    mutate = AsyncMock(return_value="")
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.assign_sriov_logical_port_dynamic",
+        mutate,
+    )
+    return mutate
+
+
+async def _assign(capacity: str):
+    return await assign_sriov_logical_port(
+        _hmc(),
+        "sys",
+        "lpar",
+        InventorySelector("1", "0", "3"),
+        Decimal(capacity),
+        profile_name="prof",
+    )
+
+
+@pytest.mark.asyncio
+async def test_assign_refuses_capacity_off_the_port_granularity_before_mutation(
+    monkeypatch,
+):
+    _common(monkeypatch, granularity="1.0")
+    mutate = _dynamic_mutation(monkeypatch)
+
+    with pytest.raises(
+        ValueError,
+        match=r"capacity_percent 7\.5 is not a multiple of the physical port's "
+        r"capacity granularity 1\.0%",
+    ):
+        await _assign("7.5")
+
+    mutate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_assign_sends_capacity_on_the_port_granularity(monkeypatch):
+    _common(monkeypatch, granularity="2.0")
+    mutate = _dynamic_mutation(monkeypatch)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",
+        AsyncMock(side_effect=[[], []]),
+    )
+
+    with pytest.raises(SriovLogicalPortPartialError):
+        await _assign("4")
+
+    mutate.assert_awaited_once()
+    assert mutate.await_args.args[-1] == "4"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("granularity", [None, "", "null"])
+async def test_assign_without_reported_granularity_leaves_the_hmc_to_judge(
+    monkeypatch, granularity
+):
+    _common(monkeypatch, granularity=granularity)
+    mutate = _dynamic_mutation(monkeypatch)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.pcie.list_sriov_configured_logical_port_rows",
+        AsyncMock(side_effect=[[], []]),
+    )
+
+    with pytest.raises(SriovLogicalPortPartialError):
+        await _assign("7.5")
+
+    mutate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("granularity", ["abc", "0", "-1", "NaN", "Infinity", "1E-27", "101"])
+async def test_assign_rejects_malformed_port_granularity_before_mutation(
+    monkeypatch, granularity
+):
+    _common(monkeypatch, granularity=granularity)
+    mutate = _dynamic_mutation(monkeypatch)
+
+    with pytest.raises(HMCCLIError, match="malformed physical-port capacity granularity"):
+        await _assign("2")
+
+    mutate.assert_not_awaited()
 
 
 @pytest.mark.asyncio

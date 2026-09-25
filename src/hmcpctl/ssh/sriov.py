@@ -45,7 +45,7 @@ async def read_sriov_environment(config: HMCConfig, system_name: str) -> tuple[s
 
 
 async def list_sriov_physical_port_rows(config: HMCConfig, system_name: str, adapter_id: str) -> list[dict[str, str]]:
-    fields = ("adapter_id", "phys_port_id", "phys_port_type", "phys_port_loc", "state", "config_logical_ports", "phys_port_max_logical_ports", "curr_eth_logical_ports")
+    fields = ("adapter_id", "phys_port_id", "phys_port_type", "phys_port_loc", "state", "config_logical_ports", "phys_port_max_logical_ports", "curr_eth_logical_ports", "min_eth_capacity_granularity")
     commands = [f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level {level} --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(fields)} --header" for level in ("roce", "ethc")]
     if not adapter_id.isascii() or not adapter_id.isdecimal() or int(adapter_id) <= 0:
         raise ValueError(f"adapter_id must be a positive decimal ID, got {adapter_id!r}")

@@ -1,0 +1,137 @@
+{
+  "record_kind": "live-capture",
+  "evidence_kind": "sanitized-read-only-probe",
+  "source": "Read-only lshwres probes on the authorized lab HMC, 2026-09-24, for issue #1035. Location codes and system names are redacted; nothing else is edited.",
+  "hmc_release": "V10R3 M1060",
+  "hmc_build": "2408210051",
+  "fields": [
+    "adapter_id",
+    "phys_port_id",
+    "phys_port_type",
+    "phys_port_loc",
+    "state",
+    "config_logical_ports",
+    "phys_port_max_logical_ports",
+    "curr_eth_logical_ports",
+    "min_eth_capacity_granularity"
+  ],
+  "selection_cases": [
+    {
+      "name": "v10r3-roce-granularity",
+      "system": "SYS-R1",
+      "system_model": "8375-42A",
+      "admitted": true,
+      "adapter_id": "1",
+      "roce": {
+        "command": "lshwres -r sriov --rsubtype physport -m SYS-R1 --level roce --filter adapter_ids=1 -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+        "exit_status": 0,
+        "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity\n1,0,roce,<REDACTED-LOC>-T1,1,0,60,0,1.0\n1,1,roce,<REDACTED-LOC>-T2,1,1,60,1,1.0\n",
+        "stderr": ""
+      },
+      "ethc": {
+        "command": "lshwres -r sriov --rsubtype physport -m SYS-R1 --level ethc --filter adapter_ids=1 -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+        "exit_status": 0,
+        "stdout": "No results were found.\n",
+        "stderr": ""
+      },
+      "expected_rows": [
+        {
+          "adapter_id": "1",
+          "phys_port_id": "0",
+          "phys_port_type": "roce",
+          "phys_port_loc": "<REDACTED-LOC>-T1",
+          "state": "1",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "60",
+          "curr_eth_logical_ports": "0",
+          "min_eth_capacity_granularity": "1.0"
+        },
+        {
+          "adapter_id": "1",
+          "phys_port_id": "1",
+          "phys_port_type": "roce",
+          "phys_port_loc": "<REDACTED-LOC>-T2",
+          "state": "1",
+          "config_logical_ports": "1",
+          "phys_port_max_logical_ports": "60",
+          "curr_eth_logical_ports": "1",
+          "min_eth_capacity_granularity": "1.0"
+        }
+      ]
+    },
+    {
+      "name": "v10r3-ethc-granularity",
+      "system": "SYS-R2",
+      "system_model": "9119-MHE",
+      "admitted": false,
+      "adapter_id": "1",
+      "roce": {
+        "command": "lshwres -r sriov --rsubtype physport -m SYS-R2 --level roce --filter adapter_ids=1 -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+        "exit_status": 0,
+        "stdout": "No results were found.\n",
+        "stderr": ""
+      },
+      "ethc": {
+        "command": "lshwres -r sriov --rsubtype physport -m SYS-R2 --level ethc --filter adapter_ids=1 -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+        "exit_status": 0,
+        "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity\n1,0,ethc,<REDACTED-LOC>-T1,0,0,16,0,2.0\n1,1,ethc,<REDACTED-LOC>-T2,0,0,16,0,2.0\n1,2,ethc,<REDACTED-LOC>-T3,0,0,16,0,2.0\n1,3,ethc,<REDACTED-LOC>-T4,0,0,16,0,2.0\n",
+        "stderr": ""
+      },
+      "expected_rows": [
+        {
+          "adapter_id": "1",
+          "phys_port_id": "0",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T1",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0",
+          "min_eth_capacity_granularity": "2.0"
+        },
+        {
+          "adapter_id": "1",
+          "phys_port_id": "1",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T2",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0",
+          "min_eth_capacity_granularity": "2.0"
+        },
+        {
+          "adapter_id": "1",
+          "phys_port_id": "2",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T3",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0",
+          "min_eth_capacity_granularity": "2.0"
+        },
+        {
+          "adapter_id": "1",
+          "phys_port_id": "3",
+          "phys_port_type": "ethc",
+          "phys_port_loc": "<REDACTED-LOC>-T4",
+          "state": "0",
+          "config_logical_ports": "0",
+          "phys_port_max_logical_ports": "16",
+          "curr_eth_logical_ports": "0",
+          "min_eth_capacity_granularity": "2.0"
+        }
+      ]
+    }
+  ],
+  "attribute_validation": {
+    "negative_control_command": "lshwres -r sriov --rsubtype physport -m SYS-R1 --level {roce|ethc} -F bogus_attr_xyz --header",
+    "exit_status": 1,
+    "stdout": "An invalid attribute was entered.  The invalid attribute is bogus_attr_xyz.  Please correct your entry and retry the command.\n",
+    "levels": [
+      "roce",
+      "ethc"
+    ]
+  }
+}
