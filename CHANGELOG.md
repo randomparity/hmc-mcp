@@ -184,6 +184,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   when V10R3 now answers the REST create with a 400 `REST0001` schema rejection instead of the
   406 (#935).
 
+- `storage detach-mapping` and `unmount-optical-media` (`delete_storage_mapping`) now use the
+  same grouped-GET / If-Match read-modify-write as a mapping create (ADR 0169), instead of a
+  full VIOS GET and an unconditional system-scoped POST that could silently overwrite a mapping
+  another client added or removed between the GET and the POST. A GET with no `ETag` is refused
+  before any POST, and a 412 is reported as a concurrent change with nothing written. The
+  existing detach guards are unchanged: exactly one matching mapping, and its client-partition
+  link must name the authorized LPAR. `_append_vios_mapping` is generalized into `_rmw_vios_mapping`,
+  shared by both the create and detach paths (#1037).
+
 - LPAR rename (`hmc_rename_lpar`), DLPAR processor and memory changes (`hmc_dlpar_proc`,
   `hmc_dlpar_mem`) and `lpars modify` / `hmc_modify_lpar` now write on V10R3. Each reads the
   whole partition and writes it back under `If-Match` with only the requested fields changed,
@@ -240,6 +249,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   wait about 10 s longer for the HMC to answer EOF. `rmvterm` still runs when the stream had
   already ended or does not end within 20 s, and the independent probe still decides `released`
   (#1058).
+
+- The probe that proves a console release now releases its own hold through stdin EOF too,
+  instead of closing its connection and running `rmvterm`. A client that ran `mkvterm` just after
+  the probe closed its connection could lose its session to that `rmvterm`. On V10R3 such a client
+  is now refused with the contention message until the probe's `mkvterm` exits, about 10 s after
+  EOF, and then acquires and keeps its session. Every proven release takes about 8.5 s longer, so
+  a `close()` or `suspend()` on an open stream takes about 22 s. `rmvterm` still runs when the
+  probe's stream had already ended or does not end within 20 s (#1072).
 
 - LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
   `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/

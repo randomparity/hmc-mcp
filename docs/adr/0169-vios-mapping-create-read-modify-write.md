@@ -1,4 +1,4 @@
-# ADR 0169: Create VIOS mappings by read-modify-write of the ViosSCSIMapping group
+# ADR 0169: VIOS mapping writes by read-modify-write of the ViosSCSIMapping group
 
 ## Status
 
@@ -16,20 +16,26 @@ back to the same URL with `If-Match: <etag>`, `Accept: */*` and a typed `Content
 
 ## Decision
 
-Both mapping creates use that sequence verbatim through one private client helper. The builder
-still renders the new mapping, and the helper appends that element to the fetched collection.
-The helper refuses before any POST when the GET lacks an `ETag`, names another VIOS, or has no
-`VirtualSCSIMappings` collection. A 412 is reported as a concurrent change and is not retried.
+Every VIOS mapping write — both mapping creates and the detach (`delete_storage_mapping`,
+#1037) — uses that sequence verbatim through one private client helper. The helper takes a
+mutation callback applied to the fetched `VirtualSCSIMappings` collection before the POST:
+append the rendered element for a create, or find-and-remove the one matching mapping for a
+detach, carrying ADR 0168's ownership check (exactly one match, and its client-LPAR link names
+the authorized LPAR) into that callback. The helper refuses before any POST when the GET lacks
+an `ETag`, names another VIOS, or has no `VirtualSCSIMappings` collection. A 412 is reported as
+a concurrent change and is not retried.
 
 ## Consequences
 
-Every create costs one extra GET and fails on a concurrent VIOS change instead of overwriting
-it. A VIOS whose grouped GET omits an empty collection cannot receive its first mapping until
-#879 shows what the HMC returns there. `delete_storage_mapping` keeps its own RMW (full GET, a
-system-scoped POST without `If-Match`), so the two paths differ until a follow-up aligns them.
-The HMC creates a new client/server adapter pair for each mapping, and a vSCSI adapter added
-beforehand is left without a server adapter. The `docs/cli.md` bootable-disk recipe no longer
-adds one. The provision and attach-disk workflows still do, which is left to a follow-up.
+Every mapping write costs one extra GET and fails on a concurrent VIOS change instead of
+overwriting it. A VIOS whose grouped GET omits an empty collection cannot receive its first
+mapping until #879 shows what the HMC returns there. The detach path used to keep its own RMW
+(full GET, a system-scoped POST without `If-Match`) until #1037 folded it into the same
+grouped-GET / If-Match sequence as a create, closing the lost-update gap this record already
+closed for creates. The HMC creates a new client/server adapter pair for each mapping, and a
+vSCSI adapter added beforehand is left without a server adapter. The `docs/cli.md` bootable-disk
+recipe no longer adds one. The provision and attach-disk workflows still do, which is left to a
+follow-up.
 
 ## Considered & rejected
 

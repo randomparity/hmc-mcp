@@ -1,7 +1,9 @@
-"""Mapping creates read-modify-write the VIOS ViosSCSIMapping group (issue #962, ADR 0169).
+"""Mapping writes read-modify-write the VIOS ViosSCSIMapping group (issue #962, ADR 0169).
 
 The existing mapping is the observed V10R3 fixture; a create must post it back
-unchanged beside the new mapping, under the GET's ETag.
+unchanged beside the new mapping, under the GET's ETag. A detach (issue #1037)
+shares the same grouped GET / If-Match POST sequence through the generalized
+helper, so its ETag/412 transport contract is pinned here alongside create's.
 """
 
 import xml.etree.ElementTree as ET
@@ -61,6 +63,53 @@ async def _map(hmc: HMCClient) -> None:
 
 async def _mount(hmc: HMCClient) -> None:
     await hmc.create_optical_mapping(VIOS_UUID, "install.iso", LPAR_UUID, "vtopt9")
+
+
+# The observed fixture's one mapping (vhost0/vtscsi0) belongs to this LPAR.
+EXISTING_MAPPING_ID = "vhost0/vtscsi0"
+EXISTING_MAPPING_LPAR = "00000000-0000-4000-8000-0000000000AA"
+
+
+async def _detach(hmc: HMCClient) -> None:
+    await hmc.delete_storage_mapping(VIOS_UUID, EXISTING_MAPPING_ID, EXISTING_MAPPING_LPAR)
+
+
+@pytest.mark.asyncio
+async def test_detach_posts_grouped_url_under_if_match(mock_hmc):
+    get, post = _routes(mock_hmc, _ok())
+
+    async with HMCClient(make_config()) as hmc:
+        await _detach(hmc)
+
+    assert get.call_count == 1 and post.call_count == 1
+    request = post.calls.last.request
+    assert request.headers["If-Match"] == '"etag-1"'
+    assert request.headers["Accept"] == "*/*"
+    assert request.headers["Content-Type"].endswith("; type=VirtualIOServer")
+    assert _mappings(request.content.decode()) == []
+
+
+@pytest.mark.asyncio
+async def test_detach_refuses_to_post_without_etag(mock_hmc):
+    _, post = _routes(mock_hmc, httpx.Response(200, text=vios_entry()))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="no ETag"):
+            await _detach(hmc)
+
+    assert not post.called
+
+
+@pytest.mark.asyncio
+async def test_detach_reports_a_concurrent_change_on_412(mock_hmc):
+    _, post = _routes(mock_hmc, _ok(), post_status=412)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="changed since they were read") as raised:
+            await _detach(hmc)
+
+    assert raised.value.status_code == 412
+    assert post.call_count == 1
 
 
 @pytest.mark.asyncio
