@@ -837,7 +837,7 @@ class TestDescriptionBaselineRestore:
             "FAIL",
         )
         assert "MANUAL RECOVERY REQUIRED" in row["data"]
-        assert "never captured" in row["data"]
+        assert "no baseline description was captured" in row["data"]
 
     @pytest.mark.asyncio
     async def test_a_failed_st0_read_leaves_the_key_absent_and_fails_restore(
@@ -866,7 +866,7 @@ class TestDescriptionBaselineRestore:
             "FAIL",
         )
         assert "MANUAL RECOVERY REQUIRED" in row["data"]
-        assert "never captured" in row["data"]
+        assert "no baseline description was captured" in row["data"]
 
 
 @pytest.mark.asyncio

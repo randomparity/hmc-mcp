@@ -201,12 +201,15 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
             scenario,
             "hmc_set_lpar_description (restore)",
             "FAIL",
-            f"MANUAL RECOVERY REQUIRED: chsyscfg -r lpar -m {config.system_name} "
-            f'-i "name={config.lp3_name},description=<original>" (or the HMC GUI where '
-            "the CLI record cannot carry it); the original could not be restored "
-            "automatically because a baseline description was never captured for "
+            "MANUAL RECOVERY REQUIRED: no baseline description was captured for "
             "this run (the ST0 read failed, or the key is absent from a resumed "
-            f"results file). ST{scenario} left its probe description in place.",
+            "results file), so the original value is not available from the "
+            "results file or anywhere else this harness recorded. Recover it "
+            "out of band (CMDB, HMC audit log, or the partition owner) and write "
+            f'it back with chsyscfg -r lpar -m {config.system_name} '
+            f'-i "name={config.lp3_name},description=<original>" or the HMC GUI '
+            f"where the CLI record cannot carry it. ST{scenario} left its probe "
+            "description in place.",
         )
         return
     blocked = _unrestorable_description(description)
