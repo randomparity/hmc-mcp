@@ -247,7 +247,7 @@ SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def _mock_execution_steps(mock_hmc, *, sync="Disabled"):
-    """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
+    """Register the 4 execution step routes (create, network, storage, power-on)."""
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
@@ -262,10 +262,6 @@ def _mock_execution_steps(mock_hmc, *, sync="Disabled"):
 
     # read_change_location, read once after the network leg succeeds (#1056)
     mock_change_location(mock_hmc, LPAR_UUID, sync=sync)
-
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
-    ).mock(return_value=httpx.Response(201, text=VSCSI_ADAPTER_FEED))
 
     mock_hmc.get(VIOS_MAPPINGS_PATH).mock(
         return_value=httpx.Response(
@@ -292,8 +288,7 @@ def _provision_args(**overrides):
         "system_name_or_uuid": SYSTEM_UUID,
         "name": "web01",
         "adapters": ProvisionAdapters(
-            port_vlan_id=VLAN_ID, vios_partition_id=7, vios_slot=11
-        ),
+port_vlan_id=VLAN_ID),
         "storage": ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
         "resources": LparResources(
             min_memory=256,
@@ -573,10 +568,15 @@ def test_provision_keeps_its_result_when_the_power_guard_fails(monkeypatch, mock
 
 
 def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
-    """hmc_provision_lpar executes all 5 steps and returns structured results."""
+    """hmc_provision_lpar executes all 4 steps and returns structured results."""
     _hmc_env(monkeypatch)
     name_lookup = _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
+    # The mapping makes the HMC create its own client/server adapter pair
+    # (ADR 0169), so the workflow adds no client adapter beforehand (#1030).
+    vscsi_route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
+    ).mock(return_value=httpx.Response(201, text=VSCSI_ADAPTER_FEED))
 
     result = hmc_provision_lpar(**_provision_args())
 
@@ -590,9 +590,10 @@ def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     steps = {s.step: s for s in result.steps}
     assert steps["create"].status == "ok"
     assert steps["network"].status == "ok"
-    assert steps["vscsi"].status == "ok"
     assert steps["storage"].status == "ok"
     assert steps["power_on"].status == "ok"
+    assert "vscsi" not in steps
+    assert not vscsi_route.called
     assert isinstance(result.warnings, tuple)
     assert result.change_location is not None
     assert result.change_location.current_profile_sync == "Disabled"
@@ -800,7 +801,7 @@ def test_provision_lpar_vg_not_found(monkeypatch, mock_hmc):
 
 
 def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
-    """When the vscsi step fails, storage and power_on are recorded as skipped."""
+    """When the storage step fails, power_on is recorded as skipped."""
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
 
@@ -816,13 +817,17 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=NETWORK_ADAPTER_FEED))
     mock_change_location(mock_hmc, LPAR_UUID, sync="Disabled")
 
-    # vSCSI step fails
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
-    ).mock(return_value=httpx.Response(500, text="<error>vscsi failed</error>"))
+    # storage step fails
+    mock_hmc.get(VIOS_MAPPINGS_PATH).mock(
+        return_value=httpx.Response(
+            200, text=VIOS_MAPPINGS_ENTRY, headers={"ETag": "etag-1"}
+        )
+    )
+    storage_route = mock_hmc.post(VIOS_MAPPINGS_PATH).mock(
+        return_value=httpx.Response(500, text="<error>mapping failed</error>")
+    )
 
-    # storage and power_on should not be called
-    storage_route = mock_hmc.post(VIOS_MAPPINGS_PATH)
+    # power_on should not be called
     power_on_route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
     )
@@ -832,10 +837,10 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     steps = {s.step: s for s in result.steps}
     assert steps["create"].status == "ok"
     assert steps["network"].status == "ok"
-    assert steps["vscsi"].status == "error"
-    assert steps["storage"].status == "skipped"
+    assert "vscsi" not in steps
+    assert steps["storage"].status == "error"
     assert steps["power_on"].status == "skipped"
-    assert not storage_route.called
+    assert storage_route.called
     assert not power_on_route.called
     assert result.resource_created is True
     assert result.workflow_completed is False
@@ -891,9 +896,9 @@ def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc
     _mock_execution_steps(mock_hmc)
 
     with patch(
-        "hmcpctl.client.core.HMCClient.add_vscsi_adapter",
-        new=AsyncMock(side_effect=TypeError("adapter defect")),
-    ), pytest.raises(TypeError, match="adapter defect"):
+        "hmcpctl.client.core.HMCClient.map_storage_to_lpar",
+        new=AsyncMock(side_effect=TypeError("mapping defect")),
+    ), pytest.raises(TypeError, match="mapping defect"):
         hmc_provision_lpar(**_provision_args())
 
 
@@ -1121,7 +1126,6 @@ def test_provision_readback_error_after_mksyscfg_reports_the_create(
         ("create", "error"),
         ("apply_profile", "ok"),
         ("network", "skipped"),
-        ("vscsi", "skipped"),
         ("storage", "skipped"),
         ("power_on", "skipped"),
     ]
@@ -1145,7 +1149,6 @@ def test_provision_apply_error_skips_remaining_legs(monkeypatch, mock_hmc):
     assert "HSCL boom" in result.steps[1].result
     assert [(s.step, s.status) for s in result.steps[2:]] == [
         ("network", "skipped"),
-        ("vscsi", "skipped"),
         ("storage", "skipped"),
         ("power_on", "skipped"),
     ]
@@ -1183,7 +1186,6 @@ def test_provision_reports_apply_step_when_create_returns_no_uuid(monkeypatch, m
         ("create", "error"),
         ("apply_profile", "ok"),
         ("network", "skipped"),
-        ("vscsi", "skipped"),
         ("storage", "skipped"),
         ("power_on", "skipped"),
     ]

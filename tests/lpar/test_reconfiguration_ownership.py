@@ -103,8 +103,6 @@ CASES: tuple[tuple[str, Operation], ...] = (
             LPAR,
             ProvisionStorage(VIOS, "disk1", vg_uuid=VG),
             capacity_mib=1024,
-            vios_partition_id=2,
-            vios_slot=10,
         ),
     ),
     (

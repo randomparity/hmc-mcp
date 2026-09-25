@@ -278,8 +278,6 @@ class LiveTestConfig:
     dry_run_lpar_name: str = "example-lt-609-dry-run"
     dry_run_storage_name: str = "example-lt-609-dry-disk"
     vdisk_volume_group_name: str = "example-lt-609-vg"
-    dry_run_vios_slot: int = 17
-    dry_run_vios_partition_id: int = 307
     dry_run_memory_mib: int = 1536
     provision_min_memory_mib: int = 1536
     provision_desired_memory_mib: int = 3072
@@ -352,8 +350,6 @@ class LiveTestConfig:
         "LIVE_TEST_DRY_RUN_LPAR_NAME": "dry_run_lpar_name",
         "LIVE_TEST_DRY_RUN_STORAGE_NAME": "dry_run_storage_name",
         "LIVE_TEST_VDISK_VOLUME_GROUP_NAME": "vdisk_volume_group_name",
-        "LIVE_TEST_DRY_RUN_VIOS_SLOT": "dry_run_vios_slot",
-        "LIVE_TEST_DRY_RUN_VIOS_PARTITION_ID": "dry_run_vios_partition_id",
         "LIVE_TEST_DRY_RUN_MEMORY_MIB": "dry_run_memory_mib",
         "LIVE_TEST_PROVISION_MIN_MEMORY_MIB": "provision_min_memory_mib",
         "LIVE_TEST_PROVISION_DESIRED_MEMORY_MIB": "provision_desired_memory_mib",
@@ -472,8 +468,6 @@ class LiveTestConfig:
             "scratch_create_max_vcpus",
             "scratch_modify_desired_memory_mib",
             "scratch_modify_max_memory_mib",
-            "dry_run_vios_slot",
-            "dry_run_vios_partition_id",
             "dry_run_memory_mib",
             "provision_min_memory_mib",
             "provision_desired_memory_mib",
@@ -1265,9 +1259,13 @@ def _decode_saved_config(value: Any) -> LiveTestConfig:
     if not isinstance(value, dict):
         raise TypeError("results config must be a JSON object")
     expected = asdict(LiveTestConfig())
-    if set(value) != set(expected):
-        raise ValueError("results config fields do not match LiveTestConfig")
     parsed = dict(value)
+    # A results document written before #1030 removed these settings is still a
+    # valid restore source; every other field difference remains a mismatch.
+    parsed.pop("dry_run_vios_slot", None)
+    parsed.pop("dry_run_vios_partition_id", None)
+    if set(parsed) != set(expected):
+        raise ValueError("results config fields do not match LiveTestConfig")
     protected = parsed["protected_lpar_names"]
     if not isinstance(protected, list) or not all(
         isinstance(name, str) for name in protected
