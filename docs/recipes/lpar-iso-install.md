@@ -288,7 +288,19 @@ is blank. This path does not need the boot-order commands. `lpars set-boot-order
 Firmware device paths, and a never-booted partition reports none. No value tried on a V10R3 HMC
 clears a pending boot order, so `clear-boot-order` refuses and writes nothing (#1048). A pending
 boot order, once set, is replaced with `set-boot-order`. A profile activation (`chsysstate -o on`)
-consumed it when observed on V10R3; whether this recipe's `power-on` job does is unverified.
+consumed it when observed on V10R3, and so did this recipe's `power-on --partition-profile` job,
+twice (#1068). Other activation paths are unverified.
+
+`set-boot-order` does not take firmware boot keywords such as `cd/dvd-all`, which another REST
+deployer writes into `PendingBootString` (#1068). On V10R3 M1060 with partition firmware
+FW950.00, the HMC stored every value tried and answered HTTP 200, including a made-up
+`no-such-keyword`, so a successful write does not show that firmware accepts a value. At
+activation the firmware copied the pending string, keyword or path, into `BootDeviceList`.
+With `cd/dvd-all` pending and a Debian 13.7 ppc64el netinst ISO mounted on the partition's
+vSCSI adapter, the partition stopped at the SMS main menu with reference codes `AA06000E` and
+`AA06000B`: no operating system was found in the boot list. The explicit CD path
+(`/vdevice/v-scsi@30000002/cdrom@8200000000000000`) stopped the same way, so these runs cannot
+say whether the firmware honours the keyword. The boot order stays path-only.
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes
