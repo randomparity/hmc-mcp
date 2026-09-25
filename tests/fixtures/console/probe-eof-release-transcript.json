@@ -1,0 +1,390 @@
+{
+ "record_kind": "live-capture",
+ "evidence_kind": "live-capture",
+ "hmc_release": "V10R3 M1060",
+ "system_model": "8375-42A",
+ "captured": "2026-09-24",
+ "source_url": "https://github.com/randomparity/hmc-mcp/issues/1072",
+ "claim_summary": "The release probe (_probe_released) runs on a free vterm slot of a not-activated partition. Arm `cost` alternates the probe's own teardown: `eof` (branch code: close the sealed stdin pipe's write end, read to stream end) and `rmvterm` (the pre-#1072 teardown: connection closed plus rmvterm, forced by making the EOF helper return False). Each `eof` probe received ' The write socket has closed. Exiting.\\n' 10.1 s after EOF, its stream ended on an open connection, it issued no rmvterm, and it took 11.60-11.63 s; each `rmvterm` probe took 3.13-3.16 s. Arm `race`: probe P starts, and client B retries ConsoleSession.open() until it acquires; every attempt while P held found the vterm held, B acquired 2.9 s after P's mkvterm exited, P issued no rmvterm, B's stream stayed open and silent for 8 s, an independent probe C found the vterm held and issued no rmvterm, and B's own close released it with no rmvterm in 21.89 s. Every run starts and ends with the partition Not Activated and the console slot free (baseline, restore-check probes).",
+ "redaction": "system and partition names never recorded; host identities omitted; commands recorded by verb only",
+ "event_times": "seconds since the run started (before the baseline state read)",
+ "runs": [
+  {
+   "arm": "cost",
+   "events": [
+    {
+     "t": 1.457,
+     "event": "baseline-state",
+     "state": "Not Activated"
+    },
+    {
+     "t": 2.95,
+     "event": "hmc-command",
+     "command": "rmvterm"
+    },
+    {
+     "t": 4.59,
+     "event": "probe",
+     "mode": "rmvterm",
+     "released": true,
+     "seconds": 3.13,
+     "commands": [
+      "rmvterm"
+     ]
+    },
+    {
+     "t": 4.591,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 9.12,
+     "event": "P-stdin-eof"
+    },
+    {
+     "t": 9.68,
+     "event": "P-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 19.215,
+     "event": "P-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 19.219,
+     "event": "P-stdout-eof"
+    },
+    {
+     "t": 19.219,
+     "event": "P-eof-teardown",
+     "ended": true,
+     "connection_closed": false
+    },
+    {
+     "t": 19.219,
+     "event": "probe",
+     "mode": "eof",
+     "released": true,
+     "seconds": 11.63,
+     "commands": []
+    },
+    {
+     "t": 23.73,
+     "event": "hmc-command",
+     "command": "rmvterm"
+    },
+    {
+     "t": 25.369,
+     "event": "probe",
+     "mode": "rmvterm",
+     "released": true,
+     "seconds": 3.15,
+     "commands": [
+      "rmvterm"
+     ]
+    },
+    {
+     "t": 29.876,
+     "event": "P-stdin-eof"
+    },
+    {
+     "t": 30.371,
+     "event": "P-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 39.976,
+     "event": "P-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 39.978,
+     "event": "P-stdout-eof"
+    },
+    {
+     "t": 39.978,
+     "event": "P-eof-teardown",
+     "ended": true,
+     "connection_closed": false
+    },
+    {
+     "t": 39.978,
+     "event": "probe",
+     "mode": "eof",
+     "released": true,
+     "seconds": 11.61,
+     "commands": []
+    },
+    {
+     "t": 44.513,
+     "event": "hmc-command",
+     "command": "rmvterm"
+    },
+    {
+     "t": 46.141,
+     "event": "probe",
+     "mode": "rmvterm",
+     "released": true,
+     "seconds": 3.16,
+     "commands": [
+      "rmvterm"
+     ]
+    },
+    {
+     "t": 50.645,
+     "event": "P-stdin-eof"
+    },
+    {
+     "t": 51.17,
+     "event": "P-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 60.74,
+     "event": "P-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 60.743,
+     "event": "P-stdout-eof"
+    },
+    {
+     "t": 60.743,
+     "event": "P-eof-teardown",
+     "ended": true,
+     "connection_closed": false
+    },
+    {
+     "t": 60.744,
+     "event": "probe",
+     "mode": "eof",
+     "released": true,
+     "seconds": 11.6,
+     "commands": []
+    },
+    {
+     "t": 65.281,
+     "event": "hmc-command",
+     "command": "rmvterm"
+    },
+    {
+     "t": 66.908,
+     "event": "probe",
+     "mode": "rmvterm",
+     "released": true,
+     "seconds": 3.16,
+     "commands": [
+      "rmvterm"
+     ]
+    },
+    {
+     "t": 71.435,
+     "event": "P-stdin-eof"
+    },
+    {
+     "t": 71.985,
+     "event": "P-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 81.53,
+     "event": "P-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 81.537,
+     "event": "P-stdout-eof"
+    },
+    {
+     "t": 81.537,
+     "event": "P-eof-teardown",
+     "ended": true,
+     "connection_closed": false
+    },
+    {
+     "t": 81.537,
+     "event": "probe",
+     "mode": "eof",
+     "released": true,
+     "seconds": 11.63,
+     "commands": []
+    },
+    {
+     "t": 81.537,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 82.985,
+     "event": "after-state",
+     "state": "Not Activated"
+    }
+   ]
+  },
+  {
+   "arm": "race",
+   "events": [
+    {
+     "t": 1.462,
+     "event": "baseline-state",
+     "state": "Not Activated"
+    },
+    {
+     "t": 2.967,
+     "event": "hmc-command",
+     "command": "rmvterm"
+    },
+    {
+     "t": 4.591,
+     "event": "probe",
+     "mode": "rmvterm",
+     "released": true,
+     "seconds": 3.13,
+     "commands": [
+      "rmvterm"
+     ]
+    },
+    {
+     "t": 4.591,
+     "event": "baseline-probe",
+     "released": true
+    },
+    {
+     "t": 9.714,
+     "event": "P-stdin-eof"
+    },
+    {
+     "t": 10.215,
+     "event": "P-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 10.647,
+     "event": "B-open-held",
+     "attempt": 0
+    },
+    {
+     "t": 13.649,
+     "event": "B-open-held",
+     "attempt": 1
+    },
+    {
+     "t": 16.665,
+     "event": "B-open-held",
+     "attempt": 2
+    },
+    {
+     "t": 19.659,
+     "event": "B-open-held",
+     "attempt": 3
+    },
+    {
+     "t": 19.808,
+     "event": "P-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 19.812,
+     "event": "P-stdout-eof"
+    },
+    {
+     "t": 19.813,
+     "event": "P-eof-teardown",
+     "ended": true,
+     "connection_closed": false
+    },
+    {
+     "t": 19.813,
+     "event": "probe",
+     "mode": "eof",
+     "released": true,
+     "seconds": 12.22,
+     "commands": []
+    },
+    {
+     "t": 22.667,
+     "event": "B-acquired",
+     "attempt": 4,
+     "data": "\r\n Open in progress  \r\n "
+    },
+    {
+     "t": 31.166,
+     "event": "B-reads-after-probe",
+     "chunks": [
+      "\r\n Open Completed. \r\n  ",
+      "<timeout: B stream open and silent>"
+     ],
+     "b_state": "held"
+    },
+    {
+     "t": 32.663,
+     "event": "C-probe",
+     "released": false,
+     "commands": []
+    },
+    {
+     "t": 54.555,
+     "event": "B-closed",
+     "released": true,
+     "seconds": 21.89,
+     "commands": []
+    },
+    {
+     "t": 59.022,
+     "event": "P-stdin-eof"
+    },
+    {
+     "t": 59.559,
+     "event": "P-stdout-chunk",
+     "nbytes": 23,
+     "data": "\r\n Open Completed. \r\n  "
+    },
+    {
+     "t": 69.116,
+     "event": "P-stdout-chunk",
+     "nbytes": 39,
+     "data": " The write socket has closed. Exiting.\n"
+    },
+    {
+     "t": 69.119,
+     "event": "P-stdout-eof"
+    },
+    {
+     "t": 69.119,
+     "event": "P-eof-teardown",
+     "ended": true,
+     "connection_closed": false
+    },
+    {
+     "t": 69.119,
+     "event": "probe",
+     "mode": "eof",
+     "released": true,
+     "seconds": 11.56,
+     "commands": []
+    },
+    {
+     "t": 69.119,
+     "event": "restore-check-probe",
+     "released": true
+    },
+    {
+     "t": 70.614,
+     "event": "after-state",
+     "state": "Not Activated"
+    }
+   ]
+  }
+ ]
+}

@@ -78,8 +78,8 @@ Capture refuses to overwrite an existing local file. Validation and inspection a
 perform no HMC I/O. Snapshots do not expose a replay command; observation data is diagnostic and
 never part of the replayable profile configuration.
 
-When the HMC creates the partition through `mksyscfg` (its REST create answered HTTP 406),
-`lpars create` then applies the new `default_profile` with `chsyscfg -o apply`, without powering
+When the HMC creates the partition through `mksyscfg` (its REST create was refused with HTTP 406
+or a 400 `REST0001` schema rejection), `lpars create` then applies the new `default_profile` with `chsyscfg -o apply`, without powering
 the partition on, and reports an `apply_profile` step. Until a profile is applied or the partition
 is activated, it has no current configuration and REST adapter writes fail. `--no-apply` skips
 the apply. Adapter changes made through REST after the apply live only in the current

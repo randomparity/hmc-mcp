@@ -15,6 +15,18 @@ Accepted
 > ended, or did not end within 20 s. The independent probe still decides `released`. Design,
 > failure model, and residual windows:
 > `docs/workflow/specs/2026-09-24-console-eof-release-design.md`.
+>
+> **Amended by #1072** (2026-09-24): live capture on HMC V10R3 M1060
+> (`tests/fixtures/console/probe-eof-release-transcript.json`). Design consequence 2: the proof
+> probe no longer tears its own hold down with a connection close plus `rmvterm`. It sends stdin
+> EOF and reads to stream end, bounded by the same 20 s, and issues `rmvterm` only when its
+> stream had already ended, or that wait times out, fails, or finds the connection closed. A
+> lost-hold report during that wait
+> also skips `rmvterm`. Recorded cost: 11.56-12.22 s per probe against 3.13-3.16 s with
+> `rmvterm`, about 8.5 s more per proven release. A client that tried `mkvterm` while the probe
+> held was refused, acquired after the probe's `mkvterm` exited, and kept its session. Decision
+> and failure model: the `#1072` amendment in
+> `docs/workflow/specs/2026-09-24-console-eof-release-design.md`.
 
 ## Context
 

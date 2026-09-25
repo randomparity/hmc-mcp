@@ -8,8 +8,8 @@ def translate_lpar_write_error(exc: HMCError) -> HMCError:
     if exc.status_code == 406:
         return HMCError(
             "The HMC rejected the LPAR write request (Not Acceptable). "
-            "Likely causes: (1) Accept or Content-Type header mismatch — "
-            "the HMC may require a more specific media type; "
+            "Likely causes: (1) media-type negotiation — hmcpctl sends Accept */* "
+            "with a typed Content-Type, so this HMC level negotiates differently; "
             "(2) XML schema version mismatch — try setting "
             "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
             exc.status_code,

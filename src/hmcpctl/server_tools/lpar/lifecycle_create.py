@@ -74,7 +74,8 @@ def hmc_create_lpar(
             1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         apply_partition_profile: When the HMC creates the partition through
-            mksyscfg (its REST create returned HTTP 406), apply the new
+            mksyscfg (its REST create was refused: HTTP 406, or a 400 REST0001
+            schema rejection), apply the new
             default_profile so the partition has a current configuration; the
             ``apply_profile`` step reports it. False leaves it unapplied.
         profile: Optional configured HMC profile name; uses the default when omitted.

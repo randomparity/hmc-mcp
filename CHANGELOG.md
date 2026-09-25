@@ -10,6 +10,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- SR-IOV logical-port assignment refuses a capacity that is not a multiple of the physical
+  port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
+  naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
+  inventory now fills `minimum_capacity_granularity_percent` (#1035).
 - `lpars provision` and `hmc_provision_lpar` report where the network adapter, vSCSI adapter,
   and storage mapping they add now live: a `change_location` result field, read once after
   those steps rather than through the standalone adapter/storage operations, in the same shape
@@ -173,6 +177,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- Shared UOM `PUT`/`POST` writes now send `Accept: */*` with the typed `Content-Type`, and
+  shared `DELETE`s send `Accept: */*`, the header shape HMC V10R3 accepts; it answered the old
+  typed `Accept` with HTTP 406 (ADR 0178). `adapters add-vscsi` and `adapters delete` were
+  verified on V10R3; the other shared writes were not probed. `lpars create` and `lpars provision` still fall back to `mksyscfg`
+  when V10R3 now answers the REST create with a 400 `REST0001` schema rejection instead of the
+  406 (#935).
+
 - `storage detach-mapping` and `unmount-optical-media` (`delete_storage_mapping`) now use the
   same grouped-GET / If-Match read-modify-write as a mapping create (ADR 0169), instead of a
   full VIOS GET and an unconditional system-scoped POST that could silently overwrite a mapping
@@ -238,6 +249,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   wait about 10 s longer for the HMC to answer EOF. `rmvterm` still runs when the stream had
   already ended or does not end within 20 s, and the independent probe still decides `released`
   (#1058).
+
+- The probe that proves a console release now releases its own hold through stdin EOF too,
+  instead of closing its connection and running `rmvterm`. A client that ran `mkvterm` just after
+  the probe closed its connection could lose its session to that `rmvterm`. On V10R3 such a client
+  is now refused with the contention message until the probe's `mkvterm` exits, about 10 s after
+  EOF, and then acquires and keeps its session. Every proven release takes about 8.5 s longer, so
+  a `close()` or `suspend()` on an open stream takes about 22 s. `rmvterm` still runs when the
+  probe's stream had already ended or does not end within 20 s (#1072).
 
 - LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
   `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/

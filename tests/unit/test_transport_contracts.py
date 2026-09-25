@@ -147,79 +147,53 @@ async def test_uom_get_with_resource_type_qualifies_accept(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_uom_post_mirrors_accept_as_content_type(mock_hmc):
-    """UOM POST Content-Type equals its Accept header and carries the UOM media type."""
+async def test_uom_post_sends_untyped_accept_and_typed_content_type(mock_hmc):
+    """UOM POST sends Accept */* and a typed Content-Type, the shape V10R3 admits (ADR 0178)."""
     route = mock_hmc.post(_LP_PATH).mock(
         return_value=httpx.Response(201, text=_EMPTY_FEED)
     )
     async with HMCClient(make_config()) as hmc:
         await hmc._post(_LP_PATH, b"<xml/>", resource_type="LogicalPartition")
-    sent_accept = route.calls.last.request.headers.get("accept", "")
-    sent_ct = route.calls.last.request.headers.get("content-type", "")
-    assert sent_accept == sent_ct, (
-        f"POST Content-Type ({sent_ct!r}) must equal Accept ({sent_accept!r})"
-    )
-    assert sent_ct == f"{MEDIA_UOM}; type=LogicalPartition", (
-        f"POST Content-Type must be UOM with resource type, got: {sent_ct!r}"
-    )
+    request = route.calls.last.request
+    assert request.headers["accept"] == "*/*"
+    assert request.headers["content-type"] == f"{MEDIA_UOM}; type=LogicalPartition"
 
 
 @pytest.mark.asyncio
-async def test_uom_put_mirrors_accept_as_content_type(mock_hmc):
-    """UOM PUT Content-Type equals its Accept header and carries the UOM media type."""
+async def test_uom_put_sends_untyped_accept_and_typed_content_type(mock_hmc):
+    """UOM PUT sends Accept */* and a typed Content-Type, the shape V10R3 admits (ADR 0178)."""
     route = mock_hmc.put(f"{_LP_PATH}/uuid1").mock(
         return_value=httpx.Response(200, text=_EMPTY_FEED)
     )
     async with HMCClient(make_config()) as hmc:
         await hmc._put(f"{_LP_PATH}/uuid1", b"<xml/>", resource_type="LogicalPartition")
-    sent_accept = route.calls.last.request.headers.get("accept", "")
-    sent_ct = route.calls.last.request.headers.get("content-type", "")
-    assert sent_accept == sent_ct, (
-        f"PUT Content-Type ({sent_ct!r}) must equal Accept ({sent_accept!r})"
-    )
-    assert sent_ct == f"{MEDIA_UOM}; type=LogicalPartition", (
-        f"PUT Content-Type must be UOM with resource type, got: {sent_ct!r}"
-    )
+    request = route.calls.last.request
+    assert request.headers["accept"] == "*/*"
+    assert request.headers["content-type"] == f"{MEDIA_UOM}; type=LogicalPartition"
 
 
 @pytest.mark.asyncio
-async def test_uom_post_retries_a_406_with_generic_accept_only(mock_hmc):
-    route = mock_hmc.post(_LP_PATH).mock(
-        side_effect=[
-            httpx.Response(406, text="not acceptable"),
-            httpx.Response(201, text=_EMPTY_FEED),
-        ]
-    )
-    async with HMCClient(make_config()) as hmc:
-        await hmc._post(
-            _LP_PATH,
-            b"<xml/>",
-            resource_type="LogicalPartition",
-            fallback_to_generic_uom_on_406=True,
-        )
-
-    assert route.call_count == 2
-    first, second = (call.request for call in route.calls)
-    assert first.headers["accept"] == f"{MEDIA_UOM}; type=LogicalPartition"
-    assert second.headers["accept"] == MEDIA_UOM
-    assert second.headers["content-type"] == first.headers["content-type"]
-
-
-@pytest.mark.asyncio
-async def test_uom_put_never_retries_a_5xx_with_generic_accept(mock_hmc):
+@pytest.mark.parametrize("status", [406, 503])
+async def test_uom_write_raises_without_retry(mock_hmc, status):
+    """A rejected UOM write is sent once and raised; no header renegotiation retry."""
     route = mock_hmc.put(f"{_LP_PATH}/uuid1").mock(
-        return_value=httpx.Response(503, text="unavailable")
+        return_value=httpx.Response(status, text="rejected")
     )
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError, match="PUT"):
-            await hmc._put(
-                f"{_LP_PATH}/uuid1",
-                b"<xml/>",
-                resource_type="LogicalPartition",
-                fallback_to_generic_uom_on_406=True,
-            )
+        with pytest.raises(HMCError, match="PUT") as raised:
+            await hmc._put(f"{_LP_PATH}/uuid1", b"<xml/>", resource_type="LogicalPartition")
 
+    assert raised.value.status_code == status
     assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_uom_delete_sends_untyped_accept(mock_hmc):
+    """UOM DELETE sends Accept */*; V10R3 answers a generic uom Accept with 406 (ADR 0178)."""
+    route = mock_hmc.delete(f"{_LP_PATH}/uuid1").mock(return_value=httpx.Response(204))
+    async with HMCClient(make_config()) as hmc:
+        await hmc._delete(f"{_LP_PATH}/uuid1")
+    assert route.calls.last.request.headers["accept"] == "*/*"
 
 
 # ── rest:job-status — complete terminal-status vocabulary ────────────────────
