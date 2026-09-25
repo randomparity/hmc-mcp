@@ -2474,6 +2474,24 @@ async def test_list_operations_unknown_type_raises_hmc_error_with_status(mock_hm
 
 
 @pytest.mark.asyncio
+async def test_create_child_sends_write_headers_without_schema_version(mock_hmc):
+    """The adapter PUT sends Accept */*, a typed Content-Type, and no schema header (ADR 0178)."""
+    lpar = "00000000-0000-4000-8000-000000000001"
+    path = f"/rest/api/uom/LogicalPartition/{lpar}/VirtualSCSIClientAdapter"
+    route = mock_hmc.put(path).mock(return_value=httpx.Response(200, text=""))
+
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc.create_child("LogicalPartition", lpar, "VirtualSCSIClientAdapter", "<x/>")
+
+    request = route.calls.last.request
+    assert request.headers["Accept"] == "*/*"
+    assert request.headers["Content-Type"] == (
+        "application/vnd.ibm.powervm.uom+xml; type=VirtualSCSIClientAdapter"
+    )
+    assert "X-HMC-Schema-Version" not in request.headers
+
+
+@pytest.mark.asyncio
 async def test_create_child_400_surfaces_hmc_schema_message(mock_hmc):
     """A 400 REST0001 schema rejection reports the HMC's message, not a generic failure (#961).
 

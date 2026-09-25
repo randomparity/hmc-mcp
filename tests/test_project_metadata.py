@@ -163,7 +163,7 @@ def test_hmc_compatibility_claims_are_evidence_scoped() -> None:
         assert tool in compatibility
         assert tool in cheatsheet
     assert "require HMC V10 or newer" in cheatsheet
-    assert "Some HMC V10 firmware builds return HTTP 406" in readme
+    assert "HMC V10R3 answers a UOM write with HTTP 406" in readme
 
 
 def test_access_policy_guidance_matches_connectionless_dispatch_semantics() -> None:
