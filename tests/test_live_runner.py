@@ -648,8 +648,6 @@ async def test_provision_dry_run_requires_vios_and_uses_configured_vlan() -> Non
     )
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.test_vlan_id = 3100
-    state.artifacts.vios_partition_id = 4
-    state.artifacts.lp3_baseline["vios_slot"] = 6
     await provisioning.validate_provisioning_dry_run(object(), state)
     assert state.calls == [
         (
@@ -658,11 +656,7 @@ async def test_provision_dry_run_requires_vios_and_uses_configured_vlan() -> Non
                 "dry_run": True,
                 "system_name_or_uuid": state.config.system_name,
                 "name": state.config.dry_run_lpar_name,
-                "adapters": {
-                    "port_vlan_id": state.config.provision_vlan_id,
-                    "vios_partition_id": 4,
-                    "vios_slot": 6,
-                },
+                "adapters": {"port_vlan_id": state.config.provision_vlan_id},
                 "storage": {
                     "vios_uuid": "vios-uuid",
                     "storage_name": state.config.dry_run_storage_name,
@@ -2412,6 +2406,25 @@ def test_restore_artifacts_tolerates_a_results_document_without_test_user_uuid(
     runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
 
     assert state.artifacts.test_user_uuid is None
+
+
+def test_restore_artifacts_tolerates_a_config_with_the_removed_vios_slot_settings(
+    tmp_path,
+):
+    """A report written before #1030 dropped the dry-run VIOS settings still restores."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["config"]["dry_run_vios_slot"] = 17
+    document["config"]["dry_run_vios_partition_id"] = 307
+    document["artifacts"]["vios_uuid"] = "vios-1"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.vios_uuid == "vios-1"
 
 
 @pytest.mark.parametrize("document", ["not JSON", "[]", '{"context": []}'])
@@ -4369,9 +4382,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
-    state.artifacts.vios_partition_id = 7
     state.artifacts.lp3_baseline = {
-        "vios_slot": 11,
         "lpars": {
             "Resource": {
                 "MinimumMemory": "1024",
@@ -4405,11 +4416,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     assert provision == {
         "system_name_or_uuid": state.config.system_name,
         "name": state.config.lp3_name,
-        "adapters": {
-            "port_vlan_id": state.config.provision_vlan_id,
-            "vios_partition_id": 7,
-            "vios_slot": 11,
-        },
+        "adapters": {"port_vlan_id": state.config.provision_vlan_id},
         "storage": {
             "vios_uuid": "vios-uuid",
             "storage_name": state.config.vdisk_name,
@@ -4462,8 +4469,6 @@ async def test_storage_provisioning_refuses_an_unlisted_vlan_before_deleting(
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
-    state.artifacts.vios_partition_id = 7
-    state.artifacts.lp3_baseline = {"vios_slot": 11}
     assert state.config.provision_vlan_id == 1
 
     await runner.exercise_storage_provisioning(None, state)
@@ -4490,8 +4495,6 @@ async def test_storage_provisioning_refuses_untrusted_volume_group(monkeypatch):
     state.artifacts.vios_uuid = "vios-uuid"
     state.artifacts.vg_uuid = "first-listed-vg"
     state.artifacts.vdisk_vg_name = ""
-    state.artifacts.vios_partition_id = 7
-    state.artifacts.lp3_baseline = {"vios_slot": 11}
 
     await runner.exercise_storage_provisioning(None, state)
 

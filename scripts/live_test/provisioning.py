@@ -42,10 +42,6 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
     print("\n=== ST13: Provision Dry Run ===")
 
     vios_uuid = artifacts.vios_uuid
-    vios_pid = artifacts.vios_partition_id or artifacts.lp3_baseline.get(
-        "vios_partition_id"
-    )
-    vios_slot = artifacts.lp3_baseline.get("vios_slot") or config.dry_run_vios_slot
 
     if not vios_uuid:
         state.skip(13, "hmc_provision_lpar (dry_run)", "no VIOS UUID")
@@ -57,11 +53,7 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
         dry_run=True,
         system_name_or_uuid=config.system_name,
         name=config.dry_run_lpar_name,
-        adapters={
-            "port_vlan_id": config.provision_vlan_id,
-            "vios_partition_id": int(vios_pid or config.dry_run_vios_partition_id),
-            "vios_slot": int(vios_slot),
-        },
+        adapters={"port_vlan_id": config.provision_vlan_id},
         storage={
             "vios_uuid": vios_uuid,
             "storage_name": config.dry_run_storage_name,
@@ -173,8 +165,6 @@ async def _provision_from_baseline(
     vios_uuid: str,
     vg_uuid: str,
     pvid: int,
-    vios_slot: int,
-    vios_pid: int,
 ) -> None:
     """Build and submit the live provision request from captured baseline resources."""
     config = state.config
@@ -183,11 +173,7 @@ async def _provision_from_baseline(
         "hmc_provision_lpar",
         system_name_or_uuid=config.system_name,
         name=config.lp3_name,
-        adapters={
-            "port_vlan_id": pvid,
-            "vios_partition_id": vios_pid,
-            "vios_slot": vios_slot,
-        },
+        adapters={"port_vlan_id": pvid},
         storage={
             "vios_uuid": vios_uuid,
             "storage_name": config.vdisk_name,
@@ -282,21 +268,11 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     artifacts = state.artifacts
     print("\n=== ST14: Storage Lifecycle + Full Live Provision ===")
 
-    baseline = artifacts.lp3_baseline
     vios_uuid = artifacts.vios_uuid
     vg_uuid = configured_vg_uuid(state)
-    vios_slot = baseline.get("vios_slot")
-    vios_pid = artifacts.vios_partition_id or baseline.get("vios_partition_id")
 
     missing = [
-        k
-        for k, v in {
-            "vios_uuid": vios_uuid,
-            "vg_uuid": vg_uuid,
-            "vios_slot": vios_slot,
-            "vios_pid": vios_pid,
-        }.items()
-        if not v
+        k for k, v in {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid}.items() if not v
     ]
     refusal = (
         f"Missing required context keys: {missing}. Re-run ST0 and ST3 before ST14."
@@ -322,7 +298,6 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         "pre-flight check",
         "PASS",
         f"vios_uuid={vios_uuid} vg_uuid={vg_uuid} vlan={config.provision_vlan_id} "
-        f"vios_slot={vios_slot} vios_pid={vios_pid} "
         f"vdisk_mib={config.provision_disk_mib}",
     )
 
@@ -340,8 +315,6 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         vios_uuid=str(vios_uuid),
         vg_uuid=str(vg_uuid),
         pvid=config.provision_vlan_id,
-        vios_slot=int(vios_slot),
-        vios_pid=int(vios_pid),
     )
 
     # Confirm lp3 is back

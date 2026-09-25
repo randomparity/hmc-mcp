@@ -89,8 +89,8 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
     assert state.artifacts.lp3_baseline["description"] == "baseline"
     assert state.artifacts.lp3_baseline["pvid"] == 42
     assert state.artifacts.lp3_baseline["vswitch_id"] == 7
-    assert state.artifacts.lp3_baseline["vios_partition_id"] == 2
-    assert state.artifacts.lp3_baseline["vios_slot"] == 11
+    assert "vios_partition_id" not in state.artifacts.lp3_baseline
+    assert "vios_slot" not in state.artifacts.lp3_baseline
     command = next(
         kwargs["cmd"] for tool, kwargs in state.calls if tool == "hmc_run_command"
     )
