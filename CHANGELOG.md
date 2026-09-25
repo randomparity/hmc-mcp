@@ -241,6 +241,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   already ended or does not end within 20 s, and the independent probe still decides `released`
   (#1058).
 
+- The probe that proves a console release now releases its own hold through stdin EOF too,
+  instead of closing its connection and running `rmvterm`. A client that ran `mkvterm` just after
+  the probe closed its connection could lose its session to that `rmvterm`. On V10R3 such a client
+  is now refused with the contention message until the probe's `mkvterm` exits, about 10 s after
+  EOF, and then acquires and keeps its session. Every proven release takes about 8.5 s longer, so
+  a `close()` or `suspend()` on an open stream takes about 22 s. `rmvterm` still runs when the
+  probe's stream had already ended or does not end within 20 s (#1072).
+
 - LPAR ownership resolution (`_partition_name`, `resolve_lpar_ownership_names`,
   `_resolve_system_name`) now rejects a non-string or whitespace-only `PartitionName`/
   `SystemName` the same way `resource_identity`'s validated readers do, instead of coercing or

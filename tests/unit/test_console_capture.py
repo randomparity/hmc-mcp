@@ -90,6 +90,9 @@ class FakeStdout:
             raise chunk
         return chunk
 
+    def at_eof(self) -> bool:
+        return not self._chunks
+
 
 class FakeStdin:
     """Records what a writable session sends through asyncssh's stdin writer."""
@@ -144,6 +147,9 @@ class EofStdout(FakeStdout):
         if isinstance(chunk, Exception):
             raise chunk
         return chunk
+
+    def at_eof(self) -> bool:
+        return self._eof.is_set() and not self._exit and not self._chunks
 
 
 class EofProcess(FakeProcess):
@@ -2437,9 +2443,9 @@ def _session_kind(kind: str) -> ConsoleSession:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["sealed", "writable"])
 async def test_close_releases_through_eof_without_rmvterm(kind):
-    process = EofProcess(BANNER)
+    process, probe = EofProcess(BANNER), EofProcess(BANNER)
     connect, run_command, probe_seconds = _session_patches(
-        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+        FakeConnection([process]), FakeConnection([probe])
     )
     with connect, run_command as release, probe_seconds:
         session = _session_kind(kind)
@@ -2448,16 +2454,15 @@ async def test_close_releases_through_eof_without_rmvterm(kind):
         assert not process.eof.is_set()
         assert await session.close() is True
 
-    assert process.eof.is_set()
-    commands = [call.args[1] for call in release.await_args_list]
-    assert commands == ["rmvterm -m sys1 -p lp1"]  # the probe's own teardown only
+    assert process.eof.is_set() and probe.eof.is_set()
+    release.assert_not_awaited()  # the session and its probe both released through EOF (#1072)
 
 
 @pytest.mark.asyncio
 async def test_suspend_releases_through_eof():
-    process = EofProcess(BANNER)
+    process, probe = EofProcess(BANNER), EofProcess(BANNER)
     connect, run_command, probe_seconds = _session_patches(
-        FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
+        FakeConnection([process]), FakeConnection([probe])
     )
     with connect, run_command as release, probe_seconds:
         session = ConsoleSession(_client(), "sys1", "lp1")
@@ -2465,8 +2470,8 @@ async def test_suspend_releases_through_eof():
         assert await session.suspend() is True
         assert await session.close() is True
 
-    assert process.eof.is_set()
-    assert release.await_count == 1
+    assert process.eof.is_set() and probe.eof.is_set()
+    release.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -2558,3 +2563,100 @@ async def test_resume_after_an_ended_stream_releases_through_eof_again():
 
     assert resumed.eof.is_set()
     assert release.await_count == 3
+
+
+# ---------------------------------------------------------------------------
+# The release probe's own teardown through stdin EOF (issue #1072)
+# ---------------------------------------------------------------------------
+
+
+_PROBE_EOF_TRANSCRIPT = json.loads(
+    (
+        Path(__file__).parents[1] / "fixtures" / "console" / "probe-eof-release-transcript.json"
+    ).read_text()
+)
+
+
+def test_probe_eof_transcript_records_teardown_without_rmvterm():
+    runs = {run["arm"]: run["events"] for run in _PROBE_EOF_TRANSCRIPT["runs"]}
+    assert set(runs) == {"cost", "race"}
+    for events in runs.values():
+        probes = [event for event in events if event["event"] == "probe"]
+        assert all(p["commands"] == ([] if p["mode"] == "eof" else ["rmvterm"]) for p in probes)
+        exits = [e["data"] for e in events if e["event"] == "P-stdout-chunk"]
+        assert exits.count(EXITED.decode()) == sum(p["mode"] == "eof" for p in probes)
+    race = {event["event"]: event for event in reversed(runs["race"])}  # first of each
+    assert race["B-acquired"]["t"] > race["P-stdout-eof"]["t"]
+    assert race["B-reads-after-probe"]["chunks"][-1] == "<timeout: B stream open and silent>"
+    assert race["C-probe"] == {**race["C-probe"], "released": False, "commands": []}
+    assert race["B-closed"] == {**race["B-closed"], "released": True, "commands": []}
+
+
+async def _probe(
+    *processes: FakeProcess, closed: bool = False
+) -> tuple[bool, AsyncMock, FakeConnection]:
+    connection = FakeConnection(list(processes))
+    connection.closed = closed
+    release = AsyncMock(return_value="Close command sent")
+    with (
+        patch("hmcpctl.ssh.console.open_hmc_connection", AsyncMock(return_value=connection)),
+        patch("hmcpctl.ssh.console.run_hmc_command", release),
+        patch("hmcpctl.ssh.console._RELEASE_PROBE_SECONDS", 0.2),
+    ):
+        released = await _probe_released(make_config(), "sys1", "lp1")
+    return released, release, connection
+
+
+@pytest.mark.asyncio
+async def test_release_probe_tears_down_through_eof_without_rmvterm():
+    process = EofProcess(BANNER)
+    released, release, connection = await _probe(process)
+
+    assert released is True
+    assert process.eof.is_set()
+    release.assert_not_awaited()
+    assert connection.closed is True
+
+
+@pytest.mark.asyncio
+async def test_release_probe_eof_timeout_falls_back_to_rmvterm():
+    released, release, _ = await _probe(FakeProcess(BANNER, None))
+
+    assert released is True
+    assert [call.args[1] for call in release.await_args_list] == ["rmvterm -m sys1 -p lp1"]
+
+
+@pytest.mark.asyncio
+async def test_release_probe_eof_read_error_falls_back_to_rmvterm():
+    released, release, _ = await _probe(EofProcess(BANNER, after_eof=(OSError("channel lost"),)))
+
+    assert released is True
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_release_probe_closed_connection_falls_back_to_rmvterm():
+    released, release, _ = await _probe(EofProcess(BANNER), closed=True)
+
+    assert released is True
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_release_probe_stream_ended_before_eof_uses_rmvterm():
+    # An end the probe did not ask for proves nothing about its hold (P3), as for the session.
+    released, release, _ = await _probe(FakeProcess(BANNER))
+
+    assert released is True
+    assert release.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_release_probe_lost_hold_during_eof_skips_rmvterm():
+    # Another client's rmvterm ended the probe's hold; the stream then stays silent (#1004).
+    split = len(LOST_HOLD_SENTINEL) // 2
+    process = FakeProcess(BANNER, LOST[:split], LOST[split:], None)
+    released, release, _ = await _probe(process)
+
+    assert released is True
+    release.assert_not_awaited()
