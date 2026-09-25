@@ -31,9 +31,17 @@ performs, mirroring the parsing rule ADR 0168 already applies to `AssociatedLogi
 
 Because that UUID is known only after the GET, the mapping document is now built inside
 `_rmw_vios_mapping`'s mutate step (after the VIOS element is fetched) rather than before the
-read-modify-write starts. A VIOS document carrying no `AssociatedManagedSystem` link fails
-the create closed, with no POST, the same fail-closed precedent ADR 0169 sets for a missing
-`ETag` or `VirtualSCSIMappings` collection.
+read-modify-write starts. `_rmw_vios_mapping`'s `mutate` callback gains a second parameter,
+`system_uuid: str | None`, read from the fetched VIOS's `AssociatedManagedSystem` link and
+passed to every caller's closure — `_rmw_vios_mapping` itself does not interpret it. Only the
+two create-side closures use it: each raises `HMCError` and never builds a document when it is
+`None`, giving both creates the same fail-closed shape ADR 0169 already gives a missing `ETag`
+or `VirtualSCSIMappings` collection, without adding that check to `_rmw_vios_mapping` itself.
+`delete_storage_mapping`'s `_detach_one` closure takes and ignores the parameter; a VIOS with
+no `AssociatedManagedSystem` link still detaches normally, unaffected by this decision.
+`lpar_uuid` and `storage_kind` keep their existing validation before the RMW GET runs, in
+`map_storage_to_lpar`/`create_optical_mapping` themselves; only the href, which needs
+`system_uuid`, is deferred into the mutate closure.
 
 The read side (`lpar_uuid_from_href`) is unchanged: it already accepts either href form.
 
@@ -42,10 +50,13 @@ The read side (`lpar_uuid_from_href`) is unchanged: it already accepts either hr
 `get_lpar_link` becomes a two-UUID call; nothing calls it before the RMW GET runs. The
 mapping-creation document text is built lazily by a closure passed to the shared append
 helper instead of once up front; `map_storage_to_lpar` and `create_optical_mapping` keep
-their existing public signatures. A VIOS whose grouped GET omits `AssociatedManagedSystem`
-(unobserved on real firmware, but not ruled out) makes both creates report a clear error
-instead of posting an href form. Test fixtures for the mapping RMW gain an
-`AssociatedManagedSystem` element to reflect real VIOS responses.
+their existing public signatures and their existing early `lpar_uuid`/`storage_kind`
+validation, unmoved. `_rmw_vios_mapping`'s two other callers, `delete_storage_mapping` and any
+future mutate closure, gain one ignorable parameter each. A VIOS whose grouped GET omits
+`AssociatedManagedSystem` (unobserved on real firmware, but not ruled out) makes both creates
+report a clear error instead of posting an href form; a detach against the same VIOS is
+unaffected. Test fixtures for the mapping RMW gain an `AssociatedManagedSystem` element to
+reflect real VIOS responses.
 
 ## Considered & rejected
 
