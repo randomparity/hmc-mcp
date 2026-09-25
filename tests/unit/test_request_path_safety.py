@@ -332,7 +332,7 @@ _UUID_PATH_BUILDERS = {
         "create_volume_group": ("vios_uuid",),
         "map_storage_to_lpar": ("vios_uuid",),
         "list_storage_mappings": ("vios_uuid",),
-        "delete_storage_mapping": ("vios_uuid", "system_uuid"),
+        "delete_storage_mapping": ("vios_uuid",),
         "_get_vg_raw_xml": ("vios_uuid", "vg_uuid"),
         "_post_vg_xml": ("vios_uuid", "vg_uuid"),
         "get_media_repository": ("vios_uuid", "vg_uuid"),
@@ -1190,10 +1190,12 @@ def test_every_governed_uom_segment_has_policy_evidence():
         for module, function, name, usage in sites
         if name in _UOM_SEGMENT_POLICIES and usage != "comparison"
     }
-    # These dispatch closures capture one parent-built path. Never lend their
+    # This dispatch closure captures one parent-built path. Never lend its
     # direct checks, or another nested function's metadata, to the parent.
+    # (delete_storage_mapping's detach RMW moved into the shared module-level
+    # `_rmw_vios_mapping` helper, ADR 0169 follow-up #1037, so it no longer
+    # builds its own dispatch closure or `post_path` here.)
     storage_dispatch_paths = {
-        "StorageMixin.delete_storage_mapping": "post_path",
         "StorageMixin._post_vg_xml": "path",
     }
     missing = []
@@ -1329,7 +1331,7 @@ def test_console_inventory_requires_its_own_bound_and_quote(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("function, binding", [
-    ("delete_storage_mapping", "post_path"), ("_post_vg_xml", "path"),
+    ("_post_vg_xml", "path"),
 ])
 def test_storage_dispatch_metadata_certifies_only_its_captured_path(
     tmp_path, monkeypatch, function, binding
