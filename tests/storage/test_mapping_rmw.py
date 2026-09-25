@@ -90,6 +90,11 @@ async def _detach(hmc: HMCClient) -> None:
     await hmc.delete_storage_mapping(VIOS_UUID, EXISTING_MAPPING_ID, EXISTING_MAPPING_LPAR)
 
 
+_parametrize_create = pytest.mark.parametrize(
+    "create", [_map, _mount], ids=["map_storage_to_lpar", "create_optical_mapping"]
+)
+
+
 @pytest.mark.asyncio
 async def test_detach_posts_grouped_url_under_if_match(mock_hmc):
     get, post = _routes(mock_hmc, _ok())
@@ -162,7 +167,7 @@ async def test_create_posts_existing_mappings_unchanged_under_if_match(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("create", [_map, _mount], ids=["map_storage_to_lpar", "create_optical_mapping"])
+@_parametrize_create
 async def test_create_fails_closed_without_associated_managed_system(mock_hmc, create):
     """No AssociatedManagedSystem on the fetched VIOS: no href to build, no POST (ADR 0179)."""
     _, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid=None)))
@@ -175,7 +180,7 @@ async def test_create_fails_closed_without_associated_managed_system(mock_hmc, c
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("create", [_map, _mount], ids=["map_storage_to_lpar", "create_optical_mapping"])
+@_parametrize_create
 async def test_create_fails_closed_with_malformed_associated_managed_system(mock_hmc, create):
     """A present but non-UUID AssociatedManagedSystem segment fails closed too."""
     _, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid="not-a-uuid")))
