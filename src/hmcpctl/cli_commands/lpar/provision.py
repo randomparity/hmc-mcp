@@ -38,12 +38,6 @@ def lpars_provision(
     vios_uuid: str = typer.Option(
         ..., "--vios-uuid", help="UUID of the VIOS for vSCSI / storage"
     ),
-    vios_partition_id: int = typer.Option(
-        ..., "--vios-partition-id", help="Numeric partition ID of the VIOS"
-    ),
-    vios_slot: int = typer.Option(
-        ..., "--vios-slot", help="Virtual slot number of the VIOS server adapter"
-    ),
     storage_name: str = typer.Option(
         ..., "--storage-name", help="VirtualDisk or PhysicalVolume name to map"
     ),
@@ -75,7 +69,7 @@ def lpars_provision(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI adapter, map storage, power on.
+    """Provision a new LPAR end-to-end: create, add network adapter, map storage, power on.
 
     Always validates preconditions first (name uniqueness, VLAN existence, volume-group existence).
     Pass --dry-run to run precondition checks only without creating anything.
@@ -102,7 +96,7 @@ def lpars_provision(
 
     request = ProvisionRequest(
         name=name,
-        adapters=ProvisionAdapters(port_vlan_id, vios_partition_id, vios_slot),
+        adapters=ProvisionAdapters(port_vlan_id),
         storage=ProvisionStorage(
             vios_uuid, storage_name, cast(StorageKind, storage_kind), vg_uuid
         ),

@@ -48,8 +48,6 @@ async def test_attach_disk_dry_run_validates_without_mutating() -> None:
         "existing-lpar",
         _storage(),
         capacity_mib=1024,
-        vios_partition_id=2,
-        vios_slot=10,
         dry_run=True,
     )
 
@@ -57,10 +55,9 @@ async def test_attach_disk_dry_run_validates_without_mutating() -> None:
         workflow_completed=False,
         lpar_uuid=LPAR_UUID,
         dry_run=True,
-            steps=(
-                WorkflowStep("create_disk", "dry_run"),
-                WorkflowStep("vscsi", "dry_run"),
-                WorkflowStep("storage", "dry_run"),
+        steps=(
+            WorkflowStep("create_disk", "dry_run"),
+            WorkflowStep("storage", "dry_run"),
         ),
         warnings=(),
     )
@@ -84,23 +81,19 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
         LPAR_UUID,
         _storage(),
         capacity_mib=1024,
-        vios_partition_id=2,
-        vios_slot=10,
     )
 
-    assert calls == ["create_disk", "vscsi", "storage"]
+    # The mapping makes the HMC create its own client/server adapter pair
+    # (ADR 0169), so no client adapter is added beforehand (#1030).
+    assert calls == ["create_disk", "storage"]
+    assert [step.step for step in result.steps] == ["create_disk", "storage"]
     assert result.workflow_completed is True
-    assert [step.status for step in result.steps] == ["ok", "ok", "ok"]
+    assert [step.status for step in result.steps] == ["ok", "ok"]
     assert result.steps[0].result == {
         "disk_name": "disk01",
         "capacity_mib": 1024,
     }
     assert result.steps[1].result == {
-        "lpar_uuid": LPAR_UUID,
-        "vios_partition_id": 2,
-        "vios_slot": 10,
-    }
-    assert result.steps[2].result == {
         "lpar_uuid": LPAR_UUID,
         "vios_uuid": VIOS_UUID,
         "storage_name": "disk01",
@@ -108,11 +101,11 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
 
 
 @pytest.mark.asyncio
-async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None:
+async def test_attach_disk_reports_a_failed_mapping_after_the_disk() -> None:
     from hmcpctl.errors import HMCError
 
     client = _client()
-    client.add_vscsi_adapter.side_effect = HMCError("adapter failed")
+    client.map_storage_to_lpar.side_effect = HMCError("mapping failed")
 
     result = await attach_disk_to_lpar(
         client,
@@ -120,13 +113,14 @@ async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None
         LPAR_UUID,
         _storage(),
         capacity_mib=1024,
-        vios_partition_id=2,
-        vios_slot=10,
     )
 
-    assert [step.status for step in result.steps] == ["ok", "error", "skipped"]
+    assert [(step.step, step.status) for step in result.steps] == [
+        ("create_disk", "ok"),
+        ("storage", "error"),
+    ]
     assert result.workflow_completed is False
-    client.map_storage_to_lpar.assert_not_awaited()
+    client.add_vscsi_adapter.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -140,8 +134,6 @@ async def test_attach_disk_rejects_invalid_capacity_before_mutating() -> None:
             LPAR_UUID,
             _storage(),
             capacity_mib=0,
-            vios_partition_id=2,
-            vios_slot=10,
         )
 
     client.create_virtual_disk.assert_not_awaited()
@@ -164,8 +156,6 @@ async def test_attach_disk_dry_run_makes_no_unclassified_call() -> None:
         "existing-lpar",
         _storage(),
         capacity_mib=1024,
-        vios_partition_id=2,
-        vios_slot=10,
         dry_run=True,
     )
 

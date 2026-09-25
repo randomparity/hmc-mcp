@@ -34,8 +34,9 @@ mapping until #879 shows what the HMC returns there. The detach path used to kee
 grouped-GET / If-Match sequence as a create, closing the lost-update gap this record already
 closed for creates. The HMC creates a new client/server adapter pair for each mapping, and a
 vSCSI adapter added beforehand is left without a server adapter. The `docs/cli.md` bootable-disk
-recipe no longer adds one. The provision and attach-disk workflows still do, which is left to a
-follow-up.
+recipe no longer adds one. The provision and attach-disk workflows stopped adding one in #1030,
+which removes ADR 0005's `vscsi` step and provision's nested `adapters.vios_partition_id`
+selector (ADR 0062).
 
 ## Considered & rejected
 

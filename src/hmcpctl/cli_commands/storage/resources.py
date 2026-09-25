@@ -155,8 +155,6 @@ def storage_attach_disk(
     capacity_mib: int = typer.Option(
         ..., "--capacity-mib", help="Disk capacity in MiB"
     ),
-    vios_id: int = typer.Option(..., "--vios-id", help="VIOS partition ID"),
-    vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server slot"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without mutation"),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -182,8 +180,6 @@ def storage_attach_disk(
             lpar,
             ProvisionStorage(vios, name, vg_uuid=vg),
             capacity_mib=capacity_mib,
-            vios_partition_id=vios_id,
-            vios_slot=vios_slot,
             dry_run=dry_run,
             ownership_override=ownership_override,
         )

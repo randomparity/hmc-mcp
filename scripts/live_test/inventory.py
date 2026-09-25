@@ -93,7 +93,7 @@ async def _capture_adapter_topology(client: Client, state: RunState) -> None:
         artifacts.lp3_baseline["cna_adapters"] = data
         _capture_cna_identifiers(data, artifacts.lp3_baseline)
 
-    # 7. vSCSI adapters — capture VIOS partition ID and VIOS server slot for ST14
+    # 7. vSCSI adapters — baseline topology
     st, data = await state.call(
         client,
         "hmc_list_adapters",
@@ -103,7 +103,6 @@ async def _capture_adapter_topology(client: Client, state: RunState) -> None:
     state.record(0, "hmc_list_adapters vSCSI (baseline)", st, data)
     if st == "PASS":
         artifacts.lp3_baseline["vscsi_adapters"] = data
-        _capture_vscsi_identifiers(data, artifacts.lp3_baseline)
 
 
 def _capture_cna_identifiers(data: object, baseline: dict[str, object]) -> None:
@@ -119,32 +118,6 @@ def _capture_cna_identifiers(data: object, baseline: dict[str, object]) -> None:
                 or 0
             )
             return
-
-
-def _capture_vscsi_identifiers(data: object, baseline: dict[str, object]) -> None:
-    """Store the first vSCSI adapter's VIOS partition and server-slot identity."""
-    for entry in entries(data):
-        resource = get_resource(entry)
-        vios_pid = (
-            resource.get("RemoteLogicalPartitionID")
-            or resource.get("remote_logical_partition_id")
-            or resource.get("ServerPartitionID")
-            or resource.get("server_partition_id")
-        )
-        server_adapter = resource.get("ServerAdapter") or {}
-        vios_slot = (
-            server_adapter.get("VirtualSlotNumber")
-            or server_adapter.get("virtual_slot_number")
-            or resource.get("RemoteSlotNumber")
-            or resource.get("remote_slot_number")
-            or resource.get("ServerAdapterID")
-            or resource.get("server_adapter_id")
-        )
-        if vios_pid is not None:
-            baseline["vios_partition_id"] = int(vios_pid)
-        if vios_slot is not None:
-            baseline["vios_slot"] = int(vios_slot)
-        return
 
 
 async def _capture_vios_identity(client: Client, state: RunState) -> None:
@@ -187,10 +160,7 @@ def _print_baseline_summary(state: RunState) -> None:
     print(
         f"  VIOS UUID: {artifacts.vios_uuid}  PartitionID: {artifacts.vios_partition_id}"
     )
-    print(
-        f"  lp3 PVID: {artifacts.lp3_baseline.get('pvid')}  "
-        f"vSCSI VIOS slot: {artifacts.lp3_baseline.get('vios_slot')}"
-    )
+    print(f"  lp3 PVID: {artifacts.lp3_baseline.get('pvid')}")
     print(f"  Baseline keys: {list(artifacts.lp3_baseline.keys())}")
 
 

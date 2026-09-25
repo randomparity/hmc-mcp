@@ -129,7 +129,8 @@ hmcpctl lpars power-on web01
 > **Note on the storage model**: an LPAR's vSCSI/vFC *adapter* is just
 > plumbing — it pairs the partition with a VIOS server slot. `storage map`
 > creates its own vSCSI client/server adapter pair, so do not run
-> `adapters add-vscsi` first; an adapter added that way is left unpaired. The
+> `adapters add-vscsi` first; an adapter added that way is left unpaired.
+> `lpars provision` and `storage attach-disk` rely on that pair too. The
 > actual *disk* lives on the VIOS or in a Shared
 > Storage Pool: carve it out of a Volume Group (`storage create-disk`) or a
 > Cluster/SSP (`cluster create-lu`), then connect it with a mapping
