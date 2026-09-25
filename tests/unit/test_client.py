@@ -1384,11 +1384,14 @@ async def test_create_volume_group(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_map_storage_to_lpar(mock_hmc):
+    system_uuid = "22222222-2222-2222-2222-222222222222"
     path = "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111?group=ViosSCSIMapping"
     vios = (
         '<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
         "<Metadata><Atom><AtomID>11111111-1111-1111-1111-111111111111</AtomID></Atom></Metadata>"
         '<PartitionUUID kb="ROO">11111111-1111-1111-1111-111111111111</PartitionUUID>'
+        f'<AssociatedManagedSystem kb="CUD" kxe="false" rel="related" '
+        f'href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/{system_uuid}"/>'
         "<VirtualSCSIMappings/></VirtualIOServer>"
     )
     mock_hmc.get(path).mock(return_value=httpx.Response(200, text=vios, headers={"ETag": "e1"}))
@@ -1401,7 +1404,7 @@ async def test_map_storage_to_lpar(mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body
-    assert f"LogicalPartition/{_PARENT_UUID}" in body
+    assert f"ManagedSystem/{system_uuid}/LogicalPartition/{_PARENT_UUID}" in body
 
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

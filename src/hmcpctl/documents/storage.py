@@ -108,8 +108,8 @@ def build_vscsi_mapping_document(
 
     storage_kind is "PhysicalVolume" (whole disk) or "VirtualDisk" (a logical
     volume from a VG). storage_name is the device/disk name (e.g. hdisk5 or
-    the DiskName). lpar_link is the Atom SELF href of the client LPAR the
-    storage is mapped to. target_device optionally pins the vtscsi name.
+    the DiskName). lpar_link is the system-scoped href of the client LPAR the
+    storage is mapped to (ADR 0179). target_device optionally pins the vtscsi name.
     """
     # storage_kind is the one caller value that becomes an element *name*
     # below, and escaping cannot make a name safe. This check, not the
@@ -140,8 +140,9 @@ def build_virtual_optical_mapping_document(
     VIOS's fetched mapping group rather than posting this document (ADR 0169).
 
     media_name is the MediaName of the VirtualOpticalMedia (ISO container) to mount.
-    lpar_link is the Atom SELF href of the client LPAR the optical media is mapped to.
-    target_device optionally pins the vtscsi name. This creates a read-only optical mapping.
+    lpar_link is the system-scoped href of the client LPAR the optical media is mapped
+    to (ADR 0179). target_device optionally pins the vtscsi name. This creates a
+    read-only optical mapping.
     """
     storage = f"""        <VirtualOpticalMedia schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>

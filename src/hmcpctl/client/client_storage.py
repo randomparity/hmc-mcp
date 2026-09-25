@@ -21,6 +21,7 @@ from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
 from ..documents import (
+    STORAGE_KINDS,
     StorageKind,
     build_virtual_disk_element,
     build_virtual_optical_mapping_document,
@@ -133,6 +134,21 @@ def lpar_uuid_from_href(href: object) -> str | None:
     return tail if marker and tail and "/" not in tail else None
 
 
+def _system_uuid_from_vios(vios_elem: ET.Element) -> str | None:
+    """The managed-system UUID from a fetched VIOS's own ``AssociatedManagedSystem`` link.
+
+    Mirrors :func:`lpar_uuid_from_href`'s parsing rule (ADR 0168) for the sibling
+    segment a mapping create's ``AssociatedLogicalPartition`` href must also carry
+    (ADR 0179): only the final path segment identifies the system.
+    """
+    link = vios_elem.find(f"{{{_UOM_NS}}}AssociatedManagedSystem")
+    href = link.get("href") if link is not None else None
+    if not isinstance(href, str):
+        return None
+    _, marker, tail = urlparse(href).path.rpartition("/ManagedSystem/")
+    return tail if marker and tail and "/" not in tail else None
+
+
 def _device_name(value: object) -> str | None:
     # element_to_dict yields {"@attrs": ..., "text": ...} for a leaf carrying
     # attributes it does not ignore; the name is its text either way.
@@ -229,12 +245,28 @@ def _disks_named(disks: ET.Element, disk_name: str) -> list[ET.Element]:
     ]
 
 
-def _append_mapping(mapping_document: str) -> Callable[[ET.Element], None]:
-    """A mutate callback that appends one parsed ``VirtualSCSIMapping`` (create)."""
+def _append_mapping(
+    operation: str, document_factory: Callable[[str], str]
+) -> Callable[[ET.Element, str | None], None]:
+    """A mutate callback that appends one parsed ``VirtualSCSIMapping`` (create).
 
-    def _mutate(mappings: ET.Element) -> None:
+    ``document_factory`` builds the mapping document from the managed-system UUID
+    observed on the fetched VIOS (ADR 0179); it runs only once that UUID is known,
+    which is why the document is built here rather than before the RMW GET. A VIOS
+    response carrying no ``AssociatedManagedSystem`` link fails the create closed,
+    before any POST.
+    """
+
+    def _mutate(mappings: ET.Element, system_uuid: str | None) -> None:
+        if system_uuid is None:
+            raise HMCError(
+                f"{operation}: VIOS has no AssociatedManagedSystem link; refusing to "
+                "build a mapping's client-LPAR href without a managed-system UUID"
+            )
         mappings.append(
-            DET.fromstring(mapping_document).find(f".//{{{_UOM_NS}}}VirtualSCSIMapping")
+            DET.fromstring(document_factory(system_uuid)).find(
+                f".//{{{_UOM_NS}}}VirtualSCSIMapping"
+            )
         )
 
     return _mutate
@@ -245,17 +277,18 @@ async def _rmw_vios_mapping(
     operation: str,
     path: str,
     uuid_path_arguments: Mapping[str, str],
-    mutate: Callable[[ET.Element], None],
+    mutate: Callable[[ET.Element, str | None], None],
 ) -> str:
     """Read-modify-write the VIOS ``ViosSCSIMapping`` group under If-Match (ADR 0169).
 
     Fetches the grouped document, refuses before any POST when the GET has no
     ``ETag`` or no ``VirtualSCSIMappings`` collection, hands ``mutate`` the fetched
-    collection to change in place (append a new mapping for a create, remove one for
-    a detach), then posts the whole VIOS element back under the GET's ``ETag`` so
-    the write never replaces mappings ``mutate`` did not touch. A 412 means the VIOS
-    changed since the GET; nothing is written, and it is reported as a concurrent
-    change rather than retried.
+    collection (and the VIOS's own managed-system UUID, ADR 0179) to change in place
+    (append a new mapping for a create, remove one for a detach), then posts the
+    whole VIOS element back under the GET's ``ETag`` so the write never replaces
+    mappings ``mutate`` did not touch. A 412 means the VIOS changed since the GET;
+    nothing is written, and it is reported as a concurrent change rather than
+    retried.
     """
     vios_uuid = uuid_path_arguments["vios_uuid"]
     got = await client._request_with_uuid_path_arguments(
@@ -289,7 +322,7 @@ async def _rmw_vios_mapping(
             200,
             got.text[:500],
         )
-    mutate(mappings)
+    mutate(mappings, _system_uuid_from_vios(vios_elem))
 
     async def dispatch() -> str:
         response = await client._request_with_uuid_path_arguments(
@@ -407,10 +440,14 @@ class StorageMixin:
             )
 
     # Virtual storage (children of VirtualIOServer)
-    def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
-        """Atom SELF href for an LPAR (used when building mappings)."""
+    def get_lpar_link(self: StorageClient, system_uuid: str, lpar_uuid: str) -> str:
+        """System-scoped href for an LPAR (used when building mappings, ADR 0179)."""
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
         _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
-        return f"{self._rest_base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
+        return (
+            f"{self._rest_base_url}/rest/api/uom/ManagedSystem/{system_uuid}"
+            f"/LogicalPartition/{lpar_uuid}"
+        )
 
     async def _reconcile_storage_mutation(
         self: StorageClient,
@@ -568,17 +605,31 @@ class StorageMixin:
         logical volume created with create_virtual_disk). storage_name is the
         device or disk name. lpar_uuid is the client partition to attach to.
         The HMC creates the client/server adapter pair for the mapping, and the
-        VIOS's existing mappings are preserved (ADR 0169).
+        VIOS's existing mappings are preserved (ADR 0169). The mapping document is
+        built system-scoped from the managed-system UUID observed on the grouped
+        VIOS GET this read-modify-write performs (ADR 0179), so lpar_uuid and
+        storage_kind are validated here, before that GET.
         """
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
+        if storage_kind not in STORAGE_KINDS:
+            raise ValueError(
+                f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"
+            )
 
-        lpar_link = self.get_lpar_link(lpar_uuid)
-        xml = build_vscsi_mapping_document(
-            storage_kind, storage_name, lpar_link, target_device=target_device
-        )
+        def _document(system_uuid: str) -> str:
+            lpar_link = self.get_lpar_link(system_uuid, lpar_uuid)
+            return build_vscsi_mapping_document(
+                storage_kind, storage_name, lpar_link, target_device=target_device
+            )
+
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
         resp = await _rmw_vios_mapping(
-            self, "map_storage_to_lpar", path, {"vios_uuid": vios_uuid}, _append_mapping(xml)
+            self,
+            "map_storage_to_lpar",
+            path,
+            {"vios_uuid": vios_uuid},
+            _append_mapping("map_storage_to_lpar", _document),
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -643,7 +694,10 @@ class StorageMixin:
         ET.register_namespace("atom", _ATOM_NS)
         not_found = f"Storage mapping {mapping_id!r} not found on VIOS {vios_uuid!r}"
 
-        def _detach_one(mappings: ET.Element) -> None:
+        def _detach_one(mappings: ET.Element, _system_uuid: str | None) -> None:
+            # A detach never builds a client-LPAR href, so it has no use for the
+            # managed-system UUID _rmw_vios_mapping passes every mutate callback
+            # (ADR 0179); a VIOS with no AssociatedManagedSystem link still detaches.
             matches = [
                 (mapping, parsed)
                 for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
@@ -1161,13 +1215,22 @@ class StorageMixin:
         lpar_uuid: str,
         target_device: str | None = None,
     ) -> dict[str, Any] | None:
-        """Create an optical-media mapping and return its response entry, if any."""
-        lpar_link = self.get_lpar_link(lpar_uuid)
-        document = build_virtual_optical_mapping_document(
-            media_name,
-            lpar_link,
-            target_device=target_device,
-        )
+        """Create an optical-media mapping and return its response entry, if any.
+
+        The mapping document is built system-scoped from the managed-system UUID
+        observed on the grouped VIOS GET this read-modify-write performs (ADR 0179),
+        so lpar_uuid is validated here, before that GET.
+        """
+        _reject_non_uuid_path_argument("lpar_uuid", lpar_uuid)
+
+        def _document(system_uuid: str) -> str:
+            lpar_link = self.get_lpar_link(system_uuid, lpar_uuid)
+            return build_virtual_optical_mapping_document(
+                media_name,
+                lpar_link,
+                target_device=target_device,
+            )
+
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
         response = await _rmw_vios_mapping(
@@ -1175,7 +1238,7 @@ class StorageMixin:
             "create_optical_mapping",
             path,
             {"vios_uuid": vios_uuid},
-            _append_mapping(document),
+            _append_mapping("create_optical_mapping", _document),
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None

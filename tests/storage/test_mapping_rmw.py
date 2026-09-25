@@ -19,6 +19,7 @@ from hmcpctl.errors import HMCError
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 VIOS_UUID = "00000000-0000-4000-8000-000000000003"
 LPAR_UUID = "00000000-0000-4000-8000-0000000000BB"
+SYSTEM_UUID = "00000000-0000-4000-8000-000000000004"
 PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
 OBSERVED = (
     Path(__file__).with_name("vscsi_mapping_v10r3.xml").read_text(encoding="utf-8")
@@ -26,11 +27,26 @@ OBSERVED = (
 OBSERVED_MAPPINGS = OBSERVED[OBSERVED.index("<VirtualSCSIMappings") :]
 
 
-def vios_entry(mappings: str = OBSERVED_MAPPINGS, uuid: str = VIOS_UUID) -> str:
+def vios_entry(
+    mappings: str = OBSERVED_MAPPINGS,
+    uuid: str = VIOS_UUID,
+    system_uuid: str | None = SYSTEM_UUID,
+) -> str:
+    """The observed V10R3 VIOS shape (#979): AssociatedManagedSystem beside PartitionUUID.
+
+    ``system_uuid=None`` omits that link, for the create-fails-closed case (ADR 0179).
+    """
+    system_link = (
+        f'<AssociatedManagedSystem kb="CUD" kxe="false" rel="related" '
+        f'href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/{system_uuid}"/>'
+        if system_uuid is not None
+        else ""
+    )
     return f"""<entry xmlns="http://www.w3.org/2005/Atom"><content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom><AtomID>{uuid}</AtomID></Atom></Metadata>
         <PartitionUUID kb="ROO">{uuid}</PartitionUUID>
+        {system_link}
         {mappings}
       </VirtualIOServer></content></entry>"""
 
@@ -139,7 +155,34 @@ async def test_create_posts_existing_mappings_unchanged_under_if_match(
     ]
     assert new.find(f"{{{UOM_NS}}}Storage/{{{UOM_NS}}}{storage}") is not None
     link = new.find(f"{{{UOM_NS}}}AssociatedLogicalPartition").get("href")
-    assert link.endswith(f"/LogicalPartition/{LPAR_UUID}")
+    assert link == (
+        f"https://hmc.test/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
+        f"/LogicalPartition/{LPAR_UUID}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("create", [_map, _mount], ids=["map_storage_to_lpar", "create_optical_mapping"])
+async def test_create_fails_closed_without_associated_managed_system(mock_hmc, create):
+    """No AssociatedManagedSystem on the fetched VIOS: no href to build, no POST (ADR 0179)."""
+    _, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid=None)))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="AssociatedManagedSystem"):
+            await create(hmc)
+
+    assert not post.called
+
+
+@pytest.mark.asyncio
+async def test_detach_unaffected_without_associated_managed_system(mock_hmc):
+    """A detach never builds a client-LPAR href, so a missing link doesn't block it."""
+    get, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid=None)))
+
+    async with HMCClient(make_config()) as hmc:
+        await _detach(hmc)
+
+    assert get.call_count == 1 and post.call_count == 1
 
 
 @pytest.mark.asyncio

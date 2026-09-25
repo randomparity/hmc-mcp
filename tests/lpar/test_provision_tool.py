@@ -149,6 +149,8 @@ VIOS_MAPPINGS_ENTRY = f"""<VirtualIOServer
   xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
   <Metadata><Atom><AtomID>{VIOS_UUID}</AtomID></Atom></Metadata>
   <PartitionUUID kb="ROO">{VIOS_UUID}</PartitionUUID>
+  <AssociatedManagedSystem kb="CUD" kxe="false" rel="related"
+    href="https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
   <VirtualSCSIMappings/>
 </VirtualIOServer>"""
 

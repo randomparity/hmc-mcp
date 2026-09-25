@@ -47,7 +47,10 @@ The read side (`lpar_uuid_from_href`) is unchanged: it already accepts either hr
 
 ## Consequences
 
-`get_lpar_link` becomes a two-UUID call; nothing calls it before the RMW GET runs. The
+`get_lpar_link` becomes a two-UUID call, so its `StorageClient` Protocol stub
+(`client_contracts.py`) and the pre-existing unit tests calling it under the one-argument
+form (`tests/unit/test_request_path_safety.py`, `tests/unit/test_client_domain_mixins.py`)
+change with it. Nothing calls it before the RMW GET runs. The
 mapping-creation document text is built lazily by a closure passed to the shared append
 helper instead of once up front; `map_storage_to_lpar` and `create_optical_mapping` keep
 their existing public signatures and their existing early `lpar_uuid`/`storage_kind`
