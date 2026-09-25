@@ -820,6 +820,54 @@ class TestDescriptionBaselineRestore:
         assert "MANUAL RECOVERY REQUIRED" in row["data"]
         assert "chsyscfg -r lpar" in row["data"]
 
+    @pytest.mark.asyncio
+    async def test_an_absent_baseline_key_fails_with_a_manual_recovery_row(self) -> None:
+        """No ST0 baseline was ever recorded for this key (e.g. a resumed results
+        file that never captured it) — distinct from a baseline that was really
+        empty, which restores normally (#1038)."""
+        state = _ScriptedSriovState([])
+        assert "description" not in state.artifacts.lp3_baseline
+
+        await lpar._restore_description(object(), state, 10)
+
+        assert state.calls == []
+        row = state.results[-1]
+        assert (row["tool"], row["status"]) == (
+            "hmc_set_lpar_description (restore)",
+            "FAIL",
+        )
+        assert "MANUAL RECOVERY REQUIRED" in row["data"]
+        assert "never captured" in row["data"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_st0_read_leaves_the_key_absent_and_fails_restore(
+        self,
+    ) -> None:
+        state = _ScriptedSriovState(
+            [
+                ("hmc_get_lpar", "PASS", {"uuid": "lp3-uuid"}),
+                ("hmc_lpar_summary", "PASS", {}),
+                ("hmc_get_lpar_description", "FAIL", {"error": "timeout"}),
+                ("hmc_get_lpar_msp", "PASS", {}),
+                ("hmc_get_lpar_proc_compat", "PASS", {}),
+            ]
+        )
+
+        await inventory._capture_lpar_properties(object(), state)
+        assert "description" not in state.artifacts.lp3_baseline
+
+        calls_before = len(state.calls)
+        await lpar._restore_description(object(), state, 15)
+
+        assert len(state.calls) == calls_before
+        row = state.results[-1]
+        assert (row["tool"], row["status"]) == (
+            "hmc_set_lpar_description (restore)",
+            "FAIL",
+        )
+        assert "MANUAL RECOVERY REQUIRED" in row["data"]
+        assert "never captured" in row["data"]
+
 
 @pytest.mark.asyncio
 async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() -> None:
