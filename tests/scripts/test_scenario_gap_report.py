@@ -33,6 +33,13 @@ OPERATIONS = [
     {"operation": "lpar.get", "tool": "hmc_get_lpar", "row_ids": ["rest:a", "rest:b"]},
 ]
 ROWS = ["rest:a", "rest:b", "cli:c"]
+ROOTS = {("m", "s")}
+
+
+def _report(source: str, schemas=SCHEMAS) -> list[str]:
+    """The report for one synthetic module ``m`` whose registered scenario is ``s``."""
+    scan = report.scan_source(source, "m.py", "m")
+    return report.build_report([scan], ROOTS, OPERATIONS, ROWS, schemas)
 
 
 def test_scan_reads_dispatches_operations_and_unreadable_sites():
@@ -45,12 +52,12 @@ def test_scan_reads_dispatches_operations_and_unreadable_sites():
         "    state.record_verified(1, 't', operation=name)\n"
     )
 
-    scan = report.scan_source(source, "m.py")
+    scan = report.scan_source(source, "m.py", "m")
 
     assert scan.dispatches == (
-        report.Dispatch("m.py:2", "hmc_list_lpars", ("system",)),
+        report.Dispatch("m.py:2", "scenario", "hmc_list_lpars", ("system",)),
     )
-    assert scan.verified == (("m.py:5", "lpar.get"),)
+    assert scan.verified == (report.Verified("m.py:5", "scenario", "lpar.get"),)
     assert scan.unreadable == (
         "m.py:3 dispatch with a non-literal tool or a ** splat",
         "m.py:4 dispatch with a non-literal tool or a ** splat",
@@ -59,12 +66,9 @@ def test_scan_reads_dispatches_operations_and_unreadable_sites():
 
 
 def test_report_lists_uncovered_operations_and_rows():
-    scan = report.scan_source(
-        'async def s(client, state):\n    await state.call(client, "hmc_list_lpars")\n',
-        "m.py",
+    lines = _report(
+        'async def s(client, state):\n    await state.call(client, "hmc_list_lpars")\n'
     )
-
-    lines = report.build_report([scan], OPERATIONS, ROWS, SCHEMAS)
 
     assert lines == [
         "uncovered-operation: lpar.get",
@@ -72,33 +76,28 @@ def test_report_lists_uncovered_operations_and_rows():
         "uncovered-row: rest:b",
         (
             "summary: 1 dispatches; operations 1/2 exercised; rows 1/3 exercised; "
-            "0 unregistered; 0 dispatch mismatches; 0 unreadable"
+            "0 departed; 0 unregistered; 0 dispatch mismatches; 0 unreadable"
         ),
     ]
 
 
 def test_record_verified_operation_counts_as_exercised():
-    scan = report.scan_source(
-        'def s(state):\n    state.record_verified(1, "t", operation="lpar.get")\n',
-        "m.py",
+    lines = _report(
+        'def s(state):\n    state.record_verified(1, "t", operation="lpar.get")\n'
     )
-
-    lines = report.build_report([scan], OPERATIONS, ROWS, SCHEMAS)
 
     assert "uncovered-operation: lpar.get" not in lines
     assert "uncovered-row: rest:b" not in lines
 
 
-def test_report_lists_scenarios_that_left_the_registry():
+def test_report_lists_operations_that_left_the_registry():
     source = (
         "async def s(client, state):\n"
         '    await state.call(client, "hmc_removed_tool")\n'
         '    state.record_verified(1, "t", operation="lpar.removed")\n'
     )
 
-    lines = report.build_report(
-        [report.scan_source(source, "m.py")], OPERATIONS, ROWS, SCHEMAS
-    )
+    lines = _report(source)
 
     assert "unregistered: m.py:2 tool hmc_removed_tool" in lines
     assert not [line for line in lines if line.startswith("dispatch-mismatch:")]
@@ -111,11 +110,7 @@ def test_a_served_tool_missing_from_the_ledger_is_unregistered():
         'async def s(client, state):\n    await state.call(client, "hmc_new_tool")\n'
     )
 
-    lines = report.build_report(
-        [report.scan_source(source, "m.py")], OPERATIONS, ROWS, schemas
-    )
-
-    assert "unregistered: m.py:2 tool hmc_new_tool" in lines
+    assert "unregistered: m.py:2 tool hmc_new_tool" in _report(source, schemas)
 
 
 def test_report_lists_unknown_and_missing_required_arguments():
@@ -124,9 +119,7 @@ def test_report_lists_unknown_and_missing_required_arguments():
         '    await state.call(client, "hmc_get_lpar", system="s", bogus=1)\n'
     )
 
-    lines = report.build_report(
-        [report.scan_source(source, "m.py")], OPERATIONS, ROWS, SCHEMAS
-    )
+    lines = _report(source)
 
     assert [line for line in lines if line.startswith("dispatch-mismatch:")] == [
         "dispatch-mismatch: m.py:2 hmc_get_lpar: unknown argument bogus",
@@ -134,8 +127,48 @@ def test_report_lists_unknown_and_missing_required_arguments():
     ]
 
 
+def test_report_lists_scenarios_that_left_the_registry():
+    """A function no registered scenario reaches, directly or through a helper."""
+    scenario = (
+        "from . import helpers\n"
+        "from .helpers import shared as reused\n"
+        "async def s(client, state):\n"
+        "    await helpers.listing(client, state)\n"
+        "    await reused(client, state)\n"
+        "    await local(client, state)\n"
+        "async def local(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars")\n'
+        "async def dropped(client, state):\n"
+        '    await state.call(client, "hmc_get_lpar", lpar="x")\n'
+        '    state.record_verified(1, "t", operation="lpar.get")\n'
+    )
+    helpers = (
+        "async def listing(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars")\n'
+        "async def shared(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars", system="s")\n'
+        "async def orphan(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars")\n'
+    )
+    scans = [
+        report.scan_source(scenario, "m.py", "m"),
+        report.scan_source(helpers, "helpers.py", "helpers"),
+    ]
+
+    lines = report.build_report(scans, ROOTS, OPERATIONS, ROWS, SCHEMAS)
+
+    assert [line for line in lines if line.startswith("departed:")] == [
+        "departed: m.py:10 dropped dispatches hmc_get_lpar",
+        "departed: m.py:11 dropped records lpar.get",
+        "departed: helpers.py:6 orphan dispatches hmc_list_lpars",
+    ]
+    assert "uncovered-operation: lpar.get" in lines
+    assert "uncovered-operation: lpar.list" not in lines
+    assert report.exit_status(lines, fail_on_dispatch=True) == 0
+
+
 def test_exit_status_fails_only_on_dispatch_findings_under_the_flag():
-    clean = ["uncovered-row: cli:c", "summary: ..."]
+    clean = ["uncovered-row: cli:c", "departed: m.py:2 x", "summary: ..."]
 
     for prefix in ("unregistered:", "dispatch-mismatch:", "unreadable:"):
         failing = [*clean, f"{prefix} m.py:2 x"]

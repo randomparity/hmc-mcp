@@ -5,8 +5,9 @@ Usage:
     python scripts/scenario_gap_report.py --fail-on-dispatch  # exit 1 on a dispatch finding
 
 Joins ``docs/capabilities/operations.json`` and ``rows.json`` to the scenario
-modules behind the runner's ``SUBTASKS`` registry, and checks each scenario
-dispatch against the input schema the composed MCP application serves. Offline
+functions the runner's ``SUBTASKS`` registry reaches, names the dispatches of
+functions it no longer reaches, and checks each registered dispatch against the
+input schema the composed MCP application serves. Offline
 and read-only: no HMC credential is needed and nothing is written.
 """
 
@@ -15,7 +16,6 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
-import inspect
 import json
 import sys
 from collections.abc import Iterable, Mapping, Sequence
@@ -33,6 +33,7 @@ from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CAPABILITIES = _REPO_ROOT / "docs" / "capabilities"
+_SCENARIO_PACKAGE = _REPO_ROOT / "scripts" / "live_test"
 # Keyword arguments `RunState.call` consumes itself; they never reach the tool.
 _RUNNER_KEYWORDS = frozenset({"expected", "reuse_gaps"})
 _DISPATCH_PREFIXES = ("unregistered:", "dispatch-mismatch:", "unreadable:")
@@ -40,20 +41,40 @@ _DISPATCH_PREFIXES = ("unregistered:", "dispatch-mismatch:", "unreadable:")
 
 @dataclass(frozen=True)
 class Dispatch:
-    """One ``call(client, "<tool>", ...)`` site: where, which tool, which keywords."""
+    """One ``call(client, "<tool>", ...)`` site and the top-level function holding it."""
 
     site: str
+    function: str
     tool: str
     arguments: tuple[str, ...]
 
 
 @dataclass(frozen=True)
-class Scan:
-    """What one scenario module dispatches and names, plus what could not be read."""
+class Verified:
+    """One ``record_verified(..., operation="<id>")`` site."""
 
+    site: str
+    function: str
+    operation: str
+
+
+@dataclass(frozen=True)
+class Scan:
+    """One scenario-package module: what it dispatches, names, and references.
+
+    ``references`` maps each top-level function or class to the ``(module, name)``
+    pairs its body names, which is what decides whether a registered scenario
+    reaches it.
+    """
+
+    module: str
     dispatches: tuple[Dispatch, ...]
-    verified: tuple[tuple[str, str], ...]
+    verified: tuple[Verified, ...]
     unreadable: tuple[str, ...]
+    references: Mapping[str, frozenset[tuple[str, str]]]
+
+
+_DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
 def _literal(node: ast.expr | None) -> str | None:
@@ -62,20 +83,59 @@ def _literal(node: ast.expr | None) -> str | None:
     return None
 
 
-def scan_source(source: str, label: str) -> Scan:
-    """Read every dispatch and ``record_verified`` operation in one module's source."""
+def _references(
+    definition: ast.AST,
+    module: str,
+    local: set[str],
+    imported: Mapping[str, tuple[str, str]],
+    packages: Mapping[str, str],
+) -> frozenset[tuple[str, str]]:
+    """The package-level names one definition's body mentions, resolved to a module."""
+    found: set[tuple[str, str]] = set()
+    for node in ast.walk(definition):
+        if isinstance(node, ast.Name) and node.id in local:
+            found.add((module, node.id))
+        elif isinstance(node, ast.Name) and node.id in imported:
+            found.add(imported[node.id])
+        elif (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in packages
+        ):
+            found.add((packages[node.value.id], node.attr))
+    return frozenset(found)
+
+
+def scan_source(source: str, label: str, module: str) -> Scan:
+    """Read every dispatch, ``record_verified`` operation and reference in a module."""
+    tree = ast.parse(source)
+    imported: dict[str, tuple[str, str]] = {}
+    packages: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.level == 1:
+            for alias in node.names:
+                if node.module is None:
+                    packages[alias.asname or alias.name] = alias.name
+                else:
+                    imported[alias.asname or alias.name] = (node.module, alias.name)
+    definitions = [node for node in tree.body if isinstance(node, _DEFINITIONS)]
+    local = {definition.name for definition in definitions}
     dispatches: list[Dispatch] = []
-    verified: list[tuple[str, str]] = []
+    verified: list[Verified] = []
     unreadable: list[str] = []
     calls = sorted(
-        (node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call)),
-        key=lambda node: (node.lineno, node.col_offset),
+        (
+            (definition.name, node)
+            for definition in definitions
+            for node in ast.walk(definition)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        ),
+        key=lambda pair: (pair[1].lineno, pair[1].col_offset),
     )
-    for node in calls:
-        if not isinstance(node.func, ast.Attribute):
-            continue
+    for function, node in calls:
         site = f"{label}:{node.lineno}"
-        if node.func.attr == "call":
+        attribute = node.func.attr if isinstance(node.func, ast.Attribute) else ""
+        if attribute == "call":
             tool = _literal(node.args[1] if len(node.args) > 1 else None)
             names = [kw.arg for kw in node.keywords if kw.arg not in _RUNNER_KEYWORDS]
             if tool is None or None in names:
@@ -83,8 +143,9 @@ def scan_source(source: str, label: str) -> Scan:
                     f"{site} dispatch with a non-literal tool or a ** splat"
                 )
                 continue
-            dispatches.append(Dispatch(site, tool, tuple(n for n in names if n)))
-        elif node.func.attr == "record_verified":
+            arguments = tuple(name for name in names if name)
+            dispatches.append(Dispatch(site, function, tool, arguments))
+        elif attribute == "record_verified":
             operation = next(
                 (kw.value for kw in node.keywords if kw.arg == "operation"), None
             )
@@ -92,26 +153,63 @@ def scan_source(source: str, label: str) -> Scan:
             if name is None:
                 unreadable.append(f"{site} record_verified without a literal operation")
                 continue
-            verified.append((site, name))
-    return Scan(tuple(dispatches), tuple(verified), tuple(unreadable))
+            verified.append(Verified(site, function, name))
+    references = {
+        definition.name: _references(definition, module, local, imported, packages)
+        for definition in definitions
+    }
+    return Scan(
+        module, tuple(dispatches), tuple(verified), tuple(unreadable), references
+    )
+
+
+def registered_definitions(
+    scans: Iterable[Scan], roots: Iterable[tuple[str, str]]
+) -> set[tuple[str, str]]:
+    """Every definition a registered scenario reaches through the names it mentions."""
+    graph = {
+        (scan.module, name): references
+        for scan in scans
+        for name, references in scan.references.items()
+    }
+    reached: set[tuple[str, str]] = set()
+    pending = list(roots)
+    while pending:
+        node = pending.pop()
+        if node not in reached:
+            reached.add(node)
+            pending.extend(graph.get(node, ()))
+    return reached
 
 
 def build_report(
     scans: Sequence[Scan],
+    roots: Iterable[tuple[str, str]],
     operations: Sequence[Mapping[str, Any]],
     row_ids: Iterable[str],
     schemas: Mapping[str, Mapping[str, Any]],
 ) -> list[str]:
-    """Every finding as one prefixed line, followed by one ``summary:`` line."""
+    """Every finding as one prefixed line, followed by one ``summary:`` line.
+
+    ``roots`` are the ``(module, function)`` pairs the ``SUBTASKS`` registry names.
+    """
     by_tool = {entry["tool"]: entry["operation"] for entry in operations}
     known = {entry["operation"] for entry in operations}
+    registered = registered_definitions(scans, roots)
     exercised: set[str] = set()
+    departed: list[str] = []
     unregistered: list[str] = []
     mismatches: list[str] = []
     unreadable: list[str] = []
     for scan in scans:
         unreadable += [f"unreadable: {item}" for item in scan.unreadable]
         for dispatch in scan.dispatches:
+            if (scan.module, dispatch.function) not in registered:
+                departed.append(
+                    f"departed: {dispatch.site} {dispatch.function} "
+                    f"dispatches {dispatch.tool}"
+                )
+                continue
             if dispatch.tool not in schemas or dispatch.tool not in by_tool:
                 unregistered.append(
                     f"unregistered: {dispatch.site} tool {dispatch.tool}"
@@ -124,11 +222,18 @@ def build_report(
                     dispatch.tool, dispatch.arguments, schemas
                 )
             ]
-        for site, operation in scan.verified:
-            if operation in known:
-                exercised.add(operation)
+        for record in scan.verified:
+            if (scan.module, record.function) not in registered:
+                departed.append(
+                    f"departed: {record.site} {record.function} "
+                    f"records {record.operation}"
+                )
+            elif record.operation in known:
+                exercised.add(record.operation)
             else:
-                unregistered.append(f"unregistered: {site} operation {operation}")
+                unregistered.append(
+                    f"unregistered: {record.site} operation {record.operation}"
+                )
     covered_rows = {
         row
         for entry in operations
@@ -142,12 +247,13 @@ def build_report(
         f"summary: {sum(len(scan.dispatches) for scan in scans)} dispatches; "
         f"operations {len(known) - len(uncovered_operations)}/{len(known)} "
         f"exercised; rows {len(all_rows) - len(uncovered_rows)}/{len(all_rows)} "
-        f"exercised; {len(unregistered)} unregistered; "
+        f"exercised; {len(departed)} departed; {len(unregistered)} unregistered; "
         f"{len(mismatches)} dispatch mismatches; {len(unreadable)} unreadable"
     )
     return [
         *(f"uncovered-operation: {name}" for name in uncovered_operations),
         *(f"uncovered-row: {row}" for row in uncovered_rows),
+        *departed,
         *unregistered,
         *mismatches,
         *unreadable,
@@ -177,14 +283,23 @@ async def served_schemas() -> dict[str, dict[str, Any]]:
 
 
 def scenario_scans() -> list[Scan]:
-    """Scan each module that defines a registered ``SUBTASKS`` scenario."""
-    paths = sorted(
-        {Path(inspect.getfile(task)) for task in live_test_runner.SUBTASKS.values()}
-    )
+    """Scan every module of the scenario package, registered or not."""
     return [
-        scan_source(path.read_text(encoding="utf-8"), str(path.relative_to(_REPO_ROOT)))
-        for path in paths
+        scan_source(
+            path.read_text(encoding="utf-8"),
+            str(path.relative_to(_REPO_ROOT)),
+            path.stem,
+        )
+        for path in sorted(_SCENARIO_PACKAGE.glob("*.py"))
     ]
+
+
+def scenario_roots() -> set[tuple[str, str]]:
+    """The ``(module, function)`` pair of every ``SUBTASKS`` entry."""
+    return {
+        (task.__module__.rsplit(".", 1)[-1], task.__name__)
+        for task in live_test_runner.SUBTASKS.values()
+    }
 
 
 def _load(name: str, key: str) -> list[Any]:
@@ -202,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     lines = build_report(
         scenario_scans(),
+        scenario_roots(),
         _load("operations.json", "operations"),
         (row["id"] for row in _load("rows.json", "rows")),
         asyncio.run(served_schemas()),
