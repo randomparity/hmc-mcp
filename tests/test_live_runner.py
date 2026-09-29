@@ -36,6 +36,7 @@ from hmcpctl.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
+import scenario_gap_report  # noqa: E402
 from live_test import (  # noqa: E402
     bare_cec,
     connectivity,
@@ -2850,49 +2851,26 @@ def test_live_runner_contains_no_executable_optmem_command():
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
-def _dispatched_calls(
-    source: str,
-) -> list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]]:
-    """Every ``call`` dispatch in ``source``: its line, tool name and arguments.
+def _dispatch_sites(source: str) -> list[scenario_gap_report.DispatchSite]:
+    """Every ``call`` dispatch in ``source``, from the gap report's enumerator.
 
-    Each argument is its keyword name paired with the expression node supplying
-    it, so a caller can check the *type* a site passes and not only the name.
-
-    A dispatch whose tool argument is not a string literal cannot be read here,
-    and skipping it would silently shrink the guard's coverage, so it fails
-    instead. A ``**mapping`` splat yields ``None`` in place of a keyword name:
-    reporting that as one problem, rather than raising on it, is what lets the
-    caller finish enumerating every other site in the tree.
+    Each site pairs its keyword names with the expression nodes supplying them, so
+    a caller can check the *type* a site passes and not only the name. A site the
+    enumerator marks unreadable is kept, never skipped: skipping it would silently
+    shrink the guard's coverage.
     """
-    dispatches: list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]] = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        if not (isinstance(node.func, ast.Attribute) and node.func.attr == "call"):
-            continue
-        tool = node.args[1] if len(node.args) > 1 else None
-        if not (isinstance(tool, ast.Constant) and isinstance(tool.value, str)):
-            raise AssertionError(  # noqa: TRY004 - AssertionError is this guard's contract, asserted at tests/test_live_runner.py:630
-                f"line {node.lineno}: call() dispatches a tool name this guard "
-                "cannot read — pass a string literal"
-            )
-        dispatches.append(
-            (
-                node.lineno,
-                tool.value,
-                tuple(
-                    (keyword.arg, keyword.value)
-                    for keyword in node.keywords
-                    if keyword.arg not in {"expected", "reuse_gaps"}
-                ),
-            )
-        )
-    return dispatches
+    return scenario_gap_report.dispatch_sites(ast.parse(source))
 
 
 def _dispatched_tool_names(source: str) -> set[str]:
     """Every tool name ``source`` hands to the runner's ``call`` dispatcher."""
-    return {tool for _, tool, _ in _dispatched_calls(source)}
+    sites = _dispatch_sites(source)
+    unreadable = [f"line {site.lineno}" for site in sites if site.tool is None]
+    assert unreadable == [], (
+        f"{', '.join(unreadable)}: call() dispatches a tool name this guard "
+        "cannot read — pass a string literal"
+    )
+    return {site.tool for site in sites if site.tool is not None}
 
 
 #: The holder a dispatch site reads statically-typed arguments from. A default
@@ -2980,15 +2958,16 @@ def _dispatch_argument_report(
     problems: list[str] = []
     checked = total = 0
     for path, source in sources.items():
-        for lineno, tool, arguments in _dispatched_calls(source):
-            if any(name is None for name, _ in arguments):
+        for site in _dispatch_sites(source):
+            lineno, tool = site.lineno, site.tool
+            if site.unreadable is not None or tool is None:
                 problems.append(
-                    f"{path}:{lineno} dispatches arguments this guard "
-                    "cannot read — name them"
+                    f"{path}:{lineno} a dispatch this guard cannot read: "
+                    f"{site.unreadable}"
                 )
                 continue
             supplied: dict[str, object] = {}
-            for name, node in arguments:
+            for name, node in site.arguments:
                 if name is None:
                     continue
                 total += 1
@@ -3216,8 +3195,8 @@ def test_static_argument_resolution_reads_config_field_types():
         '        logical_port_id="917003")\n'
     )
 
-    (_, _, arguments), *rest = _dispatched_calls(source)
-    resolved = {name: _resolved_argument(node) for name, node in arguments}
+    site, *rest = _dispatch_sites(source)
+    resolved = {name: _resolved_argument(node) for name, node in site.arguments}
 
     assert rest == []
     assert resolved["adapter_id"] == runner.LiveTestConfig().sriov_adapter_id
@@ -3251,7 +3230,8 @@ def test_static_argument_resolution_reads_conversions_and_f_strings(
         f'    await state.call(client, "hmc_list_sriov_adapters", adapter_id={expression})\n'
     )
 
-    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+    (site,) = _dispatch_sites(source)
+    ((_, node),) = site.arguments
 
     assert type(_resolved_argument(node)) is expected_type
 
@@ -3268,10 +3248,10 @@ def test_every_sriov_identifier_argument_is_actually_type_checked():
     identifiers = {"adapter_id", "physical_port_id", "logical_port_id"}
 
     passed_over = [
-        f"pcie.py:{lineno} {tool}: {name}"
-        for lineno, tool, arguments in _dispatched_calls(source)
-        if "sriov" in tool
-        for name, node in arguments
+        f"pcie.py:{site.lineno} {site.tool}: {name}"
+        for site in _dispatch_sites(source)
+        if "sriov" in (site.tool or "")
+        for name, node in site.arguments
         if name in identifiers and _resolved_argument(node) is _UNRESOLVED
     ]
 
@@ -3279,9 +3259,9 @@ def test_every_sriov_identifier_argument_is_actually_type_checked():
     assert (
         sum(
             name in identifiers
-            for _, tool, arguments in _dispatched_calls(source)
-            if "sriov" in tool
-            for name, _ in arguments
+            for site in _dispatch_sites(source)
+            if "sriov" in (site.tool or "")
+            for name, _ in site.arguments
         )
         == 23
     )
@@ -3295,7 +3275,8 @@ def test_static_argument_resolution_reports_a_config_field_that_does_not_exist()
         "        adapter_id=config.sriov_adapter_idd)\n"
     )
 
-    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+    (site,) = _dispatch_sites(source)
+    ((_, node),) = site.arguments
 
     assert _resolved_argument(node) is _NO_SUCH_FIELD
 
@@ -3338,12 +3319,24 @@ async def test_every_dispatched_argument_matches_the_served_schema():
 
 
 @pytest.mark.asyncio
-async def test_argument_guard_refuses_a_splat_it_cannot_read():
-    source = (
-        "async def workflow(client):\n"
-        '    await state.call(client, "hmc_list_lpars", **overrides)\n'
-    )
-
+@pytest.mark.parametrize(
+    "source",
+    [
+        "async def workflow(client, tool):\n    await state.call(client, tool)\n",
+        (
+            "async def workflow(client):\n"
+            '    await state.call(client, "hmc_list_lpars", **overrides)\n'
+        ),
+        (
+            "if True:\n"
+            "    async def workflow(client):\n"
+            '        await state.call(client, "hmc_list_lpars")\n'
+        ),
+    ],
+    ids=["non-literal-tool", "splat", "outside-top-level-function"],
+)
+async def test_argument_guard_refuses_a_dispatch_it_cannot_read(source):
+    """Each shape the shared enumerator cannot read fails the guard, never drops out."""
     with pytest.raises(AssertionError, match="cannot read"):
         _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
 

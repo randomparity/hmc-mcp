@@ -45,6 +45,22 @@ class Dispatch:
 
 
 @dataclass(frozen=True)
+class DispatchSite:
+    """One ``.call(...)`` site as written, readable or not.
+
+    ``arguments`` pairs each tool keyword with the expression supplying it, so a
+    consumer can check the type a site passes; a ``**`` splat has ``None`` for its
+    name. ``unreadable`` says why the site cannot be read statically, else None.
+    """
+
+    lineno: int
+    function: str | None
+    tool: str | None
+    arguments: tuple[tuple[str | None, ast.expr], ...]
+    unreadable: str | None
+
+
+@dataclass(frozen=True)
 class Verified:
     """One ``record_verified(..., operation="<id>")`` site."""
 
@@ -144,6 +160,47 @@ def _package_imports(
     return imported, packages
 
 
+def _attribute_calls(tree: ast.Module) -> list[tuple[str | None, ast.Call]]:
+    """Every ``x.attr(...)`` call in the module in source order, with the top-level
+    definition holding it (None outside one)."""
+    return sorted(
+        (
+            (statement.name if isinstance(statement, _DEFINITIONS) else None, node)
+            for statement in tree.body
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        ),
+        key=lambda pair: (pair[1].lineno, pair[1].col_offset),
+    )
+
+
+def _dispatch_site(function: str | None, node: ast.Call) -> DispatchSite | None:
+    """The dispatch ``node`` makes, or None when it is not a ``.call`` dispatch."""
+    if not (isinstance(node.func, ast.Attribute) and node.func.attr == "call"):
+        return None
+    tool = _literal(node.args[1] if len(node.args) > 1 else None)
+    arguments = tuple(
+        (kw.arg, kw.value) for kw in node.keywords if kw.arg not in _RUNNER_KEYWORDS
+    )
+    unreadable = None
+    if function is None:
+        # A def nested in a top-level `if` or `try` has no registered name to
+        # reach it by; saying so beats dropping its dispatch without a line.
+        unreadable = "call outside a top-level function"
+    elif tool is None or any(name is None for name, _ in arguments):
+        unreadable = "dispatch with a non-literal tool or a ** splat"
+    return DispatchSite(node.lineno, function, tool, arguments, unreadable)
+
+
+def dispatch_sites(tree: ast.Module) -> list[DispatchSite]:
+    """Every ``.call`` dispatch in the module, in source order, readable or not."""
+    return [
+        site
+        for function, node in _attribute_calls(tree)
+        if (site := _dispatch_site(function, node)) is not None
+    ]
+
+
 def scan_source(source: str, label: str, module: str) -> Scan:
     """Read every dispatch, ``record_verified`` operation and reference in a module."""
     tree = ast.parse(source, filename=label)
@@ -161,35 +218,22 @@ def scan_source(source: str, label: str, module: str) -> Scan:
     dispatches: list[Dispatch] = []
     verified: list[Verified] = []
     unreadable: list[str] = []
-    calls = sorted(
-        (
-            (statement.name if isinstance(statement, _DEFINITIONS) else None, node)
-            for statement in tree.body
-            for node in ast.walk(statement)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-        ),
-        key=lambda pair: (pair[1].lineno, pair[1].col_offset),
-    )
-    for function, node in calls:
+    for function, node in _attribute_calls(tree):
         site = f"{label}:{node.lineno}"
         attribute = node.func.attr if isinstance(node.func, ast.Attribute) else ""
+        dispatch = _dispatch_site(function, node)
+        if dispatch is not None:
+            if dispatch.unreadable is not None:
+                unreadable.append(f"{site} {dispatch.unreadable}")
+            else:
+                names = tuple(name for name, _ in dispatch.arguments if name)
+                dispatches.append(Dispatch(site, function, dispatch.tool, names))
+            continue
         if function is None:
-            # A def nested in a top-level `if` or `try` has no registered name to
-            # reach it by; saying so beats dropping its dispatch without a line.
-            if attribute in {"call", "record_verified"}:
+            if attribute == "record_verified":
                 unreadable.append(f"{site} {attribute} outside a top-level function")
             continue
-        if attribute == "call":
-            tool = _literal(node.args[1] if len(node.args) > 1 else None)
-            names = [kw.arg for kw in node.keywords if kw.arg not in _RUNNER_KEYWORDS]
-            if tool is None or None in names:
-                unreadable.append(
-                    f"{site} dispatch with a non-literal tool or a ** splat"
-                )
-                continue
-            arguments = tuple(name for name in names if name)
-            dispatches.append(Dispatch(site, function, tool, arguments))
-        elif attribute == "record_verified":
+        if attribute == "record_verified":
             operation = next(
                 (kw.value for kw in node.keywords if kw.arg == "operation"), None
             )
