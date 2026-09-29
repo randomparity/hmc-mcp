@@ -77,12 +77,17 @@ def test_dispatch_sites_carry_argument_nodes():
         '    await state.call(client, "hmc_list_lpars", system=config.x, expected=[X])\n'
         "    await state.call(client, tool)\n"
         '    await state.call(client, "hmc_get_lpar", **extra)\n'
+        '    await state.call(client, "hmc_get_lpar", *extra)\n'
+        '    await state.call(client, "hmc_get_lpar", "extra")\n'
+        '    await state.call(client, *extra)\n'
         "if True:\n"
         '    state.call(client, "hmc_list_lpars")\n'
         'state.record_verified(1, "t", operation="lpar.get")\n'
     )
 
-    literal, non_literal, splat, outside = report.dispatch_sites(ast.parse(source))
+    literal, non_literal, splat, star, extra, star_tool, outside = report.dispatch_sites(
+        ast.parse(source)
+    )
 
     assert (literal.lineno, literal.function, literal.tool) == (
         2,
@@ -99,6 +104,10 @@ def test_dispatch_sites_carry_argument_nodes():
     )
     assert [name for name, _ in splat.arguments] == [None]
     assert splat.unreadable == "dispatch with a non-literal tool or a ** splat"
+    positional = "dispatch with a * splat or extra positional arguments"
+    assert star.unreadable == positional
+    assert extra.unreadable == positional
+    assert star_tool.unreadable == "dispatch with a non-literal tool or a ** splat"
     assert (outside.function, outside.unreadable) == (
         None,
         "call outside a top-level function",

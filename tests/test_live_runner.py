@@ -3292,6 +3292,22 @@ def test_static_argument_resolution_reports_a_config_field_that_does_not_exist()
     ]
 
 
+def test_argument_guard_fails_a_malformed_positional_dispatch():
+    """A `*args` or third positional would raise `TypeError` live; it is not a clean call."""
+    source = (
+        "async def workflow(client, extra):\n"
+        '    await state.call(client, "hmc_get_lpar", *extra)\n'
+        '    await state.call(client, "hmc_get_lpar", "lpar-1")\n'
+    )
+
+    problems, checked, total = _dispatch_argument_report({"m.py": source}, {})
+
+    reason = "a dispatch this guard cannot read: "
+    reason += "dispatch with a * splat or extra positional arguments"
+    assert problems == [f"m.py:2 {reason}", f"m.py:3 {reason}"]
+    assert (checked, total) == (0, 0)
+
+
 @pytest.mark.asyncio
 async def test_every_dispatched_argument_matches_the_served_schema():
     """A dispatch the served schema rejects is a defect the harness ships blind."""

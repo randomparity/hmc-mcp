@@ -189,6 +189,9 @@ def _dispatch_site(function: str | None, node: ast.Call) -> DispatchSite | None:
         unreadable = "call outside a top-level function"
     elif tool is None or any(name is None for name, _ in arguments):
         unreadable = "dispatch with a non-literal tool or a ** splat"
+    elif len(node.args) != 2 or any(isinstance(arg, ast.Starred) for arg in node.args):
+        # RunState.call takes only (client, tool) positionally; the rest is keyword-only.
+        unreadable = "dispatch with a * splat or extra positional arguments"
     return DispatchSite(node.lineno, function, tool, arguments, unreadable)
 
 
