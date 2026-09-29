@@ -1,5 +1,7 @@
+import json
 from dataclasses import fields
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -36,6 +38,11 @@ def test_vnic_models_are_immutable_and_result_field_order_is_stable() -> None:
         "output",
         "errors",
     ]
+
+
+_LIVE_VNIC_FIXTURE = (
+    Path(__file__).parents[1] / "fixtures" / "pcie" / "power9-v10r3m1060-live-vnic.json"
+)
 
 
 def _hmc() -> AsyncMock:
@@ -1282,8 +1289,10 @@ async def test_remove_on_partition_with_no_vnics_reads_sentinel_as_absent(
 
 def test_snapshot_embedded_backing_reports_hmc_state() -> None:
     """Recorded live shape: state is joined to the backing by logical port ID."""
-    row = _vnic(logical="27004003")
-    row["backing_device_states"] = "sriov/27004003/1/Operational"
+    fixture = json.loads(_LIVE_VNIC_FIXTURE.read_text())
+    stdout = fixture["probes"][0]["stdout"]
+    header, values = (line.split(",") for line in stdout.splitlines())
+    row = dict(zip(header, values, strict=True))
 
     (snapshot,) = _parse_vnic_snapshots([row])
 
