@@ -118,7 +118,10 @@ def test_create_lpar_applies_validated_sriov_assignment(monkeypatch):
         system="server1",
     )
     port = SimpleNamespace(
-        capability="available", items=[SimpleNamespace(availability="up")]
+        capability="available",
+        items=[
+            SimpleNamespace(availability="up", minimum_capacity_granularity_percent=None)
+        ],
     )
     logical = SimpleNamespace(capability="available")
     assigned = AsyncMock(return_value={"status": "ok"})

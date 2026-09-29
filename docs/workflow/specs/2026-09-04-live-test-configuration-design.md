@@ -107,6 +107,13 @@ VMEDIA_REPOSITORY_SIZE_MIB=6144
 VMEDIA_SHORT_REPOSITORY_SIZE_MIB=1536
 ```
 
+> **Amended (2026-09-28, via #963).** The block above is the sample as first specified. Since
+> #963 the HMC takes whole GiB, so each `LIVE_TEST_VMEDIA_*_SIZE_MIB` must be a multiple of 1024
+> and the runner rejects `1536` at config load. The short-repository sample in `.env.example` is
+> now `1024`, which is also the runner default, so the rule below that every selectable example
+> value differs from the source value no longer holds for this key. The `1536` values in the
+> memory-size rows elsewhere in this spec are unchanged.
+
 `example.test` is a reserved documentation domain. Every selectable example
 value differs from the current live-test source values. The example may include
 commented `HMC_*` connection guidance, but it contains no credentials or
