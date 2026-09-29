@@ -205,14 +205,33 @@ def _parse_backing_snapshot(row: dict[str, str]) -> VnicBackingSnapshot:
     )
 
 
-def _parse_embedded_backings(value: str) -> tuple[VnicBackingSnapshot, ...]:
+def _parse_backing_states(value: str) -> dict[str, tuple[bool, str]]:
+    """Map logical port ID to (is_active, status) from ``sriov/<port>/<0|1>/<status>``."""
+    states: dict[str, tuple[bool, str]] = {}
+    for record in value.split(","):
+        parts = record.split("/")
+        if len(parts) != 4 or parts[0] != "sriov" or parts[2] not in ("0", "1"):
+            raise ValueError("vNIC backing_device_states row has an unsupported shape")
+        if parts[1] in states:
+            raise ValueError("vNIC backing_device_states repeats a logical port")
+        states[parts[1]] = (parts[2] == "1", parts[3])
+    return states
+
+
+def _parse_embedded_backings(
+    value: str, states_value: str
+) -> tuple[VnicBackingSnapshot, ...]:
     if not value.strip() or value == "none":
         return ()
+    states = _parse_backing_states(states_value)
     result: list[VnicBackingSnapshot] = []
     for record in value.split(","):
         parts = record.split("/")
         if len(parts) != 11 or parts[0] != "sriov":
             raise ValueError("vNIC backing_devices row has an unsupported shape")
+        if parts[5] not in states:
+            raise ValueError("vNIC backing_device_states has no record for a backing_devices port")
+        is_active, status = states[parts[5]]
         result.append(
             VnicBackingSnapshot(
                 parts[1],
@@ -225,10 +244,12 @@ def _parse_embedded_backings(value: str) -> tuple[VnicBackingSnapshot, ...]:
                 _decimal(parts[9], "max_capacity"),
                 _decimal(parts[10], "desired_max_capacity"),
                 parts[8],
-                False,
-                "",
+                is_active,
+                status,
             )
         )
+    if len(states) != len(result):
+        raise ValueError("vNIC backing_device_states has a record for no backing_devices port")
     return tuple(result)
 
 
@@ -239,7 +260,7 @@ def _parse_vnic_snapshots(rows: list[dict[str, str]]) -> tuple[VnicSnapshot, ...
             row["lpar_id"],
             row["slot_num"],
             int(row["port_vlan_id"]),
-            _parse_embedded_backings(row["backing_devices"]),
+            _parse_embedded_backings(row["backing_devices"], row["backing_device_states"]),
         )
         for row in rows
     )

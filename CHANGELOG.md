@@ -198,6 +198,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The vNIC snapshots in `vnic_before`/`vnic_after` from `network add-vnic`/`hmc_add_vnic` and
+  `network remove-vnic`/`hmc_remove_vnic` report each embedded backing's `is_active` and
+  `status` from the HMC's `backing_device_states`, joined by logical port ID. Before, they were
+  always `false` and empty. A `backing_device_states` value that is malformed or does not
+  correspond to the `backing_devices` ports now raises a `ValueError` (#1133).
 - `network list-vnics`/`hmc_list_vnics` return an empty list for a partition with no vNICs.
   Before, the HMC's `No results were found.` reply came back as a one-key row
   (`{"No results were found.": ""}`) (#1132).
