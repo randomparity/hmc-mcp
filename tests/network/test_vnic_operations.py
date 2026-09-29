@@ -1,5 +1,7 @@
+import json
 from dataclasses import fields
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,6 +12,7 @@ from hmcpctl.operations.virtualization.vnic import (
     VnicCapabilityError,
     VnicChangeResult,
     VnicPartialError,
+    _parse_vnic_snapshots,
     add_vnic,
     remove_vnic,
 )
@@ -35,6 +38,11 @@ def test_vnic_models_are_immutable_and_result_field_order_is_stable() -> None:
         "output",
         "errors",
     ]
+
+
+_LIVE_VNIC_FIXTURE = (
+    Path(__file__).parents[1] / "fixtures" / "pcie" / "power9-v10r3m1060-live-vnic.json"
+)
 
 
 def _hmc() -> AsyncMock:
@@ -69,6 +77,7 @@ def _vnic(
             "sriov/{vios_name}/{vios_lpar_id}/{adapter_id}/{physical_port_id}/"
             "{logical_port_id}/{capacity}/{desired_capacity}/50/100/100"
         ).format_map(backing),
+        "backing_device_states": f"sriov/{backing['logical_port_id']}/1/Operational",
     }
 
 
@@ -1036,7 +1045,9 @@ async def test_remove_requires_exactly_one_embedded_backing_before_mutation(
     if backing_devices is None:
         row["backing_devices"] = ""
     elif backing_devices == "extra":
-        row["backing_devices"] = f"{row['backing_devices']},{row['backing_devices']}"
+        second = _vnic(logical="4")
+        row["backing_devices"] = f"{row['backing_devices']},{second['backing_devices']}"
+        row["backing_device_states"] += f",{second['backing_device_states']}"
     else:
         row["backing_devices"] = backing_devices
     monkeypatch.setattr(
@@ -1274,3 +1285,46 @@ async def test_remove_on_partition_with_no_vnics_reads_sentinel_as_absent(
         False,
     )
     assert not any(c.startswith("chhwres") for c in commands)
+
+
+def test_snapshot_embedded_backing_reports_hmc_state() -> None:
+    """Recorded live shape: state is joined to the backing by logical port ID."""
+    fixture = json.loads(_LIVE_VNIC_FIXTURE.read_text())
+    stdout = fixture["probes"][0]["stdout"]
+    header, values = (line.split(",") for line in stdout.splitlines())
+    row = dict(zip(header, values, strict=True))
+
+    (snapshot,) = _parse_vnic_snapshots([row])
+
+    assert snapshot.backing_devices[0].is_active is True
+    assert snapshot.backing_devices[0].status == "Operational"
+
+
+def test_snapshot_embedded_backing_reports_inactive_state() -> None:
+    row = _vnic(logical="3")
+    row["backing_device_states"] = "sriov/3/0/Degraded"
+
+    (snapshot,) = _parse_vnic_snapshots([row])
+
+    assert snapshot.backing_devices[0].is_active is False
+    assert snapshot.backing_devices[0].status == "Degraded"
+
+
+@pytest.mark.parametrize(
+    "states",
+    [
+        "",
+        "none",
+        "sriov/3/1",
+        "sriov/3/2/Operational",
+        "sriov/4/1/Operational",
+        "sriov/3/1/Operational,sriov/3/0/Operational",
+        "sriov/3/1/Operational,sriov/4/1/Operational",
+    ],
+)
+def test_snapshot_rejects_uncorrelatable_backing_states(states: str) -> None:
+    row = _vnic(logical="3")
+    row["backing_device_states"] = states
+
+    with pytest.raises(ValueError, match="backing_device_states"):
+        _parse_vnic_snapshots([row])
