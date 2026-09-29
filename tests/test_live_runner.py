@@ -13,6 +13,7 @@ import subprocess
 import sys
 from dataclasses import FrozenInstanceError, asdict
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -152,7 +153,7 @@ class _ScriptedSriovState(runner.RunState):
 
 
 def _logical_port_state(
-    state: _ScriptedSriovState, *, owner: str | None = None, capacity: float = 7.5
+    state: _ScriptedSriovState, *, owner: str | None = None
 ) -> dict[str, object]:
     items: list[dict[str, object]] = []
     if owner is not None:
@@ -161,7 +162,7 @@ def _logical_port_state(
                 "logical_port_id": str(state.config.sriov_logical_port_id),
                 "availability": "1",
                 "owner_lpar": owner,
-                "capacity_percent": capacity,
+                "capacity_percent": state.config.sriov_capacity_percent,
             }
         )
     return {"items": items}
@@ -1396,6 +1397,25 @@ def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
     config = runner.LiveTestConfig.from_env_file(config_path)
 
     assert config.sriov_physical_port_id == 0
+
+
+def test_default_sriov_capacity_is_a_multiple_of_every_recorded_port_granularity() -> None:
+    """#1082: the assign path refuses a capacity that is not a granularity multiple.
+
+    The recorded HMC ports report 1.0 (roce) and 2.0 (ethc); a default that fails
+    either stops the SR-IOV arm at its own pre-check instead of exercising assign.
+    """
+    fixture = Path(__file__).parent / "fixtures/sriov/sriov-physport-granularity-v10r3.json"
+    granularities = {
+        Decimal(value)
+        for value in re.findall(r'"min_eth_capacity_granularity": "([^"]+)"', fixture.read_text())
+    }
+    example = runner.LiveTestConfig.from_env_file(Path(__file__).parents[1] / ".env.example")
+
+    assert granularities == {Decimal("1.0"), Decimal("2.0")}
+    defaults = (runner.LiveTestConfig().sriov_capacity_percent, example.sriov_capacity_percent)
+    for capacity in defaults:
+        assert all(Decimal(str(capacity)) % step == 0 for step in granularities), capacity
 
 
 @pytest.mark.parametrize(
