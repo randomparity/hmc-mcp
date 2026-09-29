@@ -41,7 +41,7 @@ capacity do not:
    matching the exhaustion check's placement, and before `add_vnic_backing`. Parsing happens in
    `_preflight_add`, so a malformed granularity on the selected port fails closed with
    `HMCCLIError` even on a verified retry — the same as prevalidation, whose port listing
-   already parses every row.
+   already parses the selected port's row.
 
 No obsolete path remains; no public contract changes other than two new module-level names
 in `pcie.py` (not in the ADR 0118 facade). No ADR: the refusal contract is #1035's, reused.
