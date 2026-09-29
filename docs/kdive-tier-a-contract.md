@@ -91,7 +91,8 @@ partition another agent owns. A provider that cares reads
 On, `power_lpar` reads the partition's ownership stamp and refuses a partition another agent
 owns unless the caller passes `ownership_override=True`, which records an audited override.
 When no managed-system selector is given it finds the owning system itself, which is a
-fleet-wide search; an override skips that search. A failed ownership read fails the call with no job submitted. See
+fleet-wide search; an override skips that search. A failed ownership read fails the call
+with no job submitted. See
 [ADR 0092](adr/0092-uniform-lpar-ownership-authorization-rule.md).
 
 ## SSH host-key verification
