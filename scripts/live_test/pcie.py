@@ -144,7 +144,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
         adapter_id=str(config.sriov_adapter_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
     )
     configured = False
     owner_lpar = None
@@ -154,7 +154,7 @@ async def _read_sriov_state(client: Client, state: RunState) -> _SriovState:
         for item in items:
             if (
                 isinstance(item, dict)
-                and item.get("logical_port_id") == str(config.sriov_logical_port_id)
+                and item.get("logical_port_id") == config.sriov_logical_port_id
                 and item.get("availability") not in ("unconfigured", None, "")
                 and item.get("owner_lpar")
             ):
@@ -260,13 +260,13 @@ async def _verify_cleanup_inventory(client: Client, state: RunState) -> tuple[bo
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
         adapter_id=str(config.sriov_adapter_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
     )
     state.record(28, "hmc_list_sriov_logical_ports (final)", st, data)
     unconfigured = False
     if st == "PASS":
         still_configured = _logical_port_is_configured(
-            data, str(config.sriov_logical_port_id)
+            data, config.sriov_logical_port_id
         )
         state.record(
             28,
@@ -406,7 +406,7 @@ async def _check_sriov_logical_port_clean(client: Client, state: RunState) -> bo
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=config.system_name,
         adapter_id=str(config.sriov_adapter_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
     )
     state.record(23, "hmc_list_sriov_logical_ports (baseline)", st, data)
     if st != "PASS":
@@ -416,7 +416,7 @@ async def _check_sriov_logical_port_clean(client: Client, state: RunState) -> bo
             "logical port inventory failed: SKIP SR-IOV arm",
         )
         return False
-    if _logical_port_is_configured(data, str(config.sriov_logical_port_id)):
+    if _logical_port_is_configured(data, config.sriov_logical_port_id):
         state.skip(
             23,
             "sriov logical port precondition",
@@ -509,7 +509,7 @@ async def assign_sriov_to_lp3(
         lpar_name_or_uuid=config.lp3_name,
         adapter_id=str(config.sriov_adapter_id),
         physical_port_id=str(config.sriov_physical_port_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
         capacity_percent=config.sriov_capacity_percent,
         profile_name=config.sriov_profile_name,
         ownership_override=True,
@@ -591,7 +591,7 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
         lpar_name_or_uuid=config.lp3_name,
         adapter_id=str(config.sriov_adapter_id),
         physical_port_id=str(config.sriov_physical_port_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
         profile_name=config.sriov_profile_name,
         ownership_override=True,
     )
@@ -656,7 +656,7 @@ async def reassign_sriov_to_lp3(
         lpar_name_or_uuid=config.lp3_name,
         adapter_id=str(config.sriov_adapter_id),
         physical_port_id=str(config.sriov_physical_port_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
         capacity_percent=config.sriov_capacity_percent,
         profile_name=config.sriov_profile_name,
         ownership_override=True,
@@ -726,7 +726,7 @@ async def cleanup_sriov(client: Client, state: RunState) -> bool:
         lpar_name_or_uuid=config.lp3_name,
         adapter_id=str(config.sriov_adapter_id),
         physical_port_id=str(config.sriov_physical_port_id),
-        logical_port_id=str(config.sriov_logical_port_id),
+        logical_port_id=config.sriov_logical_port_id,
         profile_name=config.sriov_profile_name,
         ownership_override=True,
     )

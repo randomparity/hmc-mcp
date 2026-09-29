@@ -55,7 +55,8 @@ import os
 import re
 import subprocess
 import tempfile
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -258,6 +259,7 @@ def _bootstrap_config() -> bool:
     return True
 
 
+_HEX_ID = re.compile(r"[0-9a-f]+")
 _VIOS_OBJECT_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]*")
 
 
@@ -298,7 +300,7 @@ class LiveTestConfig:
     )
     sriov_adapter_id: int = 17
     sriov_physical_port_id: int = 9
-    sriov_logical_port_id: int = 917003
+    sriov_logical_port_id: str = "917003"
     sriov_capacity_percent: float = 2.0
     sriov_profile_name: str = "example-lt-609-profile"
     # The dedicated PCIe arm creates and deletes a partition on the system it
@@ -437,6 +439,8 @@ class LiveTestConfig:
                 }
             )
             for key in cls._CONFIG_FIELDS:
+                if key == "LIVE_TEST_SRIOV_LOGICAL_PORT_ID":
+                    continue  # the HMC reports hex ids such as 2700400a
                 if key.endswith(
                     (
                         "_MIB",
@@ -481,7 +485,6 @@ class LiveTestConfig:
             "provision_vlan_id",
             "provision_disk_mib",
             "sriov_adapter_id",
-            "sriov_logical_port_id",
             "sriov_capacity_percent",
             "iso_http_port",
             "vmedia_repository_size_mib",
@@ -516,6 +519,9 @@ class LiveTestConfig:
             )
             if not _VIOS_OBJECT_NAME.fullmatch(parsed[field_name])
         ]
+        # Interpolated unquoted into the recovery `chhwres` command strings.
+        if not _HEX_ID.fullmatch(parsed["sriov_logical_port_id"]):
+            invalid.append("LIVE_TEST_SRIOV_LOGICAL_PORT_ID must be lowercase hexadecimal digits")
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
         if parsed["provision_vlan_id"] > 4094:
@@ -1625,6 +1631,35 @@ def _emit_observations(
     return True
 
 
+@asynccontextmanager
+async def served_client() -> AsyncIterator[Client]:
+    """A client connected to the application exactly as a live run composes it.
+
+    The one owner of that composition: the run loop, its argument guard and the
+    scenario gap report all read the served schemas through here.
+    """
+    # The escape hatch is opted in because this harness drives `hmc_run_command`
+    # against a real HMC. `permits` and `authorize` come from the policy just composed:
+    # calling the toggle with neither would register the tool whatever the policy says
+    # and leave its handler unwrapped, so the live run would stop being evidence about
+    # the path an operator actually takes.
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+    )
+    mcp = create_mcp(policy)
+    permits, authorize = _gates(policy)
+    await configure_arbitrary_command_tool(
+        True, mcp, permits=permits, authorize=authorize
+    )
+    async with Client(mcp) as client:
+        yield client
+
+
+async def served_schemas(client: Client) -> dict[str, dict[str, Any]]:
+    """The input schema *client* is served for each tool, by tool name."""
+    return {tool.name: tool.input_schema for tool in await client.list_tools()}
+
+
 async def main(
     subtask_filter: int | None = None,
     results_path: str = "test-results-round2.json",
@@ -1671,24 +1706,9 @@ async def main(
                 _restore_artifacts_from_results(state, hmc_config, prior)
                 break
 
-    # The escape hatch is opted in because this harness drives `hmc_run_command`
-    # against a real HMC. `permits` and `authorize` come from the policy just composed:
-    # calling the toggle with neither would register the tool whatever the policy says
-    # and leave its handler unwrapped, so the live run would stop being evidence about
-    # the path an operator actually takes.
-    policy = compile_legacy_policy(
-        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
-    )
-    mcp = create_mcp(policy)
-    permits, authorize = _gates(policy)
-    await configure_arbitrary_command_tool(
-        True, mcp, permits=permits, authorize=authorize
-    )
     try:
-        async with Client(mcp) as client:
-            state.schemas = {
-                tool.name: tool.inputSchema for tool in await client.list_tools()
-            }
+        async with served_client() as client:
+            state.schemas = await served_schemas(client)
             for n in tasks:
                 fn = SUBTASKS.get(n)
                 if fn:

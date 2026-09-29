@@ -214,6 +214,39 @@ def test_the_commit_and_group_appear_in_the_header(tmp_path, capsys):
     assert "`dedicated`" in output
 
 
+@pytest.mark.parametrize("recorded", ["V1_0", "(not set)"])
+def test_the_recorded_schema_version_appears_in_the_header(tmp_path, capsys, recorded):
+    document = _document()
+    document["run"]["schema_version"] = recorded
+
+    assert evidence.main([str(_write(tmp_path, document))]) == 0
+
+    assert f"Schema version: `{recorded}`" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("recorded", [None, "", "  ", 7, ["V1_0"]])
+def test_a_missing_or_malformed_schema_version_renders_a_placeholder(
+    tmp_path, capsys, recorded
+):
+    """Results documents from before #1089 carry no field; none may crash the render."""
+    document = _document()
+    if recorded is not None:
+        document["run"]["schema_version"] = recorded
+
+    assert evidence.main([str(_write(tmp_path, document))]) == 0
+
+    assert "Schema version: `(not recorded)`" in capsys.readouterr().out
+
+
+def test_a_newline_in_the_schema_version_cannot_add_a_line(tmp_path, capsys):
+    document = _document()
+    document["run"]["schema_version"] = "V1_0\n| forged | row |"
+
+    assert evidence.main([str(_write(tmp_path, document))]) == 0
+
+    assert "Schema version: `V1_0 | forged | row |`" in capsys.readouterr().out
+
+
 def test_a_dirty_tree_is_stated_beside_the_commit(tmp_path, capsys):
     """The sha names a tree nobody exercised; a reader must not cite it silently."""
     document = _document()
