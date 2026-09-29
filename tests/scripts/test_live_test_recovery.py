@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -498,12 +499,31 @@ async def test_every_read_only_tool_is_registered_on_the_composed_server():
     check then read as no drift — a clean verdict on an unexamined system.
     Every case above stubs the call path, so only this one sees it.
     """
-    from fastmcp import Client
-
-    async with Client(await recovery._compose_server()) as client:
+    async with recovery.runner.served_client() as client:
         registered = {tool.name for tool in await client.list_tools()}
 
     assert recovery._READ_ONLY_TOOLS <= registered
+
+
+@pytest.mark.asyncio
+async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
+    """The test above holds only if the checks use the very client it inspects."""
+    served = object()
+    seen = []
+
+    @asynccontextmanager
+    async def served_client():
+        yield served
+
+    async def no_findings(call, inputs):
+        return []
+
+    monkeypatch.setattr(recovery.runner, "served_client", served_client)
+    monkeypatch.setattr(recovery, "_read_only_caller", lambda client, state: seen.append(client))
+    monkeypatch.setattr(recovery, "check", no_findings)
+
+    assert await recovery._run_checks(_INPUTS) == []
+    assert seen == [served]
 
 
 # ---------------------------------------------------------------------------
