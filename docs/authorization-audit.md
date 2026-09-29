@@ -344,7 +344,8 @@ It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and no
 
 Emitted immediately **before** a PowerOff job is submitted for a logical partition, one record
 per submission, whichever entry point reached it: `hmc_power_off_lpar`, `hmcpctl lpars power-off`,
-or the Python API's `power_lpar`. Always `WARNING`. No access policy gates it. The decision is
+or the Python API's `power_lpar`, and the decommission workflow's own power-off
+(`hmc_decommission_lpar`, `hmcpctl lpars decommission`, `decommission_lpar`). Always `WARNING`. No access policy gates it. The decision is
 [ADR 0180](adr/0180-lpar-power-off-audit-record.md).
 
 ```json
@@ -364,7 +365,9 @@ The record is written after argument validation and after the
 operation outside the vocabulary, a `dumprestart` without `allow_dump_restart`, a guard
 refusal — writes no `lpar-power-off` record. It is written before the submit, so a submit that
 then fails is still recorded: the record proves an attempt, not that the partition stopped.
-The decommission workflow's own power-off, which always sends `shutdown`, is not recorded here.
+The decommission workflow's power-off always sends `operation: "shutdown"` and `restart: false`,
+with the `immediate` the caller chose; a partition that is already `not activated` is sent no
+PowerOff and writes no record, and neither does a dry run.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
 
