@@ -12,7 +12,11 @@ from hmcpctl.client.core import HMCClient
 
 from ...documents import StorageKind
 from ...operations.lpar.profile_sync import ChangeLocation
-from ...operations.lpar.provision import ProvisionStorage, attach_disk_to_lpar
+from ...operations.lpar.provision import (
+    AttachDiskResult,
+    ProvisionStorage,
+    attach_disk_to_lpar,
+)
 from ...operations.storage.resources import (
     StorageMapResult,
     create_media_repository,
@@ -194,6 +198,7 @@ def storage_attach_disk(
         return
     if result.workflow_completed:
         console.print(f"[green]Attached virtual disk '{name}' to {lpar}[/green]")
+        _print_attach_location(result)
         return
 
     console.print("[yellow]Disk attachment incomplete[/yellow]")
@@ -208,7 +213,15 @@ def storage_attach_disk(
             "" if step.result is None else str(step.result),
         )
     console.print(table)
+    _print_attach_location(result)
     raise typer.Exit(1)
+
+
+def _print_attach_location(result: AttachDiskResult) -> None:
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning: {warning}[/yellow]")
+    if result.change_location is not None:
+        console.print(result.change_location.summary())
 
 
 def storage_map(

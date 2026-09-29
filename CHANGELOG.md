@@ -23,6 +23,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   mapping they add now live: a `change_location` result field, read once after
   those steps rather than through the standalone adapter/storage operations, in the same shape
   and CLI rendering as `adapters add-network` (#1056).
+- `storage attach-disk` and `hmc_attach_disk_to_lpar` report where the new mapping lives: a
+  `change_location` result field, read once before the storage leg, in the same shape and CLI
+  rendering as `lpars provision`; null with a warning when the read fails (#1069).
 - Adapter and mapping commands say where their change lives. `adapters add-network`,
   `add-vscsi`, `add-vfc` and `delete`, and `storage map`, `mount-optical-media`, `detach-mapping`
   and `unmount-optical-media`, read the partition's `CurrentProfileSync` before the write and
