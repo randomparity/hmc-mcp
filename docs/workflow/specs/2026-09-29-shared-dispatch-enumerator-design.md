@@ -45,9 +45,11 @@ first match wins: `"call outside a top-level function"` when `function` is `None
 
 Consumers, each keeping its own unreadable policy:
 
-- `scan_source` builds `Dispatch` (names only) from readable sites and lists
-  `f"{label}:{lineno} {unreadable}"` for the rest. `record_verified` handling is
-  untouched. Report output on the repository is byte-identical.
+- `scan_source` keeps its single source-ordered loop over attribute calls; for each
+  `call` it asks the enumerator's per-node helper for the `DispatchSite`, then builds
+  `Dispatch` (names only) or lists `f"{label}:{lineno} {unreadable}"`. So dispatch and
+  `record_verified` unreadable lines stay interleaved in source order, as today.
+  `record_verified` handling is otherwise untouched.
 - The test module imports `scenario_gap_report` (already on `sys.path`) and deletes
   `_dispatched_calls`. `_dispatch_argument_report` iterates `dispatch_sites` and turns
   each unreadable site into one problem containing `cannot read`, then continues —
@@ -63,6 +65,11 @@ guard used to check normally, now fails the guard. Nothing is dropped — every
 `.call` in the module still reaches a consumer, readable or unreadable. On the real
 tree no such site exists (`live_test_runner.py` has zero `.call` sites; the report's
 `--fail-on-dispatch` run is clean over the scenario package).
+
+The tool-name guard also moves onto the shared classification, so it now refuses a
+`**` splat and an outside-top-level dispatch as well as a non-literal tool (today it
+accepts both). This is re-pointing, a consequence of criterion 4; on the real tree
+neither shape exists, so the tool-name set is unchanged.
 
 Rejected:
 
@@ -80,7 +87,10 @@ Rejected:
 2. Invariants at stake: the guard's fail-closed coverage — every `.call` site in the
    guarded sources is either checked or fails; `checked`/`total` on the real tree stay
    at the pre-change 253/470; the tool-name set stays at 87.
-3. Accepted: a dispatch spelled other than `<expr>.call(...)` (e.g. a bare `call(...)`
+3. Accepted: a `*` positional splat or extra positional after the tool is read as a
+   clean site — `RunState.call` is keyword-only after `tool`, so it raises
+   `TypeError` before any request; unchanged from today, follow-up candidate.
+   Accepted: a dispatch spelled other than `<expr>.call(...)` (e.g. a bare `call(...)`
    name) is not enumerated — held by the approved non-goal that what counts as a
    dispatch does not change.
 4. Covered elsewhere: `record_verified` scanning (non-goal); served-schema composition
@@ -95,7 +105,11 @@ Rejected:
 3. The guard fails on each of: a non-literal tool, a `**` splat, a dispatch outside a
    top-level function — asserted by tests in `tests/test_live_runner.py`.
 4. Existing `tests/scripts/test_scenario_gap_report.py` cases pass unchanged; a new case
-   asserts `dispatch_sites` returns expression nodes and drops runner keywords.
+   asserts `dispatch_sites` returns expression nodes and drops runner keywords, and one
+   asserts a `record_verified` unreadable line before a dispatch one keeps source order.
+5. `uv run --no-sync python scripts/scenario_gap_report.py --fail-on-dispatch` exits 0 and
+   its stdout is byte-identical before and after (`diff` exits 0; baseline ends
+   `summary: 221 dispatches; ... 0 unreadable`).
 
 ## Validation
 
@@ -107,5 +121,10 @@ Rejected:
 - `focused-test`: enumerator contract — `test_dispatch_sites_carry_argument_nodes`;
   red before `dispatch_sites` exists;
   `uv run --no-sync pytest tests/scripts/test_scenario_gap_report.py --no-cov -q`.
-- `focused-test`: coverage counts — scratch measurement script run before and after,
-  numbers recorded in the PR body; `checked >= 230` floor test stays.
+- `focused-test`: coverage counts — before and after, call
+  `_dispatch_argument_report(sources, schemas)` over `LIVE_WORKFLOW_MODULES` plus the
+  runner (as the schema test builds `sources`) and take the union of
+  `_dispatched_tool_names` over the same sources; expect 0 problems, 253, 470, 87.
+  Numbers go in the PR body; the `checked >= 230` floor test stays.
+- `focused-test`: report output — capture stdout before (done, scratch), rerun after,
+  `diff` exits 0.
