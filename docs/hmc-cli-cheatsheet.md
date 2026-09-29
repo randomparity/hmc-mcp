@@ -161,12 +161,14 @@ phys_ports,logical_ports,adapter_max_logical_ports,sriov_status --header
 lshwres -r sriov --rsubtype physport -m <system> --level roce \
     --filter adapter_ids=<id> \
     -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,\
-config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header
+config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,\
+min_eth_capacity_granularity --header
 
 lshwres -r sriov --rsubtype physport -m <system> --level ethc \
     --filter adapter_ids=<id> \
     -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,\
-config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header
+config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,\
+min_eth_capacity_granularity --header
 
 # SR-IOV configured logical ports (--level eth, filtered by adapter)
 lshwres -r sriov --rsubtype logport -m <system> --level eth \

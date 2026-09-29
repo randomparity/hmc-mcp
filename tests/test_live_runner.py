@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -12,6 +13,7 @@ import subprocess
 import sys
 from dataclasses import FrozenInstanceError, asdict
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -23,6 +25,7 @@ from hmcpctl.authorization import target_scope
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.config import ConfigError, HMCConfig
+from hmcpctl.documents.storage import VIRTUAL_DISK_NAME_MAX
 from hmcpctl.jobs import JobOutcome
 from hmcpctl.operations.virtualization.pcie import (
     InventorySelector,
@@ -150,7 +153,7 @@ class _ScriptedSriovState(runner.RunState):
 
 
 def _logical_port_state(
-    state: _ScriptedSriovState, *, owner: str | None = None, capacity: float = 7.5
+    state: _ScriptedSriovState, *, owner: str | None = None
 ) -> dict[str, object]:
     items: list[dict[str, object]] = []
     if owner is not None:
@@ -159,7 +162,7 @@ def _logical_port_state(
                 "logical_port_id": str(state.config.sriov_logical_port_id),
                 "availability": "1",
                 "owner_lpar": owner,
-                "capacity_percent": capacity,
+                "capacity_percent": state.config.sriov_capacity_percent,
             }
         )
     return {"items": items}
@@ -1396,6 +1399,25 @@ def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
     assert config.sriov_physical_port_id == 0
 
 
+def test_default_sriov_capacity_is_a_multiple_of_every_recorded_port_granularity() -> None:
+    """#1082: the assign path refuses a capacity that is not a granularity multiple.
+
+    The recorded HMC ports report 1.0 (roce) and 2.0 (ethc); a default that fails
+    either stops the SR-IOV arm at its own pre-check instead of exercising assign.
+    """
+    fixture = Path(__file__).parent / "fixtures/sriov/sriov-physport-granularity-v10r3.json"
+    granularities = {
+        Decimal(value)
+        for value in re.findall(r'"min_eth_capacity_granularity": "([^"]+)"', fixture.read_text())
+    }
+    example = runner.LiveTestConfig.from_env_file(Path(__file__).parents[1] / ".env.example")
+
+    assert granularities == {Decimal("1.0"), Decimal("2.0")}
+    defaults = (runner.LiveTestConfig().sriov_capacity_percent, example.sriov_capacity_percent)
+    for capacity in defaults:
+        assert all(Decimal(str(capacity)) % step == 0 for step in granularities), capacity
+
+
 @pytest.mark.parametrize(
     ("key", "value", "match"),
     [
@@ -1434,6 +1456,50 @@ def test_live_config_rejects_a_media_repository_size_that_is_not_whole_gib(
 
     with pytest.raises(ValueError, match=f"{key} must be a multiple of 1024"):
         runner.LiveTestConfig.from_env_file(config_path)
+
+
+def test_live_config_default_and_example_vdisk_name_fit_the_vios_limit() -> None:
+    """#1027: the shipped disk name must not fail ST14 before any HMC write."""
+    example = Path(__file__).parents[1] / ".env.example"
+    example_value = dict(
+        line.split("=", 1) for line in example.read_text().splitlines() if "=" in line
+    )["LIVE_TEST_VDISK_NAME"]
+
+    assert len(runner.LiveTestConfig().vdisk_name) <= VIRTUAL_DISK_NAME_MAX
+    assert len(example_value) <= VIRTUAL_DISK_NAME_MAX
+
+
+def test_live_config_rejects_an_over_length_vdisk_name(tmp_path) -> None:
+    """#1027: fail at load, naming the variable, not as an ST14 step failure."""
+    name = "x" * (VIRTUAL_DISK_NAME_MAX + 1)
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_VDISK_NAME", name)
+
+    with pytest.raises(ValueError, match="LIVE_TEST_VDISK_NAME must be at most 15"):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+    exact = _example_env_with(tmp_path, "LIVE_TEST_VDISK_NAME", "x" * 15)
+    assert runner.LiveTestConfig.from_env_file(exact).vdisk_name == "x" * 15
+
+
+@pytest.mark.parametrize(
+    "key", ["LIVE_TEST_VDISK_VOLUME_GROUP_NAME", "LIVE_TEST_VDISK_NAME"]
+)
+@pytest.mark.parametrize(
+    "value",
+    ["a b", "a'b", 'a"b', "a;b", "a$b", "a`b", "-a", "a|b", "a&b", "a\\b"],
+)
+def test_live_config_rejects_shell_unsafe_vios_names(tmp_path, key, value) -> None:
+    """#1033: a name that could alter the rmvlog command fails at load."""
+    config_path = _example_env_with(tmp_path, key, value)
+
+    with pytest.raises(ValueError, match=f"{key} may contain only"):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+
+def test_live_config_accepts_allowlisted_vios_names(tmp_path) -> None:
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_VDISK_NAME", "lt_1.a-b")
+
+    assert runner.LiveTestConfig.from_env_file(config_path).vdisk_name == "lt_1.a-b"
 
 
 def test_live_config_reads_the_provision_fixture_settings(tmp_path) -> None:
@@ -4459,6 +4525,11 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "hmc_lpar_summary",
     ]
     assert calls[0][1] == {"system_name_or_uuid": state.config.system_name}
+    assert calls[6][1]["cmd"] == (
+        f"viosvrcmd -m {state.config.system_name} -p vios-uuid"
+        f' -c "rmvlog -vg {state.config.vdisk_volume_group_name}'
+        f' -lv {state.config.vdisk_name}"'
+    )
     assert calls[7][1]["capacity_mib"] == state.config.provision_disk_mib
     provision = calls[9][1]
     assert provision == {
@@ -4602,6 +4673,27 @@ def test_unrestorable_description_names_the_reason(baseline):
 def test_restorable_description_is_not_blocked(baseline):
     """An ordinary baseline description is restored, not refused."""
     assert lpar._unrestorable_description(baseline) is None
+
+
+@pytest.mark.asyncio
+async def test_rmvlog_command_shell_quotes_the_system_name(monkeypatch):
+    """#1033: system_name reaches viosvrcmd quoted, as in inventory and lpar."""
+    commands = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        if tool == "hmc_run_command":
+            commands.append(kwargs["cmd"])
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState(
+        config=dataclasses.replace(runner.LiveTestConfig(), system_name="sys; reboot")
+    )
+    state.artifacts.vios_uuid = "vios-uuid"
+
+    await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
+
+    assert commands[0].startswith("viosvrcmd -m 'sys; reboot' -p vios-uuid ")
 
 
 @pytest.mark.asyncio

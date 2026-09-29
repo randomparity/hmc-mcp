@@ -466,10 +466,14 @@ than the value's authority everywhere.
 Records go to the `hmcpctl.audit` logger. A permit is `INFO`; everything else the
 logger emits is `WARNING`.
 
-Importing `hmcpctl.audit` sets `propagate = False`, so no ancestor handler receives
-audit records — including on the in-process path, where an embedder composes an
-application itself and never calls the installer. `hmcpctl serve` additionally attaches
-a handler writing to **stderr**. With neither a handler nor propagation, a `WARNING`
+Importing `hmcpctl.audit` does not change logging state: `propagate` stays `True`
+until `install_audit_sink()` runs, and only `hmcpctl serve` calls it. On the serve path
+it sets `propagate = False`, so no ancestor handler receives audit records, and
+attaches a handler writing to **stderr**. An embedder that composes an application with
+`create_mcp` and serves it itself never reaches the installer, so audit records still
+propagate to the root logger's handlers; attach your own handler to `hmcpctl.audit` and
+set `propagate = False` on it, or keep stdout-bound handlers off the root logger. With
+neither a handler nor propagation, a `WARNING`
 record still reaches `logging.lastResort` on stderr, which is what a CLI user sees. To route them elsewhere, attach your own
 handler to `hmcpctl.audit` **before** calling `main_stdio` / `main_http` — the server
 defers to a handler that is already there and will not add a second.

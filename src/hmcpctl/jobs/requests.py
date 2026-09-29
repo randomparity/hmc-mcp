@@ -15,12 +15,16 @@ DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
 BootMode = Literal["norm", "dd", "ds", "of", "sms"]
 PowerOnOperationType = Literal["activate"]
+# The PowerOn job's own keylock spelling, not the creation-time ``Keylock``
+# vocabulary in ``documents/lpar.py`` (``normal``/``manual``/``auto``).
+PowerOnKeylock = Literal["manual", "norm"]
 PowerOffOperation = Literal["shutdown", "osshutdown", "dumprestart"]
 REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
 BOOT_MODES = frozenset(get_args(BootMode))
 POWER_ON_OPERATION_TYPES = frozenset(get_args(PowerOnOperationType))
+POWER_ON_KEYLOCKS = frozenset(get_args(PowerOnKeylock))
 POWER_OFF_OPERATIONS = frozenset(get_args(PowerOffOperation))
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -65,7 +69,9 @@ def build_job_request(
 
 
 def validate_power_on_activation(
-    bootmode: BootMode, operation_type: PowerOnOperationType | None
+    bootmode: BootMode,
+    operation_type: PowerOnOperationType | None,
+    keylock: PowerOnKeylock | None,
 ) -> None:
     """Validate the PowerOn activation vocabularies for direct callers.
 
@@ -81,28 +87,35 @@ def validate_power_on_activation(
     if operation_type is not None and operation_type not in POWER_ON_OPERATION_TYPES:
         allowed = ", ".join(sorted(POWER_ON_OPERATION_TYPES))
         raise ValueError(f"PowerOn operation type must be one of: {allowed}")
+    if keylock is not None and keylock not in POWER_ON_KEYLOCKS:
+        allowed = ", ".join(sorted(POWER_ON_KEYLOCKS))
+        raise ValueError(f"PowerOn keylock must be one of: {allowed}")
 
 
 def power_on_lpar_job(
     profile_uuid: str | None = None,
     bootmode: BootMode = "norm",
     operation_type: PowerOnOperationType | None = None,
+    keylock: PowerOnKeylock | None = None,
 ) -> str:
     """Build a PowerOn request for one logical partition.
 
-    ``bootmode`` and ``operation_type`` are the job's own closed vocabularies and
-    are refused here, before any XML is built. ``profile_uuid`` is the UUID of the
-    partition profile to activate against, not a connection profile; it has no
-    vocabulary to check against, so an empty value is omitted rather than refused.
-    A call passing none of the three emits the document this builder has always
-    emitted.
+    ``bootmode``, ``operation_type`` and ``keylock`` are the job's own closed
+    vocabularies and are refused here, before any XML is built. ``profile_uuid``
+    is the UUID of the partition profile to activate against, not a connection
+    profile; it has no vocabulary to check against, so an empty value is omitted
+    rather than refused. An omitted ``keylock`` sends no parameter, leaving the
+    keylock position to the HMC. A call passing none of the four emits the
+    document this builder has always emitted.
     """
-    validate_power_on_activation(bootmode, operation_type)
+    validate_power_on_activation(bootmode, operation_type, keylock)
     parameters = {"force": "false", "novsi": "true", "bootmode": bootmode}
     if profile_uuid:
         parameters["LogicalPartitionProfile"] = profile_uuid
     if operation_type:
         parameters["OperationType"] = operation_type
+    if keylock:
+        parameters["keylock"] = keylock
     return build_job_request("PowerOn", "LogicalPartition", parameters)
 
 
