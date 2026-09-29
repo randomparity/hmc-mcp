@@ -41,11 +41,7 @@ from live_test.pcie import (
     select_profile_io_slots,
 )
 
-from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
-from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
-from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command
 from hmcpctl.ssh.transport import HMCCLIError
 
@@ -320,27 +316,6 @@ async def check(call, inputs: RecoveryInputs) -> list[Finding]:
     return findings + [drift] if drift else findings
 
 
-async def _compose_server():
-    """The MCP application the checks run against.
-
-    ``hmc_run_command`` is an opt-in escape hatch: ``create_mcp`` alone does
-    not register it, so a check that calls it fails with "Unknown tool". Before
-    ``_profile_drift`` raised, that failure read as "no drift" and the script
-    reported a system clean it had never looked at. Composed in one named place
-    so the registration is a property a test can assert, which is what the
-    2026-09-21 live run showed review alone had missed.
-    """
-    policy = compile_legacy_policy(
-        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
-    )
-    mcp = create_mcp(policy)
-    permits, authorize = _gates(policy)
-    await configure_arbitrary_command_tool(
-        True, mcp, permits=permits, authorize=authorize
-    )
-    return mcp
-
-
 def _read_only_caller(client, state: runner.RunState):
     """A call path that refuses anything off the read-only surface."""
 
@@ -352,10 +327,14 @@ def _read_only_caller(client, state: runner.RunState):
 
 
 async def _run_checks(inputs: RecoveryInputs) -> list[Finding]:
-    from fastmcp import Client
-
     state = runner.RunState(config=runner.LiveTestConfig())
-    async with Client(await _compose_server()) as client:
+    # The checks need the live run's composition, not bare ``create_mcp``:
+    # ``hmc_run_command`` is an opt-in escape hatch that only it registers. Without
+    # it the profile-drift check was answered "Unknown tool", which read as "no
+    # drift" before ``_profile_drift`` raised, so the script reported a system
+    # clean it had never looked at. The 2026-09-21 live run showed review alone had
+    # missed that, so a test asserts the read-only tools are registered here.
+    async with runner.served_client() as client:
         return await check(_read_only_caller(client, state), inputs)
 
 
