@@ -9,6 +9,7 @@ from hmcpctl.ssh.vnic import (
     add_vnic_backing,
     list_vnic_backing_rows,
     list_vnic_rows,
+    list_vnics,
     read_vios_identity,
     remove_vnic_slot,
 )
@@ -56,6 +57,16 @@ async def test_list_vnic_rows_requests_exact_fields(monkeypatch, config) -> None
         fields,
         "--header",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", ["No results were found.\n", "  No results were found.  \n\n"])
+async def test_list_vnics_accepts_hmc_empty_result(monkeypatch, config, reply: str) -> None:
+    async def fake_run(_config, _command: str) -> str:
+        return reply
+
+    monkeypatch.setattr("hmcpctl.ssh.vnic.run_hmc_command", fake_run)
+    assert await list_vnics(config, "system", "client") == []
 
 
 @pytest.mark.asyncio
