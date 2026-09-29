@@ -220,28 +220,28 @@ def scan_source(source: str, label: str, module: str) -> Scan:
     unreadable: list[str] = []
     for function, node in _attribute_calls(tree):
         site = f"{label}:{node.lineno}"
+        attribute = node.func.attr if isinstance(node.func, ast.Attribute) else ""
         dispatch = _dispatch_site(function, node)
         if dispatch is not None:
             if dispatch.unreadable is not None:
                 unreadable.append(f"{site} {dispatch.unreadable}")
-                continue
-            names = tuple(name for name, _ in dispatch.arguments if name)
-            dispatches.append(Dispatch(site, function, dispatch.tool, names))
-            continue
-        attribute = node.func.attr if isinstance(node.func, ast.Attribute) else ""
-        if attribute != "record_verified":
+            else:
+                names = tuple(name for name, _ in dispatch.arguments if name)
+                dispatches.append(Dispatch(site, function, dispatch.tool, names))
             continue
         if function is None:
-            unreadable.append(f"{site} record_verified outside a top-level function")
+            if attribute == "record_verified":
+                unreadable.append(f"{site} {attribute} outside a top-level function")
             continue
-        operation = next(
-            (kw.value for kw in node.keywords if kw.arg == "operation"), None
-        )
-        name = _literal(operation)
-        if name is None:
-            unreadable.append(f"{site} record_verified without a literal operation")
-            continue
-        verified.append(Verified(site, function, name))
+        if attribute == "record_verified":
+            operation = next(
+                (kw.value for kw in node.keywords if kw.arg == "operation"), None
+            )
+            name = _literal(operation)
+            if name is None:
+                unreadable.append(f"{site} record_verified without a literal operation")
+                continue
+            verified.append(Verified(site, function, name))
     references = {
         name: _references(node, module, local, imported, packages)
         for name, node in [
