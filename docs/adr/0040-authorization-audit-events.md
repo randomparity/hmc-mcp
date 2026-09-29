@@ -419,8 +419,8 @@ is #270.
   > serve path only, not from import; see the amendment above.
   >
   > **Amended by #1138** (2026-09-29). The next bullet is scoped to the serve path: its conclusion
-  > that the ownership-override record "now reaches `logging.lastResort`" holds only after `install_audit_sink` has run, that
-  > is, on the serve path. Elsewhere — a CLI wrapper, or an ADR 0029 embedder that composes an
+  > that the ownership-override record "now reaches `logging.lastResort`" holds only after `install_audit_sink` has
+  > run, that is, on the serve path. Elsewhere — a CLI wrapper, or an ADR 0029 embedder that composes an
   > application with `create_mcp` — nothing clears `propagate`, so the record reaches whatever
   > root handler was configured, as it did before, and reaches `lastResort` only when no handler
   > is configured. Off the serve path the #272 stdio hazard therefore remains. The logger the bullet
