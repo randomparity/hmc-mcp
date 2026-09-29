@@ -117,3 +117,15 @@ partition activates without a profile, and whether `bootmode=sms` reaches
   `jobs/requests.py:65` before this change, so `sms` and `of` are unreachable and the `open
   firmware` state at `operations/partition_state.py:5-17` is readable but never
   produced.
+
+## Amendment (#894): `keylock` joins the activation parameters
+
+`keylock` is a fourth closed vocabulary under this decision. `PowerOnKeylock` is
+`manual | norm`, the PowerOn job's own values
+(`docs/refs/hmc-rest-api-p11/jobs/logicalpartition-jobs/039-poweron_logicalpartition-job.md:51`,
+sample at `:117`) and deliberately not the creation-time `Keylock` vocabulary in
+`documents/lpar.py`, which spells normal as `normal` and adds `auto`.
+`validate_power_on_activation` refuses a non-member for both the builder and `power_lpar`'s
+already-running path; the parameter is optional on every surface and omitted from the document
+when unset, so a call passing none emits today's document byte for byte. Admitting
+`OperationType=changeKeylock` stays outside this decision.

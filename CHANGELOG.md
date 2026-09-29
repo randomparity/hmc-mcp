@@ -10,6 +10,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_power_on_lpar`, `lpars power-on --keylock` and `power_on_lpar`/`power_lpar` accept an
+  optional PowerOn `keylock` of `manual` or `norm` (normal) — the job's own spelling, not the
+  creation-time `normal`/`manual`/`auto` — refused before any HMC call, including when the
+  partition is already running. Omitted, the PowerOn document is unchanged and the HMC keeps
+  choosing the position (#894).
 - SR-IOV logical-port assignment refuses a capacity that is not a multiple of the physical
   port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
   naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
@@ -18,6 +23,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   mapping they add now live: a `change_location` result field, read once after
   those steps rather than through the standalone adapter/storage operations, in the same shape
   and CLI rendering as `adapters add-network` (#1056).
+- `storage attach-disk` and `hmc_attach_disk_to_lpar` report where the new mapping lives: a
+  `change_location` result field, read once before the storage leg, in the same shape and CLI
+  rendering as `lpars provision`; null with a warning when the read fails (#1069).
 - Adapter and mapping commands say where their change lives. `adapters add-network`,
   `add-vscsi`, `add-vfc` and `delete`, and `storage map`, `mount-optical-media`, `detach-mapping`
   and `unmount-optical-media`, read the partition's `CurrentProfileSync` before the write and
@@ -75,6 +83,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
   the v0.1.0 live window runs it (#877).
+
+- A kdive Tier A contract page, `docs/kdive-tier-a-contract.md`: the pre-release
+  `hmcpctl.operations.lpar` imports, kdive's `PowerAction` mapped onto PowerOn and PowerOff job
+  parameters, the read-only console capture and its `released` flag, and the ownership and SSH
+  host-key settings. A structural test checks every name the page uses (#878).
 
 - A `bare-cec` live-test arm, `scripts/live_bare_cec.py`. It creates a partition with explicit
   processing units, assigns a dedicated slot through `hmc_assign_dedicated_pcie_slot`, records a
@@ -177,6 +190,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- LPAR create, provision and modify, and `network add-vnic`/`hmc_add_vnic`, refuse an SR-IOV
+  logical-port or vNIC-backing capacity that is not a multiple of the physical port's Ethernet
+  capacity granularity before any HMC change, with the #1035 message. Each requested capacity
+  is checked on its own, not their per-port sum. Before, the partition was created and the HMC
+  then refused the port (`HSCL1294`), leaving a partial LPAR (#1081).
 - `lpars provision`/`hmc_provision_lpar` and `storage attach-disk`/`hmc_attach_disk_to_lpar` no
   longer add a vSCSI client adapter before mapping the disk. The mapping makes the HMC create
   its own client/server adapter pair (ADR 0169), so the added adapter was left unpaired on

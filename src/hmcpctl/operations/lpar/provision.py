@@ -143,6 +143,17 @@ class AttachDiskResult:
     dry_run: bool
     steps: tuple[WorkflowStep, ...]
     warnings: tuple[str, ...]
+    change_location: ChangeLocation | None = field(
+        default=None,
+        metadata={
+            "description": (
+                "Where the new mapping now lives: the partition's "
+                "CurrentProfileSync and whether the change reaches its current "
+                "profile too. Null on a dry run, or when the read failed (see "
+                "warnings)."
+            )
+        },
+    )
 
 
 async def _check_name_unique(hmc, name: str) -> None:
@@ -372,6 +383,7 @@ async def attach_disk_to_lpar(
         ownership_override=ownership_override,
     )
 
+    change_location, warnings = await _read_change_location(hmc, lpar_uuid)
     steps, completed = await _run_storage_leg(
         hmc,
         lpar_uuid,
@@ -383,7 +395,8 @@ async def attach_disk_to_lpar(
         lpar_uuid=lpar_uuid,
         dry_run=False,
         steps=tuple(steps),
-        warnings=(),
+        warnings=warnings,
+        change_location=change_location,
     )
 
 

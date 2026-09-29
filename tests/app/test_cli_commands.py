@@ -53,7 +53,7 @@ from hmcpctl.operations.lpar import ownership as lpar_ownership
 from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
 from hmcpctl.operations.lpar.migration import LpmResult
 from hmcpctl.operations.lpar.profile_sync import ChangeLocation
-from hmcpctl.operations.lpar.provision import ProvisionResult
+from hmcpctl.operations.lpar.provision import AttachDiskResult, ProvisionResult
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.storage.resources import (
     OpticalMedia,
@@ -1003,7 +1003,7 @@ def test_adapter_commands_print_where_the_change_lives(fake_hmc, command):
 
 
 def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
-    """--boot-mode, --partition-profile and --operation-type reach the document."""
+    """--boot-mode, --partition-profile, --operation-type and --keylock reach the job."""
     result = RUNNER.invoke(
         cli.app,
         [
@@ -1011,6 +1011,7 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
             "--boot-mode", "sms",
             "--partition-profile", PARTITION_PROFILE_UUID,
             "--operation-type", "activate",
+            "--keylock", "manual",
         ],
     )
 
@@ -1026,16 +1027,20 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     assert ">LogicalPartitionProfile</ParameterName>" in job_xml
     assert PARTITION_PROFILE_UUID in job_xml
     assert ">OperationType</ParameterName>" in job_xml
+    assert ">keylock</ParameterName>" in job_xml
+    assert '<ParameterValue kb="CUR" kxe="false">manual</ParameterValue>' in job_xml
     # #981: the fake's adapters carry no slot, so the profile check warns about each.
     assert "Warning: The partition profile lacks" in result.stdout
     assert "ClientNetworkAdapter in virtual slot not reported" in result.stdout
 
 
-def test_lpars_power_on_rejects_an_unknown_boot_mode(fake_hmc):
+@pytest.mark.parametrize(
+    "flags", [["--boot-mode", "bogus"], ["--keylock", "normal"]]
+)
+def test_lpars_power_on_rejects_an_unknown_activation_value(fake_hmc, flags):
     """Typer refuses a non-member before the command body runs, so no job is sent."""
     result = RUNNER.invoke(
-        cli.app,
-        ["lpars", "power-on", LPAR_UUID, "--force", "--yes", "--boot-mode", "bogus"],
+        cli.app, ["lpars", "power-on", LPAR_UUID, "--force", "--yes", *flags]
     )
 
     assert result.exit_code == 2
@@ -2113,6 +2118,58 @@ def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
     assert payload["workflow_completed"] is False
     assert payload["lpar_uuid"] == LPAR_UUID
     assert "Attach-disk steps" not in result.stdout
+
+
+def _attach_disk_result(*, completed: bool, warnings=(), location=UNSYNCED):
+    return AttachDiskResult(
+        workflow_completed=completed,
+        lpar_uuid=LPAR_UUID,
+        dry_run=False,
+        steps=(WorkflowStep("storage", "ok" if completed else "error", None),),
+        warnings=warnings,
+        change_location=location,
+    )
+
+
+def _invoke_attach_disk(monkeypatch, result):
+    monkeypatch.setattr(
+        cli_storage_resources, "attach_disk_to_lpar", AsyncMock(return_value=result)
+    )
+    return RUNNER.invoke(
+        cli.app,
+        [
+            "storage", "attach-disk", LPAR_UUID, "--vios", VIOS_UUID, "--vg", VG_UUID,
+            "--name", "bootvol", "--capacity-mib", "1024", "--yes",
+        ],
+    )
+
+
+def test_storage_attach_disk_renders_change_location(monkeypatch, fake_hmc):
+    """#1069: attach-disk prints the CurrentProfileSync line provision prints."""
+    result = _invoke_attach_disk(monkeypatch, _attach_disk_result(completed=True))
+
+    assert result.exit_code == 0
+    assert "CurrentProfileSync is Disabled" in result.stdout
+
+
+def test_storage_attach_disk_renders_location_warning(monkeypatch, fake_hmc):
+    result = _invoke_attach_disk(
+        monkeypatch,
+        _attach_disk_result(
+            completed=True, warnings=("Change location not read: boom",), location=None
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Change location not read: boom" in result.stdout
+    assert "CurrentProfileSync" not in result.stdout
+
+
+def test_storage_attach_disk_incomplete_renders_change_location(monkeypatch, fake_hmc):
+    result = _invoke_attach_disk(monkeypatch, _attach_disk_result(completed=False))
+
+    assert result.exit_code == 1
+    assert "CurrentProfileSync is Disabled" in result.stdout
 
 
 # --------------------------------------------------------------------------- #

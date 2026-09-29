@@ -137,3 +137,6 @@ This is a human decision record for a later workflow. Leave a field blank when e
 | Free-space evidence | volume-group JSON and diagnostic | timestamped value |
 
 Review every error.txt file and verify the capture is current before any later change. Inventory informs an operator; it never authorizes or executes a mutation.
+
+To provision a partition from an installation ISO using this evidence, continue with the
+[LPAR ISO installation recipe](lpar-iso-install.md).

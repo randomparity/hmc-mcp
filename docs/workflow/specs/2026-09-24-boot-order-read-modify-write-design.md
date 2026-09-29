@@ -165,3 +165,14 @@ and a redacted live-shaped `LogicalPartition` entry built in that module. `tests
 covers the CLI. `tests/test_live_runner.py` covers the ST20 migration. The guardrails are
 `just verify` and `uv run --no-sync prek run --all-files`. Live acceptance runs on the operator's live-test host, as
 `docs/live-testing.md` and the campaign lock describe.
+
+## Amendment: clear resolved as a refusal (#1071)
+
+#1048 closed with `clear-boot-order` refusing on V10R3 (see
+`2026-09-24-clear-boot-order-refusal-design.md`): no REST or CLI value clears a pending boot
+string. Two statements above are superseded:
+
+- Live-test ST20 exercises `set-boot-order` only on a partition whose baseline pending string is
+  non-empty, because only a set can restore it. The skip is permanent otherwise; it does not wait
+  on a future clear.
+- #1048 did not find how an HMC clears a pending boot string; it closed with the refusal.
