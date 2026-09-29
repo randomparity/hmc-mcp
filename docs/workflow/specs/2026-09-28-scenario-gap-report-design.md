@@ -2,11 +2,10 @@
 
 ## Problem
 
-Nothing joins the capability ledger (`docs/capabilities/rows.json`, `operations.json`) to
-the live scenario registry (`SUBTASKS` in `scripts/live_test_runner.py`), so no one can say
-which operations or rows have a scenario, or which scenario names an operation the registry
-no longer has. `tests/test_live_runner.py` already fails `just test` on a dispatch the
-served schema rejects; the report surfaces that class rather than adding its first detector.
+Nothing joins the ledger (`docs/capabilities/rows.json`, `operations.json`) to the live
+scenario registry (`SUBTASKS` in `scripts/live_test_runner.py`). `tests/test_live_runner.py`
+already fails `just test` on a dispatch the served schema rejects; the report surfaces that
+class rather than adding its first detector.
 
 ## Scope
 
@@ -25,16 +24,16 @@ generator, maturity record, or scenario fix (#1092-#1094, #625-#634).
   exercised operation lists it in `row_ids`. Arguments are checked by the runner's
   `_dispatch_problems(tool, names, schemas)`.
 - **Output**: one line per finding — `uncovered-operation:`, `uncovered-row:`,
-  `unregistered:` (tool not served or operation not in `operations.json`, with
-  `file:line`), `dispatch-mismatch:` (`file:line` and problem), `unreadable:` — then a
-  `summary:` line of counts. Exit 0; with `--fail-on-dispatch`, exit 1 when any
-  `unregistered`, `dispatch-mismatch` or `unreadable` line exists.
+  `unregistered:` (tool not served or not in the ledger, or operation not in the ledger;
+  `file:line`; no further check), `dispatch-mismatch:` (`file:line` and problem),
+  `unreadable:` — then a `summary:` line of counts. With every input loaded, exit 0, or
+  with `--fail-on-dispatch` 1 when an `unregistered`, `dispatch-mismatch` or `unreadable`
+  line exists. An input that fails to load raises, exiting non-zero with its cause.
 
 ### Failure model
 
 - Actors and deployments: an operator or agent at a workstation; later a CI step (#1094).
-- Invariants and assets at stake: read-only — writes nothing, reaches no HMC; exit 0
-  without the flag, so wiring cannot start red.
+- Invariants and assets at stake: read-only (no writes, no HMC); flagless exit 0.
 - Accepted failure classes: a helper in a scenario module that no registered function
   reaches still counts (module granularity, as the runner's validator); argument types
   are unchecked — `tests/test_live_runner.py` owns type resolution.
@@ -44,17 +43,18 @@ generator, maturity record, or scenario fix (#1092-#1094, #625-#634).
 
 1. Each operation in `operations.json` and row in `rows.json` not exercised prints one
    `uncovered-*` line.
-2. Each dispatched tool not served, and each `record_verified` operation absent from
-   `operations.json`, prints one `unregistered:` line with `file:line`.
+2. Each dispatched tool not served or not in the ledger, and each `record_verified`
+   operation absent from it, prints one `unregistered:` line with `file:line`.
 3. Each dispatch passing an argument absent from the served schema, or omitting a required
    one, prints `dispatch-mismatch:` with `file:line`.
-4. Exit is 0 without the flag; with it, 1 exactly when a 2, 3 or `unreadable` line exists.
+4. With inputs loaded: exit 0 without the flag; with it, 1 iff a 2, 3 or `unreadable` line.
 
 ## Validation
 
-- Scan: Mode: focused-test — synthetic source yields line, tool, keyword names, operation,
-  and `unreadable` for a splat and a non-literal tool.
+- Scan: Mode: focused-test — synthetic source yields sites, tools, keywords, operations,
+  `unreadable` for a splat and a non-literal tool.
 - Criteria 1-3: Mode: focused-test — synthetic ledger, schemas and scan give each line.
 - Criterion 4: Mode: focused-test — exit decision, clean and failing, flag on and off.
-- Real tree: Mode: focused-test — `main(["--fail-on-dispatch"])` exits 0 with `summary:`.
+- Real tree: Mode: focused-test — `main(["--fail-on-dispatch"])` exits 0; its `summary:`
+  shows non-zero dispatches and exercised operations.
 - README pointer: Mode: task-test-not-applicable — prose with no executable consumer.
