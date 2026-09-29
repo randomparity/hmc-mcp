@@ -1397,9 +1397,9 @@ def test_live_config_keeps_a_hex_sriov_logical_port_id_as_a_string(tmp_path) -> 
     assert config.sriov_logical_port_id == "2700400a"
 
 
-@pytest.mark.parametrize("value", ["", "27004 00a", "2700400a; reboot", "xyz"])
+@pytest.mark.parametrize("value", ["", "27004 00a", "2700400a; reboot", "xyz", "2700400A"])
 def test_live_config_rejects_a_non_hex_sriov_logical_port_id(tmp_path, value) -> None:
-    """The id reaches recovery shell commands unquoted, so only hex digits load."""
+    """The id reaches recovery shell commands unquoted, so only lowercase hex digits (as the HMC reports them) load."""
     config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_LOGICAL_PORT_ID", value)
 
     with pytest.raises(ValueError, match="LIVE_TEST_SRIOV_LOGICAL_PORT_ID"):

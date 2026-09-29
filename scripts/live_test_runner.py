@@ -258,7 +258,7 @@ def _bootstrap_config() -> bool:
     return True
 
 
-_HEX_ID = re.compile(r"[0-9A-Fa-f]+")
+_HEX_ID = re.compile(r"[0-9a-f]+")
 _VIOS_OBJECT_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]*")
 
 
@@ -520,7 +520,7 @@ class LiveTestConfig:
         ]
         # Interpolated unquoted into the recovery `chhwres` command strings.
         if not _HEX_ID.fullmatch(parsed["sriov_logical_port_id"]):
-            invalid.append("LIVE_TEST_SRIOV_LOGICAL_PORT_ID must be hexadecimal digits")
+            invalid.append("LIVE_TEST_SRIOV_LOGICAL_PORT_ID must be lowercase hexadecimal digits")
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
         if parsed["provision_vlan_id"] > 4094:
