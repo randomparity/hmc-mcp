@@ -81,6 +81,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
   the v0.1.0 live window runs it (#877).
 
+- A kdive Tier A contract page, `docs/kdive-tier-a-contract.md`: the pre-release
+  `hmcpctl.operations.lpar` imports, kdive's `PowerAction` mapped onto PowerOn and PowerOff job
+  parameters, the read-only console capture and its `released` flag, and the ownership and SSH
+  host-key settings. A structural test checks every name the page uses (#878).
+
 - A `bare-cec` live-test arm, `scripts/live_bare_cec.py`. It creates a partition with explicit
   processing units, assigns a dedicated slot through `hmc_assign_dedicated_pcie_slot`, records a
   PowerOn that names no profile, and activates the partition to SMS against its own profile. It
