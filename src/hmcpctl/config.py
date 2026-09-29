@@ -211,9 +211,10 @@ class HMCConfig(BaseSettings):
             "(ADR 0092 §4). Off by default: the guard costs one SSH login plus "
             "two REST GETs on every call that does not carry an ownership "
             "override, and power is the one mutation class whose inverse is a "
-            "single call. When on, power_lpar requires a managed-system selector "
-            "and refuses to power a partition another agent owns unless the "
-            "caller passes ownership_override. (HMC_AUTHORIZE_POWER_OPERATIONS)"
+            "single call. When on, power_lpar derives the owning managed system when "
+            "the selector is omitted and refuses to power a partition another "
+            "agent owns unless the caller passes ownership_override. "
+            "(HMC_AUTHORIZE_POWER_OPERATIONS)"
         ),
     )
 
