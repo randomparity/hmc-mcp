@@ -86,3 +86,7 @@ def test_sriov_port_captures_always_supply_an_adapter_id() -> None:
         for line in recipe.splitlines():
             if command in line and "hmcpctl" in line:
                 assert "--adapter-id" in line, line
+
+
+def test_inventory_recipe_hands_off_to_the_iso_install_recipe() -> None:
+    assert "(lpar-iso-install.md)" in RECIPE.read_text()

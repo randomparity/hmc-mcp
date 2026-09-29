@@ -147,6 +147,9 @@ confirms that `LPAR_NAME` is not already in use.
 The recipe resolves the system by name with `systems show`. On some HMC firmware
 `systems list` cannot serialize the full inventory; `systems show` does not need it.
 
+To capture the whole managed system before you change it, follow the
+[read-only system inventory recipe](system-inventory.md); it runs no mutating command.
+
 ## 2. Create the powered-off partition
 
 A shared-processor partition with more than one virtual processor needs explicit processing

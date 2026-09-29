@@ -35,7 +35,7 @@ hmcpctl lpars power-off mylpar --immediate
 hmcpctl adapters list mylpar                    # network adapters (default type)
 hmcpctl adapters list mylpar --type VirtualSCSIClientAdapter
 hmcpctl adapters add-network mylpar --vlan 100  # add a NIC on VLAN 100
-hmcpctl adapters add-vscsi mylpar --vios-id 1 --vios-slot 5
+hmcpctl adapters add-vscsi mylpar --vios-id 1 --vios-slot 5   # skip before storage map: it creates the pair
 hmcpctl adapters add-vfc mylpar --vios-id 1 --vios-slot 6
 hmcpctl adapters delete mylpar --type ClientNetworkAdapter --uuid <adapter-uuid>
 hmcpctl vios list

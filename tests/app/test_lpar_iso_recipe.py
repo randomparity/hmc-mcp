@@ -120,3 +120,7 @@ def test_recipe_is_linked_from_both_cli_navigation_pages() -> None:
     for relative_path in ("docs/cli.md", "docs/index.md"):
         contents = (ROOT / relative_path).read_text(encoding="utf-8")
         assert contents.count(RECIPE_LINK) == 1, relative_path
+
+
+def test_recipe_hands_off_to_the_system_inventory_recipe() -> None:
+    assert "(system-inventory.md)" in RECIPE.read_text(encoding="utf-8")
