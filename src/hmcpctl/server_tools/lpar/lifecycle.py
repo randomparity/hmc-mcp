@@ -9,7 +9,7 @@ from ..._app import (
 )
 from ...client.core import HMCClient
 from ...documents import LparResources
-from ...jobs import BootMode, PowerOffOperation, PowerOnOperationType
+from ...jobs import BootMode, PowerOffOperation, PowerOnKeylock, PowerOnOperationType
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import (
     LparPcieAssignments,
@@ -331,6 +331,7 @@ def hmc_power_on_lpar(
     boot_mode: BootMode = "norm",
     partition_profile_uuid: str | None = None,
     operation_type: PowerOnOperationType | None = None,
+    keylock: PowerOnKeylock | None = None,
 ) -> LparPowerOnOutcome:
     """Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection.
 
@@ -381,6 +382,9 @@ def hmc_power_on_lpar(
             configuration.
         operation_type: PowerOn operation type; activate states the default
             explicitly. Omit it to send no OperationType parameter.
+        keylock: Keylock position to activate with — manual or norm (normal), the
+            PowerOn job's own spelling, not the creation-time normal/manual/auto.
+            Omit it to send no keylock parameter and leave the position to the HMC.
     """
 
     return with_client(
@@ -397,6 +401,7 @@ def hmc_power_on_lpar(
             boot_mode=boot_mode,
             partition_profile_uuid=partition_profile_uuid,
             operation_type=operation_type,
+            keylock=keylock,
         ),
         profile=profile,
     )

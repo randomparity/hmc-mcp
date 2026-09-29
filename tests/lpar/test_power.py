@@ -13,6 +13,7 @@ from hmcpctl.errors import HMCError
 from hmcpctl.jobs import (
     BOOT_MODES,
     POWER_OFF_OPERATIONS,
+    POWER_ON_KEYLOCKS,
     POWER_ON_OPERATION_TYPES,
     power_off_lpar_job,
     power_off_system_job,
@@ -135,18 +136,30 @@ def _parameter_values(document: str, name: str) -> list[str]:
 
 
 def test_power_on_lpar_job_emits_optional_parameters_when_supplied():
-    """LogicalPartitionProfile and OperationType appear only when asked for."""
+    """LogicalPartitionProfile, OperationType and keylock appear only when asked for."""
     supplied = power_on_lpar_job(
-        profile_uuid=PROFILE_UUID, bootmode="sms", operation_type="activate"
+        profile_uuid=PROFILE_UUID,
+        bootmode="sms",
+        operation_type="activate",
+        keylock="manual",
     )
     assert _parameter_values(supplied, "LogicalPartitionProfile") == [PROFILE_UUID]
     assert _parameter_values(supplied, "OperationType") == ["activate"]
     assert _parameter_values(supplied, "bootmode") == ["sms"]
+    assert _parameter_values(supplied, "keylock") == ["manual"]
 
     for omitted in (power_on_lpar_job(), power_on_lpar_job(profile_uuid="")):
         assert _parameter_values(omitted, "LogicalPartitionProfile") == []
         assert _parameter_values(omitted, "OperationType") == []
+        assert _parameter_values(omitted, "keylock") == []
         assert _parameter_values(omitted, "bootmode") == ["norm"]
+
+
+@pytest.mark.parametrize("keylock", sorted(POWER_ON_KEYLOCKS))
+def test_power_on_lpar_job_accepts_every_keylock_position(keylock):
+    """Both documented job keylock positions reach the document unaltered."""
+    document = power_on_lpar_job(keylock=keylock)
+    assert _parameter_values(document, "keylock") == [keylock]
 
 
 @pytest.mark.parametrize("boot_mode", sorted(BOOT_MODES))
@@ -163,6 +176,10 @@ def test_power_on_lpar_job_accepts_every_boot_mode(boot_mode):
         ({"bootmode": "warp"}, BOOT_MODES),
         ({"operation_type": "netboot"}, POWER_ON_OPERATION_TYPES),
         ({"operation_type": ""}, POWER_ON_OPERATION_TYPES),
+        # The creation-time Keylock spelling is not the job's (ADR 0161 amendment).
+        ({"keylock": "normal"}, POWER_ON_KEYLOCKS),
+        ({"keylock": "auto"}, POWER_ON_KEYLOCKS),
+        ({"keylock": ""}, POWER_ON_KEYLOCKS),
     ],
 )
 def test_power_on_lpar_job_rejects_unknown_vocabulary(kwargs, permitted):
@@ -294,12 +311,14 @@ async def test_power_lpar_forwards_activation_parameters():
             boot_mode="sms",
             partition_profile_uuid=PROFILE_UUID,
             operation_type="activate",
+            keylock="norm",
         )
 
     _, document = hmc.submit_job.await_args.args
     assert _parameter_values(document, "bootmode") == ["sms"]
     assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
     assert _parameter_values(document, "OperationType") == ["activate"]
+    assert _parameter_values(document, "keylock") == ["norm"]
 
 
 @pytest.mark.asyncio
@@ -436,11 +455,12 @@ async def test_power_lpar_power_off_document_is_unchanged():
             boot_mode="sms",
             partition_profile_uuid=PROFILE_UUID,
             operation_type="activate",
+            keylock="manual",
         )
 
     path, document = hmc.submit_job.await_args.args
     assert path.endswith("/do/PowerOff")
-    for name in ("bootmode", "LogicalPartitionProfile", "OperationType"):
+    for name in ("bootmode", "LogicalPartitionProfile", "OperationType", "keylock"):
         assert _parameter_values(document, name) == []
 
 
@@ -457,11 +477,13 @@ async def test_power_on_lpar_passes_activation_parameters():
             boot_mode="of",
             partition_profile_uuid=PROFILE_UUID,
             operation_type="activate",
+            keylock="manual",
         )
 
     assert forwarded.await_args.kwargs["boot_mode"] == "of"
     assert forwarded.await_args.kwargs["partition_profile_uuid"] == PROFILE_UUID
     assert forwarded.await_args.kwargs["operation_type"] == "activate"
+    assert forwarded.await_args.kwargs["keylock"] == "manual"
 
 
 @pytest.mark.asyncio
@@ -489,7 +511,7 @@ async def test_power_lpar_already_running_names_the_dropped_activation_parameter
     # Only the parameter actually supplied is named, and the force=True advice
     # is not repeated as a way to apply it.
     assert "The requested boot mode was not applied" in requested.job["message"]
-    for unsupplied in ("partition profile", "operation type"):
+    for unsupplied in ("partition profile", "operation type", "keylock"):
         assert unsupplied not in requested.job["message"]
     assert requested.job["message"].count("force=True") == 1
     # An ordinary already-running call says exactly what it always said.
@@ -525,6 +547,13 @@ async def test_power_lpar_already_running_names_the_dropped_activation_parameter
                 " were not applied; power the partition off first."
             ),
         ),
+        (
+            {"keylock": "manual"},
+            (
+                " The requested keylock position was not applied;"
+                " power the partition off first."
+            ),
+        ),
     ],
 )
 def test_unapplied_activation_clause_names_only_what_was_supplied(kwargs, expected):
@@ -534,6 +563,7 @@ def test_unapplied_activation_clause_names_only_what_was_supplied(kwargs, expect
             kwargs.get("boot_mode", "norm"),
             kwargs.get("partition_profile_uuid"),
             kwargs.get("operation_type"),
+            kwargs.get("keylock"),
         )
         == expected
     )
@@ -671,24 +701,34 @@ async def test_power_lpar_distinguishes_a_degraded_profile_feed_from_a_refusal(f
 
 
 @pytest.mark.asyncio
-async def test_power_lpar_refuses_an_invalid_boot_mode_on_the_already_running_path():
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"boot_mode": "warp"}, "PowerOn boot mode must be one of"),
+        ({"keylock": "normal"}, "PowerOn keylock must be one of: manual, norm"),
+    ],
+)
+async def test_power_lpar_refuses_an_invalid_activation_value_on_the_already_running_path(
+    kwargs, expected
+):
     """Criterion 2's refusal must not be swallowed by the early return.
 
     The already-running branch returns without building a document, so the
-    builder's own check never runs on that path.
+    builder's own check never runs on that path. The refusal also precedes the
+    state read, so no HMC call is made at all.
     """
     hmc = _power_client()
     hmc.get_quick_property.return_value = "running"
+    resolver = AsyncMock(return_value=LPAR_UUID)
 
     with (
-        patch(
-            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
-            new=AsyncMock(return_value=LPAR_UUID),
-        ),
-        pytest.raises(ValueError, match="PowerOn boot mode must be one of"),
+        patch("hmcpctl.operations.lpar.core.resolve_lpar_uuid", new=resolver),
+        pytest.raises(ValueError, match=expected),
     ):
-        await power_lpar(hmc, None, LPAR_UUID, power_on=True, boot_mode="warp")
+        await power_lpar(hmc, None, LPAR_UUID, power_on=True, **kwargs)
 
+    resolver.assert_not_awaited()
+    hmc.get_quick_property.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()
 
 
