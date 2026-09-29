@@ -73,6 +73,7 @@ Event = Literal[
     "console-write",
     "install-attempted",
     "install-submitted",
+    "lpar-power-off",
     "ownership-denied",
     "ownership-override",
     "power-ownership-guard",
@@ -383,6 +384,40 @@ def record_console_write(
             "mode": mode,
             "input_kind": input_kind,
             "length": length,
+            "attribution": _attribution(agent_id, "config:agent_id"),
+        }
+
+    emit(_DENY_LEVEL, build)
+
+
+def record_lpar_power_off(
+    *,
+    lpar: str,
+    host: str,
+    operation: str,
+    immediate: bool,
+    restart: bool,
+    agent_id: str,
+) -> None:
+    """Emit one LPAR PowerOff immediately before its job is submitted (ADR 0180).
+
+    ``operation``, ``immediate`` and ``restart`` are the values the job document
+    carries, so a ``dumprestart`` crash, an ``osshutdown`` and a restart each leave
+    a distinct record. ``operation`` arrives as a plain ``str`` because its closed
+    vocabulary lives in ``hmcpctl.jobs``, which this module does not import; it is
+    bounded like any other value.
+    """
+
+    def build() -> dict[str, Any]:
+        event: Event = "lpar-power-off"
+        return {
+            "time": datetime.now(UTC).isoformat(),
+            "event": event,
+            "lpar": _bounded_audit_text(lpar),
+            "host": _bounded_audit_text(host),
+            "operation": _bounded_audit_text(operation),
+            "immediate": immediate,
+            "restart": restart,
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 

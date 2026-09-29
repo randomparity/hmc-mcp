@@ -1,5 +1,7 @@
 """Tests for managed-system, VIOS, and LPAR power jobs."""
 
+import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -7,6 +9,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, make_config
 
+from hmcpctl.audit import sink as audit_sink
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig
 from hmcpctl.errors import HMCError
@@ -379,13 +382,14 @@ async def test_power_lpar_power_on_document_ignores_power_off_parameters():
         ({"operation": "dumprestart"}, "allow_dump_restart"),
     ],
 )
-async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected):
+async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected, caplog):
     """A refused PowerOff reads nothing, submits nothing and audits nothing."""
     hmc = _power_client()
     resolver = AsyncMock(return_value=LPAR_UUID)
 
     with (
         patch("hmcpctl.operations.lpar.core.resolve_lpar_uuid", new=resolver),
+        caplog.at_level(logging.INFO),
         pytest.raises(ValueError) as refused,
     ):
         await power_lpar(hmc, None, LPAR_UUID, power_on=False, **kwargs)
@@ -394,6 +398,137 @@ async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected):
     resolver.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()
     hmc.get_quick_property.assert_not_awaited()
+    assert _audit_records(caplog) == []
+
+
+def _audit_records(caplog) -> list[dict]:
+    """Every record the reserved audit logger emitted, parsed."""
+    return [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "immediate", "restart"),
+    [
+        ("shutdown", True, False),
+        ("shutdown", False, True),
+        ("osshutdown", False, False),
+        ("dumprestart", False, True),
+    ],
+)
+async def test_power_off_records_the_variant_it_sends(
+    operation, immediate, restart, caplog
+):
+    """ADR 0180. One ``lpar-power-off`` record per PowerOff, naming what was sent.
+
+    The record's variant fields are compared with the submitted document's own
+    parameters, so the record cannot describe a call the HMC did not receive.
+    """
+    hmc = _power_client()
+    hmc.config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "u", "password": "p", "agent_id": "agent-7"}
+    )
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        caplog.at_level(logging.INFO),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            "lpar-a",
+            power_on=False,
+            immediate=immediate,
+            restart=restart,
+            operation=operation,
+            allow_dump_restart=operation == "dumprestart",
+        )
+
+    records = _audit_records(caplog)
+    assert [record["event"] for record in records] == ["lpar-power-off"]
+    record = records[0]
+    assert list(record) == [
+        "time",
+        "event",
+        "lpar",
+        "host",
+        "operation",
+        "immediate",
+        "restart",
+        "attribution",
+    ]
+    _, document = hmc.submit_job.await_args.args
+    assert [record["operation"]] == _parameter_values(document, "operation")
+    assert [str(record["immediate"]).lower()] == _parameter_values(document, "immediate")
+    assert [str(record["restart"]).lower()] == _parameter_values(document, "restart")
+    assert (record["operation"], record["immediate"], record["restart"]) == (
+        operation,
+        immediate,
+        restart,
+    )
+    assert (record["lpar"], record["host"]) == (LPAR_UUID, "hmc.test")
+    assert record["attribution"] == {
+        "claim": "agent-7",
+        "source": "config:agent_id",
+        "verified": False,
+    }
+    assert [r.levelno for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME] == [
+        logging.WARNING
+    ]
+
+
+@pytest.mark.asyncio
+async def test_power_off_is_recorded_even_when_the_submit_raises(caplog):
+    """The record precedes the submit, so a submit that raises is still recorded."""
+    hmc = _power_client()
+    hmc.submit_job.side_effect = HMCError("submit failed")
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        caplog.at_level(logging.INFO),
+        pytest.raises(HMCError),
+    ):
+        await power_lpar(
+            hmc,
+            None,
+            LPAR_UUID,
+            power_on=False,
+            operation="dumprestart",
+            allow_dump_restart=True,
+        )
+
+    records = _audit_records(caplog)
+    assert [(r["event"], r["operation"]) for r in records] == [
+        ("lpar-power-off", "dumprestart")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_power_on_emits_no_power_off_record(caplog):
+    """Power-on is not audited by this record (ADR 0180 scope)."""
+    hmc = _power_client()
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        caplog.at_level(logging.INFO),
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=True)
+
+    hmc.submit_job.assert_awaited_once()
+    assert _audit_records(caplog) == []
 
 
 @pytest.mark.asyncio

@@ -24,6 +24,7 @@ from hmcpctl.operations.lpar.profile_sync import profile_adapter_warnings
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
 
+from ...audit import records as audit
 from ...documents import (
     Keylock,
     LparResources,
@@ -744,6 +745,17 @@ async def power_lpar(
             allow_dump_restart=allow_dump_restart,
         )
     )
+    if not power_on:
+        # After validation and the ADR 0011 guard, before the submit: a refused
+        # call sent nothing, and a submit that raises may still have reached the HMC.
+        audit.record_lpar_power_off(
+            lpar=lpar_uuid,
+            host=hmc.config.host,
+            operation=operation,
+            immediate=immediate,
+            restart=restart,
+            agent_id=hmc.config.agent_id or "hmcpctl",
+        )
     job = await hmc.submit_job(
         f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{path_operation}", document
     )
