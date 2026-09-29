@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import re
 import sys
@@ -62,6 +63,58 @@ def test_scan_reads_dispatches_operations_and_unreadable_sites():
         "m.py:3 dispatch with a non-literal tool or a ** splat",
         "m.py:4 dispatch with a non-literal tool or a ** splat",
         "m.py:6 record_verified without a literal operation",
+    )
+
+
+def test_dispatch_sites_carry_argument_nodes():
+    """The one enumerator both the report and the argument guard consume.
+
+    The guard type-checks the expression each keyword supplies, so a site carries
+    the node and not only the name; runner keywords never reach the tool.
+    """
+    source = (
+        "async def s(client, state, tool, extra):\n"
+        '    await state.call(client, "hmc_list_lpars", system=config.x, expected=[X])\n'
+        "    await state.call(client, tool)\n"
+        '    await state.call(client, "hmc_get_lpar", **extra)\n'
+        "if True:\n"
+        '    state.call(client, "hmc_list_lpars")\n'
+        'state.record_verified(1, "t", operation="lpar.get")\n'
+    )
+
+    literal, non_literal, splat, outside = report.dispatch_sites(ast.parse(source))
+
+    assert (literal.lineno, literal.function, literal.tool) == (
+        2,
+        "s",
+        "hmc_list_lpars",
+    )
+    ((name, node),) = literal.arguments
+    assert name == "system"
+    assert ast.unparse(node) == "config.x"
+    assert literal.unreadable is None
+    assert (non_literal.tool, non_literal.unreadable) == (
+        None,
+        "dispatch with a non-literal tool or a ** splat",
+    )
+    assert [name for name, _ in splat.arguments] == [None]
+    assert splat.unreadable == "dispatch with a non-literal tool or a ** splat"
+    assert (outside.function, outside.unreadable) == (
+        None,
+        "call outside a top-level function",
+    )
+
+
+def test_unreadable_sites_keep_source_order_across_kinds():
+    source = (
+        "async def s(client, state, name, tool):\n"
+        "    state.record_verified(1, 't', operation=name)\n"
+        "    await state.call(client, tool)\n"
+    )
+
+    assert report.scan_source(source, "m.py", "m").unreadable == (
+        "m.py:2 record_verified without a literal operation",
+        "m.py:3 dispatch with a non-literal tool or a ** splat",
     )
 
 
