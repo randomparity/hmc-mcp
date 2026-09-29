@@ -61,8 +61,10 @@ All code changes are in `src/hmcpctl/ssh/console.py`:
 4. Covered elsewhere: reconnect while paused (#977), writes and raw mode (#958), live proof
    (#879), and lost-hold detection in a held session (ADR 0172 Consequences, #879).
 
-Threat model: no new boundary. `suspend()` and `resume()` reuse the existing `rmvterm` and
-`mkvterm` commands, built from `shlex.quote`d names that a trusted library caller supplies.
+Threat model: no new boundary. `suspend()` releases as `close()` does: stdin EOF to the
+session's own `mkvterm`, with `rmvterm` only as the fallback (amended by #1116). `resume()`
+reuses `mkvterm`. Both commands are built from `shlex.quote`d names that a trusted library
+caller supplies.
 
 ## Success
 
@@ -75,7 +77,8 @@ Threat model: no new boundary. `suspend()` and `resume()` reuse the existing `rm
    `suspend()` and `resume()` raise `RuntimeError` outside their valid states: `hand_over()`
    and `suspend()` need a held session with no active pause, and `resume()` needs a suspended
    session.
-3. Mode (b): `suspend()` returns `True` after `rmvterm` and a clean probe. `resume()` then
+3. Mode (b): `suspend()` returns `True` after the release (stdin EOF, `rmvterm` only as the
+   fallback; amended by #1116) and a clean probe. `resume()` then
    acquires on a new connection. A collector `read()` that was pending across both calls returns
    the new banner.
 4. `resume()` against a held slot raises `ConsoleHeldError`, issues no `rmvterm`, and leaves

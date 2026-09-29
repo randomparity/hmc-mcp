@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, get_type_hints
 from unittest.mock import AsyncMock, patch
@@ -9,8 +11,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from conftest import assert_only_these_client_methods_used
 
+from hmcpctl.audit import sink as audit_sink
 from hmcpctl.config import HMCConfig
 from hmcpctl.errors import HMCError
+from hmcpctl.jobs import power_off_lpar_job
 from hmcpctl.operations.lpar.assignments import WorkflowStep
 from hmcpctl.operations.lpar.decommission import (
     DecommissionAdapterRecord,
@@ -957,3 +961,109 @@ async def test_decommission_dry_run_makes_no_unclassified_call(
         }),
     )
     assert used, "the handler touched nothing; the dry-run path was not exercised"
+
+
+def _audited_client() -> AsyncMock:
+    hmc = _client()
+    hmc.config = HMCConfig.from_mapping(
+        {"host": "hmc.test", "user": "u", "password": "p", "agent_id": "agent-7"}
+    )
+    return hmc
+
+
+def _audit_records(caplog: pytest.LogCaptureFixture) -> list[dict[str, Any]]:
+    return [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_decommission_power_off_is_recorded_before_its_submit(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    immediate: bool,
+) -> None:
+    """#1115, ADR 0180 as amended: the decommission PowerOff writes one record.
+
+    The record is compared with the submitted document, so it cannot describe a
+    PowerOff the HMC did not receive, and it is already written when the submit runs.
+    """
+    hmc = _audited_client()
+    _patch_common(monkeypatch, [])
+    records_at_submit: list[list[dict[str, Any]]] = []
+
+    async def submit_job(*_args: object) -> dict[str, str]:
+        records_at_submit.append(_audit_records(caplog))
+        return {"UUID": "job-uuid", "link": "/rest/api/uom/jobs/job-uuid"}
+
+    hmc.submit_job.side_effect = submit_job
+
+    with caplog.at_level(logging.INFO):
+        result = await decommission_lpar(hmc, "system-a", "aix-prod", immediate=immediate)
+
+    assert result.resource_deleted is True
+    records = _audit_records(caplog)
+    assert [record["event"] for record in records] == ["lpar-power-off"]
+    record = records[0]
+    assert records_at_submit == [[record]]
+    assert (record["operation"], record["immediate"], record["restart"]) == (
+        "shutdown",
+        immediate,
+        False,
+    )
+    _, document = hmc.submit_job.await_args.args
+    assert document == power_off_lpar_job(
+        immediate=record["immediate"],
+        restart=record["restart"],
+        operation=record["operation"],
+    )
+    assert (record["lpar"], record["host"]) == (LPAR_UUID, "hmc.test")
+    assert record["attribution"] == {
+        "claim": "agent-7",
+        "source": "config:agent_id",
+        "verified": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_decommission_power_off_is_recorded_when_the_submit_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A submit that raises may still have reached the HMC, so it is recorded."""
+    hmc = _audited_client()
+    _patch_common(monkeypatch, [])
+    hmc.submit_job.side_effect = HMCError("submit failed")
+
+    with caplog.at_level(logging.INFO):
+        result = await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    assert result.steps[0] == WorkflowStep("power_off", "error", "submit failed")
+    assert [record["event"] for record in _audit_records(caplog)] == ["lpar-power-off"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("state", "dry_run"),
+    [("not activated", False), ("running", True)],
+    ids=["already-off", "dry-run"],
+)
+async def test_decommission_without_a_power_off_submit_records_none(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    state: str,
+    dry_run: bool,
+) -> None:
+    """No PowerOff is submitted for an already-off partition or a dry run, so no record."""
+    hmc = _audited_client()
+    hmc.get_logical_partition.return_value = _lpar(state=state)
+    _patch_common(monkeypatch, [])
+
+    with caplog.at_level(logging.INFO):
+        await decommission_lpar(hmc, "system-a", "aix-prod", dry_run=dry_run)
+
+    hmc.submit_job.assert_not_awaited()
+    assert _audit_records(caplog) == []

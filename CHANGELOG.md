@@ -14,8 +14,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   record, at `WARNING`, immediately before the PowerOff job is submitted: the resolved
   partition, the HMC host, and the `operation`, `immediate` and `restart` values sent, so a
   `dumprestart` crash is distinguishable from a graceful stop. A call refused by validation or
-  the ownership guard writes none, and the decommission workflow's own `shutdown` is not
-  recorded (ADR 0180, #895).
+  the ownership guard writes none (ADR 0180, #895). The decommission workflow's own PowerOff
+  (`hmc_decommission_lpar`, `lpars decommission`, `decommission_lpar`) writes one too, with
+  `operation` `shutdown`, `restart` false and the `immediate` it sends; an already-off
+  partition or a dry run writes none (#1115).
 - `hmc_power_on_lpar`, `lpars power-on --keylock` and `power_on_lpar`/`power_lpar` accept an
   optional PowerOn `keylock` of `manual` or `norm` (normal) — the job's own spelling, not the
   creation-time `normal`/`manual`/`auto` — refused before any HMC call, including when the
@@ -196,6 +198,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The `HMC_AUTHORIZE_POWER_OPERATIONS` description and environment-variable page no longer say
+  the guard requires a managed-system selector: it derives the owning system when the selector
+  is omitted, and an `ownership_override` skips that walk, the SSH read and the name reads
+  (#1117).
 - LPAR create, provision and modify, and `network add-vnic`/`hmc_add_vnic`, refuse an SR-IOV
   logical-port or vNIC-backing capacity that is not a multiple of the physical port's Ethernet
   capacity granularity before any HMC change, with the #1035 message. Each requested capacity
