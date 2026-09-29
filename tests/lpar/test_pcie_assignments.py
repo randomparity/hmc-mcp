@@ -1,5 +1,6 @@
 """Declarative PCIe assignment workflow tests."""
 
+from contextlib import ExitStack
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -17,6 +18,7 @@ from hmcpctl.operations.lpar.assignments import (
     apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
+from hmcpctl.operations.lpar.workflows import create_lpar
 from hmcpctl.operations.virtualization.pcie import (
     InventoryResult,
     InventorySelector,
@@ -27,6 +29,7 @@ from hmcpctl.operations.virtualization.pcie import (
     list_sriov_physical_ports,
 )
 from hmcpctl.operations.virtualization.vnic import VnicBackingSelector
+from hmcpctl.ssh.transport import HMCCLIError
 
 
 def _sriov(logical: str = "27004001") -> SriovLogicalPortAssignment:
@@ -100,7 +103,7 @@ def test_request_analysis_returns_capacity_and_unique_vios_requirements() -> Non
         LparPcieAssignments(sriov=(_sriov(),), vnics=(vnic,))
     )
 
-    assert capacities == {("1", "1"): Decimal(5)}
+    assert capacities == {("1", "1"): (Decimal(2), Decimal(3))}
     assert vios_identities == {("vios-a", "100")}
 
 
@@ -369,3 +372,120 @@ async def test_success_composes_existing_operations_in_order() -> None:
         )
     assert calls == ["sriov", "vnic"]
     assert result.workflow_completed is True
+
+
+def _granularity_inventory(granularity: str | None) -> ExitStack:
+    """Patch SR-IOV and VIOS inventory so only the port granularity varies."""
+    row = _physical_row("1")
+    if granularity is not None:
+        row["min_eth_capacity_granularity"] = granularity
+    adapter = InventoryResult(
+        "sriov_adapter",
+        "available",
+        "sys",
+        InventorySelector("1"),
+        [SriovAdapter("sys", "1", "sriov", "1", None, None, None, None)],
+        None,
+    )
+    logical = InventoryResult(
+        "sriov_logical_port", "available", "sys", InventorySelector("1", "1"), [], None
+    )
+    pcie = "hmcpctl.operations.virtualization.pcie"
+    assignments = "hmcpctl.operations.lpar.assignments"
+    vios = {"name": "vios-a", "lpar_id": "100", "lpar_env": "vioserver"}
+    stack = ExitStack()
+    for target, mock in (
+        (f"{pcie}._system_name", AsyncMock(return_value="sys")),
+        (f"{pcie}.require_admitted_environment", AsyncMock()),
+        (f"{pcie}.list_sriov_physical_port_rows", AsyncMock(return_value=[row])),
+        (f"{assignments}.list_sriov_adapters", AsyncMock(return_value=adapter)),
+        (f"{assignments}.list_sriov_logical_ports", AsyncMock(return_value=logical)),
+        (f"{assignments}._existing_capacity", AsyncMock(return_value=Decimal())),
+        (f"{assignments}.read_vios_identity", AsyncMock(return_value=vios)),
+    ):
+        stack.enter_context(patch(target, mock))
+    return stack
+
+
+def _sriov_at(capacity: str, logical: str = "27004001") -> SriovLogicalPortAssignment:
+    return SriovLogicalPortAssignment(
+        "default_profile", "1", "1", logical, Decimal(capacity)
+    )
+
+
+def _vnic_at(capacity: str) -> VnicAssignment:
+    return VnicAssignment(
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(capacity)), 42
+    )
+
+
+async def _prevalidate(assignments: LparPcieAssignments) -> None:
+    config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    await prevalidate_lpar_pcie_assignments(
+        SimpleNamespace(config=config), "sys", assignments
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "assignments",
+    [
+        pytest.param(LparPcieAssignments(sriov=(_sriov_at("7.5"),)), id="logical-port"),
+        pytest.param(LparPcieAssignments(vnics=(_vnic_at("7.5"),)), id="vnic-backing"),
+        pytest.param(
+            LparPcieAssignments(sriov=(_sriov_at("2.5"), _sriov_at("2.5", "27004002"))),
+            id="items-whose-sum-is-on-granularity",
+        ),
+    ],
+)
+async def test_prevalidation_refuses_each_item_off_the_port_granularity(
+    assignments: LparPcieAssignments,
+) -> None:
+    with (
+        _granularity_inventory("1.0"),
+        pytest.raises(
+            ValueError,
+            match=r"capacity_percent [27]\.5 is not a multiple of the physical port's "
+            r"capacity granularity 1\.0%",
+        ),
+    ):
+        await _prevalidate(assignments)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("granularity", ["2.0", None, "", "null"])
+async def test_prevalidation_admits_on_granularity_or_unreported_granularity(
+    granularity: str | None,
+) -> None:
+    capacity = "4" if granularity == "2.0" else "7.5"
+    with _granularity_inventory(granularity):
+        await _prevalidate(
+            LparPcieAssignments(sriov=(_sriov_at(capacity),), vnics=(_vnic_at(capacity),))
+        )
+
+
+@pytest.mark.asyncio
+async def test_prevalidation_rejects_malformed_port_granularity() -> None:
+    with (
+        _granularity_inventory("abc"),
+        pytest.raises(HMCCLIError, match="malformed physical-port capacity granularity"),
+    ):
+        await _prevalidate(LparPcieAssignments(sriov=(_sriov_at("2"),)))
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_off_granularity_capacity_before_creating_the_lpar() -> None:
+    create = AsyncMock()
+    config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    with (
+        _granularity_inventory("1.0"),
+        patch("hmcpctl.operations.lpar.workflows.create_and_stamp_lpar", create),
+        pytest.raises(ValueError, match="not a multiple"),
+    ):
+        await create_lpar(
+            SimpleNamespace(config=config),
+            "sys",
+            SimpleNamespace(name="new-lpar"),
+            LparPcieAssignments(sriov=(_sriov_at("7.5"),)),
+        )
+    create.assert_not_awaited()

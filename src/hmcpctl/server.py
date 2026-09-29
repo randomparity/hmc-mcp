@@ -300,8 +300,8 @@ _FASTMCP_LOGGER_NAME: Final = "fastmcp"
 _SINK_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
 
 #: This package's own logger namespace, and the parent of every logger in it
-#: except the one ``audit.AUDIT_LOGGER_NAME`` reserves — which sets ``propagate = False`` at
-#: import, so binding here never touches its stream. ADR 0043 amendment (#534).
+#: except the one ``audit.AUDIT_LOGGER_NAME`` reserves — which ``install_audit_sink`` sets
+#: ``propagate = False`` on, so binding here never touches its stream. ADR 0043 amendment (#534).
 _PACKAGE_LOGGER_NAME: Final = "hmcpctl"
 
 #: The third-party loggers the served path binds to ADR 0043's sink (ADR 0051,

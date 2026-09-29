@@ -310,6 +310,14 @@ them nowhere to set it from.
 stdio hazard itself: an operator or a dependency that puts a `StreamHandler(sys.stdout)` on the
 root logger would, without it, corrupt the protocol stream once per authorized call.
 
+> **Amended by #1028** (2026-09-28). **The flag is no longer set at module import.** Commit
+> `68823e54` (#558) removed the import-time assignment and pinned the opposite with
+> `test_import_is_inert_until_sink_installation`: only `install_audit_sink`, called by
+> `_serve_application`, clears `propagate`. An embedder that composes an application with
+> `create_mcp` and serves it itself therefore still propagates to the root logger, the #272
+> hazard, and must attach its own handler to `hmcpctl.audit`, clear `propagate`, or keep
+> stdout-bound handlers off the root logger. The paragraph below records the original decision.
+
 **The flag is set at module import, not only here.** `install_audit_sink` is called by
 `_serve_application` alone, so an embedder that composes an application with `create_mcp` and
 serves it over stdio itself would keep propagating — a route to the protocol stream in a module
@@ -407,6 +415,8 @@ is #270.
 - A server whose stderr is absent, broken, or closed authorizes calls it does not record. That is
   the deliberate trade named in the Decision's total-emission rule. A destination that neither
   raises nor returns is a different case; see the residuals below.
+- > **Amended by #1028** (2026-09-28). `propagate` is cleared by `install_audit_sink` on the
+  > serve path only, not from import; see the amendment above.
 - Because `propagate` is set unconditionally, and from import, an operator who collected audit
   output off the root logger must attach to `hmc_mcp.audit` instead. **One case in the field does
   change, and it is the ownership override.** It previously logged on `hmc_mcp.operations.lpar`,
