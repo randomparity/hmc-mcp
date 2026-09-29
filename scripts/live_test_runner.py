@@ -259,6 +259,7 @@ def _bootstrap_config() -> bool:
     return True
 
 
+_HEX_ID = re.compile(r"[0-9a-f]+")
 _VIOS_OBJECT_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]*")
 
 
@@ -299,7 +300,7 @@ class LiveTestConfig:
     )
     sriov_adapter_id: int = 17
     sriov_physical_port_id: int = 9
-    sriov_logical_port_id: int = 917003
+    sriov_logical_port_id: str = "917003"
     sriov_capacity_percent: float = 2.0
     sriov_profile_name: str = "example-lt-609-profile"
     # The dedicated PCIe arm creates and deletes a partition on the system it
@@ -438,6 +439,8 @@ class LiveTestConfig:
                 }
             )
             for key in cls._CONFIG_FIELDS:
+                if key == "LIVE_TEST_SRIOV_LOGICAL_PORT_ID":
+                    continue  # the HMC reports hex ids such as 2700400a
                 if key.endswith(
                     (
                         "_MIB",
@@ -482,7 +485,6 @@ class LiveTestConfig:
             "provision_vlan_id",
             "provision_disk_mib",
             "sriov_adapter_id",
-            "sriov_logical_port_id",
             "sriov_capacity_percent",
             "iso_http_port",
             "vmedia_repository_size_mib",
@@ -517,6 +519,9 @@ class LiveTestConfig:
             )
             if not _VIOS_OBJECT_NAME.fullmatch(parsed[field_name])
         ]
+        # Interpolated unquoted into the recovery `chhwres` command strings.
+        if not _HEX_ID.fullmatch(parsed["sriov_logical_port_id"]):
+            invalid.append("LIVE_TEST_SRIOV_LOGICAL_PORT_ID must be lowercase hexadecimal digits")
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
         if parsed["provision_vlan_id"] > 4094:
