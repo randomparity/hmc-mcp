@@ -9,14 +9,15 @@ class rather than adding its first detector.
 
 ## Scope
 
-New `scripts/scenario_gap_report.py`, tested by `tests/scripts/test_scenario_gap_report.py`,
-plus one pointer sentence in `docs/capabilities/README.md`. No just recipe, CI job, schema,
-generator, maturity record, or scenario fix (#1092-#1094, #625-#634).
+New `scripts/scenario_gap_report.py`, its `tests/scripts/` module, and a pointer in
+`docs/capabilities/README.md`. No recipe, CI job, schema, generator, maturity record, or
+scenario fix (#1092-#1094, #625-#634).
 
-- **Scenario modules**: the modules defining a `SUBTASKS` value, as the runner's validator.
-- **Scan** (AST per module): each `<x>.call(client, "<tool>", ...)` with line, tool and
-  keyword names (`expected`, `reuse_gaps` dropped), and each `record_verified` literal
-  `operation=`. A non-literal tool or operation, or a `**` splat, is `unreadable`.
+- **Scan** (AST, each `scripts/live_test/*.py`): each `<x>.call(client, "<tool>", ...)`
+  with line, enclosing top-level function, tool and keywords (`expected`, `reuse_gaps`
+  dropped); each literal `record_verified` `operation=`; a non-literal tool or operation,
+  or a `**` splat, is `unreadable`. A function is registered when a `SUBTASKS` value
+  reaches it by name (same module, `from .m import`, `from . import m` then `m.f`).
 - **Served schemas**: the runner's composition — legacy policy with the arbitrary command,
   `create_mcp`, `configure_arbitrary_command_tool`, in-process `list_tools()`.
 - **Join**: a tool maps to the `operations.json` entry with that `tool`. An operation is
@@ -24,7 +25,7 @@ generator, maturity record, or scenario fix (#1092-#1094, #625-#634).
   exercised operation lists it in `row_ids`. Arguments are checked by the runner's
   `_dispatch_problems(tool, names, schemas)`.
 - **Output**: one line per finding — `uncovered-operation:`, `uncovered-row:`,
-  `unregistered:` (tool not served or not in the ledger, or operation not in the ledger;
+  `departed:` (unregistered function's dispatch or record), `unregistered:` (tool not served or not in the ledger, or operation not in the ledger;
   `file:line`; no further check), `dispatch-mismatch:` (`file:line` and problem),
   `unreadable:` — then a `summary:` line of counts. With every input loaded, exit 0, or
   with `--fail-on-dispatch` 1 when an `unregistered`, `dispatch-mismatch` or `unreadable`
@@ -34,17 +35,17 @@ generator, maturity record, or scenario fix (#1092-#1094, #625-#634).
 
 - Actors and deployments: an operator or agent at a workstation; later a CI step (#1094).
 - Invariants and assets at stake: read-only (no writes, no HMC); flagless exit 0.
-- Accepted failure classes: a helper in a scenario module that no registered function
-  reaches still counts (module granularity, as the runner's validator); argument types
-  are unchecked — `tests/test_live_runner.py` owns type resolution.
+- Accepted failure classes: a function reached only dynamically (`getattr`, a mapping)
+  reads as departed; argument types are unchecked (`tests/test_live_runner.py` owns them).
 - Covered elsewhere: CI enforcement (#1094); fixing mismatches (#625-#634).
 
 ## Success
 
 1. Each operation in `operations.json` and row in `rows.json` not exercised prints one
    `uncovered-*` line.
-2. Each dispatched tool not served or not in the ledger, and each `record_verified`
-   operation absent from it, prints one `unregistered:` line with `file:line`.
+2. Each dispatch or `record_verified` in an unregistered function prints `departed:`;
+   in a registered one, a tool not served or not in the ledger, or an operation absent
+   from it, prints `unregistered:`; both with `file:line`.
 3. Each dispatch passing an argument absent from the served schema, or omitting a required
    one, prints `dispatch-mismatch:` with `file:line`.
 4. With inputs loaded: exit 0 without the flag; with it, 1 iff a 2, 3 or `unreadable` line.
@@ -54,7 +55,6 @@ generator, maturity record, or scenario fix (#1092-#1094, #625-#634).
 - Scan: Mode: focused-test — synthetic source yields sites, tools, keywords, operations,
   `unreadable` for a splat and a non-literal tool.
 - Criteria 1-3: Mode: focused-test — synthetic ledger, schemas and scan give each line.
-- Criterion 4: Mode: focused-test — exit decision, clean and failing, flag on and off.
-- Real tree: Mode: focused-test — `main(["--fail-on-dispatch"])` exits 0; its `summary:`
-  shows non-zero dispatches and exercised operations.
+- Criterion 4: Mode: focused-test — exit decision, flag on and off (`departed` excluded).
+- Real tree: Mode: focused-test — `--fail-on-dispatch` exits 0, non-zero counts read.
 - README pointer: Mode: task-test-not-applicable — prose with no executable consumer.
