@@ -141,7 +141,10 @@ def hmc_attach_disk_to_lpar(
     create disk, then map it; the mapping makes the HMC create the vSCSI
     client/server adapter pair, so no adapter is added beforehand. Set
     dry_run=True to validate only. Expected HMC failures are returned per step;
-    completed steps are ``ok`` and unattempted steps are ``skipped``.
+    completed steps are ``ok`` and unattempted steps are ``skipped``. Returns
+    ``change_location`` on a real run: the partition's ``CurrentProfileSync``
+    and whether the mapping also reaches its current profile; null, with a
+    warning, when the read fails.
 
     Args:
         lpar_name_or_uuid: Target partition name or UUID.

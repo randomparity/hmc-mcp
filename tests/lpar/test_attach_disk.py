@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from conftest import assert_only_these_client_methods_used
 
+from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.assignments import WorkflowStep
 from hmcpctl.operations.lpar.provision import (
     AttachDiskResult,
@@ -31,6 +32,7 @@ def _client() -> AsyncMock:
     client = AsyncMock()
     client.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
     client.list_volume_groups.return_value = [{"UUID": VG_UUID}]
+    client.get_logical_partition.return_value = {"Resource": {}}
     return client
 
 
@@ -102,8 +104,6 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
 
 @pytest.mark.asyncio
 async def test_attach_disk_reports_a_failed_mapping_after_the_disk() -> None:
-    from hmcpctl.errors import HMCError
-
     client = _client()
     client.map_storage_to_lpar.side_effect = HMCError("mapping failed")
 
@@ -168,3 +168,90 @@ async def test_attach_disk_dry_run_makes_no_unclassified_call() -> None:
         }),
     )
     assert used, "the handler touched nothing; the dry-run path was not exercised"
+
+
+def _with_sync(client: AsyncMock, sync: str | None) -> None:
+    resource = {} if sync is None else {"CurrentProfileSync": sync}
+    client.get_logical_partition.return_value = {"Resource": resource}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sync", "lives_in"),
+    [
+        ("On", "current-configuration-and-profile"),
+        ("Disabled", "current-configuration"),
+    ],
+)
+async def test_attach_disk_reports_change_location(sync: str, lives_in: str) -> None:
+    """#1069: like provision, attach-disk says where the new mapping lives."""
+    client = _client()
+    _with_sync(client, sync)
+
+    result = await attach_disk_to_lpar(
+        client, None, LPAR_UUID, _storage(), capacity_mib=1024
+    )
+
+    assert result.change_location is not None
+    assert result.change_location.current_profile_sync == sync
+    assert result.change_location.lives_in == lives_in
+    assert result.warnings == ()
+    client.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
+
+
+@pytest.mark.asyncio
+async def test_attach_disk_reports_change_location_after_a_failed_mapping() -> None:
+    client = _client()
+    _with_sync(client, "Disabled")
+    client.map_storage_to_lpar.side_effect = HMCError("mapping failed")
+
+    result = await attach_disk_to_lpar(
+        client, None, LPAR_UUID, _storage(), capacity_mib=1024
+    )
+
+    assert result.workflow_completed is False
+    assert result.change_location is not None
+    assert result.change_location.lives_in == "current-configuration"
+
+
+@pytest.mark.asyncio
+async def test_attach_disk_change_location_read_failure_is_advisory() -> None:
+    client = _client()
+    client.get_logical_partition.side_effect = HMCError("boom")
+
+    result = await attach_disk_to_lpar(
+        client, None, LPAR_UUID, _storage(), capacity_mib=1024
+    )
+
+    assert result.workflow_completed is True
+    assert result.change_location is None
+    assert any("Change location not read" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_attach_disk_change_location_is_read_after_the_storage_leg() -> None:
+    client = _client()
+    calls: list[str] = []
+    client.map_storage_to_lpar.side_effect = lambda *args: calls.append("storage")
+
+    async def read(_uuid):
+        calls.append("read")
+        return {"Resource": {}}
+
+    client.get_logical_partition.side_effect = read
+
+    await attach_disk_to_lpar(client, None, LPAR_UUID, _storage(), capacity_mib=1024)
+
+    assert calls == ["storage", "read"]
+
+
+@pytest.mark.asyncio
+async def test_attach_disk_dry_run_reads_no_change_location() -> None:
+    client = _client()
+
+    result = await attach_disk_to_lpar(
+        client, None, LPAR_UUID, _storage(), capacity_mib=1024, dry_run=True
+    )
+
+    assert result.change_location is None
+    client.get_logical_partition.assert_not_awaited()
