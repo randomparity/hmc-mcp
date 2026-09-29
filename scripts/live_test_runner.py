@@ -299,7 +299,7 @@ class LiveTestConfig:
     sriov_adapter_id: int = 17
     sriov_physical_port_id: int = 9
     sriov_logical_port_id: int = 917003
-    sriov_capacity_percent: float = 7.5
+    sriov_capacity_percent: float = 2.0
     sriov_profile_name: str = "example-lt-609-profile"
     # The dedicated PCIe arm creates and deletes a partition on the system it
     # names, so it refuses to run on a default: an empty system name or LPAR
