@@ -208,8 +208,8 @@ class HMCConfig(BaseSettings):
         default=False,
         description=(
             "Enforce the ADR 0011 ownership guard on LPAR power operations "
-            "(ADR 0092 §4). Off by default: the guard costs one SSH login plus "
-            "two REST GETs on every call that does not carry an ownership "
+            "(ADR 0092 §4). Off by default: the guard adds an SSH login and extra "
+            "REST reads to every call that does not carry an ownership "
             "override, and power is the one mutation class whose inverse is a "
             "single call. When on, power_lpar derives the owning managed system when "
             "the selector is omitted and refuses to power a partition another "

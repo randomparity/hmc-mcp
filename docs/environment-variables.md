@@ -79,12 +79,11 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   the CLI names the SSH command takes. `ownership_override=True` skips the SSH
   read, the fleet walk described below, and those two name reads; it still
   resolves the partition and reads its name, because the audit record for an
-  approved override names the partition. A
-  power-cycling orchestrator is the highest-frequency caller of this operation, and
-  power is the one mutation class whose inverse is a single call with no prior
-  state to reconstruct, so the cost is opt-in rather than default. Turn it on when
-  the HMC is shared with other agents or human operators and that cost is
-  acceptable.
+  approved override names the partition. A power-cycling orchestrator is the
+  highest-frequency caller of this operation, and power is the one mutation class
+  whose inverse is a single call with no prior state to reconstruct, so the cost is
+  opt-in rather than default. Turn it on when the HMC is shared with other agents
+  or human operators and that cost is acceptable.
 
   Turning it on changes two things beyond the ownership check. A partition another
   agent owns is refused with a `PermissionError`; retry it as a deliberate, audited
