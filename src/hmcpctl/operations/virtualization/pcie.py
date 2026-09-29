@@ -647,7 +647,7 @@ async def _read_sriov_assignment_inventory(
     return physical[0], rows, before
 
 
-def _eth_capacity_granularity(row: dict[str, str]) -> Decimal | None:
+def eth_capacity_granularity(row: dict[str, str]) -> Decimal | None:
     """Return the port's Ethernet capacity granularity, or None when it reports none."""
     value = row.get("min_eth_capacity_granularity", "")
     if value in {"", "null"}:
@@ -662,6 +662,15 @@ def _eth_capacity_granularity(row: dict[str, str]) -> Decimal | None:
     return granularity
 
 
+def require_capacity_granularity(capacity: Decimal, granularity: Decimal | None) -> None:
+    """Refuse a capacity that is not a multiple of the port's reported granularity."""
+    if granularity is not None and capacity % granularity:
+        raise ValueError(
+            f"capacity_percent {capacity} is not a multiple of the physical port's "
+            f"capacity granularity {granularity}%"
+        )
+
+
 async def _require_sriov_assignment_capacity_and_state(
     config: HMCConfig,
     system_name: str,
@@ -674,12 +683,7 @@ async def _require_sriov_assignment_capacity_and_state(
     capacity: Decimal,
 ) -> None:
     """Require an available logical port, sufficient capacity, and mutable LPAR state."""
-    granularity = _eth_capacity_granularity(physical_port)
-    if granularity is not None and capacity % granularity:
-        raise ValueError(
-            f"capacity_percent {capacity} is not a multiple of the physical port's "
-            f"capacity granularity {granularity}%"
-        )
+    require_capacity_granularity(capacity, eth_capacity_granularity(physical_port))
     candidates = await list_sriov_unconfigured_logical_port_rows(config, system_name)
     port_location = physical_port["phys_port_loc"] + "-S"
     if not any(
@@ -1138,7 +1142,7 @@ async def list_sriov_physical_ports(
                     availability,
                     row["phys_port_loc"],
                     None,
-                    _eth_capacity_granularity(row),
+                    eth_capacity_granularity(row),
                     None,
                     None,
                 )
