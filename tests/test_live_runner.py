@@ -23,6 +23,7 @@ from hmcpctl.authorization import target_scope
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.config import ConfigError, HMCConfig
+from hmcpctl.documents.storage import VIRTUAL_DISK_NAME_MAX
 from hmcpctl.jobs import JobOutcome
 from hmcpctl.operations.virtualization.pcie import (
     InventorySelector,
@@ -1434,6 +1435,29 @@ def test_live_config_rejects_a_media_repository_size_that_is_not_whole_gib(
 
     with pytest.raises(ValueError, match=f"{key} must be a multiple of 1024"):
         runner.LiveTestConfig.from_env_file(config_path)
+
+
+def test_live_config_default_and_example_vdisk_name_fit_the_vios_limit() -> None:
+    """#1027: the shipped disk name must not fail ST14 before any HMC write."""
+    example = Path(__file__).parents[1] / ".env.example"
+    example_value = dict(
+        line.split("=", 1) for line in example.read_text().splitlines() if "=" in line
+    )["LIVE_TEST_VDISK_NAME"]
+
+    assert len(runner.LiveTestConfig().vdisk_name) <= VIRTUAL_DISK_NAME_MAX
+    assert len(example_value) <= VIRTUAL_DISK_NAME_MAX
+
+
+def test_live_config_rejects_an_over_length_vdisk_name(tmp_path) -> None:
+    """#1027: fail at load, naming the variable, not as an ST14 step failure."""
+    name = "x" * (VIRTUAL_DISK_NAME_MAX + 1)
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_VDISK_NAME", name)
+
+    with pytest.raises(ValueError, match="LIVE_TEST_VDISK_NAME must be at most 15"):
+        runner.LiveTestConfig.from_env_file(config_path)
+
+    exact = _example_env_with(tmp_path, "LIVE_TEST_VDISK_NAME", "x" * 15)
+    assert runner.LiveTestConfig.from_env_file(exact).vdisk_name == "x" * 15
 
 
 def test_live_config_reads_the_provision_fixture_settings(tmp_path) -> None:

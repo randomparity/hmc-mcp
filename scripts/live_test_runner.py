@@ -105,6 +105,7 @@ from live_test.vmedia import (
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.config import HMCConfig, env_var_value
+from hmcpctl.documents.storage import VIRTUAL_DISK_NAME_MAX
 from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
 from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
@@ -266,7 +267,7 @@ class LiveTestConfig:
     scratch_name: str = "example-lt-609-scratch"
     nettest_name: str = "example-lt-609-network"
     test_user: str = "example-lt-609-user"
-    vdisk_name: str = "example-lt-609-disk"
+    vdisk_name: str = "lt609-disk"
     scratch_create_desired_memory_mib: int = 1536
     scratch_create_max_memory_mib: int = 3072
     scratch_create_desired_vcpus: int = 3
@@ -498,6 +499,10 @@ class LiveTestConfig:
             invalid.append("sriov_physical_port_id")
         if not parsed["protected_lpar_names"]:
             invalid.append("LIVE_TEST_PROTECTED_LPAR_NAMES")
+        if len(parsed["vdisk_name"]) > VIRTUAL_DISK_NAME_MAX:
+            invalid.append(
+                f"LIVE_TEST_VDISK_NAME must be at most {VIRTUAL_DISK_NAME_MAX} characters"
+            )
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
         if parsed["provision_vlan_id"] > 4094:
