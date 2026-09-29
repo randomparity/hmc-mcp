@@ -259,3 +259,21 @@ system to a byte-identical baseline with no operator action.
 - **Asking for profile drift after the fixture is gone.** verified: the profile is deleted with
   its partition, so the read answers HSCL8012 and — once failed reads raise — would exit 2 on
   every clean run.
+
+*Amendment 2026-09-29 (#1121):* several citations above no longer match `main`. The original
+text is left as written; current locations, checked against `1e3a133b`:
+
+- `_run_from_arguments` is at `scripts/live_test_runner.py:1202` (cited at `:1105-1140`).
+- `_hmc_identity` is at `scripts/live_test_runner.py:1339-1346` (cited at `:1233-1240`). It
+  still returns `host`, `port`, `user` and `verify_ssl`, so the argument holds.
+- `require_admitted_environment` is at `src/hmcpctl/operations/virtualization/pcie.py:575`
+  (cited as `src/hmc_mcp/operations/virtualization/pcie.py:295`; the package rename is ADR 0167).
+- The ST29 marker text `"dedicated admitted environment"` is at `scripts/live_test/pcie.py:1155`
+  (cited at `:1150`).
+- The arm no longer mirrors the admission rule in `_environment_admitted`
+  (`scripts/live_test/pcie.py:875`). Commit `2cc2007e` deleted that function; the arm now
+  imports the operations module's own `_is_exact_admitted_environment`
+  (`src/hmcpctl/operations/virtualization/pcie.py:553`; imported at
+  `scripts/live_test/pcie.py:70`, used at `:1165`). The rejected alternative's reasoning
+  stands: a blocking preflight would still duplicate an admission rule, now shared by reuse
+  rather than by a copy.
