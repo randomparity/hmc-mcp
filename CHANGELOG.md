@@ -10,6 +10,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- The power-path `ownership_override` cost is now stated as the source has it: the partition
+  resolution plus one partition-name GET, with no SSH command and no managed-system name read.
+  Corrected in the `_power_on` docstring and `docs/environment-variables.md`, and ADR 0092 §4
+  carries a dated amendment naming `resolve_and_authorize_lpar_mutation` (#1135).
 - `hmc_power_off_lpar`, `lpars power-off` and `power_lpar` now write an `lpar-power-off` audit
   record, at `WARNING`, immediately before the PowerOff job is submitted: the resolved
   partition, the HMC host, and the `operation`, `immediate` and `restart` values sent, so a
