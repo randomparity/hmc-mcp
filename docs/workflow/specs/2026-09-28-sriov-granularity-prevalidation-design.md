@@ -38,7 +38,10 @@ capacity do not:
 2. `_preflight_add` parses the selected port row's granularity into
    `_VnicPreflightContext.granularity`; `add_vnic` calls `require_capacity_granularity`
    beside the existing exhaustion check. It stays after the verified-retry (unchanged) return,
-   matching the exhaustion check's placement, and before `add_vnic_backing`.
+   matching the exhaustion check's placement, and before `add_vnic_backing`. Parsing happens in
+   `_preflight_add`, so a malformed granularity on the selected port fails closed with
+   `HMCCLIError` even on a verified retry — the same as prevalidation, whose port listing
+   already parses every row.
 
 No obsolete path remains; no public contract changes other than two new module-level names
 in `pcie.py` (not in the ADR 0118 facade). No ADR: the refusal contract is #1035's, reused.
@@ -47,9 +50,10 @@ in `pcie.py` (not in the ADR 0118 facade). No ADR: the refusal contract is #1035
 
 1. **Actors and deployments:** a local operator or MCP client driving create / provision /
    modify / `add_vnic` against one HMC.
-2. **Invariants and assets:** no HMC mutation (`mksyscfg`, `chsyscfg`, `chhwres`) after an
-   off-granularity request; no partial LPAR left by create; error types unchanged
-   (`ValueError` for the refusal, `HMCCLIError` for malformed granularity).
+2. **Invariants and assets:** no HMC mutation (`mksyscfg`, `chsyscfg`, `chhwres`) after a
+   request item whose capacity is not a multiple of a granularity the selected port reports;
+   hence no partial LPAR from that cause. Error types unchanged (`ValueError` for the refusal,
+   `HMCCLIError` for malformed granularity).
 3. **Accepted failure classes:** a port reporting no granularity is not refused — the HMC
    judges, as in #1035. Non-Ethernet (RoCE/FC-specific) granularity is out of scope
    (operator-approved exclusion). Granularity changing between prevalidation and mutation —
@@ -71,11 +75,14 @@ in `pcie.py` (not in the ADR 0118 facade). No ADR: the refusal contract is #1035
 
 - `focused-test`: `tests/lpar/test_pcie_assignments.py` — per-item refusal (7.5 on 1.0;
   2.5 + 2.5 on one port), vNIC-backing item refusal, on-granularity and `None` pass, malformed
-  → `HMCCLIError`; request analysis returns per-item tuples. Red before the change: no raise.
+  → `HMCCLIError` (an existing-behaviour pin: the port listing already parses it); request
+  analysis returns per-item tuples. Red before the change: no raise, and create proceeds.
 - `focused-test`: `tests/network/test_vnic_operations.py` — `add_vnic` 7.5 on 1.0 refused with
   no `add_vnic_backing` call; 4 on 2.0 dispatches; malformed → `HMCCLIError`. Red: mutation
   dispatched.
 - `focused-test`: `tests/unit/test_sriov_logical_port_operations.py` existing #1035 cases stay
   green (shared helper preserves message).
 - Live: lab HMC via `docs/live-testing.md` — granularity readback; off-granularity create
-  refused with no partition created.
+  refused with no partition created (`lssyscfg` before/after). The live runner's 7.5% default
+  (#1082) is already refused by the direct-assign path since #1035; this change adds no new
+  runner failure.
