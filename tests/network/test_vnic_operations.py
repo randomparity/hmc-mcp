@@ -13,6 +13,7 @@ from hmcpctl.operations.virtualization.vnic import (
     add_vnic,
     remove_vnic,
 )
+from hmcpctl.ssh.transport import HMCCLIError
 
 
 def test_vnic_models_are_immutable_and_result_field_order_is_stable() -> None:
@@ -1144,3 +1145,72 @@ async def test_remove_successful_reads_with_changed_slot_are_contradictory(
     assert result.backing_after_read_succeeded
     assert result.vnic_after[0].port_vlan_id == 8
     assert len(result.backing_after) == 1
+
+
+def _granularity_port(monkeypatch: pytest.MonkeyPatch, granularity: str) -> AsyncMock:
+    """Wire an empty inventory whose physical port reports ``granularity``; return the mutation."""
+    module = "hmcpctl.operations.virtualization.vnic"
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        f"{module}.list_sriov_physical_port_rows",
+        AsyncMock(
+            return_value=[
+                {
+                    "adapter_id": "1",
+                    "phys_port_id": "1",
+                    "state": "1",
+                    "min_eth_capacity_granularity": granularity,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(f"{module}.list_vnic_rows", AsyncMock(return_value=[]))
+    monkeypatch.setattr(f"{module}.list_vnic_backing_rows", AsyncMock(return_value=[]))
+    mutate = AsyncMock(side_effect=RuntimeError("dispatched"))
+    monkeypatch.setattr(f"{module}.add_vnic_backing", mutate)
+    return mutate
+
+
+async def _add_at(capacity: str) -> VnicChangeResult:
+    return await add_vnic(
+        _hmc(),
+        "system-a",
+        "client-a",
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(capacity)),
+        7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_refuses_capacity_off_the_port_granularity_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mutate = _granularity_port(monkeypatch, "1.0")
+    with pytest.raises(
+        ValueError,
+        match=r"capacity_percent 7\.5 is not a multiple of the physical port's "
+        r"capacity granularity 1\.0%",
+    ):
+        await _add_at("7.5")
+    mutate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("granularity", "capacity"), [("2.0", "4"), ("", "7.5")])
+async def test_add_dispatches_on_or_without_port_granularity(
+    monkeypatch: pytest.MonkeyPatch, granularity: str, capacity: str
+) -> None:
+    mutate = _granularity_port(monkeypatch, granularity)
+    with pytest.raises(VnicPartialError):
+        await _add_at(capacity)
+    mutate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_add_rejects_malformed_port_granularity_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mutate = _granularity_port(monkeypatch, "abc")
+    with pytest.raises(HMCCLIError, match="malformed physical-port capacity granularity"):
+        await _add_at("2")
+    mutate.assert_not_awaited()
