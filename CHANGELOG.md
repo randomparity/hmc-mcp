@@ -198,6 +198,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `network list-vnics`/`hmc_list_vnics` return an empty list for a partition with no vNICs.
+  Before, the HMC's `No results were found.` reply came back as a one-key row
+  (`{"No results were found.": ""}`) (#1132).
 - `network add-vnic`/`hmc_add_vnic` can add a partition's first vNIC. The vNIC read now treats
   the HMC's `No results were found.` reply as an empty list; before, it failed as a header
   mismatch, so the add's preflight refused every partition with no vNICs. The same read backs

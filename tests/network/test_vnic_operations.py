@@ -1214,3 +1214,63 @@ async def test_add_rejects_malformed_port_granularity_before_mutation(
     with pytest.raises(HMCCLIError, match="malformed physical-port capacity granularity"):
         await _add_at("2")
     mutate.assert_not_awaited()
+
+
+_SENTINEL = "No results were found.\n"
+
+
+def _csv(fields: tuple[str, ...], row: dict[str, str]) -> str:
+    return ",".join(fields) + "\n" + ",".join(row.get(f, "") for f in fields) + "\n"
+
+
+def _sentinel_hmc(monkeypatch: pytest.MonkeyPatch, after: dict[str, str] | None) -> list[str]:
+    """Stub the SSH transport: the HMC replies with its sentinel until a mutation."""
+    from hmcpctl.ssh import vnic as ssh_vnic
+
+    commands: list[str] = []
+
+    async def fake_run(_config: object, command: str) -> str:
+        commands.append(command)
+        if command.startswith("chhwres"):
+            return ""
+        mutated = any(c.startswith("chhwres") for c in commands)
+        if after is None or not mutated:
+            return _SENTINEL
+        if "vnicbkdev" in command:
+            return _csv(ssh_vnic._VNIC_BACKING_FIELDS, _backing())
+        return _csv(ssh_vnic._VNIC_FIELDS, after)
+
+    monkeypatch.setattr("hmcpctl.ssh.vnic.run_hmc_command", fake_run)
+    return commands
+
+
+@pytest.mark.asyncio
+async def test_add_on_partition_with_no_vnics_reads_sentinel_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    commands = _sentinel_hmc(monkeypatch, _vnic())
+    result = await add_vnic(
+        _hmc(),
+        "system-a",
+        "client-a",
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2)),
+        7,
+    )
+    assert (result.changed, result.slot_num, result.vnic_before) == (True, "2", ())
+    assert sum(c.startswith("chhwres") for c in commands) == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_on_partition_with_no_vnics_reads_sentinel_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    commands = _sentinel_hmc(monkeypatch, None)
+    result = await remove_vnic(_hmc(), "system-a", "client-a", "2")
+    assert (result.changed, result.selector, result.mutation_dispatched) == (
+        False,
+        None,
+        False,
+    )
+    assert not any(c.startswith("chhwres") for c in commands)
