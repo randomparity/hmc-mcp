@@ -2402,7 +2402,7 @@ def test_help_renders_the_docstring_unwrapped_with_every_group(capsys):
 def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
 
-    block = runner._run_provenance([24], "dedicated", repo_root)
+    block = runner._run_provenance([24], "dedicated", repo_root, "V1_0")
 
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -2414,19 +2414,21 @@ def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
     assert block["tested_commit"] == head.stdout.strip()
     assert block["group"] == "dedicated"
     assert block["subtasks"] == [24]
+    assert block["schema_version"] == "V1_0"
     assert isinstance(block["tree_clean"], bool)
     assert datetime.fromisoformat(block["finished"]).tzinfo is not None
 
 
 def test_run_provenance_outside_a_repository_reports_no_commit():
     """A run that cannot be attributed says so; it does not omit the block."""
-    block = runner._run_provenance([0, 1], None, None)
+    block = runner._run_provenance([0, 1], None, None, "(not set)")
 
     assert block == {
         "tested_commit": None,
         "tree_clean": None,
         "group": None,
         "subtasks": [0, 1],
+        "schema_version": "(not set)",
         "finished": block["finished"],
     }
 
@@ -2445,7 +2447,7 @@ def test_run_provenance_reports_a_dirty_tree(tmp_path):
         subprocess.run(["git", *args], cwd=tmp_path, check=True)
     (tmp_path / "scripts" / "thing.py").write_text("x = 2\n", encoding="utf-8")
 
-    block = runner._run_provenance([24], "dedicated", tmp_path)
+    block = runner._run_provenance([24], "dedicated", tmp_path, "(not set)")
 
     assert block["tested_commit"] is not None
     assert block["tree_clean"] is False
@@ -3925,11 +3927,17 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("env_value", "recorded"), [(None, "(not set)"), ("V1_0", "V1_0")]
+)
 async def test_main_stamps_run_provenance_into_the_results_document(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, env_value, recorded
 ):
-    """A matrix taken from this document can be dated; #869's could not."""
+    """A matrix taken from this document can be dated and its header state read."""
     _isolate_runner(monkeypatch)
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    if env_value is not None:
+        monkeypatch.setenv("HMC_SCHEMA_VERSION", env_value)
 
     async def fake_subtask(_client, state):
         state.record(24, "fake", "PASS", {})
@@ -3946,7 +3954,15 @@ async def test_main_stamps_run_provenance_into_the_results_document(
 
     block = json.loads(results_path.read_text())["run"]
     assert block["subtasks"] == [24]
-    assert set(block) == {"tested_commit", "tree_clean", "group", "subtasks", "finished"}
+    assert block["schema_version"] == recorded
+    assert set(block) == {
+        "tested_commit",
+        "tree_clean",
+        "group",
+        "subtasks",
+        "schema_version",
+        "finished",
+    }
 
 
 @pytest.mark.asyncio
