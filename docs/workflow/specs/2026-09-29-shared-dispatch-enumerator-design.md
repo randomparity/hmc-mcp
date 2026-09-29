@@ -33,8 +33,16 @@ class DispatchSite:
     arguments: tuple[tuple[str | None, ast.expr], ...]  # tool keywords; None name = ** splat
     unreadable: str | None        # why the site cannot be read statically, else None
 
+def _attribute_calls(tree: ast.Module) -> list[tuple[str | None, ast.Call]]
+def _dispatch_site(function: str | None, node: ast.Call) -> DispatchSite | None
 def dispatch_sites(tree: ast.Module) -> list[DispatchSite]
 ```
+
+`_attribute_calls` is the one source-ordered walk: each attribute call in any top-level
+statement, paired with its enclosing top-level definition name (today's `calls = sorted(...)`
+comprehension). `_dispatch_site` owns the `call` predicate and classification, returning
+`None` for any other attribute. `dispatch_sites` maps `_dispatch_site` over
+`_attribute_calls` and drops `None`.
 
 It visits every `ast.Call` whose `func` is an `ast.Attribute` named `call` inside any
 top-level statement — which is every such call in the module — in source order.
@@ -45,17 +53,17 @@ first match wins: `"call outside a top-level function"` when `function` is `None
 
 Consumers, each keeping its own unreadable policy:
 
-- `scan_source` keeps its single source-ordered loop over attribute calls; for each
-  `call` it asks the enumerator's per-node helper for the `DispatchSite`, then builds
+- `scan_source` keeps its single loop, now over `_attribute_calls`; where
+  `_dispatch_site` returns a site it builds
   `Dispatch` (names only) or lists `f"{label}:{lineno} {unreadable}"`. So dispatch and
   `record_verified` unreadable lines stay interleaved in source order, as today.
   `record_verified` handling is otherwise untouched.
 - The test module imports `scenario_gap_report` (already on `sys.path`) and deletes
   `_dispatched_calls`. `_dispatch_argument_report` iterates `dispatch_sites` and turns
   each unreadable site into one problem containing `cannot read`, then continues —
-  the guard fails (`problems == []` is asserted). `_dispatched_tool_names` and the
-  argument-resolution tests read through a helper that asserts no site is unreadable,
-  message containing `cannot read`.
+  the guard fails (`problems == []` is asserted). `_dispatched_tool_names` re-points
+  onto `dispatch_sites` with today's semantics: it fails (`cannot read`) only when a
+  site's `tool` is `None`. The argument-resolution tests read `dispatch_sites` directly.
 
 ### Scope decision
 
@@ -66,10 +74,9 @@ guard used to check normally, now fails the guard. Nothing is dropped — every
 tree no such site exists (`live_test_runner.py` has zero `.call` sites; the report's
 `--fail-on-dispatch` run is clean over the scenario package).
 
-The tool-name guard also moves onto the shared classification, so it now refuses a
-`**` splat and an outside-top-level dispatch as well as a non-literal tool (today it
-accepts both). This is re-pointing, a consequence of criterion 4; on the real tree
-neither shape exists, so the tool-name set is unchanged.
+The tool-name guard keeps its own rule (fail only on a non-literal tool): changing it is
+an approved exclusion, and the argument guard already fails on the other two shapes over
+a superset of the same sources.
 
 Rejected:
 
@@ -114,9 +121,9 @@ Rejected:
 ## Validation
 
 - `focused-test`: guard unreadable policy — parametrized
-  `test_argument_guard_refuses_a_dispatch_it_cannot_read` and
-  `test_dispatch_guard_refuses_a_tool_name_it_cannot_read` over the three fault shapes;
-  red on the outside-top-level case before the change (the old walk checks it);
+  `test_argument_guard_refuses_a_dispatch_it_cannot_read` over the three fault shapes,
+  replacing the splat-only test; red on the outside-top-level case before the change
+  (the old walk checks it); the existing tool-name test stays;
   `uv run --no-sync pytest tests/test_live_runner.py -k "cannot_read" --no-cov -q`.
 - `focused-test`: enumerator contract — `test_dispatch_sites_carry_argument_nodes`;
   red before `dispatch_sites` exists;
