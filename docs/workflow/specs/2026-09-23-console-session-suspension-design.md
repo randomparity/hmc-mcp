@@ -69,8 +69,8 @@ Threat model: no new boundary. `suspend()` and `resume()` reuse the existing `rm
 1. Mode (a): inside `hand_over()`, `handover.read()` returns the stream bytes that follow the
    collector's last chunk. A collector read that was waiting on the stream returns nothing
    during the handover and returns the next bytes after it. From `open()` to `close()`,
-   `run_hmc_command` runs only for `close()` (rmvterm plus the probe's teardown), and
-   `create_process` runs once on the session's own connection.
+   `run_hmc_command` runs only for `close()` (`rmvterm` only as the fallback to stdin EOF, plus
+   the probe's teardown; amended by #1084), and `create_process` runs once on the session's own connection.
 2. After `hand_over()` exits, `handover.read()` raises `RuntimeError`. `hand_over()`,
    `suspend()` and `resume()` raise `RuntimeError` outside their valid states: `hand_over()`
    and `suspend()` need a held session with no active pause, and `resume()` needs a suspended

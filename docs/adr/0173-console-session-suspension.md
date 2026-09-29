@@ -7,6 +7,11 @@ Rule 1 (one hold per session, `close()` terminal) gains the two suspension modes
 `close()` is accepted during `suspend()` and `resume()`. Rule 4 (release belongs to `close()`)
 gains one exception: `suspend()` also releases, with the same proof.
 
+> **Amended by #1084** (2026-09-28): decision 2's release sequence is stdin EOF first, then
+> `rmvterm` only when the stream had ended or EOF does not finish in time, then the independent
+> probe, which releases its own hold the same way. This records #1058 and #1072; the code and
+> `close()`'s docstring already behave this way.
+
 ## Context
 
 A continuous collector (#957) must yield the console to a preempting hold, such as kdive's KGDB
@@ -28,8 +33,8 @@ released.
    collector, and a handover read still pending then raises `RuntimeError`. Only one
    pause, of either mode, can be active at a time.
 2. **Release for an external holder (mode b).** `await session.suspend()` releases exactly as
-   `close()` does: `rmvterm`, the independent probe, then connection and stdin teardown. It
-   returns the proof as a `bool`. `await session.resume()` acquires again through the same path
+   `close()` does: stdin EOF, `rmvterm` only as the fallback, the independent probe, then
+   connection and stdin teardown. It returns the proof as a `bool`. `await session.resume()` acquires again through the same path
    as `open()`. It never issues `rmvterm`, even when the session was built with
    `take_over=True`, because that would end the holder the session made way for. If the slot
    was taken, `resume()` raises `ConsoleHeldError` and the session stays suspended. The caller

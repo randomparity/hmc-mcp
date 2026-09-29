@@ -573,6 +573,66 @@ def _provision_step_names(
     return names
 
 
+async def _run_legs_through_power(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    request: ProvisionRequest,
+    lpar_uuid: str,
+    steps: list[WorkflowStep],
+    step_names: list[str],
+) -> tuple[bool, tuple[str, ...], ChangeLocation | None]:
+    """Run the policy through power legs; on failure, skip the remaining steps.
+
+    Returns the completed flag, the change-location read's warnings, and the
+    change location. Both are empty until the read, which follows the network
+    leg.
+    """
+    change_location: ChangeLocation | None = None
+    warnings: tuple[str, ...] = ()
+    completed = await _run_policy_leg(
+        steps,
+        hmc,
+        system_name_or_uuid,
+        request.name,
+        request.minimum_affinity_policy,
+    )
+    completed = completed and await _run_network_leg(
+        steps, hmc, lpar_uuid, request.adapters.port_vlan_id
+    )
+    if completed:
+        # Read once here, not through the standalone adapter/storage operations,
+        # which would repeat the authorization read once per step (#1056).
+        change_location, warnings = await _read_change_location(hmc, lpar_uuid)
+        storage_steps, completed = await _run_storage_leg(hmc, lpar_uuid, request.storage)
+        steps.extend(storage_steps)
+    completed = completed and await _run_assignment_leg(
+        steps, hmc, system_name_or_uuid, request.name, request.assignments
+    )
+    completed = completed and (
+        not request.power_on
+        or await _run_power_leg(
+            steps, hmc, system_name_or_uuid, lpar_uuid, request.affinity_assessment
+        )
+    )
+    if not completed:
+        _skip_steps(steps, step_names[len(steps) :])
+    return completed, warnings, change_location
+
+
+async def _run_affinity_stage(
+    steps: list[WorkflowStep], hmc: HMCClient, request: ProvisionRequest
+) -> tuple[bool, tuple[str, ...]]:
+    """Run the optional post-activation affinity assessment."""
+    if request.affinity_assessment is None:
+        return True, ()
+    if not request.power_on:
+        steps.append(WorkflowStep("affinity_assessment", "skipped"))
+        return False, ()
+    return await _run_affinity_leg(
+        steps, hmc, request.affinity_assessment, request.minimum_affinity_policy
+    )
+
+
 async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -638,68 +698,12 @@ async def provision_lpar(
     if not _append_apply_step(steps, step_names, creation):
         return _failed_provision_result(creation, created_uuid, steps, step_names)
 
-    if not await _run_policy_leg(
-        steps,
-        hmc,
-        system_name_or_uuid,
-        request.name,
-        request.minimum_affinity_policy,
-    ):
-        return _failed_provision_result(creation, created_uuid, steps, step_names)
-
-    if not await _run_network_leg(steps, hmc, created_uuid, request.adapters.port_vlan_id):
-        return _failed_provision_result(creation, created_uuid, steps, step_names)
-
-    # Read once here, not through the standalone adapter/storage operations,
-    # which would repeat the authorization read once per step (#1056).
-    change_location, location_warnings = await _read_change_location(hmc, created_uuid)
-
-    storage_steps, storage_completed = await _run_storage_leg(
-        hmc, created_uuid, request.storage
+    completed, warnings, change_location = await _run_legs_through_power(
+        hmc, system_name_or_uuid, request, created_uuid, steps, step_names
     )
-    steps.extend(storage_steps)
-    if not storage_completed:
-        return _failed_provision_result(
-            creation, created_uuid, steps, step_names,
-            location_warnings, change_location,
-        )
-
-    if not await _run_assignment_leg(
-        steps, hmc, system_name_or_uuid, request.name, request.assignments
-    ):
-        return _failed_provision_result(
-            creation, created_uuid, steps, step_names,
-            location_warnings, change_location,
-        )
-
-    if request.power_on and not await _run_power_leg(
-        steps, hmc, system_name_or_uuid, created_uuid, request.affinity_assessment
-    ):
-        return _failed_provision_result(
-            creation, created_uuid, steps, step_names,
-            location_warnings, change_location,
-        )
-
-    if request.affinity_assessment is not None:
-        if not request.power_on:
-            steps.append(WorkflowStep("affinity_assessment", "skipped"))
-            return _provision_result(
-                creation, created_uuid, steps, False,
-                location_warnings, change_location,
-            )
-        completed, affinity_warnings = await _run_affinity_leg(
-            steps, hmc, request.affinity_assessment, request.minimum_affinity_policy
-        )
-        if not completed:
-            return _provision_result(
-                creation, created_uuid, steps, False,
-                location_warnings, change_location,
-            )
-        return _provision_result(
-            creation, created_uuid, steps, True,
-            location_warnings + affinity_warnings, change_location,
-        )
-
+    if completed:
+        completed, affinity_warnings = await _run_affinity_stage(steps, hmc, request)
+        warnings += affinity_warnings
     return _provision_result(
-        creation, created_uuid, steps, True, location_warnings, change_location
+        creation, created_uuid, steps, completed, warnings, change_location
     )
