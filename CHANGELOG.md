@@ -10,11 +10,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
-- Every LPAR PowerOff now writes an `lpar-power-off` audit record, at `WARNING`, immediately
-  before the job is submitted: the resolved partition, the HMC host, and the `operation`,
-  `immediate` and `restart` values sent, so a `dumprestart` crash is distinguishable from a
-  graceful stop. It covers `hmc_power_off_lpar`, `lpars power-off` and `power_lpar`; a call
-  refused by validation or the ownership guard writes none (ADR 0180, #895).
+- `hmc_power_off_lpar`, `lpars power-off` and `power_lpar` now write an `lpar-power-off` audit
+  record, at `WARNING`, immediately before the PowerOff job is submitted: the resolved
+  partition, the HMC host, and the `operation`, `immediate` and `restart` values sent, so a
+  `dumprestart` crash is distinguishable from a graceful stop. A call refused by validation or
+  the ownership guard writes none, and the decommission workflow's own `shutdown` is not
+  recorded (ADR 0180, #895).
 - `hmc_power_on_lpar`, `lpars power-on --keylock` and `power_on_lpar`/`power_lpar` accept an
   optional PowerOn `keylock` of `manual` or `norm` (normal) — the job's own spelling, not the
   creation-time `normal`/`manual`/`auto` — refused before any HMC call, including when the
