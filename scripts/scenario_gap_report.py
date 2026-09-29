@@ -24,12 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import live_test_runner
-from fastmcp import Client
-
-from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
-from hmcpctl.server import TOOL_SECURITY, _gates, create_mcp
-from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CAPABILITIES = _REPO_ROOT / "docs" / "capabilities"
@@ -322,21 +316,9 @@ def exit_status(lines: Iterable[str], *, fail_on_dispatch: bool) -> int:
 
 
 async def served_schemas() -> dict[str, dict[str, Any]]:
-    """The input schema each tool serves, composed exactly as the live runner does.
-
-    This mirrors the composition in ``live_test_runner``'s run loop (the block that
-    fills ``state.schemas``); a change there must be made here too.
-    """
-    policy = compile_legacy_policy(
-        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
-    )
-    application = create_mcp(policy)
-    permits, authorize = _gates(policy)
-    await configure_arbitrary_command_tool(
-        True, application, permits=permits, authorize=authorize
-    )
-    async with Client(application) as client:
-        return {tool.name: tool.input_schema for tool in await client.list_tools()}
+    """The input schema each tool serves, through the live runner's own composition."""
+    async with live_test_runner.served_client() as client:
+        return await live_test_runner.served_schemas(client)
 
 
 def scenario_scans() -> list[Scan]:
