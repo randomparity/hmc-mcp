@@ -196,6 +196,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The `HMC_AUTHORIZE_POWER_OPERATIONS` description and environment-variable page no longer say
+  the guard requires a managed-system selector: it derives the owning system when the selector
+  is omitted, and an `ownership_override` skips that walk, the SSH read and the name reads
+  (#1117).
 - LPAR create, provision and modify, and `network add-vnic`/`hmc_add_vnic`, refuse an SR-IOV
   logical-port or vNIC-backing capacity that is not a multiple of the physical port's Ethernet
   capacity granularity before any HMC change, with the #1035 message. Each requested capacity
