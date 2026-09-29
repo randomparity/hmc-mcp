@@ -241,6 +241,13 @@ with the same shape (#441's `hmc_set_lpar_msp` and `hmc_set_lpar_proc_compat`,
 each carries an optional selector; they should reuse
 `_resolve_and_authorize_lpar` rather than invent a second derivation.
 
+> **Amended by #1144** (2026-09-29): the function this record calls
+> `_resolve_and_authorize_lpar` (in the Decision section and again in the closing
+> paragraph above) is now
+> `resolve_and_authorize_lpar_mutation`
+> (`operations/lpar/ownership.py::resolve_and_authorize_lpar_mutation`). ADR 0092's #1135
+> note records the same rename.
+
 ## Considered & rejected
 
 **Make the selector required on the operation, and on the tool.** The simplest

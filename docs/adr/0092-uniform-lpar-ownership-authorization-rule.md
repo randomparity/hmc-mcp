@@ -360,6 +360,13 @@ narrows it further — it skips the fleet walk on an override and pays one name 
 > (`operations/lpar/ownership.py::resolve_and_authorize_lpar_names`), which the vNIC, PCIe
 > and affinity operations use.
 
+> **Amended by #1144** (2026-09-29): the #1135 note's list of callers of
+> `resolve_and_authorize_lpar_names` is incomplete. It is also called by the LPAR
+> configuration operations (`operations/lpar/configuration.py`) and by
+> `set_lpar_ownership_description`
+> (`operations/lpar/ownership.py::set_lpar_ownership_description`), so those paths pay the
+> same two REST GETs on an override.
+
 The two REST GETs come from `resolve_lpar_ownership_names`
 (`operations/lpar/ownership.py::resolve_lpar_ownership_names`), which the guard needs to turn UUIDs into the CLI names
 the SSH command takes. It calls `_resolve_system_name` (`operations/lpar/ownership.py::_resolve_system_name`) → `hmc.get_managed_system`
