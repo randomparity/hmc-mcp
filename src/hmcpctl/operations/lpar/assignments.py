@@ -19,6 +19,7 @@ from hmcpctl.operations.virtualization.pcie import (
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
+    require_capacity_granularity,
     require_dedicated_pcie_environment,
     require_drc_index,
 )
@@ -171,12 +172,16 @@ def _validate_dedicated_requests(items: tuple[DedicatedPcieAssignment, ...]) -> 
 
 def _analyze_assignment_requests(
     assignments: LparPcieAssignments,
-) -> tuple[dict[tuple[str, str], Decimal], set[tuple[str, str]]]:
-    """Validate request structure and return its inventory requirements."""
+) -> tuple[dict[tuple[str, str], tuple[Decimal, ...]], set[tuple[str, str]]]:
+    """Validate request structure and return its inventory requirements.
+
+    Capacities are kept per requested item, in request order, because the port's
+    granularity binds each logical port or backing, not their per-port sum.
+    """
     _validate_dedicated_requests(assignments.dedicated)
 
     identities: dict[tuple[str, str], tuple[str, Decimal]] = {}
-    requested_capacity: dict[tuple[str, str], Decimal] = {}
+    requested_capacity: dict[tuple[str, str], tuple[Decimal, ...]] = {}
     for item in assignments.sriov:
         require_command_safe_text(item.profile_name, "profile_name")
         adapter = require_command_safe_text(item.adapter_id, "adapter_id")
@@ -191,7 +196,8 @@ def _analyze_assignment_requests(
             raise ValueError("duplicate logical-port assignment")
         identities[key] = observation
         requested_capacity[adapter, physical] = (
-            requested_capacity.get((adapter, physical), Decimal()) + capacity
+            *requested_capacity.get((adapter, physical), ()),
+            capacity,
         )
 
     vnic_requests: set[tuple[str, str, str, str, Decimal, int]] = set()
@@ -218,7 +224,8 @@ def _analyze_assignment_requests(
         vnic_requests.add(identity)
         vios_identities.add((backing.vios_name, backing.vios_lpar_id))
         requested_capacity[adapter, physical] = (
-            requested_capacity.get((adapter, physical), Decimal()) + capacity
+            *requested_capacity.get((adapter, physical), ()),
+            capacity,
         )
     return requested_capacity, vios_identities
 
@@ -226,7 +233,7 @@ def _analyze_assignment_requests(
 async def _validate_sriov_inventory(
     hmc: HMCClient,
     system: str,
-    requested_capacity: dict[tuple[str, str], Decimal],
+    requested_capacity: dict[tuple[str, str], tuple[Decimal, ...]],
 ) -> None:
     """Validate adapter, port, logical-port, and capacity inventory."""
 
@@ -245,16 +252,21 @@ async def _validate_sriov_inventory(
             raise ValueError(
                 f"SR-IOV physical port {adapter}/{physical} is not healthy"
             )
+        for capacity in requested:
+            require_capacity_granularity(
+                capacity, ports.items[0].minimum_capacity_granularity_percent
+            )
         logical = await list_sriov_logical_ports(hmc, system, adapter, physical)
         if logical.capability != "available":
             raise ValueError(
                 logical.unavailable_reason or "logical-port inventory unavailable"
             )
         used = await _existing_capacity(hmc, adapters.system, adapter, physical)
-        if used + requested > 100:
+        total = sum(requested, Decimal())
+        if used + total > 100:
             raise ValueError(
                 f"capacity exhausted on {adapter}/{physical}: {used}% used and "
-                f"{requested}% requested"
+                f"{total}% requested"
             )
 
 

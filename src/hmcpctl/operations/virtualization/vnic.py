@@ -9,7 +9,11 @@ from typing import Literal
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_names
-from hmcpctl.operations.virtualization.pcie import require_admitted_environment
+from hmcpctl.operations.virtualization.pcie import (
+    eth_capacity_granularity,
+    require_admitted_environment,
+    require_capacity_granularity,
+)
 from hmcpctl.operations.virtualization.validation import (
     require_command_safe_text,
     validate_capacity_percent,
@@ -98,6 +102,7 @@ class _VnicPreflightContext:
     vnics: tuple[VnicSnapshot, ...]
     backings: tuple[VnicBackingSnapshot, ...]
     used_capacity: Decimal
+    granularity: Decimal | None
 
 
 @dataclass(frozen=True)
@@ -416,6 +421,7 @@ async def _preflight_add(
     ]
     if len(ports) != 1 or ports[0]["state"] != "1":
         raise VnicCapabilityError("physical port is unavailable or mismatched")
+    granularity = eth_capacity_granularity(ports[0])
     direct = await list_sriov_configured_logical_port_rows(
         config, system_name, selector.adapter_id
     )
@@ -431,6 +437,7 @@ async def _preflight_add(
         before,
         backings,
         _used_port_capacity(observations, selector),
+        granularity,
     )
 
 
@@ -609,7 +616,8 @@ async def add_vnic(
     """Add a vNIC backing and reconcile the resulting state.
 
     Raises:
-        ValueError: If selectors, VLAN, or available capacity are invalid.
+        ValueError: If selectors, VLAN, capacity granularity, or available capacity
+            are invalid.
         VnicCapabilityError: If current inventory forbids the mutation.
         VnicPartialError: If a dispatched mutation cannot be reconciled.
     """
@@ -650,6 +658,7 @@ async def add_vnic(
         raise VnicCapabilityError(
             "existing matching vNIC inventory is ambiguous or degraded"
         )
+    require_capacity_granularity(selector.capacity_percent, context.granularity)
     if context.used_capacity + selector.capacity_percent > 100:
         raise ValueError(f"capacity exhausted: {context.used_capacity}% used of 100%")
     payload = _add_payload(selector)
