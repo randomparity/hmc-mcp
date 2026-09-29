@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastmcp import Client
 
 SCRIPTS_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -24,10 +23,7 @@ import live_bare_cec as wrapper  # noqa: E402
 import live_test_runner as runner  # noqa: E402
 from live_test import bare_cec, pcie  # noqa: E402
 
-from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN  # noqa: E402
-from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy  # noqa: E402
 from hmcpctl.errors import HMCError  # noqa: E402
-from hmcpctl.server_tools.command import configure_arbitrary_command_tool  # noqa: E402
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command  # noqa: E402
 from hmcpctl.ssh.transport import HMCCLIError  # noqa: E402
 
@@ -60,17 +56,10 @@ _REAL_AUTHORIZATION_CHECK = bare_cec._power_operations_authorized
 @pytest.fixture(scope="module")
 def schemas() -> dict[str, dict[str, Any]]:
     """The input schemas the live runner's server really serves."""
-    policy = compile_legacy_policy(
-        runner.TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
-    )
 
     async def served() -> dict[str, dict[str, Any]]:
-        # Built as `live_test_runner.main` builds it, escape hatch included.
-        mcp = runner.create_mcp(policy)
-        permits, authorize = runner._gates(policy)
-        await configure_arbitrary_command_tool(True, mcp, permits=permits, authorize=authorize)
-        async with Client(mcp) as client:
-            return {tool.name: tool.input_schema for tool in await client.list_tools()}
+        async with runner.served_client() as client:
+            return await runner.served_schemas(client)
 
     return asyncio.run(served())
 
