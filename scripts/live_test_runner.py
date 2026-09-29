@@ -258,6 +258,9 @@ def _bootstrap_config() -> bool:
     return True
 
 
+_VIOS_OBJECT_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]*")
+
+
 @dataclass(frozen=True)
 class LiveTestConfig:
     """Validated operator configuration for live-test executions."""
@@ -503,6 +506,16 @@ class LiveTestConfig:
             invalid.append(
                 f"LIVE_TEST_VDISK_NAME must be at most {VIRTUAL_DISK_NAME_MAX} characters"
             )
+        # Both names are interpolated into the ST14 `viosvrcmd ... rmvlog` string.
+        invalid += [
+            f"{key} may contain only letters, digits, '.', '_' and '-', "
+            "and must not start with '-'"
+            for key, field_name in (
+                ("LIVE_TEST_VDISK_VOLUME_GROUP_NAME", "vdisk_volume_group_name"),
+                ("LIVE_TEST_VDISK_NAME", "vdisk_name"),
+            )
+            if not _VIOS_OBJECT_NAME.fullmatch(parsed[field_name])
+        ]
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
         if parsed["provision_vlan_id"] > 4094:
