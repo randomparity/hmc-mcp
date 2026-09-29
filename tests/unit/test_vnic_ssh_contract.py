@@ -59,6 +59,15 @@ async def test_list_vnic_rows_requests_exact_fields(monkeypatch, config) -> None
 
 
 @pytest.mark.asyncio
+async def test_list_vnic_rows_accepts_hmc_empty_result(monkeypatch, config) -> None:
+    async def fake_run(_config, _command: str) -> str:
+        return "No results were found.\n"
+
+    monkeypatch.setattr("hmcpctl.ssh.vnic.run_hmc_command", fake_run)
+    assert await list_vnic_rows(config, "system", "client") == []
+
+
+@pytest.mark.asyncio
 async def test_list_vnic_backing_rows_accepts_hmc_empty_result(
     monkeypatch, config
 ) -> None:
