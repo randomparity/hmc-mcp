@@ -98,12 +98,16 @@ def _references(
             found.add((module, node.id))
         elif isinstance(node, ast.Name) and node.id in imported:
             found.add(imported[node.id])
-        elif (
-            isinstance(node, ast.Attribute)
-            and isinstance(node.value, ast.Name)
-            and node.value.id in packages
-        ):
-            found.add((packages[node.value.id], node.attr))
+        elif isinstance(node, ast.Attribute):
+            holder = node.value
+            if isinstance(holder, ast.Name) and holder.id in packages:
+                found.add((packages[holder.id], node.attr))
+            elif (  # `import live_test.m` then `live_test.m.f`
+                isinstance(holder, ast.Attribute)
+                and isinstance(holder.value, ast.Name)
+                and holder.value.id == _PACKAGE
+            ):
+                found.add((holder.attr, node.attr))
     return frozenset(found)
 
 
@@ -115,6 +119,11 @@ def scan_source(source: str, label: str, module: str) -> Scan:
     # Imports anywhere in the module, relative or absolute through `live_test`:
     # a function-local import still names a package function.
     for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname and alias.name.startswith(f"{_PACKAGE}."):
+                    packages[alias.asname] = alias.name.removeprefix(f"{_PACKAGE}.")
+            continue
         if not isinstance(node, ast.ImportFrom):
             continue
         source = node.module or ""
@@ -130,7 +139,15 @@ def scan_source(source: str, label: str, module: str) -> Scan:
             else:
                 packages[alias.asname or alias.name] = alias.name
     definitions = [node for node in tree.body if isinstance(node, _DEFINITIONS)]
-    local = {definition.name for definition in definitions}
+    # A module-level `alias = _impl` is a name a scenario can reach `_impl` through.
+    aliases = {
+        target.id: statement.value
+        for statement in tree.body
+        if isinstance(statement, ast.Assign)
+        for target in statement.targets
+        if isinstance(target, ast.Name)
+    }
+    local = {definition.name for definition in definitions} | aliases.keys()
     dispatches: list[Dispatch] = []
     verified: list[Verified] = []
     unreadable: list[str] = []
@@ -172,8 +189,11 @@ def scan_source(source: str, label: str, module: str) -> Scan:
                 continue
             verified.append(Verified(site, function, name))
     references = {
-        definition.name: _references(definition, module, local, imported, packages)
-        for definition in definitions
+        name: _references(node, module, local, imported, packages)
+        for name, node in [
+            *((definition.name, definition) for definition in definitions),
+            *aliases.items(),
+        ]
     }
     return Scan(
         module, tuple(dispatches), tuple(verified), tuple(unreadable), references

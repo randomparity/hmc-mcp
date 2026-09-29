@@ -198,6 +198,34 @@ def test_absolute_and_function_local_imports_still_reach_a_helper():
     )
 
 
+def test_module_aliases_and_plain_package_imports_still_reach_a_helper():
+    scenario = (
+        "import live_test.helpers\n"
+        "import live_test.helpers as named\n"
+        "async def _impl(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars")\n'
+        "alias = _impl\n"
+        "async def s(client, state):\n"
+        "    await alias(client, state)\n"
+        "    await live_test.helpers.listing(client, state)\n"
+        "    await named.other(client, state)\n"
+    )
+    helpers = (
+        "async def listing(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars")\n'
+        "async def other(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars", system="s")\n'
+    )
+    scans = [
+        report.scan_source(scenario, "m.py", "m"),
+        report.scan_source(helpers, "helpers.py", "helpers"),
+    ]
+
+    lines = report.build_report(scans, ROOTS, OPERATIONS, ROWS, SCHEMAS)
+
+    assert not [line for line in lines if line.startswith("departed:")]
+
+
 def test_a_dispatch_outside_a_top_level_function_is_unreadable():
     source = (
         "if True:\n"
