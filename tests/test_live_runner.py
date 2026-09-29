@@ -36,6 +36,7 @@ from hmcpctl.ssh import affinity as ssh_affinity
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
+import scenario_gap_report  # noqa: E402
 from live_test import (  # noqa: E402
     bare_cec,
     connectivity,
@@ -440,8 +441,14 @@ async def test_sriov_arm_emits_verified_observations(monkeypatch) -> None:
             "sriov.assign_logical_port",
             "passed",
             "passed",
-            sorted(["assign-call-succeeded", "logical-port-configured",
-                    "owner-is-target-lpar", "capacity-matches"]),
+            sorted(
+                [
+                    "assign-call-succeeded",
+                    "logical-port-configured",
+                    "owner-is-target-lpar",
+                    "capacity-matches",
+                ]
+            ),
         ),
         "st26-hmc-unassign-sriov-logical-port": (
             "sriov.unassign_logical_port",
@@ -801,7 +808,9 @@ class TestDescriptionBaselineRestore:
         assert state.results[-1]["status"] == "PASS"
 
     @pytest.mark.asyncio
-    async def test_an_unrestorable_baseline_fails_with_a_manual_recovery_row(self) -> None:
+    async def test_an_unrestorable_baseline_fails_with_a_manual_recovery_row(
+        self,
+    ) -> None:
         state = _ScriptedSriovState([])
         state.artifacts.lp3_baseline["description"] = "café stamp"
 
@@ -817,7 +826,9 @@ class TestDescriptionBaselineRestore:
         assert "chsyscfg -r lpar" in row["data"]
 
     @pytest.mark.asyncio
-    async def test_an_absent_baseline_key_fails_with_a_manual_recovery_row(self) -> None:
+    async def test_an_absent_baseline_key_fails_with_a_manual_recovery_row(
+        self,
+    ) -> None:
         """No ST0 baseline was ever recorded for this key (e.g. a resumed results
         file that never captured it) — distinct from a baseline that was really
         empty, which restores normally (#1038)."""
@@ -1276,7 +1287,9 @@ async def test_the_run_header_records_which_way_the_run_went(
         monkeypatch.setenv(spelling, "V1_0")
         assert HMCConfig(host="h", user="u", password="p").schema_version == "V1_0"
 
-    await runner.main(999, str(tmp_path / "results.json"), config=runner.LiveTestConfig())
+    await runner.main(
+        999, str(tmp_path / "results.json"), config=runner.LiveTestConfig()
+    )
 
     assert reported in capsys.readouterr().out
 
@@ -1381,7 +1394,9 @@ def test_live_config_reads_the_bare_cec_dump_opt_in_from_the_example(tmp_path) -
     config_path = tmp_path / ".env"
     config_path.write_text(text)
 
-    assert runner.LiveTestConfig.from_env_file(config_path).accept_platform_dump == "true"
+    assert (
+        runner.LiveTestConfig.from_env_file(config_path).accept_platform_dump == "true"
+    )
     assert runner.LiveTestConfig().accept_platform_dump == ""
 
 
@@ -1398,23 +1413,36 @@ def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
     assert config.sriov_physical_port_id == 0
 
 
-def test_default_sriov_capacity_is_a_multiple_of_every_recorded_port_granularity() -> None:
+def test_default_sriov_capacity_is_a_multiple_of_every_recorded_port_granularity() -> (
+    None
+):
     """#1082: the assign path refuses a capacity that is not a granularity multiple.
 
     The recorded HMC ports report 1.0 (roce) and 2.0 (ethc); a default that fails
     either stops the SR-IOV arm at its own pre-check instead of exercising assign.
     """
-    fixture = Path(__file__).parent / "fixtures/sriov/sriov-physport-granularity-v10r3.json"
+    fixture = (
+        Path(__file__).parent / "fixtures/sriov/sriov-physport-granularity-v10r3.json"
+    )
     granularities = {
         Decimal(value)
-        for value in re.findall(r'"min_eth_capacity_granularity": "([^"]+)"', fixture.read_text())
+        for value in re.findall(
+            r'"min_eth_capacity_granularity": "([^"]+)"', fixture.read_text()
+        )
     }
-    example = runner.LiveTestConfig.from_env_file(Path(__file__).parents[1] / ".env.example")
+    example = runner.LiveTestConfig.from_env_file(
+        Path(__file__).parents[1] / ".env.example"
+    )
 
     assert granularities == {Decimal("1.0"), Decimal("2.0")}
-    defaults = (runner.LiveTestConfig().sriov_capacity_percent, example.sriov_capacity_percent)
+    defaults = (
+        runner.LiveTestConfig().sriov_capacity_percent,
+        example.sriov_capacity_percent,
+    )
     for capacity in defaults:
-        assert all(Decimal(str(capacity)) % step == 0 for step in granularities), capacity
+        assert all(Decimal(str(capacity)) % step == 0 for step in granularities), (
+            capacity
+        )
 
 
 @pytest.mark.parametrize(
@@ -1425,9 +1453,17 @@ def test_default_sriov_capacity_is_a_multiple_of_every_recorded_port_granularity
         ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "half", "could not convert"),
         ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "0", "scratch_create_desired_procs"),
         ("LIVE_TEST_SCRATCH_CREATE_MAX_PROCS", "-0.5", "scratch_create_max_procs"),
-        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "nan", "scratch_create_desired_procs"),
+        (
+            "LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS",
+            "nan",
+            "scratch_create_desired_procs",
+        ),
         ("LIVE_TEST_SCRATCH_CREATE_MAX_PROCS", "inf", "scratch_create_max_procs"),
-        ("LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS", "0.7", "inconsistent resource limits"),
+        (
+            "LIVE_TEST_SCRATCH_CREATE_DESIRED_PROCS",
+            "0.7",
+            "inconsistent resource limits",
+        ),
     ],
 )
 def test_live_config_rejects_unusable_scratch_processing_units(
@@ -1620,7 +1656,13 @@ def test_bootstrap_redacts_config_error_before_dotenv_fallback(monkeypatch, caps
 
 @pytest.mark.parametrize(
     "filename",
-    ["config.toml", "test-results-round2.json", "CONFIG.TOML", "settings.yaml", "lab_run.log"],
+    [
+        "config.toml",
+        "test-results-round2.json",
+        "CONFIG.TOML",
+        "settings.yaml",
+        "lab_run.log",
+    ],
 )
 def test_failure_redaction_keeps_a_named_file_readable(filename):
     """#914: `config.toml: no default_profile set` printed as `<REDACTED-HOST>: …`."""
@@ -1845,8 +1887,10 @@ def test_declared_limitations_have_registered_gap_identities():
 )
 def test_gap_identity_rejects_malformed_tokens(field, value):
     arguments = {
-        "operation": "pcm.get_preferences", "variant": "managed-system-pcm",
-        "reason": "unavailable", "error_codes": frozenset({"406"}),
+        "operation": "pcm.get_preferences",
+        "variant": "managed-system-pcm",
+        "reason": "unavailable",
+        "error_codes": frozenset({"406"}),
     }
     arguments[field] = value
     with pytest.raises(ValueError, match="operation|variant"):
@@ -2062,13 +2106,20 @@ def test_gap_output_can_be_copied_and_loaded_for_next_run(tmp_path):
     assert runner._load_known_gaps(("V10R3", "POWER10"), repo, catalog) == set()
 
 
-@pytest.mark.parametrize("records", [[None], [{"operation": "unknown.operation"}], "invalid"])
+@pytest.mark.parametrize(
+    "records", [[None], [{"operation": "unknown.operation"}], "invalid"]
+)
 def test_invalid_gap_catalog_fails_even_without_environment(tmp_path, records):
     catalog = tmp_path / "maturity.json"
-    catalog.write_text(json.dumps({
-        "format_version": 3, "admission_policy": "existing-runtime-guards",
-        "operations": records,
-    }))
+    catalog.write_text(
+        json.dumps(
+            {
+                "format_version": 3,
+                "admission_policy": "existing-runtime-guards",
+                "operations": records,
+            }
+        )
+    )
     with pytest.raises(ValueError, match="invalid gap catalog"):
         runner._load_known_gaps(None, tmp_path, catalog)
 
@@ -2090,7 +2141,12 @@ def test_classify_failure_reads_the_message_not_the_traceback():
 @pytest.mark.parametrize(
     "status,data,expected_status,note_contains",
     [
-        ("FAIL", {"steps": [{"step": "apply_profile", "status": "error"}]}, "FAIL", None),
+        (
+            "FAIL",
+            {"steps": [{"step": "apply_profile", "status": "error"}]},
+            "FAIL",
+            None,
+        ),
         ("PASS", "not a dict", "PASS", None),
         ("PASS", {"lpar": {"UUID": "u"}}, "PASS", None),
         (
@@ -2113,7 +2169,10 @@ def test_classify_failure_reads_the_message_not_the_traceback():
         ),
         (
             "PASS",
-            {"workflow_completed": False, "steps": [{"step": "assign[0]", "status": "error"}]},
+            {
+                "workflow_completed": False,
+                "steps": [{"step": "assign[0]", "status": "error"}],
+            },
             "FAIL",
             "assign[0] failed",
         ),
@@ -2830,49 +2889,26 @@ def test_live_runner_contains_no_executable_optmem_command():
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
-def _dispatched_calls(
-    source: str,
-) -> list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]]:
-    """Every ``call`` dispatch in ``source``: its line, tool name and arguments.
+def _dispatch_sites(source: str) -> list[scenario_gap_report.DispatchSite]:
+    """Every ``call`` dispatch in ``source``, from the gap report's enumerator.
 
-    Each argument is its keyword name paired with the expression node supplying
-    it, so a caller can check the *type* a site passes and not only the name.
-
-    A dispatch whose tool argument is not a string literal cannot be read here,
-    and skipping it would silently shrink the guard's coverage, so it fails
-    instead. A ``**mapping`` splat yields ``None`` in place of a keyword name:
-    reporting that as one problem, rather than raising on it, is what lets the
-    caller finish enumerating every other site in the tree.
+    Each site pairs its keyword names with the expression nodes supplying them, so
+    a caller can check the *type* a site passes and not only the name. A site the
+    enumerator marks unreadable is kept, never skipped: skipping it would silently
+    shrink the guard's coverage.
     """
-    dispatches: list[tuple[int, str, tuple[tuple[str | None, ast.expr], ...]]] = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        if not (isinstance(node.func, ast.Attribute) and node.func.attr == "call"):
-            continue
-        tool = node.args[1] if len(node.args) > 1 else None
-        if not (isinstance(tool, ast.Constant) and isinstance(tool.value, str)):
-            raise AssertionError(  # noqa: TRY004 - AssertionError is this guard's contract, asserted at tests/test_live_runner.py:630
-                f"line {node.lineno}: call() dispatches a tool name this guard "
-                "cannot read — pass a string literal"
-            )
-        dispatches.append(
-            (
-                node.lineno,
-                tool.value,
-                tuple(
-                    (keyword.arg, keyword.value)
-                    for keyword in node.keywords
-                    if keyword.arg not in {"expected", "reuse_gaps"}
-                ),
-            )
-        )
-    return dispatches
+    return scenario_gap_report.dispatch_sites(ast.parse(source))
 
 
 def _dispatched_tool_names(source: str) -> set[str]:
     """Every tool name ``source`` hands to the runner's ``call`` dispatcher."""
-    return {tool for _, tool, _ in _dispatched_calls(source)}
+    sites = _dispatch_sites(source)
+    unreadable = [f"line {site.lineno}" for site in sites if site.tool is None]
+    assert unreadable == [], (
+        f"{', '.join(unreadable)}: call() dispatches a tool name this guard "
+        "cannot read — pass a string literal"
+    )
+    return {site.tool for site in sites if site.tool is not None}
 
 
 #: The holder a dispatch site reads statically-typed arguments from. A default
@@ -2960,15 +2996,16 @@ def _dispatch_argument_report(
     problems: list[str] = []
     checked = total = 0
     for path, source in sources.items():
-        for lineno, tool, arguments in _dispatched_calls(source):
-            if any(name is None for name, _ in arguments):
+        for site in _dispatch_sites(source):
+            if site.unreadable is not None:
                 problems.append(
-                    f"{path}:{lineno} dispatches arguments this guard "
-                    "cannot read — name them"
+                    f"{path}:{site.lineno} a dispatch this guard cannot read: "
+                    f"{site.unreadable}"
                 )
                 continue
+            lineno, tool = site.lineno, site.tool
             supplied: dict[str, object] = {}
-            for name, node in arguments:
+            for name, node in site.arguments:
                 if name is None:
                     continue
                 total += 1
@@ -3196,8 +3233,8 @@ def test_static_argument_resolution_reads_config_field_types():
         '        logical_port_id="917003")\n'
     )
 
-    (_, _, arguments), *rest = _dispatched_calls(source)
-    resolved = {name: _resolved_argument(node) for name, node in arguments}
+    site, *rest = _dispatch_sites(source)
+    resolved = {name: _resolved_argument(node) for name, node in site.arguments}
 
     assert rest == []
     assert resolved["adapter_id"] == runner.LiveTestConfig().sriov_adapter_id
@@ -3231,7 +3268,8 @@ def test_static_argument_resolution_reads_conversions_and_f_strings(
         f'    await state.call(client, "hmc_list_sriov_adapters", adapter_id={expression})\n'
     )
 
-    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+    (site,) = _dispatch_sites(source)
+    ((_, node),) = site.arguments
 
     assert type(_resolved_argument(node)) is expected_type
 
@@ -3248,10 +3286,10 @@ def test_every_sriov_identifier_argument_is_actually_type_checked():
     identifiers = {"adapter_id", "physical_port_id", "logical_port_id"}
 
     passed_over = [
-        f"pcie.py:{lineno} {tool}: {name}"
-        for lineno, tool, arguments in _dispatched_calls(source)
-        if "sriov" in tool
-        for name, node in arguments
+        f"pcie.py:{site.lineno} {site.tool}: {name}"
+        for site in _dispatch_sites(source)
+        if "sriov" in (site.tool or "")
+        for name, node in site.arguments
         if name in identifiers and _resolved_argument(node) is _UNRESOLVED
     ]
 
@@ -3259,9 +3297,9 @@ def test_every_sriov_identifier_argument_is_actually_type_checked():
     assert (
         sum(
             name in identifiers
-            for _, tool, arguments in _dispatched_calls(source)
-            if "sriov" in tool
-            for name, _ in arguments
+            for site in _dispatch_sites(source)
+            if "sriov" in (site.tool or "")
+            for name, _ in site.arguments
         )
         == 23
     )
@@ -3275,7 +3313,8 @@ def test_static_argument_resolution_reports_a_config_field_that_does_not_exist()
         "        adapter_id=config.sriov_adapter_idd)\n"
     )
 
-    ((_, _, ((_, node),)),) = _dispatched_calls(source)
+    (site,) = _dispatch_sites(source)
+    ((_, node),) = site.arguments
 
     assert _resolved_argument(node) is _NO_SUCH_FIELD
 
@@ -3318,12 +3357,24 @@ async def test_every_dispatched_argument_matches_the_served_schema():
 
 
 @pytest.mark.asyncio
-async def test_argument_guard_refuses_a_splat_it_cannot_read():
-    source = (
-        "async def workflow(client):\n"
-        '    await state.call(client, "hmc_list_lpars", **overrides)\n'
-    )
-
+@pytest.mark.parametrize(
+    "source",
+    [
+        "async def workflow(client, tool):\n    await state.call(client, tool)\n",
+        (
+            "async def workflow(client):\n"
+            '    await state.call(client, "hmc_list_lpars", **overrides)\n'
+        ),
+        (
+            "if True:\n"
+            "    async def workflow(client):\n"
+            '        await state.call(client, "hmc_list_lpars")\n'
+        ),
+    ],
+    ids=["non-literal-tool", "splat", "outside-top-level-function"],
+)
+async def test_argument_guard_refuses_a_dispatch_it_cannot_read(source):
+    """Each shape the shared enumerator cannot read fails the guard, never drops out."""
     with pytest.raises(AssertionError, match="cannot read"):
         _assert_dispatch_arguments({"synthetic.py": source}, await _served_schemas())
 
@@ -3517,7 +3568,8 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
             ]
         if tool == "hmc_get_media_repository":
             first_st16_probe = (
-                workflow is runner.vmedia_bootstrap_and_create_repo and counts[tool] == 1
+                workflow is runner.vmedia_bootstrap_and_create_repo
+                and counts[tool] == 1
             )
             return "PASS", None if first_st16_probe else {"UUID": "repo"}
         if tool == "hmc_list_optical_media":
@@ -3633,7 +3685,9 @@ async def test_vmedia_repository_skips_when_configured_group_too_small(monkeypat
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append(tool)
         if tool == "hmc_list_volume_groups":
-            return "PASS", [{"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 5}]
+            return "PASS", [
+                {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 5}
+            ]
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -3659,7 +3713,9 @@ async def test_vmedia_does_not_claim_a_pre_existing_repository(monkeypatch):
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append(tool)
         if tool == "hmc_list_volume_groups":
-            return "PASS", [{"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 64}]
+            return "PASS", [
+                {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 64}
+            ]
         if tool == "hmc_get_media_repository":
             return "PASS", {"RepositoryName": "VMLibrary", "RepositorySize": "6144"}
         return "PASS", {}
@@ -3747,12 +3803,18 @@ def test_vmedia_behavioral_inventory_covers_every_registered_stage():
     ("reported", "sets", "skip_reason"),
     [
         (
-            {"pending_boot_string": _BOOT_LAN, "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}"},
+            {
+                "pending_boot_string": _BOOT_LAN,
+                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
+            },
             [[_BOOT_DISK, _BOOT_LAN], [_BOOT_LAN]],
             None,
         ),
         (
-            {"pending_boot_string": None, "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}"},
+            {
+                "pending_boot_string": None,
+                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
+            },
             [],
             "REST0126",
         ),
@@ -3790,7 +3852,12 @@ async def test_vmedia_boot_order_writes_only_what_it_can_restore(
     monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
     _configure_vmedia_artifacts(
         state,
-        {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg", "lp3_uuid": "lp3"},
+        {
+            "vmedia_repo_created": True,
+            "vios_uuid": "vios",
+            "vg_uuid": "vg",
+            "lp3_uuid": "lp3",
+        },
     )
 
     await runner.vmedia_boot_verification(None, state)
@@ -3800,7 +3867,8 @@ async def test_vmedia_boot_order_writes_only_what_it_can_restore(
     ] == sets
     assert "hmc_clear_lpar_boot_order" not in [tool for tool, _ in calls]
     skipped = [
-        entry for entry in state.results
+        entry
+        for entry in state.results
         if entry["tool"] == "hmc_set_lpar_boot_order (boot device list)"
         and entry["status"] == "SKIP"
     ]
@@ -4389,7 +4457,9 @@ async def test_nettest_cleanup_deletes_by_name_when_identity_unresolved(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_nettest_cleanup_fails_with_manual_recovery_when_delete_fails(monkeypatch):
+async def test_nettest_cleanup_fails_with_manual_recovery_when_delete_fails(
+    monkeypatch,
+):
     """A PASS create that can't be cleaned up records FAIL with manual recovery, not SKIP (#969)."""
 
     async def scripted_call(_state, _client, tool, **kwargs):
@@ -4734,7 +4804,9 @@ async def test_lpar_property_workflow_refuses_an_unrestorable_description(monkey
     ]
     assert descriptions == ["MCP live-test probe R2 safe to clear"]
     restore = [row for row in state.results if row["tool"].endswith("(restore)")]
-    assert [row["status"] for row in restore if "description" in row["tool"]] == ["FAIL"]
+    assert [row["status"] for row in restore if "description" in row["tool"]] == [
+        "FAIL"
+    ]
 
 
 @pytest.mark.asyncio
@@ -4886,7 +4958,9 @@ async def test_wait_for_job_outcome_normalizes_from_the_served_shape():
 @pytest.mark.parametrize("changed", [True, False])
 # FastMCP's client cannot enforce the served schema's Decimal pattern and says so;
 # the field it concerns is not the one this test reads.
-@pytest.mark.filterwarnings("ignore:Pattern .* is not supported by Pydantic:UserWarning")
+@pytest.mark.filterwarnings(
+    "ignore:Pattern .* is not supported by Pydantic:UserWarning"
+)
 async def test_sriov_changed_reads_the_served_result_shape(changed: bool):
     """The SR-IOV transcripts script mappings; the live client serves a model."""
     application = FastMCP("sriov-shape-probe")
@@ -5001,12 +5075,13 @@ def test_verified_scenarios_name_registered_operations():
     the pull request, rather than after an expensive run against real hardware.
     """
     registered = {
-        tool.operation
-        for tool in runner.check_capability_inventory.discover_registry()
+        tool.operation for tool in runner.check_capability_inventory.discover_registry()
     }
     declared = _recorded_operations()
 
-    assert declared, "no record_verified operations found — the guard would pass vacuously"
+    assert declared, (
+        "no record_verified operations found — the guard would pass vacuously"
+    )
     assert sorted(declared - registered) == []
 
 
@@ -5108,8 +5183,18 @@ def _live_repo(tmp_path: Path) -> Path:
     (tmp_path / "scripts" / "placeholder.py").write_text("", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(
-        ["git", "-C", str(tmp_path), "-c", "user.email=t@example.test",
-         "-c", "user.name=t", "commit", "-qm", "base"],
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.email=t@example.test",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "base",
+        ],
         check=True,
     )
     return tmp_path
@@ -5202,20 +5287,27 @@ def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
     assert errors == []
     assert document[0]["operation"] == "console.info"
     assert document[0]["observation"]["result"] == "passed"
-    assert document[0]["observation"]["closure_fingerprint"] != hashlib.sha256(
-        b""
-    ).hexdigest()
+    assert (
+        document[0]["observation"]["closure_fingerprint"]
+        != hashlib.sha256(b"").hexdigest()
+    )
 
 
 def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):
     """A one-line `.env` typo costs a startup exit, not a hardware run's output."""
     monkeypatch.setattr(
-        runner, "_read_environment", lambda *_a: (_ for _ in ()).throw(ValueError("lone key"))
+        runner,
+        "_read_environment",
+        lambda *_a: (_ for _ in ()).throw(ValueError("lone key")),
     )
     monkeypatch.setattr(
-        runner.LiveTestConfig, "from_env_file", classmethod(lambda _cls: runner.LiveTestConfig())
+        runner.LiveTestConfig,
+        "from_env_file",
+        classmethod(lambda _cls: runner.LiveTestConfig()),
     )
-    monkeypatch.setattr(runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP"))
+    monkeypatch.setattr(
+        runner, "create_mcp", lambda *_a, **_k: pytest.fail("created MCP")
+    )
 
     assert runner._run_from_arguments([]) == 1
     assert "lone key" in capsys.readouterr().out
@@ -5256,13 +5348,15 @@ def test_emission_skips_an_unknown_operation_and_keeps_the_rest(tmp_path, capsys
     repo = _live_repo(tmp_path)
     state = _state_with_one_observation()
     state.observations.insert(
-        0, {"operation": "not.an.operation", "observation": dict(state.observations[0]["observation"], id="st0-bogus")}
+        0,
+        {
+            "operation": "not.an.operation",
+            "observation": dict(state.observations[0]["observation"], id="st0-bogus"),
+        },
     )
     destination = repo / "test-results-round2-observations.json"
 
-    assert runner._emit_observations(
-        state, destination, ("V10R3", "POWER10"), repo
-    )
+    assert runner._emit_observations(state, destination, ("V10R3", "POWER10"), repo)
 
     document = json.loads(destination.read_text())
     assert [entry["operation"] for entry in document] == ["console.info"]
@@ -5283,7 +5377,13 @@ def test_gitignore_covers_live_test_results():
 
 @pytest.mark.parametrize(
     "value",
-    ["hmc01.lab.example.com", "0644C7T", "U78CB.001.WZS0044-P1-C2", "lab-hmc-3", "10.1.2.3"],
+    [
+        "hmc01.lab.example.com",
+        "0644C7T",
+        "U78CB.001.WZS0044-P1-C2",
+        "lab-hmc-3",
+        "10.1.2.3",
+    ],
 )
 def test_an_environment_value_outside_its_grammar_is_rejected(tmp_path, value):
     """These two strings are the only free text an observation carries.
@@ -5385,7 +5485,9 @@ def test_record_verified_writes_its_verdict_with_the_row():
     assert [row["result"] for row in state.results] == ["observed", "passed"]
 
 
-@pytest.mark.parametrize("identity", ["job-", "j", "ab", "Job-found", "-job", "job_found"])
+@pytest.mark.parametrize(
+    "identity", ["job-", "j", "ab", "Job-found", "-job", "job_found"]
+)
 def test_assertion_id_rejects_a_truncated_or_malformed_token(identity):
     """A trailing hyphen is a truncated token, not a closed-shape one."""
     with pytest.raises(ValueError, match="closed-shape token"):
