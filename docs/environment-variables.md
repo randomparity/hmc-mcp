@@ -111,9 +111,10 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   system fails or returns no `SystemName`, and that fallback *swallows* its timeout
   and carries on to the ownership read, which then burns a second one. At the
   300-second default that is roughly ten minutes before the failure surfaces, not
-  five. The override path pays only the first, because it skips the ownership read
-  — so it is not an unconditional SSH-free path either. A deployment whose HMC
-  credentials work for REST but not for SSH should leave this setting off.
+  five. The override path runs neither command — it skips the name resolution and
+  the ownership read — so the two-timeout worst case applies to the non-override
+  path only. A deployment whose HMC credentials work for REST but not for SSH
+  should leave this setting off, because the non-override path still needs SSH.
 
   **Set the environment variable, not the TOML key, to make the guard hold
   everywhere.** The value is read from the resolved config, so a TOML

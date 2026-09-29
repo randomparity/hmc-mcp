@@ -347,6 +347,19 @@ partition. #371 corrected an earlier reading of this parenthetical that took the
 override path to be free end to end; ADR 0094's `_resolve_and_authorize_lpar`
 narrows it further — it skips the fleet walk on an override and pays one name read.)
 
+> **Amended by #1135** (2026-09-29): the function this section calls
+> `_resolve_and_authorize_lpar` (here and in the §3 table) is now
+> `resolve_and_authorize_lpar_mutation`
+> (`operations/lpar/ownership.py::resolve_and_authorize_lpar_mutation`). On an override
+> it returns through `_authorize_override`
+> (`operations/lpar/ownership.py::_authorize_override`), which resolves the partition and
+> reads its name once, and never reaches `resolve_lpar_ownership_names`. So the optional-
+> selector chain on the power path pays one partition-name GET, no SSH command and no
+> managed-system name read. The two REST GETs quoted above are paid on an override only by
+> callers of `resolve_and_authorize_lpar_names`
+> (`operations/lpar/ownership.py::resolve_and_authorize_lpar_names`), which the vNIC, PCIe
+> and affinity operations use.
+
 The two REST GETs come from `resolve_lpar_ownership_names`
 (`operations/lpar/ownership.py::resolve_lpar_ownership_names`), which the guard needs to turn UUIDs into the CLI names
 the SSH command takes. It calls `_resolve_system_name` (`operations/lpar/ownership.py::_resolve_system_name`) → `hmc.get_managed_system`

@@ -293,10 +293,11 @@ async def _power_on(
     Consequences). The override keeps the resolution inside ADR 0092 §5's two
     mechanisms — it is audited — rather than adding a call-site-conditional
     guard. With ``authorize_power_operations`` on it spares the SSH ownership
-    read, though not the two REST name lookups that precede it; with the
-    setting off nothing here runs at all. It also means every successful
-    provision emits an ``ownership-override`` audit record once the setting is
-    on — ``docs/authorization-audit.md`` records that the event is not
+    read and both managed-system name reads, and costs one partition-name GET
+    (the UUID this leg passes needs no lookup); with the setting off nothing
+    here runs at all. It also means every successful provision emits an
+    ``ownership-override`` audit record once the setting is on —
+    ``docs/authorization-audit.md`` records that the event is not
     human-triggered only.
     """
     result = await power_lpar(
