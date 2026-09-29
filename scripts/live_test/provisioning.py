@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import TYPE_CHECKING
 
 from fastmcp import Client
@@ -121,7 +122,7 @@ async def _recreate_test_disk(
 
     vg_name = config.vdisk_volume_group_name
     command = (
-        f"viosvrcmd -m {config.system_name} -p {artifacts.vios_uuid}"
+        f"viosvrcmd -m {shlex.quote(config.system_name)} -p {artifacts.vios_uuid}"
         f' -c "rmvlog -vg {vg_name} -lv {config.vdisk_name}"'
     )
     status, data = await state.call(
