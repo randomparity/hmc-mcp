@@ -10,6 +10,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_power_on_lpar`, `lpars power-on --keylock` and `power_on_lpar`/`power_lpar` accept an
+  optional PowerOn `keylock` of `manual` or `norm` (normal) — the job's own spelling, not the
+  creation-time `normal`/`manual`/`auto` — refused before any HMC call, including when the
+  partition is already running. Omitted, the PowerOn document is unchanged and the HMC keeps
+  choosing the position (#894).
 - SR-IOV logical-port assignment refuses a capacity that is not a multiple of the physical
   port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
   naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
