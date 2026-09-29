@@ -51,7 +51,8 @@ mapping comes from epic #871 and issue #872):
 - `on` against a running partition submits no job and reports `already_running`, unless
   `force=True`.
 - With `wait=True`, a wait that times out returns the last-seen, non-terminal job. Poll it
-  with `hmc_get_job`; do not resubmit, least of all an `operation=dumprestart`.
+  with `hmcpctl.operations.jobs.get_job` (tool: `hmc_get_job`); do not resubmit, least of
+  all an `operation=dumprestart`.
 
 ## Console capture
 
@@ -71,7 +72,9 @@ bytes.
   issued no `rmvterm` against it.
 - **Contention.** When another session already holds the terminal, the capture raises
   `hmcpctl.ssh.console.ConsoleHeldError`, captures nothing, and never takes the terminal
-  over.
+  over. It raises the same error after acquisition when the HMC's contention sentence
+  appears in the captured output; its own hold has then been released, and the message
+  says whether that release was proven. Neither path returns captured bytes.
 - **Writing is a different class.** `hmcpctl.ssh.console.WritableConsoleSession`
   ([ADR 0176](adr/0176-console-input-and-exclusive-raw-mode.md)) is the only type that can
   write to a console. The capture never constructs it, and this contract does not cover it.
@@ -88,12 +91,13 @@ partition another agent owns. A provider that cares reads
 On, `power_lpar` reads the partition's ownership stamp and refuses a partition another agent
 owns unless the caller passes `ownership_override=True`, which records an audited override.
 When no managed-system selector is given it finds the owning system itself, which is a
-fleet-wide search. A failed ownership read fails the call with no job submitted. See
+fleet-wide search; an override skips that search. A failed ownership read fails the call with no job submitted. See
 [ADR 0092](adr/0092-uniform-lpar-ownership-authorization-rule.md).
 
 ## SSH host-key verification
 
-Console capture and the ownership read run over SSH. `HMC_SSH_VERIFY_HOST_KEY` (profile key
+Console capture and `power_lpar`'s guarded ownership check run over SSH;
+`list_lpar_ownership` is a REST read. `HMC_SSH_VERIFY_HOST_KEY` (profile key
 `ssh_verify_host_key`) defaults to true: the HMC's host key must already be in the process
 user's `~/.ssh/known_hosts` ([SSH trust setup](HMC_HINTS.md#ssh-host-key-trust)). Setting it
 false disables server authentication for sessions that carry the HMC credentials, and every

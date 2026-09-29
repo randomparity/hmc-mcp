@@ -39,6 +39,7 @@ EXPECTED_IMPORT_PATHS = {
     "hmcpctl.ssh.console.ConsoleHeldError",
     "hmcpctl.ssh.console.ConsoleHoldLostError",
     "hmcpctl.ssh.console.WritableConsoleSession",
+    "hmcpctl.operations.jobs.get_job",
     "hmcpctl.api",
 }
 EXPECTED_TOOLS = {
