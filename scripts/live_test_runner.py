@@ -37,10 +37,10 @@ own headers never carry it — including `submit_job`, so the job path every
 power operation takes is unaffected either way. A run therefore starts with or
 without it. `docs/compatibility.md` is the full account.
 
-The run header prints the resolved value, including `(not set)`, to stdout. The
-results and observations documents do not record it, so a matrix cited as
-evidence for a run does not by itself name the request environment it was
-gathered in.
+The run header prints the resolved value, including `(not set)`, to stdout, and
+the results document records the same string as `run.schema_version`. The
+observations document does not record it, so observations cited as evidence do
+not by themselves name the request environment they were gathered in.
 """
 
 from __future__ import annotations
@@ -299,7 +299,7 @@ class LiveTestConfig:
     sriov_adapter_id: int = 17
     sriov_physical_port_id: int = 9
     sriov_logical_port_id: int = 917003
-    sriov_capacity_percent: float = 7.5
+    sriov_capacity_percent: float = 2.0
     sriov_profile_name: str = "example-lt-609-profile"
     # The dedicated PCIe arm creates and deletes a partition on the system it
     # names, so it refuses to run on a default: an empty system name or LPAR
@@ -1479,7 +1479,10 @@ def _repository_root() -> Path | None:
 
 
 def _run_provenance(
-    tasks: Sequence[int], group: str | None, repo_root: Path | None
+    tasks: Sequence[int],
+    group: str | None,
+    repo_root: Path | None,
+    schema_version: str,
 ) -> dict[str, Any]:
     """What this run was, so a matrix taken from it can be dated.
 
@@ -1491,6 +1494,10 @@ def _run_provenance(
 
     `tree_clean` qualifies `commit`: with `src` or `scripts` dirty the sha names
     a tree that was not the one exercised, so evidence cannot cite it.
+
+    `schema_version` is the resolved `HMC_SCHEMA_VERSION` (`(not set)` when
+    unset), the same string the run header prints, so a matrix can say which
+    request environment produced it.
     """
     commit: str | None = None
     tree_clean: bool | None = None
@@ -1504,6 +1511,7 @@ def _run_provenance(
         "tree_clean": tree_clean,
         "group": group,
         "subtasks": list(tasks),
+        "schema_version": schema_version,
         "finished": datetime.now(UTC).isoformat(),
     }
 
@@ -1694,7 +1702,7 @@ async def main(
         Path(results_path),
         json.dumps(
             {
-                "run": _run_provenance(tasks, group, repo_root),
+                "run": _run_provenance(tasks, group, repo_root, schema_version),
                 "config": asdict(state.config),
                 "hmc": _hmc_identity(hmc_config),
                 "artifacts": asdict(state.artifacts),

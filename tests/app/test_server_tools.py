@@ -332,6 +332,7 @@ def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc
         boot_mode="sms",
         partition_profile_uuid=PARTITION_PROFILE_UUID,
         operation_type="activate",
+        keylock="manual",
     )
 
     assert outcome.warnings == ()
@@ -342,11 +343,15 @@ def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc
     assert ">LogicalPartitionProfile</ParameterName>" in body
     assert PARTITION_PROFILE_UUID in body
     assert ">OperationType</ParameterName>" in body
+    assert ">keylock</ParameterName>" in body
+    assert '<ParameterValue kb="CUR" kxe="false">manual</ParameterValue>' in body
 
     # ADR 0161: the partition profile is never named `profile`, which is the
     # connection profile and stays exactly what it was.
     parameters = inspect.signature(hmc_power_on_lpar).parameters
-    assert {"boot_mode", "partition_profile_uuid", "operation_type"} <= set(parameters)
+    assert {"boot_mode", "partition_profile_uuid", "operation_type", "keylock"} <= set(
+        parameters
+    )
     assert parameters["profile"].default is None
 
 

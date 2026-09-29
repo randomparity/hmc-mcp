@@ -770,9 +770,9 @@ async def _configure_boot_order(
     The boot order takes Open Firmware device paths (#980). No path is reported for
     the virtual CD, so the step no longer forces a CD-first boot: it writes back the
     paths the HMC reports, which exercises the write. It writes only when the baseline
-    pending boot order is non-empty, because only a set can restore it: V10R3 rejects
-    the empty value a clear writes (HTTP 500 REST0126), which would leave the write
-    behind.
+    pending boot order is non-empty, because only a set can restore it: no V10R3 value
+    clears a pending boot string (#1048), so a write over an empty baseline would
+    leave the write behind.
     """
     config = state.config
     artifacts = state.artifacts
@@ -793,8 +793,8 @@ async def _configure_boot_order(
         state.skip(
             20,
             _SET_BOOT_ORDER_STEP,
-            "baseline pending boot order is empty; V10R3 rejects the empty value that "
-            "would restore it (HTTP 500 REST0126)",
+            "baseline pending boot order is empty; no V10R3 value clears a pending boot "
+            "string (#1048; the empty value is rejected with HTTP 500 REST0126)",
         )
         return
     if not boot_devices:
