@@ -89,6 +89,14 @@ def _provenance(document: dict[str, Any]) -> tuple[str, str] | None:
     return commit, ""
 
 
+def _schema_version(run: dict[str, Any]) -> str:
+    """The recorded `HMC_SCHEMA_VERSION`, on one line, or a placeholder for older documents."""
+    recorded = run.get("schema_version")
+    if isinstance(recorded, str) and recorded.strip():
+        return " ".join(recorded.split())
+    return "(not recorded)"
+
+
 def render(document: dict[str, Any]) -> str | None:
     """The Markdown matrix, or `None` when the document cannot be attributed."""
     attribution = _provenance(document)
@@ -104,6 +112,7 @@ def render(document: dict[str, Any]) -> str | None:
 
     selection = (
         f"Group: `{run.get('group') or '(none)'}` · "
+        f"Schema version: `{_schema_version(run)}` · "
         f"Subtasks dispatched: `{run.get('subtasks')}` · "
         f"Finished: `{run.get('finished')}`"
     )
