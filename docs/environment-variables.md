@@ -24,7 +24,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
 | `HMC_AUDIT_MEMENTO` | string | `hmcpctl` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs. Must contain only printable ASCII (U+0020 through U+007E); an empty string is accepted. See header configuration note below |
 | `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmcpctl:<agent_id>` and new LPARs are stamped with `[hmcpctl owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmcpctl` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmcpctl` is always used. |
-| `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmcpctl lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
+| `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmcpctl lpars power-on/power-off`) reads the ownership token before submitting the job, derives the owning managed system when the selector is omitted (a bounded fleet walk), and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
 | `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmcpctl storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
 | `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on UOM requests whose call site does not opt out, and on every `/rest/api/web/` request; requests that build their own headers never send it. Must contain only printable ASCII (U+0020 through U+007E); an empty string omits the header. **Leave unset for normal operation** — see note below. |
 
@@ -73,17 +73,17 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 
 - **Power ownership guard** (`HMC_AUTHORIZE_POWER_OPERATIONS`): ADR 0011 ownership
   is advisory by default on the power path, and ADR 0092 §4 records why. The guard
-  costs **one SSH login plus two REST GETs** per guarded call —
-  `authorize_lpar_mutation` reads the token over SSH, and
-  `resolve_lpar_ownership_names` performs both REST reads unconditionally to turn
-  UUIDs into the CLI names the SSH command takes. `ownership_override=True` skips
-  the SSH read, **not** the two REST reads: they run first, because the audit
-  record for an approved override names the system and the partition. A
-  power-cycling orchestrator is the highest-frequency caller of this operation, and
-  power is the one mutation class whose inverse is a single call with no prior
-  state to reconstruct, so the cost is opt-in rather than default. Turn it on when
-  the HMC is shared with other agents or human operators and that cost is
-  acceptable.
+  costs **one SSH login plus two REST GETs** per guarded call that supplies
+  the managed-system selector — `authorize_lpar_mutation` reads the token over SSH,
+  and `resolve_lpar_ownership_names` performs both REST reads to turn UUIDs into
+  the CLI names the SSH command takes. `ownership_override=True` skips the SSH
+  read, the fleet walk described below, and those two name reads; it still
+  resolves the partition and reads its name, because the audit record for an
+  approved override names the partition. A power-cycling orchestrator is the
+  highest-frequency caller of this operation, and power is the one mutation class
+  whose inverse is a single call with no prior state to reconstruct, so the cost is
+  opt-in rather than default. Turn it on when the HMC is shared with other agents
+  or human operators and that cost is acceptable.
 
   Turning it on changes two things beyond the ownership check. A partition another
   agent owns is refused with a `PermissionError`; retry it as a deliberate, audited

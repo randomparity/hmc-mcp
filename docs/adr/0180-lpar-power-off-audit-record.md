@@ -5,6 +5,17 @@
 Accepted (2026-09-28). Adds one member to ADR 0040's closed `Event` vocabulary under ADR 0040's
 stability rule (a field or event may be added, never renamed, removed, or retyped).
 
+> **Amended by #1115** (2026-09-29): decision 3's "one emit point" and the Consequences bullet
+> exempting the decommission workflow no longer hold. The decommission workflow's own PowerOff
+> (`hmc_decommission_lpar`, `hmcpctl lpars decommission`, `decommission_lpar`) writes one
+> `lpar-power-off` record too, immediately before its submit and after the ownership check it
+> already runs, with `operation="shutdown"`, `restart=false` and the `immediate` it sends. The
+> exemption's reason, that decommission has no variant to tell apart, answered whether crash and
+> graceful stop can be distinguished, not whether the stop is recorded at all; an operator
+> filtering for every partition stop missed these. A partition already `not activated` is not
+> submitted a PowerOff and writes no record, and a dry run writes none. A submit that raises is
+> still recorded, as in `power_lpar`.
+
 ## Context
 
 ADR 0164 gave the LPAR PowerOff job a closed `operation` vocabulary — `shutdown`, `osshutdown`

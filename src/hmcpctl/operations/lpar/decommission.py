@@ -13,6 +13,7 @@ from hmcpctl.operations.lpar.ownership import (
     resolve_lpar_ownership_names,
 )
 
+from ...audit import records as audit
 from ...client.client_contracts import AdapterType
 from ...errors import HMCError
 from ...jobs import (
@@ -474,6 +475,16 @@ async def _power_off(
             "ok",
             {"already_off": True, "state": "not activated"},
         )
+    # ADR 0180 as amended by #1115: before the submit, because a submit that raises
+    # may still have reached the HMC. The values are the ones the document below carries.
+    audit.record_lpar_power_off(
+        lpar=inventory.lpar_uuid,
+        host=hmc.config.host,
+        operation="shutdown",
+        immediate=immediate,
+        restart=False,
+        agent_id=hmc.config.agent_id or "hmcpctl",
+    )
     submitted_job = await hmc.submit_job(
         f"/rest/api/uom/LogicalPartition/{inventory.lpar_uuid}/do/PowerOff",
         power_off_lpar_job(immediate=immediate),
