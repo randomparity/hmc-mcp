@@ -4,6 +4,11 @@
 
 Accepted (2026-08-20)
 
+> **Correction (2026-09-28, via #963).** The Context below says `hmc_list_optical_media` returns
+> `MediaName`, `MediaSize`, and `MediaType` only. Since #963 it returns `name`, `size_mib` (the
+> HMC's GiB `Size` element converted to MiB) and `media_type`. Its listing still exposes no media
+> content, so this record's conclusion is unchanged. The original sentence is left in place.
+
 ## Context
 
 ADR 0049 made an `http(s)` URL the only source `hmc_upload_iso` accepts, and said

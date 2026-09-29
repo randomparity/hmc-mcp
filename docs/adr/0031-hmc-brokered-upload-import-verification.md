@@ -7,6 +7,12 @@
 Accepted. Amended 2026-08-20 by ADR 0052 — see *Amendment* below; the decision
 recorded here stands, one signature it lists has changed.
 
+> **Correction (2026-09-28, via #963).** The Checksum Exposure Decision below says the
+> `VirtualOpticalMedia` element exposes `MediaName`, `MediaSize`, and `MediaType`. Since #963 the
+> element is read as carrying `Size`, not `MediaSize`: the HMC XSD names the field `Size` and
+> measures it in GiB, and live V10R3 responses do not include `MediaSize`. The decision itself,
+> that no checksum field is exposed, is unchanged. The original sentence is left in place.
+
 ## Context
 
 Issue #201 requires establishing a source-grounded compatibility decision for HMC/VIOS brokered ISO upload, import, cleanup, and checksum inspection behavior before exposing a public upload API. The existing `client.py:263-338` provides generic `/rest/api/web/` resource transport and endpoint-specific error handling, while `client_storage.py:119-161` currently implements only UOM media-repository mutations. Neither seam records the brokered file create, streamed upload, ISO import, cleanup, or imported-media checksum behavior needed for the media upload saga (#200).
