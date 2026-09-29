@@ -10,7 +10,9 @@ The composition that turns the tool registry into what an MCP client is served
 argument-guard helper `_served_schemas` in `tests/test_live_runner.py`, and
 `served_schemas` in `scripts/scenario_gap_report.py`. Each reads the schema under a
 different spelling (`inputSchema`, `model_dump(by_alias=True)["inputSchema"]`,
-`input_schema`). Nothing keeps the copies in step.
+`input_schema`). Nothing keeps the copies in step. A fourth copy, the `schemas` fixture
+in `tests/scripts/test_live_bare_cec.py`, is outside this change's surface and is
+reported as a follow-up rather than migrated here.
 
 ## Design
 
