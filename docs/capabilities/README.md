@@ -169,6 +169,10 @@ check on the way in — but it cannot know whether an observation describes a ru
 happened. Trust rests on the record being small, closed-shape, and reviewed.
 
 Scenario coverage remains hand-written until #706.
+`uv run --no-sync python scripts/scenario_gap_report.py` reports, offline, the operations
+and rows no registered live scenario exercises, scenario dispatches or `record_verified`
+operations the registry no longer has, and dispatches whose argument names the served
+input schema rejects. It exits 0; `--fail-on-dispatch` exits 1 on any dispatch finding.
 
 The catalog records no runtime eligibility. `existing-runtime-guards` neither grants
 nor revokes admission: authorization, ownership, validation, capability, and safety
