@@ -16,20 +16,19 @@ scenario fix (#1092-#1094, #625-#634).
 - **Scan** (AST, each `scripts/live_test/*.py`): each `<x>.call(client, "<tool>", ...)`
   with line, enclosing top-level function, tool and keywords (`expected`, `reuse_gaps`
   dropped); each literal `record_verified` `operation=`; a non-literal tool or operation,
-  or a `**` splat, is `unreadable`. A function is registered when a `SUBTASKS` value
-  reaches it by name (same module, `from .m import`, `from . import m` then `m.f`).
+  a `**` splat, or a site outside a top-level def is `unreadable`. A function is registered
+  when a `SUBTASKS` value reaches it by name (same module, `from .` or `live_test` import).
 - **Served schemas**: the runner's composition — legacy policy with the arbitrary command,
   `create_mcp`, `configure_arbitrary_command_tool`, in-process `list_tools()`.
 - **Join**: a tool maps to the `operations.json` entry with that `tool`. An operation is
   exercised when dispatched or named by `record_verified`; a row is exercised when an
   exercised operation lists it in `row_ids`. Arguments are checked by the runner's
   `_dispatch_problems(tool, names, schemas)`.
-- **Output**: one line per finding — `uncovered-operation:`, `uncovered-row:`,
-  `departed:` (unregistered function's dispatch or record), `unregistered:` (tool not served or not in the ledger, or operation not in the ledger;
-  `file:line`; no further check), `dispatch-mismatch:` (`file:line` and problem),
-  `unreadable:` — then a `summary:` line of counts. With every input loaded, exit 0, or
-  with `--fail-on-dispatch` 1 when an `unregistered`, `dispatch-mismatch` or `unreadable`
-  line exists. An input that fails to load raises, exiting non-zero with its cause.
+- **Output**: one line per finding — `uncovered-operation:`, `uncovered-row:`, `departed:`
+  (unregistered function's site), `unregistered:` (tool or operation not in the ledger, or
+  tool not served; no further check), `dispatch-mismatch:`, `unreadable:`, each site with
+  `file:line` — then `summary:` counts. Loaded inputs exit 0, or with `--fail-on-dispatch`
+  1 on an `unregistered`, `dispatch-mismatch` or `unreadable` line. A failed load raises.
 
 ### Failure model
 

@@ -167,6 +167,49 @@ def test_report_lists_scenarios_that_left_the_registry():
     assert report.exit_status(lines, fail_on_dispatch=True) == 0
 
 
+def test_absolute_and_function_local_imports_still_reach_a_helper():
+    scenario = (
+        "from live_test.helpers import listing\n"
+        "async def s(client, state):\n"
+        "    from .helpers import shared\n"
+        "    from live_test import helpers\n"
+        "    await listing(client, state)\n"
+        "    await shared(client, state)\n"
+        "    await helpers.other(client, state)\n"
+    )
+    helpers = (
+        "async def listing(client, state):\n"
+        '    await state.call(client, "hmc_get_lpar", bogus=1)\n'
+        "async def shared(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars")\n'
+        "async def other(client, state):\n"
+        '    await state.call(client, "hmc_list_lpars", system="s")\n'
+    )
+    scans = [
+        report.scan_source(scenario, "m.py", "m"),
+        report.scan_source(helpers, "helpers.py", "helpers"),
+    ]
+
+    lines = report.build_report(scans, ROOTS, OPERATIONS, ROWS, SCHEMAS)
+
+    assert not [line for line in lines if line.startswith("departed:")]
+    assert (
+        "dispatch-mismatch: helpers.py:2 hmc_get_lpar: unknown argument bogus" in lines
+    )
+
+
+def test_a_dispatch_outside_a_top_level_function_is_unreadable():
+    source = (
+        "if True:\n"
+        "    async def s(client, state):\n"
+        '        await state.call(client, "hmc_list_lpars")\n'
+    )
+
+    assert report.scan_source(source, "m.py", "m").unreadable == (
+        "m.py:3 call outside a top-level function",
+    )
+
+
 def test_exit_status_fails_only_on_dispatch_findings_under_the_flag():
     clean = ["uncovered-row: cli:c", "departed: m.py:2 x", "summary: ..."]
 

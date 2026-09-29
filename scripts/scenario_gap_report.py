@@ -33,7 +33,8 @@ from hmcpctl.server_tools.command import configure_arbitrary_command_tool
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CAPABILITIES = _REPO_ROOT / "docs" / "capabilities"
-_SCENARIO_PACKAGE = _REPO_ROOT / "scripts" / "live_test"
+_PACKAGE = "live_test"
+_SCENARIO_PACKAGE = _REPO_ROOT / "scripts" / _PACKAGE
 # Keyword arguments `RunState.call` consumes itself; they never reach the tool.
 _RUNNER_KEYWORDS = frozenset({"expected", "reuse_gaps"})
 _DISPATCH_PREFIXES = ("unregistered:", "dispatch-mismatch:", "unreadable:")
@@ -111,13 +112,23 @@ def scan_source(source: str, label: str, module: str) -> Scan:
     tree = ast.parse(source)
     imported: dict[str, tuple[str, str]] = {}
     packages: dict[str, str] = {}
-    for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.level == 1:
-            for alias in node.names:
-                if node.module is None:
-                    packages[alias.asname or alias.name] = alias.name
-                else:
-                    imported[alias.asname or alias.name] = (node.module, alias.name)
+    # Imports anywhere in the module, relative or absolute through `live_test`:
+    # a function-local import still names a package function.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        source = node.module or ""
+        if node.level == 0 and source.startswith(f"{_PACKAGE}."):
+            source = source.removeprefix(f"{_PACKAGE}.")
+        elif node.level == 0 and source == _PACKAGE:
+            source = ""
+        elif node.level != 1:
+            continue
+        for alias in node.names:
+            if source:
+                imported[alias.asname or alias.name] = (source, alias.name)
+            else:
+                packages[alias.asname or alias.name] = alias.name
     definitions = [node for node in tree.body if isinstance(node, _DEFINITIONS)]
     local = {definition.name for definition in definitions}
     dispatches: list[Dispatch] = []
@@ -125,9 +136,9 @@ def scan_source(source: str, label: str, module: str) -> Scan:
     unreadable: list[str] = []
     calls = sorted(
         (
-            (definition.name, node)
-            for definition in definitions
-            for node in ast.walk(definition)
+            (statement.name if isinstance(statement, _DEFINITIONS) else None, node)
+            for statement in tree.body
+            for node in ast.walk(statement)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
         ),
         key=lambda pair: (pair[1].lineno, pair[1].col_offset),
@@ -135,6 +146,12 @@ def scan_source(source: str, label: str, module: str) -> Scan:
     for function, node in calls:
         site = f"{label}:{node.lineno}"
         attribute = node.func.attr if isinstance(node.func, ast.Attribute) else ""
+        if function is None:
+            # A def nested in a top-level `if` or `try` has no registered name to
+            # reach it by; saying so beats dropping its dispatch without a line.
+            if attribute in {"call", "record_verified"}:
+                unreadable.append(f"{site} {attribute} outside a top-level function")
+            continue
         if attribute == "call":
             tool = _literal(node.args[1] if len(node.args) > 1 else None)
             names = [kw.arg for kw in node.keywords if kw.arg not in _RUNNER_KEYWORDS]
@@ -269,7 +286,11 @@ def exit_status(lines: Iterable[str], *, fail_on_dispatch: bool) -> int:
 
 
 async def served_schemas() -> dict[str, dict[str, Any]]:
-    """The input schema each tool serves, composed exactly as the live runner does."""
+    """The input schema each tool serves, composed exactly as the live runner does.
+
+    This mirrors the composition in ``live_test_runner``'s run loop (the block that
+    fills ``state.schemas``); a change there must be made here too.
+    """
     policy = compile_legacy_policy(
         TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
     )
