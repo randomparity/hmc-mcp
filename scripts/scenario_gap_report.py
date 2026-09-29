@@ -111,33 +111,49 @@ def _references(
     return frozenset(found)
 
 
-def scan_source(source: str, label: str, module: str) -> Scan:
-    """Read every dispatch, ``record_verified`` operation and reference in a module."""
-    tree = ast.parse(source, filename=label)
+def _import_origin(node: ast.ImportFrom) -> str | None:
+    """The package module a `from` import reads, `""` for the package, else None."""
+    origin = node.module or ""
+    if node.level == 1:
+        return origin
+    if node.level == 0 and origin == _PACKAGE:
+        return ""
+    if node.level == 0 and origin.startswith(f"{_PACKAGE}."):
+        return origin.removeprefix(f"{_PACKAGE}.")
+    return None
+
+
+def _package_imports(
+    tree: ast.Module,
+) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """Names bound to package functions, and names bound to package modules.
+
+    Imports anywhere in the module count, relative or absolute through `live_test`:
+    a function-local import still names a package function.
+    """
     imported: dict[str, tuple[str, str]] = {}
     packages: dict[str, str] = {}
-    # Imports anywhere in the module, relative or absolute through `live_test`:
-    # a function-local import still names a package function.
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.asname and alias.name.startswith(f"{_PACKAGE}."):
                     packages[alias.asname] = alias.name.removeprefix(f"{_PACKAGE}.")
             continue
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        source = node.module or ""
-        if node.level == 0 and source.startswith(f"{_PACKAGE}."):
-            source = source.removeprefix(f"{_PACKAGE}.")
-        elif node.level == 0 and source == _PACKAGE:
-            source = ""
-        elif node.level != 1:
+        origin = _import_origin(node) if isinstance(node, ast.ImportFrom) else None
+        if origin is None:
             continue
         for alias in node.names:
-            if source:
-                imported[alias.asname or alias.name] = (source, alias.name)
+            if origin:
+                imported[alias.asname or alias.name] = (origin, alias.name)
             else:
                 packages[alias.asname or alias.name] = alias.name
+    return imported, packages
+
+
+def scan_source(source: str, label: str, module: str) -> Scan:
+    """Read every dispatch, ``record_verified`` operation and reference in a module."""
+    tree = ast.parse(source, filename=label)
+    imported, packages = _package_imports(tree)
     definitions = [node for node in tree.body if isinstance(node, _DEFINITIONS)]
     # A module-level `alias = _impl` is a name a scenario can reach `_impl` through.
     aliases = {
