@@ -34,7 +34,10 @@ async def list_vnics(config: HMCConfig, system_name: str, lpar_name: str) -> lis
 
 async def list_vnic_rows(config: HMCConfig, system_name: str, lpar_name: str) -> list[dict[str, str]]:
     command = f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F {','.join(_VNIC_FIELDS)} --header"
-    return parse_hmc_delimited_rows(await run_hmc_command(config, command), _VNIC_FIELDS)
+    output = await run_hmc_command(config, command)
+    if output.strip() == "No results were found.":
+        return []
+    return parse_hmc_delimited_rows(output, _VNIC_FIELDS)
 
 
 async def list_vnic_backing_rows(config: HMCConfig, system_name: str) -> list[dict[str, str]]:

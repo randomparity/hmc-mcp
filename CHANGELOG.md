@@ -196,6 +196,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `network add-vnic`/`hmc_add_vnic` can add a partition's first vNIC. The vNIC read now treats
+  the HMC's `No results were found.` reply as an empty list; before, it failed as a header
+  mismatch, so the add's preflight refused every partition with no vNICs (#1111).
 - The `HMC_AUTHORIZE_POWER_OPERATIONS` description and environment-variable page no longer say
   the guard requires a managed-system selector: it derives the owning system when the selector
   is omitted, and an `ownership_override` skips that walk, the SSH read and the name reads
