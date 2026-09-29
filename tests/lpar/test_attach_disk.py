@@ -229,7 +229,7 @@ async def test_attach_disk_change_location_read_failure_is_advisory() -> None:
 
 
 @pytest.mark.asyncio
-async def test_attach_disk_change_location_is_read_after_the_storage_leg() -> None:
+async def test_attach_disk_change_location_is_read_before_the_storage_leg() -> None:
     client = _client()
     calls: list[str] = []
     client.map_storage_to_lpar.side_effect = lambda *args: calls.append("storage")
@@ -242,7 +242,7 @@ async def test_attach_disk_change_location_is_read_after_the_storage_leg() -> No
 
     await attach_disk_to_lpar(client, None, LPAR_UUID, _storage(), capacity_mib=1024)
 
-    assert calls == ["storage", "read"]
+    assert calls == ["read", "storage"]
 
 
 @pytest.mark.asyncio

@@ -383,13 +383,13 @@ async def attach_disk_to_lpar(
         ownership_override=ownership_override,
     )
 
+    change_location, warnings = await _read_change_location(hmc, lpar_uuid)
     steps, completed = await _run_storage_leg(
         hmc,
         lpar_uuid,
         storage,
         disk_capacity_mib=capacity_mib,
     )
-    change_location, warnings = await _read_change_location(hmc, lpar_uuid)
     return AttachDiskResult(
         workflow_completed=completed,
         lpar_uuid=lpar_uuid,
