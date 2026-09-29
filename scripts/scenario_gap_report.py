@@ -113,7 +113,7 @@ def _references(
 
 def scan_source(source: str, label: str, module: str) -> Scan:
     """Read every dispatch, ``record_verified`` operation and reference in a module."""
-    tree = ast.parse(source)
+    tree = ast.parse(source, filename=label)
     imported: dict[str, tuple[str, str]] = {}
     packages: dict[str, str] = {}
     # Imports anywhere in the module, relative or absolute through `live_test`:
