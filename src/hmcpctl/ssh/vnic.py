@@ -29,7 +29,9 @@ _VIOS_IDENTITY_FIELDS = ("name", "lpar_id", "lpar_env")
 async def list_vnics(config: HMCConfig, system_name: str, lpar_name: str) -> list[dict[str, Any]]:
     command = f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     output = await run_hmc_command(config, command)
-    return [] if not output.strip() else _parse_lshwres_output(output)
+    if not output.strip() or output.strip() == "No results were found.":
+        return []
+    return _parse_lshwres_output(output)
 
 
 async def list_vnic_rows(config: HMCConfig, system_name: str, lpar_name: str) -> list[dict[str, str]]:
