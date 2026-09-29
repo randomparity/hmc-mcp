@@ -171,21 +171,33 @@ async def test_power_operation_must_belong_to_its_closed_set(
 
 
 @pytest.mark.asyncio
-async def test_enabled_guard_refuses_a_partition_another_agent_owns() -> None:
+async def test_enabled_guard_refuses_a_partition_another_agent_owns(caplog) -> None:
     hmc = _hmc(authorize=True, agent_id="alice")
 
     with patch(
         "hmcpctl.operations.lpar.ownership.get_lpar_description",
         new=AsyncMock(return_value=OWNED_BY_BOB),
-    ), pytest.raises(PermissionError, match="ownership_override=true"):
+    ), caplog.at_level(logging.WARNING), pytest.raises(
+        PermissionError, match="ownership_override=true"
+    ):
         await power_lpar(
             hmc,
             SYSTEM_UUID,
             LPAR_UUID,
             power_on=False,
+            operation="dumprestart",
+            allow_dump_restart=True,
         )
 
     hmc.submit_job.assert_not_awaited()
+    # ADR 0180: a guard refusal records the denial and no power-off, because
+    # nothing was sent. The denial record keeps the capture from being empty.
+    events = [
+        json.loads(record.getMessage())["event"]
+        for record in caplog.records
+        if record.name == audit_sink.AUDIT_LOGGER_NAME
+    ]
+    assert events == ["ownership-denied"]
 
 
 @pytest.mark.asyncio
@@ -254,10 +266,12 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
         for record in caplog.records
         if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
-    assert len(records) == 1, (
-        "an absence assertion over an empty capture proves nothing"
-    )
-    assert records[0]["event"] == "ownership-override"
+    # The override is recorded before the ADR 0180 power-off record, which
+    # names the job that override let through.
+    assert [record["event"] for record in records] == [
+        "ownership-override",
+        "lpar-power-off",
+    ]
     # The system is the caller's selector verbatim, not its resolved CLI name:
     # ADR 0094's override path deliberately skips the managed-system read so a
     # degraded fleet cannot block an approved exception. The partition name is

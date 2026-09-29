@@ -495,6 +495,7 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
         "console-write",
         "install-attempted",
         "install-submitted",
+        "lpar-power-off",
         "ownership-denied",
         "ownership-override",
         "power-ownership-guard",
@@ -549,6 +550,16 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
         agent_id="a",
     )
     emitted.add(_one(lines)["event"])
+    lines = _capture()
+    audit.record_lpar_power_off(
+        lpar="l",
+        host="hmc.test",
+        operation="dumprestart",
+        immediate=False,
+        restart=False,
+        agent_id="a",
+    )
+    emitted.add(_one(lines)["event"])
     emitted.add(json.loads(audit_sink._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
 
@@ -596,6 +607,23 @@ def test_the_console_write_record_carries_metadata_and_no_content():
         "verified": False,
     }
     assert levels == [logging.WARNING]
+
+
+def test_the_power_off_record_bounds_its_text_and_keeps_its_booleans():
+    """ADR 0180. Caller-reachable text takes the shared bound; the flags stay booleans."""
+    lines = _capture()
+    audit.record_lpar_power_off(
+        lpar="x" * 300,
+        host="hmc.test",
+        operation="o" * 300,
+        immediate=True,
+        restart=False,
+        agent_id="agent-7",
+    )
+    record = _one(lines)
+    assert record["event"] == "lpar-power-off"
+    assert len(record["lpar"]) == len(record["operation"]) == audit.MAX_VALUE_LENGTH
+    assert (record["immediate"], record["restart"]) == (True, False)
 
 
 def test_the_override_record_carries_the_hmc_host():

@@ -340,6 +340,34 @@ proves an attempt, not delivery.
 
 It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
 
+### `event: "lpar-power-off"`
+
+Emitted immediately **before** a PowerOff job is submitted for a logical partition, one record
+per submission, whichever entry point reached it: `hmc_power_off_lpar`, `hmcpctl lpars power-off`,
+or the Python API's `power_lpar`. Always `WARNING`. No access policy gates it. The decision is
+[ADR 0180](adr/0180-lpar-power-off-audit-record.md).
+
+```json
+{"time":"2026-09-28T18:00:00+00:00","event":"lpar-power-off","lpar":"11111111-1111-1111-1111-111111111111","host":"hmc-a.example","operation":"dumprestart","immediate":false,"restart":true,"attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+```
+
+`operation`, `immediate` and `restart` are the values the submitted job document carries.
+`operation` is `shutdown`, `osshutdown` or `dumprestart`; `dumprestart` crashes the partition
+and takes a platform dump, so this is the field to filter on to tell a forced crash from a
+graceful stop. `restart: true` means the partition is started again after it stops. `lpar` is
+the resolved partition UUID the job was submitted against, whatever selector the caller passed,
+and `host` is the `HMCConfig.host` of the client. `attribution.claim` is `HMC_AGENT_ID`, or
+`hmcpctl` when that is unset, as it is for the install records.
+
+The record is written after argument validation and after the
+[ADR 0011](adr/0011-multi-agent-lpar-ownership.md) ownership guard, so a refused call — an
+operation outside the vocabulary, a `dumprestart` without `allow_dump_restart`, a guard
+refusal — writes no `lpar-power-off` record. It is written before the submit, so a submit that
+then fails is still recorded: the record proves an attempt, not that the partition stopped.
+The decommission workflow's own power-off, which always sends `shutdown`, is not recorded here.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and not as nulls.
+
 ### `event: "power-ownership-guard"`
 
 Emitted once at `serve` startup for every connection the selected access policy can route.
