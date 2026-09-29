@@ -343,9 +343,10 @@ It carries no `policy`, `decision`, `reason`, `targets`, or `connection`, and no
 ### `event: "lpar-power-off"`
 
 Emitted immediately **before** a PowerOff job is submitted for a logical partition, one record
-per submission, whichever entry point reached it: `hmc_power_off_lpar`, `hmcpctl lpars power-off`,
-or the Python API's `power_lpar`, and the decommission workflow's own power-off
-(`hmc_decommission_lpar`, `hmcpctl lpars decommission`, `decommission_lpar`). Always `WARNING`. No access policy gates it. The decision is
+per submission, whichever entry point reached it: `hmc_power_off_lpar`,
+`hmcpctl lpars power-off`, the Python API's `power_lpar`, and the decommission workflow's own
+power-off (`hmc_decommission_lpar`, `hmcpctl lpars decommission`, `decommission_lpar`). Always
+`WARNING`. No access policy gates it. The decision is
 [ADR 0180](adr/0180-lpar-power-off-audit-record.md).
 
 ```json
