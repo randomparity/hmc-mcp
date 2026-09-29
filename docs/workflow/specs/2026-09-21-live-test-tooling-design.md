@@ -130,8 +130,9 @@ therefore treat result rows as untrusted, not as pre-cleaned. The operator and a
 trusted with the credentials they already hold.
 
 **Control per boundary.**
-- Credential read: preflight delegates to `_bootstrap_config` and `_ensure_schema_version`
-  and reports only a per-key present/absent verdict. No `HMC_*` **value** appears in any
+- Credential read: preflight delegates to `_bootstrap_config` and calls the runner's
+  `_load_dotenv()` itself (the runner does the same in its startup gate, so `.env` is still
+  read; #875 removed `_ensure_schema_version`, which used to make that call) and reports only a per-key present/absent verdict. No `HMC_*` **value** appears in any
   output stream. Scenario values (`LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME`, `_LPAR_PREFIX`,
   `_DRC_INDEX`) are deliberately printed — naming what a run will mutate is the point of the
   verdict, and none is a credential.
@@ -166,10 +167,11 @@ Redaction correctness for FAIL rows belongs to ADR 0120.
 9. AGENTS.md states that a live matrix is evidence only for the commit it ran on.
 
 "Every invalid configuration the runner itself would reject" in (3) is bounded to what
-`LiveTestConfig.from_env_file`, `_bootstrap_config` and `_ensure_schema_version` reject:
+`LiveTestConfig.from_env_file` and `_bootstrap_config` reject:
 a missing, empty, unknown or duplicate `LIVE_TEST_*` key, a non-integer or non-positive
-numeric value, inconsistent resource limits, unresolvable credentials, and a missing
-`HMC_SCHEMA_VERSION`.
+numeric value, inconsistent resource limits, and unresolvable credentials. A missing
+`HMC_SCHEMA_VERSION` is no longer a rejection: #875 made it opt-in, and the runner reports
+`(not set)`.
 
 An HMC record delimiter in a value is **not** in that set, contrary to an earlier draft:
 `from_env_file` performs no delimiter check. `_config_value_safe` does, inside
