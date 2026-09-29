@@ -10,6 +10,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_power_on_lpar`, `lpars power-on --keylock` and `power_on_lpar`/`power_lpar` accept an
+  optional PowerOn `keylock` of `manual` or `norm` (normal) — the job's own spelling, not the
+  creation-time `normal`/`manual`/`auto` — refused before any HMC call, including when the
+  partition is already running. Omitted, the PowerOn document is unchanged and the HMC keeps
+  choosing the position (#894).
 - SR-IOV logical-port assignment refuses a capacity that is not a multiple of the physical
   port's Ethernet capacity granularity (`min_eth_capacity_granularity`) before any HMC change,
   naming both values; a port that reports no granularity is unchanged. SR-IOV physical-port
@@ -78,6 +83,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   dedicated PCIe slot, activate it to SMS, read its state and reference codes, power it off,
   unassign the slot and delete it, using installed `hmcpctl` commands only. It is unverified until
   the v0.1.0 live window runs it (#877).
+
+- A kdive Tier A contract page, `docs/kdive-tier-a-contract.md`: the pre-release
+  `hmcpctl.operations.lpar` imports, kdive's `PowerAction` mapped onto PowerOn and PowerOff job
+  parameters, the read-only console capture and its `released` flag, and the ownership and SSH
+  host-key settings. A structural test checks every name the page uses (#878).
 
 - A `bare-cec` live-test arm, `scripts/live_bare_cec.py`. It creates a partition with explicit
   processing units, assigns a dedicated slot through `hmc_assign_dedicated_pcie_slot`, records a

@@ -7,6 +7,7 @@ import typer
 from ...jobs import (
     BootMode,
     PowerOffOperation,
+    PowerOnKeylock,
     PowerOnOperationType,
     validate_wait_timing,
 )
@@ -48,6 +49,11 @@ def lpars_power_on(
     operation_type: PowerOnOperationType | None = typer.Option(
         None, "--operation-type", help="PowerOn operation type"
     ),
+    keylock: PowerOnKeylock | None = typer.Option(
+        None,
+        "--keylock",
+        help="Keylock position to activate with (norm is normal); omitted, the HMC decides",
+    ),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
     _power_lpar(
@@ -63,6 +69,7 @@ def lpars_power_on(
         boot_mode=boot_mode,
         partition_profile=partition_profile,
         operation_type=operation_type,
+        keylock=keylock,
     )
 
 
@@ -135,6 +142,7 @@ def _power_lpar(
     boot_mode: BootMode = "norm",
     partition_profile: str | None = None,
     operation_type: PowerOnOperationType | None = None,
+    keylock: PowerOnKeylock | None = None,
     restart: bool = False,
     operation: PowerOffOperation = "shutdown",
     allow_dump_restart: bool = False,
@@ -171,6 +179,7 @@ def _power_lpar(
             boot_mode=boot_mode,
             partition_profile_uuid=partition_profile,
             operation_type=operation_type,
+            keylock=keylock,
             restart=restart,
             operation=operation,
             allow_dump_restart=allow_dump_restart,

@@ -19,7 +19,8 @@ delete partitions on a managed system.
 (`scripts/live_test_runner.py:1105-1140`) validates the `.env` through
 `LiveTestConfig.from_env_file`, refuses a results path git does not ignore, resolves
 credentials via `_bootstrap_config` — `~/.config/hmc-mcp/config.toml` first, `.env` as
-fallback — and checks `HMC_SCHEMA_VERSION`, all before the first dispatch and each with a
+fallback — and checks `HMC_SCHEMA_VERSION` (*amended 2026-09-28, #889: #875 removed that
+check; the variable is opt-in and the runner reports `(not set)`*), all before the first dispatch and each with a
 non-zero exit. The runner's own docstring calls this "the preflight", and it is one.
 
 What it cannot do is answer whether a run *would* start without being the run. It also never
@@ -61,9 +62,15 @@ the two in one namespace invites an operator to run hardware mutation believing 
 check.
 
 **Preflight calls the runner's own validators; it never re-derives a verdict.** It invokes
-`LiveTestConfig.from_env_file`, `_bootstrap_config` and `_ensure_schema_version` — the same
-three the runner gates on — so there is exactly one definition of a valid configuration and
-one credential precedence. What preflight adds is asking without running, plus the two facts
+`LiveTestConfig.from_env_file` and `_bootstrap_config`, and calls the runner's `_load_dotenv()`
+itself — the same calls the runner's startup gate makes — so there is exactly one definition
+of a valid configuration and one credential precedence.
+
+*Amendment 2026-09-28 (#889):* this paragraph originally listed a third validator,
+`_ensure_schema_version`. #875 removed it and made `HMC_SCHEMA_VERSION` opt-in, so a missing
+value is no longer a rejection. `.env` is still read: `_bootstrap_config` loads it as the
+TOML fallback, and both the runner's startup gate and preflight call `_load_dotenv()` directly
+so a `.env`-only `HMC_*` value is read when a TOML profile resolves. What preflight adds is asking without running, plus the two facts
 the runner never establishes. It is therefore authoritative about configuration because it
 is delegating to the authority, not competing with it.
 

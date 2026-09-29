@@ -47,10 +47,12 @@ and none whose requests all omit it:
 Unset — or set to the empty string, which disables the header the same way —
 is therefore the setting under which no request carries it at all.
 
-A live run prints the resolved value in its run header, on stdout. The
-`test-results-*.json` and observations documents do not record it, so a matrix
-cited as evidence does not by itself say which of those two request
-environments produced it — read that from the run's output.
+A live run prints the resolved value in its run header, on stdout, and records
+the same string (`(not set)` when unset) as `run.schema_version` in the
+`test-results-*.json` document. The observations document does not record it,
+so observations cited as evidence do not by themselves say which of those two
+request environments produced them — read that from the results document or the
+run's output.
 See [`docs/environment-variables.md`](environment-variables.md) for all
 supported variables.
 

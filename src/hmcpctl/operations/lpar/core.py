@@ -39,6 +39,7 @@ from ...jobs import (
     SUCCESSFUL_JOB_STATUSES,
     BootMode,
     PowerOffOperation,
+    PowerOnKeylock,
     PowerOnOperationType,
     job_outcome,
     power_off_lpar_job,
@@ -260,11 +261,13 @@ async def power_on_lpar(
     boot_mode: BootMode = "norm",
     partition_profile_uuid: str | None = None,
     operation_type: PowerOnOperationType | None = None,
+    keylock: PowerOnKeylock | None = None,
 ) -> LparPowerOnOutcome:
     """Activate an LPAR and optionally assess its resulting affinity.
 
-    ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are passed
-    through to the PowerOn job document; their defaults leave it unchanged.
+    ``boot_mode``, ``partition_profile_uuid``, ``operation_type`` and ``keylock``
+    are passed through to the PowerOn job document; their defaults leave it
+    unchanged.
     """
     system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if affinity_assessment is not None:
@@ -295,6 +298,7 @@ async def power_on_lpar(
         boot_mode=boot_mode,
         partition_profile_uuid=partition_profile_uuid,
         operation_type=operation_type,
+        keylock=keylock,
     )
     if (
         affinity_assessment is None
@@ -587,6 +591,7 @@ def _unapplied_activation_clause(
     boot_mode: BootMode,
     partition_profile_uuid: str | None,
     operation_type: PowerOnOperationType | None,
+    keylock: PowerOnKeylock | None,
 ) -> str:
     """Name the activation parameters an already-running partition discarded.
 
@@ -602,6 +607,7 @@ def _unapplied_activation_clause(
             ("boot mode", boot_mode != "norm"),
             ("partition profile", bool(partition_profile_uuid)),
             ("operation type", bool(operation_type)),
+            ("keylock position", bool(keylock)),
         )
         if supplied
     ]
@@ -630,14 +636,15 @@ async def power_lpar(
     boot_mode: BootMode = "norm",
     partition_profile_uuid: str | None = None,
     operation_type: PowerOnOperationType | None = None,
+    keylock: PowerOnKeylock | None = None,
     restart: bool = False,
     operation: PowerOffOperation = "shutdown",
     allow_dump_restart: bool = False,
 ) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait.
 
-    ``boot_mode``, ``partition_profile_uuid`` and ``operation_type`` are
-    activation parameters and apply to PowerOn only; the PowerOff arm builds a
+    ``boot_mode``, ``partition_profile_uuid``, ``operation_type`` and ``keylock``
+    are activation parameters and apply to PowerOn only; the PowerOff arm builds a
     different document and ignores them. ``partition_profile_uuid`` is the UUID
     of a partition profile, not the connection profile the tool and CLI call
     ``profile``. Their defaults emit the document this call has always emitted.
@@ -676,7 +683,7 @@ async def power_lpar(
     if power_on:
         # Ahead of every side effect: the ownership leg below can write an
         # audited override, and the already-running branch never reaches a builder.
-        validate_power_on_activation(boot_mode, operation_type)
+        validate_power_on_activation(boot_mode, operation_type, keylock)
     else:
         # Same reason on this arm: the ownership leg runs before the builder does.
         validate_power_off_operation(operation, allow_dump_restart)
@@ -697,7 +704,7 @@ async def power_lpar(
         )
         if state == "running":
             unapplied = _unapplied_activation_clause(
-                boot_mode, partition_profile_uuid, operation_type
+                boot_mode, partition_profile_uuid, operation_type, keylock
             )
             return LparPowerResult(
                 lpar_uuid,
@@ -727,6 +734,7 @@ async def power_lpar(
             profile_uuid=partition_profile_uuid,
             bootmode=boot_mode,
             operation_type=operation_type,
+            keylock=keylock,
         )
         if power_on
         else power_off_lpar_job(
