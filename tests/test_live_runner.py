@@ -1349,7 +1349,7 @@ def test_live_config_reads_the_complete_example_and_ignores_exports(
     config = runner.LiveTestConfig.from_env_file(config_path)
 
     assert config.system_name == "example-lt-609-system"
-    assert config.sriov_logical_port_id == 917003
+    assert config.sriov_logical_port_id == "917003"
     assert config.scratch_create_desired_procs == 0.3
     assert config.scratch_create_max_procs == 0.6
     assert config.iso_url == "http://iso.example.test:18090/example-lt-609.iso"
@@ -1383,6 +1383,26 @@ def test_live_config_reads_the_bare_cec_dump_opt_in_from_the_example(tmp_path) -
 
     assert runner.LiveTestConfig.from_env_file(config_path).accept_platform_dump == "true"
     assert runner.LiveTestConfig().accept_platform_dump == ""
+
+
+def test_live_config_keeps_a_hex_sriov_logical_port_id_as_a_string(tmp_path) -> None:
+    """The HMC reports logical port ids such as 2700400a; `_ID` keys parse as int."""
+    config_path = _example_env_with(
+        tmp_path, "LIVE_TEST_SRIOV_LOGICAL_PORT_ID", "2700400a"
+    )
+
+    config = runner.LiveTestConfig.from_env_file(config_path)
+
+    assert config.sriov_logical_port_id == "2700400a"
+
+
+@pytest.mark.parametrize("value", ["", "27004 00a", "2700400a; reboot", "xyz", "2700400A"])
+def test_live_config_rejects_a_non_hex_sriov_logical_port_id(tmp_path, value) -> None:
+    """The id reaches recovery shell commands unquoted, so only lowercase hex digits (as the HMC reports them) load."""
+    config_path = _example_env_with(tmp_path, "LIVE_TEST_SRIOV_LOGICAL_PORT_ID", value)
+
+    with pytest.raises(ValueError, match="LIVE_TEST_SRIOV_LOGICAL_PORT_ID"):
+        runner.LiveTestConfig.from_env_file(config_path)
 
 
 def test_live_config_accepts_zero_sriov_physical_port_id(tmp_path) -> None:
