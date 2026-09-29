@@ -182,6 +182,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- LPAR create, provision and modify, and `network add-vnic`/`hmc_add_vnic`, refuse an SR-IOV
+  logical-port or vNIC-backing capacity that is not a multiple of the physical port's Ethernet
+  capacity granularity before any HMC change, with the #1035 message. Each requested capacity
+  is checked on its own, not their per-port sum. Before, the partition was created and the HMC
+  then refused the port (`HSCL1294`), leaving a partial LPAR (#1081).
 - `lpars provision`/`hmc_provision_lpar` and `storage attach-disk`/`hmc_attach_disk_to_lpar` no
   longer add a vSCSI client adapter before mapping the disk. The mapping makes the HMC create
   its own client/server adapter pair (ADR 0169), so the added adapter was left unpaired on
