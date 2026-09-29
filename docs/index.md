@@ -12,6 +12,7 @@ an HMC, and use the CLI or an MCP client.
 | [LPAR ISO installation recipe](recipes/lpar-iso-install.md) | Resumable provisioning and optical-boot lifecycle |
 | [MCP server](mcp-server.md) | Access policies, client setup, HTTP transport, migration, and diagnostics |
 | [Python library](python-api.md) | Installation, example usage, typing, and the supported API contract |
+| [kdive Tier A contract](kdive-tier-a-contract.md) | Pre-release LPAR imports, PowerAction job mapping, console capture, and ownership and host-key settings |
 | [HMC compatibility](compatibility.md) | HMC versions and firmware write-path limitations |
 | [Development](development.md) | Stack, setup, testing, source layout, and HMC REST API internals |
 | [Read-only system inventory recipe](recipes/system-inventory.md) | Capture managed-system configuration before later operator decisions |
