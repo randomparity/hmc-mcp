@@ -294,9 +294,10 @@ async def _power_on(
     mechanisms — it is audited — rather than adding a call-site-conditional
     guard. With ``authorize_power_operations`` on it spares the SSH ownership
     read and both managed-system name reads, and costs one partition-name GET
-    (the UUID this leg passes needs no lookup); with the setting off nothing here runs at all. It also means every successful
-    provision emits an ``ownership-override`` audit record once the setting is
-    on — ``docs/authorization-audit.md`` records that the event is not
+    (the UUID this leg passes needs no lookup); with the setting off nothing
+    here runs at all. It also means every successful provision emits an
+    ``ownership-override`` audit record once the setting is on —
+    ``docs/authorization-audit.md`` records that the event is not
     human-triggered only.
     """
     result = await power_lpar(
