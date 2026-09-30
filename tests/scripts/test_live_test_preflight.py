@@ -379,6 +379,19 @@ def test_every_arm_is_predicted_when_no_group_is_given(workspace, monkeypatch, c
     assert "  all " not in output
 
 
+def test_an_explicit_group_all_predicts_every_arm(workspace, monkeypatch, capsys):
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "all", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    for group in runner.SUBTASK_GROUPS:
+        if group != "all":
+            assert group in output
+    assert "  all " not in output
+
+
 # ---------------------------------------------------------------------------
 # Hardware findings are advisory (failure model)
 # ---------------------------------------------------------------------------

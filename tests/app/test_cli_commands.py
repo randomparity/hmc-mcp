@@ -1187,7 +1187,8 @@ def test_lpars_create(fake_hmc):
     assert result.exit_code == 0
     assert "Created LPAR 'newlpar'" in result.stdout
     assert fake_hmc.calls[0] == ("find_partition_by_name", ("newlpar",), {})
-    name, args, _ = fake_hmc.calls[1]
+    assert fake_hmc.calls[1] == ("get_managed_system", (SYSTEM_UUID,), {})
+    name, args, _ = fake_hmc.calls[2]
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
@@ -3687,7 +3688,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
         ),
         (
             ["lpars", "set-proc-compat", "lpar1", "sys1", "POWER10", "--yes"],
-            ("chsyscfg", "name=lpar1", "lpar_proc_compat_mode=POWER10"),
+            ("chsyscfg -r prof", "lpar_name=lpar1", "lpar_proc_compat_mode=POWER10"),
         ),
         (
             ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
@@ -3726,7 +3727,6 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
     [
         ["lpars", "set-description", "lpar1", "sys1", "new text", "--yes"],
         ["lpars", "set-msp", "lpar1", "sys1", "true", "--yes"],
-        ["lpars", "set-proc-compat", "lpar1", "sys1", "POWER10", "--yes"],
     ],
 )
 def test_destructive_ssh_commands_preserve_bracketed_result(

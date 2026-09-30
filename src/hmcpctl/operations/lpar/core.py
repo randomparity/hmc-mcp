@@ -16,6 +16,7 @@ from hmcpctl.operations.affinity.rest import (
     validate_affinity_request,
 )
 from hmcpctl.operations.lpar.errors import translate_lpar_write_error
+from hmcpctl.operations.lpar.memory_bound import require_memory_within_system
 from hmcpctl.operations.lpar.ownership import (
     resolve_and_authorize_lpar_mutation,
     stamp_created_lpar_ownership,
@@ -431,6 +432,7 @@ async def create_and_stamp_lpar(
             "or delete the existing partition first."
         )
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    await require_memory_within_system(hmc, system_uuid, creation.resources)
     system_name: str | None = None
     apply_step: WorkflowStep | None = None
     readback_error: HMCError | None = None
