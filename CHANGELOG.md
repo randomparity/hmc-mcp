@@ -208,6 +208,20 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
   default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
   get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
+- A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
+  identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
+  SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
+  add/remove preflight and PCIe-assignment prevalidation (`lpars create`, DLPAR, provision). These
+  five header-bearing reads share one helper in `ssh/commands.py` for the `No results were found.`
+  sentinel and that wrap, so the SR-IOV and `lsrefcode` messages now read `<read> response did not
+  match the expected <fields> fields: <parser detail>` (#892).
+- `hmc_modify_lpar`, `hmc_dlpar_mem` and `hmc_dlpar_proc` now state which object they change.
+  The write reaches the partition's current configuration; with `CurrentProfileSync` `Disabled`
+  the partition profile keeps its old values (live: `desired_mem` and `desired_procs` unchanged),
+  so activating a profile discards the change. The DLPAR results carry `change_location` and a
+  `warnings` list, and `hmc_modify_lpar` adds the same warning to its `warnings`; the docstrings
+  no longer claim the change always applies on next activation. Write behaviour is unchanged
+  (#1170).
 - `hmc_list_lpar_ownership` now reads the text of a `Description` element that carries an
   attribute, which V10R3 sends as `ksv`. Every stamped partition was reported `owned: false,
   unparsed: true` and its `description` came back as a mapping; the listing now returns the
@@ -655,6 +669,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
   networks and stops before deleting the test partition when the VLAN is not there, and
   `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 
 ### Changed
 
