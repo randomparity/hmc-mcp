@@ -41,15 +41,19 @@ with desired vcpus defaulted to 1 reach the HMC and fail there.
    the caller passes vcpus (bounded: the message names them). Read-only lookups
    (`find_partition_by_name`, system UUID resolution) still precede the refusal, as for the
    existing document validation. `provision_lpar(dry_run=True)` does not build the document and
-   does not refuse (provision preflight is out of this surface).
+   does not refuse (provision preflight is out of this surface). A non-positive explicit vcpu
+   count is validated as its `mksyscfg` default (`or` semantics, as `_shared_processor_pairs`
+   sends it); REST renders it verbatim and leaves it to the HMC to reject (defaulting rules are
+   excluded).
 4. Covered elsewhere: the per-vcpu minimum (#938, platform-specific); modify validation,
    dedicated validation, and defaulting rules (operator exclusions, 2026-09-29).
 
 ## Success
 
-1. `build_lpar_document` raises `ValueError` naming `max_procs`/`max_vcpus` for
-   `max_procs=4, max_vcpus=2`, and naming `desired_procs`/`desired_vcpus` for
-   `desired_procs=1.5` with vcpus omitted.
+1. `build_lpar_document` raises `ValueError` naming `max_procs`/`max_vcpus` and
+   `--max-procs` for `max_procs=4, max_vcpus=2`, and naming `desired_procs`/`desired_vcpus` and
+   `--vcpus` for `desired_procs=1.5` with vcpus omitted; the tests match the unit field, the
+   vcpu field, and the option together.
 2. `create_lpar_via_cli` raises `HMCCLIError` for the same two inputs without running a command.
 3. `units == vcpus` at each level is accepted on both paths; a dedicated request with units
    above its vcpu fields is accepted.
