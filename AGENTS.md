@@ -407,3 +407,16 @@ people's landed work as if it were yours. Use:
 ```sh
 git --no-pager diff "$(git merge-base HEAD origin/main)"
 ```
+
+**`git blame` skips the tree-wide reformat only when told to.** The commit that
+first applied `ruff format` to every module is listed in `.git-blame-ignore-revs`.
+GitHub's blame view reads that file on its own; a local `git blame` does not until
+you run, once per clone:
+
+```sh
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+A later mechanical reformat goes in its own commit and joins that file by full SHA.
+Land that PR with `--merge`: both `--rebase` and `--squash` rewrite the commit, and
+the SHA the file lists would then name nothing on `main`.
