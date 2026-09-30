@@ -246,6 +246,16 @@ def _reject_dot_segments(method: str, path: str) -> None:
 # delimiter is unsafe in a prefix too, not just in the identifier (ADR 0152).
 _JOB_PATH = re.compile(r"(?:/[^/?#]+)*/(?:Job|jobs)/[^/?#]+")
 
+# The shape a V10R3 HMC renders a job entry's SELF link in:
+# `/rest/api/uom/jobs/{JobID}/{uuid}`, whose trailing UUID changes on every read
+# of the same job (issue #1160). The JobID path it extends is the one the HMC was
+# observed to resolve, so a link of this shape is addressed through that path and
+# the per-read segment is never requested. Only a UUID-shaped trailing segment is
+# dropped: anything else stays in the path and meets `_reject_non_job_path` whole.
+_JOB_SELF_LINK = re.compile(
+    r"(/rest/api/uom/jobs/[^/?#]+)/[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
+)
+
 
 def _reject_non_job_path(path: str, argument: str) -> None:
     """Refuse a job path that does not address a job.
@@ -260,7 +270,7 @@ def _reject_non_job_path(path: str, argument: str) -> None:
 
     The check binds the *resource class*, not the identifier. Binding the last
     segment to ``job_id`` would be tighter, and was rejected: ``jobs.job_identifier``
-    prefers the response's ``UUID``/``JobID`` over the link's last segment, so the
+    prefers the response's ``JobID``/``UUID`` over the link's last segment, so the
     two can legitimately differ — and issue #95 exists precisely because some
     firmware cannot resolve the job identifier, which is the case this argument
     serves and the one that cannot be tested here. Binding the class is what can
@@ -286,9 +296,30 @@ def _reject_non_job_path(path: str, argument: str) -> None:
     ):
         raise HMCError(
             f"{argument} refused: it does not address a job resource. Pass the "
-            "UUID or JobID as job_id, or the SELF link returned when the job "
-            "was submitted as job_href."
+            "JobID as job_id, or a SELF link from the job's entry as job_href."
         )
+
+
+def _job_request_path(job_id: str, job_href: str | None) -> str:
+    """Return the one path a job read or delete requests, refused unless it is a job.
+
+    Without *job_href* the path is the documented global one built from *job_id*.
+    With it, the link's path is used, except that the HMC's own SELF-link shape
+    (`_JOB_SELF_LINK`) is addressed by its JobID segment. The refusal runs on the
+    path that will be requested (ADR 0149), after that step, so dropping the
+    per-read segment cannot let a path through the guard that it would not
+    accept on its own.
+    """
+    if not job_href:
+        path = f"/rest/api/uom/jobs/{job_id}"
+        _reject_non_job_path(path, "job_id")
+        return path
+    path = urlparse(job_href).path
+    self_link = _JOB_SELF_LINK.fullmatch(path)
+    if self_link:
+        path = self_link.group(1)
+    _reject_non_job_path(path, "job_href")
+    return path
 
 
 def _env_flag(value: str) -> bool | None:
@@ -1480,23 +1511,24 @@ class HMCClient(
         *,
         job_href: str | None = None,
     ) -> dict[str, Any] | None:
-        """Fetch an HMC job by UUID or JobID.
-
-        When *job_href* is provided (the SELF link returned by ``submit_job``),
-        it is used directly so the request hits the per-operation path.
+        """Fetch an HMC job by JobID.
 
         The documented global endpoint is ``/rest/api/uom/jobs/{id}`` and uses
-        the ``web+xml`` content type. When ``job_href`` is supplied, its job
-        path remains preferred so per-operation SELF links work as returned by
-        the HMC (see issue #95).
+        the ``web+xml`` content type. It resolves the entry's ``JobID``; a V10R3
+        HMC answers the Atom entry UUID with HTTP 406 (issue #1160).
+
+        When *job_href* is provided (a SELF link from a job entry), its job path
+        is preferred so per-operation SELF links work as returned by the HMC
+        (see issue #95). The HMC's ``/rest/api/uom/jobs/{JobID}/{uuid}`` SELF
+        link is addressed by its JobID segment; the trailing UUID changes on
+        every read and is never requested.
 
         Either argument produces one path, and that path is refused as
         :class:`HMCError` unless its raw and decoded forms preserve the job
         resource and segment boundaries — the same refusal ``delete_job``
         applies (ADR 0152).
         """
-        path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
-        _reject_non_job_path(path, "job_href" if job_href else "job_id")
+        path = _job_request_path(job_id, job_href)
         xml = await self._web_get(path)
         if not xml:
             return None
@@ -1551,11 +1583,11 @@ class HMCClient(
     ) -> None:
         """Delete a job, preferring its SELF link when available.
 
-        Refuse paths whose raw and decoded forms disagree on job-resource
-        structure, as ``get_job_entry`` does (ADR 0152).
+        The link resolves to a path exactly as ``get_job_entry`` resolves it, and
+        paths whose raw and decoded forms disagree on job-resource structure are
+        refused the same way (ADR 0152).
         """
-        path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_id}"
-        _reject_non_job_path(path, "job_href" if job_href else "job_id")
+        path = _job_request_path(job_id, job_href)
         await self._delete(path)
 
     # Raw escape hatch

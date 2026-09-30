@@ -63,16 +63,27 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
 
 
 def job_identifier(job: dict[str, Any]) -> str | None:
+    """Return the identifier the documented global jobs path resolves.
+
+    ``Resource.JobID`` comes first: a V10R3 HMC answers
+    ``/rest/api/uom/jobs/{id}`` for the JobID and refuses the Atom entry UUID
+    with HTTP 406 (issue #1160). The entry UUID, then the SELF link, are
+    fallbacks for a response that carries no JobID. The HMC renders that link as
+    ``/rest/api/uom/jobs/{JobID}/{uuid}`` with a UUID that changes on every
+    read, so a link of that shape yields its JobID segment, not its last one.
+    """
     resource = job.get("Resource")
     resource_id = resource.get("JobID") if isinstance(resource, dict) else None
-    for candidate in (job.get("UUID"), resource_id):
+    for candidate in (resource_id, job.get("UUID")):
         if isinstance(candidate, str) and candidate.strip():
             return candidate.strip()
     link = job.get("link")
     if not isinstance(link, str) or not link.strip():
         return None
-    path = urlparse(link.strip()).path.rstrip("/")
-    return path.rsplit("/", 1)[-1] if path else None
+    segments = urlparse(link.strip()).path.rstrip("/").split("/")
+    if len(segments) >= 3 and segments[-3] == "jobs":
+        return segments[-2]
+    return segments[-1] or None
 
 
 def _job_href(job: dict[str, Any] | None) -> str | None:
@@ -181,7 +192,7 @@ async def wait_for_submitted_job(
     identifier = job_identifier(job)
     if identifier is None:
         raise HMCError(
-            "Cannot wait for the submitted HMC job: the response contained no usable UUID, JobID, or polling link"
+            "Cannot wait for the submitted HMC job: the response contained no usable JobID, UUID, or polling link"
         )
     return await client.wait_for_job_entry(
         identifier, timeout_seconds, poll_interval, job_href=_job_href(job)

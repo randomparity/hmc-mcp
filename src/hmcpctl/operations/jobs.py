@@ -75,8 +75,8 @@ def _require_job_id(job_id: str) -> str:
         raise ValueError(
             f"job_id {job_id!r} is not an HMC job identifier: it is a path "
             "segment, or contains a path, query, whitespace, or non-printable "
-            "character. Store the UUID or JobID on its own; pass a submission "
-            "link as job_href."
+            "character. Store the JobID on its own; pass a job's SELF link "
+            "as job_href."
         )
     return identifier
 
@@ -245,8 +245,9 @@ def _warn_if_another_job_answered(
     _logger.warning(
         "HMC job_href %r returned job %s for requested identifier %s. The "
         "outcome describes the job that was read. This is expected when the "
-        "stored handle is a JobID and the response carries a UUID; it is a "
-        "mispaired handle otherwise.",
+        "stored handle is the job entry's UUID, which earlier releases handed "
+        "out, and the response carries a JobID; it is a mispaired handle "
+        "otherwise.",
         link,
         outcome.job_id,
         identifier,
@@ -262,9 +263,12 @@ async def get_job(
 ) -> JobOutcome:
     """Read one HMC job by persisted identifier and normalize its outcome.
 
-    *job_id* is the UUID or JobID the HMC minted when the job was submitted;
-    *job_href* is that submission's SELF link, needed only on firmware that cannot
-    resolve the identifier through the documented global jobs path (issue #95).
+    *job_id* is the JobID this package hands out for a submitted job (a stored
+    entry UUID from an earlier release is accepted, but a V10R3 HMC answers it
+    with HTTP 406, issue #1160); *job_href* is a SELF link from the job's entry,
+    needed only on firmware that cannot resolve the identifier through the
+    documented global jobs path (issue #95). The HMC's
+    ``/rest/api/uom/jobs/{JobID}/{uuid}`` link is read through its JobID segment.
     Neither argument requires anything held in memory since submission.
 
     A job the HMC no longer knows about — reaped, deleted, or never present —
@@ -299,9 +303,10 @@ async def get_job(
     out of step — reads the *other* job. The returned ``job_id`` is
     response-derived, so it names the job actually read, and a difference from
     the requested identifier logs a warning rather than raising. Treat that
-    comparison as advisory: ``jobs.job_identifier`` prefers the response's UUID
-    over its JobID, so a handle stored as a JobID differs from the returned
-    ``job_id`` on firmware that reports both, with no substitution involved.
+    comparison as advisory: ``jobs.job_identifier`` prefers the response's JobID
+    over its UUID, so a handle stored as an entry UUID — what earlier releases
+    handed out — differs from the returned ``job_id`` on firmware that reports
+    both, with no substitution involved.
     """
     identifier = _require_job_id(job_id)
     link = _clean_job_href(job_href)
