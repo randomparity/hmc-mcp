@@ -663,6 +663,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
   networks and stops before deleting the test partition when the VLAN is not there, and
   `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 
 ### Changed
 
