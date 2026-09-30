@@ -5234,6 +5234,10 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "delete-call-succeeded",
             "lpar-name-absent",
             "slot-released",
+            "state-read-returned-a-state",
+            "list-call-succeeded",
+            "fixture-slot-listed",
+            "fixture-slot-unowned",
         },
     }
 
