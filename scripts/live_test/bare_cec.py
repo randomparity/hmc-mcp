@@ -338,7 +338,9 @@ async def _activation_profile_uuid(
         lpar_name_or_uuid=fixture.lpar_uuid,
         system_name_or_uuid=arm.system_name,
     )
-    link = _field(lpar, "AssociatedPartitionProfile") if st_lpar == "PASS" else None
+    # `hmc_get_lpar` serves the Atom entry: the partition's fields sit under `Resource`.
+    resource = _field(lpar, "Resource") if st_lpar == "PASS" else None
+    link = _field(resource, "AssociatedPartitionProfile")
     if isinstance(link, dict) and "@attrs" in link:
         link = link["@attrs"]
     href = link.get("href") if isinstance(link, dict) else None
