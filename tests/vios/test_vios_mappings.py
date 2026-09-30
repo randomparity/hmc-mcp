@@ -45,7 +45,6 @@ VIOS_STORAGE_DETAIL_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone=
 """
 
 
-
 @pytest.mark.asyncio
 async def test_get_vios_storage_detail(mock_hmc):
     """get_vios_storage_detail requests both documented mapping groups."""

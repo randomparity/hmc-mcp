@@ -29,7 +29,9 @@ def test_probe_verifies_by_default(capsys):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("insecure", [False, True])
-async def test_probe_main_propagates_opt_out_before_connect(insecure, monkeypatch, capsys):
+async def test_probe_main_propagates_opt_out_before_connect(
+    insecure, monkeypatch, capsys
+):
     profile = probe.Profile("test", "hmc.test", "test", "test-password")
     monkeypatch.setattr(probe, "load_profiles", lambda: [profile])
     observed = []
@@ -52,13 +54,15 @@ async def test_probe_main_propagates_opt_out_before_connect(insecure, monkeypatc
 
 
 @pytest.mark.parametrize("arguments, insecure", [([], False), (["--insecure"], True)])
-def test_probe_cli_parses_per_run_choice(arguments, insecure, monkeypatch, tmp_path, capsys):
+def test_probe_cli_parses_per_run_choice(
+    arguments, insecure, monkeypatch, tmp_path, capsys
+):
     config_path = tmp_path / ".config" / "hmcpctl" / "config.toml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         '[profiles.test]\nhost = "hmc.test"\nuser = "test"\n'
         'password = "fixture"\n'  # pragma: allowlist secret - mocked probe fixture
-        'ssh_verify_host_key = false\n'
+        "ssh_verify_host_key = false\n"
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     observed = []
@@ -89,6 +93,8 @@ async def test_probe_profile_default_does_not_opt_out(monkeypatch):
         return connection
 
     monkeypatch.setattr(probe.asyncssh, "connect", connect)
-    result = await probe.probe_profile(probe.Profile("test", "hmc.test", "test", "test-password"))
+    result = await probe.probe_profile(
+        probe.Profile("test", "hmc.test", "test", "test-password")
+    )
     assert "error" not in result
     assert observed[0]["known_hosts"] is not None

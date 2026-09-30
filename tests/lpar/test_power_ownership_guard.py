@@ -174,11 +174,13 @@ async def test_power_operation_must_belong_to_its_closed_set(
 async def test_enabled_guard_refuses_a_partition_another_agent_owns(caplog) -> None:
     hmc = _hmc(authorize=True, agent_id="alice")
 
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value=OWNED_BY_BOB),
-    ), caplog.at_level(logging.WARNING), pytest.raises(
-        PermissionError, match="ownership_override=true"
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value=OWNED_BY_BOB),
+        ),
+        caplog.at_level(logging.WARNING),
+        pytest.raises(PermissionError, match="ownership_override=true"),
     ):
         await power_lpar(
             hmc,
@@ -226,10 +228,13 @@ async def test_enabled_guard_runs_before_the_already_running_short_circuit() -> 
     hmc = _hmc(authorize=True, agent_id="alice")
     hmc.get_quick_property.return_value = "running"
 
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value=OWNED_BY_BOB),
-    ), pytest.raises(PermissionError):
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value=OWNED_BY_BOB),
+        ),
+        pytest.raises(PermissionError),
+    ):
         await power_lpar(
             hmc,
             SYSTEM_UUID,
@@ -284,10 +289,13 @@ async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> Non
     """SSH is a hard dependency once the guard is on — and it fails closed."""
     hmc = _hmc(authorize=True)
 
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(side_effect=HMCCLIError("SSH command timed out after 300s")),
-    ), pytest.raises(HMCCLIError, match="timed out"):
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(side_effect=HMCCLIError("SSH command timed out after 300s")),
+        ),
+        pytest.raises(HMCCLIError, match="timed out"),
+    ):
         await power_lpar(
             hmc,
             SYSTEM_UUID,
@@ -345,10 +353,13 @@ async def test_enabled_guard_discovers_the_owning_system_without_a_selector() ->
 async def test_enabled_guard_refuses_a_partition_owned_by_a_discovered_system() -> None:
     hmc = _hmc(authorize=True, agent_id="alice")
 
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value=OWNED_BY_BOB),
-    ), pytest.raises(PermissionError, match="ownership_override=true"):
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value=OWNED_BY_BOB),
+        ),
+        pytest.raises(PermissionError, match="ownership_override=true"),
+    ):
         await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     hmc.submit_job.assert_not_awaited()
@@ -382,10 +393,13 @@ async def test_enabled_guard_refuses_a_uuid_paired_with_a_foreign_system() -> No
     hmc = _hmc(authorize=True, agent_id="alice")
     hmc.list_logical_partitions.return_value = [{"UUID": OTHER_LPAR_UUID}]
 
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value=OWNED_BY_ALICE),
-    ) as read, pytest.raises(ValueError, match="does not belong to managed system"):
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value=OWNED_BY_ALICE),
+        ) as read,
+        pytest.raises(ValueError, match="does not belong to managed system"),
+    ):
         await power_lpar(
             hmc,
             SYSTEM_UUID,

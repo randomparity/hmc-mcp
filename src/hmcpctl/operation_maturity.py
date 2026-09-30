@@ -80,7 +80,9 @@ def _parse_operation(value: object, policy: str) -> tuple[str, _ProjectedOperati
         )
     operation = value["operation"]
     if not isinstance(operation, str) or _OPERATION.fullmatch(operation) is None:
-        raise OperationMaturityError(f"invalid operation ID {operation!r} in projection")
+        raise OperationMaturityError(
+            f"invalid operation ID {operation!r} in projection"
+        )
     implementation = value["implementation"]
     verification = value["verification"]
     reason = value["reason"]
@@ -118,7 +120,9 @@ def _read_projection_document() -> object:
     try:
         content = resources.files("hmcpctl").joinpath(_RESOURCE).read_bytes()
         if len(content) > _MAX_RESOURCE_BYTES:
-            raise OperationMaturityError("operation-maturity projection exceeds size limit")
+            raise OperationMaturityError(
+                "operation-maturity projection exceeds size limit"
+            )
         return json.loads(content.decode("utf-8"), object_pairs_hook=_unique_pairs)
     except OperationMaturityError:
         raise
@@ -133,7 +137,10 @@ def _parse_projection(document: object) -> dict[str, _ProjectedOperation]:
         raise OperationMaturityError(
             f"projection root must contain exactly {sorted(_ROOT_KEYS)}"
         )
-    if type(document["format_version"]) is not int or document["format_version"] != _FORMAT_VERSION:
+    if (
+        type(document["format_version"]) is not int
+        or document["format_version"] != _FORMAT_VERSION
+    ):
         raise OperationMaturityError(
             f"projection format_version must be integer {_FORMAT_VERSION}"
         )
@@ -156,9 +163,7 @@ def _parse_projection(document: object) -> dict[str, _ProjectedOperation]:
     return result
 
 
-def _resolved(
-    projected: _ProjectedOperation, now: datetime
-) -> OperationMaturity:
+def _resolved(projected: _ProjectedOperation, now: datetime) -> OperationMaturity:
     maturity = projected.maturity
     if (
         maturity.verification in {"current", "failed"}
@@ -205,9 +210,7 @@ def operation_maturity(
     catalog = operation_maturity_catalog(now=now)
     return catalog.get(
         operation,
-        OperationMaturity(
-            "unrecorded", "unrecorded", _RUNTIME_ELIGIBILITY
-        ),
+        OperationMaturity("unrecorded", "unrecorded", _RUNTIME_ELIGIBILITY),
     )
 
 

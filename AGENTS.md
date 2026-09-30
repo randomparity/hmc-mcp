@@ -300,6 +300,7 @@ failure to its cause instead of re-reading the umbrella output:
 
 ```sh
 just lint              # ruff check .
+just format-check      # ruff format --check . over Python files; Markdown is excluded
 just typecheck         # ty check
 just secrets           # detect-secrets-hook against .secrets.baseline
 just workflow-security # zizmor over .github/workflows/, no online audits
@@ -314,7 +315,8 @@ Two of those have a **regenerator, not a hand fix**. When `tool-docs-check`
 fails, run `just tool-docs` and commit the result; editing `docs/tools/*.md` by
 hand only makes the next run fail again. `doc-freshness` is the same pattern
 generalized: it re-runs the recipe each banner-carrying document names and
-diffs the output, so the fix is always to run that recipe.
+diffs the output, so the fix is always to run that recipe. `format-check` is
+fixed the same way, by `uv run --no-sync ruff format .`, never by hand.
 
 `build` and `verify-artifacts` are the other two `verify` members: `build`
 produces a fresh wheel and sdist into `dist/`, and `verify-artifacts` validates
@@ -407,3 +409,16 @@ people's landed work as if it were yours. Use:
 ```sh
 git --no-pager diff "$(git merge-base HEAD origin/main)"
 ```
+
+**`git blame` skips the tree-wide reformat only when told to.** The commit that
+first applied `ruff format` to every module is listed in `.git-blame-ignore-revs`.
+GitHub's blame view reads that file on its own; a local `git blame` does not until
+you run, once per clone:
+
+```sh
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+A later mechanical reformat goes in its own commit and joins that file by full SHA.
+Land that PR with `--merge`: both `--rebase` and `--squash` rewrite the commit, and
+the SHA the file lists would then name nothing on `main`.

@@ -67,7 +67,9 @@ def _feed(virtual_disks: str = VIRTUAL_DISKS) -> str:
 </feed>"""
 
 
-def _routes(mock_hmc, *, etag: str | None = ETAG, feed: str | None = None, post_status=200):
+def _routes(
+    mock_hmc, *, etag: str | None = ETAG, feed: str | None = None, post_status=200
+):
     headers = {"ETag": etag} if etag else {}
     mock_hmc.get(VG_PATH).mock(
         return_value=httpx.Response(200, text=feed or _feed(), headers=headers)

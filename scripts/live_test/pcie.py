@@ -248,7 +248,9 @@ def _logical_port_is_configured(data: object, logical_port_id: str) -> bool:
     )
 
 
-async def _verify_cleanup_inventory(client: Client, state: RunState) -> tuple[bool, bool]:
+async def _verify_cleanup_inventory(
+    client: Client, state: RunState
+) -> tuple[bool, bool]:
     """Record final logical-port and profile checks after cleanup.
 
     Returns (restored, profile_clean): restored only when the inventory read
@@ -630,7 +632,9 @@ async def unassign_sriov_from_lp3(client: Client, state: RunState) -> bool:
         assertions=[
             # A failed call returned above, before any readback.
             Assertion("unassign-call-succeeded", True),
-            Assertion("profile-ports-cleared", _profile_read_clean(sriov_state.profile_ports)),
+            Assertion(
+                "profile-ports-cleared", _profile_read_clean(sriov_state.profile_ports)
+            ),
         ],
         cleanup="not-required",
         data=f"profile_ports={sriov_state.profile_ports!r}",
@@ -669,7 +673,10 @@ async def reassign_sriov_to_lp3(
     sriov_state = await _read_sriov_state(client, state)
     ok = sriov_state.configured and sriov_state.owner_lpar == config.lp3_name
     if _sriov_changed(data):
-        evidence.reassign = (sriov_state.configured, sriov_state.owner_lpar == config.lp3_name)
+        evidence.reassign = (
+            sriov_state.configured,
+            sriov_state.owner_lpar == config.lp3_name,
+        )
     state.record(
         27,
         "sriov post-reassign verify",
@@ -900,6 +907,7 @@ _DEFAULT_DEDICATED_PROFILE = "default_profile"
 _DEDICATED_SCENARIO = "st29-dedicated-pcie"
 _IO_SLOTS_SCENARIO = "st36-io-slots"
 
+
 @dataclass(frozen=True)
 class _DedicatedConfig:
     system_name: str
@@ -951,7 +959,9 @@ _RECORD_DELIMITERS = ',="[]\\'
 
 def _config_value_safe(value: str) -> bool:
     """Whether *value* can cross the HMC record grammar unchanged."""
-    return not any(character in _RECORD_DELIMITERS or character < " " for character in value)
+    return not any(
+        character in _RECORD_DELIMITERS or character < " " for character in value
+    )
 
 
 def _dedicated_config(live: LiveTestConfig) -> _DedicatedConfig | None:
@@ -969,7 +979,9 @@ def _dedicated_config(live: LiveTestConfig) -> _DedicatedConfig | None:
     lpar_prefix = live.dedicated_pcie_lpar_prefix.strip()
     if not system_name or not lpar_prefix:
         return None
-    profile_name = live.dedicated_pcie_profile_name.strip() or _DEFAULT_DEDICATED_PROFILE
+    profile_name = (
+        live.dedicated_pcie_profile_name.strip() or _DEFAULT_DEDICATED_PROFILE
+    )
     drc_index = live.dedicated_pcie_drc_index.strip() or None
     if not all(
         _config_value_safe(value)
@@ -1042,8 +1054,7 @@ def _change_io_slots_command(
         ]
     )
     return (
-        f"chsyscfg -r prof -m {shlex.quote(arm.system_name)} "
-        f"-i {shlex.quote(record)}"
+        f"chsyscfg -r prof -m {shlex.quote(arm.system_name)} -i {shlex.quote(record)}"
     )
 
 
@@ -1101,10 +1112,7 @@ async def _read_dedicated_state(
     )
     if st == "PASS" and isinstance(data, dict):
         for item in data.get("items") or []:
-            if (
-                isinstance(item, dict)
-                and item.get("drc_index") == fixture.drc_index
-            ):
+            if isinstance(item, dict) and item.get("drc_index") == fixture.drc_index:
                 raw_owner = item.get("owner_lpar") or ""
                 slot_owner = raw_owner.strip() or None
                 if slot_owner == "null":
@@ -1144,10 +1152,7 @@ async def _admit_dedicated_environment(
     st_m, model = await state.call(
         client,
         "hmc_run_command",
-        cmd=(
-            "lssyscfg -r sys -m "
-            f"{shlex.quote(config.system_name)} -F type_model"
-        ),
+        cmd=(f"lssyscfg -r sys -m {shlex.quote(config.system_name)} -F type_model"),
     )
     if st_v != "PASS" or st_m != "PASS":
         state.skip(
@@ -1247,10 +1252,14 @@ async def _auto_select_slot(
     if st == "PASS":
         try:
             if not isinstance(data, str):
-                raise HMCCLIError(f"profile readback is {type(data).__name__}, not text")
+                raise HMCCLIError(
+                    f"profile readback is {type(data).__name__}, not text"
+                )
             profile_rows = parse_profile_io_slot_rows(data)
         except HMCCLIError as error:
-            failure = CallFailure("HMCCLIError", f"HMCCLIError: {error}", "", None, False)
+            failure = CallFailure(
+                "HMCCLIError", f"HMCCLIError: {error}", "", None, False
+            )
     if profile_rows is None:
         state.record(
             29,
@@ -1264,7 +1273,8 @@ async def _auto_select_slot(
         )
         return None
     eligible = [
-        row for row in unassigned
+        row
+        for row in unassigned
         if not _profile_lists_slot(profile_rows, str(row.get("drc_index")))
     ]
     if not eligible:
@@ -1468,7 +1478,9 @@ async def _created_despite_failure(
     return uuid_match.group(1) if uuid_match else ""
 
 
-async def name_absent(client: Client, state: RunState, fixture: _DedicatedFixture) -> bool:
+async def name_absent(
+    client: Client, state: RunState, fixture: _DedicatedFixture
+) -> bool:
     """Whether the fixture's name answers HSCL8012 after its delete.
 
     Only a readable description carrying this run's marker means the partition
@@ -1526,12 +1538,18 @@ async def _probe_create_time_assignment(
     )
     record_status, reason = judge_create_result(st, data)
     state.record(
-        30, "hmc_create_lpar (create-time dedicated assignment)", record_status, data, reason
+        30,
+        "hmc_create_lpar (create-time dedicated assignment)",
+        record_status,
+        data,
+        reason,
     )
     if st == "PASS":
         fixture.probe_created = True
         if isinstance(data, dict) and isinstance(data.get("lpar"), dict):
-            fixture.probe_lpar_uuid = data["lpar"].get("UUID") or data["lpar"].get("uuid")
+            fixture.probe_lpar_uuid = data["lpar"].get("UUID") or data["lpar"].get(
+                "uuid"
+            )
     else:
         # A lost response is not a refusal: read back before believing
         # nothing was created.
@@ -1570,7 +1588,9 @@ async def _probe_create_time_assignment(
 
     probe = replace(fixture, lpar_name=fixture.probe_lpar_name)
     io_slots = await _read_profile_io_slots(client, state, probe)
-    landed = io_slots is not None and _io_slots_contains(io_slots, str(fixture.drc_index))
+    landed = io_slots is not None and _io_slots_contains(
+        io_slots, str(fixture.drc_index)
+    )
     state.record(
         30,
         "create-time assignment profile readback",
@@ -1842,7 +1862,9 @@ async def assign_dedicated_slot(
     # early on a FAIL would leave the run believing it had not written
     # something it had, which is the belief cleanup must never hold.
     applied = await _read_profile_io_slots(client, state, fixture)
-    assigned = applied is not None and _io_slots_contains(applied, str(fixture.drc_index))
+    assigned = applied is not None and _io_slots_contains(
+        applied, str(fixture.drc_index)
+    )
     if assigned:
         fixture.applied_io_slots = applied
     fixture.evidence["assign"] = (st == "PASS", assigned)
@@ -1862,9 +1884,8 @@ async def verify_dedicated_assigned(
     """Verify the assignment through profile and inventory readback."""
     print("\n=== ST32: Dedicated PCIe Post-Assign Verify (issue #217) ===")
     observed = await _read_dedicated_state(client, state, fixture)
-    profile_ok = (
-        observed.profile_io_slots is not None
-        and _io_slots_contains(observed.profile_io_slots, str(fixture.drc_index))
+    profile_ok = observed.profile_io_slots is not None and _io_slots_contains(
+        observed.profile_io_slots, str(fixture.drc_index)
     )
     state.record(
         32,
@@ -2074,7 +2095,9 @@ async def cleanup_dedicated(
 
     # Guard A — fixture identity, re-read immediately before any mutation.
     observed = await _read_dedicated_state(client, state, fixture)
-    state.record(34, "dedicated pre-cleanup state", "PASS", _dedicated_state_summary(observed))
+    state.record(
+        34, "dedicated pre-cleanup state", "PASS", _dedicated_state_summary(observed)
+    )
     recovery = (
         f"MANUAL RECOVERY REQUIRED: fixture {fixture.lpar_name!r} on "
         f"{arm.system_name!r} could not be confirmed as this run's; no "
@@ -2237,9 +2260,7 @@ async def cleanup_dedicated(
     return st
 
 
-async def exercise_dedicated_pcie_assignment(
-    client: Client, state: RunState
-) -> None:
+async def exercise_dedicated_pcie_assignment(client: Client, state: RunState) -> None:
     """Orchestrate the dedicated-slot assign/verify/unassign/reassign/cleanup arm."""
     print("\n============================")
     print("=== Dedicated PCIe Live Test (issue #217) ===")
@@ -2347,7 +2368,9 @@ async def _exercise_dedicated_steps(
         return
 
     assign_ok = await assign_dedicated_slot(client, state, fixture)
-    verify_ok = await verify_dedicated_assigned(client, state, fixture) if assign_ok else False
+    verify_ok = (
+        await verify_dedicated_assigned(client, state, fixture) if assign_ok else False
+    )
     if not assign_ok:
         state.skip(
             32,
@@ -2444,7 +2467,10 @@ async def _io_slots_scenario(
             "SKIP io_slots scenario",
         )
         return
-    if fixture.baseline_io_slots != "none" or fixture.applied_io_slots != f"{slot_a}/none/0":
+    if (
+        fixture.baseline_io_slots != "none"
+        or fixture.applied_io_slots != f"{slot_a}/none/0"
+    ):
         state.skip(
             36,
             "io_slots scenario",
@@ -2466,7 +2492,9 @@ async def _io_slots_scenario(
     try:
         await _io_slots_steps(client, state, fixture, slot_b, slot_c)
     finally:
-        await _restore_io_slots(client, state, fixture, ((slot_c, False), (slot_b, True)))
+        await _restore_io_slots(
+            client, state, fixture, ((slot_c, False), (slot_b, True))
+        )
 
 
 async def _io_slots_steps(
@@ -2482,12 +2510,17 @@ async def _io_slots_steps(
     st, data = await state.call(
         client,
         "hmc_run_command",
-        cmd=_change_io_slots_command(fixture, add=True, drc_index=slot_b, required=True),
+        cmd=_change_io_slots_command(
+            fixture, add=True, drc_index=slot_b, required=True
+        ),
     )
     populated = await _read_profile_io_slots(client, state, fixture)
-    setup_ok = st == "PASS" and populated is not None and sorted(
-        _io_slot_elements(populated)
-    ) == sorted([f"{slot_a}/none/0", f"{slot_b}/none/1"])
+    setup_ok = (
+        st == "PASS"
+        and populated is not None
+        and sorted(_io_slot_elements(populated))
+        == sorted([f"{slot_a}/none/0", f"{slot_b}/none/1"])
+    )
     state.record(
         36,
         "io_slots setup (is_required=1 element)",
@@ -2514,7 +2547,8 @@ async def _io_slots_steps(
         st == "PASS" and bool(rendered_c),
         rendered_c == [f"{slot_c}/none/0"],
         added is not None
-        and [e for e in elements if e not in rendered_c] == _io_slot_elements(populated),
+        and [e for e in elements if e not in rendered_c]
+        == _io_slot_elements(populated),
     )
     fixture.evidence["io-slots-add"] = held
     if not all(held):
@@ -2529,7 +2563,9 @@ async def _io_slots_steps(
         drc_index=slot_c,
     )
     removed = await _read_profile_io_slots(client, state, fixture)
-    c_removed = st == "PASS" and removed is not None and slot_c not in _listed_drcs(removed)
+    c_removed = (
+        st == "PASS" and removed is not None and slot_c not in _listed_drcs(removed)
+    )
     state.record_verified(
         36,
         "hmc_unassign_dedicated_pcie_slot (io-slots)",
@@ -2551,7 +2587,9 @@ async def _io_slots_steps(
         cmd=_change_io_slots_command(fixture, add=False, drc_index=slot_b),
     )
     remaining = await _read_profile_io_slots(client, state, fixture)
-    b_removed = st == "PASS" and remaining is not None and slot_b not in _listed_drcs(remaining)
+    b_removed = (
+        st == "PASS" and remaining is not None and slot_b not in _listed_drcs(remaining)
+    )
     state.record_verified(
         36,
         "chsyscfg-io-slots-remove-required",

@@ -142,7 +142,9 @@ async def test_all_actionable_terminal_job_statuses_are_reported() -> None:
 
     result = await fleet_health(client)
 
-    assert {job["status"] for job in result.failed_jobs} == _ACTIONABLE_TERMINAL_STATUSES
+    assert {
+        job["status"] for job in result.failed_jobs
+    } == _ACTIONABLE_TERMINAL_STATUSES
     assert all(
         job["error"] == f"Job ended with status {job['status']}"
         for job in result.failed_jobs
@@ -370,9 +372,7 @@ async def test_aggregate_issue_budget_includes_failed_jobs(monkeypatch) -> None:
             ResourceMonitoringControlState="inactive",
         )
     ]
-    client.list_uom.return_value = [
-        _entry("job-1", JobName="failed", Status="FAILED")
-    ]
+    client.list_uom.return_value = [_entry("job-1", JobName="failed", Status="FAILED")]
 
     with pytest.raises(ValueError, match="safe limit of 1 issues"):
         await fleet_health(client)

@@ -29,7 +29,9 @@ async def test_create_user_builds_document_from_typed_request() -> None:
 
     document = hmc.create_hmc_user.await_args.args[1]
     assert '<UserID kb="CUR" kxe="false">alice</UserID>' in document
-    assert '<UserDescription kb="CUR" kxe="false">operator</UserDescription>' in document
+    assert (
+        '<UserDescription kb="CUR" kxe="false">operator</UserDescription>' in document
+    )
     assert result == {"Resource": {"UserID": "alice"}}
 
 
@@ -48,5 +50,8 @@ async def test_modify_user_preserves_explicit_clear_values() -> None:
     document = hmc.modify_hmc_user.await_args.args[2]
     assert '<UserDescription kb="CUR" kxe="false"></UserDescription>' in document
     assert '<AssociatedResourceRoles kb="CUR" kxe="false"/>' in document
-    assert '<AllowSSHRemoteAccess kb="CUR" kxe="false">false</AllowSSHRemoteAccess>' in document
+    assert (
+        '<AllowSSHRemoteAccess kb="CUR" kxe="false">false</AllowSSHRemoteAccess>'
+        in document
+    )
     assert result is None

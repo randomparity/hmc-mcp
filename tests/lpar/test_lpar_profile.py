@@ -81,7 +81,9 @@ def test_backup_lpar_profiles_force_flag_appended(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock(BACKUP_OUTPUT)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak", force=True)
+        result = hmc_backup_lpar_profiles(
+            SYSTEM_UUID, "/tmp/lpar_profiles.bak", force=True
+        )
 
     expected_cmd = f"bkprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak --force"
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)

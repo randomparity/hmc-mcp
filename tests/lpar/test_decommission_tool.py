@@ -122,7 +122,9 @@ def _client() -> AsyncMock:
     hmc.get_logical_partition.return_value = _lpar()
     hmc.get_quick_property.return_value = "not activated"
 
-    async def list_adapters(_lpar_uuid: str, adapter_type: str) -> list[dict[str, object]]:
+    async def list_adapters(
+        _lpar_uuid: str, adapter_type: str
+    ) -> list[dict[str, object]]:
         adapters = {
             "ClientNetworkAdapter": [
                 _adapter("ClientNetworkAdapter", "cna-2"),
@@ -140,13 +142,18 @@ def _client() -> AsyncMock:
         return adapters[adapter_type]
 
     hmc.list_adapters.side_effect = list_adapters
-    hmc.list_vios.return_value = [{"UUID": VIOS_UUID, "Resource": {"PartitionName": "vios1"}}]
+    hmc.list_vios.return_value = [
+        {"UUID": VIOS_UUID, "Resource": {"PartitionName": "vios1"}}
+    ]
     hmc.get_vios_storage_detail.return_value = _storage_detail()
     hmc.wait_for_job_entry.return_value = {
         "UUID": "job-uuid",
         "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
     }
-    hmc.submit_job.return_value = {"UUID": "job-uuid", "link": "/rest/api/uom/jobs/job-uuid"}
+    hmc.submit_job.return_value = {
+        "UUID": "job-uuid",
+        "link": "/rest/api/uom/jobs/job-uuid",
+    }
     hmc.delete_storage_mapping = AsyncMock()
     hmc.delete_virtual_disk = AsyncMock()
     hmc.delete_logical_unit = AsyncMock()
@@ -161,16 +168,22 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
         assert hmc is not None
         return SYSTEM_UUID
 
-    async def resolve_names(hmc, system_uuid: str, fallback: str, lpar_uuid: str) -> tuple[str, str]:
+    async def resolve_names(
+        hmc, system_uuid: str, fallback: str, lpar_uuid: str
+    ) -> tuple[str, str]:
         calls.append(f"resolve_names:{system_uuid}:{fallback}:{lpar_uuid}")
         return ("system-a", "aix-prod")
 
-    async def authorize(hmc, system_name: str, lpar_name: str, *, ownership_override: bool = False) -> None:
+    async def authorize(
+        hmc, system_name: str, lpar_name: str, *, ownership_override: bool = False
+    ) -> None:
         calls.append(f"authorize:{system_name}:{lpar_name}:{ownership_override}")
 
     monkeypatch.setattr(ops, "resolve_system_uuid", resolve_system_uuid)
     monkeypatch.setattr(ops, "resolve_lpar_ownership_names", resolve_names)
-    monkeypatch.setattr(ops, "authorize_decommission_lpar_ownership_snapshot", authorize)
+    monkeypatch.setattr(
+        ops, "authorize_decommission_lpar_ownership_snapshot", authorize
+    )
 
 
 def _tool_result() -> DecommissionResult:
@@ -247,7 +260,9 @@ def test_hmc_decommission_lpar_delegates_with_one_configured_client() -> None:
 
 
 @pytest.mark.asyncio
-async def test_decommission_rejects_uuid_outside_selected_system(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_decommission_rejects_uuid_outside_selected_system(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     hmc = _client()
     hmc.list_logical_partitions.return_value = [_lpar(uuid="other-uuid")]
     authorize = AsyncMock()
@@ -255,7 +270,9 @@ async def test_decommission_rejects_uuid_outside_selected_system(monkeypatch: py
     from hmcpctl.operations.lpar import decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
-    monkeypatch.setattr(ops, "authorize_decommission_lpar_ownership_snapshot", authorize)
+    monkeypatch.setattr(
+        ops, "authorize_decommission_lpar_ownership_snapshot", authorize
+    )
 
     with pytest.raises(ValueError, match="No LPAR .* on managed system"):
         await decommission_lpar(hmc, "system-a", LPAR_UUID)
@@ -285,7 +302,9 @@ async def test_decommission_resolves_uuid_case_insensitively(
 
     assert result.lpar_uuid == hmc_uuid
     hmc.get_logical_partition.assert_awaited_once_with(hmc_uuid)
-    assert [call.args[0] for call in hmc.list_adapters.await_args_list] == [hmc_uuid] * 4
+    assert [call.args[0] for call in hmc.list_adapters.await_args_list] == [
+        hmc_uuid
+    ] * 4
 
 
 @pytest.mark.asyncio
@@ -327,9 +346,7 @@ async def test_decommission_warns_when_listed_vios_has_no_uuid(
 ) -> None:
     calls: list[str] = []
     hmc = _client()
-    hmc.list_vios.return_value = [
-        {"Resource": {"PartitionName": "vios-missing-id"}}
-    ]
+    hmc.list_vios.return_value = [{"Resource": {"PartitionName": "vios-missing-id"}}]
     _patch_common(monkeypatch, calls)
 
     result = await decommission_lpar(hmc, "system-a", "aix-prod", dry_run=True)
@@ -338,8 +355,10 @@ async def test_decommission_warns_when_listed_vios_has_no_uuid(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        ("Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
-         "has no UUID, so its storage mappings could not be inventoried."),
+        (
+            "Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
+            "has no UUID, so its storage mappings could not be inventoried."
+        ),
     )
     hmc.get_vios_storage_detail.assert_not_awaited()
 
@@ -359,8 +378,10 @@ async def test_decommission_warns_when_vios_storage_detail_is_unavailable(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        (f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
-         "storage detail, so its storage mappings could not be inventoried."),
+        (
+            f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+            "storage detail, so its storage mappings could not be inventoried."
+        ),
     )
     hmc.get_vios_storage_detail.assert_awaited_once_with(VIOS_UUID)
 
@@ -382,18 +403,22 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
         return []
 
     hmc.list_adapters.side_effect = list_adapters
-    hmc.submit_job.side_effect = lambda *args, **kwargs: calls.append("submit_job") or {
-        "UUID": "job-uuid",
-        "link": "/rest/api/uom/jobs/job-uuid",
-    }
-    hmc.wait_for_job_entry.side_effect = lambda *args, **kwargs: calls.append("wait_for_job_entry") or {
-        "UUID": "job-uuid",
-        "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
-    }
-    hmc.delete_adapter.side_effect = (
-        lambda _lpar_uuid, adapter_type, adapter_uuid: calls.append(
-            f"delete_adapter:{adapter_type}:{adapter_uuid}"
-        )
+    hmc.submit_job.side_effect = lambda *args, **kwargs: (
+        calls.append("submit_job")
+        or {
+            "UUID": "job-uuid",
+            "link": "/rest/api/uom/jobs/job-uuid",
+        }
+    )
+    hmc.wait_for_job_entry.side_effect = lambda *args, **kwargs: (
+        calls.append("wait_for_job_entry")
+        or {
+            "UUID": "job-uuid",
+            "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
+        }
+    )
+    hmc.delete_adapter.side_effect = lambda _lpar_uuid, adapter_type, adapter_uuid: (
+        calls.append(f"delete_adapter:{adapter_type}:{adapter_uuid}")
     )
     hmc.delete_logical_partition.side_effect = lambda uuid: calls.append(
         f"delete_lpar:{uuid}"
@@ -407,8 +432,10 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
     assert result.blast_radius["unresolved_storage_mapping_count"] == 0
     assert result.blast_radius["unavailable_storage_source_count"] == 1
     assert result.warnings == (
-        (f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
-         "storage detail, so its storage mappings could not be inventoried."),
+        (
+            f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+            "storage detail, so its storage mappings could not be inventoried."
+        ),
     )
     assert calls == [
         "resolve_system_uuid:system-a",
@@ -423,7 +450,9 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
 
 
 @pytest.mark.asyncio
-async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_decommission_dry_run_inventories_without_mutating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     hmc = _client()
     _patch_common(monkeypatch, calls)
@@ -507,7 +536,9 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_decommission_enforces_ownership_even_for_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_decommission_enforces_ownership_even_for_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     hmc = _client()
 
     from hmcpctl.operations.lpar import decommission as ops
@@ -531,7 +562,9 @@ async def test_decommission_enforces_ownership_even_for_dry_run(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_decommission_allows_explicit_ownership_override(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_decommission_allows_explicit_ownership_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     hmc = _client()
     _patch_common(monkeypatch, calls)
@@ -553,9 +586,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     hmc = _client()
-    hmc.config = HMCConfig(
-        host="hmc.test", user="user", agent_id="alice"
-    )
+    hmc.config = HMCConfig(host="hmc.test", user="user", agent_id="alice")
 
     from hmcpctl.operations.lpar import decommission as ops
 
@@ -571,7 +602,9 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
             "[hmcpctl owner:bob created:2026-08-14]",
         )
     )
-    monkeypatch.setattr("hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions)
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions
+    )
 
     result = await decommission_lpar(
         hmc, "system-a", "aix-prod", ownership_override=True
@@ -587,9 +620,7 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     hmc = _client()
-    hmc.config = HMCConfig(
-        host="hmc.test", user="user", agent_id="alice"
-    )
+    hmc.config = HMCConfig(host="hmc.test", user="user", agent_id="alice")
 
     from hmcpctl.operations.lpar import decommission as ops
 
@@ -605,7 +636,9 @@ async def test_decommission_revalidates_changed_owner_before_mutation(
             "[hmcpctl owner:bob created:2026-08-15]",
         )
     )
-    monkeypatch.setattr("hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions)
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", descriptions
+    )
 
     with pytest.raises(PermissionError, match="owned by 'bob'"):
         await decommission_lpar(hmc, "system-a", "aix-prod")
@@ -623,21 +656,25 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
     calls: list[str] = []
     hmc = _client()
     _patch_common(monkeypatch, calls)
-    hmc.submit_job.side_effect = lambda *args, **kwargs: calls.append("submit_job") or {
-        "UUID": "job-uuid",
-        "link": "/rest/api/uom/jobs/job-uuid",
-    }
-    hmc.wait_for_job_entry.side_effect = lambda *args, **kwargs: calls.append("wait_for_job_entry") or {
-        "UUID": "job-uuid",
-        "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
-    }
-    hmc.get_quick_property.side_effect = (
-        lambda *args, **kwargs: calls.append("get_state") or "not activated"
+    hmc.submit_job.side_effect = lambda *args, **kwargs: (
+        calls.append("submit_job")
+        or {
+            "UUID": "job-uuid",
+            "link": "/rest/api/uom/jobs/job-uuid",
+        }
     )
-    hmc.delete_adapter.side_effect = (
-        lambda lpar_uuid, adapter_type, adapter_uuid: calls.append(
-            f"delete_adapter:{adapter_type}:{adapter_uuid}"
-        )
+    hmc.wait_for_job_entry.side_effect = lambda *args, **kwargs: (
+        calls.append("wait_for_job_entry")
+        or {
+            "UUID": "job-uuid",
+            "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
+        }
+    )
+    hmc.get_quick_property.side_effect = lambda *args, **kwargs: (
+        calls.append("get_state") or "not activated"
+    )
+    hmc.delete_adapter.side_effect = lambda lpar_uuid, adapter_type, adapter_uuid: (
+        calls.append(f"delete_adapter:{adapter_type}:{adapter_uuid}")
     )
     hmc.delete_logical_partition.side_effect = lambda uuid: calls.append(
         f"delete_lpar:{uuid}"
@@ -699,7 +736,9 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
 
 
 @pytest.mark.asyncio
-async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_decommission_marks_already_off_lpar_without_power_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     hmc = _client()
     hmc.get_logical_partition.return_value = _lpar(state="not activated")
@@ -713,13 +752,11 @@ async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch
         return []
 
     hmc.list_adapters.side_effect = list_adapters
-    hmc.get_quick_property.side_effect = (
-        lambda *args, **kwargs: calls.append("get_state") or "not activated"
+    hmc.get_quick_property.side_effect = lambda *args, **kwargs: (
+        calls.append("get_state") or "not activated"
     )
-    hmc.delete_adapter.side_effect = (
-        lambda _lpar_uuid, adapter_type, adapter_uuid: calls.append(
-            f"delete_adapter:{adapter_type}:{adapter_uuid}"
-        )
+    hmc.delete_adapter.side_effect = lambda _lpar_uuid, adapter_type, adapter_uuid: (
+        calls.append(f"delete_adapter:{adapter_type}:{adapter_uuid}")
     )
     hmc.delete_logical_partition.side_effect = lambda uuid: calls.append(
         f"delete_lpar:{uuid}"
@@ -839,11 +876,21 @@ async def test_decommission_stops_when_detach_state_cannot_be_read(
     ("job", "fragment"),
     [
         (
-            {"UUID": "job-uuid", "Resource": {"JobID": "job-uuid", "Status": "FAILED", "ResponseException": {"Message": "power failed"}}},
+            {
+                "UUID": "job-uuid",
+                "Resource": {
+                    "JobID": "job-uuid",
+                    "Status": "FAILED",
+                    "ResponseException": {"Message": "power failed"},
+                },
+            },
             "status 'FAILED'",
         ),
         (
-            {"UUID": "job-uuid", "Resource": {"JobID": "job-uuid", "Status": "RUNNING"}},
+            {
+                "UUID": "job-uuid",
+                "Resource": {"JobID": "job-uuid", "Status": "RUNNING"},
+            },
             "timed out",
         ),
     ],
@@ -873,12 +920,16 @@ async def test_decommission_reports_power_off_failure_and_skips_later_steps(
 
 
 @pytest.mark.asyncio
-async def test_decommission_stops_after_first_adapter_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_decommission_stops_after_first_adapter_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     hmc = _client()
     _patch_common(monkeypatch, calls)
 
-    async def delete_adapter(_lpar_uuid: str, adapter_type: str, adapter_uuid: str) -> None:
+    async def delete_adapter(
+        _lpar_uuid: str, adapter_type: str, adapter_uuid: str
+    ) -> None:
         calls.append(f"delete_adapter:{adapter_type}:{adapter_uuid}")
         if adapter_uuid == "vscsi-1":
             raise HMCError("adapter delete failed")
@@ -952,13 +1003,15 @@ async def test_decommission_dry_run_makes_no_unclassified_call(
     assert result.resource_deleted is False
     used = assert_only_these_client_methods_used(
         hmc,
-        frozenset({
-            "list_logical_partitions",  # read: find the partition on the system
-            "get_logical_partition",  # read: its current state and attributes
-            "list_adapters",  # read: blast radius, four adapter kinds
-            "list_vios",  # read: every VIOS on the system
-            "get_vios_storage_detail",  # read: each VIOS's storage mappings
-        }),
+        frozenset(
+            {
+                "list_logical_partitions",  # read: find the partition on the system
+                "get_logical_partition",  # read: its current state and attributes
+                "list_adapters",  # read: blast radius, four adapter kinds
+                "list_vios",  # read: every VIOS on the system
+                "get_vios_storage_detail",  # read: each VIOS's storage mappings
+            }
+        ),
     )
     assert used, "the handler touched nothing; the dry-run path was not exercised"
 
@@ -1002,7 +1055,9 @@ async def test_decommission_power_off_is_recorded_before_its_submit(
     hmc.submit_job.side_effect = submit_job
 
     with caplog.at_level(logging.INFO):
-        result = await decommission_lpar(hmc, "system-a", "aix-prod", immediate=immediate)
+        result = await decommission_lpar(
+            hmc, "system-a", "aix-prod", immediate=immediate
+        )
 
     assert result.resource_deleted is True
     records = _audit_records(caplog)

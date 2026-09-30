@@ -43,8 +43,10 @@ class HMCError(Exception):
             # fallback's 500-char slice.
             detail = f"{detail}: {msg[:500]}"
         if body is not None:
-            body = body[:MAX_ERROR_BODY_BYTES].encode("utf-8")[:MAX_ERROR_BODY_BYTES].decode(
-                "utf-8", errors="ignore"
+            body = (
+                body[:MAX_ERROR_BODY_BYTES]
+                .encode("utf-8")[:MAX_ERROR_BODY_BYTES]
+                .decode("utf-8", errors="ignore")
             )
         self.body = body
         super().__init__(detail)

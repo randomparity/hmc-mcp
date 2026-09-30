@@ -599,8 +599,16 @@ def test_the_console_write_record_carries_metadata_and_no_content():
         "attribution",
     ]
     assert record["event"] == "console-write"
-    assert (record["system"], record["lpar"], record["host"]) == ("sys-a", "lp-01", "hmc.test")
-    assert (record["mode"], record["input_kind"], record["length"]) == ("exclusive", "sysrq", 2)
+    assert (record["system"], record["lpar"], record["host"]) == (
+        "sys-a",
+        "lp-01",
+        "hmc.test",
+    )
+    assert (record["mode"], record["input_kind"], record["length"]) == (
+        "exclusive",
+        "sysrq",
+        2,
+    )
     assert record["attribution"] == {
         "claim": "agent-7",
         "source": "config:agent_id",

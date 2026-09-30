@@ -176,7 +176,9 @@ async def test_add_rejects_non_integer_vlan_before_preflight(
     selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal(2))
     preflight = AsyncMock()
     mutation = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic._preflight_add", preflight)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic._preflight_add", preflight
+    )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation
     )
@@ -275,14 +277,17 @@ async def test_add_preserves_shell_metacharacters_as_quoted_payload_data(
         ),
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.vnic.list_vnic_rows", AsyncMock(side_effect=[[], []])
+        "hmcpctl.operations.virtualization.vnic.list_vnic_rows",
+        AsyncMock(side_effect=[[], []]),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], []]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate
+    )
 
     with pytest.raises(VnicPartialError):
         await add_vnic(_hmc(), "system-a", "client-a", selector, 7)
@@ -402,7 +407,8 @@ async def test_add_rejects_exhausted_capacity(monkeypatch: pytest.MonkeyPatch) -
         ),
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
+        "hmcpctl.operations.virtualization.vnic.list_vnic_rows",
+        AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
@@ -430,7 +436,9 @@ async def test_add_verified_retry_is_unchanged(monkeypatch: pytest.MonkeyPatch) 
         AsyncMock(return_value=[_backing()]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate
+    )
     result = await add_vnic(
         _hmc(),
         "system-a",
@@ -473,7 +481,9 @@ async def test_add_verified_retry_resolves_before_new_allocation_capacity(
         AsyncMock(return_value=[_backing(capacity="60", desired_capacity="60")]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate
+    )
 
     result = await add_vnic(
         _hmc(),
@@ -510,7 +520,8 @@ async def test_add_rejects_identical_duplicates_within_one_projection(
         ),
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
+        "hmcpctl.operations.virtualization.vnic.list_vnic_rows",
+        AsyncMock(return_value=[]),
     )
     backing_rows = [_backing(), _backing()] if projection == "backing" else []
     monkeypatch.setattr(
@@ -518,7 +529,9 @@ async def test_add_rejects_identical_duplicates_within_one_projection(
         AsyncMock(return_value=backing_rows),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate
+    )
 
     with pytest.raises(ValueError, match=f"duplicate {projection}"):
         await add_vnic(
@@ -551,14 +564,17 @@ async def test_add_deduplicates_consistent_direct_and_backing_observations(
         ),
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
+        "hmcpctl.operations.virtualization.vnic.list_vnic_rows",
+        AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing(capacity="50", desired_capacity="98.0")]),
     )
     mutate = AsyncMock(side_effect=RuntimeError("dispatched"))
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate
+    )
 
     with pytest.raises(VnicPartialError):
         await add_vnic(
@@ -614,7 +630,9 @@ async def test_add_ignores_unrelated_equal_selector_backing_for_target_identity(
         AsyncMock(side_effect=[[unrelated], [unrelated, _backing()]]),
     )
     mutation = AsyncMock(return_value="created")
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation
+    )
 
     result = await add_vnic(
         _hmc(),
@@ -643,7 +661,9 @@ async def test_add_before_state_after_dispatch_is_known_unchanged_partial(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], []]),
     )
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", AsyncMock())
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", AsyncMock()
+    )
 
     with pytest.raises(VnicPartialError) as caught:
         await add_vnic(
@@ -700,7 +720,9 @@ async def test_add_reconciliation_decision_table(
     mutation = AsyncMock(return_value="created")
     if mutation_error is not None:
         mutation.side_effect = mutation_error
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation
+    )
     call = add_vnic(
         _hmc(),
         "system-a",
@@ -743,7 +765,9 @@ async def test_add_retry_ignores_unrelated_selector_matching_degraded_backing(
         AsyncMock(return_value=[_backing(), _backing(logical="4", is_active="0")]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutate
+    )
 
     result = await add_vnic(
         _hmc(),
@@ -805,7 +829,9 @@ async def test_add_retry_refuses_degraded_correlated_target_backing(
         AsyncMock(return_value=[_backing(status="Degraded")]),
     )
     mutation = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", mutation
+    )
 
     with pytest.raises(VnicCapabilityError, match="ambiguous or degraded"):
         await add_vnic(
@@ -867,7 +893,9 @@ async def test_add_successful_reads_with_only_new_vnic_are_contradictory(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[], []]),
     )
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.add_vnic_backing", AsyncMock())
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.add_vnic_backing", AsyncMock()
+    )
 
     with pytest.raises(VnicPartialError) as caught:
         await add_vnic(
@@ -926,7 +954,8 @@ async def test_add_command_and_both_read_failures_are_retained_in_order(
 async def test_remove_absent_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     _common(monkeypatch)
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[])
+        "hmcpctl.operations.virtualization.vnic.list_vnic_rows",
+        AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
@@ -998,7 +1027,9 @@ async def test_remove_reconciliation_decision_table(
     mutation = AsyncMock(return_value="removed")
     if mutation_error is not None:
         mutation.side_effect = mutation_error
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.remove_vnic_slot", mutation)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.remove_vnic_slot", mutation
+    )
     call = remove_vnic(_hmc(), "system-a", "client-a", "2")
 
     if case == "final-success":
@@ -1051,14 +1082,17 @@ async def test_remove_requires_exactly_one_embedded_backing_before_mutation(
     else:
         row["backing_devices"] = backing_devices
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.vnic.list_vnic_rows", AsyncMock(return_value=[row])
+        "hmcpctl.operations.virtualization.vnic.list_vnic_rows",
+        AsyncMock(return_value=[row]),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(return_value=[_backing()]),
     )
     mutate = AsyncMock()
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.remove_vnic_slot", mutate)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.remove_vnic_slot", mutate
+    )
 
     with pytest.raises(VnicCapabilityError, match="exactly one embedded backing"):
         await remove_vnic(_hmc(), "system-a", "client-a", "2")
@@ -1145,7 +1179,9 @@ async def test_remove_successful_reads_with_changed_slot_are_contradictory(
         "hmcpctl.operations.virtualization.vnic.list_vnic_backing_rows",
         AsyncMock(side_effect=[[_backing()], [_backing()]]),
     )
-    monkeypatch.setattr("hmcpctl.operations.virtualization.vnic.remove_vnic_slot", AsyncMock())
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.vnic.remove_vnic_slot", AsyncMock()
+    )
 
     with pytest.raises(VnicPartialError) as caught:
         await remove_vnic(_hmc(), "system-a", "client-a", "2")
@@ -1222,7 +1258,9 @@ async def test_add_rejects_malformed_port_granularity_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mutate = _granularity_port(monkeypatch, "abc")
-    with pytest.raises(HMCCLIError, match="malformed physical-port capacity granularity"):
+    with pytest.raises(
+        HMCCLIError, match="malformed physical-port capacity granularity"
+    ):
         await _add_at("2")
     mutate.assert_not_awaited()
 
@@ -1234,7 +1272,9 @@ def _csv(fields: tuple[str, ...], row: dict[str, str]) -> str:
     return ",".join(fields) + "\n" + ",".join(row.get(f, "") for f in fields) + "\n"
 
 
-def _sentinel_hmc(monkeypatch: pytest.MonkeyPatch, after: dict[str, str] | None) -> list[str]:
+def _sentinel_hmc(
+    monkeypatch: pytest.MonkeyPatch, after: dict[str, str] | None
+) -> list[str]:
     """Stub the SSH transport: the HMC replies with its sentinel until a mutation."""
     from hmcpctl.ssh import vnic as ssh_vnic
 

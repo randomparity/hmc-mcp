@@ -113,17 +113,14 @@ def test_library_runtime_dependencies_declare_compatible_ranges(
 ) -> None:
     match = RANGED_REQUIREMENT.fullmatch(requirement)
     assert match, (
-        f"library runtime dependency must declare one >=floor,<cap range: "
-        f"{requirement}"
+        f"library runtime dependency must declare one >=floor,<cap range: {requirement}"
     )
     assert match["name"].lower().replace("_", "-") in LIBRARY_DEPENDENCIES
 
 
 def test_library_dependency_set_is_exhaustive() -> None:
     names = {
-        RANGED_REQUIREMENT.fullmatch(requirement)["name"]
-        .lower()
-        .replace("_", "-")
+        RANGED_REQUIREMENT.fullmatch(requirement)["name"].lower().replace("_", "-")
         for requirement in _library_requirements()
     }
     assert names == LIBRARY_DEPENDENCIES, (
@@ -170,7 +167,9 @@ def test_direct_third_party_imports_are_declared() -> None:
         for requirement in requirements
     }
 
-    assert unresolved == set(), f"cannot map imported modules to distributions: {unresolved}"
+    assert unresolved == set(), (
+        f"cannot map imported modules to distributions: {unresolved}"
+    )
     assert imported_distributions <= declared, (
         "runtime modules import undeclared distributions: "
         f"{sorted(imported_distributions - declared)}"

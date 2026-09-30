@@ -59,8 +59,7 @@ def test_every_documented_tool_name_is_registered() -> None:
         "Documentation names hmc_* identifiers that are neither registered tools nor "
         "listed in NON_TOOL_IDENTIFIERS: "
         + ", ".join(
-            f"{name} ({lineno})"
-            for name, lineno in sorted(unregistered.items())
+            f"{name} ({lineno})" for name, lineno in sorted(unregistered.items())
         )
         + ". Drop the reference or name a tool that server.TOOL_SECURITY registers."
     )

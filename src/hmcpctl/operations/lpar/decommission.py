@@ -119,6 +119,7 @@ class _Inventory:
             "unavailable_storage_source_count": self.unavailable_storage_source_count,
         }
 
+
 def _skip_steps(steps: list[WorkflowStep], *names: str) -> None:
     steps.extend(WorkflowStep(name, "skipped") for name in names)
 

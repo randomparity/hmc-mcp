@@ -14,7 +14,9 @@ from pathlib import Path
 import pytest
 
 MODULE_PATH = Path(__file__).parents[2] / "scripts" / "link_reference_corpus.py"
-MODULE_SPEC = importlib.util.spec_from_file_location("link_reference_corpus", MODULE_PATH)
+MODULE_SPEC = importlib.util.spec_from_file_location(
+    "link_reference_corpus", MODULE_PATH
+)
 assert MODULE_SPEC is not None
 assert MODULE_SPEC.loader is not None
 link_reference_corpus = importlib.util.module_from_spec(MODULE_SPEC)
@@ -155,7 +157,9 @@ def test_git_resolution_failure_is_announced(
     """main() announces a git-call failure and still exits 0, never swallowing it."""
 
     def _raise(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise subprocess.CalledProcessError(128, ["git", "rev-parse", "--show-toplevel"])
+        raise subprocess.CalledProcessError(
+            128, ["git", "rev-parse", "--show-toplevel"]
+        )
 
     monkeypatch.setattr(subprocess, "run", _raise)
 

@@ -162,12 +162,8 @@ async def test_delete_media_repository_refuses_nonempty(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_media_repository_succeeds_when_empty(mock_hmc):
     """delete_media_repository succeeds when repository is empty."""
-    mock_hmc.get(VG_PATH).mock(
-        return_value=httpx.Response(200, text=EMPTY_REPO_FEED)
-    )
-    mock_hmc.post(VG_PATH).mock(
-        return_value=httpx.Response(200, text=EMPTY_REPO_FEED)
-    )
+    mock_hmc.get(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
+    mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
 
     config = make_config()
     async with HMCClient(config) as hmc:
@@ -195,7 +191,9 @@ async def test_delete_media_repository_refuses_medium_that_appeared_since_the_ch
             httpx.Response(200, text=MEDIA_VG_FEED, headers={"ETag": '"etag-1"'}),
         ]
     )
-    post_route = mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
+    post_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(200, text=EMPTY_REPO_FEED)
+    )
 
     config = make_config()
     async with HMCClient(config) as hmc:
@@ -231,11 +229,11 @@ async def test_delete_optical_media_succeeds_when_unmounted(mock_hmc):
         return_value=httpx.Response(200, text=NO_MAPPINGS_FEED)
     )
     mock_hmc.get(VG_PATH).mock(
-        return_value=httpx.Response(200, text=MEDIA_VG_FEED, headers={"ETag": '"etag-1"'})
+        return_value=httpx.Response(
+            200, text=MEDIA_VG_FEED, headers={"ETag": '"etag-1"'}
+        )
     )
-    mock_hmc.post(VG_PATH).mock(
-        return_value=httpx.Response(200, text=EMPTY_REPO_FEED)
-    )
+    mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
 
     config = make_config()
     async with HMCClient(config) as hmc:
@@ -308,9 +306,13 @@ async def test_delete_optical_media_refusal_is_repr_quoted(mock_hmc):
     assert repr(media_name) in message
 
 
-V10R3_MAPPINGS = (Path(__file__).with_name("vscsi_mapping_v10r3.xml")).read_text(encoding="utf-8")
+V10R3_MAPPINGS = (Path(__file__).with_name("vscsi_mapping_v10r3.xml")).read_text(
+    encoding="utf-8"
+)
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
-GROUP_LINK = f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
+GROUP_LINK = (
+    f"https://hmc.example.invalid/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
+)
 
 
 @pytest.mark.asyncio

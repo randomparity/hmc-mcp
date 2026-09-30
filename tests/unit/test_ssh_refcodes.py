@@ -62,16 +62,21 @@ def test_non_integer_count_is_refused(monkeypatch, count):
 def test_command_shape_is_exact(monkeypatch):
     """The composed command is the one the design fixed, value for value."""
     header = ",".join(REFCODE_FIELDS)
-    transport = _transport(monkeypatch, f"{header}\nweb01,2026-09-21 10:00:00,C2001150\n")
+    transport = _transport(
+        monkeypatch, f"{header}\nweb01,2026-09-21 10:00:00,C2001150\n"
+    )
 
     rows = _run(list_lpar_refcodes(_config(), "sys1", "web01", 5))
 
     assert _sent(transport) == (
-        "lsrefcode -r lpar -m sys1 --filter lpar_names=web01"
-        f" -n 5 -F {header} --header"
+        f"lsrefcode -r lpar -m sys1 --filter lpar_names=web01 -n 5 -F {header} --header"
     )
     assert rows == [
-        {"lpar_name": "web01", "time_stamp": "2026-09-21 10:00:00", "refcode": "C2001150"}
+        {
+            "lpar_name": "web01",
+            "time_stamp": "2026-09-21 10:00:00",
+            "refcode": "C2001150",
+        }
     ]
 
 

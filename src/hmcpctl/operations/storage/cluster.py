@@ -60,13 +60,19 @@ async def delete_logical_unit(
 
 
 def validate_logical_unit_create(
-    lu_type: LuType, device_type: DeviceType, wait: bool, timeout_seconds: int, poll_interval: int
+    lu_type: LuType,
+    device_type: DeviceType,
+    wait: bool,
+    timeout_seconds: int,
+    poll_interval: int,
 ) -> None:
     """Validate logical-unit creation controls before connecting."""
     validate_logical_unit_types(lu_type, device_type)
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
 
-def validate_logical_unit_wait(wait: bool, timeout_seconds: int, poll_interval: int) -> None:
+def validate_logical_unit_wait(
+    wait: bool, timeout_seconds: int, poll_interval: int
+) -> None:
     """Validate logical-unit polling controls before connecting."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)

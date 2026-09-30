@@ -49,8 +49,11 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmcpctl.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
+        authorize,
     )
+
+
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
     (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
@@ -240,7 +243,9 @@ async def test_lpm_recovery_operations_wait_for_terminal_outcome(
     assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
     assert result.job.status == "COMPLETED"
     assert result.job.timed_out is False
-    hmc.wait_for_job_entry.assert_awaited_once_with("job-1", 60, 2, job_href="/jobs/job-1")
+    hmc.wait_for_job_entry.assert_awaited_once_with(
+        "job-1", 60, 2, job_href="/jobs/job-1"
+    )
 
 
 @pytest.mark.asyncio

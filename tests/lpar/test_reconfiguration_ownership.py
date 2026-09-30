@@ -68,9 +68,7 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
-        lambda hmc: delete_adapter(
-            hmc, None, LPAR, "ClientNetworkAdapter", "adapter"
-        ),
+        lambda hmc: delete_adapter(hmc, None, LPAR, "ClientNetworkAdapter", "adapter"),
     ),
     (
         "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
@@ -85,15 +83,11 @@ CASES: tuple[tuple[str, Operation], ...] = (
     ),
     (
         "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
-        lambda hmc: mount_optical_media(
-                hmc, VIOS, LPAR, media_name="aix.iso"
-        ),
+        lambda hmc: mount_optical_media(hmc, VIOS, LPAR, media_name="aix.iso"),
     ),
     (
         "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
-        lambda hmc: unmount_optical_media(
-                hmc, VIOS, LPAR, media_name="aix.iso"
-        ),
+        lambda hmc: unmount_optical_media(hmc, VIOS, LPAR, media_name="aix.iso"),
     ),
     (
         "hmcpctl.operations.lpar.provision.resolve_and_authorize_lpar_mutation",
@@ -171,9 +165,7 @@ def _real_guard_hmc() -> AsyncMock:
         }
     )
     hmc.get_managed_system.return_value = {"Resource": {"SystemName": SYSTEM_NAME}}
-    hmc.get_logical_partition.return_value = {
-        "Resource": {"PartitionName": LPAR_NAME}
-    }
+    hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
     hmc.list_logical_partitions.return_value = [{"UUID": LPAR}]
     hmc.list_optical_mappings.return_value = [
         {
@@ -199,13 +191,16 @@ async def test_real_guard_rejects_foreign_optical_owner_before_write(
     """A foreign token blocks both optical mutations before their HMC write."""
     hmc = _real_guard_hmc()
 
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value=FOREIGN_OWNER),
-    ), pytest.raises(PermissionError, match="ownership_override=true"):
-            await operation(
-                hmc, VIOS, LPAR, media_name="aix.iso", system_name_or_uuid=SYSTEM_UUID
-            )
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ),
+        pytest.raises(PermissionError, match="ownership_override=true"),
+    ):
+        await operation(
+            hmc, VIOS, LPAR, media_name="aix.iso", system_name_or_uuid=SYSTEM_UUID
+        )
 
     getattr(hmc, write_method).assert_not_awaited()
 
@@ -230,10 +225,10 @@ async def test_optical_ownership_override_bypasses_read_and_writes(
     ) as read:
         await operation(
             hmc,
-                VIOS,
-                LPAR,
-                media_name="aix.iso",
-                system_name_or_uuid=SYSTEM_UUID,
+            VIOS,
+            LPAR,
+            media_name="aix.iso",
+            system_name_or_uuid=SYSTEM_UUID,
             ownership_override=True,
         )
 
@@ -303,13 +298,18 @@ def test_cli_resource_modify_rejects_foreign_owner_before_hmc_write() -> None:
 def test_resource_modify_override_skips_ownership_read_and_writes() -> None:
     """An approved resource override reaches the shared operation's POST."""
     hmc = _real_guard_hmc()
-    hmc.update_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
-    with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description",
-        new=AsyncMock(return_value=FOREIGN_OWNER),
-    ) as read, patch(
-        "hmcpctl.server_tools.lpar.lifecycle.with_client",
-        side_effect=lambda fn, **_: asyncio.run(fn(hmc)),
+    hmc.update_logical_partition.return_value = {
+        "Resource": {"PartitionName": LPAR_NAME}
+    }
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value=FOREIGN_OWNER),
+        ) as read,
+        patch(
+            "hmcpctl.server_tools.lpar.lifecycle.with_client",
+            side_effect=lambda fn, **_: asyncio.run(fn(hmc)),
+        ),
     ):
         server_lifecycle.hmc_modify_lpar(
             LPAR,
@@ -430,7 +430,8 @@ async def test_delete_adapter_returns_where_the_deletion_lives(
 ) -> None:
     guard = AsyncMock(return_value=LPAR)
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", guard
+        "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
+        guard,
     )
     hmc = AsyncMock()
     hmc.get_logical_partition.return_value = {

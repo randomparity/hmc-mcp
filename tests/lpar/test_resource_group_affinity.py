@@ -232,16 +232,14 @@ def test_shared_operation_resolves_system_and_defaults_to_all():
     )
     with (
         patch(
-                "hmcpctl.operations.affinity.ssh.resolve_ssh_names",
+            "hmcpctl.operations.affinity.ssh.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", None)),
         ) as resolve,
         patch(
-                "hmcpctl.operations.affinity.ssh.query_resource_group_memopt_scores", query
+            "hmcpctl.operations.affinity.ssh.query_resource_group_memopt_scores", query
         ),
     ):
-        result = asyncio.run(
-            list_resource_group_memopt_scores(_hmc(), "system-uuid")
-        )
+        result = asyncio.run(list_resource_group_memopt_scores(_hmc(), "system-uuid"))
     assert result.capability == "available"
     assert result.selector == MemoptResourceGroupSelector(all=True)
     resolve.assert_awaited_once_with(_config(), "system-uuid", None)

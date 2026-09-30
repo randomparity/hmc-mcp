@@ -38,7 +38,9 @@ def test_metric_links_parse_error_tags_context():
 
 
 def test_find_text_entity_error_tags_context():
-    body = "<!DOCTYPE feed [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><feed>&xxe;</feed>"
+    body = (
+        "<!DOCTYPE feed [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><feed>&xxe;</feed>"
+    )
 
     with pytest.raises(HMCError) as exc_info:
         _find_text(body, "test context")

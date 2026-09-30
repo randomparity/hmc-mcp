@@ -17,6 +17,7 @@ from hmcpctl.server_tools.systems.core import hmc_list_configured_hosts
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_toml(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -34,6 +35,7 @@ def _patch_config_path(tmp_path, content: str | None):
 # ---------------------------------------------------------------------------
 # Test 1: No config file
 # ---------------------------------------------------------------------------
+
 
 def test_no_config_file(tmp_path):
     """Returns empty profiles list when no config file exists."""
@@ -68,7 +70,7 @@ def test_single_profile_is_default(tmp_path):
     assert p["host"] == "hmc.example.com"
     assert p["user"] == "admin"
     assert p["is_default"] is True
-    assert p["port"] == 443         # HMCConfig default
+    assert p["port"] == 443  # HMCConfig default
     assert p["verify_ssl"] is False  # HMCConfig default
 
 
@@ -123,7 +125,9 @@ def test_password_literal_has_password_true_no_value(tmp_path):
     assert p["has_password"] is True
     # The raw profile dict must never be forwarded; verify no password key leaks
     assert "password" not in p
-    assert "supersecret" not in str(result)  # paranoid check  # pragma: allowlist secret
+    assert "supersecret" not in str(
+        result
+    )  # paranoid check  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +201,7 @@ def test_ssh_key_has_ssh_key_true_no_content(tmp_path):
 # Test 8: TOML parse error → ValueError with config path
 # ---------------------------------------------------------------------------
 
+
 def test_toml_parse_error(tmp_path):
     """TOML parse error → ValueError whose message includes the config path."""
     cfg = tmp_path / "config.toml"
@@ -212,13 +217,16 @@ def test_toml_parse_error(tmp_path):
 # Test 9: PermissionError reading config → ValueError with path and OS error
 # ---------------------------------------------------------------------------
 
+
 def test_permission_error_reading_config(tmp_path):
     """PermissionError reading config file → ValueError with path and OS error."""
     cfg = tmp_path / "config.toml"
     cfg.write_text("[profiles.x]\nhost = 'h'\nuser = 'u'\n", encoding="utf-8")
     with (
         patch("hmcpctl.config.resolve_config_path", return_value=cfg),
-        patch.object(Path, "read_text", side_effect=PermissionError("Permission denied")),
+        patch.object(
+            Path, "read_text", side_effect=PermissionError("Permission denied")
+        ),
         pytest.raises(ValueError, match="cannot be read"),
     ):
         hmc_list_configured_hosts()
@@ -279,6 +287,7 @@ def test_port_verify_ssl_explicit_values(tmp_path):
 def test_port_verify_ssl_defaults_from_hmcconfig(tmp_path):
     """When port and verify_ssl are absent, defaults come from HMCConfig.model_fields."""
     from hmcpctl.config import HMCConfig
+
     expected_port = int(HMCConfig.model_fields["port"].default)
     expected_verify_ssl = bool(HMCConfig.model_fields["verify_ssl"].default)
 
@@ -334,7 +343,7 @@ def test_list_configured_hosts_nicknames_secret_free(tmp_path, monkeypatch):
 
     rendered = str(result)
     assert "HMC_PROD_PW" not in rendered
-    assert "stgpass" not in rendered   # pragma: allowlist secret
+    assert "stgpass" not in rendered  # pragma: allowlist secret
     assert "nicknames" in result
 
 
@@ -415,6 +424,7 @@ def test_reads_config_document_exactly_once(tmp_path):
     from unittest.mock import MagicMock
 
     import hmcpctl.config as config_mod
+
     cfg = _write_toml(tmp_path / "config.toml", READ_COUNT_TOML)
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (

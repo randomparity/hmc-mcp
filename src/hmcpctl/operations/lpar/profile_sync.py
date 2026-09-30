@@ -140,7 +140,9 @@ async def adapters_missing_from_profile(
         for adapter in await hmc.list_adapters(lpar_uuid, adapter_type):
             slot = _text((adapter.get("Resource") or {}).get("VirtualSlotNumber"))
             if slot is None or slot not in slots:
-                missing.append(f"{adapter_type} in virtual slot {slot or 'not reported'}")
+                missing.append(
+                    f"{adapter_type} in virtual slot {slot or 'not reported'}"
+                )
     return missing
 
 

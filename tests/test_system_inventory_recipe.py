@@ -30,31 +30,41 @@ READ_COMMANDS = {
     'storage get-media-repo "$vios" "$vg" --system "$SYSTEM" --json',
     'storage list-optical-media "$vios" "$vg" --system "$SYSTEM" --json',
     'raw get "/rest/api/uom/VirtualIOServer/$vios/VolumeGroup/$vg"',
-    'cluster list --json',
-    'cluster list-ssps --json',
+    "cluster list --json",
+    "cluster list-ssps --json",
     'raw get "/rest/api/uom/SharedStoragePool/$ssp"',
 }
 
 
 def test_system_inventory_recipe_has_required_read_only_contract() -> None:
     recipe = RECIPE.read_text()
-    for marker in ("Sensitive data", "umask 077", "raw HMC XML", "error.txt",
-                   "dedicated-pcie-slots.json", "sriov-logical-ports-$adapter.json",
-                   "sea-adapters.json",
-                   "vfc-ports.json", "vios-$vios.raw.xml",
-                   "vg-$vg.raw.xml", "shared-storage-pools.json",
-                   "ssp-$ssp.raw.xml",
-                   "VIOS partition ID / server slot", "Candidate disk name",
-                   "Free-space evidence"):
+    for marker in (
+        "Sensitive data",
+        "umask 077",
+        "raw HMC XML",
+        "error.txt",
+        "dedicated-pcie-slots.json",
+        "sriov-logical-ports-$adapter.json",
+        "sea-adapters.json",
+        "vfc-ports.json",
+        "vios-$vios.raw.xml",
+        "vg-$vg.raw.xml",
+        "shared-storage-pools.json",
+        "ssp-$ssp.raw.xml",
+        "VIOS partition ID / server slot",
+        "Candidate disk name",
+        "Free-space evidence",
+    ):
         assert marker in recipe
     commands = set(re.findall(r"hmcpctl ([^\n\x60]+)", recipe))
     assert commands == READ_COMMANDS
 
 
 def test_system_inventory_recipe_is_linked_from_documentation_index() -> None:
-    assert "[Read-only system inventory recipe](recipes/system-inventory.md)" in (
-        ROOT / "docs/index.md"
-    ).read_text()
+    assert (
+        "[Read-only system inventory recipe](recipes/system-inventory.md)"
+        in (ROOT / "docs/index.md").read_text()
+    )
 
 
 def _uuid_write_line() -> str:
@@ -65,7 +75,9 @@ def _uuid_write_line() -> str:
     return lines[0]
 
 
-def test_unresolved_system_stops_the_capture_rather_than_writing_empty_files(tmp_path) -> None:
+def test_unresolved_system_stops_the_capture_rather_than_writing_empty_files(
+    tmp_path,
+) -> None:
     """An unresolved system must fail loudly; the HMC firmware behind #783 makes this reachable."""
     guard = _uuid_write_line()
     script = f'CAPTURE_DIR={tmp_path}\nSYSTEM=""\n{guard}\necho reached-next-step\n'

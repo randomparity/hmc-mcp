@@ -32,7 +32,9 @@ def _observed_mappings() -> list[dict]:
 
 class _StorageClient:
     async def list_volume_groups(self, _vios_uuid: str):
-        return [{"UUID": "vg-1", "Resource": {"GroupName": "rootvg", "FreeSpace": "10"}}]
+        return [
+            {"UUID": "vg-1", "Resource": {"GroupName": "rootvg", "FreeSpace": "10"}}
+        ]
 
     async def list_optical_media(self, _vios_uuid: str, _vg_uuid: str):
         return [{"MediaName": "install.iso", "Size": "1", "MediaType": "ISO"}]
@@ -57,7 +59,9 @@ async def test_storage_inventory_translates_hmc_resources() -> None:
         "free_space_diagnostic": None,
     }
     assert asdict(optical_media[0]) == {
-        "name": "install.iso", "size_mib": 1024, "media_type": "ISO"
+        "name": "install.iso",
+        "size_mib": 1024,
+        "media_type": "ISO",
     }
     assert asdict(mappings[0]) == {
         "id": "vhost0/vtscsi0",
@@ -117,9 +121,7 @@ async def test_volume_group_keeps_integral_values_as_int() -> None:
 @pytest.mark.parametrize("value", ["279.0", "279.000"])
 @pytest.mark.asyncio
 async def test_volume_group_keeps_integral_float_strings_as_int(value: str) -> None:
-    groups = await list_volume_groups(
-        _vg_client({"GroupCapacity": value}), VIOS_UUID
-    )
+    groups = await list_volume_groups(_vg_client({"GroupCapacity": value}), VIOS_UUID)
 
     assert groups[0].capacity_gib == 279
     assert not isinstance(groups[0].capacity_gib, float)
@@ -173,7 +175,9 @@ async def test_volume_group_rejects_non_decimal_capacity(value: str) -> None:
     an HMC that sends `<FreeSpace/>` is not reporting "no value", it is sending a
     malformed one, and `HMCError` names the field so the reply can be diagnosed.
     """
-    with pytest.raises(HMCError, match="list_volume_groups returned an invalid GroupCapacity"):
+    with pytest.raises(
+        HMCError, match="list_volume_groups returned an invalid GroupCapacity"
+    ):
         await list_volume_groups(_vg_client({"GroupCapacity": value}), VIOS_UUID)
 
 
@@ -189,7 +193,9 @@ async def test_volume_group_rejects_bool_capacity() -> None:
     ("size_gib", "size_mib"),
     [("1.0801", 1106.0224), ("0.5", 512), ("20", 20480), (None, None)],
 )
-async def test_optical_media_reports_the_gib_size_field_in_mib(size_gib, size_mib) -> None:
+async def test_optical_media_reports_the_gib_size_field_in_mib(
+    size_gib, size_mib
+) -> None:
     """The live medium carries Size in GiB (#963); size_mib is that value times 1024."""
 
     class _Client:

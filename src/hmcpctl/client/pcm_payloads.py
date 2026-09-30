@@ -109,7 +109,9 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
             links.append(
                 {
                     "link": link.get("href") or "",
-                    "updated": (updated.text or "").strip() if updated is not None else "",
+                    "updated": (updated.text or "").strip()
+                    if updated is not None
+                    else "",
                     "title": (title.text or "").strip() if title is not None else "",
                 }
             )
@@ -124,6 +126,7 @@ def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str] | None:
     entry's ISO-8601 ``updated`` stamp instead; stamps that fail to parse sort
     as the earliest UTC instant so a real (even old) timestamp always wins.
     """
+
     def _key(link: dict[str, str]) -> datetime:
         updated = link.get("updated", "")
         try:

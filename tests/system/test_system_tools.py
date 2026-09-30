@@ -690,9 +690,7 @@ def test_vios_state_filter_rejects_unknown_state(monkeypatch, mock_hmc):
 def test_vios_system_and_state_filters_compose(monkeypatch, mock_hmc):
     """A system-scoped feed can also be filtered by PartitionState."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer"
-    ).mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(
             200,
             text=_feed(

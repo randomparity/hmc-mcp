@@ -31,7 +31,9 @@ def _repository_files(repo_root: Path) -> tuple[str, ...]:
             capture_output=True,
         )
     except (OSError, subprocess.CalledProcessError) as error:
-        raise RuntimeError(f"cannot inspect repository paths in {repo_root}: {error}") from error
+        raise RuntimeError(
+            f"cannot inspect repository paths in {repo_root}: {error}"
+        ) from error
     return tuple(os.fsdecode(path) for path in result.stdout.split(b"\0") if path)
 
 
@@ -41,8 +43,7 @@ def unexpected_conftests(repo_root: Path) -> tuple[str, ...]:
         sorted(
             path
             for path in _repository_files(repo_root)
-            if PurePosixPath(path).name == "conftest.py"
-            and path != _CANONICAL_CONFTEST
+            if PurePosixPath(path).name == "conftest.py" and path != _CANONICAL_CONFTEST
         )
     )
 

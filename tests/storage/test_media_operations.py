@@ -24,8 +24,10 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
+        authorize,
     )
+
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "22222222-2222-2222-2222-222222220001"
@@ -142,6 +144,7 @@ async def test_list_optical_media_empty_propagates(mock_hmc):
     assert route.called
     assert media_list == []
 
+
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
 OTHER_LPAR_UUID = "22222222-2222-2222-2222-222222222222"
@@ -253,9 +256,7 @@ async def test_unmount_optical_media_deletes_only_the_exact_mapping_identity():
         },
     ]
 
-    await unmount_optical_media(
-        hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
-    )
+    await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso")
 
     hmc.list_optical_mappings.assert_awaited_once_with(VIOS_UUID, LPAR_UUID)
     hmc.delete_storage_mapping.assert_awaited_once_with(
@@ -289,9 +290,7 @@ async def test_unmount_optical_media_rejects_ambiguous_exact_identity():
     ]
 
     with pytest.raises(HMCError, match="ambiguous"):
-        await unmount_optical_media(
-            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
-        )
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso")
 
     hmc.delete_storage_mapping.assert_not_awaited()
 
@@ -310,9 +309,7 @@ async def test_unmount_optical_media_fails_closed_when_exact_mapping_is_absent()
     ]
 
     with pytest.raises(HMCError, match="not found"):
-        await unmount_optical_media(
-            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
-        )
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso")
 
     hmc.delete_storage_mapping.assert_not_awaited()
 
@@ -329,9 +326,7 @@ async def test_unmount_optical_media_rejects_a_mapping_without_identity():
     ]
 
     with pytest.raises(HMCError, match="no adapter/target identity"):
-        await unmount_optical_media(
-            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
-        )
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso")
 
     hmc.delete_storage_mapping.assert_not_awaited()
 
@@ -348,11 +343,13 @@ async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(moc
     LPAR-scoped inventory identity is part of the selection.
     """
     _mock_unmount_reads(mock_hmc)
-    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(
+        return_value=httpx.Response(200, text="")
+    )
 
     async with HMCClient(make_config()) as hmc:
         result = await unmount_optical_media(
-                hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
+            hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
         )
 
     assert result == ChangeLocation("Disabled", "current-configuration")
@@ -371,12 +368,12 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
     container stays available for a later remount.
     """
     _mock_unmount_reads(mock_hmc)
-    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(
+        return_value=httpx.Response(200, text="")
+    )
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(
-                hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
-        )
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso")
 
     body = _posted_document(post)
     assert "VirtualOpticalMedia" in body
@@ -391,12 +388,16 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_unmount_optical_media_fails_without_post_when_mapping_is_absent(mock_hmc):
+async def test_unmount_optical_media_fails_without_post_when_mapping_is_absent(
+    mock_hmc,
+):
     """An unmatched exact identity fails closed without rewriting the VIOS."""
     mock_hmc.get(_MAPPINGS_GET_PATH).mock(
         return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
     )
-    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(
+        return_value=httpx.Response(200, text="")
+    )
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="not found"):
@@ -418,12 +419,12 @@ async def test_unmount_optical_media_preserves_a_sibling_with_a_prefix_name(
         "</VirtualOpticalMedia></Storage>",
     )
     _mock_unmount_reads(mock_hmc, doc)
-    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(
+        return_value=httpx.Response(200, text="")
+    )
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(
-                hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso"
-        )
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, media_name="rhel9.iso")
 
     body = _posted_document(post)
     assert "rhel9.iso.bak" in body
@@ -456,12 +457,12 @@ async def test_unmount_optical_media_resolves_vios_and_lpar_names(mock_hmc):
         return_value=httpx.Response(200, text=lpar_search)
     )
     _mock_unmount_reads(mock_hmc)
-    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    post = mock_hmc.post(_MAPPINGS_POST_PATH).mock(
+        return_value=httpx.Response(200, text="")
+    )
 
     async with HMCClient(make_config()) as hmc:
-        await unmount_optical_media(
-                hmc, "vios1", "lpar1", media_name="rhel9.iso"
-        )
+        await unmount_optical_media(hmc, "vios1", "lpar1", media_name="rhel9.iso")
 
     assert "vtopt0" not in _posted_document(post)
 

@@ -120,9 +120,9 @@ def _mock_dlpar_authorization(router) -> None:
 def _partition_feed(*entries: str) -> str:
     """Wrap rendered LPAR entries in the Atom feed envelope the client parses."""
     inner = "".join(
-        entry.split("?>", 1)[1].strip().replace(
-            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
-        )
+        entry.split("?>", 1)[1]
+        .strip()
+        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
         for entry in entries
     )
     return (
@@ -181,7 +181,8 @@ def _mock_create_406(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=rejection or httpx.Response(406, text="<error>Not Acceptable</error>")
+        return_value=rejection
+        or httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
 
@@ -248,7 +249,9 @@ def test_create_lpar_rest0001_schema_rejection_falls_back_to_cli(monkeypatch, mo
     """A 400 REST0001 created nothing, so the create still reaches mksyscfg (ADR 0178)."""
     _hmc_env(monkeypatch)
     order: list[str] = []
-    _mock_create_406(mock_hmc, order, rejection=httpx.Response(400, text=_REST0001_BODY))
+    _mock_create_406(
+        mock_hmc, order, rejection=httpx.Response(400, text=_REST0001_BODY)
+    )
     apply = AsyncMock(return_value="")
 
     result, create_via_cli = _create_via_406(apply, order)
@@ -263,7 +266,8 @@ def test_create_lpar_other_400_is_raised_without_cli_fallback(monkeypatch, mock_
     """A 400 that is not a schema rejection is the HMC's answer, not a reason to retry."""
     _hmc_env(monkeypatch)
     _mock_create_406(
-        mock_hmc, rejection=httpx.Response(400, text="<error>HSCL0622 bad value</error>")
+        mock_hmc,
+        rejection=httpx.Response(400, text="<error>HSCL0622 bad value</error>"),
     )
     apply = AsyncMock(return_value="")
 
@@ -437,7 +441,9 @@ def test_apply_profile_sends_verified_chsyscfg():
     with patch(
         "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
     ) as run:
-        asyncio.run(apply_lpar_profile_via_cli(HMCConfig(host="hmc.test"), "sys 1", "lp1"))
+        asyncio.run(
+            apply_lpar_profile_via_cli(HMCConfig(host="hmc.test"), "sys 1", "lp1")
+        )
     assert run.await_args.args[1] == (
         "chsyscfg -r lpar -m 'sys 1' -o apply -p lp1 -n default_profile"
     )
@@ -715,9 +721,15 @@ def test_cli_create_sends_shared_record_otherwise(dedicated):
 @pytest.mark.parametrize(
     ("resources", "option"),
     [
-        (LparResources(dedicated=True, min_procs=0.5, desired_procs=1.0), "--min-procs"),
+        (
+            LparResources(dedicated=True, min_procs=0.5, desired_procs=1.0),
+            "--min-procs",
+        ),
         (LparResources(dedicated=True, desired_procs=1.5), "--procs"),
-        (LparResources(dedicated=True, desired_procs=1.0, max_procs=2.5), "--max-procs"),
+        (
+            LparResources(dedicated=True, desired_procs=1.0, max_procs=2.5),
+            "--max-procs",
+        ),
     ],
 )
 def test_cli_create_refuses_fractional_dedicated_counts(resources, option):
@@ -738,9 +750,7 @@ def test_cli_create_refuses_fractional_dedicated_counts(resources, option):
 
 def test_cli_create_passes_dedicated_sharing_mode():
     fields = _proc_fields(
-        LparResources(
-            dedicated=True, desired_procs=1.0, sharing_mode="keep_idle_procs"
-        )
+        LparResources(dedicated=True, desired_procs=1.0, sharing_mode="keep_idle_procs")
     )
     assert fields["sharing_mode"] == "keep_idle_procs"
 

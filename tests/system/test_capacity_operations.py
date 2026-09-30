@@ -51,7 +51,11 @@ def test_capacity_summaries_reject_malformed_processing_units(summarize):
 )
 def test_capacity_summaries_contextualize_malformed_numeric_fields(field, value):
     system = {**SYSTEM, "Resource": {**SYSTEM["Resource"], field: value}}
-    lpars = [] if field != "DesiredMemory" else [{"UUID": "lpar-2", "Resource": {field: value}}]
+    lpars = (
+        []
+        if field != "DesiredMemory"
+        else [{"UUID": "lpar-2", "Resource": {field: value}}]
+    )
 
     with pytest.raises(ValueError, match=field):
         calculate_system_capacity(system, lpars)

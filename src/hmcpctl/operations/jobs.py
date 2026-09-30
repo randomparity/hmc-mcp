@@ -220,9 +220,10 @@ def _select_persisted_job_href(
         return None
     if link is not None:
         return link
-    if dead_link is not None and urlsplit(outcome.job_href or "").path == urlsplit(
-        dead_link
-    ).path:
+    if (
+        dead_link is not None
+        and urlsplit(outcome.job_href or "").path == urlsplit(dead_link).path
+    ):
         return None
     return outcome.job_href
 

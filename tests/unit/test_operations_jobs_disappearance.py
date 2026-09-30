@@ -369,9 +369,7 @@ async def test_wait_for_job_does_not_compress_the_confirmation_interval(
     monkeypatch.setattr(asyncio, "sleep", AsyncMock(side_effect=advance))
 
     async with HMCClient(make_config()) as hmc:
-        outcome = await wait_for_job(
-            hmc, _JOB_ID, timeout_seconds=3, poll_interval=2
-        )
+        outcome = await wait_for_job(hmc, _JOB_ID, timeout_seconds=3, poll_interval=2)
 
     assert outcome.found is False
     assert read_times == [0.0, 2.0, 4.0]
@@ -405,9 +403,7 @@ async def test_wait_for_job_caps_an_oversized_confirmation_interval(
     monkeypatch.setattr(asyncio, "sleep", AsyncMock(side_effect=advance))
 
     async with HMCClient(make_config()) as hmc:
-        outcome = await wait_for_job(
-            hmc, _JOB_ID, timeout_seconds=2, poll_interval=5
-        )
+        outcome = await wait_for_job(hmc, _JOB_ID, timeout_seconds=2, poll_interval=5)
 
     assert outcome.found is False
     assert read_times == [0.0, 2.0, 4.0]

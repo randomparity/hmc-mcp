@@ -34,6 +34,7 @@ def serialize_tool_result(value: Any) -> Any:
     """Convert domain dataclasses at the MCP boundary; leave mappings unchanged."""
     return asdict(value) if is_dataclass(value) else value
 
+
 INSTRUCTIONS = (
     "Tools for querying and operating IBM Power systems via the HMC "
     "(Hardware Management Console) REST API. Managed systems are Power "

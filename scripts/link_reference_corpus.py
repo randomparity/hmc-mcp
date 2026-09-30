@@ -77,7 +77,9 @@ def main() -> int:
     try:
         worktree_root, main_root = _resolve_roots()
     except (subprocess.CalledProcessError, OSError) as error:
-        print(f"reference corpus check skipped: could not resolve worktree roots ({error})")
+        print(
+            f"reference corpus check skipped: could not resolve worktree roots ({error})"
+        )
         return 0
 
     for message in sync_reference_corpus(worktree_root, main_root):

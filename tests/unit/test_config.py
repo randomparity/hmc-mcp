@@ -68,7 +68,10 @@ def test_response_bytes_default():
 @pytest.mark.parametrize("value", [1, 8, 67108864])
 def test_response_bytes_explicit_override(value):
     assert HMCConfig(max_response_bytes=value).max_response_bytes == value
-    assert HMCConfig.from_mapping({"max_response_bytes": value}).max_response_bytes == value
+    assert (
+        HMCConfig.from_mapping({"max_response_bytes": value}).max_response_bytes
+        == value
+    )
 
 
 @pytest.mark.parametrize("value", [0, -1, 1.5, "bad", None])
@@ -106,11 +109,18 @@ def test_response_bytes_mapping_ignores_environment(monkeypatch, value):
     assert "max_response_bytes" in explicit.model_fields_set
 
 
-@pytest.mark.parametrize("name", [
-    "HMC_MAX_RESPONSE_BYTES", "hmc_max_response_bytes", "Hmc_Max_Response_Bytes",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "HMC_MAX_RESPONSE_BYTES",
+        "hmc_max_response_bytes",
+        "Hmc_Max_Response_Bytes",
+    ],
+)
 def test_response_bytes_environment_beats_toml(tmp_path, monkeypatch, name):
-    path = _write_toml(tmp_path / "config.toml", MINIMAL_TOML + "max_response_bytes = 8\n")
+    path = _write_toml(
+        tmp_path / "config.toml", MINIMAL_TOML + "max_response_bytes = 8\n"
+    )
     assert load_profile("dev", config_path=path).max_response_bytes == 8
     monkeypatch.setenv(name, "67108864")
     assert load_profile("dev", config_path=path).max_response_bytes == 67108864
@@ -119,7 +129,8 @@ def test_response_bytes_environment_beats_toml(tmp_path, monkeypatch, name):
 @pytest.mark.parametrize("value", ["0", "-1", "1.5", '"bad"'])
 def test_response_bytes_invalid_toml(tmp_path, value):
     path = _write_toml(
-        tmp_path / "config.toml", MINIMAL_TOML + f"max_response_bytes = {value}\n",
+        tmp_path / "config.toml",
+        MINIMAL_TOML + f"max_response_bytes = {value}\n",
     )
     with pytest.raises(ValueError, match="max_response_bytes"):
         load_profile("dev", config_path=path)
@@ -179,8 +190,10 @@ def test_resolve_linux_fallback(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     cfg = fake_home / ".config" / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
-    with patch.object(sys, "platform", "linux"), \
-         patch("pathlib.Path.home", return_value=fake_home):
+    with (
+        patch.object(sys, "platform", "linux"),
+        patch("pathlib.Path.home", return_value=fake_home),
+    ):
         result = resolve_config_path()
     assert result == cfg
 
@@ -190,8 +203,10 @@ def test_resolve_macos(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     cfg = fake_home / "Library" / "Application Support" / "hmcpctl" / "config.toml"
     _write_toml(cfg, MINIMAL_TOML)
-    with patch.object(sys, "platform", "darwin"), \
-         patch("pathlib.Path.home", return_value=fake_home):
+    with (
+        patch.object(sys, "platform", "darwin"),
+        patch("pathlib.Path.home", return_value=fake_home),
+    ):
         result = resolve_config_path()
     assert result == cfg
 
@@ -384,15 +399,21 @@ def test_load_profile_explicit_path_missing(tmp_path, monkeypatch):
     """An explicit config_path that does not exist names the path, not a profile problem (#915)."""
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     missing = tmp_path / "absent.toml"
-    with pytest.raises(ConfigFileNotFoundError, match=r"absent\.toml: config file not found"):
+    with pytest.raises(
+        ConfigFileNotFoundError, match=r"absent\.toml: config file not found"
+    ):
         load_profile(config_path=missing)
 
 
-def test_load_profile_explicit_path_missing_even_with_profile_requested(tmp_path, monkeypatch):
+def test_load_profile_explicit_path_missing_even_with_profile_requested(
+    tmp_path, monkeypatch
+):
     """An explicit missing path is reported regardless of a requested profile (#915)."""
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     missing = tmp_path / "absent.toml"
-    with pytest.raises(ConfigFileNotFoundError, match=r"absent\.toml: config file not found"):
+    with pytest.raises(
+        ConfigFileNotFoundError, match=r"absent\.toml: config file not found"
+    ):
         load_profile("prod", config_path=missing)
 
 
@@ -451,7 +472,11 @@ def test_direct_construction_still_works(monkeypatch):
     monkeypatch.delenv("HMC_HOST", raising=False)
     monkeypatch.delenv("HMC_USER", raising=False)
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
-    cfg = HMCConfig(host="myhost", user="myuser", password="mypass")  # pragma: allowlist secret
+    cfg = HMCConfig(
+        host="myhost",
+        user="myuser",
+        password="mypass",  # pragma: allowlist secret
+    )
     assert cfg.host == "myhost"
     assert cfg.user == "myuser"
     assert cfg.password == "mypass"  # pragma: allowlist secret
@@ -474,8 +499,10 @@ def test_config_dir_linux_xdg(monkeypatch):
 def test_config_dir_macos(monkeypatch):
     """config_dir() returns ~/Library/Application Support/hmcpctl on macOS."""
     fake_home = Path("/tmp/fake_home")
-    with patch.object(sys, "platform", "darwin"), \
-         patch("pathlib.Path.home", return_value=fake_home):
+    with (
+        patch.object(sys, "platform", "darwin"),
+        patch("pathlib.Path.home", return_value=fake_home),
+    ):
         result = config_dir()
     assert result == fake_home / "Library" / "Application Support" / "hmcpctl"
 
@@ -517,13 +544,17 @@ def test_list_profiles_with_default_rejects_non_string_default(tmp_path, value):
         f"default_profile = {value}\n\n[profiles.prod]\nhost = 'h'\n",
     )
 
-    with pytest.raises(ConfigError, match="'default_profile' must be a profile-name string"):
+    with pytest.raises(
+        ConfigError, match="'default_profile' must be a profile-name string"
+    ):
         list_profiles_with_default(config_path=cfg)
 
 
 def test_list_profiles_with_default_absent(tmp_path):
     """Returns ([], None) when file absent."""
-    names, default = list_profiles_with_default(config_path=tmp_path / "nonexistent.toml")
+    names, default = list_profiles_with_default(
+        config_path=tmp_path / "nonexistent.toml"
+    )
     assert names == []
     assert default is None
 
@@ -557,6 +588,7 @@ def test_agent_id_no_warning_when_audit_memento_is_default():
     # When audit_memento is default ('hmcpctl'), no warning is emitted even
     # when agent_id is set, because there is no custom value being silently discarded.
     import warnings as _warnings
+
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
         cfg = HMCConfig.from_mapping({"agent_id": "alice"})
@@ -640,9 +672,7 @@ def test_audit_memento_override_logs_once_per_process(caplog):
     """The bounded log record is emitted once for an unchanged state."""
     with caplog.at_level(logging.WARNING, logger="hmcpctl.config"):
         for _ in range(5):
-            HMCConfig.from_mapping(
-                {"agent_id": "log-agent", "audit_memento": "mine"}
-            )
+            HMCConfig.from_mapping({"agent_id": "log-agent", "audit_memento": "mine"})
 
     records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert len(records) == 1
@@ -683,7 +713,7 @@ class _SlowFalse:
 def test_audit_memento_override_warns_once_across_concurrent_threads(
     caplog, monkeypatch
 ):
-    """"At most once per state" must hold off the event-loop thread too.
+    """ "At most once per state" must hold off the event-loop thread too.
 
     ``server_permissions`` resolves guards under ``asyncio.to_thread`` and builds
     one config per granted connection, so concurrent ``hmc_effective_permissions``
@@ -691,9 +721,7 @@ def test_audit_memento_override_warns_once_across_concurrent_threads(
     unsynchronised check-then-act lets each of them miss the membership test and
     emit, turning "once per state" into O(concurrency).
     """
-    monkeypatch.setattr(
-        config_module, "_reported_memento_override", _SlowFalse()
-    )
+    monkeypatch.setattr(config_module, "_reported_memento_override", _SlowFalse())
     workers = 8
     ready = threading.Barrier(workers)
 
@@ -723,9 +751,7 @@ def test_audit_memento_override_repeat_is_recoverable_at_debug(caplog):
     """
     with caplog.at_level(logging.DEBUG, logger="hmcpctl.config"):
         for _ in range(3):
-            HMCConfig.from_mapping(
-                {"agent_id": "debug-agent", "audit_memento": "mine"}
-            )
+            HMCConfig.from_mapping({"agent_id": "debug-agent", "audit_memento": "mine"})
 
     records = [record for record in caplog.records if record.name == "hmcpctl.config"]
     assert [record.levelno for record in records] == [
@@ -864,7 +890,7 @@ ghost = "does-not-exist"
     msg = str(exc.value)
     assert "ghost" in msg
     assert "does-not-exist" in msg
-    assert "prod" in msg    # available profiles named
+    assert "prod" in msg  # available profiles named
 
 
 def test_unknown_name_config_error_names_nicknames(tmp_path, monkeypatch):
@@ -874,8 +900,8 @@ def test_unknown_name_config_error_names_nicknames(tmp_path, monkeypatch):
     with pytest.raises(ConfigError) as exc:
         load_profile(profile="nope", config_path=cfg)
     msg = str(exc.value)
-    assert "big-iron" in msg    # a nickname is named
-    assert "prod" in msg        # a profile is named
+    assert "big-iron" in msg  # a nickname is named
+    assert "prod" in msg  # a profile is named
 
 
 def test_nickname_resolution_is_case_sensitive(tmp_path, monkeypatch):
@@ -1141,7 +1167,9 @@ def test_reader_reports_an_unresolvable_home(reader, monkeypatch):
         ("config_inventory", {"profiles": [], "config_file": None}),
     ],
 )
-def test_listing_reader_with_no_platform_config_file(name, empty, tmp_path, monkeypatch):
+def test_listing_reader_with_no_platform_config_file(
+    name, empty, tmp_path, monkeypatch
+):
     """No config.toml anywhere is an empty configuration, not a failure."""
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
@@ -1168,12 +1196,16 @@ def test_load_profile_platform_file_missing_no_profile_requested(tmp_path, monke
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with (
         patch.object(sys, "platform", "linux"),
-        pytest.raises(ConfigFileNotFoundError, match=r"config\.toml: config file not found"),
+        pytest.raises(
+            ConfigFileNotFoundError, match=r"config\.toml: config file not found"
+        ),
     ):
         load_profile(config_path=None)
 
 
-def test_load_profile_platform_file_missing_hmc_profile_requested(tmp_path, monkeypatch):
+def test_load_profile_platform_file_missing_hmc_profile_requested(
+    tmp_path, monkeypatch
+):
     """A missing platform file with HMC_PROFILE set still reports the profile problem,
     not the file (unaffected by #915: something did ask for a profile)."""
 
@@ -1197,7 +1229,9 @@ def test_load_profile_platform_file_vanishes_before_read(tmp_path, monkeypatch):
     # existence check and load_profile's later read.
     vanished = tmp_path / "config.toml"
     monkeypatch.setattr(config_module, "resolve_config_path", lambda: vanished)
-    with pytest.raises(ConfigFileNotFoundError, match="config file not found") as exc_info:
+    with pytest.raises(
+        ConfigFileNotFoundError, match="config file not found"
+    ) as exc_info:
         load_profile(config_path=None)
     assert str(vanished) in str(exc_info.value)
 
@@ -1285,9 +1319,7 @@ def test_from_mapping_leaves_no_field_to_the_environment(monkeypatch):
     fails to pass explicitly is caught here rather than leaking in production.
     """
     prefix = HMCConfig.model_config["env_prefix"]
-    env_names = {
-        name: f"{prefix}{name.upper()}" for name in HMCConfig.model_fields
-    }
+    env_names = {name: f"{prefix}{name.upper()}" for name in HMCConfig.model_fields}
     for env_name in env_names.values():
         monkeypatch.delenv(env_name, raising=False)
     pristine = HMCConfig().model_dump()
@@ -1734,7 +1766,9 @@ def test_env_var_value_resolves_multiple_casings_the_way_hmcconfig_does(monkeypa
         ("hmc_ssh_Key_file", "ssh_key_file"),
     ],
 )
-def test_env_var_value_folds_the_way_the_loader_folds(monkeypatch, env_name, field_name):
+def test_env_var_value_folds_the_way_the_loader_folds(
+    monkeypatch, env_name, field_name
+):
     """``str.upper()`` and ``str.lower()`` are different relations over Unicode.
 
     pydantic-settings folds down (``_get_env_var_key`` is ``key.lower()``), so

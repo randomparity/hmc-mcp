@@ -178,9 +178,7 @@ def test_no_module_composes_an_application_at_import():
         for node in tree.body:
             # A call inside a function or class body runs when that is called, not at
             # import, so only the statements that execute on import are walked.
-            if isinstance(
-                node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 continue
             for call in ast.walk(node):
                 if not isinstance(call, ast.Call):
@@ -237,7 +235,9 @@ def test_the_legacy_policy_composes_the_registry_the_default_used_to():
 def test_the_generated_policy_denies_the_arbitrary_command():
     """R14: the flag stays insufficient on its own (epic #218 requirement 6)."""
     assert "hmc_run_command" not in _names(create_mcp(_legacy_policy()))
-    assert _legacy_policy(include_arbitrary_command=True).permits_tool("hmc_run_command")
+    assert _legacy_policy(include_arbitrary_command=True).permits_tool(
+        "hmc_run_command"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -493,7 +493,10 @@ def test_serve_without_a_policy_exits_2_as_a_subprocess():
     executable = _console_script(proof="refusal")
 
     completed = subprocess.run(
-        [executable, "serve"], capture_output=True, text=True, timeout=60,
+        [executable, "serve"],
+        capture_output=True,
+        text=True,
+        timeout=60,
         check=False,
     )
 
@@ -528,7 +531,10 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
 
     generated = subprocess.run(
         [executable, "config", "init-access-policy"],
-        capture_output=True, text=True, env=env, timeout=120,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
         check=False,
     )
     assert generated.returncode == 0, generated.stderr
@@ -550,7 +556,10 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     # Second run: refuses, changes nothing, and names the way forward.
     again = subprocess.run(
         [executable, "config", "init-access-policy"],
-        capture_output=True, text=True, env=env, timeout=120,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
         check=False,
     )
     assert again.returncode == 1
@@ -563,12 +572,17 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
     # unparseable line on stdout and is observable.
     server = subprocess.Popen(
         [executable, "serve", "--access-policy", LEGACY_POLICY_NAME],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
     )
     try:
         request = {
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
@@ -615,4 +629,6 @@ def test_every_spec_numbered_test_named_in_the_header_still_exists():
     defined = set(re.findall(r"^def (test_\w+)", source, flags=re.MULTILINE))
 
     assert named, "the header maps no test; the guard would pass vacuously"
-    assert named <= defined, f"named in the header but not defined: {sorted(named - defined)}"
+    assert named <= defined, (
+        f"named in the header but not defined: {sorted(named - defined)}"
+    )

@@ -72,9 +72,7 @@ def _job_assertions(outcome: JobOutcome | None, job_uuid: str) -> list[Assertion
     """The postconditions a job inspection must hold to count as evidence."""
     return [
         Assertion("job-found", bool(outcome and outcome.found)),
-        Assertion(
-            "job-identity-matches", bool(outcome and outcome.job_id == job_uuid)
-        ),
+        Assertion("job-identity-matches", bool(outcome and outcome.job_id == job_uuid)),
         Assertion(
             "job-status-successful",
             bool(outcome and outcome.status in SUCCESSFUL_JOB_STATUSES),

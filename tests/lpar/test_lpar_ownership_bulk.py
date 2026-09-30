@@ -164,7 +164,9 @@ def test_absent_element_differs_from_empty_element(monkeypatch, mock_hmc):
 def test_selector_by_system_name_resolves_then_lists_once(monkeypatch, mock_hmc):
     """A SystemName selector resolves to its UUID, then issues one list call."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/search/(SystemName=={SYSTEM_NAME})").mock(
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/search/(SystemName=={SYSTEM_NAME})"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=_feed(

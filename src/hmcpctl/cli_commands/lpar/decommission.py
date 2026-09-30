@@ -77,7 +77,9 @@ def _render_decommission_result(
             "were deleted[/yellow]"
         )
     elif result.workflow_completed:
-        console.print(f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]")
+        console.print(
+            f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]"
+        )
     else:
         console.print(
             f"[yellow]LPAR '{name_or_uuid}' was not fully decommissioned — "

@@ -104,7 +104,9 @@ def _pinned_env(home: Path) -> dict[str, str]:
     loader state it needs; `HOME` is redirected at a scratch directory so no developer's
     real profile or access policy is in reach of the child.
     """
-    env = {name: value for name, value in os.environ.items() if not name.startswith("HMC_")}
+    env = {
+        name: value for name, value in os.environ.items() if not name.startswith("HMC_")
+    }
     for name in _DROPPED:
         env.pop(name, None)
     env["HOME"] = str(home)
@@ -205,7 +207,9 @@ def _launch(
     )
 
 
-def test_a_bare_module_launch_imports_the_shadowing_package(shadowed_cwd, installed_package):
+def test_a_bare_module_launch_imports_the_shadowing_package(
+    shadowed_cwd, installed_package
+):
     """The exposure, constructed: without the remedy the launch directory wins.
 
     This arm is what makes the next one mean something. If a bare launch stopped

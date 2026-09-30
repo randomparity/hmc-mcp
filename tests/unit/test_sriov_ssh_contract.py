@@ -126,8 +126,7 @@ def test_physical_port_evidence_preserves_live_verification_contract():
 
 def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str:
     return (
-        f"{','.join(_PHYSICAL_FIELDS)}\n"
-        f"{adapter_id},0,{port_type},U-T1,1,0,60,0,1.0\n"
+        f"{','.join(_PHYSICAL_FIELDS)}\n{adapter_id},0,{port_type},U-T1,1,0,60,0,1.0\n"
     )
 
 
@@ -137,20 +136,20 @@ def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str
     _GRANULARITY_EVIDENCE["selection_cases"],
     ids=lambda case: case["name"],
 )
-async def test_physical_port_selects_the_sole_populated_level(
-    monkeypatch, case
-):
+async def test_physical_port_selects_the_sole_populated_level(monkeypatch, case):
     run = AsyncMock(side_effect=[case["roce"]["stdout"], case["ethc"]["stdout"]])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
-    assert await list_sriov_physical_port_rows(
-        _config(), case["system"], case["adapter_id"]
-    ) == case["expected_rows"]
+    assert (
+        await list_sriov_physical_port_rows(
+            _config(), case["system"], case["adapter_id"]
+        )
+        == case["expected_rows"]
+    )
     commands = [call.args[1] for call in run.await_args_list]
     assert len(commands) == 2
     expected_filter = (
-        f"--filter "
-        f"{shlex.quote(build_filter([('adapter_ids', case['adapter_id'])]))}"
+        f"--filter {shlex.quote(build_filter([('adapter_ids', case['adapter_id'])]))}"
     )
     expected_projection = f"-F {','.join(_PHYSICAL_FIELDS)} --header"
     assert all(
@@ -169,9 +168,14 @@ def test_granularity_evidence_pins_the_captured_projection_and_attribute_control
     evidence = _GRANULARITY_EVIDENCE
 
     assert tuple(evidence["fields"]) == _PHYSICAL_FIELDS
-    assert (evidence["hmc_release"], evidence["hmc_build"]) == ("V10R3 M1060", "2408210051")
+    assert (evidence["hmc_release"], evidence["hmc_build"]) == (
+        "V10R3 M1060",
+        "2408210051",
+    )
     assert {
-        case["name"]: {row["min_eth_capacity_granularity"] for row in case["expected_rows"]}
+        case["name"]: {
+            row["min_eth_capacity_granularity"] for row in case["expected_rows"]
+        }
         for case in evidence["selection_cases"]
     } == {"v10r3-roce-granularity": {"1.0"}, "v10r3-ethc-granularity": {"2.0"}}
     control = evidence["attribute_validation"]
@@ -197,7 +201,9 @@ async def test_physical_port_rejects_invalid_adapter_ids_without_ssh(
 
 
 @pytest.mark.asyncio
-async def test_physical_port_propagates_first_command_error_without_second_read(monkeypatch):
+async def test_physical_port_propagates_first_command_error_without_second_read(
+    monkeypatch,
+):
     error = HMCCLIError("RoCE read refused")
     run = AsyncMock(side_effect=error)
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
@@ -211,7 +217,9 @@ async def test_physical_port_propagates_first_command_error_without_second_read(
 
 
 @pytest.mark.asyncio
-async def test_physical_port_propagates_second_command_error_before_parsing(monkeypatch):
+async def test_physical_port_propagates_second_command_error_before_parsing(
+    monkeypatch,
+):
     error = HMCCLIError("ethc read refused")
     run = AsyncMock(side_effect=["wrong,header\n1,2\n", error])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
@@ -253,9 +261,7 @@ async def test_physical_port_rejects_ambiguous_or_mismatched_rows(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_physical_port_returns_empty_when_both_levels_are_empty(monkeypatch):
-    run = AsyncMock(
-        side_effect=["No results were found.", "No results were found."]
-    )
+    run = AsyncMock(side_effect=["No results were found.", "No results were found."])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     assert await list_sriov_physical_port_rows(_config(), "sys", "1") == []

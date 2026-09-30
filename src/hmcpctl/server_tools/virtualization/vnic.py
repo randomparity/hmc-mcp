@@ -81,9 +81,7 @@ def hmc_list_sea_adapters(
     """
 
     return with_client(
-        lambda hmc: list_sea_adapters(
-            hmc, system_name_or_uuid, lpar_name_or_uuid
-        ),
+        lambda hmc: list_sea_adapters(hmc, system_name_or_uuid, lpar_name_or_uuid),
         profile=profile,
     )
 

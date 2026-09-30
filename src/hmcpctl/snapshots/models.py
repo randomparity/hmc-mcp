@@ -295,7 +295,11 @@ class LparSnapshot(_StrictSnapshotModel):
             raise ValueError(f"{name} observation fields are invalid")
         score = observation.data["min_affinity_score"]
         action = observation.data["min_affinity_score_action"]
-        if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, int)
+            or not 0 <= score <= 100
+        ):
             raise ValueError(f"{name} score must be an integer from 0 through 100")
         if action not in {"none", "warn", "fail"}:
             raise ValueError(f"{name} action must be none, warn, or fail")

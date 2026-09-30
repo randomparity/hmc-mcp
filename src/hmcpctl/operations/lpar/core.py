@@ -339,7 +339,9 @@ def _rest_create_refused(exc: HMCError) -> bool:
     A 406 is a negotiation refusal; a 400 ``REST0001`` is V10R3 rejecting the
     document against its schema. Either leaves ``mksyscfg`` as the way to create.
     """
-    return exc.status_code == 406 or (exc.status_code == 400 and "REST0001" in (exc.body or ""))
+    return exc.status_code == 406 or (
+        exc.status_code == 400 and "REST0001" in (exc.body or "")
+    )
 
 
 _REST_CREATE_NO_PROFILE = "REST create path creates no profile, so none was applied"
@@ -581,9 +583,7 @@ async def _require_contained_partition_profile(
         "LogicalPartition", lpar_uuid, "LogicalPartitionProfile"
     )
     wanted = partition_profile_uuid.casefold()
-    if not profiles or not any(
-        str(profile.get("UUID") or "") for profile in profiles
-    ):
+    if not profiles or not any(str(profile.get("UUID") or "") for profile in profiles):
         raise ValueError(
             "the target partition's profile feed came back empty or carried no "
             "profile UUID, so the supplied partition profile could not be "

@@ -200,7 +200,9 @@ def network_list_io_slots(
 ) -> None:
     """List physical I/O slots on a managed system (HMC CLI via SSH)."""
 
-    slots = run_cli_coroutine(lambda: list_io_slots(ssh_config(), system_name, pci_class))
+    slots = run_cli_coroutine(
+        lambda: list_io_slots(ssh_config(), system_name, pci_class)
+    )
 
     output(slots, as_json, None, "No I/O slots found")
 

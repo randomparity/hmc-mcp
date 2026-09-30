@@ -267,8 +267,10 @@ def _render_group(group: str, members: list[ToolRecord]) -> str:
         "",
         f"# `{group}` tools",
         "",
-        (f"{len(members)} tool{plural} in the `{group}` operation domain. "
-         f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."),
+        (
+            f"{len(members)} tool{plural} in the `{group}` operation domain. "
+            f"{SCOPE_NOTE} See the [tool reference index](index.md) for every domain."
+        ),
         "",
         SUMMARY_NOTE,
         "",
@@ -316,8 +318,10 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
         "",
         "# MCP tool reference",
         "",
-        (f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
-         "cannot drift from what the code registers."),
+        (
+            f"{SCOPE_NOTE} It is generated from the server's tool registry, so it "
+            "cannot drift from what the code registers."
+        ),
         "",
         SUMMARY_NOTE,
         "",
@@ -330,48 +334,52 @@ def _render_index(groups: Mapping[str, list[ToolRecord]]) -> str:
     lines.extend(
         f"| `{effect}` | {count} |" for effect, count in _effect_counts(records)
     )
-    lines.extend([
-        "",
-        "## Maturity vocabulary",
-        "",
-        (
-            "The maturity fields come from the [canonical HMC reference capability "
-            "ledger](../capabilities/README.md). They report evidence, not permission "
-            "to run an operation."
-        ),
-        "",
-        (
-            "- **Implementation:** `unrecorded`, `absent`, `partial`, or "
-            "`implemented`."
-        ),
-        (
-            "- **Verification:** `unrecorded`, `unevidenced`, `current`, `stale`, "
-            "or `failed`. A stale value includes `closure-changed` or "
-            "`age-exceeded` in parentheses."
-        ),
-        (
-            "- **Runtime eligibility:** `existing-runtime-guards`; authorization, "
-            "ownership, validation, capability, and safety checks remain authoritative."
-        ),
-        "",
-        "## Domains",
-        "",
-        "| Domain | Tools | Page |",
-        "| --- | --- | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Maturity vocabulary",
+            "",
+            (
+                "The maturity fields come from the [canonical HMC reference capability "
+                "ledger](../capabilities/README.md). They report evidence, not permission "
+                "to run an operation."
+            ),
+            "",
+            (
+                "- **Implementation:** `unrecorded`, `absent`, `partial`, or "
+                "`implemented`."
+            ),
+            (
+                "- **Verification:** `unrecorded`, `unevidenced`, `current`, `stale`, "
+                "or `failed`. A stale value includes `closure-changed` or "
+                "`age-exceeded` in parentheses."
+            ),
+            (
+                "- **Runtime eligibility:** `existing-runtime-guards`; authorization, "
+                "ownership, validation, capability, and safety checks remain authoritative."
+            ),
+            "",
+            "## Domains",
+            "",
+            "| Domain | Tools | Page |",
+            "| --- | --- | --- |",
+        ]
+    )
     lines.extend(
         f"| `{group}` | {len(members)} | [{group}.md]({group}.md) |"
         for group, members in sorted(groups.items())
     )
     if withheld:
         lines.extend(["", "## Not exposed by default", *_enablement_note(records)])
-    lines.extend([
-        "",
-        "## Every tool",
-        "",
-        "| Tool | Effect | Page |",
-        "| --- | --- | --- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Every tool",
+            "",
+            "| Tool | Effect | Page |",
+            "| --- | --- | --- |",
+        ]
+    )
     lines.extend(
         f"| `{record.name}` | `{record.effect}` "
         f"| [{record.domain}.md]({record.domain}.md) |"

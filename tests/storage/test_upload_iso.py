@@ -134,7 +134,9 @@ async def test_upload_iso_success(mock_hmc, stage_download):
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert result["status"] == "uploaded"
     assert result["media_name"] == MEDIA_NAME
@@ -184,7 +186,9 @@ async def test_upload_iso_accepts_both_supported_schemes(
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, url, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, url, system_name_or_uuid=None
+        )
 
     assert result["status"] == "uploaded"
     download.assert_awaited_once_with(url)
@@ -214,7 +218,14 @@ async def test_upload_iso_refuses_every_source_that_is_not_an_http_url(rejected)
     for them to reach.
     """
     with pytest.raises(ValueError) as exc_info:
-        await upload_iso(MagicMock(), VIOS_UUID, VG_UUID, MEDIA_NAME, rejected, system_name_or_uuid=None)
+        await upload_iso(
+            MagicMock(),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            rejected,
+            system_name_or_uuid=None,
+        )
 
     message = str(exc_info.value)
     assert "http://" in message and "https://" in message
@@ -252,11 +263,19 @@ async def test_upload_iso_refuses_a_local_path_before_touching_anything(
         "hmcpctl.operations.storage.resources.resolve_vios_uuid", _detonate("the HMC")
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.storage.resources._download_iso_from_url", _detonate("the network")
+        "hmcpctl.operations.storage.resources._download_iso_from_url",
+        _detonate("the network"),
     )
 
     with pytest.raises(ValueError) as exc_info:
-        await upload_iso(MagicMock(), VIOS_UUID, VG_UUID, MEDIA_NAME, str(readable), system_name_or_uuid=None)
+        await upload_iso(
+            MagicMock(),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            str(readable),
+            system_name_or_uuid=None,
+        )
 
     assert "http" in str(exc_info.value)
 
@@ -280,7 +299,14 @@ async def test_upload_iso_refusal_reveals_nothing_about_the_server_filesystem(
     messages = set()
     for candidate in (readable, unreadable, absent):
         with pytest.raises(ValueError) as exc_info:
-            await upload_iso(MagicMock(), VIOS_UUID, VG_UUID, MEDIA_NAME, str(candidate) , system_name_or_uuid=None)
+            await upload_iso(
+                MagicMock(),
+                VIOS_UUID,
+                VG_UUID,
+                MEDIA_NAME,
+                str(candidate),
+                system_name_or_uuid=None,
+            )
         # Only the caller's own input distinguishes the three.
         messages.add(str(exc_info.value).replace(str(candidate), "<source>"))
 
@@ -303,7 +329,9 @@ async def test_upload_iso_name_collision(mock_hmc, stage_download):
         )
 
         with pytest.raises(FileExistsError) as exc_info:
-            await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+            await upload_iso(
+                hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+            )
 
         assert f"Media name '{MEDIA_NAME}' already exists" in str(exc_info.value)
 
@@ -321,7 +349,14 @@ async def test_upload_iso_refuses_an_invalid_media_name_before_the_download(
         hmc.list_optical_media = _visible_after_upload()
 
         with pytest.raises(ValueError, match="media_name"):
-            await upload_iso(hmc, VIOS_UUID, VG_UUID, "bad name!.iso", ISO_URL, system_name_or_uuid=None)
+            await upload_iso(
+                hmc,
+                VIOS_UUID,
+                VG_UUID,
+                "bad name!.iso",
+                ISO_URL,
+                system_name_or_uuid=None,
+            )
 
         hmc.list_optical_media.assert_not_awaited()
 
@@ -346,7 +381,9 @@ async def test_upload_iso_drops_the_download_when_the_repository_read_fails(
         )
 
         with pytest.raises(HMCError):
-            await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+            await upload_iso(
+                hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+            )
 
     download.assert_not_awaited()
 
@@ -379,7 +416,9 @@ async def test_upload_iso_closes_the_handle_it_streamed_from(
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     staged, _, _ = download.return_value
     opened = [handle for handle in handles if handle.name == str(staged)]
@@ -388,7 +427,9 @@ async def test_upload_iso_closes_the_handle_it_streamed_from(
 
 
 @pytest.mark.asyncio
-async def test_upload_iso_releases_the_file_when_the_upload_fails(mock_hmc, stage_download):
+async def test_upload_iso_releases_the_file_when_the_upload_fails(
+    mock_hmc, stage_download
+):
     """A failed contents PUT still deletes the File and the staged download."""
     download = stage_download()
     routes = _web_file_routes(mock_hmc)
@@ -399,7 +440,9 @@ async def test_upload_iso_releases_the_file_when_the_upload_fails(mock_hmc, stag
         hmc.list_optical_media = _visible_after_upload()
 
         with pytest.raises(HMCError, match="Web File upload failed") as raised:
-            await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+            await upload_iso(
+                hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+            )
 
     assert routes.delete.call_count == 1
     assert any("list-optical-media" in note for note in raised.value.__notes__)
@@ -415,7 +458,9 @@ async def test_upload_iso_refuses_a_name_taken_during_the_download(stage_downloa
     hmc = _web_file_client(list_optical_media=AsyncMock(side_effect=[[], [VISIBLE]]))
 
     with pytest.raises(FileExistsError, match="already exists"):
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     hmc._web_file_create.assert_not_awaited()
     staged, _, _ = download.return_value
@@ -427,11 +472,15 @@ async def test_upload_iso_rejected_transfer_carries_no_landed_note(stage_downloa
     """A 4xx on the transfer is a refusal, so it does not say the HMC may hold the ISO."""
     stage_download()
     hmc = _web_file_client(
-        _web_file_upload=AsyncMock(side_effect=HMCError("Web File upload failed", 400, ""))
+        _web_file_upload=AsyncMock(
+            side_effect=HMCError("Web File upload failed", 400, "")
+        )
     )
 
     with pytest.raises(HMCError, match="Web File upload failed") as raised:
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert not getattr(raised.value, "__notes__", [])
     hmc._web_file_delete.assert_awaited_once_with(FILE_UUID)
@@ -442,11 +491,15 @@ async def test_upload_iso_create_failure_deletes_nothing(stage_download):
     """A File that was never created has no FileUUID to release."""
     stage_download()
     hmc = _web_file_client(
-        _web_file_create=AsyncMock(side_effect=HMCError("Web File create failed", 400, ""))
+        _web_file_create=AsyncMock(
+            side_effect=HMCError("Web File create failed", 400, "")
+        )
     )
 
     with pytest.raises(HMCError, match="Web File create failed"):
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     hmc._web_file_upload.assert_not_awaited()
     hmc._web_file_delete.assert_not_awaited()
@@ -461,7 +514,9 @@ async def test_upload_iso_fails_when_the_repository_never_lists_the_media(
     hmc = _web_file_client(list_optical_media=AsyncMock(return_value=[]))
 
     with pytest.raises(HMCError, match="did not list it") as raised:
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert "list-optical-media" in str(raised.value)
     assert raised.value.status_code is None
@@ -477,10 +532,14 @@ async def test_upload_iso_waits_for_the_media_to_appear(stage_download, sleeps):
     stage_download()
     other = {"MediaName": "other.iso"}
     hmc = _web_file_client(
-        list_optical_media=AsyncMock(side_effect=[[], [], [], [other], [other, VISIBLE]])
+        list_optical_media=AsyncMock(
+            side_effect=[[], [], [], [other], [other, VISIBLE]]
+        )
     )
 
-    result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+    result = await upload_iso(
+        hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+    )
 
     assert result["media"] == VISIBLE
     assert sleeps.await_count == 2
@@ -498,7 +557,9 @@ async def test_upload_iso_notes_that_the_bytes_landed_when_a_poll_fails(stage_do
     )
 
     with pytest.raises(HMCError, match="GET VolumeGroup failed") as raised:
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert any("list-optical-media" in note for note in raised.value.__notes__)
     hmc._web_file_delete.assert_awaited_once_with(FILE_UUID)
@@ -512,7 +573,9 @@ async def test_upload_iso_raises_file_delete_failure_after_success(stage_downloa
     hmc = _web_file_client(_web_file_delete=AsyncMock(side_effect=delete_error))
 
     with pytest.raises(HMCError, match="Web File delete failed") as raised:
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert any("only the release failed" in note for note in raised.value.__notes__)
     staged, _, _ = download.return_value
@@ -531,10 +594,14 @@ async def test_upload_iso_logs_delete_failure_without_masking_primary_error(
     )
 
     with pytest.raises(RuntimeError, match="upload failed"):
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     record = next(
-        record for record in caplog.records if "web File delete failed" in record.message
+        record
+        for record in caplog.records
+        if "web File delete failed" in record.message
     )
     assert FILE_UUID in record.message
     assert record.exc_info is not None
@@ -558,7 +625,9 @@ async def test_upload_iso_raises_local_cleanup_failure_after_success(
     hmc = _web_file_client()
 
     with pytest.raises(PermissionError, match="file is busy") as raised:
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert any(str(staged) in note for note in raised.value.__notes__)
 
@@ -583,7 +652,9 @@ async def test_upload_iso_logs_local_cleanup_failure_during_primary_error(
     )
 
     with pytest.raises(RuntimeError, match="upload failed"):
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     record = next(
         record
@@ -624,7 +695,9 @@ async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
         hmc._web_file_upload = _capture
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     chunks = captured["chunks"]
     assert captured["is_async_iterator"] is True
@@ -674,7 +747,9 @@ async def test_upload_iso_streams_a_zero_byte_file_as_an_empty_body(
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     request = uploaded.calls.last.request
     assert request.content == b""
@@ -693,7 +768,9 @@ async def test_upload_iso_refuses_a_volume_group_without_a_repository(stage_down
     hmc = _web_file_client(get_media_repository=AsyncMock(return_value=None))
 
     with pytest.raises(ValueError, match="holds no media repository"):
-        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     hmc.get_media_repository.assert_awaited_once_with(VIOS_UUID, VG_UUID)
     download.assert_not_awaited()
@@ -712,12 +789,13 @@ async def test_upload_iso_large_file(mock_hmc, stage_download):
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert result["status"] == "uploaded"
     assert result["media_size_bytes"] == len(large_content)
     assert result["sha256"] == large_sha256
-
 
 
 @pytest.mark.asyncio
@@ -725,38 +803,41 @@ async def test_download_iso_from_http_url_success():
     """Download ISO from HTTP URL succeeds with proper streaming and checksum."""
     test_content = b"Test ISO content for HTTP download\n" * 100
     test_url = "http://example.com/test.iso"
-    
+
     # Mock httpx.AsyncClient and response
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    
+
     # Mock streaming iterator
     async def mock_aiter_bytes(chunk_size=8192):
         for i in range(0, len(test_content), chunk_size):
-            yield test_content[i:i + chunk_size]
-    
+            yield test_content[i : i + chunk_size]
+
     mock_response.aiter_bytes = mock_aiter_bytes
-    
+
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-    
+
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
-    
-    with patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
+
+    with patch(
+        "hmcpctl.operations.storage.resources.httpx.AsyncClient",
+        return_value=mock_client,
+    ):
         temp_file, sha256, size = await _download_iso_from_url(test_url)
-        
+
         assert temp_file.exists()
         assert size == len(test_content)
         assert sha256 == hashlib.sha256(test_content).hexdigest()
-        
+
         # Read back content to verify
         with temp_file.open("rb") as f:
             assert f.read() == test_content
-        
+
         # Clean up
         temp_file.unlink()
 
@@ -766,28 +847,31 @@ async def test_download_iso_from_https_url_success():
     """Download ISO from HTTPS URL succeeds."""
     test_content = b"Test HTTPS download content\n" * 50
     test_url = "https://example.com/secure.iso"
-    
+
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    
+
     async def mock_aiter_bytes(chunk_size=8192):
         for i in range(0, len(test_content), chunk_size):
-            yield test_content[i:i + chunk_size]
-    
+            yield test_content[i : i + chunk_size]
+
     mock_response.aiter_bytes = mock_aiter_bytes
-    
+
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-    
+
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
-    
-    with patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
+
+    with patch(
+        "hmcpctl.operations.storage.resources.httpx.AsyncClient",
+        return_value=mock_client,
+    ):
         temp_file, _sha256, size = await _download_iso_from_url(test_url)
-        
+
         assert temp_file.exists()
         assert size == len(test_content)
         temp_file.unlink()
@@ -797,7 +881,7 @@ async def test_download_iso_from_https_url_success():
 async def test_download_iso_http_error():
     """Download ISO fails on HTTP error."""
     test_url = "http://example.com/notfound.iso"
-    
+
     request = httpx.Request("GET", test_url)
     mock_response = AsyncMock()
     mock_response.status_code = 404
@@ -820,7 +904,10 @@ async def test_download_iso_http_error():
     mock_client.stream = MagicMock(return_value=mock_response)
 
     with (
-        patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client),
+        patch(
+            "hmcpctl.operations.storage.resources.httpx.AsyncClient",
+            return_value=mock_client,
+        ),
         pytest.raises(httpx.HTTPStatusError),
     ):
         await _download_iso_from_url(test_url)
@@ -832,66 +919,73 @@ async def test_download_iso_size_limit_exceeded():
     # Use a small size limit for testing
     test_content = b"X" * 1000  # 1KB content
     small_limit = 500  # Set a very small limit
-    
+
     test_url = "http://example.com/large.iso"
-    
+
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    
+
     async def mock_aiter_bytes(chunk_size=8192):
         for i in range(0, len(test_content), chunk_size):
-            yield test_content[i:i + chunk_size]
-    
+            yield test_content[i : i + chunk_size]
+
     mock_response.aiter_bytes = mock_aiter_bytes
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-    
+
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
-    
+
     # Patch the size limit to be small
     with (
-        patch('hmcpctl.operations.storage.resources.MAX_DOWNLOAD_SIZE_BYTES', small_limit),
-        patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client),
+        patch(
+            "hmcpctl.operations.storage.resources.MAX_DOWNLOAD_SIZE_BYTES", small_limit
+        ),
+        patch(
+            "hmcpctl.operations.storage.resources.httpx.AsyncClient",
+            return_value=mock_client,
+        ),
         pytest.raises(ValueError, match="exceeds maximum allowed size"),
     ):
         await _download_iso_from_url(test_url)
-
-
 
 
 @pytest.mark.asyncio
 async def test_download_iso_cleanup_on_error():
     """Download ISO cleans up temp file when download fails."""
     test_url = "http://example.com/error.iso"
-    
+
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    
+
     async def mock_aiter_bytes(chunk_size=8192):
         yield b"partial content"
         raise RuntimeError("Network error during download")
-    
+
     mock_response.aiter_bytes = mock_aiter_bytes
-    
+
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-    
+
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.stream = MagicMock(return_value=mock_response)
-    
-    with patch('hmcpctl.operations.storage.resources.httpx.AsyncClient', return_value=mock_client):
+
+    with patch(
+        "hmcpctl.operations.storage.resources.httpx.AsyncClient",
+        return_value=mock_client,
+    ):
         with pytest.raises(RuntimeError):
             await _download_iso_from_url(test_url)
-        
+
         # Verify temp file was cleaned up by checking no leftover files
         import glob
+
         temp_files = glob.glob("/tmp/hmc_upload_*.iso")
         assert len(temp_files) == 0, f"Temp files not cleaned: {temp_files}"
 
@@ -938,7 +1032,8 @@ def detonate_on_network(monkeypatch):
     # than in the code under test. `connect` is the reaching-out half.
     monkeypatch.setattr(socket.socket, "connect", _trap("a connection"))
     monkeypatch.setattr(
-        "hmcpctl.operations.storage.resources.httpx.AsyncClient", _trap("the HTTP client")
+        "hmcpctl.operations.storage.resources.httpx.AsyncClient",
+        _trap("the HTTP client"),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.storage.resources.resolve_vios_uuid", _trap("the HMC")
@@ -970,7 +1065,14 @@ async def test_upload_iso_refuses_a_host_off_the_allowlist_without_connecting(
     instance metadata, loopback services, hosts inside the server's segment.
     """
     with pytest.raises(ValueError) as exc_info:
-        await upload_iso(_client_for(ISO_HOST), VIOS_UUID, VG_UUID, MEDIA_NAME, blocked , system_name_or_uuid=None)
+        await upload_iso(
+            _client_for(ISO_HOST),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            blocked,
+            system_name_or_uuid=None,
+        )
 
     message = str(exc_info.value)
     assert "allowlist" in message
@@ -991,7 +1093,14 @@ async def test_upload_iso_refuses_every_url_when_no_allowlist_is_configured(
     naming the setting is part of the decision rather than a nicety.
     """
     with pytest.raises(ValueError) as exc_info:
-        await upload_iso(_client_for(""), VIOS_UUID, VG_UUID, MEDIA_NAME, url, system_name_or_uuid=None)
+        await upload_iso(
+            _client_for(""),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            url,
+            system_name_or_uuid=None,
+        )
 
     message = str(exc_info.value)
     assert "HMC_ISO_URL_ALLOWLIST" in message
@@ -1017,7 +1126,14 @@ async def test_upload_iso_refusal_cannot_distinguish_a_host_that_exists(
     messages = set()
     for candidate in (resolvable, unresolvable):
         with pytest.raises(ValueError) as exc_info:
-            await upload_iso(_client_for(ISO_HOST), VIOS_UUID, VG_UUID, MEDIA_NAME, candidate, system_name_or_uuid=None)
+            await upload_iso(
+                _client_for(ISO_HOST),
+                VIOS_UUID,
+                VG_UUID,
+                MEDIA_NAME,
+                candidate,
+                system_name_or_uuid=None,
+            )
         # Only the caller's own input distinguishes the two.
         messages.add(str(exc_info.value).replace(candidate, "<source>"))
 
@@ -1037,7 +1153,14 @@ async def test_upload_iso_allowlist_entry_with_a_port_permits_only_that_port(
     loopback on the MCP server host.
     """
     with pytest.raises(ValueError) as exc_info:
-        await upload_iso(_client_for("localhost:18765"), VIOS_UUID, VG_UUID, MEDIA_NAME, "http://localhost:22/test-image.iso", system_name_or_uuid=None)
+        await upload_iso(
+            _client_for("localhost:18765"),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            "http://localhost:22/test-image.iso",
+            system_name_or_uuid=None,
+        )
 
     assert "allowlist" in str(exc_info.value)
     assert detonate_on_network == []
@@ -1060,7 +1183,9 @@ async def test_upload_iso_matches_the_default_port_of_a_portless_url(
     config = make_config(iso_url_allowlist=f"{ISO_HOST}:443")
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = _visible_after_upload()
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert result["status"] == "uploaded"
     download.assert_awaited_once_with(ISO_URL)
@@ -1111,7 +1236,9 @@ async def test_upload_iso_uploads_from_an_allowlisted_url_end_to_end(
             monkeypatch, lambda _request: httpx.Response(200, content=TEST_CONTENT)
         )
         hmc.list_optical_media = _visible_after_upload()
-        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None)
+        result = await upload_iso(
+            hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL, system_name_or_uuid=None
+        )
 
     assert result["status"] == "uploaded"
     assert result["sha256"] == TEST_SHA256
@@ -1173,7 +1300,10 @@ async def test_download_iso_refuses_a_redirect_without_a_location(monkeypatch):
         ("", ()),
         ("images.test", (("images.test", None),)),
         ("localhost:18765", (("localhost", 18765),)),
-        (" images.test , localhost:18765 ,", (("images.test", None), ("localhost", 18765))),
+        (
+            " images.test , localhost:18765 ,",
+            (("images.test", None), ("localhost", 18765)),
+        ),
         ("IMAGES.TEST", (("images.test", None),)),
         ("[::1]:18765", (("::1", 18765),)),
     ],
@@ -1224,7 +1354,14 @@ async def test_upload_iso_refuses_a_url_whose_port_is_unusable(
     it. The host in these cases is allowlisted; the port is what refuses them.
     """
     with pytest.raises(ValueError, match="usable TCP port"):
-        await upload_iso(_client_for(f"{ISO_HOST}:443"), VIOS_UUID, VG_UUID, MEDIA_NAME, url, system_name_or_uuid=None)
+        await upload_iso(
+            _client_for(f"{ISO_HOST}:443"),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            url,
+            system_name_or_uuid=None,
+        )
 
     assert detonate_on_network == []
 

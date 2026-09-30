@@ -251,7 +251,9 @@ _INSTALL_KWARGS = {
 }
 
 
-def test_install_vios_by_lpar_selector_tool_submits_detached_installios(monkeypatch, mock_hmc):
+def test_install_vios_by_lpar_selector_tool_submits_detached_installios(
+    monkeypatch, mock_hmc
+):
     """The tool resolves the target then runs the composed installios command."""
     from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
 
@@ -317,7 +319,9 @@ def test_install_vios_by_lpar_selector_tool_rejects_invalid_arguments_before_ssh
     assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
 
 
-def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
+def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(
+    monkeypatch, mock_hmc
+):
     from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
 
     _hmc_env(monkeypatch)

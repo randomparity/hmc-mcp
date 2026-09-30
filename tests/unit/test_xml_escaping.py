@@ -474,7 +474,9 @@ def test_logon_user_cannot_add_a_second_user_id():
 def test_web_file_filename_cannot_add_a_sibling_element():
     filename = "a.iso</Filename><Filename>evil.iso"
     xml = documents.build_web_file_document(
-        filename=filename, size_bytes=1, vios_uuid="00000000-0000-0000-0000-000000000001"
+        filename=filename,
+        size_bytes=1,
+        vios_uuid="00000000-0000-0000-0000-000000000001",
     )
 
     parsed = DET.fromstring(xml.encode("utf-8"))

@@ -38,7 +38,9 @@ LPAR_NAME = "my-lpar"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("resource", [None, [], {}, {"SystemName": ""}, {"SystemName": 1}])
+@pytest.mark.parametrize(
+    "resource", [None, [], {}, {"SystemName": ""}, {"SystemName": 1}]
+)
 async def test_system_rest_selector_rejects_malformed_resource(resource):
     hmc = MagicMock()
     hmc.get_managed_system = AsyncMock(return_value={"Resource": resource})
@@ -50,7 +52,9 @@ async def test_system_rest_selector_rejects_malformed_resource(resource):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("resource", [None, [], {}, {"PartitionName": " "}, {"PartitionName": 1}])
+@pytest.mark.parametrize(
+    "resource", [None, [], {}, {"PartitionName": " "}, {"PartitionName": 1}]
+)
 async def test_lpar_rest_selector_rejects_malformed_resource(resource):
     hmc = MagicMock()
     hmc.get_logical_partition = AsyncMock(return_value={"Resource": resource})
@@ -59,6 +63,7 @@ async def test_lpar_rest_selector_rejects_malformed_resource(resource):
         await _lpar_name_from_rest(hmc, LPAR_UUID)
 
     assert not isinstance(raised.value, ResourceNotFoundError)
+
 
 # ``lssyscfg -r sys|lpar -F uuid,name`` output rows.
 _SYS_ROWS = f"00000000-0000-0000-0000-000000000000,other\n{SYSTEM_UUID},{SYSTEM_NAME}\n"

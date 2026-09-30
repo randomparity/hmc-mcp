@@ -97,9 +97,7 @@ def test_the_value_is_readable_with_no_config_file_present():
     assert guards[0].detail is None
 
 
-def test_a_malformed_config_file_is_reported_as_unresolved(
-    tmp_path, caplog
-):
+def test_a_malformed_config_file_is_reported_as_unresolved(tmp_path, caplog):
     """Authored configuration failures remain visible to the operator."""
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
     policy = _policy(ALL_TOOLS_GRANT)
@@ -120,13 +118,15 @@ def test_one_malformed_document_is_classified_for_every_connection(
 ):
     """A shared read failure retains one unresolved row per connection."""
     _write_config(tmp_path, "[profiles.a\nhost = 'h'\n")
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["a", "b"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["a", "b"],
+                "targets": "all-targets",
+            }
+        ]
+    )
     original = config_module._read_config_document
     reads = 0
 
@@ -196,13 +196,15 @@ def test_a_profile_key_is_reported_against_only_the_profile_that_carries_it(tmp_
         user = "admin"
         """,
     )
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["guarded", "open"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["guarded", "open"],
+                "targets": "all-targets",
+            }
+        ]
+    )
 
     guards = _by_connection(resolve_power_guards(policy))
 
@@ -231,13 +233,15 @@ def test_one_report_reads_the_config_document_once_for_multiple_profiles(
         user = "admin"
         """,
     )
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["guarded", "open"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["guarded", "open"],
+                "targets": "all-targets",
+            }
+        ]
+    )
     original = config_module._read_config_document
     reads = 0
 
@@ -268,13 +272,15 @@ def test_snapshot_decision_reuses_the_resolver_host_sample(monkeypatch, tmp_path
         user = "admin"
         """,
     )
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["a", "b"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["a", "b"],
+                "targets": "all-targets",
+            }
+        ]
+    )
     host_checks = iter([None, "changed.example.com"])
     checks = 0
 
@@ -314,9 +320,9 @@ def test_separate_reports_read_fresh_config_documents(monkeypatch, tmp_path):
         return original(path)
 
     monkeypatch.setattr(config_module, "_read_config_document", counting_reader)
-    policy = _policy([
-        {"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}]
+    )
     _write_config(
         tmp_path,
         """
@@ -360,9 +366,9 @@ def test_the_environment_variable_overrides_every_profile(monkeypatch, tmp_path)
         """,
     )
     monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "false")
-    policy = _policy([
-        {"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}]
+    )
 
     guards = _by_connection(resolve_power_guards(policy))
 
@@ -389,13 +395,15 @@ def test_an_ambient_host_makes_a_profile_key_ineffective(monkeypatch, tmp_path):
         """,
     )
     monkeypatch.setenv("HMC_HOST", "hmc-c.example.com")
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["<default>", "guarded"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["<default>", "guarded"],
+                "targets": "all-targets",
+            }
+        ]
+    )
 
     guards = _by_connection(resolve_power_guards(policy))
 
@@ -428,9 +436,9 @@ def test_a_case_variant_overrides_a_profiles_value(monkeypatch, tmp_path):
         """,
     )
     monkeypatch.setenv("hmc_authorize_power_operations", "false")
-    policy = _policy([
-        {"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["guarded"], "targets": "all-targets"}]
+    )
 
     guards = _by_connection(resolve_power_guards(policy))
 
@@ -500,9 +508,9 @@ def test_a_connection_that_cannot_be_resolved_is_reported_not_raised(tmp_path, c
         p = "present"
         """,
     )
-    policy = _policy([
-        {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}]
+    )
 
     with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
         guards = _by_connection(resolve_power_guards(policy))
@@ -554,9 +562,9 @@ def test_the_unresolved_warning_is_said_once_not_once_per_call(tmp_path, caplog)
         user = "admin"
         """,
     )
-    policy = _policy([
-        {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}]
+    )
 
     with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
         reported: set[tuple[str, str]] = set()
@@ -581,9 +589,9 @@ async def test_each_application_has_its_own_unresolved_warning_history(
         user = "admin"
         """,
     )
-    policy = _policy([
-        {"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["absent"], "targets": "all-targets"}]
+    )
     applications = (create_mcp(policy), create_mcp(policy))
 
     with caplog.at_level(logging.WARNING, logger="hmcpctl.server_tools.permissions"):
@@ -625,13 +633,15 @@ def test_one_malformed_profile_does_not_take_down_the_whole_report(tmp_path):
         _env_file = "/etc/passwd"
         """,
     )
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["sound", "broken"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["sound", "broken"],
+                "targets": "all-targets",
+            }
+        ]
+    )
 
     guards = _by_connection(resolve_power_guards(policy))
 
@@ -667,13 +677,15 @@ def test_an_ambient_host_collapses_the_reported_set_to_the_default(
         """,
     )
     monkeypatch.setenv("HMC_HOST", "hmc-c.example.com")
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["<default>", "guarded", "open"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["<default>", "guarded", "open"],
+                "targets": "all-targets",
+            }
+        ]
+    )
 
     guards = resolve_power_guards(policy)
 
@@ -681,17 +693,17 @@ def test_an_ambient_host_collapses_the_reported_set_to_the_default(
 
 
 @pytest.mark.parametrize("name", ["hmc_host", "Hmc_Host"])
-def test_an_ambient_host_case_variant_collapses_report_like_dispatch(
-    monkeypatch, name
-):
+def test_an_ambient_host_case_variant_collapses_report_like_dispatch(monkeypatch, name):
     monkeypatch.setenv(name, "hmc-c.example.com")
-    policy = _policy([
-        {
-            "effects": ["read"],
-            "connections": ["<default>", "guarded"],
-            "targets": "all-targets",
-        }
-    ])
+    policy = _policy(
+        [
+            {
+                "effects": ["read"],
+                "connections": ["<default>", "guarded"],
+                "targets": "all-targets",
+            }
+        ]
+    )
 
     guards = resolve_power_guards(policy)
 
@@ -720,9 +732,9 @@ def test_an_ambient_host_with_no_default_grant_reports_nothing(name):
     the default connection then denies every call — so there is no connection
     whose guard state describes a call this server would make.
     """
-    policy = _policy([
-        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}]
+    )
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv(name, "hmc-c.example.com")
@@ -741,9 +753,9 @@ def test_an_empty_connection_set_does_not_read_the_config_document(monkeypatch):
 
 def test_an_empty_ambient_host_does_not_collapse_named_connections(monkeypatch):
     monkeypatch.setenv("hmc_host", "")
-    policy = _policy([
-        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}]
+    )
 
     guards = resolve_power_guards(policy)
 
@@ -757,9 +769,9 @@ def test_a_connection_no_grant_names_is_not_reported():
     (ADR 0038), so an entry for it would describe a call this server refuses —
     and would resolve a profile the policy withholds in order to say so.
     """
-    policy = _policy([
-        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}
-    ])
+    policy = _policy(
+        [{"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}]
+    )
 
     guards = resolve_power_guards(policy)
 

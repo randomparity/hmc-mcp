@@ -38,7 +38,9 @@ def select_wheel(artifact_dir: Path) -> Path:
     """Return the sole wheel in *artifact_dir* or reject ambiguous input."""
     wheels = sorted(artifact_dir.glob("*.whl"))
     if len(wheels) != 1 or not wheels[0].is_file():
-        raise ValueError(f"expected exactly one wheel in {artifact_dir}, found {len(wheels)}")
+        raise ValueError(
+            f"expected exactly one wheel in {artifact_dir}, found {len(wheels)}"
+        )
     return wheels[0].resolve()
 
 

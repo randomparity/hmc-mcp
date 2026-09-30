@@ -65,7 +65,10 @@ def test_rejects_script_without_a_test_module(tmp_path: Path, capsys) -> None:
 
     assert check_test_layout.main(["--repo-root", str(root)]) == 1
     error = capsys.readouterr().err
-    assert "scripts/live_test_evidence.py -> tests/scripts/test_live_test_evidence.py" in error
+    assert (
+        "scripts/live_test_evidence.py -> tests/scripts/test_live_test_evidence.py"
+        in error
+    )
     assert "one test module per scripts/ entry point" in error
 
 

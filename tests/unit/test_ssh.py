@@ -18,7 +18,7 @@ def test_ssh_verification_configuration(tmp_path, monkeypatch):
     assert "ssh_verify_host_key" in HMCConfig.model_fields
     assert HMCConfig.from_mapping({}).ssh_verify_host_key is True
     config_path = tmp_path / "config.toml"
-    config_path.write_text('[profiles.test]\nssh_verify_host_key = false\n')
+    config_path.write_text("[profiles.test]\nssh_verify_host_key = false\n")
     assert load_profile("test", config_path).ssh_verify_host_key is False
     monkeypatch.setenv("HMC_SSH_VERIFY_HOST_KEY", "true")
     assert load_profile("test", config_path).ssh_verify_host_key is True
@@ -34,10 +34,16 @@ def test_ssh_verification_configuration(tmp_path, monkeypatch):
 @pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
 @pytest.mark.parametrize("verify", [True, False])
 @pytest.mark.parametrize("key_file", [None, "/test-key"])
-async def test_ssh_host_key_policy_reaches_each_connection(operation, verify, key_file, caplog):
+async def test_ssh_host_key_policy_reaches_each_connection(
+    operation, verify, key_file, caplog
+):
     config = make_config(ssh_verify_host_key=verify, ssh_key_file=key_file)
     connection = _make_ssh_mock()
-    connect = MagicMock(return_value=connection) if operation is run_hmc_command else AsyncMock()
+    connect = (
+        MagicMock(return_value=connection)
+        if operation is run_hmc_command
+        else AsyncMock()
+    )
     with patch("hmcpctl.ssh.transport.asyncssh.connect", connect):
         if operation is run_hmc_command:
             await operation(config, "lshmc -V")
@@ -53,8 +59,12 @@ async def test_ssh_host_key_policy_reaches_each_connection(operation, verify, ke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
-@pytest.mark.parametrize("trust", ["trusted", "changed", "unknown", "missing", "malformed", "insecure"])
-async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "trust", ["trusted", "changed", "unknown", "missing", "malformed", "insecure"]
+)
+async def test_ssh_host_key_handshake_precedes_password(
+    operation, trust, tmp_path, monkeypatch
+):
     """Use a real local SSH peer; rejected keys must never receive credentials."""
     passwords = []
 
@@ -75,7 +85,10 @@ async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_pa
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
     async with asyncssh.create_server(
-        Server, "127.0.0.1", 0, server_host_keys=[host_key],
+        Server,
+        "127.0.0.1",
+        0,
+        server_host_keys=[host_key],
         process_factory=process_handler,
     ) as listener:
         port = listener.get_port()
@@ -83,21 +96,31 @@ async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_pa
         trust_file.parent.mkdir()
         if trust != "missing":
             recorded_key = (
-                asyncssh.generate_private_key("ssh-ed25519") if trust == "changed" else host_key
+                asyncssh.generate_private_key("ssh-ed25519")
+                if trust == "changed"
+                else host_key
             )
             entry = f"[127.0.0.1]:{port} " + recorded_key.export_public_key().decode()
-            trust_file.write_text({"unknown": "", "malformed": "invalid-entry\n"}.get(trust, entry))
+            trust_file.write_text(
+                {"unknown": "", "malformed": "invalid-entry\n"}.get(trust, entry)
+            )
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
         # Pin an ephemeral port and isolate ambient SSH config, keeping the actual handshake.
         connect = asyncssh.connect
         monkeypatch.setattr(
-            asyncssh, "connect", lambda **kwargs: connect(port=port, config=None, **kwargs)
+            asyncssh,
+            "connect",
+            lambda **kwargs: connect(port=port, config=None, **kwargs),
         )
-        config = HMCConfig.from_mapping({
-            "host": "127.0.0.1", "user": "test",
-            "password": "test-password",  # pragma: allowlist secret - loopback fixture
-            "ssh_verify_host_key": trust != "insecure", "ssh_timeout": 5,
-        })
+        config = HMCConfig.from_mapping(
+            {
+                "host": "127.0.0.1",
+                "user": "test",
+                "password": "test-password",  # pragma: allowlist secret - loopback fixture
+                "ssh_verify_host_key": trust != "insecure",
+                "ssh_timeout": 5,
+            }
+        )
 
         async def invoke():
             if operation is run_hmc_command:
@@ -121,9 +144,11 @@ async def test_ssh_host_key_handshake_precedes_password(operation, trust, tmp_pa
                 assert "Invalid known hosts entry" in str(exc.value)
             assert passwords == []
 
+
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal asyncssh mock
 # ---------------------------------------------------------------------------
+
 
 def _make_ssh_mock(stdout: str = "output\n") -> MagicMock:
     """Return a mock asyncssh connection whose run() returns stdout."""
@@ -156,10 +181,13 @@ async def test_invalid_credentials_preserve_value_error(operation):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", [run_hmc_command, open_hmc_connection])
 async def test_os_connection_failures_use_hmc_cli_error(operation):
-    with patch(
-        "hmcpctl.ssh.transport.asyncssh.connect",
-        side_effect=ConnectionRefusedError("connection refused"),
-    ), pytest.raises(HMCCLIError, match="SSH .*failed") as exc_info:
+    with (
+        patch(
+            "hmcpctl.ssh.transport.asyncssh.connect",
+            side_effect=ConnectionRefusedError("connection refused"),
+        ),
+        pytest.raises(HMCCLIError, match="SSH .*failed") as exc_info,
+    ):
         if operation is run_hmc_command:
             await operation(make_config(), "lshmc -v")
         else:
@@ -178,7 +206,9 @@ async def test_run_hmc_command_password_auth():
     """
     conn_mock = _make_ssh_mock("lssyscfg output\n")
 
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
+    with patch(
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock
+    ) as mock_connect:
         result = await run_hmc_command(make_config(), "lssyscfg -r sys")
 
     mock_connect.assert_called_once()
@@ -196,7 +226,9 @@ async def test_run_hmc_command_key_auth():
     """Key auth path: asyncssh.connect called with client_keys, password=None."""
     conn_mock = _make_ssh_mock("lssyscfg key output\n")
 
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
+    with patch(
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock
+    ) as mock_connect:
         result = await run_hmc_command(
             make_config(ssh_key_file="/home/user/.ssh/hmc_key"),
             "lssyscfg -r sys",
@@ -237,10 +269,13 @@ async def test_run_hmc_command_command_timeout_raises_hmcclierror():
 @pytest.mark.asyncio
 async def test_run_hmc_command_connect_timeout_raises_hmcclierror():
     """A connect that never completes surfaces as HMCCLIError, not a hang."""
-    with patch(
-        "hmcpctl.ssh.transport.asyncssh.connect",
-        side_effect=TimeoutError("timed out"),
-    ), pytest.raises(HMCCLIError, match="timed out after 300s"):
+    with (
+        patch(
+            "hmcpctl.ssh.transport.asyncssh.connect",
+            side_effect=TimeoutError("timed out"),
+        ),
+        pytest.raises(HMCCLIError, match="timed out after 300s"),
+    ):
         await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
@@ -320,10 +355,13 @@ async def test_run_hmc_command_signal_failure_names_signal_and_command():
 async def test_run_hmc_command_connect_error_raises_hmcclierror():
     """An SSH connection/auth failure surfaces as HMCCLIError, not a raw
     asyncssh error."""
-    with patch(
-        "hmcpctl.ssh.transport.asyncssh.connect",
-        side_effect=asyncssh.Error("connect", "connection refused"),
-    ), pytest.raises(HMCCLIError, match="connection refused"):
+    with (
+        patch(
+            "hmcpctl.ssh.transport.asyncssh.connect",
+            side_effect=asyncssh.Error("connect", "connection refused"),
+        ),
+        pytest.raises(HMCCLIError, match="connection refused"),
+    ):
         await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
@@ -342,12 +380,16 @@ def test_hmc_config_ssh_key_field_set():
 def test_hmc_config_ssh_timeout_default():
     """ssh_timeout defaults to 300s and honours an explicit override."""
     assert HMCConfig(host="h", user="u", password="p").ssh_timeout == 300.0
-    assert HMCConfig(host="h", user="u", password="p", ssh_timeout=45.0).ssh_timeout == 45.0
+    assert (
+        HMCConfig(host="h", user="u", password="p", ssh_timeout=45.0).ssh_timeout
+        == 45.0
+    )
 
 
 # ---------------------------------------------------------------------------
 # Credential validation parity with the REST path
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_run_hmc_command_missing_config_fails_actionably():
@@ -370,9 +412,13 @@ async def test_run_hmc_command_key_auth_skips_password_requirement():
     credential check and the command reaches asyncssh."""
     conn_mock = _make_ssh_mock("lssyscfg key output\n")
 
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock) as mock_connect:
+    with patch(
+        "hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock
+    ) as mock_connect:
         result = await run_hmc_command(
-            HMCConfig(host="hmc.test", user="hscroot", ssh_key_file="/home/user/.ssh/hmc_key"),
+            HMCConfig(
+                host="hmc.test", user="hscroot", ssh_key_file="/home/user/.ssh/hmc_key"
+            ),
             "lssyscfg -r sys",
         )
 

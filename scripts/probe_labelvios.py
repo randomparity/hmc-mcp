@@ -116,7 +116,9 @@ def connect_kwargs(profile: Profile, *, insecure: bool = False) -> ConnectionOpt
         "port": 22,
         "username": profile.user,
         "password": profile.password,
-        "known_hosts": None if insecure else str(pathlib.Path.home() / ".ssh" / "known_hosts"),
+        "known_hosts": None
+        if insecure
+        else str(pathlib.Path.home() / ".ssh" / "known_hosts"),
         "preferred_auth": "password",
         "client_keys": [],
     }
@@ -131,7 +133,9 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
         "systems": [],
     }
     try:
-        async with asyncssh.connect(**connect_kwargs(profile, insecure=insecure)) as conn:
+        async with asyncssh.connect(
+            **connect_kwargs(profile, insecure=insecure)
+        ) as conn:
             rc, stdout, stderr = await run_ssh_command(conn, "lshmc -V")
             result["queries"]["lshmc -V"] = {
                 "cmd": "lshmc -V",
@@ -162,6 +166,7 @@ async def probe_profile(profile: Profile, *, insecure: bool = False) -> ProbeRes
 
             for sys_name in systems:
                 import shlex
+
                 m = shlex.quote(sys_name)
                 sys_queries: dict[str, QueryResult] = {}
 
@@ -214,9 +219,9 @@ def report(results: list[ProbeResult]) -> None:
         for label, q in r["queries"].items():
             if label.startswith("["):
                 sys_name = label
-                print(f"\n  {'─'*60}")
+                print(f"\n  {'─' * 60}")
                 print(f"  SYSTEM: {sys_name}")
-                print(f"  {'─'*60}")
+                print(f"  {'─' * 60}")
                 for qlabel, qq in q.items():
                     _print_query(f"  {qlabel}", qq)
             else:
@@ -262,7 +267,8 @@ async def main(*, insecure: bool = False) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--insecure", action="store_true",
+        "--insecure",
+        action="store_true",
         help="Disable SSH host-key verification for this run (credentials may be intercepted)",
     )
     args = parser.parse_args()

@@ -26,10 +26,7 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def _lpar_feed(**fields: str) -> str:
-    body = "\n".join(
-        f'        <{k} xmlns="{NS}">{v}</{k}>'
-        for k, v in fields.items()
-    )
+    body = "\n".join(f'        <{k} xmlns="{NS}">{v}</{k}>' for k, v in fields.items())
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -163,7 +160,8 @@ def test_lpar_summary_no_adapters(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(
-            200, text=_lpar_feed(PartitionName="minimal", PartitionState="not activated")
+            200,
+            text=_lpar_feed(PartitionName="minimal", PartitionState="not activated"),
         )
     )
     mock_hmc.get(
@@ -192,9 +190,9 @@ def test_lpar_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
   </entry>
 </feed>
 """
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==myname)"
-    ).mock(return_value=httpx.Response(200, text=search_feed))
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==myname)").mock(
+        return_value=httpx.Response(200, text=search_feed)
+    )
 
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(
@@ -216,9 +214,9 @@ def test_lpar_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
 def test_lpar_summary_name_not_found_raises(monkeypatch, mock_hmc):
     """hmc_lpar_summary raises ValueError when the partition name is unknown."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
 
     with pytest.raises(ValueError, match="ghost"):
         hmc_lpar_summary("ghost")

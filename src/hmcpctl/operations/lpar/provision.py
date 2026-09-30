@@ -75,7 +75,9 @@ class ProvisionStorage:
     )
     vg_uuid: str | None = field(
         default=None,
-        metadata={"description": "Volume-group UUID used when creating a virtual disk."},
+        metadata={
+            "description": "Volume-group UUID used when creating a virtual disk."
+        },
     )
 
 
@@ -94,6 +96,8 @@ class ProvisionRequest:
     caller_token: str | None = None
     minimum_affinity_policy: MinimumAffinityPolicy | None = None
     affinity_assessment: ProvisionAffinityAssessment | None = None
+
+
 @dataclass(frozen=True)
 class ProvisionResult:
     """Truthful outcome of a provisioning attempt."""
@@ -569,7 +573,9 @@ async def _preflight_provision_request(
     await _check_vlan_exists(hmc, system_uuid, request.adapters.port_vlan_id)
     if request.storage.vg_uuid is not None:
         await _check_vg_exists(hmc, request.storage.vios_uuid, request.storage.vg_uuid)
-    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, request.assignments)
+    await prevalidate_lpar_pcie_assignments(
+        hmc, system_name_or_uuid, request.assignments
+    )
 
 
 def _provision_step_names(
@@ -617,7 +623,9 @@ async def _run_legs_through_power(
         # Read once here, not through the standalone adapter/storage operations,
         # which would repeat the authorization read once per step (#1056).
         change_location, warnings = await _read_change_location(hmc, lpar_uuid)
-        storage_steps, completed = await _run_storage_leg(hmc, lpar_uuid, request.storage)
+        storage_steps, completed = await _run_storage_leg(
+            hmc, lpar_uuid, request.storage
+        )
         steps.extend(storage_steps)
     completed = completed and await _run_assignment_leg(
         steps, hmc, system_name_or_uuid, request.name, request.assignments

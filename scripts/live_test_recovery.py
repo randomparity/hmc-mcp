@@ -342,15 +342,19 @@ def _report(inputs: RecoveryInputs, findings: list[Finding]) -> None:
     print(f"recovery check for run marker {inputs.run_marker}")
     print("=" * 60)
     if not findings:
-        print(f"CLEAN  nothing carrying {inputs.run_marker} survives on "
-              f"{inputs.system_name}")
+        print(
+            f"CLEAN  nothing carrying {inputs.run_marker} survives on "
+            f"{inputs.system_name}"
+        )
         return
     for finding in findings:
         print(f"STRANDED  {finding.what}")
         print(f"          {finding.detail}")
         print(f"  clear with:  {finding.remedy}")
-    print("\nThis script issues no mutating call. Run the commands above "
-          "yourself, then re-run this check.")
+    print(
+        "\nThis script issues no mutating call. Run the commands above "
+        "yourself, then re-run this check."
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

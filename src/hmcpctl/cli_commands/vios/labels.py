@@ -116,7 +116,9 @@ def vios_list_vfc_group_labels(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vFC placement group labels on a managed system."""
-    rows = run_cli_coroutine(lambda: list_vios_vfc_group_labels(ssh_config(), system_name_or_uuid))
+    rows = run_cli_coroutine(
+        lambda: list_vios_vfc_group_labels(ssh_config(), system_name_or_uuid)
+    )
     output(rows, as_json, None, "No VIOS vFC group labels found")
 
 

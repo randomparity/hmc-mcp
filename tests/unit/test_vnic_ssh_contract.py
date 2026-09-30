@@ -60,8 +60,12 @@ async def test_list_vnic_rows_requests_exact_fields(monkeypatch, config) -> None
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reply", ["No results were found.\n", "  No results were found.  \n\n"])
-async def test_list_vnics_accepts_hmc_empty_result(monkeypatch, config, reply: str) -> None:
+@pytest.mark.parametrize(
+    "reply", ["No results were found.\n", "  No results were found.  \n\n"]
+)
+async def test_list_vnics_accepts_hmc_empty_result(
+    monkeypatch, config, reply: str
+) -> None:
     async def fake_run(_config, _command: str) -> str:
         return reply
 

@@ -8,9 +8,7 @@ from pathlib import Path
 import pytest
 
 MODULE_PATH = Path(__file__).parents[2] / "scripts" / "check_adr_numbering.py"
-MODULE_SPEC = importlib.util.spec_from_file_location(
-    "check_adr_numbering", MODULE_PATH
-)
+MODULE_SPEC = importlib.util.spec_from_file_location("check_adr_numbering", MODULE_PATH)
 assert MODULE_SPEC is not None
 assert MODULE_SPEC.loader is not None
 check_adr_numbering = importlib.util.module_from_spec(MODULE_SPEC)

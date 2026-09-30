@@ -273,6 +273,7 @@ def record_ownership_override(
 
     emit(_DENY_LEVEL, build)
 
+
 def record_ownership_denied(
     *,
     operation: OwnershipOperation,
