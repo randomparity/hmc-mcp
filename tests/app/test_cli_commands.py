@@ -204,7 +204,11 @@ class FakeHMC:
             "Resource": {
                 "SystemName": "sys1",
                 "State": "operating",
-                "MachineTypeModelSerialNumber": "9119-MHE",
+                "MachineTypeModelAndSerialNumber": {
+                    "MachineType": "9119",
+                    "Model": "MHE",
+                    "SerialNumber": "SN00001",
+                },
                 "IPAddress": "10.0.0.1",
             },
         }
@@ -4012,7 +4016,7 @@ def test_systems_list_table(fake_hmc):
 
     assert result.exit_code == 0
     assert "sys1" in result.stdout
-    assert "9119-MHE" in result.stdout
+    assert "9119-MHE*SN00001" in result.stdout
     assert fake_hmc.calls == [("list_managed_systems", (), {})]
 
 

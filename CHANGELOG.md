@@ -202,6 +202,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The managed-system MTMS is now read from the element V10R3 serves,
+  `MachineTypeModelAndSerialNumber`, through one shared renderer (`xmlutil.render_mtms`).
+  `systems list` showed `-` for every system, a VIOS backup addressed by system UUID always
+  failed its MTMS lookup, and snapshot capture, `console info` and the inventory summary
+  read the unserved `MachineTypeModelSerialNumber`. The old name is no longer read (#1184).
 - A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
   identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
   SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC

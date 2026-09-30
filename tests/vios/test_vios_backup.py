@@ -460,13 +460,21 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
 @pytest.mark.parametrize(
     ("mtms", "expected_shell_mtms"),
     [
-        ("9009-42A*1234567", "'9009-42A*1234567'"),
         (
             {"MachineType": "9009", "Model": "42A", "SerialNumber": "1234567"},
             "'9009-42A*1234567'",
         ),
+        (
+            {
+                "Metadata": {"Atom": ""},
+                "MachineType": {"@attrs": {"kb": "CUR"}, "text": "9009"},
+                "Model": "42A",
+                "SerialNumber": "1234567",
+            },
+            "'9009-42A*1234567'",
+        ),
     ],
-    ids=["flattened", "nested"],
+    ids=["served", "attributed-children"],
 )
 def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
     monkeypatch, mtms, expected_shell_mtms
@@ -477,7 +485,7 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
     hmc.get_managed_system.return_value = {
         "Resource": {
             "SystemName": SYSTEM_NAME,
-            "MachineTypeModelSerialNumber": mtms,
+            "MachineTypeModelAndSerialNumber": mtms,
         }
     }
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
@@ -499,9 +507,10 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
     "managed_system",
     [
         {"Resource": {}},
-        {"Resource": {"MachineTypeModelSerialNumber": "9009-42A"}},
+        {"Resource": {"MachineTypeModelSerialNumber": "9009-42A*1234567"}},
+        {"Resource": {"MachineTypeModelAndSerialNumber": "9009-42A*1234567"}},
     ],
-    ids=["missing-mtms", "malformed-flattened"],
+    ids=["missing-mtms", "unserved-element-name", "scalar-value"],
 )
 def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
     monkeypatch, managed_system
@@ -517,7 +526,7 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
             "hmcpctl.ssh.transport.asyncssh.connect",
             side_effect=AssertionError("reached the SSH layer"),
         ),
-        pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"),
+        pytest.raises(ValueError, match="MachineTypeModelAndSerialNumber"),
     ):
         hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
@@ -557,7 +566,7 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
         mtms[component] = value
     hmc = AsyncMock()
     hmc.get_managed_system.return_value = {
-        "Resource": {"MachineTypeModelSerialNumber": mtms}
+        "Resource": {"MachineTypeModelAndSerialNumber": mtms}
     }
     monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
 
@@ -566,7 +575,7 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
             "hmcpctl.ssh.transport.asyncssh.connect",
             side_effect=AssertionError("reached the SSH layer"),
         ),
-        pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"),
+        pytest.raises(ValueError, match="MachineTypeModelAndSerialNumber"),
     ):
         hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
@@ -576,7 +585,13 @@ def test_backup_vios_reuses_config_for_rest_and_ssh(monkeypatch):
     config = object()
     hmc = AsyncMock()
     hmc.get_managed_system.return_value = {
-        "Resource": {"MachineTypeModelSerialNumber": "9009-42A*1234567"}
+        "Resource": {
+            "MachineTypeModelAndSerialNumber": {
+                "MachineType": "9009",
+                "Model": "42A",
+                "SerialNumber": "1234567",
+            }
+        }
     }
     client_type = MagicMock(side_effect=_client_factory(hmc, config))
     run_hmc_cli = AsyncMock(return_value="completed\n")

@@ -16,7 +16,8 @@ from ...operations.systems.core import (
     power_system,
 )
 from ...operations.systems.health import fetch_fleet_health
-from ..output import console, err_console, first_field, output, print_json
+from ...xmlutil import render_mtms
+from ..output import _resource, console, err_console, first_field, output, print_json
 from ..runtime import with_client
 
 
@@ -66,7 +67,7 @@ def systems_list(
                 first_field(s, "SystemName"),
                 s.get("UUID") or "-",
                 first_field(s, "State"),
-                first_field(s, "MachineTypeModelSerialNumber", "MTMS"),
+                render_mtms(_resource(s)) or "-",
                 first_field(s, "IPAddress", "PrimaryIPAddress"),
             )
     output(systems, as_json, table, "No managed systems found")
