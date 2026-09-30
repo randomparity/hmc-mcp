@@ -22,7 +22,7 @@ app = [
     "mcp-types==2.2.0",
     "rich==15.0.0",
     "typer==0.27.2",
-    "uvicorn==0.52.4",
+    "uvicorn==0.53.0",
 ]
 
 [project.urls]
@@ -34,7 +34,7 @@ Security = "https://github.com/randomparity/hmc-mcp/security/policy"
 hmcpctl = "hmcpctl:main"
 
 [build-system]
-requires = ["hatchling==1.32.0"]
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.sdist]
@@ -50,15 +50,15 @@ dev = [
     "cryptography==50.0.1",
     "detect-secrets==1.5.0",
     "fastmcp-slim[client]==4.0.3",
-    "hatchling==1.32.0",
-    "prek==0.5.0",
+    "hatchling==1.32.4",
+    "prek==0.5.3",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "respx==0.23.1",
-    "ruff==0.16.5",
-    "ty==0.0.75",
-    "zizmor==1.29.0",
+    "ruff==0.16.8",
+    "ty==0.0.83",
+    "zizmor==1.30.1",
 ]
 
 [tool.ruff.format]
