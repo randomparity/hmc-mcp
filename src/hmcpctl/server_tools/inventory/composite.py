@@ -49,6 +49,10 @@ def hmc_system_summary(
 ) -> SystemSummary:
     """Return state, capacity, partition counts, and VIOS count for one system.
 
+    Total capacity is the system's configurable memory (MiB) or processor units
+    and free is what it currently reports available. ``mtms`` reads
+    ``type-model*serial``.
+
     Args:
         system_name_or_uuid: SystemName or UUID of the managed system.
         profile: Optional configured HMC profile name; uses the default when omitted.

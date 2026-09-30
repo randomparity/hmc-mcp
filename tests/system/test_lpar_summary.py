@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from conftest import captured_lpar_entry
 
 from hmcpctl.operations.inventory.composite import _lpar_summary
 from hmcpctl.server_tools.inventory.composite import hmc_lpar_summary
@@ -172,6 +173,31 @@ def test_lpar_summary_reads_text_of_attributed_description():
     description = {"@attrs": {"ksv": "V1_2_0"}, "text": "Production LPAR"}
     summary = _lpar_summary({"Resource": {"Description": description}}, [])
     assert summary.description == "Production LPAR"
+
+
+def test_lpar_summary_of_captured_inactive_partition_reads_zeros(monkeypatch, mock_hmc):
+    """The captured not-activated entry reads 0 in every container (#1161 P33)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<feed xmlns="http://www.w3.org/2005/Atom">\n'
+                f"{captured_lpar_entry(LPAR_UUID, 'idle-lpar')}\n</feed>"
+            ),
+        )
+    )
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
+    ).mock(return_value=httpx.Response(200, text=EMPTY_ADAPTER_FEED))
+
+    result = hmc_lpar_summary(LPAR_UUID)
+
+    assert result.current_memory_mib == "0"
+    assert result.desired_memory_mib == "0"
+    assert result.desired_proc_units == "0"
+    assert result.current_proc_units is None
+    assert result.dedicated_procs is None
 
 
 # ---------------------------------------------------------------------- #

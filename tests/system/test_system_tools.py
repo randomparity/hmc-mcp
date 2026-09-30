@@ -9,6 +9,7 @@ hmc_run_command (SSH) is covered there too.
 
 import httpx
 import pytest
+from conftest import captured_lpar_entry, captured_system_entry
 
 from hmcpctl.errors import HMCError
 from hmcpctl.server_tools.inventory.capacity import (
@@ -420,67 +421,38 @@ def _sys_feed(*entries: str) -> str:
 """
 
 
-def _sys_entry(uuid: str, name: str, total_mem: int, total_procs: float) -> str:
-    return f"""  <entry>
-    <id>urn:uuid:{uuid}</id>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <SystemName>{name}</SystemName>
-        <AssignableSystemMemory>{total_mem}</AssignableSystemMemory>
-        <ConfigurableSystemProcessorUnits>{total_procs}</ConfigurableSystemProcessorUnits>
-      </ManagedSystem>
-    </content>
-  </entry>"""
-
-
-def _lpar_entry(
-    uuid: str, name: str, mem: int, procs: float, state: str = "running"
-) -> str:
-    return f"""  <entry>
-    <id>urn:uuid:{uuid}</id>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <PartitionName>{name}</PartitionName>
-        <PartitionState>{state}</PartitionState>
-        <DesiredMemory>{mem}</DesiredMemory>
-        <DesiredProcessingUnits>{procs}</DesiredProcessingUnits>
-      </LogicalPartition>
-    </content>
-  </entry>"""
-
-
 def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
-    """hmc_capacity_report returns total/assigned/free resources per system."""
+    """hmc_capacity_report reports each system's own configurable and free figures."""
     _hmc_env(monkeypatch)
-    # Two managed systems
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(
             200,
             text=_sys_feed(
-                _sys_entry(SYS_UUID_A, "p9-01", total_mem=131072, total_procs=16.0),
-                _sys_entry(SYS_UUID_B, "p9-02", total_mem=65536, total_procs=8.0),
-            ),
-        )
-    )
-    # LPARs for system A: 2 LPARs using 16384 MiB + 2.0 procs total
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
-                _lpar_entry(
-                    "lp-a2", "aix2", mem=8192, procs=1.0, state="not activated"
+                captured_system_entry(SYS_UUID_A, "p9-01"),
+                captured_system_entry(
+                    SYS_UUID_B,
+                    "p9-02",
+                    configurable_mem="65536",
+                    available_mem="61440",
+                    configurable_proc="8",
+                    available_proc="7.5",
                 ),
             ),
         )
     )
-    # LPARs for system B: 1 LPAR using 4096 MiB + 0.5 procs
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
+    # Inactive partitions read 0 everywhere, so they must not shape capacity.
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
         return_value=httpx.Response(
             200,
             text=_sys_feed(
-                _lpar_entry("lp-b1", "linux1", mem=4096, procs=0.5),
+                captured_lpar_entry("lp-a1", "aix1", state="running"),
+                captured_lpar_entry("lp-a2", "aix2"),
             ),
+        )
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200, text=_sys_feed(captured_lpar_entry("lp-b1", "linux1"))
         )
     )
 
@@ -491,28 +463,26 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
 
     a = by_name["p9-01"]
     assert a.total_memory_mib == 131072
-    assert a.assigned_memory_mib == 16384
-    assert a.free_memory_mib == 131072 - 16384
-    assert a.total_proc_units == 16.0
+    assert a.free_memory_mib == 112448
+    assert a.assigned_memory_mib == 131072 - 112448
+    assert a.total_proc_units == 20.0
+    assert a.free_proc_units == 18.0
     assert a.assigned_proc_units == 2.0
-    assert a.free_proc_units == pytest.approx(14.0)
     assert a.total_lpars == 2
     assert a.running_lpars == 1  # only "running" counts
 
     b = by_name["p9-02"]
     assert b.assigned_memory_mib == 4096
-    assert b.free_memory_mib == 65536 - 4096
+    assert b.free_memory_mib == 61440
+    assert b.assigned_proc_units == 0.5
 
 
 def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
-    """hmc_capacity_report handles a system with no LPARs (free == total)."""
+    """hmc_capacity_report handles a system with no LPARs."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                _sys_entry(SYS_UUID_A, "empty-sys", total_mem=65536, total_procs=8.0),
-            ),
+            200, text=_sys_feed(captured_system_entry(SYS_UUID_A, "empty-sys"))
         )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
@@ -520,8 +490,7 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     )
 
     result = hmc_capacity_report()
-    assert result[0].assigned_memory_mib == 0
-    assert result[0].free_memory_mib == 65536
+    assert result[0].free_memory_mib == 112448
     assert result[0].running_lpars == 0
     assert result[0].total_lpars == 0
 
@@ -533,35 +502,23 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
         return_value=httpx.Response(
             200,
             text=_sys_feed(
-                _sys_entry(SYS_UUID_A, "big-sys", total_mem=131072, total_procs=16.0),
-                _sys_entry(SYS_UUID_B, "small-sys", total_mem=8192, total_procs=2.0),
+                captured_system_entry(SYS_UUID_A, "big-sys"),
+                captured_system_entry(
+                    SYS_UUID_B, "small-sys", available_mem="2048", available_proc="0.5"
+                ),
             ),
         )
     )
-    # big-sys: 1 LPAR using 8192 MiB / 1.0 proc → free = 122880 MiB / 15.0 procs
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
-            ),
+    for uuid in (SYS_UUID_A, SYS_UUID_B):
+        mock_hmc.get(f"/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition").mock(
+            return_value=httpx.Response(200, text=EMPTY_FEED)
         )
-    )
-    # small-sys: 1 LPAR using 6144 MiB / 1.5 procs → free = 2048 MiB / 0.5 procs
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                _lpar_entry("lp-b1", "linux1", mem=6144, procs=1.5),
-            ),
-        )
-    )
 
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
     result = hmc_find_placement(desired_memory_mib=4096, desired_proc_units=0.5)
     assert len(result) == 1
     assert result[0].system_name == "big-sys"
-    assert result[0].free_memory_mib == 131072 - 8192
+    assert result[0].free_memory_mib == 112448
 
 
 def test_find_placement_no_candidates(monkeypatch, mock_hmc):
@@ -571,17 +528,14 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
         return_value=httpx.Response(
             200,
             text=_sys_feed(
-                _sys_entry(SYS_UUID_A, "full-sys", total_mem=8192, total_procs=2.0),
+                captured_system_entry(
+                    SYS_UUID_A, "full-sys", available_mem="0", available_proc="0"
+                ),
             ),
         )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                _lpar_entry("lp-a1", "aix1", mem=8192, procs=2.0),
-            ),
-        )
+        return_value=httpx.Response(200, text=EMPTY_FEED)
     )
 
     result = hmc_find_placement(desired_memory_mib=512)

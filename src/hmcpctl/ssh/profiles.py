@@ -161,16 +161,46 @@ async def get_proc_compat_modes(
     ]
 
 
+async def get_lpar_default_profile(
+    config: HMCConfig, system_name: str, lpar_name: str
+) -> str:
+    """Return the name of *lpar_name*'s default partition profile.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F default_profile``.
+
+    Raises:
+        HMCCLIError: If the HMC reports no default profile.
+    """
+    cmd = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} "
+        "-F default_profile"
+    )
+    name = (await run_hmc_command(config, cmd)).strip()
+    if not name:
+        raise HMCCLIError(
+            f"partition {lpar_name!r} reports no default profile; "
+            "pass profile_name to choose one"
+        )
+    return name
+
+
 async def get_lpar_proc_compat(
     config: HMCConfig,
     system_name: str,
     lpar_name: str,
+    profile_name: str | None = None,
 ) -> dict[str, str]:
-    """Get the current and desired processor compatibility modes of an LPAR.
+    """Get the processor compatibility modes of an LPAR and one of its profiles.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
-    -F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` and returns a
-    dict with keys ``"desired"`` and ``"curr"``.
+    -F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode,default_profile``
+    and then ``lssyscfg -r prof`` for *profile_name* (the default profile when
+    omitted). Returns ``"desired"`` and ``"curr"`` (the partition), ``"profile"``
+    (the profile examined) and ``"profile_mode"`` (its
+    ``lpar_proc_compat_mode``). The partition's desired mode is not the profile's
+    value: the HMC accepts ``lpar_proc_compat_mode`` only on a profile.
 
     Note: ``pend_lpar_proc_compat_mode`` is not a valid HMC CLI attribute;
     ``desired_lpar_proc_compat_mode`` is the correct field name.
@@ -178,15 +208,31 @@ async def get_lpar_proc_compat(
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
         f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} "
-        "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+        "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode,default_profile"
     )
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
-        return {"desired": "", "curr": ""}
-    parts = raw.strip().split(",")
-    desired = parts[0].strip() if len(parts) > 0 else ""
-    curr = parts[1].strip() if len(parts) > 1 else ""
-    return {"desired": desired, "curr": curr}
+        return {"desired": "", "curr": "", "profile": "", "profile_mode": ""}
+    parts = [part.strip() for part in raw.strip().split(",")]
+    parts += [""] * (3 - len(parts))
+    profile = profile_name or parts[2]
+    if not profile:
+        raise HMCCLIError(
+            f"partition {lpar_name!r} reports no default profile; "
+            "pass profile_name to choose one"
+        )
+    mode_cmd = (
+        f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter "
+        f"{shlex.quote(build_filter([('lpar_names', lpar_name), ('profile_names', profile)]))} "
+        "-F lpar_proc_compat_mode"
+    )
+    profile_mode = (await run_hmc_command(config, mode_cmd)).strip()
+    return {
+        "desired": parts[0],
+        "curr": parts[1],
+        "profile": profile,
+        "profile_mode": profile_mode,
+    }
 
 
 async def set_lpar_proc_compat(
@@ -194,22 +240,30 @@ async def set_lpar_proc_compat(
     system_name: str,
     lpar_name: str,
     mode: str,
+    profile_name: str | None = None,
 ) -> str:
-    """Set the processor compatibility mode of *lpar_name* via SSH.
+    """Set the processor compatibility mode on a profile of *lpar_name* via SSH.
 
-    Runs ``chsyscfg -r lpar -m <system_name>
-    -i "name=<lpar_name>,lpar_proc_compat_mode=<mode>"`` and returns the raw
-    command output.
+    ``lpar_proc_compat_mode`` is a partition-profile attribute; ``chsyscfg -r
+    lpar`` rejects it. Runs ``chsyscfg -r prof -m <system_name>
+    -i "name=<profile>,lpar_name=<lpar_name>,lpar_proc_compat_mode=<mode>"``,
+    where the profile is *profile_name* or, when omitted, the partition's default
+    profile. Returns the name of the profile changed.
 
     Raises:
-        HMCCLIError: If *lpar_name* or *mode* contains a character the ``-i``
-            record's parser treats as structure.
+        HMCCLIError: If *lpar_name*, *profile_name* or *mode* contains a
+            character the ``-i`` record's parser treats as structure, or the
+            partition has no default profile.
     """
-    record = build_attribute_record(
-        [("name", lpar_name), ("lpar_proc_compat_mode", mode)]
+    profile = profile_name or await get_lpar_default_profile(
+        config, system_name, lpar_name
     )
-    cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
-    return await run_hmc_command(config, cmd)
+    record = build_attribute_record(
+        [("name", profile), ("lpar_name", lpar_name), ("lpar_proc_compat_mode", mode)]
+    )
+    cmd = f"chsyscfg -r prof -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
+    await run_hmc_command(config, cmd)
+    return profile
 
 
 # SR-IOV adapter mode and vNICs (chhwres)

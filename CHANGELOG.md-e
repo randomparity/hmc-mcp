@@ -202,6 +202,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+<<<<<<< HEAD
 - `hmc_lpar_summary`, `lpars summary` and `lpar_summary` returned null memory and processor
   figures on V10R3, which nests them in `PartitionMemoryConfiguration` and
   `PartitionProcessorConfiguration`. They now read those containers: `current_proc_units` and
@@ -209,6 +210,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   one, `dedicated_procs` is now a boolean saying which, and `desired_vcpus` is null for a
   dedicated partition. `current_*` no longer falls back to the desired value. `os_type` is a
   string. An inactive partition still reads 0 for every figure on V10R3 (#1183).
+=======
 - `hmc_fleet_health` (and `systems health`) failed-job records carry the identifier
   `hmc_get_job` accepts. Each record's `uuid`, filled from the entry UUID that a V10R3 HMC
   answers with HTTP 406 on `/rest/api/uom/jobs/{id}`, is replaced by `job_id`, taken from
@@ -216,6 +218,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   surface: `uuid` is renamed rather than kept alongside, since it named the unreadable
   identifier and no documented consumer reads `failed_jobs[].uuid`; the other health buckets
   keep `uuid` for the resources they describe (#1173).
+
 - `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
   report real capacity on a V10R3 HMC instead of zeros. They read the system's
   `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
@@ -231,6 +234,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
   default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
   get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
+>>>>>>> origin/main
 - A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
   identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
   SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC

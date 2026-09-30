@@ -376,18 +376,26 @@ def hmc_set_lpar_msp(
 
 @tool(effect="read", operation="lpar.get_proc_compat", target_kind="lpar")
 def hmc_get_lpar_proc_compat(
-    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, str]:
-    """Return an LPAR's desired and current processor compatibility modes.
+    """Return an LPAR's processor compatibility modes and a profile's mode.
+
+    ``desired`` and ``curr`` describe the partition; ``profile`` and
+    ``profile_mode`` name a partition profile and its ``lpar_proc_compat_mode``,
+    the attribute ``hmc_set_lpar_proc_compat`` writes.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile_name: Partition profile to read; the default profile when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_proc_compat(
-            config, system_name, lpar_name
+            config, system_name, lpar_name, profile_name
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
@@ -401,9 +409,15 @@ def hmc_set_lpar_proc_compat(
     lpar_name_or_uuid: str,
     mode: ProcessorCompatibilityMode,
     ownership_override: bool = False,
+    profile_name: str | None = None,
     profile: str | None = None,
 ) -> str:
-    """Set an LPAR's processor compatibility mode.
+    """Set the processor compatibility mode on an LPAR's partition profile.
+
+    The HMC accepts ``lpar_proc_compat_mode`` only on a partition profile, so
+    this changes the named profile (the partition's default profile when
+    ``profile_name`` is omitted) and reports which one. Read it back with
+    ``hmc_get_lpar_proc_compat``.
 
     WARNING: This changes LPAR configuration on the selected HMC.
 
@@ -413,6 +427,7 @@ def hmc_set_lpar_proc_compat(
         mode: Desired mode supported by the system; enumerate legal values with
             ``hmc_get_proc_compat_modes``.
         ownership_override: Bypass ownership rejection after operator approval.
+        profile_name: Partition profile to change; the default profile when omitted.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
@@ -422,6 +437,7 @@ def hmc_set_lpar_proc_compat(
             system_name_or_uuid,
             lpar_name_or_uuid,
             mode,
+            profile_name=profile_name,
             ownership_override=ownership_override,
         ),
         profile=profile,

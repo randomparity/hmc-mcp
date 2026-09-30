@@ -493,3 +493,107 @@ def assert_only_these_client_methods_used(client, allowed: frozenset[str]) -> se
         "set with its classification."
     )
     return used
+
+
+# A ManagedSystem <entry> in the shape V10R3 served for #1175 (read-only capture
+# 2026-09-30, POWER9): capacity sits in the memory and processor configuration
+# containers, several leaves carry a ``ksv`` attribute, and MTMS is structured.
+# Defaults are the captured values; the serial is a placeholder. ``omit`` drops
+# the named top-level elements so tests can prove a missing one is not zero.
+_CAPTURED_SYSTEM_ELEMENTS = {
+    "AssociatedSystemMemoryConfiguration": """\
+      <AssociatedSystemMemoryConfiguration>
+        <Metadata><Atom/></Metadata>
+        <ConfigurableSystemMemory>{configurable_mem}</ConfigurableSystemMemory>
+        <CurrentAvailableSystemMemory>{available_mem}</CurrentAvailableSystemMemory>
+        <InstalledSystemMemory>{configurable_mem}</InstalledSystemMemory>
+        <PendingAvailableSystemMemory>{available_mem}</PendingAvailableSystemMemory>
+        <MemoryUsedByHypervisor>10432</MemoryUsedByHypervisor>
+        <CurrentAssignedMemoryToPartitions ksv="V1_10_0">8192</CurrentAssignedMemoryToPartitions>
+      </AssociatedSystemMemoryConfiguration>""",
+    "AssociatedSystemProcessorConfiguration": """\
+      <AssociatedSystemProcessorConfiguration>
+        <Metadata><Atom/></Metadata>
+        <ConfigurableSystemProcessorUnits>{configurable_proc}</ConfigurableSystemProcessorUnits>
+        <CurrentAvailableSystemProcessorUnits>{available_proc}</CurrentAvailableSystemProcessorUnits>
+        <InstalledSystemProcessorUnits>{configurable_proc}</InstalledSystemProcessorUnits>
+        <DeconfiguredSystemProcessorUnits group="Hypervisor">0</DeconfiguredSystemProcessorUnits>
+      </AssociatedSystemProcessorConfiguration>""",
+    "MachineTypeModelAndSerialNumber": """\
+      <MachineTypeModelAndSerialNumber>
+        <Metadata><Atom/></Metadata>
+        <MachineType>8375</MachineType>
+        <Model>42A</Model>
+        <SerialNumber>SERIAL0</SerialNumber>
+      </MachineTypeModelAndSerialNumber>""",
+    "State": "      <State>operating</State>",
+    "SystemFirmware": '      <SystemFirmware ksv="V1_2_0">VL950_FW950.00 (39)</SystemFirmware>',
+    "SystemType": '      <SystemType ksv="V1_7_0">fsp</SystemType>',
+}
+
+
+def captured_system_entry(
+    uuid: str,
+    name: str,
+    *,
+    configurable_mem: str = "131072",
+    available_mem: str = "112448",
+    configurable_proc: str = "20",
+    available_proc: str = "18",
+    omit: tuple[str, ...] = (),
+) -> str:
+    """A feed ``<entry>`` for one ManagedSystem in the captured V10R3 shape."""
+    body = "\n".join(
+        element.format(
+            configurable_mem=configurable_mem,
+            available_mem=available_mem,
+            configurable_proc=configurable_proc,
+            available_proc=available_proc,
+        )
+        for key, element in _CAPTURED_SYSTEM_ELEMENTS.items()
+        if key not in omit
+    )
+    return f"""  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <Metadata><Atom/></Metadata>
+      <SystemName>{name}</SystemName>
+{body}
+      </ManagedSystem>
+    </content>
+  </entry>"""
+
+
+# A LogicalPartition <entry> in the captured V10R3 shape of a partition that is
+# not activated: every memory and processor figure reads "0" although its
+# profile holds memory, so nothing may sum these into assigned capacity.
+def captured_lpar_entry(uuid: str, name: str, state: str = "not activated") -> str:
+    return f"""  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <PartitionName>{name}</PartitionName>
+        <PartitionState>{state}</PartitionState>
+        <PartitionMemoryConfiguration>
+          <Metadata><Atom/></Metadata>
+          <CurrentMaximumMemory>0</CurrentMaximumMemory>
+          <CurrentMemory>0</CurrentMemory>
+          <DesiredMemory>0</DesiredMemory>
+          <MaximumMemory>0</MaximumMemory>
+          <MinimumMemory>0</MinimumMemory>
+          <RuntimeMemory>0</RuntimeMemory>
+        </PartitionMemoryConfiguration>
+        <PartitionProcessorConfiguration>
+          <Metadata><Atom/></Metadata>
+          <SharedProcessorConfiguration>
+            <Metadata><Atom/></Metadata>
+            <DesiredProcessingUnits>0</DesiredProcessingUnits>
+            <DesiredVirtualProcessors>0</DesiredVirtualProcessors>
+            <MaximumProcessingUnits>0</MaximumProcessingUnits>
+            <UncappedWeight>128</UncappedWeight>
+          </SharedProcessorConfiguration>
+        </PartitionProcessorConfiguration>
+      </LogicalPartition>
+    </content>
+  </entry>"""
