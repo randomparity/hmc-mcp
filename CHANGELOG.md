@@ -210,7 +210,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   ownership guard makes. Text carrying its own complete stamp is still written as given, the
   ADR 0066 re-stamp and handover. A `[hmcpctl` or `[caller ` fragment without a complete stamp
   is refused before any HMC call. Removing a stamp now takes `ownership_override`, which
-  writes the text as given (#1169).
+  writes the text as given. ADR 0066 carries a dated amendment recording the change (#1169).
 
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that

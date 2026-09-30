@@ -68,3 +68,29 @@ statement.
   longer import the guard primitives directly.
 - No new HMC traffic pattern: still exactly one SSH write per call, preceded by
   the same REST resolution and authorization reads the tool path performed.
+
+## Amendment (2026-09-30, #1169): the operation keeps a well-formed stamp
+
+The Decision above says the operation "is format-agnostic and writes whatever
+text passes validation and the guard". That no longer holds. Live evidence
+recorded for #1169 (#1161, pattern P25) showed that `chsyscfg -r lpar -i
+'name=…,description=…'` replaces the whole field. After one plain-text write,
+a partition stamped `[hmcpctl owner:… created:…] [caller …]` read back as the
+plain text alone. The next `hmc_delete_lpar` then found no stamp and deleted it
+with no override.
+
+The operation now reads the current description once, runs the guard on that
+snapshot, and then handles the new text as follows:
+
+- **Plain text** (no stamp-shaped fragment) is written after the current
+  well-formed stamp and the `[caller …]` segment directly following it.
+- **Text carrying its own complete stamp** is written as given. The re-stamp
+  and handover uses in the Context above are unchanged.
+- **Text with a `[hmcpctl` or `[caller ` fragment that does not parse as a
+  stamp** is refused before any HMC call, with or without an override, because
+  a malformed token locks the partition against every later guarded mutation.
+- **With `ownership_override`**, the operation reads nothing, as in ADR 0092 §4,
+  and writes the text as given. That is now the only way to remove a stamp.
+
+The consequence under "No new HMC traffic pattern" still holds: the one
+authorization read now also supplies the stamp that is kept.
