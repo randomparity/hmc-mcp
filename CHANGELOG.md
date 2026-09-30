@@ -205,8 +205,31 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - The managed-system MTMS is now read from the element V10R3 serves,
   `MachineTypeModelAndSerialNumber`, through one shared renderer (`xmlutil.render_mtms`).
   `systems list` showed `-` for every system, a VIOS backup addressed by system UUID always
-  failed its MTMS lookup, and snapshot capture, `console info` and the inventory summary
+  failed its MTMS lookup, and snapshot capture and `console info`
   read the unserved `MachineTypeModelSerialNumber`. The old name is no longer read (#1184).
+- `hmc_fleet_health` (and `systems health`) failed-job records carry the identifier
+  `hmc_get_job` accepts. Each record's `uuid`, filled from the entry UUID that a V10R3 HMC
+  answers with HTTP 406 on `/rest/api/uom/jobs/{id}`, is replaced by `job_id`, taken from
+  `jobs.job_identifier` (the `Resource.JobID`). Output-contract change on a pre-release
+  surface: `uuid` is renamed rather than kept alongside, since it named the unreadable
+  identifier and no documented consumer reads `failed_jobs[].uuid`; the other health buckets
+  keep `uuid` for the resources they describe (#1173).
+
+- `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
+  report real capacity on a V10R3 HMC instead of zeros. They read the system's
+  `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
+  containers: total is the configurable figure, free the currently available one, and assigned
+  is total minus free, so it now counts hypervisor memory and the VIOS, which the partition feed
+  omits. Partition figures no longer feed capacity, since an inactive partition reads 0. A
+  system that serves no such figure fails with an error naming it rather than reading 0.
+  `hmc_system_summary` returns `mtms` as `type-model*serial` from
+  `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
+- `hmc_set_lpar_proc_compat`, `lpars set-proc-compat` and `set_lpar_proc_compat` now write
+  `lpar_proc_compat_mode` with `chsyscfg -r prof`; the HMC accepts it only on a partition profile
+  and rejected every `-r lpar` call. They change the profile named by the new `profile_name`
+  argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
+  default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
+  get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
 - A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
   identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
   SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC

@@ -10,7 +10,7 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 
 from ...errors import HMCError
-from ...jobs import FAILED_JOB_STATUSES, job_outcome
+from ...jobs import FAILED_JOB_STATUSES, job_identifier, job_outcome
 from .. import jobs as operations_jobs
 
 _SYSTEM_WORKERS = 8
@@ -51,8 +51,10 @@ def _resource(entry: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _sorted_records(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
-    return tuple(sorted(records, key=lambda record: (record["name"], record["uuid"])))
+def _sorted_records(
+    records: list[dict[str, Any]], id_key: str = "uuid"
+) -> tuple[dict[str, Any], ...]:
+    return tuple(sorted(records, key=lambda record: (record["name"], record[id_key])))
 
 
 def _check_issue_budget(*categories: Collection[object]) -> None:
@@ -127,16 +129,16 @@ def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     status = _bounded_text_or_unknown(resource.get("Status")).upper()
     if status not in FAILED_JOB_STATUSES:
         return None
-    uuid = _bounded_text_or_unknown(job.get("UUID"))
+    job_id = _bounded_text_or_unknown(job_identifier(job))
     normalized_job = {**job, "Resource": {**resource, "Status": status}}
-    error = job_outcome(uuid, normalized_job).error
+    error = job_outcome(job_id, normalized_job).error
     bounded_error = (
         error.strip()[:_MAX_ERROR_LENGTH]
         if isinstance(error, str) and error.strip()
         else "unknown"
     )
     return {
-        "uuid": uuid,
+        "job_id": job_id,
         "name": _bounded_text_or_unknown(resource.get("JobName")),
         "status": status,
         "error": bounded_error,
@@ -157,7 +159,7 @@ async def _recent_failed_jobs(
         for job in jobs[:_RECENT_JOB_LIMIT]
         if (failure := _failed_job(job)) is not None
     ]
-    return _sorted_records(failures), ()
+    return _sorted_records(failures, "job_id"), ()
 
 
 async def _system_inventory(
