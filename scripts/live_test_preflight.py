@@ -193,8 +193,8 @@ def _generic_verdict(group: str, config: runner.LiveTestConfig) -> ArmVerdict:
 def arm_verdicts(
     config: runner.LiveTestConfig, group: str | None
 ) -> tuple[ArmVerdict, ...]:
-    """Predict each selected arm. `None` selects every arm."""
-    selected = tuple(runner.SUBTASK_GROUPS) if group is None else (group,)
+    """Predict each selected arm. `None` and `"all"` select every arm."""
+    selected = tuple(runner.SUBTASK_GROUPS) if group in (None, "all") else (group,)
     return tuple(
         _ARM_VERDICTS[name](config)
         if name in _ARM_VERDICTS
