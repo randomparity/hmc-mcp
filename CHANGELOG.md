@@ -202,6 +202,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_lpar_summary`, `lpars summary` and `lpar_summary` returned null memory and processor
+  figures on V10R3, which nests them in `PartitionMemoryConfiguration` and
+  `PartitionProcessorConfiguration`. They now read those containers: `current_proc_units` and
+  `desired_proc_units` are processing units for a shared partition and processors for a dedicated
+  one, `dedicated_procs` is now a boolean saying which, and `desired_vcpus` is null for a
+  dedicated partition. `current_*` no longer falls back to the desired value. `os_type` is a
+  string. An inactive partition still reads 0 for every figure on V10R3 (#1183).
 - A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
   identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
   SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
