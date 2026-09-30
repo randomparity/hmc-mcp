@@ -344,6 +344,9 @@ def _rest_create_refused(exc: HMCError) -> bool:
     )
 
 
+_REST_CREATE_NO_PROFILE = "REST create path creates no profile, so none was applied"
+
+
 async def create_and_stamp_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -397,6 +400,10 @@ async def create_and_stamp_lpar(
     )
     try:
         created_lpar = await hmc.create_logical_partition(system_uuid, document)
+        if creation.apply_profile is True:
+            apply_step = WorkflowStep(
+                "apply_profile", "skipped", _REST_CREATE_NO_PROFILE
+            )
     except HMCError as exc:
         if not _rest_create_refused(exc):
             raise
@@ -505,6 +512,13 @@ def _unapplied_profile_warnings(
     """Say that a skipped or failed apply left the partition unconfigured."""
     if apply_step is None or apply_step.status == "ok":
         return ()
+    if apply_step.result == _REST_CREATE_NO_PROFILE:
+        return (
+            (
+                f"requested profile apply for {name!r} was not performed: "
+                f"{_REST_CREATE_NO_PROFILE}"
+            ),
+        )
     warning = (
         f"partition profile {DEFAULT_PROFILE_NAME!r} was not applied: {name!r} has "
         "no current configuration, so its current memory and processors read as "

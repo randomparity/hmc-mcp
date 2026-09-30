@@ -100,6 +100,7 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
                 name="test-lpar",
+                apply_partition_profile=False,
             )
 
     assert result.resource_created is True
@@ -159,6 +160,7 @@ def test_create_lpar_applies_validated_sriov_assignment(monkeypatch):
                 SYSTEM_UUID,
                 "test-lpar",
                 assignments=LparPcieAssignments(sriov=(assignment,)),
+                apply_partition_profile=False,
             )
 
     assigned.assert_awaited_once_with(
@@ -195,6 +197,7 @@ def test_create_lpar_ownership_stamped_false_on_stamp_failure(monkeypatch):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
                 name="test-lpar",
+                apply_partition_profile=False,
             )
 
     assert result.ownership_stamped is False
@@ -221,6 +224,7 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
                 name="test-lpar",
+                apply_partition_profile=False,
             )
 
     assert result.lpar is not None
@@ -261,6 +265,7 @@ def test_create_lpar_valid_caller_token_stamped(monkeypatch):
             result = hmc_create_lpar(
                 system_name_or_uuid=SYSTEM_UUID,
                 name="test-lpar",
+                apply_partition_profile=False,
                 caller_token="CHG-9",
             )
     assert result.resource_created is True

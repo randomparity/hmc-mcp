@@ -205,6 +205,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `create_and_stamp_lpar` (and so `hmc_create_lpar` and provisioning) no longer drops a requested
+  profile apply silently when the REST create succeeds. That path creates no profile, so the
+  result now carries a skipped `apply_profile` step and a warning saying the apply was not
+  performed (#1083).
 - The vNIC snapshots in `vnic_before`/`vnic_after` from `network add-vnic`/`hmc_add_vnic` and
   `network remove-vnic`/`hmc_remove_vnic` report each embedded backing's `is_active` and
   `status` from the HMC's `backing_device_states`, joined by logical port ID. Before, they were
