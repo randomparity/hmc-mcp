@@ -202,6 +202,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_modify_lpar`, `hmc_dlpar_mem` and `hmc_dlpar_proc` now state which object they change.
+  The write reaches the partition's current configuration; with `CurrentProfileSync` `Disabled`
+  the partition profile keeps its old values (live: `desired_mem` and `desired_procs` unchanged),
+  so activating a profile discards the change. The DLPAR results carry `change_location` and a
+  `warnings` list, and `hmc_modify_lpar` adds the same warning to its `warnings`; the docstrings
+  no longer claim the change always applies on next activation. Write behaviour is unchanged
+  (#1170).
+
 - The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
   set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
   says the client decides per call site whether to send it, and directs the operator to report a

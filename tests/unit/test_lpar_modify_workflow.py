@@ -112,3 +112,35 @@ async def test_modify_lpar_preserves_steps_when_final_readback_fails(monkeypatch
     assert result.warnings == (
         "final LPAR readback failed: readback unavailable (HTTP 503)",
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sync", "warned"), [("Disabled", True), ("On", False), (None, True)]
+)
+async def test_modify_lpar_warns_when_the_profile_did_not_change(
+    monkeypatch, sync, warned
+):
+    resource = {"Resource": {"CurrentProfileSync": sync} if sync else {}}
+    hmc = AsyncMock()
+    hmc.update_logical_partition.return_value = resource
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        AsyncMock(return_value="lpar-1"),
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
+        AsyncMock(),
+    )
+
+    result = await modify_lpar(
+        hmc,
+        None,
+        "lpar-1",
+        LparResources(desired_memory=3072),
+        LparPcieAssignments(),
+    )
+
+    assert bool(result.warnings) is warned
+    if warned:
+        assert "CurrentProfileSync" in result.warnings[0]

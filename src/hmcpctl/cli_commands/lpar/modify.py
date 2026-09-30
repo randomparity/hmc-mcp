@@ -61,8 +61,9 @@ def lpars_modify(
     """Change an LPAR's name and/or resource assignment (memory / CPU).
 
     Only options you pass are changed. On a running partition these are
-    dynamic (DLPAR) operations and need RMC up; otherwise they apply on next
-    activation.
+    dynamic (DLPAR) operations and need RMC up. The write changes the current
+    configuration, not a partition profile: activating a profile discards it
+    unless CurrentProfileSync is On (see the result's warnings).
     """
     assignments = load_pcie_assignments(pcie_assignments)
     resources = LparResources(
