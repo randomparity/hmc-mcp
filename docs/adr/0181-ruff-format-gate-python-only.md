@@ -6,12 +6,14 @@ Accepted (2026-09-29)
 
 ## Context
 
-`ruff format --check .` failed on 246 files on `main`, and no gate ran the
-formatter. `static` ran `ruff check .` (lint) only, and no prek hook ran
+`ruff format --check .` failed on 246 files on `main` when #1122 was filed (249
+at this change's base), and no gate ran the formatter. `static` ran `ruff check .` (lint) only, and no prek hook ran
 `ruff format`. A contributor who ran the formatter reformatted unrelated code into
 their diff, and a check nobody runs cannot say whether a file conforms (#1122).
 
-Twelve of the 246 were Markdown: ruff 0.16 formats Python code blocks inside
+ADR 0002 recorded that ruff format was "not yet a gate"; this record makes it one.
+
+Twelve of those files were Markdown: ruff 0.16 formats Python code blocks inside
 Markdown. Some of those blocks are laid out by hand, such as the aligned comments
 in `AGENTS.md`, and ADR bodies are amended rather than rewritten.
 
@@ -21,7 +23,10 @@ in `AGENTS.md`, and ADR bodies are amended rather than rewritten.
    `pyproject.toml` sets `exclude = ["*.md"]`, so Markdown code blocks are not
    formatted or checked.
 2. The tree was reformatted once, in a commit holding only the formatter's
-   output. `.git-blame-ignore-revs` lists that commit's full SHA.
+   output. `.git-blame-ignore-revs` lists that commit's full SHA, and the SHA of
+   each later commit that formats code merged in after it. The PR carrying them
+   lands with `--merge`: `--rebase` and `--squash` rewrite those commits, and
+   `git blame` silently ignores a listed SHA that names nothing.
 3. `just format-check` runs `uv run --no-sync ruff format --check .`. It is a
    `static` member with a matching prek hook of the same id, under the 1:1 rule
    `tests/test_ci_pipeline.py` enforces, and is one of the gates that test pins
@@ -37,7 +42,9 @@ in `AGENTS.md`, and ADR bodies are amended rather than rewritten.
   `.git-blame-ignore-revs`.
 - A `detect-secrets` allowlist pragma must sit on the line that holds the flagged
   value in the formatter's output. One call in `tests/unit/test_config.py` was
-  rewritten into that shape before the reformat.
+  rewritten into that shape before the reformat. Pragmas on values detect-secrets
+  does not flag, and one `# type: ignore`, now sit on a closing-parenthesis line
+  where the formatter put them; the gates stay green, and they were not hand-moved.
 
 ## Alternatives considered
 
