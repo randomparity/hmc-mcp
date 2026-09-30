@@ -1056,6 +1056,7 @@ def test_set_lpar_ownership_description_override_bypasses_guard(caplog):
     assert result == "ok"
     read.assert_not_awaited()
     write.assert_awaited_once()
+    assert write.call_args.args[3] == "replacement"
     records = _override_records(caplog)
     assert len(records) == 1
     assert records[0]["event"] == "ownership-override"
@@ -1103,6 +1104,159 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
     assert write.call_args.args[3] == token
     assert result == "ok"
     assert write.call_args.args[3] == token
+
+
+def _set_description_over(current, description, *, agent_id="alice"):
+    """Run the operation against *current* and return the read and write mocks."""
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": agent_id})}
+    )()
+    read = AsyncMock(return_value=current)
+    write = AsyncMock(return_value="ok")
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=read),
+        patch("hmcpctl.operations.lpar.ownership.set_lpar_description", new=write),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(
+                hmc, "sys1", "lpar1", description
+            )
+        )
+    return read, write
+
+
+def test_set_description_keeps_the_captured_stamp_and_caller_token():
+    """#1169 regression, in the shape the live capture recorded.
+
+    Before: the write replaced ``[hmcpctl owner:hmcpctl created:...] [caller
+    w1161]`` with ``w1161 probe``, and the unstamped partition was then deleted
+    with no override.
+    """
+    stamp = "[hmcpctl owner:hmcpctl created:2026-09-29] [caller w1161]"
+    read, write = _set_description_over(stamp, "w1161 probe", agent_id=None)
+    read.assert_awaited_once()
+    assert write.call_args.args[3] == f"{stamp} w1161 probe"
+    assert lpar_ownership.parse_lpar_ownership_owner(write.call_args.args[3]) == (
+        "hmcpctl"
+    )
+    assert (
+        lpar_ownership.parse_lpar_ownership_caller_token(write.call_args.args[3])
+        == "w1161"
+    )
+
+
+@pytest.mark.parametrize(
+    ("current", "text", "written"),
+    [
+        (
+            "[hmcpctl owner:alice created:2026-08-14]",
+            "notes",
+            "[hmcpctl owner:alice created:2026-08-14] notes",
+        ),
+        (
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] old notes",
+            "new notes",
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] new notes",
+        ),
+        (
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] old notes",
+            "",
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1]",
+        ),
+        ("free text, no stamp", "replacement", "replacement"),
+        (
+            "lead [hmcpctl owner:alice created:2026-08-14] [caller T-1] tail",
+            "new",
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] new",
+        ),
+        (
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] see [caller U]",
+            "new",
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] new",
+        ),
+        (
+            (
+                "[hmcpctl owner:alice created:2026-08-14] x "
+                "[hmcpctl owner:bob created:2026-08-15] [caller T-2]"
+            ),
+            "new",
+            "[hmcpctl owner:alice created:2026-08-14] new",
+        ),
+    ],
+)
+def test_set_description_replaces_only_the_user_text(current, text, written):
+    """Plain text replaces the field, keeping the first stamp and its own caller."""
+    _, write = _set_description_over(current, text)
+    assert write.call_args.args[3] == written
+
+
+def test_set_description_with_its_own_stamp_is_written_as_given():
+    """ADR 0066 handover: the owner writes a complete stamp naming the new owner."""
+    handover = "[hmcpctl owner:bob created:2026-09-30] [caller T-2] pool"
+    _, write = _set_description_over(
+        "[hmcpctl owner:alice created:2026-08-14] [caller T-1]", handover
+    )
+    assert write.call_args.args[3] == handover
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "[hmcpctl owner:alice]",
+        "[hmcpctl owner:alice created:2026-8-1] notes",
+        "[caller T-1] notes",
+        "notes [hmcpctl",
+    ],
+)
+@pytest.mark.parametrize("ownership_override", [False, True])
+def test_set_description_refuses_a_stamp_that_does_not_parse(bad, ownership_override):
+    """A malformed stamp would lock the partition; refused before any read, even
+    with an override."""
+    resolve_system = AsyncMock()
+    hmc = type("StubHMC", (), {"config": _config()})()
+    write = AsyncMock()
+    with (
+        patch(
+            "hmcpctl.operations.lpar.ownership.resolve_system_uuid", new=resolve_system
+        ),
+        patch("hmcpctl.operations.lpar.ownership.set_lpar_description", new=write),
+        pytest.raises(ValueError, match="well-formed ownership stamp"),
+    ):
+        asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(
+                hmc, "sys1", "lpar1", bad, ownership_override=ownership_override
+            )
+        )
+    resolve_system.assert_not_awaited()
+    write.assert_not_awaited()
+
+
+def test_set_description_refuses_a_malformed_current_stamp():
+    """The guard still refuses a malformed current token without an override."""
+    hmc = type("StubHMC", (), {"config": _config()})()
+    write = AsyncMock()
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description",
+            new=AsyncMock(return_value="[hmcpctl owner:alice]"),
+        ),
+        patch("hmcpctl.operations.lpar.ownership.set_lpar_description", new=write),
+    )
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        pytest.raises(PermissionError, match="malformed"),
+    ):
+        asyncio.run(
+            lpar_ownership.set_lpar_ownership_description(hmc, "sys1", "lpar1", "x")
+        )
+    write.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
