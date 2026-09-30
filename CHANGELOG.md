@@ -202,6 +202,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_fleet_health` (and `systems health`) failed-job records carry the identifier
+  `hmc_get_job` accepts. Each record's `uuid`, filled from the entry UUID that a V10R3 HMC
+  answers with HTTP 406 on `/rest/api/uom/jobs/{id}`, is replaced by `job_id`, taken from
+  `jobs.job_identifier` (the `Resource.JobID`). Output-contract change on a pre-release
+  surface: `uuid` is renamed rather than kept alongside, since it named the unreadable
+  identifier and no documented consumer reads `failed_jobs[].uuid`; the other health buckets
+  keep `uuid` for the resources they describe (#1173).
+
 - `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
   report real capacity on a V10R3 HMC instead of zeros. They read the system's
   `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
