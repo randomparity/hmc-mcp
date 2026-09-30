@@ -10,7 +10,7 @@ from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,
-    parse_hmc_delimited_rows,
+    parse_hmc_result_rows,
 )
 from .transport import run_hmc_command
 
@@ -68,28 +68,30 @@ async def list_vnic_rows(
     config: HMCConfig, system_name: str, lpar_name: str
 ) -> list[dict[str, str]]:
     command = f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F {','.join(_VNIC_FIELDS)} --header"
-    output = await run_hmc_command(config, command)
-    if output.strip() == "No results were found.":
-        return []
-    return parse_hmc_delimited_rows(output, _VNIC_FIELDS)
+    return parse_hmc_result_rows(
+        await run_hmc_command(config, command), _VNIC_FIELDS, "vNIC inventory"
+    )
 
 
 async def list_vnic_backing_rows(
     config: HMCConfig, system_name: str
 ) -> list[dict[str, str]]:
     command = f"lshwres -r virtualio --rsubtype vnicbkdev -m {shlex.quote(system_name)} -F {','.join(_VNIC_BACKING_FIELDS)} --header"
-    output = await run_hmc_command(config, command)
-    if output.strip() == "No results were found.":
-        return []
-    return parse_hmc_delimited_rows(output, _VNIC_BACKING_FIELDS)
+    return parse_hmc_result_rows(
+        await run_hmc_command(config, command),
+        _VNIC_BACKING_FIELDS,
+        "vNIC backing-device inventory",
+    )
 
 
 async def read_vios_identity(
     config: HMCConfig, system_name: str, vios_name: str
 ) -> ViosIdentity:
     command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', vios_name)]))} -F {','.join(_VIOS_IDENTITY_FIELDS)} --header"
-    rows = parse_hmc_delimited_rows(
-        await run_hmc_command(config, command), _VIOS_IDENTITY_FIELDS
+    rows = parse_hmc_result_rows(
+        await run_hmc_command(config, command),
+        _VIOS_IDENTITY_FIELDS,
+        "VIOS identity read",
     )
     if len(rows) != 1:
         raise ValueError(
