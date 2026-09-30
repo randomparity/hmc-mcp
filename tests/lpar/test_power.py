@@ -710,7 +710,27 @@ async def test_power_lpar_already_active_state_submits_no_job(state):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", [*_UNSETTLED_STATES, "unrecognized"])
+@pytest.mark.parametrize(
+    ("state", "submitted"),
+    [("Running", False), ("Open Firmware", False), ("Not Activated", True)],
+)
+async def test_power_lpar_guard_accepts_the_cli_title_case_rendering(state, submitted):
+    """``lssyscfg`` renders states in title case; the guard must not depend on case."""
+    hmc = _power_client()
+    hmc.get_quick_property.return_value = state
+
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        result = await power_lpar(hmc, None, LPAR_UUID, power_on=True)
+
+    assert hmc.submit_job.await_count == int(submitted)
+    assert result.job.get("already_running", False) is not submitted
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", [*_UNSETTLED_STATES, "unrecognized", None])
 async def test_power_lpar_refuses_power_on_outside_not_activated(state):
     hmc = _power_client()
     hmc.get_quick_property.return_value = state
