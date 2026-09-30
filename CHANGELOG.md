@@ -208,6 +208,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   text, so a stamped partition is `owned: true` with its owner. `hmc_lpar_summary` returns the
   same text instead of a mapping, and the system-wide profile-restore ownership check, which
   reads the listing, no longer refuses on an unreadable description (#1168).
+- The job tools' docstrings and parameter help, the server instructions and `hmcpctl jobs`
+  help now tell agents to persist the JobID and the stable `jobs/{JobID}` `job_href`, and note
+  that an entry UUID stored by an earlier release reads only through its `job_href`. ADR 0093
+  records the identifier change (#1172).
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
   HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,
