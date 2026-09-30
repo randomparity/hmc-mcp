@@ -30,6 +30,14 @@ def _entry(uuid: object, **resource: object) -> dict:
     return {"UUID": uuid, "Resource": resource}
 
 
+def _job_entry(job_id: str | None, **resource: object) -> dict:
+    """A captured JobResponse read: the entry UUID differs from Resource.JobID."""
+    return {
+        "UUID": "entry-uuid-read",
+        "Resource": {"JobID": job_id, **resource},
+    }
+
+
 def _healthy_client() -> AsyncMock:
     client = AsyncMock()
     client.list_managed_systems.return_value = [
@@ -85,8 +93,8 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
     client.list_logical_partitions.side_effect = lpars
     client.list_vios.side_effect = vios
     client.list_uom.return_value = [
-        _entry(
-            "job-1",
+        _job_entry(
+            "1712345678",
             JobName="failed-job",
             Status="failed_to_start",
             ResponseException={"Message": "could not start"},
@@ -119,13 +127,34 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
     )
     assert result.failed_jobs == (
         {
-            "uuid": "job-1",
+            "job_id": "1712345678",
             "name": "failed-job",
             "status": "FAILED_TO_START",
             "error": "could not start",
         },
     )
     assert result.warnings == ()
+
+
+@pytest.mark.asyncio
+async def test_failed_job_handle_is_the_job_id_not_the_entry_uuid() -> None:
+    client = _healthy_client()
+    client.list_uom.return_value = [_job_entry("1712345678", Status="FAILED")]
+
+    (failed,) = (await fleet_health(client)).failed_jobs
+
+    assert failed["job_id"] == "1712345678"
+    assert "uuid" not in failed
+
+
+@pytest.mark.asyncio
+async def test_failed_job_without_job_id_falls_back_to_entry_uuid() -> None:
+    client = _healthy_client()
+    client.list_uom.return_value = [_job_entry(None, Status="FAILED")]
+
+    (failed,) = (await fleet_health(client)).failed_jobs
+
+    assert failed["job_id"] == "entry-uuid-read"
 
 
 @pytest.mark.asyncio
@@ -191,7 +220,7 @@ async def test_malformed_child_identities_remain_visible_as_unknown() -> None:
 
     assert result.lpars[0]["uuid"] == result.lpars[0]["name"] == "unknown"
     assert result.vios[0]["uuid"] == result.vios[0]["name"] == "unknown"
-    assert result.failed_jobs[0]["uuid"] == "unknown"
+    assert result.failed_jobs[0]["job_id"] == "unknown"
     assert result.failed_jobs[0]["name"] == "unknown"
 
 
