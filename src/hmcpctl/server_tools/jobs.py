@@ -30,7 +30,7 @@ def hmc_get_job(
     job_href: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Get one HMC job by UUID or JobID, optionally using its submission SELF link.
+    """Get one HMC job by JobID, optionally using its submission SELF link.
 
     Returns null when the HMC produced no entry for this identifier — reaped,
     deleted, or never present. Any other HMC failure still raises. Null is one
@@ -50,11 +50,16 @@ def hmc_get_job(
     the one that failed, and nothing in the result says which happened. A supplied
     link also decides **which job is read** — its path is fetched directly and
     checked only for addressing a job resource — so a mispaired handle returns the
-    *other* job. Compare the returned entry's UUID or JobID against the identifier
+    *other* job. Compare the returned entry's JobID against the identifier
     you passed.
 
+    Persist the JobID and the stable ``/rest/api/uom/jobs/{JobID}`` ``job_href`` that
+    submitting tools return. The Atom entry UUID is not a usable ``job_id`` on V10R3:
+    the global jobs path answers it with HTTP 406. A UUID stored by an earlier
+    release reads only through its ``job_href``.
+
     Args:
-        job_id: UUID or JobID returned when the job was submitted.
+        job_id: JobID returned when the job was submitted.
         job_href: Optional submission SELF link for firmware that cannot resolve the job
             identifier.
         profile: Optional configured HMC profile name; uses the default when omitted.
@@ -172,7 +177,7 @@ def hmc_wait_for_job(
     entry", not "the HMC no longer has this job".
 
     Args:
-        job_id: UUID or JobID returned when the job was submitted.
+        job_id: JobID returned when the job was submitted.
         timeout_seconds: Maximum polling duration in seconds; zero performs one poll.
         poll_interval: Seconds between polls; must be greater than zero.
         job_href: Optional submission SELF link for firmware that cannot resolve the job

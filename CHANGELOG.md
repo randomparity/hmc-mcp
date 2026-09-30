@@ -202,12 +202,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
-- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
-  equivalents) refuse a `desired_memory` above the managed system's own
-  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
-  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
-  memory call that names no managed system is not checked, because that path does not resolve
-  one (#1166).
+- The job tools' docstrings and parameter help, the server instructions and `hmcpctl jobs`
+  help now tell agents to persist the JobID and the stable `jobs/{JobID}` `job_href`, and note
+  that an entry UUID stored by an earlier release reads only through its `job_href`. ADR 0093
+  records the identifier change (#1172).
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
   HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,
@@ -645,6 +643,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
   networks and stops before deleting the test partition when the VLAN is not there, and
   `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 
 ### Changed
 
