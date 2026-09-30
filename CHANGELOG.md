@@ -10,6 +10,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmcpctl storage attach-disk` and `hmc_attach_disk_to_lpar` refuse a disk name over the
+  15-character VIOS limit or a capacity that is not a positive multiple of 1024 MiB before
+  any HMC request, on a dry run as on a real run, with the builder's message (#1032).
 - The power-path `ownership_override` cost is now stated as the source has it: the partition
   resolution plus one partition-name GET, with no SSH command and no managed-system name read.
   Corrected in the `_power_on` docstring and `docs/environment-variables.md`, and ADR 0092 §4
