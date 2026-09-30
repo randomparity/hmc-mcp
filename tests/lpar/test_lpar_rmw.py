@@ -53,7 +53,9 @@ def _processors(dedicated: bool, has_dedicated: bool) -> str:
             {_el("SharedProcessorPoolID", "0")}{_el("UncappedWeight", "128")}
         </SharedProcessorConfiguration>"""
     )
-    flag = _el("HasDedicatedProcessors", str(dedicated).lower()) if has_dedicated else ""
+    flag = (
+        _el("HasDedicatedProcessors", str(dedicated).lower()) if has_dedicated else ""
+    )
     mode = "keep_idle_procs" if dedicated else "uncapped"
     return f"""<{PPC} kb="CUD" kxe="false" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
@@ -62,7 +64,9 @@ def _processors(dedicated: bool, has_dedicated: bool) -> str:
     </{PPC}>"""
 
 
-def _entry(*, dedicated: bool = False, has_dedicated: bool = True, name: str = "lpar-a") -> str:
+def _entry(
+    *, dedicated: bool = False, has_dedicated: bool = True, name: str = "lpar-a"
+) -> str:
     return f"""<entry xmlns="http://www.w3.org/2005/Atom">
     <id>{LPAR}</id>
     <title>LogicalPartition</title>
@@ -83,8 +87,14 @@ def _entry(*, dedicated: bool = False, has_dedicated: bool = True, name: str = "
 </entry>"""
 
 
-def _routes(mock_hmc, *, etag: str | None = ETAG, entry: str | None = None,
-            get_status: int = 200, post_status: int = 200):
+def _routes(
+    mock_hmc,
+    *,
+    etag: str | None = ETAG,
+    entry: str | None = None,
+    get_status: int = 200,
+    post_status: int = 200,
+):
     headers = {"ETag": etag} if etag else {}
     body = entry if entry is not None else _entry()
     get = mock_hmc.get(LPAR_PATH, params={"group": "Advanced"}).mock(
@@ -133,7 +143,10 @@ async def _update(updates, subject: str = "the partition", lpar: str = LPAR):
 @pytest.mark.asyncio
 async def test_update_posts_whole_partition_with_only_mapped_text(mock_hmc):
     get, post = _routes(mock_hmc)
-    changes = {"PartitionName": "lpar-b", "PartitionMemoryConfiguration/DesiredMemory": "4096"}
+    changes = {
+        "PartitionName": "lpar-b",
+        "PartitionMemoryConfiguration/DesiredMemory": "4096",
+    }
 
     result = await _update(lambda _lpar: changes)
 
@@ -154,9 +167,12 @@ async def test_update_hands_the_read_partition_to_the_mapping(mock_hmc):
     _routes(mock_hmc)
     seen: list[str] = []
 
-    await _update(lambda lpar: seen.append(_find(lpar, "PartitionName").text or "") or {
-        "PartitionName": "x"
-    })
+    await _update(
+        lambda lpar: (
+            seen.append(_find(lpar, "PartitionName").text or "")
+            or {"PartitionName": "x"}
+        )
+    )
 
     assert seen == ["lpar-a"]
 
@@ -169,10 +185,18 @@ def _raise(_lpar):
     ("kwargs", "updates", "error", "message"),
     [
         ({"etag": None}, {"PartitionName": "x"}, HMCError, "no ETag"),
-        ({}, {f"{PPC}/NoSuchElement": "x"},
-         HMCError, f"has no {PPC}/NoSuchElement; refusing to write the partition"),
-        ({"entry": "<entry xmlns='http://www.w3.org/2005/Atom'/>"}, {"PartitionName": "x"},
-         HMCError, "no LogicalPartition"),
+        (
+            {},
+            {f"{PPC}/NoSuchElement": "x"},
+            HMCError,
+            f"has no {PPC}/NoSuchElement; refusing to write the partition",
+        ),
+        (
+            {"entry": "<entry xmlns='http://www.w3.org/2005/Atom'/>"},
+            {"PartitionName": "x"},
+            HMCError,
+            "no LogicalPartition",
+        ),
         ({"entry": "<not-xml"}, {"PartitionName": "x"}, HMCError, "not valid XML"),
         ({"get_status": 500}, {"PartitionName": "x"}, HMCError, "failed"),
         ({}, {}, ValueError, "nothing to write for the partition"),
@@ -180,7 +204,9 @@ def _raise(_lpar):
     ],
 )
 @pytest.mark.asyncio
-async def test_update_refuses_before_any_post(mock_hmc, kwargs, updates, error, message):
+async def test_update_refuses_before_any_post(
+    mock_hmc, kwargs, updates, error, message
+):
     _, post = _routes(mock_hmc, **kwargs)
 
     with pytest.raises(error, match=message):
@@ -242,8 +268,12 @@ def test_partition_updates_maps_shared_processors_in_the_current_mode():
     assert partition_updates(
         _lpar(_entry()),
         resources=LparResources(
-            min_procs=0.5, desired_procs=1.0, max_procs=2.25,
-            min_vcpus=1, desired_vcpus=2, max_vcpus=4,
+            min_procs=0.5,
+            desired_procs=1.0,
+            max_procs=2.25,
+            min_vcpus=1,
+            desired_vcpus=2,
+            max_vcpus=4,
         ),
     ) == {
         f"{SHARED}/DesiredProcessingUnits": "1",
@@ -259,7 +289,9 @@ def test_partition_updates_maps_shared_processors_in_the_current_mode():
 def test_partition_updates_maps_dedicated_processors_in_the_current_mode():
     assert partition_updates(
         _lpar(_entry(dedicated=True)),
-        resources=LparResources(desired_procs=3.0, max_procs=4, sharing_mode="keep_idle_procs"),
+        resources=LparResources(
+            desired_procs=3.0, max_procs=4, sharing_mode="keep_idle_procs"
+        ),
     ) == {
         f"{DEDICATED}/DesiredProcessors": "3",
         f"{DEDICATED}/MaximumProcessors": "4",
@@ -277,7 +309,9 @@ def test_partition_updates_maps_dedicated_processors_in_the_current_mode():
         (LparResources(uncapped=True, sharing_mode="capped"), "uncapped"),
     ],
 )
-def test_partition_updates_sets_the_shared_sharing_mode_without_a_weight(resources, mode):
+def test_partition_updates_sets_the_shared_sharing_mode_without_a_weight(
+    resources, mode
+):
     updates = partition_updates(_lpar(_entry()), resources=resources)
 
     assert updates == {
@@ -287,7 +321,10 @@ def test_partition_updates_sets_the_shared_sharing_mode_without_a_weight(resourc
 
 
 def test_partition_updates_maps_nothing_for_dedicated_alone():
-    assert partition_updates(_lpar(_entry()), resources=LparResources(dedicated=False)) == {}
+    assert (
+        partition_updates(_lpar(_entry()), resources=LparResources(dedicated=False))
+        == {}
+    )
 
 
 def test_partition_updates_names_has_dedicated_for_a_mode_only_request():
@@ -302,18 +339,32 @@ def test_partition_updates_names_has_dedicated_for_a_mode_only_request():
     ("dedicated", "resources", "message"),
     [
         (False, LparResources(dedicated=True, desired_procs=2), "switch the partition"),
-        (True, LparResources(dedicated=False, desired_procs=0.5), "switch the partition"),
+        (
+            True,
+            LparResources(dedicated=False, desired_procs=0.5),
+            "switch the partition",
+        ),
         (True, LparResources(desired_vcpus=2), "shared-processor partition"),
         (True, LparResources(uncapped=True), "shared-processor partition"),
-        (True, LparResources(desired_procs=1.5), "DesiredProcessors=1.5 is not a whole"),
+        (
+            True,
+            LparResources(desired_procs=1.5),
+            "DesiredProcessors=1.5 is not a whole",
+        ),
         (True, LparResources(min_procs=0.5), "MinimumProcessors=0.5 is not a whole"),
         (True, LparResources(max_procs=float("inf")), "max_procs=inf must be a finite"),
-        (False, LparResources(desired_procs=float("nan")), "desired_procs=nan must be a finite"),
+        (
+            False,
+            LparResources(desired_procs=float("nan")),
+            "desired_procs=nan must be a finite",
+        ),
         (False, LparResources(desired_vcpus=-1), "desired_vcpus=-1 must be a finite"),
         (False, LparResources(sharing_mode="bogus"), "sharing_mode must be one of"),  # type: ignore[arg-type]
     ],
 )
-def test_partition_updates_refuses_what_the_read_cannot_carry(dedicated, resources, message):
+def test_partition_updates_refuses_what_the_read_cannot_carry(
+    dedicated, resources, message
+):
     with pytest.raises(ValueError, match=message):
         partition_updates(_lpar(_entry(dedicated=dedicated)), resources=resources)
 
@@ -323,7 +374,9 @@ async def test_a_mode_only_request_on_a_read_without_the_mode_is_refused(mock_hm
     _, post = _routes(mock_hmc, entry=_entry(has_dedicated=False))
 
     with pytest.raises(HMCError, match=f"has no {PPC}/HasDedicatedProcessors"):
-        await _update(lambda lpar: partition_updates(lpar, resources=LparResources(uncapped=True)))
+        await _update(
+            lambda lpar: partition_updates(lpar, resources=LparResources(uncapped=True))
+        )
 
     assert not post.called
 
@@ -337,7 +390,10 @@ async def test_a_processor_change_posts_only_its_fields(mock_hmc):
 
     assert _canonical(_lpar(post.calls.last.request.content)) == _expected(
         _entry(),
-        {f"{SHARED}/DesiredProcessingUnits": "0.4", f"{SHARED}/DesiredVirtualProcessors": "4"},
+        {
+            f"{SHARED}/DesiredProcessingUnits": "0.4",
+            f"{SHARED}/DesiredVirtualProcessors": "4",
+        },
     )
 
 
@@ -354,7 +410,8 @@ def authorized(monkeypatch):
     guard = AsyncMock(return_value=LPAR)
     for module in ("core", "dlpar"):
         monkeypatch.setattr(
-            f"hmcpctl.operations.lpar.{module}.resolve_and_authorize_lpar_mutation", guard
+            f"hmcpctl.operations.lpar.{module}.resolve_and_authorize_lpar_mutation",
+            guard,
         )
     monkeypatch.setattr(
         "hmcpctl.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments", AsyncMock()
@@ -379,7 +436,9 @@ def _posted(post) -> list[bytes]:
 
 
 @pytest.mark.asyncio
-async def test_rename_posts_only_the_new_name_and_no_create_only_field(mock_hmc, authorized):
+async def test_rename_posts_only_the_new_name_and_no_create_only_field(
+    mock_hmc, authorized
+):
     get, post = _routes(mock_hmc)
 
     lpar_uuid, _ = await _rename("lpar-b")
@@ -417,7 +476,9 @@ async def test_modify_reports_the_rename_when_the_resources_leg_is_refused(
 ):
     _, post = _routes(mock_hmc)
 
-    result = await _modify(LparResources(dedicated=True, desired_procs=2), new_name="lpar-b")
+    result = await _modify(
+        LparResources(dedicated=True, desired_procs=2), new_name="lpar-b"
+    )
 
     assert [(step.step, step.status) for step in result.steps] == [
         ("rename", "ok"),
@@ -437,7 +498,9 @@ async def test_a_refused_resources_leg_without_a_rename_raises(mock_hmc, authori
     assert not post.called
 
 
-@pytest.mark.parametrize("operation", [_rename, lambda name: _modify(LparResources(), name)])
+@pytest.mark.parametrize(
+    "operation", [_rename, lambda name: _modify(LparResources(), name)]
+)
 @pytest.mark.asyncio
 async def test_a_name_xml_cannot_carry_is_refused_before_any_request(
     mock_hmc, authorized, operation

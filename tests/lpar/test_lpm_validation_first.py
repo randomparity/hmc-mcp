@@ -19,7 +19,8 @@ def _authorize_lpar_mutations(monkeypatch):
         return await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system)
 
     monkeypatch.setattr(
-        "hmcpctl.operations.lpar.migration.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.lpar.migration.resolve_and_authorize_lpar_mutation",
+        authorize,
     )
 
 
@@ -77,9 +78,7 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
         in client.method_calls
     )
     assert (
-        call.lpar_migrate(
-            "lpar-1", "target", target_profile_name=None, wait_time=None
-        )
+        call.lpar_migrate("lpar-1", "target", target_profile_name=None, wait_time=None)
         in client.method_calls
     )
     client.wait_for_job_entry.assert_awaited_once()

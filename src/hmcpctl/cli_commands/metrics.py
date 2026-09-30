@@ -27,7 +27,9 @@ def metrics_prefs(
     """Show PCM monitoring preferences for a resource."""
     validate_pcm_preferences_category(category)
 
-    prefs = with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_name_or_uuid))
+    prefs = with_client(
+        lambda hmc: get_pcm_preferences(hmc, category, resource_name_or_uuid)
+    )
 
     print_json(prefs)
 
@@ -67,7 +69,9 @@ def metrics_set_prefs(
     ):
         raise typer.Abort()
 
-    with_client(lambda hmc: set_pcm_preferences(hmc, category, resource_name_or_uuid, flags))
+    with_client(
+        lambda hmc: set_pcm_preferences(hmc, category, resource_name_or_uuid, flags)
+    )
 
     console.print(f"[green]Updated {category} {resource_name_or_uuid}: {flags}[/green]")
 

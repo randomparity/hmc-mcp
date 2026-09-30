@@ -162,7 +162,9 @@ async def test_storage_inventory_resolves_the_owning_group() -> None:
 
     assert state.artifacts.vg_uuid == "vg-uuid"
     assert state.artifacts.vdisk_vg_name == "rootvg"
-    assert not any(tool == "parse virtual disk capacity" for _, tool, _, _ in state.results)
+    assert not any(
+        tool == "parse virtual disk capacity" for _, tool, _, _ in state.results
+    )
     assert [tool for tool, _ in state.calls] == [
         "hmc_list_volume_groups",
         "hmc_list_clusters",

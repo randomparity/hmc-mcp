@@ -214,6 +214,7 @@ async def set_lpar_proc_compat(
 
 # SR-IOV adapter mode and vNICs (chhwres)
 
+
 async def backup_lpar_profiles(
     config: HMCConfig,
     system_name: str,
@@ -406,7 +407,9 @@ def parse_profile_io_slots(value: str) -> tuple[ProfileIoSlot, ...]:
             )
         )
     if len({slot.drc_index for slot in slots}) != len(slots):
-        raise HMCCLIError(f"unadmitted io_slots rendering: repeated DRC index in {value!r}")
+        raise HMCCLIError(
+            f"unadmitted io_slots rendering: repeated DRC index in {value!r}"
+        )
     return tuple(slots)
 
 

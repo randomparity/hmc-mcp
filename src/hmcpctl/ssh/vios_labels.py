@@ -41,7 +41,9 @@ def _single_vios_selector(
     if vios_name is not None:
         return "vios_names", _nonblank(vios_name, "vios_name")
     if vios_id is None:
-        raise ValueError("VIOS label operation requires vios_id when vios_name is absent")
+        raise ValueError(
+            "VIOS label operation requires vios_id when vios_name is absent"
+        )
     if vios_id <= 0:
         raise ValueError("VIOS label operation vios_id must be positive")
     return "vios_ids", vios_id
@@ -79,7 +81,9 @@ def _member_selector(
         _require_bounded_member_bytes("vios_names", validated)
         return "vios_names", validated
     if vios_ids is None:
-        raise ValueError("VIOS group label operation requires vios_ids when names are absent")
+        raise ValueError(
+            "VIOS group label operation requires vios_ids when names are absent"
+        )
     if len(vios_ids) > _MAX_GROUP_MEMBERS:
         raise ValueError(
             f"VIOS group label vios_ids accepts at most {_MAX_GROUP_MEMBERS} members"

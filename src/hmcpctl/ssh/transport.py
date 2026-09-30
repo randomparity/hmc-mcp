@@ -30,12 +30,15 @@ def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
         "host": config.host,
         "username": config.user,
         "known_hosts": (
-            str(Path.home() / ".ssh" / "known_hosts") if config.ssh_verify_host_key else None
+            str(Path.home() / ".ssh" / "known_hosts")
+            if config.ssh_verify_host_key
+            else None
         ),
     }
     if not config.ssh_verify_host_key:
         logging.getLogger(__name__).warning(
-            "SSH host-key verification disabled for %s (ssh_verify_host_key=false)", config.host
+            "SSH host-key verification disabled for %s (ssh_verify_host_key=false)",
+            config.host,
         )
     if config.ssh_key_file:
         connect_kwargs["client_keys"] = [config.ssh_key_file]
@@ -104,7 +107,9 @@ def _process_termination(error: asyncssh.ProcessError) -> str:
 
 def _asyncssh_error(error: asyncssh.Error) -> HMCCLIError:
     """Build an error from an asyncssh failure with optional captured output."""
-    detail = getattr(error, "stderr", None) or getattr(error, "stdout", None) or str(error)
+    detail = (
+        getattr(error, "stderr", None) or getattr(error, "stdout", None) or str(error)
+    )
     return HMCCLIError(f"SSH command failed: {detail.strip()}")
 
 
@@ -136,9 +141,7 @@ async def open_hmc_connection(config: HMCConfig) -> asyncssh.SSHClientConnection
             f"{config.ssh_timeout:.0f}s."
         ) from exc
     except (OSError, ValueError) as exc:
-        raise HMCCLIError(
-            f"SSH connection to {config.host} failed: {exc}"
-        ) from exc
+        raise HMCCLIError(f"SSH connection to {config.host} failed: {exc}") from exc
     except asyncssh.Error as exc:
         raise HMCCLIError(f"SSH connection failed: {str(exc).strip()}") from exc
 

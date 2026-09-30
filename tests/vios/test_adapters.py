@@ -41,7 +41,10 @@ def test_network_adapter_minimal():
 
 def test_network_adapter_full():
     xml = build_client_network_adapter_document(
-        port_vlan_id=200, slot_number=9, virtual_switch_id=3, tagged=True,
+        port_vlan_id=200,
+        slot_number=9,
+        virtual_switch_id=3,
+        tagged=True,
         mac_address="02:00:00:00:00:01",
     )
     assert ">200<" in xml

@@ -110,9 +110,7 @@ def hmc_get_lpar_memopt_score(
     """
 
     return with_client(
-        lambda hmc: get_lpar_memopt_score(
-            hmc, system_name_or_uuid, lpar_name_or_uuid
-        ),
+        lambda hmc: get_lpar_memopt_score(hmc, system_name_or_uuid, lpar_name_or_uuid),
         profile=profile,
     )
 

@@ -76,9 +76,7 @@ def _tree(
     )
     for name, text in (healthy if committed is None else committed).items():
         (root / "docs" / "generated" / name).write_text(text, encoding="utf-8")
-    subprocess.run(
-        ["git", "init", "-q", "--initial-branch=main"], cwd=root, check=True
-    )
+    subprocess.run(["git", "init", "-q", "--initial-branch=main"], cwd=root, check=True)
     return root
 
 
@@ -117,9 +115,7 @@ def _tool_reference_only(tmp_path: Path, justfile: str) -> Path:
     (root / "docs").mkdir(parents=True)
     (root / "justfile").write_text(justfile, encoding="utf-8")
     shutil.copytree(ROOT / "docs" / "tools", root / "docs" / "tools")
-    subprocess.run(
-        ["git", "init", "-q", "--initial-branch=main"], cwd=root, check=True
-    )
+    subprocess.run(["git", "init", "-q", "--initial-branch=main"], cwd=root, check=True)
     return root
 
 
@@ -162,7 +158,9 @@ def test_deleting_the_real_generated_surface_reddens(tmp_path, capsys) -> None:
     """
     root = _tool_reference_only(tmp_path, (ROOT / "justfile").read_text())
     shutil.rmtree(root / "docs" / "tools")
-    (root / "docs" / "tools-summary.md").write_text("# hand written\n", encoding="utf-8")
+    (root / "docs" / "tools-summary.md").write_text(
+        "# hand written\n", encoding="utf-8"
+    )
 
     assert _run(root) == 1
     err = capsys.readouterr().err
@@ -232,8 +230,12 @@ def test_only_the_first_few_differences_carry_a_diff(tmp_path, capsys) -> None:
     """A format change makes every page differ at once; the report stays readable."""
     root = _tree(
         tmp_path,
-        produced={f"page{index}.md": _page(f"# generated {index}") for index in range(6)},
-        committed={f"page{index}.md": _page(f"# committed {index}") for index in range(6)},
+        produced={
+            f"page{index}.md": _page(f"# generated {index}") for index in range(6)
+        },
+        committed={
+            f"page{index}.md": _page(f"# committed {index}") for index in range(6)
+        },
     )
 
     assert _run(root) == 1
@@ -432,7 +434,6 @@ def test_hung_regeneration_command_is_killed_with_its_children(
     _wait_for_pid_exit(int(pid_file.read_text(encoding="utf-8")))
 
 
-
 def test_a_refused_group_kill_still_bounds_the_timeout(
     tmp_path, capsys, monkeypatch
 ) -> None:
@@ -474,6 +475,7 @@ def test_a_descendant_outside_the_process_group_does_not_extend_the_timeout(
     assert _run(root) == 1
     assert time.monotonic() - started < 10
     assert "`just demo-docs` did not finish within 1s" in capsys.readouterr().err
+
 
 # --- negative controls: the arrangement (ADR 0098 §3, reverse) ---------------
 

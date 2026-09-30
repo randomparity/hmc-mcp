@@ -74,8 +74,7 @@ _ATTRIBUTE_ENTITIES = {'"': "&quot;", "'": "&apos;"}
 # cause. They are refused at the boundary instead, which keeps the contract
 # every builder parameter meets down to "escape or reject".
 _ILLEGAL_XML_CHARACTERS = re.compile(
-    "[^\u0009\u000a\u000d\u0020-\ud7ff\ue000-\ufffd"
-    "\U00010000-\U0010ffff]"
+    "[^\u0009\u000a\u000d\u0020-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]"
 )
 
 
@@ -149,8 +148,7 @@ def _escape_argument(value: object) -> object:
         return [_escape_argument(item) for item in value]
     if isinstance(value, dict):
         return {
-            _escape_argument(key): _escape_argument(item)
-            for key, item in value.items()
+            _escape_argument(key): _escape_argument(item) for key, item in value.items()
         }
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return _escape_dataclass(value)
@@ -193,9 +191,7 @@ def escapes_string_arguments(func: Callable[_P, str]) -> Callable[_P, str]:
 
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> str:
-        escaped_args = cast(
-            "_P.args", tuple(_escape_argument(value) for value in args)
-        )
+        escaped_args = cast("_P.args", tuple(_escape_argument(value) for value in args))
         escaped_kwargs = cast(
             "_P.kwargs",
             {name: _escape_argument(value) for name, value in kwargs.items()},
@@ -222,7 +218,9 @@ def element_to_dict(el: Element) -> dict[str, Any] | str:
     """
     children = list(el)
     attrs = {
-        localname(k): v for k, v in el.attrib.items() if localname(k) not in _IGNORED_ATTRS
+        localname(k): v
+        for k, v in el.attrib.items()
+        if localname(k) not in _IGNORED_ATTRS
     }
     text = (el.text or "").strip()
 
@@ -281,7 +279,9 @@ def parse_feed(xml_text: str) -> list[dict[str, Any]]:
     root = DET.fromstring(xml_text.encode("utf-8"))
     root_type = localname(root.tag)
     if root_type == "feed":
-        return [_parse_entry(entry) for entry in root if localname(entry.tag) == "entry"]
+        return [
+            _parse_entry(entry) for entry in root if localname(entry.tag) == "entry"
+        ]
     if root_type == "entry":
         return [_parse_entry(root)]
     return [
@@ -315,4 +315,6 @@ def find_all_text(xml_text: str, *names: str) -> list[str]:
     """
     root = DET.fromstring(xml_text.encode("utf-8"))
     wanted = set(names)
-    return [(el.text or "").strip() for el in root.iter() if localname(el.tag) in wanted]
+    return [
+        (el.text or "").strip() for el in root.iter() if localname(el.tag) in wanted
+    ]

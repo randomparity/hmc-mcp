@@ -33,7 +33,8 @@ from hmcpctl.tool_registry import TargetSelector, ToolSecurity
 def _security(*selectors, exhaustive=True):
     """A record declaring *selectors*, as ``tool()`` would have built it."""
     targets = tuple(
-        TargetSelector(kind, argument, required) for kind, argument, required in selectors
+        TargetSelector(kind, argument, required)
+        for kind, argument, required in selectors
     )
     return ToolSecurity(
         effect="destructive",
@@ -115,7 +116,9 @@ def test_an_omitted_optional_selector_is_absent_not_unreadable():
     assert extracted[1] == ("managed_system", "system_name_or_uuid", ABSENT)
 
 
-@pytest.mark.parametrize("value", [1.5, ["db-01"], {"lpar": "db-01"}, object(), b"db-01"])
+@pytest.mark.parametrize(
+    "value", [1.5, ["db-01"], {"lpar": "db-01"}, object(), b"db-01"]
+)
 def test_every_other_type_is_unreadable_uninspected(value):
     extracted = selected_targets(
         POWER_OFF_LPAR,
@@ -252,7 +255,9 @@ def test_a_table_never_covers_a_selector_less_tool():
     """
     extracted = selected_targets(LDAP_REMOVE, {"resource": "ldap"})
     assert extracted == ()
-    assert targets_permitted(_table(lpar=["scratch-01"]), LDAP_REMOVE, extracted) is False
+    assert (
+        targets_permitted(_table(lpar=["scratch-01"]), LDAP_REMOVE, extracted) is False
+    )
 
 
 def test_a_table_never_covers_a_composite_whose_selectors_do_not_bound_it():
@@ -461,7 +466,7 @@ def test_a_read_tool_is_bound_exactly_as_a_destructive_one_is():
 
 
 def test_a_read_tools_omitted_optional_selector_denies_too():
-    """"Every partition on every system" is not what a narrow table granted."""
+    """ "Every partition on every system" is not what a narrow table granted."""
     extracted = selected_targets(
         GET_LPAR, {"lpar_name_or_uuid": "db-01", "system_name_or_uuid": None}
     )
@@ -546,11 +551,15 @@ def test_each_denial_template_has_exactly_one_reason_code():
     for code, (security, extracted, fragment) in cases.items():
         assert denial_reason(security, extracted) == code
         assert fragment in str(target_denial("t", "p", security, extracted))
-    assert set(cases) | {
-        "permitted",
-        "configuration-unreadable",
-        "connection-not-granted",
-    } == REASONS
+    assert (
+        set(cases)
+        | {
+            "permitted",
+            "configuration-unreadable",
+            "connection-not-granted",
+        }
+        == REASONS
+    )
 
 
 def test_denial_reason_names_the_condition_that_actually_held():
@@ -659,6 +668,7 @@ def test_a_none_sub_object_is_unreadable_not_absent():
 
 def test_a_missing_attribute_is_unreadable():
     """An object without the declared field is malformed, not narrow."""
+
     class Impostor:
         pass
 

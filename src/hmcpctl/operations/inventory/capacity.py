@@ -54,7 +54,9 @@ def calculate_system_capacity(
     running = 0
     for lpar in lpars:
         lpar_resource = lpar.get("Resource") or {}
-        lpar_identity = lpar.get("UUID") or lpar_resource.get("PartitionName") or "unknown LPAR"
+        lpar_identity = (
+            lpar.get("UUID") or lpar_resource.get("PartitionName") or "unknown LPAR"
+        )
         assigned_memory += _int_capacity(lpar_resource, "DesiredMemory", lpar_identity)
         assigned_processors += lpar_processing_units(lpar)
         if lpar_resource.get("PartitionState") == "running":

@@ -30,7 +30,8 @@ def _named_scripts() -> set[str]:
             names.add(match)
             continue
         names.update(
-            match.replace(brace.group(0), option) for option in brace.group(1).split(",")
+            match.replace(brace.group(0), option)
+            for option in brace.group(1).split(",")
         )
     return names
 

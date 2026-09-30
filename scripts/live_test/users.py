@@ -77,9 +77,7 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         associated_task_role="viewer",
         description="MCP live test user R2",
     )
-    state.record_with_expected(
-        11, "hmc_create_user", st, data, [_HMCUSER_UNSUPPORTED]
-    )
+    state.record_with_expected(11, "hmc_create_user", st, data, [_HMCUSER_UNSUPPORTED])
     user_created = st == "PASS"
 
     st, data = await state.call(

@@ -37,6 +37,7 @@ from ...ssh.lpar import resolve_lpar_cli_name
 
 _logger = logging.getLogger(__name__)
 
+
 class _TargetResolver(Protocol):
     def __call__(
         self,

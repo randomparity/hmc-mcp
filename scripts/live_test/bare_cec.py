@@ -85,7 +85,9 @@ _NOT_ACTIVATED = frozenset({"not activated"})
 _FIRMWARE_STATES = frozenset({"open firmware", "running"})
 _SETTLED_STATES = _NOT_ACTIVATED | _FIRMWARE_STATES
 
-_UUID_AT_END = re.compile(r"/([0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12})/?\Z")
+_UUID_AT_END = re.compile(
+    r"/([0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12})/?\Z"
+)
 
 #: Before #939, `hmc_create_lpar` left a new partition without an applied profile, so a
 #: PowerOn naming no profile had no current configuration to activate and HSCL3680 was
@@ -402,9 +404,13 @@ async def _no_profile_activation(
     )
     failure = _job_failure(st, data)
     if failure is None:
-        state.record_with_expected(_ROW, label, st, data, [_NO_PROFILE_ACTIVATION_REFUSED])
+        state.record_with_expected(
+            _ROW, label, st, data, [_NO_PROFILE_ACTIVATION_REFUSED]
+        )
     elif _NO_PROFILE_ACTIVATION_REFUSED.matches(failure):
-        state.record(_ROW, label, "SKIP", failure, _NO_PROFILE_ACTIVATION_REFUSED.reason)
+        state.record(
+            _ROW, label, "SKIP", failure, _NO_PROFILE_ACTIVATION_REFUSED.reason
+        )
     else:
         state.record(_ROW, label, "FAIL", failure)
         if failure.exception_type == "JobTimedOut":
@@ -425,7 +431,9 @@ async def _no_profile_activation(
     if not _record_power(state, off_label, st, data, failure):
         return False
     observed = await _read_state(client, state, fixture, _NOT_ACTIVATED)
-    return _record_state(state, "state after no-profile power off", observed, _NOT_ACTIVATED)
+    return _record_state(
+        state, "state after no-profile power off", observed, _NOT_ACTIVATED
+    )
 
 
 async def _activate_to_sms(
@@ -457,7 +465,9 @@ async def _activate_to_sms(
     job_id = job_identifier(job) if job is not None else None
     if job_id is None:
         state.skip(_ROW, "hmc_get_job", "the activation returned no job identifier")
-        state.skip(_ROW, "hmc_wait_for_job", "the activation returned no job identifier")
+        state.skip(
+            _ROW, "hmc_wait_for_job", "the activation returned no job identifier"
+        )
     else:
         await _inspect_job(client, state, job_id)
     return reached in _FIRMWARE_STATES
@@ -471,7 +481,9 @@ async def _inspect_job(client: Client, state: RunState, job_id: str) -> None:
         operation="job.get",
         scenario=_SCENARIO,
         assertions=_job_assertions(
-            job_outcome(job_id, data if st == "PASS" and isinstance(data, dict) else None),
+            job_outcome(
+                job_id, data if st == "PASS" and isinstance(data, dict) else None
+            ),
             job_id,
         ),
         cleanup="not-required",
@@ -491,7 +503,9 @@ async def _inspect_job(client: Client, state: RunState, job_id: str) -> None:
     )
 
 
-async def _observe(client: Client, state: RunState, fixture: pcie._DedicatedFixture) -> None:
+async def _observe(
+    client: Client, state: RunState, fixture: pcie._DedicatedFixture
+) -> None:
     """Read reference codes and capture the console of the activated partition."""
     arm = fixture.config
     st, data = await state.call(
@@ -543,7 +557,8 @@ async def _observe(client: Client, state: RunState, fixture: pcie._DedicatedFixt
         scenario=_SCENARIO,
         assertions=[
             Assertion(
-                "console-captured", st == "PASS" and capture.get("stop_reason") != "error"
+                "console-captured",
+                st == "PASS" and capture.get("stop_reason") != "error",
             ),
             Assertion("console-released", capture.get("released") is True),
         ],
@@ -553,7 +568,8 @@ async def _observe(client: Client, state: RunState, fixture: pcie._DedicatedFixt
         data=data
         if st != "PASS"
         else {
-            key: capture.get(key) for key in ("stop_reason", "released", "bytes_captured")
+            key: capture.get(key)
+            for key in ("stop_reason", "released", "bytes_captured")
         },
     )
 
@@ -594,13 +610,21 @@ async def _reactivate_and_restart(
     if not _record_power(state, "hmc_power_on_lpar (re-activate)", st, data, failure):
         return False
     observed = await _read_state(client, state, fixture, _FIRMWARE_STATES)
-    if not _record_state(state, "state after re-activation", observed, _FIRMWARE_STATES):
+    if not _record_state(
+        state, "state after re-activation", observed, _FIRMWARE_STATES
+    ):
         return False
-    st, data, failure = await _power_off(client, state, fixture, immediate=True, restart=True)
-    if not _record_power(state, "hmc_power_off_lpar (immediate restart)", st, data, failure):
+    st, data, failure = await _power_off(
+        client, state, fixture, immediate=True, restart=True
+    )
+    if not _record_power(
+        state, "hmc_power_off_lpar (immediate restart)", st, data, failure
+    ):
         return False
     observed = await _read_state(client, state, fixture, _FIRMWARE_STATES)
-    return _record_state(state, "state after immediate restart", observed, _FIRMWARE_STATES)
+    return _record_state(
+        state, "state after immediate restart", observed, _FIRMWARE_STATES
+    )
 
 
 async def _osshutdown_refusal(
@@ -709,7 +733,9 @@ async def _unassign(client: Client, state: RunState, run: _Run) -> bool:
             Assertion("profile-restored-to-baseline", restored),
         ],
         cleanup="not-required",
-        data=data if st != "PASS" else f"io_slots={after!r} baseline={fixture.baseline_io_slots!r}",
+        data=data
+        if st != "PASS"
+        else f"io_slots={after!r} baseline={fixture.baseline_io_slots!r}",
     )
     return restored
 
@@ -945,7 +971,10 @@ async def exercise_bare_cec(client: Client, state: RunState) -> None:
         await _run_steps(client, state, run)
     except Exception as exc:  # noqa: BLE001 - recorded as FAIL; the teardown still runs
         state.record(
-            _ROW, "bare-cec arm raised before teardown", "FAIL", f"{type(exc).__name__}: {exc}"
+            _ROW,
+            "bare-cec arm raised before teardown",
+            "FAIL",
+            f"{type(exc).__name__}: {exc}",
         )
     finally:
         await _teardown(client, state, run)

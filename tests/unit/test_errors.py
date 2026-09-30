@@ -19,7 +19,9 @@ def test_hmc_error_extracts_message_past_4096_byte_truncation_cutoff() -> None:
 
 
 def test_hmc_error_extracts_message_from_xml_body() -> None:
-    error = HMCError("request failed", 500, "<Error><Message>bad input</Message></Error>")
+    error = HMCError(
+        "request failed", 500, "<Error><Message>bad input</Message></Error>"
+    )
 
     assert str(error) == "request failed (HTTP 500): bad input"
 

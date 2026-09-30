@@ -127,22 +127,23 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "Deploy</OperationName>" in body
     assert (
-        f"<ParameterName kb=\"ROR\" kxe=\"false\">TargetUuid</ParameterName>\n"
-        f"      <ParameterValue kb=\"CUR\" kxe=\"false\">{TARGET_SYSTEM_UUID}"
+        f'<ParameterName kb="ROR" kxe="false">TargetUuid</ParameterName>\n'
+        f'      <ParameterValue kb="CUR" kxe="false">{TARGET_SYSTEM_UUID}'
         "</ParameterValue>" in body
     )
     assert (
         '<ParameterName kb="ROR" kxe="false">TemplateUuid</ParameterName>\n'
-        '      <ParameterValue kb="CUR" kxe="false">draft-uuid</ParameterValue>'
-        in body
+        '      <ParameterValue kb="CUR" kxe="false">draft-uuid</ParameterValue>' in body
     )
     assert "K_X_API_SESSION_MEMENTO" in body
     assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
     assert result["ownership_stamped"] is None
     assert result["warnings"] == [
-        ("ownership stamp not attempted: template deployment does not identify and stamp "
-         "the new LPAR; list partitions to identify it, then set its description")
+        (
+            "ownership stamp not attempted: template deployment does not identify and stamp "
+            "the new LPAR; list partitions to identify it, then set its description"
+        )
     ]
 
 
@@ -239,7 +240,9 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))
-    with patch("hmcpctl.operations.templates.core.stamp_created_lpar_ownership", new=stamp):
+    with patch(
+        "hmcpctl.operations.templates.core.stamp_created_lpar_ownership", new=stamp
+    ):
         result = hmc_deploy_partition_template(
             "draft-uuid",
             TARGET_SYSTEM_UUID,

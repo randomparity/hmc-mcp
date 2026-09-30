@@ -447,7 +447,9 @@ def test_timeout_terminates_pytest_and_returns_timeout_status(
 
     process = TimedOutProcess()
     monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
-    monkeypatch.setattr(run_tests.subprocess, "Popen", lambda _command, **_kwargs: process)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: process
+    )
 
     assert run_tests.main() == 124
 

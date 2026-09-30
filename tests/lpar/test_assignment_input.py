@@ -19,7 +19,9 @@ def test_missing_path_returns_empty_assignments() -> None:
 
 def test_valid_json_is_deserialized(tmp_path) -> None:
     path = tmp_path / "assignments.json"
-    path.write_text(json.dumps({"dedicated": [{"profile_name": "p", "drc_index": "1"}]}))
+    path.write_text(
+        json.dumps({"dedicated": [{"profile_name": "p", "drc_index": "1"}]})
+    )
 
     result = load_pcie_assignments(path)
 

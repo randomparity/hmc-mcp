@@ -60,6 +60,7 @@ class AffinityEvidence:
     regression_threshold: int | None
     optimization_threshold: int | None
 
+
 @dataclass(frozen=True)
 class AffinityAssessmentResult:
     """Stable assessment verdict with the evidence that explains it."""
@@ -194,9 +195,7 @@ async def assess_post_activation_affinity(
     current_row = await get_lpar_memopt_score(
         hmc, request.system_name_or_uuid, request.lpar_name
     )
-    predicted_rows = await plan_lpar_memopt_scores(
-        hmc, request.system_name_or_uuid
-    )
+    predicted_rows = await plan_lpar_memopt_scores(hmc, request.system_name_or_uuid)
     predicted_row = next(
         (row for row in predicted_rows if row.get("lpar_name") == request.lpar_name),
         None,

@@ -21,7 +21,9 @@ from .transport import HMCCLIError, run_hmc_command
 _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES = 4096
 _RESOURCE_GROUP_MEMOPT_MINIMUM_HMC = (11, 1, 1110)
 _RESOURCE_GROUP_CURRENT_FIELDS = (
-    "resource_group_name", "resource_group_id", "curr_score"
+    "resource_group_name",
+    "resource_group_id",
+    "curr_score",
 )
 _RESOURCE_GROUP_CALCULATED_FIELDS = (
     *_RESOURCE_GROUP_CURRENT_FIELDS,
@@ -43,7 +45,9 @@ def _validate_selector_names(names: tuple[str, ...], label: str) -> None:
         for name in names
     )
     if invalid:
-        raise ValueError(f"{label} must be nonblank and contain no commas or control characters")
+        raise ValueError(
+            f"{label} must be nonblank and contain no commas or control characters"
+        )
     if len(set(names)) != len(names):
         raise ValueError(f"{label} must not contain duplicates")
 
@@ -56,7 +60,9 @@ def _validate_selector_ids(ids: tuple[int, ...], label: str, minimum: int) -> No
         for identifier in ids
     )
     if invalid:
-        raise ValueError(f"{label} must be {('positive' if minimum else 'non-negative')} integers")
+        raise ValueError(
+            f"{label} must be {('positive' if minimum else 'non-negative')} integers"
+        )
     if len(set(ids)) != len(ids):
         raise ValueError(f"{label} must not contain duplicates")
 
@@ -504,8 +510,8 @@ async def plan_system_memopt_score(
         raise HMCCLIError(
             f"lsmemopt system query returned {len(rows)} rows; expected exactly 1"
         )
-    result = _validated_memopt_rows(
-        output, {"curr_sys_score", "predicted_sys_score"}
-    )[0]
+    result = _validated_memopt_rows(output, {"curr_sys_score", "predicted_sys_score"})[
+        0
+    ]
     result["prediction_guaranteed"] = False
     return result

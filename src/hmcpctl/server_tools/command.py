@@ -47,9 +47,7 @@ async def configure_arbitrary_command_tool(
     permits: Callable[[str], bool],
     authorize: Authorize,
 ) -> None:
-    """Register the escape hatch only when both capability and policy gates allow it.
-
-    """
+    """Register the escape hatch only when both capability and policy gates allow it."""
     permitted = enabled and permits("hmc_run_command")
     registered = await mcp.local_provider.get_tool("hmc_run_command") is not None
     if permitted and not registered:

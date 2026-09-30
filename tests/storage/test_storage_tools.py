@@ -51,10 +51,12 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.virtualization.adapters.resolve_and_authorize_lpar_mutation",
+        authorize,
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
+        authorize,
     )
 
 
@@ -155,7 +157,9 @@ _LPAR_LINK = (
     "https://hmc.example.invalid:12443/rest/api/uom/ManagedSystem/"
     f"{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}"
 )
-_VIOS_IDENTITY = Path(__file__).with_name("vios_identity_v10r3.xml").read_text(encoding="utf-8")
+_VIOS_IDENTITY = (
+    Path(__file__).with_name("vios_identity_v10r3.xml").read_text(encoding="utf-8")
+)
 
 
 def _mapping(target: str, lpar_link: str = _LPAR_LINK) -> str:
@@ -187,7 +191,9 @@ def _mock_detach_reads(mock_hmc, mappings: str):
       </content></entry></feed>"""
     mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
-    ).mock(return_value=httpx.Response(200, text=inventory, headers={"ETag": '"etag-1"'}))
+    ).mock(
+        return_value=httpx.Response(200, text=inventory, headers={"ETag": '"etag-1"'})
+    )
     return mock_hmc.post(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
     ).mock(return_value=httpx.Response(200, text=""))
@@ -199,7 +205,8 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
 
     guard = AsyncMock(return_value=LPAR_UUID)
     with patch(
-        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation", new=guard
+        "hmcpctl.operations.storage.resources.resolve_and_authorize_lpar_mutation",
+        new=guard,
     ):
         assert hmc_detach_storage_mapping(VIOS_UUID, "vhost0/vtscsi0") == {
             "mapping_id": "vhost0/vtscsi0",
@@ -285,7 +292,9 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
         "lives_in": "current-configuration-and-profile",
         "profile_name": None,
     }
-    assert read.calls[0].request.url.path == f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
+    assert (
+        read.calls[0].request.url.path == f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
+    )
 
 
 def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):
@@ -451,7 +460,10 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     # storage_kind lands as the element name; storage_name is DiskName.
     assert '<VirtualDisk schemaVersion="V1_0">' in body
     assert '<DiskName kb="CUR" kxe="false">lv_boot</DiskName>' in body
-    assert f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}" in body
+    assert (
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}"
+        in body
+    )
 
 
 def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
@@ -469,7 +481,10 @@ def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
     assert '<PhysicalVolume schemaVersion="V1_0">' in body
     assert '<VolumeName kb="CUR" kxe="false">hdisk5</VolumeName>' in body
     assert '<TargetName kb="CUR" kxe="false">vtscsi0</TargetName>' in body
-    assert f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}" in body
+    assert (
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition/{LPAR_UUID}"
+        in body
+    )
 
 
 def test_map_storage_invalid_kind_raises(monkeypatch, mock_hmc):
@@ -526,7 +541,11 @@ def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_BARE_VG_FEED, headers={"ETag": '"etag-1"'}))
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(
+            200, text=_BARE_VG_FEED, headers={"ETag": '"etag-1"'}
+        )
+    )
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )
@@ -544,7 +563,11 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
     """
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}))
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(
+            200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}
+        )
+    )
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )
@@ -565,7 +588,11 @@ def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     # Both list_optical_media and delete_media_repository GET the same path.
-    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}))
+    mock_hmc.get(vg_path).mock(
+        return_value=httpx.Response(
+            200, text=_VMLIB_VG_FEED, headers={"ETag": '"etag-1"'}
+        )
+    )
     route = mock_hmc.post(vg_path).mock(
         return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
     )

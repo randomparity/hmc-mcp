@@ -19,7 +19,9 @@ def join_boot_device_paths(paths: list[str]) -> str:
     ElementTree, which is its only escaping point.
     """
     if not paths:
-        raise ValueError("Boot order must contain at least one Open Firmware device path")
+        raise ValueError(
+            "Boot order must contain at least one Open Firmware device path"
+        )
     for path in paths:
         if not _is_joinable(path):
             raise ValueError(

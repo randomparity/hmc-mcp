@@ -986,8 +986,14 @@ def test_lpars_power_on_submits_power_on_job(fake_hmc):
     [
         ["adapters", "add-network", LPAR_UUID, "--vlan", "100", "--yes"],
         [
-            "adapters", "delete", LPAR_UUID, "--type", "ClientNetworkAdapter",
-            "--uuid", "adapter-1", "--yes",
+            "adapters",
+            "delete",
+            LPAR_UUID,
+            "--type",
+            "ClientNetworkAdapter",
+            "--uuid",
+            "adapter-1",
+            "--yes",
         ],
     ],
     ids=["add", "delete"],
@@ -1007,19 +1013,28 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
         [
-            "lpars", "power-on", LPAR_UUID, "--force", "--yes",
-            "--boot-mode", "sms",
-            "--partition-profile", PARTITION_PROFILE_UUID,
-            "--operation-type", "activate",
-            "--keylock", "manual",
+            "lpars",
+            "power-on",
+            LPAR_UUID,
+            "--force",
+            "--yes",
+            "--boot-mode",
+            "sms",
+            "--partition-profile",
+            PARTITION_PROFILE_UUID,
+            "--operation-type",
+            "activate",
+            "--keylock",
+            "manual",
         ],
     )
 
     assert result.exit_code == 0
     # Select by name: the ADR 0039 containment read precedes the submission.
-    assert ("list_child", ("LogicalPartition", LPAR_UUID, "LogicalPartitionProfile")) in [
-        (name, args) for name, args, _ in fake_hmc.calls
-    ]
+    assert (
+        "list_child",
+        ("LogicalPartition", LPAR_UUID, "LogicalPartitionProfile"),
+    ) in [(name, args) for name, args, _ in fake_hmc.calls]
     submitted = [args for name, args, _ in fake_hmc.calls if name == "submit_job"]
     assert len(submitted) == 1
     _, job_xml = submitted[0]
@@ -1034,9 +1049,7 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     assert "ClientNetworkAdapter in virtual slot not reported" in result.stdout
 
 
-@pytest.mark.parametrize(
-    "flags", [["--boot-mode", "bogus"], ["--keylock", "normal"]]
-)
+@pytest.mark.parametrize("flags", [["--boot-mode", "bogus"], ["--keylock", "normal"]])
 def test_lpars_power_on_rejects_an_unknown_activation_value(fake_hmc, flags):
     """Typer refuses a non-member before the command body runs, so no job is sent."""
     result = RUNNER.invoke(
@@ -1070,7 +1083,15 @@ def test_lpars_power_off_resolves_name_then_submits(fake_hmc):
 def test_lpars_power_off_forwards_shutdown_parameters(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["lpars", "power-off", LPAR_NAME, "--operation", "osshutdown", "--restart", "--yes"],
+        [
+            "lpars",
+            "power-off",
+            LPAR_NAME,
+            "--operation",
+            "osshutdown",
+            "--restart",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1078,7 +1099,9 @@ def test_lpars_power_off_forwards_shutdown_parameters(fake_hmc):
     document = fake_hmc.calls[1][1][1]
     assert '<ParameterName kb="ROR" kxe="false">restart</ParameterName>' in document
     assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' in document
-    assert '<ParameterValue kb="CUR" kxe="false">osshutdown</ParameterValue>' in document
+    assert (
+        '<ParameterValue kb="CUR" kxe="false">osshutdown</ParameterValue>' in document
+    )
 
 
 def test_lpars_power_off_prompt_names_restart_and_operation(fake_hmc):
@@ -1490,9 +1513,9 @@ def test_lpars_modify_dedicated_flag_must_match_the_partition_mode(fake_hmc):
     )
 
     assert result.exit_code != 0
-    assert "switch the partition between dedicated and shared" in str(result.exception) + (
-        result.output
-    )
+    assert "switch the partition between dedicated and shared" in str(
+        result.exception
+    ) + (result.output)
     assert not any(call[0] == "update_logical_partition" for call in fake_hmc.calls)
 
 
@@ -1829,8 +1852,13 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
             "virtualization.adapters",
             "delete_adapter",
             [
-                "adapters", "delete", "--type", "ClientNetworkAdapter",
-                "--uuid", "adapter-1", "--yes",
+                "adapters",
+                "delete",
+                "--type",
+                "ClientNetworkAdapter",
+                "--uuid",
+                "adapter-1",
+                "--yes",
             ],
             UNSYNCED,
         ),
@@ -1838,8 +1866,16 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
             "storage.resources",
             "attach_disk_to_lpar",
             [
-                "storage", "attach-disk", "--vios", VIOS_UUID, "--vg", VG_UUID,
-                "--name", "bootvol", "--capacity-mib", "1024",
+                "storage",
+                "attach-disk",
+                "--vios",
+                VIOS_UUID,
+                "--vg",
+                VG_UUID,
+                "--name",
+                "bootvol",
+                "--capacity-mib",
+                "1024",
                 "--dry-run",
             ],
             None,
@@ -1884,10 +1920,21 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
 )
 @pytest.mark.parametrize(
     ("scope_args", "expected_system"),
-    [(["--system", SYSTEM_UUID], SYSTEM_UUID), (["-s", SYSTEM_UUID], SYSTEM_UUID), ([], None)],
+    [
+        (["--system", SYSTEM_UUID], SYSTEM_UUID),
+        (["-s", SYSTEM_UUID], SYSTEM_UUID),
+        ([], None),
+    ],
 )
 def test_lpar_scoped_commands_pass_system_scope(
-    fake_hmc, monkeypatch, module, operation, args, returned, scope_args, expected_system
+    fake_hmc,
+    monkeypatch,
+    module,
+    operation,
+    args,
+    returned,
+    scope_args,
+    expected_system,
 ):
     seen = []
 
@@ -2138,8 +2185,18 @@ def _invoke_attach_disk(monkeypatch, result):
     return RUNNER.invoke(
         cli.app,
         [
-            "storage", "attach-disk", LPAR_UUID, "--vios", VIOS_UUID, "--vg", VG_UUID,
-            "--name", "bootvol", "--capacity-mib", "1024", "--yes",
+            "storage",
+            "attach-disk",
+            LPAR_UUID,
+            "--vios",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--capacity-mib",
+            "1024",
+            "--yes",
         ],
     )
 
@@ -2752,7 +2809,12 @@ def test_storage_list_mappings_json(fake_hmc, monkeypatch):
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == [
-        {"id": "vhost0/vtscsi0", "lpar_uuid": None, "backing_kind": None, "backing_name": None},
+        {
+            "id": "vhost0/vtscsi0",
+            "lpar_uuid": None,
+            "backing_kind": None,
+            "backing_name": None,
+        },
         {"id": None, "lpar_uuid": None, "backing_kind": None, "backing_name": None},
     ]
 
@@ -3335,10 +3397,10 @@ def test_affinity_cli_propagates_hmc_errors(monkeypatch):
                 "60",
                 "--yes",
             ],
-                (
-                    "lpar_migrate",
-                    (LPAR_UUID, "sys1", "target-profile"),
-                    {"wait_time": 60},
+            (
+                "lpar_migrate",
+                (LPAR_UUID, "sys1", "target-profile"),
+                {"wait_time": 60},
             ),
         ),
         (
@@ -3665,7 +3727,9 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
         ["lpars", "set-proc-compat", "lpar1", "sys1", "POWER10", "--yes"],
     ],
 )
-def test_destructive_ssh_commands_preserve_bracketed_result(monkeypatch, fake_hmc, args):
+def test_destructive_ssh_commands_preserve_bracketed_result(
+    monkeypatch, fake_hmc, args
+):
     """The trailing HMC result line round-trips a bracketed stamp intact -- #965."""
 
     async def fake(_config, command):
@@ -4063,7 +4127,11 @@ def test_vios_power_on(fake_hmc):
 @pytest.mark.parametrize("command", ["power-on", "power-off"])
 @pytest.mark.parametrize(
     ("scope_args", "expected_system"),
-    [(["--system", SYSTEM_UUID], SYSTEM_UUID), (["-s", SYSTEM_UUID], SYSTEM_UUID), ([], None)],
+    [
+        (["--system", SYSTEM_UUID], SYSTEM_UUID),
+        (["-s", SYSTEM_UUID], SYSTEM_UUID),
+        ([], None),
+    ],
 )
 def test_vios_power_commands_pass_system_scope(
     fake_hmc, monkeypatch, command, scope_args, expected_system

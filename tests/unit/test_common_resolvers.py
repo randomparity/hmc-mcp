@@ -54,9 +54,10 @@ async def test_partition_resolver_forwards_resolved_system_scope(
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     getattr(hmc, finder_name).return_value = {"UUID": resource_uuid}
 
-    assert await resolver(
-        hmc, resource_name, system_name_or_uuid="system-name"
-    ) == resource_uuid
+    assert (
+        await resolver(hmc, resource_name, system_name_or_uuid="system-name")
+        == resource_uuid
+    )
 
     hmc.find_system_by_name.assert_awaited_once_with("system-name")
     getattr(hmc, finder_name).assert_awaited_once_with(
@@ -70,9 +71,10 @@ async def test_partition_resolver_uuid_pass_through_ignores_system_scope(resolve
     hmc = AsyncMock()
     resource_uuid = "11111111-1111-1111-1111-111111111111"
 
-    assert await resolver(
-        hmc, resource_uuid, system_name_or_uuid="system-name"
-    ) == resource_uuid
+    assert (
+        await resolver(hmc, resource_uuid, system_name_or_uuid="system-name")
+        == resource_uuid
+    )
 
     hmc.find_system_by_name.assert_not_awaited()
     hmc.find_partition_by_name.assert_not_awaited()

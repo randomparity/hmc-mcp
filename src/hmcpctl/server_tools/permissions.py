@@ -119,6 +119,7 @@ _UNRESOLVED_LOG = (
     "built, so its authorize_power_operations is reported as unresolved: %s"
 )
 
+
 @dataclass(frozen=True)
 class PowerOwnershipGuard:
     """The effective ``authorize_power_operations`` for one connection.
@@ -446,9 +447,7 @@ def resolve_power_guards(
             document = load_config_document()
         except Exception as exc:  # noqa: BLE001 — classified per connection below
             document = exc
-    return tuple(
-        _power_guard(name, reported_unresolved, document) for name in ordered
-    )
+    return tuple(_power_guard(name, reported_unresolved, document) for name in ordered)
 
 
 def build_effective_permissions(

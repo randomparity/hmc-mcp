@@ -120,7 +120,9 @@ def test_create_lpar_applies_validated_sriov_assignment(monkeypatch):
     port = SimpleNamespace(
         capability="available",
         items=[
-            SimpleNamespace(availability="up", minimum_capacity_granularity_percent=None)
+            SimpleNamespace(
+                availability="up", minimum_capacity_granularity_percent=None
+            )
         ],
     )
     logical = SimpleNamespace(capability="available")

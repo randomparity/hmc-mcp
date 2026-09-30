@@ -50,7 +50,6 @@ def _config() -> HMCConfig:
         host="hmc.test",
         user="hscroot",
         password="abc123",  # pragma: allowlist secret
-
     )
 
 
@@ -614,8 +613,10 @@ def _flag_payload_problems(
     """
     if not isinstance(literal, ast.JoinedStr):
         return [
-            (f"{ast.unparse(literal)} (a command that is not an f-string, "
-             f"so its {flag} payload cannot be traced to {builder_name})")
+            (
+                f"{ast.unparse(literal)} (a command that is not an f-string, "
+                f"so its {flag} payload cannot be traced to {builder_name})"
+            )
         ]
     unguarded: list[str] = []
     examined = 0
@@ -898,7 +899,7 @@ def test_the_scan_finds_every_known_site():
         "list_vios_fc_port_labels",
         "list_vios_vfc_group_labels",
         "_capture_lpar_cli_dump",
-            "_lpar_environment",
+        "_lpar_environment",
         "restore_lpar_baseline",
     }
 

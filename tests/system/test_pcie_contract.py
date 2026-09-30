@@ -56,20 +56,26 @@ EXPECTED_PROVENANCE = {
     ),
     "power9-sriov-logport.json": (
         P9_URL,
-        ("lshwres > -r sriov > --rsubtype logport > --level eth > "
-         "adapter_ids,logical_port_ids,phys_port_ids"),
+        (
+            "lshwres > -r sriov > --rsubtype logport > --level eth > "
+            "adapter_ids,logical_port_ids,phys_port_ids"
+        ),
     ),
     "power10-sriov-contract.json": (
         "https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres",
-        ("chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
-         "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
-         "min_eth_capacity_granularity"),
+        (
+            "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
+            "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
+            "min_eth_capacity_granularity"
+        ),
     ),
     "power11-sriov-contract.json": (
         "https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres",
-        ("chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
-         "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
-         "min_eth_capacity_granularity"),
+        (
+            "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
+            "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
+            "min_eth_capacity_granularity"
+        ),
     ),
 }
 
@@ -142,7 +148,13 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
         for row in parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
     } == {"eth"}
     current = json.loads(
-        (ROOT / "tests" / "fixtures" / "sriov" / "sriov-physport-granularity-v10r3.json").read_text()
+        (
+            ROOT
+            / "tests"
+            / "fixtures"
+            / "sriov"
+            / "sriov-physport-granularity-v10r3.json"
+        ).read_text()
     )["selection_cases"][0]
     run = AsyncMock(side_effect=[current["roce"]["stdout"], current["ethc"]["stdout"]])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
@@ -166,7 +178,9 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
     assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
     with pytest.raises(AssertionError):
-        assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
+        assert (
+            hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
+        )
 
 
 def test_evidence_records_have_closed_versioned_shapes() -> None:
@@ -344,7 +358,9 @@ def test_dedicated_profile_io_slots_capture_is_pinned() -> None:
     fixture_bytes = fixture.read_bytes()
     assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
     with pytest.raises(AssertionError):
-        assert hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
+        assert (
+            hashlib.sha256(fixture_bytes + b"perturbed").hexdigest() == fixture_sha256
+        )
 
 
 def test_captured_io_slots_parse_with_a_none_pool() -> None:

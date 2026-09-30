@@ -34,7 +34,8 @@ METACHARACTER_MEDIA_NAME = "R&D <a> \"b\" 'c'.iso"
 def file_response(*file_uuids: str) -> str:
     """The create response, carrying one ``FileUUID`` element per argument."""
     uuids = "".join(
-        f'<FileUUID kxe="false" kb="ROR">{file_uuid}</FileUUID>' for file_uuid in file_uuids
+        f'<FileUUID kxe="false" kb="ROR">{file_uuid}</FileUUID>'
+        for file_uuid in file_uuids
     )
     return f"""<entry xmlns="http://www.w3.org/2005/Atom">
     <id>{FILE_UUID}</id>
@@ -107,7 +108,10 @@ async def test_web_file_create_sends_the_proven_request(mock_hmc):
     assert result == FILE_UUID
     request = route.calls.last.request
     assert request.method == "PUT"
-    assert request.headers["Content-Type"] == "application/vnd.ibm.powervm.web+xml; type=File"
+    assert (
+        request.headers["Content-Type"]
+        == "application/vnd.ibm.powervm.web+xml; type=File"
+    )
     assert request.headers["Accept"] == "*/*"
     assert "X-HMC-Schema-Version" not in request.headers
     root = DET.fromstring(request.content)
@@ -238,8 +242,11 @@ async def test_web_file_upload_sends_a_stream_the_body_never_buffers(monkeypatch
     third is what makes the second safe — an explicit `Content-Length` is also
     why httpx does not fall back to `Transfer-Encoding: chunked` here.
     """
-    chunks = [TEST_UPLOAD_CONTENT[:1000], TEST_UPLOAD_CONTENT[1000:3000],
-              TEST_UPLOAD_CONTENT[3000:]]
+    chunks = [
+        TEST_UPLOAD_CONTENT[:1000],
+        TEST_UPLOAD_CONTENT[1000:3000],
+        TEST_UPLOAD_CONTENT[3000:],
+    ]
     transport = _StreamShapeTransport()
     monkeypatch.setattr(
         "hmcpctl.client.core.httpx.AsyncClient",
@@ -291,7 +298,10 @@ async def test_web_file_upload_waits_the_upload_timeout_for_the_response(
 
     general = hmc_config.timeout
     assert route.calls.last.request.extensions["timeout"] == {
-        "connect": general, "read": read, "write": general, "pool": general,
+        "connect": general,
+        "read": read,
+        "write": general,
+        "pool": general,
     }
 
 

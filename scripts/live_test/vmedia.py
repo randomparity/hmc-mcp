@@ -32,25 +32,23 @@ _ALREADY_POWERED_OFF = ExpectedOutcome(
     variant="pre-boot-power-off",
     transient=True,
     reason="lp3 already powered off (expected)",
-    error_codes=frozenset(
-        {"already", "not activated", "powered off", "not running"}
-    ),
+    error_codes=frozenset({"already", "not activated", "powered off", "not running"}),
 )
 _REPOSITORY_ALREADY_GONE = ExpectedOutcome(
     operation="media.delete_repository",
     variant="repository-removal",
     transient=True,
     reason="repository already gone (expected on re-run)",
-    error_codes=frozenset(
-        {"not found", "does not exist", "no repository", "no media"}
-    ),
+    error_codes=frozenset({"not found", "does not exist", "no repository", "no media"}),
 )
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
 
 
-_NOT_OWNED = "no repository recorded as created by the live test in the configured group"
+_NOT_OWNED = (
+    "no repository recorded as created by the live test in the configured group"
+)
 
 
 def _owns_repository(state: RunState) -> bool:
@@ -123,7 +121,9 @@ async def _select_vmedia_volume_group(
     if free_mib is not None and free_mib < repo_size_mib:
         for name in dependents:
             state.skip(
-                16, name, f"insufficient free space: {free_mib} MiB < {repo_size_mib} MiB"
+                16,
+                name,
+                f"insufficient free space: {free_mib} MiB < {repo_size_mib} MiB",
             )
         return False
     return True
@@ -440,7 +440,9 @@ async def _verify_iso_reupload_refused(client: Client, state: RunState) -> None:
     """
     config = state.config
     artifacts = state.artifacts
-    print(f"  ⏳ Re-uploading {config.iso_media_name} — expect the name collision to be refused…")
+    print(
+        f"  ⏳ Re-uploading {config.iso_media_name} — expect the name collision to be refused…"
+    )
     st, data = await state.call(
         client,
         "hmc_upload_iso",
@@ -673,7 +675,9 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
     ]
     if not artifacts.vmedia_iso_name or not _owns_repository(state):
         for name in skip_names:
-            state.skip(19, name, f"vmedia_iso_name not set (ST18 failed) or {_NOT_OWNED}")
+            state.skip(
+                19, name, f"vmedia_iso_name not set (ST18 failed) or {_NOT_OWNED}"
+            )
         return
 
     await _mount_vmedia_and_confirm(client, state)
@@ -807,7 +811,11 @@ async def _configure_boot_order(
     try:
         join_boot_device_paths(pending)
     except ValueError as exc:
-        state.skip(20, _SET_BOOT_ORDER_STEP, f"baseline pending boot order cannot be restored: {exc}")
+        state.skip(
+            20,
+            _SET_BOOT_ORDER_STEP,
+            f"baseline pending boot order cannot be restored: {exc}",
+        )
         return
     artifacts.vmedia_orig_boot_order = pending
     status, data = await state.call(

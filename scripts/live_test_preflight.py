@@ -142,7 +142,10 @@ def _bare_cec_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
                 not bare_cec._power_operations_authorized(),
                 "HMC_AUTHORIZE_POWER_OPERATIONS must be true",
             ),
-            (accept_dump is None, "LIVE_TEST_ACCEPT_PLATFORM_DUMP must be true, false or unset"),
+            (
+                accept_dump is None,
+                "LIVE_TEST_ACCEPT_PLATFORM_DUMP must be true, false or unset",
+            ),
         )
         if failed
     ]
@@ -160,7 +163,8 @@ def _bare_cec_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
             ),
             f"profile {resolved.profile_name} io_slots (assigned, then restored)",
             f"dedicated slot {resolved.drc_index or pcie.AUTO_SELECTED_SLOT}",
-            "platform dump: " + ("taken (dumprestart opted in)" if accept_dump else "not taken"),
+            "platform dump: "
+            + ("taken (dumprestart opted in)" if accept_dump else "not taken"),
         ),
         resolved.system_name,
     )
@@ -192,7 +196,9 @@ def arm_verdicts(
     """Predict each selected arm. `None` selects every arm."""
     selected = tuple(runner.SUBTASK_GROUPS) if group is None else (group,)
     return tuple(
-        _ARM_VERDICTS[name](config) if name in _ARM_VERDICTS else _generic_verdict(name, config)
+        _ARM_VERDICTS[name](config)
+        if name in _ARM_VERDICTS
+        else _generic_verdict(name, config)
         for name in selected
         if name != "all"
     )
@@ -261,7 +267,9 @@ def _check_credentials() -> tuple[bool, dict[str, bool]]:
 
 
 def _print_arms(
-    verdicts: tuple[ArmVerdict, ...], envelopes: dict[str, str], provision_vlan: str | None
+    verdicts: tuple[ArmVerdict, ...],
+    envelopes: dict[str, str],
+    provision_vlan: str | None,
 ) -> None:
     print("\npredicted arms — the run decides; a RUNNABLE arm may still SKIP")
     for verdict in verdicts:

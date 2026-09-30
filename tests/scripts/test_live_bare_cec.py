@@ -119,7 +119,11 @@ class World:
         if "type_model" in cmd:
             return "8375-42A"
         if cmd == _PROFILE_READ:
-            rows = [f'{self.name},default_profile,"{self.io_slots}"'] if self.created else []
+            rows = (
+                [f'{self.name},default_profile,"{self.io_slots}"']
+                if self.created
+                else []
+            )
             return "\n".join(["lpar_name,name,io_slots", *rows]) + "\n"
         if "io_slots-" in cmd:
             self.io_slots = "none"
@@ -130,11 +134,17 @@ class World:
         owner = self.name if self.created and self.lpar_state != "not activated" else ""
         return {
             "capability": "available",
-            "items": [{"drc_index": _DRC, "description": "Ethernet", "owner_lpar": owner}],
+            "items": [
+                {"drc_index": _DRC, "description": "Ethernet", "owner_lpar": owner}
+            ],
         }
 
     def _hmc_create_lpar(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        self.created, self.name, self.marker = True, kwargs["name"], kwargs["caller_token"]
+        self.created, self.name, self.marker = (
+            True,
+            kwargs["name"],
+            kwargs["caller_token"],
+        )
         return {
             "resource_created": True,
             "lpar": {"UUID": _LPAR_UUID},
@@ -211,7 +221,9 @@ class World:
 
     def _hmc_delete_lpar(self, _kwargs: dict[str, Any]) -> str:
         if self.lpar_state != "not activated":
-            return HMCError("partition is not in the not activated state", status_code=409)
+            return HMCError(
+                "partition is not in the not activated state", status_code=409
+            )
         self.created = False
         return f"Deleted LPAR {_LPAR_UUID}"
 
@@ -279,7 +291,9 @@ def test_happy_path_promotes_every_operation_and_leaves_nothing(schemas):
     assert {o["result"] for o in observations.values()} == {"passed"}
     assert {o["scenario"] for o in observations.values()} == {"st35-bare-cec"}
     ids = [item["observation"]["id"] for item in state.observations]
-    assert len(ids) == len(set(ids)), "a duplicate id discards the observations document"
+    assert len(ids) == len(set(ids)), (
+        "a duplicate id discards the observations document"
+    )
     assert observations["lpar.create"]["cleanup"] == "passed"
     assert observations["pcie.assign_dedicated_slot"]["cleanup"] == "passed"
     assert set(observations["lpar.delete"]["assertions"]) == {
@@ -296,7 +310,12 @@ def test_happy_path_issues_the_issue_876_sequence(schemas):
     _run(world, state)
 
     power = [
-        (tool, kwargs.get("partition_profile_uuid"), kwargs.get("operation"), kwargs.get("restart"))
+        (
+            tool,
+            kwargs.get("partition_profile_uuid"),
+            kwargs.get("operation"),
+            kwargs.get("restart"),
+        )
         for tool, kwargs in world.calls
         if tool in {"hmc_power_on_lpar", "hmc_power_off_lpar"}
     ]
@@ -325,7 +344,9 @@ def test_happy_path_issues_the_issue_876_sequence(schemas):
         "hmc_unassign_dedicated_pcie_slot",
         "hmc_delete_lpar",
     ]
-    assert [tools.index(tool) for tool in order] == sorted(tools.index(tool) for tool in order)
+    assert [tools.index(tool) for tool in order] == sorted(
+        tools.index(tool) for tool in order
+    )
     (create,) = world.calls_to("hmc_create_lpar")
     assert create["resources"] == bare_cec._RESOURCES
     assert create["resources"]["desired_procs"] == 0.5
@@ -384,7 +405,9 @@ def test_an_unmatched_refusal_is_a_failure_not_a_skip(schemas):
 
     _run(world, state)
 
-    assert [row["tool"] for row in _rows(state, "FAIL")] == ["hmc_power_off_lpar (osshutdown)"]
+    assert [row["tool"] for row in _rows(state, "FAIL")] == [
+        "hmc_power_off_lpar (osshutdown)"
+    ]
     _assert_torn_down(world)
 
 
@@ -403,7 +426,9 @@ def test_a_no_profile_activation_that_boots_is_powered_off_before_sms(schemas):
 
     assert _row(state, "hmc_power_on_lpar (no partition profile)")["status"] == "PASS"
     assert "'open firmware'" in _row(state, "no-profile activation outcome")["data"]
-    tools = [t for t in world.tools() if t in {"hmc_power_on_lpar", "hmc_power_off_lpar"}]
+    tools = [
+        t for t in world.tools() if t in {"hmc_power_on_lpar", "hmc_power_off_lpar"}
+    ]
     assert tools[:3] == ["hmc_power_on_lpar", "hmc_power_off_lpar", "hmc_power_on_lpar"]
     assert _observations(state)["lpar.power_on"]["result"] == "passed"
 
@@ -413,7 +438,11 @@ def test_platform_dump_runs_only_on_opt_in(schemas):
 
     _run(world, state)
 
-    dumps = [k for k in world.calls_to("hmc_power_off_lpar") if k.get("operation") == "dumprestart"]
+    dumps = [
+        k
+        for k in world.calls_to("hmc_power_off_lpar")
+        if k.get("operation") == "dumprestart"
+    ]
     assert dumps and dumps[0]["allow_dump_restart"] is True
     assert _row(state, "state after dumprestart")["status"] == "PASS"
     _assert_torn_down(world)
@@ -449,12 +478,24 @@ def test_a_timed_out_activation_fails_ends_the_steps_and_still_tears_down(schema
 @pytest.mark.parametrize(
     ("setup", "label"),
     [
-        (lambda mp, state: mp.setattr(bare_cec, "_power_operations_authorized", lambda: False),
-         "bare-cec power authorization"),
-        (lambda _mp, state: object.__setattr__(state.config, "accept_platform_dump", "yes"),
-         "bare-cec platform-dump opt-in"),
-        (lambda _mp, state: state.record(29, "dedicated slot selection", "PASS", "x"),
-         "bare-cec fixture artifacts"),
+        (
+            lambda mp, state: mp.setattr(
+                bare_cec, "_power_operations_authorized", lambda: False
+            ),
+            "bare-cec power authorization",
+        ),
+        (
+            lambda _mp, state: object.__setattr__(
+                state.config, "accept_platform_dump", "yes"
+            ),
+            "bare-cec platform-dump opt-in",
+        ),
+        (
+            lambda _mp, state: state.record(
+                29, "dedicated slot selection", "PASS", "x"
+            ),
+            "bare-cec fixture artifacts",
+        ),
     ],
 )
 def test_each_admission_refusal_skips_before_touching_the_hmc(
@@ -482,7 +523,9 @@ def test_power_operations_authorization_reads_the_server_config(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_an_exception_mid_arm_still_powers_off_unassigns_and_deletes(schemas, monkeypatch):
+def test_an_exception_mid_arm_still_powers_off_unassigns_and_deletes(
+    schemas, monkeypatch
+):
     world, state = World(), _state(schemas)
 
     async def explode(*_args: Any) -> None:
@@ -496,8 +539,10 @@ def test_an_exception_mid_arm_still_powers_off_unassigns_and_deletes(schemas, mo
     assert "RuntimeError: scenario bug" in raised["data"]
     tools = world.tools()
     teardown_off = max(i for i, t in enumerate(tools) if t == "hmc_power_off_lpar")
-    assert teardown_off < tools.index("hmc_unassign_dedicated_pcie_slot") < tools.index(
-        "hmc_delete_lpar"
+    assert (
+        teardown_off
+        < tools.index("hmc_unassign_dedicated_pcie_slot")
+        < tools.index("hmc_delete_lpar")
     )
     assert _observations(state)["pcie.unassign_dedicated_slot"]["result"] == "passed"
     _assert_torn_down(world)
@@ -508,7 +553,9 @@ def test_a_partition_that_will_not_power_off_is_left_with_recovery_commands(
 ):
     world, state = World(), _state(schemas)
     _explodes_after_activation(monkeypatch)
-    world.overrides["hmc_power_off_lpar"] = lambda _k: _job("COMPLETED_WITH_ERROR", "HSCL1234 no")
+    world.overrides["hmc_power_off_lpar"] = lambda _k: _job(
+        "COMPLETED_WITH_ERROR", "HSCL1234 no"
+    )
 
     _run(world, state)
 
@@ -561,7 +608,9 @@ def test_a_foreign_identity_on_an_active_partition_is_left_with_recovery(
     assert world.calls_to("hmc_power_off_lpar") == []
 
 
-def test_a_transient_identity_read_is_re_read_before_teardown_acts(schemas, monkeypatch):
+def test_a_transient_identity_read_is_re_read_before_teardown_acts(
+    schemas, monkeypatch
+):
     world, state = World(), _state(schemas)
     _explodes_after_activation(monkeypatch)
     failures = iter([HMCError("transient 503", status_code=503)])
@@ -631,7 +680,9 @@ def test_a_delete_whose_response_was_lost_is_judged_by_readback(schemas):
     delete = _observations(state)["lpar.delete"]
     assert delete["result"] == "failed"
     assert set(delete["assertions"]) == {"lpar-name-absent", "slot-released"}
-    assert len(world.calls_to("hmc_delete_lpar")) == 1, "no second delete of a gone partition"
+    assert len(world.calls_to("hmc_delete_lpar")) == 1, (
+        "no second delete of a gone partition"
+    )
     _assert_torn_down(world)
 
 
@@ -687,7 +738,9 @@ def test_the_dedicated_arm_create_still_sends_no_resources(schemas):
 
 def test_wrapper_dispatches_its_own_group_through_the_argument_entry_point(monkeypatch):
     seen = []
-    monkeypatch.setattr(runner, "_run_from_arguments", lambda argv: seen.append(argv) or 0)
+    monkeypatch.setattr(
+        runner, "_run_from_arguments", lambda argv: seen.append(argv) or 0
+    )
 
     assert wrapper.main([]) == 0
     assert seen == [["--group", "bare-cec"]]

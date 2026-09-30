@@ -34,7 +34,11 @@ def test_error_translators_return_translated_errors(translator, status, message)
 
 @pytest.mark.parametrize(
     "translator",
-    [translate_pcm_error, translate_template_error, translate_virtual_network_create_error],
+    [
+        translate_pcm_error,
+        translate_template_error,
+        translate_virtual_network_create_error,
+    ],
 )
 def test_error_translators_return_unmatched_errors_unchanged(translator):
     original = HMCError("raw failure", 500)

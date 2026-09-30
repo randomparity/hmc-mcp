@@ -134,7 +134,9 @@ def _job_error(status: str | None, resource: dict[str, Any]) -> str | None:
     exception_text = _exception_text(resource)
     if status == "EXCEPTION" and exception_text:
         return exception_text
-    return _result_message(resource) or exception_text or f"Job ended with status {status}"
+    return (
+        _result_message(resource) or exception_text or f"Job ended with status {status}"
+    )
 
 
 def _exception_text(resource: dict[str, Any]) -> str | None:

@@ -572,15 +572,11 @@ async def resolve_and_authorize_lpar_names(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
     )
-    await _verify_partition_on_system(
-        hmc, system_uuid, lpar_uuid, lpar_name_or_uuid
-    )
+    await _verify_partition_on_system(hmc, system_uuid, lpar_uuid, lpar_name_or_uuid)
     names = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )
-    await authorize_lpar_mutation(
-        hmc, *names, ownership_override=ownership_override
-    )
+    await authorize_lpar_mutation(hmc, *names, ownership_override=ownership_override)
     return names
 
 
@@ -646,8 +642,10 @@ async def stamp_created_lpar_ownership(
     system_name = await _resolve_system_name(hmc, system_uuid, system_fallback)
     if system_name == system_uuid:
         return None, [
-            (f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-             "could not resolve the managed-system name")
+            (
+                f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+                "could not resolve the managed-system name"
+            )
         ]
 
     token = await stamp_lpar_ownership(

@@ -70,30 +70,146 @@ def _recording_client() -> tuple[HMCClient, list[str]]:
 # Each newly guarded request builder, including both delete-network identities.
 # Arguments marked UUID_B are varied independently; payload names stay ordinary.
 _NEW_UUID_PATH_CALLS = (
-    ("create_logical_unit", (UUID_B, "disk", 1), "cluster_uuid", 0, f"Cluster/{UUID_B}/do/CreateLogicalUnit"),
-    ("delete_logical_unit", (UUID_B, "disk"), "cluster_uuid", 0, f"Cluster/{UUID_B}/do/DeleteLogicalUnit"),
-    ("list_logical_partitions", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/LogicalPartition"),
-    ("create_logical_partition", (UUID_B, "<LogicalPartition/>"), "system_uuid", 0, f"ManagedSystem/{UUID_B}/LogicalPartition"),
-    ("delete_logical_partition", (UUID_B,), "lpar_uuid", 0, f"LogicalPartition/{UUID_B}"),
-    ("_lpar_job", (UUID_B, "Migrate", "<JobRequest/>"), "lpar_uuid", 0, f"LogicalPartition/{UUID_B}/do/Migrate"),
-    ("list_virtual_switches", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualSwitch"),
-    ("list_virtual_networks", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualNetwork"),
-    ("list_network_bridges", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/NetworkBridge"),
-    ("create_virtual_network", (UUID_B, "network", 2, 0, "switch"), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualNetwork"),
-    ("delete_virtual_network", (UUID_B, UUID_A), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualNetwork/{UUID_A}"),
-    ("delete_virtual_network", (UUID_A, UUID_B), "network_uuid", 1, f"ManagedSystem/{UUID_A}/VirtualNetwork/{UUID_B}"),
-    ("modify_managed_system", (UUID_B, "<ManagedSystem/>"), "system_uuid", 0, f"ManagedSystem/{UUID_B}"),
-    ("power_on_system", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/do/PowerOn"),
-    ("power_off_system", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/do/PowerOff"),
-    ("power_on_vios", (UUID_B,), "vios_uuid", 0, f"VirtualIOServer/{UUID_B}/do/PowerOn"),
-    ("power_off_vios", (UUID_B,), "vios_uuid", 0, f"VirtualIOServer/{UUID_B}/do/PowerOff"),
-    ("list_vios", (UUID_B,), "system_uuid", 0, f"ManagedSystem/{UUID_B}/VirtualIOServer"),
-    ("get_vios_storage_detail", (UUID_B,), "vios_uuid", 0, f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping&group=ViosFCMapping"),
+    (
+        "create_logical_unit",
+        (UUID_B, "disk", 1),
+        "cluster_uuid",
+        0,
+        f"Cluster/{UUID_B}/do/CreateLogicalUnit",
+    ),
+    (
+        "delete_logical_unit",
+        (UUID_B, "disk"),
+        "cluster_uuid",
+        0,
+        f"Cluster/{UUID_B}/do/DeleteLogicalUnit",
+    ),
+    (
+        "list_logical_partitions",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/LogicalPartition",
+    ),
+    (
+        "create_logical_partition",
+        (UUID_B, "<LogicalPartition/>"),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/LogicalPartition",
+    ),
+    (
+        "delete_logical_partition",
+        (UUID_B,),
+        "lpar_uuid",
+        0,
+        f"LogicalPartition/{UUID_B}",
+    ),
+    (
+        "_lpar_job",
+        (UUID_B, "Migrate", "<JobRequest/>"),
+        "lpar_uuid",
+        0,
+        f"LogicalPartition/{UUID_B}/do/Migrate",
+    ),
+    (
+        "list_virtual_switches",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/VirtualSwitch",
+    ),
+    (
+        "list_virtual_networks",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/VirtualNetwork",
+    ),
+    (
+        "list_network_bridges",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/NetworkBridge",
+    ),
+    (
+        "create_virtual_network",
+        (UUID_B, "network", 2, 0, "switch"),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/VirtualNetwork",
+    ),
+    (
+        "delete_virtual_network",
+        (UUID_B, UUID_A),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/VirtualNetwork/{UUID_A}",
+    ),
+    (
+        "delete_virtual_network",
+        (UUID_A, UUID_B),
+        "network_uuid",
+        1,
+        f"ManagedSystem/{UUID_A}/VirtualNetwork/{UUID_B}",
+    ),
+    (
+        "modify_managed_system",
+        (UUID_B, "<ManagedSystem/>"),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}",
+    ),
+    (
+        "power_on_system",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/do/PowerOn",
+    ),
+    (
+        "power_off_system",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/do/PowerOff",
+    ),
+    (
+        "power_on_vios",
+        (UUID_B,),
+        "vios_uuid",
+        0,
+        f"VirtualIOServer/{UUID_B}/do/PowerOn",
+    ),
+    (
+        "power_off_vios",
+        (UUID_B,),
+        "vios_uuid",
+        0,
+        f"VirtualIOServer/{UUID_B}/do/PowerOff",
+    ),
+    (
+        "list_vios",
+        (UUID_B,),
+        "system_uuid",
+        0,
+        f"ManagedSystem/{UUID_B}/VirtualIOServer",
+    ),
+    (
+        "get_vios_storage_detail",
+        (UUID_B,),
+        "vios_uuid",
+        0,
+        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping&group=ViosFCMapping",
+    ),
 )
 
 
 @pytest.mark.parametrize("method,args,argument,position,suffix", _NEW_UUID_PATH_CALLS)
-def test_new_uuid_builders_refuse_ordinary_names_before_io(method, args, argument, position, suffix):
+def test_new_uuid_builders_refuse_ordinary_names_before_io(
+    method, args, argument, position, suffix
+):
     client, requested = _recording_client()
     invalid = "ordinary-resource-name"
     arguments = list(args)
@@ -106,7 +222,9 @@ def test_new_uuid_builders_refuse_ordinary_names_before_io(method, args, argumen
 
 
 @pytest.mark.parametrize("method,args,argument,position,suffix", _NEW_UUID_PATH_CALLS)
-def test_new_uuid_builders_preserve_mixed_case_paths(method, args, argument, position, suffix, monkeypatch):
+def test_new_uuid_builders_preserve_mixed_case_paths(
+    method, args, argument, position, suffix, monkeypatch
+):
     client = _client()
     requested = []
     mixed = "aBcDeFaB-cDeF-CdEf-cDEF-AbCdEfABCdef"
@@ -149,11 +267,17 @@ def test_lpar_document_link_preserves_mixed_case():
     )
 
 
-@pytest.mark.parametrize("method,resource_type", [
-    ("list_logical_partitions", "LogicalPartition"), ("list_vios", "VirtualIOServer"),
-])
+@pytest.mark.parametrize(
+    "method,resource_type",
+    [
+        ("list_logical_partitions", "LogicalPartition"),
+        ("list_vios", "VirtualIOServer"),
+    ],
+)
 @pytest.mark.parametrize("scope", [None, ""])
-def test_optional_uuid_scopes_still_allow_unscoped_lists(method, resource_type, scope, monkeypatch):
+def test_optional_uuid_scopes_still_allow_unscoped_lists(
+    method, resource_type, scope, monkeypatch
+):
     client = _client()
     requested = []
 
@@ -169,7 +293,9 @@ def test_optional_uuid_scopes_still_allow_unscoped_lists(method, resource_type, 
 def test_lpm_operation_refusal_precedes_uuid_refusal():
     client, requested = _recording_client()
     with pytest.raises(ValueError, match="^LPM job operation must be one of: "):
-        asyncio.run(client._lpar_job("ordinary-partition-name", "Unlisted", "<JobRequest/>"))
+        asyncio.run(
+            client._lpar_job("ordinary-partition-name", "Unlisted", "<JobRequest/>")
+        )
     assert requested == []
 
 
@@ -652,9 +778,7 @@ _TYPE_SEGMENT_CALLS = (
 @pytest.mark.parametrize(
     "method, args, kwargs",
     _TYPE_SEGMENT_CALLS,
-    ids=[
-        f"{name}-{index}" for index, (name, _, _) in enumerate(_TYPE_SEGMENT_CALLS)
-    ],
+    ids=[f"{name}-{index}" for index, (name, _, _) in enumerate(_TYPE_SEGMENT_CALLS)],
 )
 def test_no_unsafe_type_segment_reaches_transport(method, args, kwargs):
     """Refused at the boundary, before anything is built (ADR 0143).
@@ -736,7 +860,11 @@ _GROUP_VALUES = (
 
 _GROUP_CALLS = (
     ("list_uom", ("LogicalPartition",), "/rest/api/uom/LogicalPartition"),
-    ("get_uom", ("LogicalPartition", UUID_A), f"/rest/api/uom/LogicalPartition/{UUID_A}"),
+    (
+        "get_uom",
+        ("LogicalPartition", UUID_A),
+        f"/rest/api/uom/LogicalPartition/{UUID_A}",
+    ),
 )
 
 
@@ -1002,25 +1130,44 @@ _UUID_UOM_SITES = {
     for owner, names in _UUID_UOM_REQUEST_SITES.items()
     for name in names.split()
 } | {
-    ("client_network", "NetworkMixin.create_virtual_network", "system_uuid", "document-link"),
+    (
+        "client_network",
+        "NetworkMixin.create_virtual_network",
+        "system_uuid",
+        "document-link",
+    ),
     ("client_storage", "StorageMixin.get_lpar_link", "lpar_uuid", "document-link"),
     ("client_storage", "StorageMixin.get_lpar_link", "system_uuid", "document-link"),
 }
-_CLASSIFIED_UOM_SITES = _UUID_UOM_SITES | {
-    (*owner.split(".", 1), name, "request")
-    for owner, name in _CONSOLE_UOM_REQUEST_SITES.items()
-} | {
-    # These document/comparison identities are classified, not UUID-governed.
-    ("client_network", "NetworkMixin.create_virtual_network", "switch_uuid", "document-link"),
-    ("client_storage", "StorageMixin.list_storage_mappings", "lpar_uuid", "comparison"),
-    ("client_storage", "_filter_optical_mappings", "lpar_uuid", "comparison"),
-    # Existing enforcement remains separately asserted: ADRs 0143, 0151, 0157.
-    ("client_lpm", "LpmMixin._lpar_job", "operation", "request"),
-    ("client_users", "UsersMixin._child_path", "child_type", "request"),
-    ("client_users", "UsersMixin.get_hmc_user", "profile_path_id", "request"),
-    ("client_users", "UsersMixin.modify_hmc_user", "profile_path_id", "request"),
-    ("client_users", "UsersMixin.delete_hmc_user", "profile_path_id", "request"),
-}
+_CLASSIFIED_UOM_SITES = (
+    _UUID_UOM_SITES
+    | {
+        (*owner.split(".", 1), name, "request")
+        for owner, name in _CONSOLE_UOM_REQUEST_SITES.items()
+    }
+    | {
+        # These document/comparison identities are classified, not UUID-governed.
+        (
+            "client_network",
+            "NetworkMixin.create_virtual_network",
+            "switch_uuid",
+            "document-link",
+        ),
+        (
+            "client_storage",
+            "StorageMixin.list_storage_mappings",
+            "lpar_uuid",
+            "comparison",
+        ),
+        ("client_storage", "_filter_optical_mappings", "lpar_uuid", "comparison"),
+        # Existing enforcement remains separately asserted: ADRs 0143, 0151, 0157.
+        ("client_lpm", "LpmMixin._lpar_job", "operation", "request"),
+        ("client_users", "UsersMixin._child_path", "child_type", "request"),
+        ("client_users", "UsersMixin.get_hmc_user", "profile_path_id", "request"),
+        ("client_users", "UsersMixin.modify_hmc_user", "profile_path_id", "request"),
+        ("client_users", "UsersMixin.delete_hmc_user", "profile_path_id", "request"),
+    }
+)
 
 
 def _is_boundary_check(node: ast.AST) -> bool:
@@ -1049,7 +1196,9 @@ def _uom_function_scopes(
                 pending: list[ast.AST] = list(child.body)
                 while pending:
                     node = pending.pop()
-                    if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                    if isinstance(
+                        node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+                    ):
                         continue
                     nodes.append(node)
                     pending.extend(ast.iter_child_nodes(node))
@@ -1088,7 +1237,9 @@ def _uom_segment_expressions(node: ast.JoinedStr) -> list[ast.expr]:
     if start is None:
         return []
     return [
-        part.value for part in node.values[start:] if isinstance(part, ast.FormattedValue)
+        part.value
+        for part in node.values[start:]
+        if isinstance(part, ast.FormattedValue)
     ]
 
 
@@ -1120,14 +1271,18 @@ def _uom_path_sites() -> tuple[
             owner = (module, function)
             usages = {}
             for node in nodes:
-                if isinstance(node, ast.Assign) and isinstance(node.value, ast.JoinedStr):
+                if isinstance(node, ast.Assign) and isinstance(
+                    node.value, ast.JoinedStr
+                ):
                     targets = {ast.unparse(target) for target in node.targets}
                     if module == "client_storage" and "expected_link" in targets:
                         usages[id(node.value)] = "comparison"
                     elif module == "client_network" and "switch_link" in targets:
                         usages[id(node.value)] = "document-link"
                 if _is_boundary_check(node):
-                    guarded.setdefault(owner, set()).add(ast.unparse(cast(ast.Call, node).args[1]))
+                    guarded.setdefault(owner, set()).add(
+                        ast.unparse(cast(ast.Call, node).args[1])
+                    )
                 if (bound := _is_quote_binding(node)) is not None:
                     quote_bound.setdefault(owner, set()).add(bound)
             for node in nodes:
@@ -1139,8 +1294,13 @@ def _uom_path_sites() -> tuple[
                 for expression in _uom_segment_expressions(node):
                     # Inline encoding is per-expression evidence; it never
                     # certifies a separate raw interpolation of the same name.
-                    binding = ast.Assign(targets=[ast.Name(id="inline")], value=expression)
-                    if isinstance(expression, ast.Call) and _is_quote_binding(binding) is not None:
+                    binding = ast.Assign(
+                        targets=[ast.Name(id="inline")], value=expression
+                    )
+                    if (
+                        isinstance(expression, ast.Call)
+                        and _is_quote_binding(binding) is not None
+                    ):
                         inline_encoded.add(len(interpolations))
                         name = ast.unparse(expression.args[0])
                     else:
@@ -1162,14 +1322,25 @@ def _matching_argument_check(node: ast.AST, predicate: str, argument: str) -> bo
     )
 
 
-def _mapped_path_arguments(node: ast.AST, path: ast.JoinedStr, bindings: set[str]) -> set[str]:
+def _mapped_path_arguments(
+    node: ast.AST, path: ast.JoinedStr, bindings: set[str]
+) -> set[str]:
     """Only literal metadata on an existing request helper receiving this path."""
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
         return set()
-    helpers = {"_get": 0, "_put": 0, "_post": 0, "_delete": 0,
-               "_request_with_uuid_path_arguments": 1}
+    helpers = {
+        "_get": 0,
+        "_put": 0,
+        "_post": 0,
+        "_delete": 0,
+        "_request_with_uuid_path_arguments": 1,
+    }
     position = helpers.get(node.func.attr)
-    if ast.unparse(node.func.value) != "self" or position is None or len(node.args) <= position:
+    if (
+        ast.unparse(node.func.value) != "self"
+        or position is None
+        or len(node.args) <= position
+    ):
         return set()
     destination = node.args[position]
     if destination is not path and not (
@@ -1181,7 +1352,8 @@ def _mapped_path_arguments(node: ast.AST, path: ast.JoinedStr, bindings: set[str
         for keyword in node.keywords
         if keyword.arg == "uuid_path_arguments" and isinstance(keyword.value, ast.Dict)
         for key, value in zip(keyword.value.keys, keyword.value.values)
-        if isinstance(key, ast.Constant) and isinstance(value, ast.Name)
+        if isinstance(key, ast.Constant)
+        and isinstance(value, ast.Name)
         and key.value == value.id
     }
 
@@ -1212,31 +1384,48 @@ def test_every_governed_uom_segment_has_policy_evidence():
     package = Path(client_module.__file__).parent
     for source in sorted(package.rglob("*.py")):
         module = source.relative_to(package).with_suffix("").as_posix()
-        scopes = dict(_uom_function_scopes(ast.parse(source.read_text(encoding="utf-8"))))
+        scopes = dict(
+            _uom_function_scopes(ast.parse(source.read_text(encoding="utf-8")))
+        )
         for function, nodes in scopes.items():
             for path in nodes:
                 if not isinstance(path, ast.JoinedStr):
                     continue
                 bindings = {
-                    target.id for node in nodes
+                    target.id
+                    for node in nodes
                     if isinstance(node, ast.Assign) and node.value is path
-                    for target in node.targets if isinstance(target, ast.Name)
+                    for target in node.targets
+                    if isinstance(target, ast.Name)
                 }
-                mapped = set().union(*(
-                    _mapped_path_arguments(node, path, bindings) for node in nodes
-                ))
-                capture = storage_dispatch_paths.get(function) if module == "client_storage" else None
+                mapped = set().union(
+                    *(_mapped_path_arguments(node, path, bindings) for node in nodes)
+                )
+                capture = (
+                    storage_dispatch_paths.get(function)
+                    if module == "client_storage"
+                    else None
+                )
                 if capture in bindings:
-                    mapped.update(set().union(*(
-                        _mapped_path_arguments(node, path, {capture})
-                        for node in scopes.get(f"{function}.dispatch", [])
-                    )))
+                    mapped.update(
+                        set().union(
+                            *(
+                                _mapped_path_arguments(node, path, {capture})
+                                for node in scopes.get(f"{function}.dispatch", [])
+                            )
+                        )
+                    )
                 for expression in _uom_segment_expressions(path):
                     # A canonical identity is never encoded data: an
                     # inline-quoted UUID segment is unclassifiable, and the
                     # failure must name its plain argument, not the call.
-                    binding = ast.Assign(targets=[ast.Name(id="inline")], value=expression)
-                    if isinstance(expression, ast.Call) and _is_quote_binding(binding) is not None:
+                    binding = ast.Assign(
+                        targets=[ast.Name(id="inline")], value=expression
+                    )
+                    if (
+                        isinstance(expression, ast.Call)
+                        and _is_quote_binding(binding) is not None
+                    ):
                         name = ast.unparse(expression.args[0])
                     else:
                         name = ast.unparse(expression)
@@ -1245,16 +1434,23 @@ def test_every_governed_uom_segment_has_policy_evidence():
                         continue
                     if _UOM_SEGMENT_POLICIES[name] == "uuid":
                         enforced = name in mapped or any(
-                            _matching_argument_check(node, "_reject_non_uuid_path_argument", name)
+                            _matching_argument_check(
+                                node, "_reject_non_uuid_path_argument", name
+                            )
                             for node in nodes
                         )
                     else:
                         enforced = any(
                             _is_quote_binding(node) == name
-                            and ast.unparse(cast(ast.Call, cast(ast.Assign, node).value).args[0]) == "console_uuid"
+                            and ast.unparse(
+                                cast(ast.Call, cast(ast.Assign, node).value).args[0]
+                            )
+                            == "console_uuid"
                             for node in nodes
                         ) and any(
-                            _matching_argument_check(node, "_reject_over_long_path_value", "console_uuid")
+                            _matching_argument_check(
+                                node, "_reject_over_long_path_value", "console_uuid"
+                            )
                             for node in nodes
                         )
                     if not enforced:
@@ -1277,7 +1473,7 @@ def test_uuid_inventory_detects_missing_site_evidence(tmp_path, monkeypatch, evi
     core_path.write_text("", encoding="utf-8")
     source = tmp_path / "client_extra.py"
     prefix = (
-        'def example(self, system_uuid):\n'
+        "def example(self, system_uuid):\n"
         '    path = f"/rest/api/uom/ManagedSystem/{system_uuid}"\n'
     )
     source.write_text(prefix + f"    {evidence}\n", encoding="utf-8")
@@ -1285,7 +1481,7 @@ def test_uuid_inventory_detects_missing_site_evidence(tmp_path, monkeypatch, evi
     test_every_governed_uom_segment_has_policy_evidence()
     # The same name in another function or a nested function cannot certify it.
     source.write_text(
-        prefix + '    def nested():\n' + f"        {evidence}\n",
+        prefix + "    def nested():\n" + f"        {evidence}\n",
         encoding="utf-8",
     )
     with pytest.raises(AssertionError, match="client_extra.*example.*system_uuid"):
@@ -1302,14 +1498,16 @@ def test_uuid_inventory_detects_missing_site_evidence(tmp_path, monkeypatch, evi
         'self._get(other_path, "ManagedSystem", uuid_path_arguments={"system_uuid": system_uuid})',
     ],
 )
-def test_uuid_inventory_requires_matching_argument_and_destination(tmp_path, monkeypatch, evidence):
+def test_uuid_inventory_requires_matching_argument_and_destination(
+    tmp_path, monkeypatch, evidence
+):
     from hmcpctl.client import core as client_module
 
     source = tmp_path / "core.py"
     source.write_text(
-        'def example(self, system_uuid, other_uuid, other_path, metadata):\n'
+        "def example(self, system_uuid, other_uuid, other_path, metadata):\n"
         '    path = f"/rest/api/uom/ManagedSystem/{system_uuid}"\n'
-        f'    {evidence}\n',
+        f"    {evidence}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(client_module, "__file__", str(source))
@@ -1318,7 +1516,9 @@ def test_uuid_inventory_requires_matching_argument_and_destination(tmp_path, mon
 
 
 @pytest.mark.parametrize("missing", ["bound", "quote"])
-def test_console_inventory_requires_its_own_bound_and_quote(tmp_path, monkeypatch, missing):
+def test_console_inventory_requires_its_own_bound_and_quote(
+    tmp_path, monkeypatch, missing
+):
     from hmcpctl.client import core as client_module
 
     source = tmp_path / "core.py"
@@ -1326,23 +1526,29 @@ def test_console_inventory_requires_its_own_bound_and_quote(tmp_path, monkeypatc
         "bound": '    _reject_over_long_path_value("console_uuid", console_uuid)\n',
         "quote": '    console_path_id = quote(console_uuid, safe="")\n',
     }
-    prefix = 'def example(console_uuid, console_path_id):\n'
+    prefix = "def example(console_uuid, console_path_id):\n"
     path = '    return f"/rest/api/uom/ManagementConsole/{console_path_id}"\n'
     source.write_text(prefix + "".join(evidence.values()) + path, encoding="utf-8")
     monkeypatch.setattr(client_module, "__file__", str(source))
     test_every_governed_uom_segment_has_policy_evidence()
     source.write_text(
-        prefix + "".join(value for key, value in evidence.items() if key != missing)
-        + '    def nested():\n    ' + evidence[missing] + path,
+        prefix
+        + "".join(value for key, value in evidence.items() if key != missing)
+        + "    def nested():\n    "
+        + evidence[missing]
+        + path,
         encoding="utf-8",
     )
     with pytest.raises(AssertionError, match="core.*example.*console_path_id"):
         test_every_governed_uom_segment_has_policy_evidence()
 
 
-@pytest.mark.parametrize("function, binding", [
-    ("_post_vg_xml", "path"),
-])
+@pytest.mark.parametrize(
+    "function, binding",
+    [
+        ("_post_vg_xml", "path"),
+    ],
+)
 def test_storage_dispatch_metadata_certifies_only_its_captured_path(
     tmp_path, monkeypatch, function, binding
 ):
@@ -1352,10 +1558,10 @@ def test_storage_dispatch_metadata_certifies_only_its_captured_path(
     core_path.write_text("", encoding="utf-8")
     source = tmp_path / "client_storage.py"
     prefix = (
-        'class StorageMixin:\n'
-        f'    def {function}(self, vios_uuid):\n'
+        "class StorageMixin:\n"
+        f"    def {function}(self, vios_uuid):\n"
         f'        {binding} = f"/rest/api/uom/VirtualIOServer/{{vios_uuid}}"\n'
-        '        async def dispatch():\n'
+        "        async def dispatch():\n"
     )
     metadata = (
         f'            await self._request_with_uuid_path_arguments("POST", {binding}, '
@@ -1364,14 +1570,12 @@ def test_storage_dispatch_metadata_certifies_only_its_captured_path(
     source.write_text(prefix + metadata, encoding="utf-8")
     monkeypatch.setattr(client_module, "__file__", str(core_path))
     test_every_governed_uom_segment_has_policy_evidence()
-    source.write_text(prefix + '            pass\n', encoding="utf-8")
+    source.write_text(prefix + "            pass\n", encoding="utf-8")
     with pytest.raises(AssertionError, match=f"client_storage.*{function}.*vios_uuid"):
         test_every_governed_uom_segment_has_policy_evidence()
 
 
-def test_an_inline_quoted_uuid_identity_still_requires_its_check(
-    tmp_path, monkeypatch
-):
+def test_an_inline_quoted_uuid_identity_still_requires_its_check(tmp_path, monkeypatch):
     """Encoding a canonical identity does not satisfy its UUID policy.
 
     The inventory normalizes inline quote forms to their argument, so this
@@ -1382,8 +1586,8 @@ def test_an_inline_quoted_uuid_identity_still_requires_its_check(
 
     source = tmp_path / "core.py"
     source.write_text(
-        'def example(self, system_uuid):\n'
-        '    path = f"/rest/api/uom/ManagedSystem/{quote(system_uuid, safe=\'\')}"\n',
+        "def example(self, system_uuid):\n"
+        "    path = f\"/rest/api/uom/ManagedSystem/{quote(system_uuid, safe='')}\"\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(client_module, "__file__", str(source))
@@ -1417,7 +1621,8 @@ def test_every_uom_path_interpolation_is_a_known_argument():
         (module, function, name, usage)
         for module, function, name, usage in interpolations
         if not (
-            module == "core" and name in _KNOWN_UOM_SEGMENT_ARGUMENTS
+            module == "core"
+            and name in _KNOWN_UOM_SEGMENT_ARGUMENTS
             or (module, function, name, usage) in _CLASSIFIED_UOM_SITES
         )
     )
@@ -1430,7 +1635,7 @@ def test_uom_path_inventory_detects_an_unclassified_module(tmp_path, monkeypatch
     core_path = tmp_path / "core.py"
     core_path.write_text("# Synthetic package root.\n", encoding="utf-8")
     (tmp_path / "client_extra.py").write_text(
-        'async def example(new_segment):\n'
+        "async def example(new_segment):\n"
         '    return f"/rest/api/uom/Example/{new_segment}"\n',
         encoding="utf-8",
     )
@@ -1439,42 +1644,54 @@ def test_uom_path_inventory_detects_an_unclassified_module(tmp_path, monkeypatch
         test_every_uom_path_interpolation_is_a_known_argument()
 
 
-def test_uom_inventory_keeps_prefixed_composed_and_inline_segments(tmp_path, monkeypatch):
+def test_uom_inventory_keeps_prefixed_composed_and_inline_segments(
+    tmp_path, monkeypatch
+):
     from hmcpctl.client import core as client_module
 
     core_path = tmp_path / "core.py"
     core_path.write_text("", encoding="utf-8")
     (tmp_path / "client_network.py").write_text(
-        'class NetworkMixin:\n'
-        '    def create_virtual_network(self, system_uuid, switch_uuid):\n'
+        "class NetworkMixin:\n"
+        "    def create_virtual_network(self, system_uuid, switch_uuid):\n"
         '        switch_link = (f"{self._rest_base_url}/rest/api/uom/ManagedSystem/"\n'
         '                       f"{system_uuid}/VirtualSwitch/{switch_uuid}")\n',
         encoding="utf-8",
     )
     (tmp_path / "client_users.py").write_text(
-        'class UsersMixin:\n'
-        '    def get_hmc_user(self, console_uuid, user_profile_uuid):\n'
+        "class UsersMixin:\n"
+        "    def get_hmc_user(self, console_uuid, user_profile_uuid):\n"
         '        profile_path_id = quote(user_profile_uuid, safe="")\n'
-        '        return f"{self._child_path(console_uuid, \'UserProfile\')}/{profile_path_id}"\n',
+        "        return f\"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}\"\n",
         encoding="utf-8",
     )
     (tmp_path / "client_storage.py").write_text(
-        'def _filter_optical_mappings(lpar_uuid):\n'
+        "def _filter_optical_mappings(lpar_uuid):\n"
         '    expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"\n',
         encoding="utf-8",
     )
     nested = tmp_path / "nested"
     nested.mkdir()
     (nested / "inline.py").write_text(
-        'def example(system_uuid, data):\n'
-        '    return f"/rest/api/uom/ManagedSystem/{quote(system_uuid, safe=\'\')}/{data.id}"\n',
+        "def example(system_uuid, data):\n"
+        "    return f\"/rest/api/uom/ManagedSystem/{quote(system_uuid, safe='')}/{data.id}\"\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(client_module, "__file__", str(core_path))
     sites, _, _, encoded = _uom_path_sites()
     assert set(sites) == {
-        ("client_network", "NetworkMixin.create_virtual_network", "system_uuid", "document-link"),
-        ("client_network", "NetworkMixin.create_virtual_network", "switch_uuid", "document-link"),
+        (
+            "client_network",
+            "NetworkMixin.create_virtual_network",
+            "system_uuid",
+            "document-link",
+        ),
+        (
+            "client_network",
+            "NetworkMixin.create_virtual_network",
+            "switch_uuid",
+            "document-link",
+        ),
         ("client_users", "UsersMixin.get_hmc_user", "profile_path_id", "request"),
         ("client_storage", "_filter_optical_mappings", "lpar_uuid", "comparison"),
         ("nested/inline", "example", "system_uuid", "request"),
@@ -1491,31 +1708,35 @@ def test_uom_inventory_cannot_borrow_another_functions_guards(tmp_path, monkeypa
 
     core_path = tmp_path / "core.py"
     core_path.write_text(
-        'def same(resource_type):\n'
+        "def same(resource_type):\n"
         '    _reject_unknown_uom_type("resource_type", resource_type)\n'
         '    return f"/rest/api/uom/{resource_type}"\n',
         encoding="utf-8",
     )
     (tmp_path / "client_extra.py").write_text(
-        'class Guarded:\n'
-        '    def same(resource_type, value):\n'
+        "class Guarded:\n"
+        "    def same(resource_type, value):\n"
         '        _reject_unknown_uom_type("resource_type", resource_type)\n'
         '        encoded_value = quote(value, safe="")\n'
         '        return f"/rest/api/uom/{resource_type}/{encoded_value}"\n'
-        'class Unguarded:\n'
-        '    def same(resource_type, encoded_value):\n'
-        '        def nested():\n'
+        "class Unguarded:\n"
+        "    def same(resource_type, encoded_value):\n"
+        "        def nested():\n"
         '            _reject_unknown_uom_type("resource_type", resource_type)\n'
         '            encoded_value = quote(resource_type, safe="")\n'
         '        return f"/rest/api/uom/{resource_type}/{encoded_value}"\n'
-        'def same(resource_type):\n'
+        "def same(resource_type):\n"
         '    return f"/rest/api/uom/{resource_type}"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(client_module, "__file__", str(core_path))
-    with pytest.raises(AssertionError, match="client_extra.*Unguarded.same.*resource_type"):
+    with pytest.raises(
+        AssertionError, match="client_extra.*Unguarded.same.*resource_type"
+    ):
         test_every_uom_type_interpolation_is_guarded()
-    with pytest.raises(AssertionError, match="client_extra.*Unguarded.same.*encoded_value"):
+    with pytest.raises(
+        AssertionError, match="client_extra.*Unguarded.same.*encoded_value"
+    ):
         test_every_encoded_uom_segment_is_quote_bound()
 
 
@@ -1524,8 +1745,8 @@ def test_inline_encoding_cannot_certify_a_raw_sibling(tmp_path, monkeypatch):
 
     source = tmp_path / "core.py"
     inline = (
-        'def example(encoded_value):\n'
-        '    first = f"/rest/api/uom/Example/{quote(encoded_value, safe=\'\')}"\n'
+        "def example(encoded_value):\n"
+        "    first = f\"/rest/api/uom/Example/{quote(encoded_value, safe='')}\"\n"
     )
     source.write_text(inline, encoding="utf-8")
     monkeypatch.setattr(client_module, "__file__", str(source))
@@ -1549,7 +1770,8 @@ def test_every_encoded_uom_segment_is_quote_bound():
         {
             (module, function, name)
             for index, (module, function, name, _) in enumerate(interpolations)
-            if name in _ENCODED_SEGMENT_ARGUMENTS | {"console_path_id", "profile_path_id"}
+            if name
+            in _ENCODED_SEGMENT_ARGUMENTS | {"console_path_id", "profile_path_id"}
             and name not in quote_bound.get((module, function), set())
             and index not in inline_encoded
         }
@@ -1637,7 +1859,9 @@ def _quick_property_path(property_name: str) -> str:
     client, requested = _recording_client()
 
     assert (
-        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+        asyncio.run(
+            client.get_quick_property("LogicalPartition", UUID_A, property_name)
+        )
         is None
     )
     assert len(requested) == 1
@@ -1717,7 +1941,9 @@ def test_a_dot_segment_quick_property_name_is_still_refused(property_name):
     client._http.build_request = _forbidden  # type: ignore[method-assign]
 
     with pytest.raises(HMCError, match="refused"):
-        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+        asyncio.run(
+            client.get_quick_property("LogicalPartition", UUID_A, property_name)
+        )
 
 
 @pytest.mark.parametrize(
@@ -1766,7 +1992,9 @@ def test_a_caller_percent_encoded_dot_segment_name_is_refused_too(property_name)
     client._http.build_request = _forbidden  # type: ignore[method-assign]
 
     with pytest.raises(HMCError, match="refused"):
-        asyncio.run(client.get_quick_property("LogicalPartition", UUID_A, property_name))
+        asyncio.run(
+            client.get_quick_property("LogicalPartition", UUID_A, property_name)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1819,14 +2047,15 @@ def test_a_url_httpx_refuses_to_build_is_refused_as_an_hmc_error(call, path):
 # ---------------------------------------------------------------------------
 
 
-
 @pytest.mark.parametrize("validate", [False, True])
 def test_over_long_search_property_name_is_refused_before_io(validate):
     client, requested = _recording_client()
     name = "A" * (_MAX_UOM_PATH_VALUE_LENGTH + 1)
 
     with pytest.raises(ValueError) as error:
-        asyncio.run(client.search_uom("ManagedSystem", name, "value", validate=validate))
+        asyncio.run(
+            client.search_uom("ManagedSystem", name, "value", validate=validate)
+        )
 
     assert requested == []
     assert "property_name" in str(error.value)

@@ -293,7 +293,9 @@ def _collection_limit_section(readme: str) -> str:
         assert heading in readme, f"operation guide has no '{heading}' heading"
     assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(
         COLLECTION_LIMIT_NEXT
-    ), f"operation guide must keep '{COLLECTION_LIMIT_HEADING}' before '{COLLECTION_LIMIT_NEXT}'"
+    ), (
+        f"operation guide must keep '{COLLECTION_LIMIT_HEADING}' before '{COLLECTION_LIMIT_NEXT}'"
+    )
     return readme.split(COLLECTION_LIMIT_HEADING, 1)[1].split(COLLECTION_LIMIT_NEXT, 1)[
         0
     ]

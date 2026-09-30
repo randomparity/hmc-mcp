@@ -100,9 +100,13 @@ def _classify(token: str, short_names: set[str]) -> str:
         return "tool"
     if match := PARAMETER.fullmatch(token):
         name, value = match.groups()
-        assert name in inspect.signature(power_lpar).parameters, f"not a power_lpar parameter: {token!r}"
+        assert name in inspect.signature(power_lpar).parameters, (
+            f"not a power_lpar parameter: {token!r}"
+        )
         if name == "operation":
-            assert value in POWER_OFF_OPERATIONS, f"not an accepted PowerOff operation: {token!r}"
+            assert value in POWER_OFF_OPERATIONS, (
+                f"not an accepted PowerOff operation: {token!r}"
+            )
         return "parameter"
     if SETTING.fullmatch(token):
         assert token.removeprefix("HMC_").lower() in HMCConfig.model_fields, token
@@ -111,7 +115,9 @@ def _classify(token: str, short_names: set[str]) -> str:
         return "field"
     if token in short_names:
         return "short"
-    assert token in PROSE_TERMS, f"unresolvable token {token!r}: resolve it or allowlist it"
+    assert token in PROSE_TERMS, (
+        f"unresolvable token {token!r}: resolve it or allowlist it"
+    )
     return "prose"
 
 
@@ -122,7 +128,9 @@ def test_page_has_no_fenced_blocks_the_token_scan_would_misread() -> None:
 def test_every_backticked_token_resolves_or_is_a_prose_term() -> None:
     tokens = _page_tokens()
     # A bare name counts only as the last segment of a dotted path the page also resolves.
-    short_names = {token.rsplit(".", 1)[-1] for token in tokens if token.startswith("hmcpctl.")}
+    short_names = {
+        token.rsplit(".", 1)[-1] for token in tokens if token.startswith("hmcpctl.")
+    }
     found: dict[str, set[str]] = {}
     for token in tokens:
         found.setdefault(_classify(token, short_names), set()).add(token)
@@ -135,4 +143,6 @@ def test_every_backticked_token_resolves_or_is_a_prose_term() -> None:
 
 
 def test_page_is_linked_once_from_the_index() -> None:
-    assert (ROOT / "docs" / "index.md").read_text(encoding="utf-8").count(PAGE_LINK) == 1
+    assert (ROOT / "docs" / "index.md").read_text(encoding="utf-8").count(
+        PAGE_LINK
+    ) == 1

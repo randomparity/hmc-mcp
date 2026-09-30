@@ -229,7 +229,9 @@ def test_serve_rejects_an_unknown_audit_level():
     main_stdio.assert_not_called()
 
 
-@pytest.mark.parametrize("level_name", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+@pytest.mark.parametrize(
+    "level_name", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+)
 @pytest.mark.parametrize("http", [False, True])
 def test_serve_forwards_the_audit_level(http, level_name):
     args = ["serve", "--audit-level", level_name, *POLICY_ARGS]

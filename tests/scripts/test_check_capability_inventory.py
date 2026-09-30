@@ -148,7 +148,10 @@ def test_confirmed_gap_never_promotes_verification(tmp_path):
     registry = _closure_registry(tmp_path)
     record = _operation("system.list", "absent")
     record["implementation"]["missing_scope"] = [_confirmed_gap()]
-    assert inventory.derive_states([record], registry, tmp_path, _NOW)["system.list"].state == "unevidenced"
+    assert (
+        inventory.derive_states([record], registry, tmp_path, _NOW)["system.list"].state
+        == "unevidenced"
+    )
 
 
 @pytest.mark.parametrize(
@@ -369,7 +372,10 @@ def test_verify_corpora_detects_changed_and_extra_files(tmp_path: Path) -> None:
     data.mkdir()
     source.mkdir()
     page = source / "alpha.md"
-    page.write_text("---\nsource: https://example.test/alpha\ncaptured: now\n---\n", encoding="utf-8")
+    page.write_text(
+        "---\nsource: https://example.test/alpha\ncaptured: now\n---\n",
+        encoding="utf-8",
+    )
     digest = inventory.format_sha256(page.read_bytes())
     _write_json(
         data / "corpora.json",
@@ -702,8 +708,14 @@ def test_environment_values_reject_private_identifiers(
     ("mutation", "diagnostic"),
     [
         ({"tested_commit": "a" * 39}, "tested_commit must be a full SHA"),
-        ({"closure_fingerprint": "b" * 63}, "closure_fingerprint must be a full SHA-256"),
-        ({"assertions": ["Console UUID present"]}, "assertions must be closed-shape tokens"),
+        (
+            {"closure_fingerprint": "b" * 63},
+            "closure_fingerprint must be a full SHA-256",
+        ),
+        (
+            {"assertions": ["Console UUID present"]},
+            "assertions must be closed-shape tokens",
+        ),
         ({"assertions": ["a-b", "a-b"]}, "assertions must be unique"),
         (
             {"result": "failed", "cleanup": "wiped"},
@@ -746,7 +758,11 @@ def test_closure_fingerprint_changes_with_an_imported_module_only(
 ) -> None:
     _package(
         tmp_path,
-        {"a.py": "from .b import thing\n", "b.py": "thing = 1\n", "c.py": "other = 2\n"},
+        {
+            "a.py": "from .b import thing\n",
+            "b.py": "thing = 1\n",
+            "c.py": "other = 2\n",
+        },
     )
     first = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
 
@@ -881,8 +897,16 @@ def _closure_registry(
     [
         ([], "unrecorded", None),
         ([{"evidence": []}], "unevidenced", None),
-        ([{"evidence": [{"closure_fingerprint": "c" * 64}]}], "stale", "closure-changed"),
-        ([{"evidence": [{"observed_at": "2026-01-01T00:00:00Z"}]}], "stale", "age-exceeded"),
+        (
+            [{"evidence": [{"closure_fingerprint": "c" * 64}]}],
+            "stale",
+            "closure-changed",
+        ),
+        (
+            [{"evidence": [{"observed_at": "2026-01-01T00:00:00Z"}]}],
+            "stale",
+            "age-exceeded",
+        ),
         ([{"evidence": [{"result": "failed"}]}], "failed", None),
         ([{"evidence": [{}]}], "current", None),
         # Only a live observation derives a state: the validator still admits
@@ -935,7 +959,9 @@ def test_report_line_carries_implementation_state(capsys) -> None:
 
 def test_verification_report_summary_and_fail_on_stale(capsys) -> None:
     states = {
-        "system.list": inventory.OperationState("stale", "closure-changed", "implemented"),
+        "system.list": inventory.OperationState(
+            "stale", "closure-changed", "implemented"
+        ),
         "vnic.add": inventory.OperationState("unrecorded"),
     }
 
@@ -1001,7 +1027,9 @@ def test_verification_report_is_quiet_outside_github_actions(
 ) -> None:
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
-    states = {"system.list": inventory.OperationState("stale", "age-exceeded", "implemented")}
+    states = {
+        "system.list": inventory.OperationState("stale", "age-exceeded", "implemented")
+    }
 
     inventory.verification_report(states, fail_on_stale=False)
 
@@ -1055,7 +1083,9 @@ def test_runtime_projection_renders_only_recorded_operations(tmp_path: Path) -> 
     }
 
 
-def test_runtime_projection_preserves_latest_live_observation_time(tmp_path: Path) -> None:
+def test_runtime_projection_preserves_latest_live_observation_time(
+    tmp_path: Path,
+) -> None:
     registry = _closure_registry(tmp_path)
     fingerprint = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
     record = _operation()
@@ -1140,15 +1170,20 @@ def test_write_runtime_projection_option_generates_requested_path(
     projection = tmp_path / "projection.json"
     monkeypatch.setattr(inventory, "discover_registry", tuple)
 
-    assert inventory.main(
-        [
-            "--inventory",
-            str(inventory_root),
-            "--write-runtime-projection",
-            str(projection),
-        ]
-    ) == 0
+    assert (
+        inventory.main(
+            [
+                "--inventory",
+                str(inventory_root),
+                "--write-runtime-projection",
+                str(projection),
+            ]
+        )
+        == 0
+    )
 
-    assert projection.read_text(encoding="utf-8") == inventory.render_runtime_projection(
+    assert projection.read_text(
+        encoding="utf-8"
+    ) == inventory.render_runtime_projection(
         [], (), inventory.ROOT, inventory.datetime.now(UTC)
     )

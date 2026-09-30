@@ -975,7 +975,9 @@ def test_unresolvable_default_path_is_an_access_policy_error(monkeypatch) -> Non
     def _explode() -> object:
         raise RuntimeError("Could not determine home directory.")
 
-    monkeypatch.setattr("hmcpctl.authorization.access_policy.resolve_access_policy_path", _explode)
+    monkeypatch.setattr(
+        "hmcpctl.authorization.access_policy.resolve_access_policy_path", _explode
+    )
 
     with pytest.raises(AccessPolicyError, match="cannot resolve the access-policy"):
         load_access_policy("lab", TOOL_SECURITY)

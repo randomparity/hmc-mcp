@@ -71,13 +71,16 @@ def hmc_list_volume_groups(
             reduce HMC work or network transfer.
     """
 
-    return [serialize_tool_result(entry) for entry in run_limited_collection(
-        lambda hmc: list_volume_groups(
-            hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-        ),
-        limit,
-        profile=profile,
-    )]
+    return [
+        serialize_tool_result(entry)
+        for entry in run_limited_collection(
+            lambda hmc: list_volume_groups(
+                hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            ),
+            limit,
+            profile=profile,
+        )
+    ]
 
 
 @tool(effect="mutate", operation="storage.create_volume_group", target_kind="vios")
@@ -476,12 +479,15 @@ def hmc_list_optical_media(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return [serialize_tool_result(entry) for entry in with_client(
-        lambda hmc: list_optical_media(
-            hmc, vios_name_or_uuid, vg_uuid, system_name_or_uuid=system_name_or_uuid
-        ),
-        profile=profile,
-    )]
+    return [
+        serialize_tool_result(entry)
+        for entry in with_client(
+            lambda hmc: list_optical_media(
+                hmc, vios_name_or_uuid, vg_uuid, system_name_or_uuid=system_name_or_uuid
+            ),
+            profile=profile,
+        )
+    ]
 
 
 @tool(effect="read", operation="storage.list_mappings", target_kind="vios")
@@ -507,15 +513,18 @@ def hmc_list_storage_mappings(
             partition name; when omitted the name is searched fleet-wide.
     """
 
-    return [serialize_tool_result(entry) for entry in with_client(
-        lambda hmc: list_storage_mappings(
-            hmc,
-            vios_name_or_uuid,
-            lpar_name_or_uuid,
-            system_name_or_uuid=system_name_or_uuid,
-        ),
-        profile=profile,
-    )]
+    return [
+        serialize_tool_result(entry)
+        for entry in with_client(
+            lambda hmc: list_storage_mappings(
+                hmc,
+                vios_name_or_uuid,
+                lpar_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
+            ),
+            profile=profile,
+        )
+    ]
 
 
 @tool(effect="destructive", operation="storage.detach_mapping", target_kind="vios")
@@ -568,7 +577,9 @@ def hmc_list_clusters(
             reduce HMC work or network transfer.
     """
 
-    return run_limited_collection(lambda hmc: hmc.list_clusters(), limit, profile=profile)
+    return run_limited_collection(
+        lambda hmc: hmc.list_clusters(), limit, profile=profile
+    )
 
 
 @tool(effect="read", operation="cluster.list_pools", target_kind="console")
@@ -601,7 +612,9 @@ def hmc_get_shared_storage_pool(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
-    return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid), profile=profile)
+    return with_client(
+        lambda hmc: hmc.get_shared_storage_pool(ssp_uuid), profile=profile
+    )
 
 
 @tool(effect="mutate", operation="cluster.create_logical_unit", target_kind="cluster")

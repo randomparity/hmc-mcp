@@ -28,7 +28,9 @@ class ConfiguredVolumeGroup:
     free_space_mib: int | None
 
 
-def _free_space_mib(entry: Mapping[str, Any], resource: Mapping[str, Any]) -> int | None:
+def _free_space_mib(
+    entry: Mapping[str, Any], resource: Mapping[str, Any]
+) -> int | None:
     """Convert the HMC's GiB free-space figure to MiB; None when unknown."""
     gib = entry.get("free_space_gib")
     if gib is None:
@@ -55,7 +57,9 @@ def resolve_configured_volume_group(
         listed_name = entry.get("name") or resource.get("GroupName")
         if listed_name == name and isinstance(uuid, str) and uuid:
             artifacts.vg_uuid, artifacts.vdisk_vg_name = uuid, name
-            return ConfiguredVolumeGroup(uuid, resource, _free_space_mib(entry, resource))
+            return ConfiguredVolumeGroup(
+                uuid, resource, _free_space_mib(entry, resource)
+            )
     artifacts.vg_uuid = artifacts.vdisk_vg_name = None
     for dependent in dependents:
         state.skip(stage, dependent, f"configured volume group {name!r} not listed")

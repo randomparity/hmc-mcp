@@ -27,10 +27,7 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def _system_feed(uuid: str, **fields: str) -> str:
-    body = "\n".join(
-        f'        <{k} xmlns="{NS}">{v}</{k}>'
-        for k, v in fields.items()
-    )
+    body = "\n".join(f'        <{k} xmlns="{NS}">{v}</{k}>' for k, v in fields.items())
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>

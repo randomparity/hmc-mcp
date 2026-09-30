@@ -37,7 +37,9 @@ async def create_lpar(
         steps.append(created.apply_step)
     # A failed apply, or a create that returns no partition body to apply against,
     # stops the ordered workflow; the partition (if created) stays created.
-    apply_failed = created.apply_step is not None and created.apply_step.status == "error"
+    apply_failed = (
+        created.apply_step is not None and created.apply_step.status == "error"
+    )
     assignments_skipped = created.lpar is None or apply_failed
     if assignments_skipped:
         steps.extend(

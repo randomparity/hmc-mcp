@@ -38,7 +38,9 @@ COMMITTED = ROOT / "docs" / "tools"
 README_POINTER = "https://github.com/randomparity/hmc-mcp/blob/main/docs/tools/index.md"
 
 SECURITY = {
-    "hmc_alpha": ToolSecurity(effect="read", operation="alpha.list", target_kind="lpar"),
+    "hmc_alpha": ToolSecurity(
+        effect="read", operation="alpha.list", target_kind="lpar"
+    ),
     "hmc_beta": ToolSecurity(
         effect="destructive", operation="beta.delete", target_kind="console"
     ),
@@ -123,11 +125,13 @@ def test_records_join_shared_maturity_and_render_sparse_absence(
         "| Tool | Effect | Operation | Target | Implementation | Verification | "
         "Runtime eligibility | Summary |" in pages["alpha.md"]
     )
-    assert "| `partial` | `stale (closure-changed)` | `existing-runtime-guards` |" in (
-        pages["alpha.md"]
+    assert (
+        "| `partial` | `stale (closure-changed)` | `existing-runtime-guards` |"
+        in (pages["alpha.md"])
     )
-    assert "| `unrecorded` | `unrecorded` | `existing-runtime-guards` |" in (
-        pages["beta.md"]
+    assert (
+        "| `unrecorded` | `unrecorded` | `existing-runtime-guards` |"
+        in (pages["beta.md"])
     )
     assert "../capabilities/README.md" in pages["index.md"]
     for value in ("absent", "partial", "implemented"):
@@ -225,9 +229,7 @@ def test_grouping_is_a_parameter_not_a_hardcoded_domain() -> None:
 
 def test_a_group_named_index_raises_instead_of_losing_its_page() -> None:
     with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
-        gen_tool_reference.render_pages(
-            _records(), group_key=lambda record: "index"
-        )
+        gen_tool_reference.render_pages(_records(), group_key=lambda record: "index")
 
     assert "index.md" in str(error.value)
 
@@ -265,8 +267,9 @@ def test_a_tool_a_default_deployment_withholds_is_named_on_its_page() -> None:
         _records(exposed=lambda name: name != "hmc_beta")
     )
 
-    assert "Registered but not exposed by a default deployment: `hmc_beta`" in (
-        pages["beta.md"]
+    assert (
+        "Registered but not exposed by a default deployment: `hmc_beta`"
+        in (pages["beta.md"])
     )
     assert "## Not exposed by default" in pages["index.md"]
     assert "- **2** tools are registered." in pages["index.md"]
@@ -290,7 +293,9 @@ def test_check_reports_a_stale_page_a_missing_page_and_an_orphan(tmp_path) -> No
 
 
 def test_writing_removes_a_page_the_generator_no_longer_emits(tmp_path) -> None:
-    gen_tool_reference.write_pages(gen_tool_reference.render_pages(_records()), tmp_path)
+    gen_tool_reference.write_pages(
+        gen_tool_reference.render_pages(_records()), tmp_path
+    )
     (alpha,) = [record for record in _records() if record.name == "hmc_alpha"]
 
     gen_tool_reference.write_pages(gen_tool_reference.render_pages([alpha]), tmp_path)
@@ -362,7 +367,9 @@ def test_writing_refuses_on_a_page_it_cannot_decode(tmp_path) -> None:
     assert list(tmp_path.iterdir()) == [undecodable]
 
 
-def test_check_mode_exits_one_on_a_stale_tree_and_names_the_fix(tmp_path, capsys) -> None:
+def test_check_mode_exits_one_on_a_stale_tree_and_names_the_fix(
+    tmp_path, capsys
+) -> None:
     assert gen_tool_reference.main(["--output", str(tmp_path)]) == 0
     (tmp_path / "index.md").write_text("stale\n", encoding="utf-8")
 
@@ -382,12 +389,17 @@ def test_the_committed_reference_matches_the_live_registry() -> None:
     )
 
     assert len(records) == len(TOOL_SECURITY)
-    assert gen_tool_reference.check_pages(
-        gen_tool_reference.render_pages(records), COMMITTED
-    ) == []
+    assert (
+        gen_tool_reference.check_pages(
+            gen_tool_reference.render_pages(records), COMMITTED
+        )
+        == []
+    )
 
 
-def test_served_descriptions_omit_the_docstring_sections_the_note_says_are_not_sent() -> None:
+def test_served_descriptions_omit_the_docstring_sections_the_note_says_are_not_sent() -> (
+    None
+):
     """SUMMARY_NOTE tells readers `tools/list` omits these; pin that to the live walk."""
     descriptions = asyncio.run(gen_tool_reference.load_descriptions())
 

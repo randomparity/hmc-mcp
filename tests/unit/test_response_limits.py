@@ -53,11 +53,17 @@ async def make_client():
     clients = []
 
     async def make(stream, *, headers=None, status=200, max_response_bytes=8):
-        client = core.HMCClient(HMCConfig.from_mapping({
-            "host": "hmc.test", "user": "test", "verify_ssl": True,
-            "max_response_bytes": max_response_bytes,
-            "password": "test",  # pragma: allowlist secret — MockTransport fixture only.
-        }))
+        client = core.HMCClient(
+            HMCConfig.from_mapping(
+                {
+                    "host": "hmc.test",
+                    "user": "test",
+                    "verify_ssl": True,
+                    "max_response_bytes": max_response_bytes,
+                    "password": "test",  # pragma: allowlist secret — MockTransport fixture only.
+                }
+            )
+        )
         await client._http.aclose()
 
         def handle(request):
@@ -65,7 +71,8 @@ async def make_client():
             return httpx.Response(status, headers=headers, stream=stream)
 
         client._http = httpx.AsyncClient(
-            base_url="https://hmc.test", transport=httpx.MockTransport(handle),
+            base_url="https://hmc.test",
+            transport=httpx.MockTransport(handle),
         )
         clients.append(client)
         return client
@@ -75,8 +82,11 @@ async def make_client():
         await client._http.aclose()
 
 
-@pytest.mark.parametrize("declared", ["9", "00009", "100000000", "9" * 5000],
-                         ids=["small", "zero-padded", "large", "huge-decimal"])
+@pytest.mark.parametrize(
+    "declared",
+    ["9", "00009", "100000000", "9" * 5000],
+    ids=["small", "zero-padded", "large", "huge-decimal"],
+)
 async def test_declared_overflow_does_not_read_body(make_client, declared):
     stream = ObservedStream([b"unread"])
     client = await make_client(stream, headers={"Content-Length": declared})
@@ -156,7 +166,9 @@ async def test_identity_encoding_is_accepted(make_client, encoding):
 async def test_identity_negotiation_overrides_caller(make_client):
     stream = ObservedStream([b"ok"])
     client = await make_client(stream)
-    assert (await client._request("GET", PATH, headers={"accept-encoding": "gzip"})).text == "ok"
+    assert (
+        await client._request("GET", PATH, headers={"accept-encoding": "gzip"})
+    ).text == "ok"
     assert stream.accept_encoding == "identity"
 
 
@@ -173,8 +185,11 @@ async def test_upload_reply_is_bounded(make_client):
     assert stream.closed
 
 
-@pytest.mark.parametrize("body", ["x" * 9000, "🙂" * 2000, "<Message>" + "x" * 5000 + "</Message>"],
-                         ids=["plain", "utf8", "xml"])
+@pytest.mark.parametrize(
+    "body",
+    ["x" * 9000, "🙂" * 2000, "<Message>" + "x" * 5000 + "</Message>"],
+    ids=["plain", "utf8", "xml"],
+)
 async def test_error_diagnostics_are_independently_bounded(body):
     error = HMCError("failed", 500, body)
     assert error.status_code == 500
@@ -217,7 +232,9 @@ async def test_oversized_http_error_is_rejected(make_client):
     assert stream.closed
 
 
-@pytest.mark.parametrize("failure", [httpx.ReadError("read failed"), httpx.ReadTimeout("timed out")])
+@pytest.mark.parametrize(
+    "failure", [httpx.ReadError("read failed"), httpx.ReadTimeout("timed out")]
+)
 async def test_read_failure_closes_response(make_client, failure):
     stream = ObservedStream([b"small"], read_error=failure)
     client = await make_client(stream)
@@ -301,16 +318,30 @@ async def test_cancellation_during_successful_close_is_preserved(make_client):
                 await task
 
 
-@pytest.mark.parametrize("method,args", [
-    ("_get", (PATH,)), ("_post", (PATH, "")), ("_put", (PATH, "")),
-    ("_delete", (PATH,)), ("_web_get", (PATH,)), ("_web_post", (PATH, "")),
-    ("_web_delete", (PATH,)), ("raw_get", (PATH,)), ("raw_post", (PATH, "")),
-    ("submit_job", (PATH, "")), ("_templates_get", (PATH,)),
-    ("_get_remote_access_xml", (PATH,)), ("_web_file_create", (UUID, "test.iso", 1)),
-    ("_web_file_delete", (UUID,)), ("_post_pcm", (PATH, "")),
-    ("fetch_json", (PATH,)), ("submit_platform_update", (UUID, {})),
-    ("_logon_once", ("",)), ("logoff", ()),
-])
+@pytest.mark.parametrize(
+    "method,args",
+    [
+        ("_get", (PATH,)),
+        ("_post", (PATH, "")),
+        ("_put", (PATH, "")),
+        ("_delete", (PATH,)),
+        ("_web_get", (PATH,)),
+        ("_web_post", (PATH, "")),
+        ("_web_delete", (PATH,)),
+        ("raw_get", (PATH,)),
+        ("raw_post", (PATH, "")),
+        ("submit_job", (PATH, "")),
+        ("_templates_get", (PATH,)),
+        ("_get_remote_access_xml", (PATH,)),
+        ("_web_file_create", (UUID, "test.iso", 1)),
+        ("_web_file_delete", (UUID,)),
+        ("_post_pcm", (PATH, "")),
+        ("fetch_json", (PATH,)),
+        ("submit_platform_update", (UUID, {})),
+        ("_logon_once", ("",)),
+        ("logoff", ()),
+    ],
+)
 async def test_consumers_share_declared_limit(make_client, method, args):
     stream = ObservedStream([b"unread"])
     client = await make_client(stream, headers={"Content-Length": "9"})

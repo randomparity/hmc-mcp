@@ -51,7 +51,9 @@ def test_remote_access_builder_rejects_invalid_updates(values, clears, message) 
 
 
 @pytest.mark.asyncio
-async def test_remote_access_get_merge_and_post_preserve_unmodified_fields(mock_hmc) -> None:
+async def test_remote_access_get_merge_and_post_preserve_unmodified_fields(
+    mock_hmc,
+) -> None:
     get_route = mock_hmc.get(PATH).mock(
         return_value=httpx.Response(200, text=REMOTE_ACCESS)
     )
@@ -85,7 +87,10 @@ async def test_remote_access_empty_responses_are_none(mock_hmc) -> None:
     mock_hmc.get(PATH).mock(return_value=httpx.Response(200, text=REMOTE_ACCESS))
     mock_hmc.post(PATH).mock(return_value=httpx.Response(202, text=""))
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, []) is None
+        assert (
+            await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, [])
+            is None
+        )
 
 
 @pytest.mark.asyncio

@@ -43,7 +43,9 @@ async def list_lpar_refcodes(
     if isinstance(count, bool) or not isinstance(count, int):
         raise TypeError(f"count must be an int, got {type(count).__name__}")
     if not 1 <= count <= MAX_REFCODE_COUNT:
-        raise ValueError(f"count must be between 1 and {MAX_REFCODE_COUNT}, got {count}")
+        raise ValueError(
+            f"count must be between 1 and {MAX_REFCODE_COUNT}, got {count}"
+        )
     for field, value in (("system_name", system_name), ("lpar_name", lpar_name)):
         # validate_hmc_name admits whitespace-only text, and an empty or blank
         # selector composes a filter naming no partition rather than failing.

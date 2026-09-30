@@ -82,7 +82,10 @@ async def test_get_media_repository(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220001")
+        result = await hmc.get_media_repository(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222220001",
+        )
 
     assert route.called
     assert result is not None
@@ -103,7 +106,10 @@ async def test_get_media_repository_empty(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220002")
+        result = await hmc.get_media_repository(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222220002",
+        )
 
     assert route.called
     assert result is not None
@@ -142,7 +148,10 @@ async def test_get_media_repository_not_found(mock_hmc):
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "99999999-9999-9999-9999-999999999999")
+        result = await hmc.get_media_repository(
+            "11111111-1111-1111-1111-111111111111",
+            "99999999-9999-9999-9999-999999999999",
+        )
 
     assert route.called
     assert result is None
@@ -156,7 +165,10 @@ async def test_get_media_repository_absent_from_existing_volume_group(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITHOUT_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220003")
+        result = await hmc.get_media_repository(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222220003",
+        )
 
     assert route.called
     assert result is None
@@ -170,7 +182,10 @@ async def test_list_optical_media(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WITH_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await hmc.list_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220001")
+        media_list = await hmc.list_optical_media(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222220001",
+        )
 
     assert route.called
     assert len(media_list) == 2
@@ -190,7 +205,10 @@ async def test_list_optical_media_empty(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=VG_ENTRY_EMPTY_REPO))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await hmc.list_optical_media("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222220002")
+        media_list = await hmc.list_optical_media(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222220002",
+        )
 
     assert route.called
     assert media_list == []
@@ -244,7 +262,10 @@ async def test_list_optical_media_not_found(mock_hmc):
     ).mock(return_value=httpx.Response(404, text=""))
 
     async with HMCClient(make_config()) as hmc:
-        media_list = await hmc.list_optical_media("11111111-1111-1111-1111-111111111111", "99999999-9999-9999-9999-999999999999")
+        media_list = await hmc.list_optical_media(
+            "11111111-1111-1111-1111-111111111111",
+            "99999999-9999-9999-9999-999999999999",
+        )
 
     assert route.called
     assert media_list == []

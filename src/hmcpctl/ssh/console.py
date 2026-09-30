@@ -544,7 +544,9 @@ async def _probe_released(config: HMCConfig, system_name: str, lpar_name: str) -
         stdin.close()
 
 
-async def _release_probe_by_eof(stdin: _SealedStdin, process: Any, connection: Any) -> bool:
+async def _release_probe_by_eof(
+    stdin: _SealedStdin, process: Any, connection: Any
+) -> bool:
     """Send the probe's stdin EOF and read until its ``mkvterm`` exits (#1072).
 
     ``True`` once the stream ended on an open connection, or the HMC reported that
@@ -830,12 +832,16 @@ class ConsoleSession:
         self._close_task: asyncio.Task[bool] | None = None
         self._released: bool | None = None
         self._owner: object | None = None  # the session itself, a handover, or None
-        self._collecting = asyncio.Event()  # set only while the session owns the channel
+        self._collecting = (
+            asyncio.Event()
+        )  # set only while the session owns the channel
         self._inflight: asyncio.Future[bytes] | None = None
         self._release_proof = False
         self._settled = asyncio.Event()  # clear only while suspend() or resume() runs
         self._settled.set()
-        self._remote_closed = False  # latched: a remote close never later counts as a drop
+        self._remote_closed = (
+            False  # latched: a remote close never later counts as a drop
+        )
         self._tail = b""  # the stream's last bytes, for a sentinel split across reads
         # The unread scan found the stream ended; unlike _remote_closed, it does not
         # depend on the reconnect path.
@@ -863,7 +869,9 @@ class ConsoleSession:
         """
         if self._state != "new" or self._close_task is not None:
             raise RuntimeError("a console session opens once and never after close()")
-        await self._finish_acquire(await self._acquire("unheld", take_over=self._take_over))
+        await self._finish_acquire(
+            await self._acquire("unheld", take_over=self._take_over)
+        )
 
     async def _acquire(self, fallback: _State, *, take_over: bool = False) -> bool:
         """Acquire the vterm; return whether cancellation arrived meanwhile."""
@@ -1000,7 +1008,10 @@ class ConsoleSession:
         """
         if self._reconnect_task is not None:
             return await self._reconnect_outcome(self._reconnect_task)
-        if self._state in ("new", "opening", "unheld", "dropped") or self._close_task is not None:
+        if (
+            self._state in ("new", "opening", "unheld", "dropped")
+            or self._close_task is not None
+        ):
             raise RuntimeError("the console session is not open")
         while True:
             await self._collecting.wait()
@@ -1045,13 +1056,19 @@ class ConsoleSession:
             self._lpar,
             error,
         )
-        self._state = "dropped"  # _acquire moves it on; a failure before that stays dropped
+        self._state = (
+            "dropped"  # _acquire moves it on; a failure before that stays dropped
+        )
         self._drop_channel()
-        task = self._reconnect_task = asyncio.create_task(self._reconnect_after_drop(error))
+        task = self._reconnect_task = asyncio.create_task(
+            self._reconnect_after_drop(error)
+        )
         task.add_done_callback(_retrieve)
         return await self._reconnect_outcome(task)
 
-    async def _reconnect_outcome(self, task: asyncio.Task[ConsoleGap]) -> bytes | ConsoleGap:
+    async def _reconnect_outcome(
+        self, task: asyncio.Task[ConsoleGap]
+    ) -> bytes | ConsoleGap:
         """Await the reconnect; a consumer's timeout leaves it and its outcome in place."""
         gap: ConsoleGap | None = None
         try:
@@ -1113,7 +1130,9 @@ class ConsoleSession:
             yield handover
 
     @contextlib.asynccontextmanager
-    async def _handed_over(self, handover: _Handover, name: str) -> AsyncIterator[_Handover]:
+    async def _handed_over(
+        self, handover: _Handover, name: str
+    ) -> AsyncIterator[_Handover]:
         self._require_collecting(name)
         self._give_channel(handover)
         try:
@@ -1186,7 +1205,9 @@ class ConsoleSession:
             or self._owner is not self
             or self._reconnect_task is not None  # the consumer reads the gap first
         ):
-            raise RuntimeError(f"{name} needs an open console session with no pause active")
+            raise RuntimeError(
+                f"{name} needs an open console session with no pause active"
+            )
 
     async def close(self) -> bool:
         """Release the vterm once and report whether the release was proven.
@@ -1222,8 +1243,12 @@ class ConsoleSession:
         try:
             if self._reconnect_task is not None:
                 self._reconnect_task.cancel()
-                await asyncio.wait({self._reconnect_task})  # completes even if never started
-            await self._settled.wait()  # a suspend() or resume() in flight finishes first
+                await asyncio.wait(
+                    {self._reconnect_task}
+                )  # completes even if never started
+            await (
+                self._settled.wait()
+            )  # a suspend() or resume() in flight finishes first
             if self._state == "held":
                 self._released = await self._release_hold()
             elif self._state == "suspended":
@@ -1242,7 +1267,9 @@ class ConsoleSession:
         self._release_proof = False
         await self._scan_unread()
         eof_released = (
-            self._state != "lost" and not self._stream_ended and await self._release_by_eof()
+            self._state != "lost"
+            and not self._stream_ended
+            and await self._release_by_eof()
         )
         if self._state == "lost":
             logger.warning(
@@ -1373,7 +1400,9 @@ class WritableConsoleSession(ConsoleSession):
             RuntimeError: The session cannot write now (see the class docstring).
         """
         if not (isinstance(key, str) and len(key) == 1 and "!" <= key <= "~"):
-            raise ValueError(f"SysRq key must be one printable ASCII character, got {key!r}")
+            raise ValueError(
+                f"SysRq key must be one printable ASCII character, got {key!r}"
+            )
         if not isinstance(prefix, bytes):
             raise TypeError(f"SysRq prefix must be bytes, got {type(prefix).__name__}")
         if not prefix:

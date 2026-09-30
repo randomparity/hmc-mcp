@@ -76,7 +76,11 @@ _PLACEHOLDER = "<prog>"
 # and Typer reads `TERMINAL_WIDTH` in preference to the `COLUMNS` pinned below -- a
 # narrow inherited value would wrap the longer program name's `Usage:` line alone.
 _DROPPED = (
-    "XDG_CONFIG_HOME", "APPDATA", "FORCE_COLOR", "CLICOLOR_FORCE", "TERMINAL_WIDTH",
+    "XDG_CONFIG_HOME",
+    "APPDATA",
+    "FORCE_COLOR",
+    "CLICOLOR_FORCE",
+    "TERMINAL_WIDTH",
 )
 
 # SGR escapes, which survive `NO_COLOR`. The sibling idiom at
@@ -111,7 +115,9 @@ def _launchers() -> tuple[list[str], list[str]]:
 
 
 def _child_env(home: Path) -> dict[str, str]:
-    env = {name: value for name, value in os.environ.items() if not name.startswith("HMC_")}
+    env = {
+        name: value for name, value in os.environ.items() if not name.startswith("HMC_")
+    }
     for name in _DROPPED:
         env.pop(name, None)
     env["HOME"] = str(home)
@@ -132,8 +138,13 @@ def _run_both(args: list[str], tmp_path: Path) -> tuple[Completed, Completed]:
     def run(launcher: list[str]) -> Completed:
         return subprocess.run(
             [*launcher, *args],
-            capture_output=True, text=True, env=env, cwd=tmp_path,
-            stdin=subprocess.DEVNULL, timeout=60, check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=tmp_path,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+            check=False,
         )
 
     return run(console), run(module)
@@ -187,7 +198,9 @@ def _normalise(
 
     replaced = prefix + _PLACEHOLDER + tail
     return (
-        "\n".join(replaced if line == console_usage else line for line in console_lines),
+        "\n".join(
+            replaced if line == console_usage else line for line in console_lines
+        ),
         "\n".join(replaced if line == module_usage else line for line in module_lines),
     )
 

@@ -19,6 +19,7 @@ from .client_parse import _parse_feed
 
 REMOTE_ACCESS_MEDIA = "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
 
+
 class UsersMixin:
     """Operations below a documented UOM ``ManagementConsole`` resource."""
 

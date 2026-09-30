@@ -45,9 +45,7 @@ VIOS_BACKUP_TOOLS = (
 )
 COUNT_NUMBER = r"(?:\*{2})?\d[\d,]*(?:\*{2})?"
 TOOL_COUNT_NOUN = r"(?:tools?(?:\s+names?)?|names?)"
-NUMBERED_TOOL_COUNT = (
-    rf"{COUNT_NUMBER}(?:\s+[\w-]+){{0,3}}\s+{TOOL_COUNT_NOUN}"
-)
+NUMBERED_TOOL_COUNT = rf"{COUNT_NUMBER}(?:\s+[\w-]+){{0,3}}\s+{TOOL_COUNT_NOUN}"
 FIXED_TOOL_COUNT = re.compile(
     rf"(?:{NUMBERED_TOOL_COUNT}[^.\n]{{0,80}}\bevery ordinary tool\b"
     rf"|\bevery ordinary tool\b[^.\n]{{0,80}}(?:{COUNT_NUMBER}\s+total\b"
@@ -75,9 +73,7 @@ def _section(text: str, heading: str, next_heading: str | None = None) -> str:
 
 def _relocate(text: str, body: str, destination: str) -> str:
     """Move ``body`` out of its own section and under ``destination``."""
-    return text.replace(body, "\n\n", 1).replace(
-        destination, f"{destination}{body}", 1
-    )
+    return text.replace(body, "\n\n", 1).replace(destination, f"{destination}{body}", 1)
 
 
 def _project_metadata() -> dict[str, object]:
@@ -119,9 +115,7 @@ def test_readme_links_canonical_governance_files() -> None:
 
     for path, link in POLICY_LINKS.items():
         assert (ROOT / path).is_file(), f"missing canonical policy file: {path}"
-        assert link in governance, (
-            f"'{GOVERNANCE_HEADING}' must link {path}"
-        )
+        assert link in governance, f"'{GOVERNANCE_HEADING}' must link {path}"
 
 
 def test_governance_links_relocated_out_of_their_section_are_caught() -> None:
@@ -261,9 +255,7 @@ def test_local_path_relocated_into_another_section_is_caught() -> None:
         expectation in relocated.lower() for expectation in LOCAL_PATH_EXPECTATIONS
     )
     moved = _section(relocated, CONTRIBUTING_HEADING, CONTRIBUTING_NEXT)
-    assert [
-        command for command in LOCAL_PATH_COMMANDS if f"`{command}`" in moved
-    ] == []
+    assert [command for command in LOCAL_PATH_COMMANDS if f"`{command}`" in moved] == []
     assert [
         expectation
         for expectation in LOCAL_PATH_EXPECTATIONS

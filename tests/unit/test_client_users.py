@@ -64,12 +64,16 @@ def test_user_child_path_refuses_a_type_outside_the_grammar(child_type):
     cannot see this module, so the guarantee is this runtime refusal rather
     than a test-time observation (ADR 0147).
     """
-    with pytest.raises(ValueError, match="child_type must be an HMC resource type name"):
+    with pytest.raises(
+        ValueError, match="child_type must be an HMC resource type name"
+    ):
         UsersMixin._child_path("console-1", child_type)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method", ["get_hmc_user", "modify_hmc_user", "delete_hmc_user"])
+@pytest.mark.parametrize(
+    "method", ["get_hmc_user", "modify_hmc_user", "delete_hmc_user"]
+)
 @pytest.mark.parametrize("length", [257, 20_000])
 async def test_profile_identifier_refused_before_transport(method, length):
     client, requested = _recording_client()
@@ -87,13 +91,19 @@ async def test_profile_identifier_refused_before_transport(method, length):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method", ["get_hmc_user", "modify_hmc_user", "delete_hmc_user"])
+@pytest.mark.parametrize(
+    "method", ["get_hmc_user", "modify_hmc_user", "delete_hmc_user"]
+)
 async def test_profile_identifiers_accept_unicode_boundary(method, mock_hmc):
     value = "\U0001f600" * 256
     args = ("<UserProfile/>",) if method == "modify_hmc_user" else ()
     encoded = quote(value, safe="")
     path = f"/rest/api/uom/ManagementConsole/{encoded}/UserProfile/{encoded}"
-    verb = {"get_hmc_user": "GET", "modify_hmc_user": "POST", "delete_hmc_user": "DELETE"}
+    verb = {
+        "get_hmc_user": "GET",
+        "modify_hmc_user": "POST",
+        "delete_hmc_user": "DELETE",
+    }
     route = mock_hmc.route(method=verb[method], url=f"https://hmc.test:443{path}").mock(
         return_value=httpx.Response(200)
     )
@@ -127,7 +137,7 @@ async def test_remote_access_unicode_boundary_keeps_query_and_update(mock_hmc):
     document = (
         '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
         '<ManagementConsole xmlns=""><LdapEnabled>true</LdapEnabled>'
-        '</ManagementConsole></content></entry></feed>'
+        "</ManagementConsole></content></entry></feed>"
     )
     get_route = mock_hmc.get(path).mock(return_value=httpx.Response(200, text=document))
     post_route = mock_hmc.post(path).mock(return_value=httpx.Response(200))

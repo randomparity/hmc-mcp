@@ -205,7 +205,9 @@ def _analyze_assignment_requests(
     for item in assignments.vnics:
         backing = item.backing
         adapter = require_command_safe_text(backing.adapter_id, "adapter_id")
-        physical = require_command_safe_text(backing.physical_port_id, "physical_port_id")
+        physical = require_command_safe_text(
+            backing.physical_port_id, "physical_port_id"
+        )
         require_command_safe_text(backing.vios_name, "vios_name")
         require_command_safe_text(backing.vios_lpar_id, "vios_lpar_id")
         capacity = validate_capacity_percent(backing.capacity_percent)

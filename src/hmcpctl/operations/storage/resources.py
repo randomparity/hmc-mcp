@@ -189,7 +189,11 @@ def _storage_mapping(entry: Mapping[str, Any]) -> StorageMapping:
     for kind in ("VirtualDisk", "PhysicalVolume", "VirtualOpticalMedia"):
         candidate = backing.get(kind)
         if isinstance(candidate, Mapping):
-            name = candidate.get("DiskName") or candidate.get("VolumeName") or candidate.get("MediaName")
+            name = (
+                candidate.get("DiskName")
+                or candidate.get("VolumeName")
+                or candidate.get("MediaName")
+            )
             return StorageMapping(
                 mapping_id, lpar_uuid, kind, name if isinstance(name, str) else None
             )
@@ -728,10 +732,13 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
         httpx.HTTPStatusError: If HTTP request fails (4xx/5xx).
     """
     timeout = httpx.Timeout(CONNECT_TIMEOUT, read=READ_TIMEOUT)
-    async with httpx.AsyncClient(
-        timeout=timeout,
-        follow_redirects=False,
-    ) as client, client.stream("GET", url) as response:
+    async with (
+        httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,
+        ) as client,
+        client.stream("GET", url) as response,
+    ):
         # Every 3xx, not just httpx's `is_redirect` (which additionally
         # requires a Location header): a 3xx without one is not a body to
         # import into a media repository either.
@@ -755,9 +762,7 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
 
         try:
             with os.fdopen(fd, "wb") as f:
-                async for chunk in response.aiter_bytes(
-                    chunk_size=DEFAULT_CHUNK_SIZE
-                ):
+                async for chunk in response.aiter_bytes(chunk_size=DEFAULT_CHUNK_SIZE):
                     downloaded_size += len(chunk)
                     if downloaded_size > MAX_DOWNLOAD_SIZE_BYTES:
                         raise ValueError(
@@ -813,7 +818,10 @@ async def list_optical_media(
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    return [_optical_media(entry) for entry in await hmc.list_optical_media(vios_uuid, vg_uuid)]
+    return [
+        _optical_media(entry)
+        for entry in await hmc.list_optical_media(vios_uuid, vg_uuid)
+    ]
 
 
 async def _refuse_existing_media(
@@ -865,7 +873,9 @@ async def _upload_iso_via_web_file(
         file_uuid = await hmc._web_file_create(vios_uuid, media_name, file_size)
         with iso_path.open("rb") as handle:
             try:
-                await hmc._web_file_upload(file_uuid, _aiter_file_chunks(handle), file_size)
+                await hmc._web_file_upload(
+                    file_uuid, _aiter_file_chunks(handle), file_size
+                )
             except HMCError as exc:
                 if exc.status_code is not None and exc.status_code >= 500:
                     exc.add_note(_ACCEPTED_NOTE)
@@ -1118,9 +1128,7 @@ async def unmount_optical_media(
             continue
         storage = mapping.get("Storage")
         optical = (
-            storage.get("VirtualOpticalMedia")
-            if isinstance(storage, dict)
-            else None
+            storage.get("VirtualOpticalMedia") if isinstance(storage, dict) else None
         )
         if isinstance(optical, dict) and optical.get("MediaName") == media_name:
             matches.append(mapping)

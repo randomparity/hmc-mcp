@@ -51,7 +51,9 @@ async def modify_lpar(
     if (
         assignments != LparPcieAssignments() or new_name is not None
     ) and system_name_or_uuid is None:
-        raise ValueError("system_name_or_uuid is required for rename or PCIe assignments")
+        raise ValueError(
+            "system_name_or_uuid is required for rename or PCIe assignments"
+        )
     if new_name is not None:
         escape_xml(new_name)
     if system_name_or_uuid is not None:
@@ -147,7 +149,9 @@ async def _apply_dlpar_change(
     )
     try:
         return await hmc.update_logical_partition(
-            lpar_uuid, lambda lpar: partition_updates(lpar, resources=resources), subject
+            lpar_uuid,
+            lambda lpar: partition_updates(lpar, resources=resources),
+            subject,
         )
     except HMCError as exc:
         translated = translate_lpar_write_error(exc)
@@ -156,7 +160,9 @@ async def _apply_dlpar_change(
         raise translated from exc
 
 
-def _require_fields(resources: LparResources, fields: tuple[str, ...], kind: str) -> None:
+def _require_fields(
+    resources: LparResources, fields: tuple[str, ...], kind: str
+) -> None:
     if all(getattr(resources, name) is None for name in fields):
         raise ValueError(
             f"Nothing to change: pass at least one {kind} field ({', '.join(fields)})"

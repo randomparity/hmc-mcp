@@ -89,13 +89,18 @@ def test_init_creates_file(tmp_path, monkeypatch):
 def test_init_refuses_existing_file(tmp_path, monkeypatch):
     """init exits 1 with an error message when the file already exists."""
     target = tmp_path / "hmcpctl" / "config.toml"
-    _write_toml(target, "[profiles.x]\nhost='h'\nuser='u'\npassword='p'  # pragma: allowlist secret\n")
+    _write_toml(
+        target,
+        "[profiles.x]\nhost='h'\nuser='u'\npassword='p'  # pragma: allowlist secret\n",
+    )
     original_content = target.read_text()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "init"])
     assert result.exit_code == 1
-    assert "already exists" in result.output or "already exists" in (result.stderr or "")
+    assert "already exists" in result.output or "already exists" in (
+        result.stderr or ""
+    )
     # File must be unchanged
     assert target.read_text() == original_content
 
@@ -199,7 +204,9 @@ def test_show_json_flag(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     with patch.object(sys, "platform", "linux"):
-        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show", "--json"])
+        result = RUNNER.invoke(
+            cli.app, ["--profile", "prod", "config", "show", "--json"]
+        )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert "password" not in data
@@ -427,15 +434,19 @@ def test_show_resolves_nickname(tmp_path, monkeypatch):
     _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
-    monkeypatch.setenv("HMC_PROD_PW", "dummy-value-for-test")   # pragma: allowlist secret
+    monkeypatch.setenv(
+        "HMC_PROD_PW", "dummy-value-for-test"
+    )  # pragma: allowlist secret
     with patch.object(sys, "platform", "linux"):
-        result = RUNNER.invoke(cli.app, ["--profile", "big-iron", "config", "show", "--json"])
+        result = RUNNER.invoke(
+            cli.app, ["--profile", "big-iron", "config", "show", "--json"]
+        )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["profile"] == "prod"
     assert data["resolved_from"] == "big-iron"
     assert data["host"] == "prod-hmc.example.com"
-    assert "dummy-value-for-test" not in result.output   # pragma: allowlist secret
+    assert "dummy-value-for-test" not in result.output  # pragma: allowlist secret
 
 
 def test_show_profile_key_has_null_resolved_from(tmp_path, monkeypatch):
@@ -443,9 +454,13 @@ def test_show_profile_key_has_null_resolved_from(tmp_path, monkeypatch):
     _write_toml(tmp_path / "hmcpctl" / "config.toml", NICKNAME_TOML)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("HMC_PROFILE", raising=False)
-    monkeypatch.setenv("HMC_PROD_PW", "dummy-value-for-test")   # pragma: allowlist secret
+    monkeypatch.setenv(
+        "HMC_PROD_PW", "dummy-value-for-test"
+    )  # pragma: allowlist secret
     with patch.object(sys, "platform", "linux"):
-        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show", "--json"])
+        result = RUNNER.invoke(
+            cli.app, ["--profile", "prod", "config", "show", "--json"]
+        )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["profile"] == "prod"
@@ -505,7 +520,7 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (
         patch.object(config_mod, "_read_config_document", counter),
-            patch.object(sys, "platform", "linux"),
+        patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
 
@@ -535,7 +550,7 @@ def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
     counter = MagicMock(wraps=config_mod._read_config_document)
     with (
         patch.object(config_mod, "_read_config_document", counter),
-            patch.object(sys, "platform", "linux"),
+        patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["config", "list"])
 
@@ -643,13 +658,9 @@ def test_init_access_policy_output_at_the_default_path_uses_output_case(
     default_target = tmp_path / "hmcpctl" / "access-policy.toml"
 
     with patch.object(sys, "platform", "linux"):
-        first = RUNNER.invoke(
-            cli.app, [*POLICY_ARGV, "--output", str(default_target)]
-        )
+        first = RUNNER.invoke(cli.app, [*POLICY_ARGV, "--output", str(default_target)])
         assert first.exit_code == 0, first.output
-        second = RUNNER.invoke(
-            cli.app, [*POLICY_ARGV, "--output", str(default_target)]
-        )
+        second = RUNNER.invoke(cli.app, [*POLICY_ARGV, "--output", str(default_target)])
 
     flattened = second.output.replace("\n", "")
     assert second.exit_code == 1
@@ -746,6 +757,8 @@ def test_every_spec_numbered_test_named_in_the_header_still_exists():
 
     assert named, "the header maps no test; the guard would pass vacuously"
     assert named <= defined, f"named but not defined: {sorted(named - defined)}"
+
+
 # ---------------------------------------------------------------------------
 # config diff-access-policy (issue #276)
 # ---------------------------------------------------------------------------
@@ -776,9 +789,7 @@ def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
 
     assert result.exit_code == 0, result.output
     assert not [
-        line
-        for line in result.output.splitlines()
-        if line.startswith(("+", "-"))
+        line for line in result.output.splitlines() if line.startswith(("+", "-"))
     ], result.output
 
 
@@ -812,7 +823,7 @@ def test_diff_access_policy_shows_a_profile_added_after_generation(
     config_dir = tmp_path / "hmcpctl"
     (config_dir / "config.toml").write_text(
         TWO_PROFILE_TOML
-        + '\n[profiles.staging]\n'
+        + "\n[profiles.staging]\n"
         + 'host = "staging.example.com"\n'
         + 'user = "admin"\n'
         + 'password_env = "HMC_STAGING_PW"  # pragma: allowlist secret\n',

@@ -52,7 +52,10 @@ def test_layout_block_lists_filenames_and_globs() -> None:
     assert "ssh/*.py" in entries
     assert "config.py" in entries
     layout = _layout_block(_guide())
-    assert all(name in layout for name in ("client/", "operations/", "server_tools/", "cli_commands/"))
+    assert all(
+        name in layout
+        for name in ("client/", "operations/", "server_tools/", "cli_commands/")
+    )
 
 
 def test_every_module_has_a_layout_entry() -> None:

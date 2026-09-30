@@ -301,9 +301,7 @@ def test_env_var_names_derives_names_from_settings_fields(
         model_config={"env_prefix": "HMC_"},
         model_fields={
             "host": SimpleNamespace(alias=None, validation_alias=None, env=None),
-            "ssh_timeout": SimpleNamespace(
-                alias=None, validation_alias=None, env=None
-            ),
+            "ssh_timeout": SimpleNamespace(alias=None, validation_alias=None, env=None),
         },
     )
     monkeypatch.setattr(guard_module, "HMCConfig", settings)

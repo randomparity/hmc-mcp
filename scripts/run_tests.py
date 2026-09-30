@@ -89,9 +89,7 @@ def main() -> int:
         if interrupted:
             return 130
         if timed_out:
-            print(
-                f"test: timed out after {TEST_TIMEOUT_SECONDS}s", file=sys.stderr
-            )
+            print(f"test: timed out after {TEST_TIMEOUT_SECONDS}s", file=sys.stderr)
             return 124
         return _exit_status(process.returncode)
 

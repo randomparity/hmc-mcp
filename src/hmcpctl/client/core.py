@@ -125,7 +125,9 @@ _QUICK_PROPERTY_CONTAINER_ELEMENT = "QuickProperty_Collection"
 _QUICK_PROPERTY_ELEMENT = "QuickProperty"
 
 
-async def _close_response(response: httpx.Response, primary: BaseException | None) -> None:
+async def _close_response(
+    response: httpx.Response, primary: BaseException | None
+) -> None:
     """Finish owned cleanup even if the caller is cancelled again during close."""
     close_task = asyncio.create_task(response.aclose())
     while not close_task.done():
@@ -147,14 +149,17 @@ async def _close_response(response: httpx.Response, primary: BaseException | Non
 
 
 async def _read_bounded_response(
-    response: httpx.Response, max_response_bytes: int,
+    response: httpx.Response,
+    max_response_bytes: int,
 ) -> httpx.Response:
     """Buffer only identity bytes, checking size before retaining each chunk."""
     primary = None
     try:
         encoding = response.headers.get("Content-Encoding", "").strip().lower()
         if encoding and encoding != "identity":
-            raise HMCError("Response encoding refused: expected identity", response.status_code)
+            raise HMCError(
+                "Response encoding refused: expected identity", response.status_code
+            )
         declared = response.headers.get("Content-Length", "").strip()
         if declared.isascii() and declared.isdecimal():
             normalized = declared.lstrip("0") or "0"
@@ -173,12 +178,16 @@ async def _read_bounded_response(
             if observed > max_response_bytes:
                 raise HMCError(
                     f"Response observed size {observed} bytes exceeds limit "
-                    f"{max_response_bytes} bytes", response.status_code,
+                    f"{max_response_bytes} bytes",
+                    response.status_code,
                 )
             body.extend(chunk)
         return httpx.Response(
-            response.status_code, headers=response.headers, content=bytes(body),
-            request=response.request, extensions=response.extensions,
+            response.status_code,
+            headers=response.headers,
+            content=bytes(body),
+            request=response.request,
+            extensions=response.extensions,
         )
     except BaseException as exc:
         primary = exc
@@ -186,10 +195,12 @@ async def _read_bounded_response(
     finally:
         await _close_response(response, primary)
 
+
 # The two RFC 3986 dot-segments. Held as a frozenset and compared per path
 # segment rather than with a substring test, so a resource legitimately named
 # "..log" or "a..b" is not refused for containing the characters.
 _DOT_SEGMENTS: frozenset[str] = frozenset({".", ".."})
+
 
 def _reject_dot_segments(method: str, path: str) -> None:
     """Refuse a request path that could resolve away from the resource it names.
@@ -567,7 +578,9 @@ class HMCClient(
             headers["Accept-Encoding"] = "identity"
             request = self._http.build_request(method, path, headers=headers, **kwargs)
             response = await self._http.send(request, stream=True)
-            return await _read_bounded_response(response, self.config.max_response_bytes)
+            return await _read_bounded_response(
+                response, self.config.max_response_bytes
+            )
         except httpx.InvalidURL as exc:
             # Not the path: it holds the character httpx refused and this
             # message reaches logs. httpx's reason renders that character
@@ -710,7 +723,9 @@ class HMCClient(
         uuid_path_arguments: Mapping[str, str] | None = None,
     ) -> None:
         headers = self._uom_headers(None)
-        headers["Accept"] = "*/*"  # V10R3 answers a generic uom Accept with 406 (ADR 0178).
+        headers["Accept"] = (
+            "*/*"  # V10R3 answers a generic uom Accept with 406 (ADR 0178).
+        )
         resp = await self._request_with_uuid_path_arguments(
             "DELETE",
             path,
@@ -905,7 +920,9 @@ class HMCClient(
             value = value[1:-1]
         return value or None
 
-    async def _defined_quick_property_names(self, resource_type: str) -> frozenset[str] | None:
+    async def _defined_quick_property_names(
+        self, resource_type: str
+    ) -> frozenset[str] | None:
         """The quick-property names *resource_type* defines, or None if unknown.
 
         Reads the root ``/quick`` anchor once per type per client and caches the
@@ -1197,9 +1214,7 @@ class HMCClient(
             return None, schema_version
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        found = _find_all_text(
-            resp.text, f"GET {path}", _SEARCH_PARAMETER_NAME_ELEMENT
-        )
+        found = _find_all_text(resp.text, f"GET {path}", _SEARCH_PARAMETER_NAME_ELEMENT)
         names = [n for n in found if n]
         if names:
             return names, schema_version
@@ -1343,7 +1358,9 @@ class HMCClient(
         uuid_path_arguments: dict[str, str] = {}
         if parent_type is not None and parent_uuid is not None:
             _reject_unknown_uom_type("parent_type", parent_type)
-            path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/operations"
+            path = (
+                f"/rest/api/uom/{parent_type}/{parent_uuid}/{resource_type}/operations"
+            )
             uuid_path_arguments["parent_uuid"] = parent_uuid
         elif parent_type is None and parent_uuid is None:
             path = f"/rest/api/uom/{resource_type}/operations"

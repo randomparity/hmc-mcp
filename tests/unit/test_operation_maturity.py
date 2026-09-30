@@ -106,7 +106,9 @@ def test_current_verification_ages_at_the_exact_ninety_day_boundary(
         _projection(observed_at=observed.strftime("%Y-%m-%dT%H:%M:%SZ")),
     )
 
-    assert maturity.operation_maturity("system.list", now=_NOW).verification == "current"
+    assert (
+        maturity.operation_maturity("system.list", now=_NOW).verification == "current"
+    )
     expired = maturity.operation_maturity(
         "system.list", now=_NOW + timedelta(seconds=1)
     )
@@ -127,9 +129,7 @@ def test_current_verification_ages_at_the_exact_ninety_day_boundary(
         lambda value: value["operations"][0].update({"verification": {}}),
         lambda value: value["operations"][0].update({"reason": []}),
         lambda value: value["operations"][0].update({"observed_at": "not-a-time"}),
-        lambda value: value["operations"][0].update(
-            {"verification": "unevidenced"}
-        ),
+        lambda value: value["operations"][0].update({"verification": "unevidenced"}),
         lambda value: value["operations"][0].update({"reason": "age-exceeded"}),
         lambda value: value["operations"].append(value["operations"][0].copy()),
     ],

@@ -231,9 +231,7 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
                     if (issue := _vios_issue(vios, system_uuid, system_name))
                     is not None
                 )
-                _check_issue_budget(
-                    system_issues, vios_issues, lpar_issues
-                )
+                _check_issue_budget(system_issues, vios_issues, lpar_issues)
             finally:
                 queue.task_done()
 
@@ -249,9 +247,7 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
     failed_jobs, warnings = job_task.result()
-    _check_issue_budget(
-        system_issues, vios_issues, lpar_issues, failed_jobs
-    )
+    _check_issue_budget(system_issues, vios_issues, lpar_issues, failed_jobs)
     return FleetHealthResult(
         _sorted_records(system_issues),
         _sorted_records(vios_issues),

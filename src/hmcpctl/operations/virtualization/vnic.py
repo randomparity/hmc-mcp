@@ -230,7 +230,9 @@ def _parse_embedded_backings(
         if len(parts) != 11 or parts[0] != "sriov":
             raise ValueError("vNIC backing_devices row has an unsupported shape")
         if parts[5] not in states:
-            raise ValueError("vNIC backing_device_states has no record for a backing_devices port")
+            raise ValueError(
+                "vNIC backing_device_states has no record for a backing_devices port"
+            )
         is_active, status = states[parts[5]]
         result.append(
             VnicBackingSnapshot(
@@ -249,7 +251,9 @@ def _parse_embedded_backings(
             )
         )
     if len(states) != len(result):
-        raise ValueError("vNIC backing_device_states has a record for no backing_devices port")
+        raise ValueError(
+            "vNIC backing_device_states has a record for no backing_devices port"
+        )
     return tuple(result)
 
 
@@ -260,7 +264,9 @@ def _parse_vnic_snapshots(rows: list[dict[str, str]]) -> tuple[VnicSnapshot, ...
             row["lpar_id"],
             row["slot_num"],
             int(row["port_vlan_id"]),
-            _parse_embedded_backings(row["backing_devices"], row["backing_device_states"]),
+            _parse_embedded_backings(
+                row["backing_devices"], row["backing_device_states"]
+            ),
         )
         for row in rows
     )

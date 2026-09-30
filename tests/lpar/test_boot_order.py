@@ -39,10 +39,17 @@ def _field(name: str, kb: str, value: str) -> str:
     return f"<{name} {attrs}>{value}</{name}>" if value else f"<{name} {attrs}/>"
 
 
-def _entry(*, pending: str = "", devices: str = "", last: str = "", boot_list: bool = True,
-           pending_element: bool = True) -> str:
+def _entry(
+    *,
+    pending: str = "",
+    devices: str = "",
+    last: str = "",
+    boot_list: bool = True,
+    pending_element: bool = True,
+) -> str:
     pending_xml = _field("PendingBootString", "UOO", pending) if pending_element else ""
-    boot_list_xml = f"""
+    boot_list_xml = (
+        f"""
     <BootListInformation ksv="V1_5_0" kb="UOD" kxe="false" schemaVersion="V1_0">
         <Metadata>
             <Atom/>
@@ -51,7 +58,10 @@ def _entry(*, pending: str = "", devices: str = "", last: str = "", boot_list: b
         {_field("BootDeviceList", "ROO", devices)}
         {_field("ShadowBootDeviceList", "ROO", ",," if devices else "")}
         {_field("LastBootedDeviceString", "ROO", last)}
-    </BootListInformation>""" if boot_list else ""
+    </BootListInformation>"""
+        if boot_list
+        else ""
+    )
     return f"""<entry xmlns="http://www.w3.org/2005/Atom">
     <id>{LPAR}</id>
     <title>LogicalPartition</title>
@@ -73,8 +83,14 @@ def _entry(*, pending: str = "", devices: str = "", last: str = "", boot_list: b
 </entry>"""
 
 
-def _routes(mock_hmc, *, etag: str | None = ETAG, entry: str | None = None,
-            get_status: int = 200, post_status: int = 200):
+def _routes(
+    mock_hmc,
+    *,
+    etag: str | None = ETAG,
+    entry: str | None = None,
+    get_status: int = 200,
+    post_status: int = 200,
+):
     headers = {"ETag": etag} if etag else {}
     body = entry if entry is not None else _entry()
     get = mock_hmc.get(LPAR_PATH, params={"group": "Advanced"}).mock(
@@ -154,11 +170,18 @@ async def test_set_pending_boot_string_posts_whole_partition_with_if_match(mock_
         "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition"
     )
     posted = _lpar(request.content)
-    expected = _lpar(_entry(pending=f"{DISK} {LAN}", devices=f"{DISK} {LAN}", last=DISK))
+    expected = _lpar(
+        _entry(pending=f"{DISK} {LAN}", devices=f"{DISK} {LAN}", last=DISK)
+    )
     assert _canonical(posted) == _canonical(expected)
-    pending = next(el for el in posted.iter() if localname(el.tag) == "PendingBootString")
+    pending = next(
+        el for el in posted.iter() if localname(el.tag) == "PendingBootString"
+    )
     assert pending.attrib == {
-        "group": "Advanced", "ksv": "V1_5_0", "kxe": "false", "kb": "UOO"
+        "group": "Advanced",
+        "ksv": "V1_5_0",
+        "kxe": "false",
+        "kb": "UOO",
     }
     assert pending.text == f"{DISK} {LAN}"
 
@@ -181,7 +204,8 @@ async def test_set_pending_boot_string_escapes_the_value_once(mock_hmc):
 
     assert b"/a&amp;b&lt;c" in post.calls.last.request.content
     pending = next(
-        el for el in _lpar(post.calls.last.request.content).iter()
+        el
+        for el in _lpar(post.calls.last.request.content).iter()
         if localname(el.tag) == "PendingBootString"
     )
     assert pending.text == "/a&b<c"
@@ -192,14 +216,22 @@ async def test_set_pending_boot_string_escapes_the_value_once(mock_hmc):
     [
         ({"etag": None}, "no ETag"),
         ({"entry": _entry(boot_list=False)}, "BootListInformation/PendingBootString"),
-        ({"entry": _entry(pending_element=False)}, "BootListInformation/PendingBootString"),
-        ({"entry": "<entry xmlns='http://www.w3.org/2005/Atom'/>"}, "no LogicalPartition"),
+        (
+            {"entry": _entry(pending_element=False)},
+            "BootListInformation/PendingBootString",
+        ),
+        (
+            {"entry": "<entry xmlns='http://www.w3.org/2005/Atom'/>"},
+            "no LogicalPartition",
+        ),
         ({"entry": "<not-xml"}, "not valid XML"),
         ({"get_status": 500}, "failed"),
     ],
 )
 @pytest.mark.asyncio
-async def test_set_pending_boot_string_refuses_before_any_post(mock_hmc, kwargs, message):
+async def test_set_pending_boot_string_refuses_before_any_post(
+    mock_hmc, kwargs, message
+):
     _, post = _routes(mock_hmc, **kwargs)
 
     with pytest.raises(HMCError, match=message):
@@ -288,10 +320,13 @@ async def test_read_lpar_boot_order_rejects_missing_lpar():
     hmc = AsyncMock()
     hmc.get_uom.return_value = None
 
-    with patch(
-        "hmcpctl.operations.lpar.boot_order.resolve_lpar_uuid",
-        new=AsyncMock(return_value="missing"),
-    ), pytest.raises(ValueError, match="LPAR 'missing' not found"):
+    with (
+        patch(
+            "hmcpctl.operations.lpar.boot_order.resolve_lpar_uuid",
+            new=AsyncMock(return_value="missing"),
+        ),
+        pytest.raises(ValueError, match="LPAR 'missing' not found"),
+    ):
         await read_lpar_boot_order(hmc, "system-a", "missing")
 
 
@@ -300,10 +335,13 @@ async def test_set_lpar_boot_order_validates_before_authorizing():
     hmc = AsyncMock()
     authorize = AsyncMock(return_value=LPAR)
 
-    with patch(
-        "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
-        new=authorize,
-    ), pytest.raises(ValueError, match="Invalid boot device path"):
+    with (
+        patch(
+            "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+            new=authorize,
+        ),
+        pytest.raises(ValueError, match="Invalid boot device path"),
+    ):
         await set_lpar_boot_order(hmc, "system-1", "lpar-1", ["cd", "disk"])
 
     authorize.assert_not_awaited()
@@ -341,10 +379,13 @@ async def test_set_lpar_boot_order_authorizes_then_writes_the_joined_paths():
 async def test_clear_lpar_boot_order_refuses_after_authorization():
     hmc = AsyncMock()
 
-    with patch(
-        "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
-        new=AsyncMock(return_value=LPAR),
-    ) as authorize, pytest.raises(HMCError, match="REST0126") as exc_info:
+    with (
+        patch(
+            "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+            new=AsyncMock(return_value=LPAR),
+        ) as authorize,
+        pytest.raises(HMCError, match="REST0126") as exc_info,
+    ):
         await clear_lpar_boot_order(hmc, "system-1", "lpar-1")
 
     authorize.assert_awaited_once_with(
@@ -364,10 +405,13 @@ async def test_set_lpar_boot_order_translates_hmc_not_acceptable():
         "write failed", status_code=406, body=body
     )
 
-    with patch(
-        "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
-        new=AsyncMock(return_value=LPAR),
-    ), pytest.raises(HMCError, match="Not Acceptable") as exc_info:
+    with (
+        patch(
+            "hmcpctl.operations.lpar.boot_order.resolve_and_authorize_lpar_mutation",
+            new=AsyncMock(return_value=LPAR),
+        ),
+        pytest.raises(HMCError, match="Not Acceptable") as exc_info,
+    ):
         await set_lpar_boot_order(hmc, "system-1", "lpar-1", [DISK])
 
     assert exc_info.value.status_code == 406

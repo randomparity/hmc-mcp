@@ -180,7 +180,8 @@ def test_attach_disk_is_state_changing_not_destructive():
     assert TOOL_SECURITY["hmc_attach_disk_to_lpar"].effect == "mutate"
     annotations = _tools_by_name()["hmc_attach_disk_to_lpar"].annotations
     assert annotations is None or (
-        annotations.read_only_hint is not True and annotations.destructive_hint is not True
+        annotations.read_only_hint is not True
+        and annotations.destructive_hint is not True
     )
 
 
@@ -604,9 +605,9 @@ def test_metrics_tools_have_stable_output_schemas():
         "hmc_aggregated_metric_links",
     ):
         tool = by_name[tool_name]
-        assert tool.annotations is not None and tool.annotations.read_only_hint is True, (
-            tool_name
-        )
+        assert (
+            tool.annotations is not None and tool.annotations.read_only_hint is True
+        ), tool_name
         assert "mode" not in tool.parameters.get("properties", {})
 
 

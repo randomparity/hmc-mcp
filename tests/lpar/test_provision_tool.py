@@ -289,8 +289,7 @@ def _provision_args(**overrides):
     args = {
         "system_name_or_uuid": SYSTEM_UUID,
         "name": "web01",
-        "adapters": ProvisionAdapters(
-port_vlan_id=VLAN_ID),
+        "adapters": ProvisionAdapters(port_vlan_id=VLAN_ID),
         "storage": ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
         "resources": LparResources(
             min_memory=256,
@@ -419,7 +418,9 @@ def _assessment_result(classification="none"):
 
 
 def _successful_power_outcome():
-    return JobOutcome("job-1", "COMPLETED_OK", False, None, {"Resource": {}}, True, None)
+    return JobOutcome(
+        "job-1", "COMPLETED_OK", False, None, {"Resource": {}}, True, None
+    )
 
 
 def test_provision_affinity_power_on_waits_for_terminal_result():
@@ -429,7 +430,9 @@ def test_provision_affinity_power_on_waits_for_terminal_result():
         "hmcpctl.operations.lpar.provision.power_lpar",
         new=AsyncMock(return_value=LparPowerResult(LPAR_UUID, terminal_job)),
     ) as power:
-        result = asyncio.run(_power_on(hmc, SYSTEM_UUID, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
+        result = asyncio.run(
+            _power_on(hmc, SYSTEM_UUID, LPAR_UUID, _affinity_request())
+        )  # type: ignore[arg-type]
     assert isinstance(result, JobOutcome)
     assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
@@ -884,8 +887,7 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
     names = [step.step for step in result.steps]
     assert names.count("network") == 1
     assert (
-        next(step for step in result.steps if step.step == "network").status
-        == "error"
+        next(step for step in result.steps if step.step == "network").status == "error"
     )
     # Nothing changed on the partition, so there is nowhere to report (#1056).
     assert result.change_location is None
@@ -897,10 +899,13 @@ def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
 
-    with patch(
-        "hmcpctl.client.core.HMCClient.map_storage_to_lpar",
-        new=AsyncMock(side_effect=TypeError("mapping defect")),
-    ), pytest.raises(TypeError, match="mapping defect"):
+    with (
+        patch(
+            "hmcpctl.client.core.HMCClient.map_storage_to_lpar",
+            new=AsyncMock(side_effect=TypeError("mapping defect")),
+        ),
+        pytest.raises(TypeError, match="mapping defect"),
+    ):
         hmc_provision_lpar(**_provision_args())
 
 
@@ -964,6 +969,7 @@ def test_provision_operation_rejects_bad_token_before_any_round_trip(monkeypatch
     so the operation validates first, before any HMC round trip."""
     _hmc_env(monkeypatch)
     from hmcpctl.operations.lpar.provision import provision_lpar
+
     args = _provision_args(caller_token="a=b")
 
     with pytest.raises(ValueError, match="caller_token"):
@@ -998,14 +1004,18 @@ def test_provision_policy_rejects_unsupported_system_before_mutation(
 ):
     _hmc_env(monkeypatch)
     with (
-        patch( "hmcpctl.operations.lpar.provision.resolve_ssh_names", AsyncMock(return_value=("system", None)), ),
-        patch( "hmcpctl.operations.lpar.provision.require_minimum_affinity_policy_capability", AsyncMock(side_effect=HMCCLIError("POWER11 required")), ),
+        patch(
+            "hmcpctl.operations.lpar.provision.resolve_ssh_names",
+            AsyncMock(return_value=("system", None)),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.provision.require_minimum_affinity_policy_capability",
+            AsyncMock(side_effect=HMCCLIError("POWER11 required")),
+        ),
         pytest.raises(HMCCLIError, match="POWER11"),
     ):
         hmc_provision_lpar(
-            **_provision_args(
-                minimum_affinity_policy=MinimumAffinityPolicy(80, "warn")
-            )
+            **_provision_args(minimum_affinity_policy=MinimumAffinityPolicy(80, "warn"))
         )
     assert_no_mutating_requests(mock_hmc)
 
@@ -1172,7 +1182,9 @@ def test_provision_rest_create_reports_no_apply_step(monkeypatch, mock_hmc):
     assert result.workflow_completed is True
 
 
-def test_provision_reports_apply_step_when_create_returns_no_uuid(monkeypatch, mock_hmc):
+def test_provision_reports_apply_step_when_create_returns_no_uuid(
+    monkeypatch, mock_hmc
+):
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     apply_step = WorkflowStep("apply_profile", "ok", "default_profile")

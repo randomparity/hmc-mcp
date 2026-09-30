@@ -21,8 +21,7 @@ def test_app_only_dependencies_are_confined_to_the_app_extra() -> None:
     assert _dependency_names(project["dependencies"]).isdisjoint(APP_ONLY_PACKAGES)
     assert set(project["optional-dependencies"]) == {"app"}
     assert (
-        _dependency_names(project["optional-dependencies"]["app"])
-        == APP_ONLY_PACKAGES
+        _dependency_names(project["optional-dependencies"]["app"]) == APP_ONLY_PACKAGES
     )
 
 

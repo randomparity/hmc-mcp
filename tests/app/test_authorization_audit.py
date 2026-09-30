@@ -198,14 +198,10 @@ def test_serve_records_every_effective_power_guard(records, lab_profile):
     ]
 
 
-def test_serve_records_a_case_variant_as_environment(
-    records, lab_profile, monkeypatch
-):
+def test_serve_records_a_case_variant_as_environment(records, lab_profile, monkeypatch):
     """Startup audit uses the report's deterministic source vocabulary."""
     lab_profile.write_text(
-        "[profiles.lab]\n"
-        'host = "lab.invalid"\n'
-        "authorize_power_operations = true\n"
+        '[profiles.lab]\nhost = "lab.invalid"\nauthorize_power_operations = true\n'
     )
     monkeypatch.setenv("hmc_authorize_power_operations", "false")
     policy = _policy(

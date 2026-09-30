@@ -26,6 +26,7 @@ _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
 }
 _ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*[+-]?$")
 
+
 def parse_hmc_delimited_rows(
     text: str,
     fields: Sequence[str],

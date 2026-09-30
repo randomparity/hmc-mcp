@@ -73,7 +73,9 @@ def test_parse_feed_multiple_entries():
     first = entries[0]
     assert first["UUID"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     assert first["ResourceType"] == "ManagedSystem"
-    assert first["link"].endswith("/rest/api/uom/ManagedSystem/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    assert first["link"].endswith(
+        "/rest/api/uom/ManagedSystem/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    )
     assert first["Resource"]["SystemName"] == "server1"
     assert first["Resource"]["State"] == "operating"
     mtms = first["Resource"]["MachineTypeModelSerialNumber"]
@@ -121,6 +123,8 @@ def test_find_all_text_keeps_empty_elements_as_empty_strings():
 
 
 def test_repeated_children_become_list():
-    xml = '<r><item>1</item><item>2</item><item>3</item></r>'
-    result = element_to_dict(__import__("xml.etree.ElementTree", fromlist=["fromstring"]).fromstring(xml))
+    xml = "<r><item>1</item><item>2</item><item>3</item></r>"
+    result = element_to_dict(
+        __import__("xml.etree.ElementTree", fromlist=["fromstring"]).fromstring(xml)
+    )
     assert result["item"] == ["1", "2", "3"]

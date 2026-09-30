@@ -79,14 +79,14 @@ def test_dispatch_sites_carry_argument_nodes():
         '    await state.call(client, "hmc_get_lpar", **extra)\n'
         '    await state.call(client, "hmc_get_lpar", *extra)\n'
         '    await state.call(client, "hmc_get_lpar", "extra")\n'
-        '    await state.call(client, *extra)\n'
+        "    await state.call(client, *extra)\n"
         "if True:\n"
         '    state.call(client, "hmc_list_lpars")\n'
         'state.record_verified(1, "t", operation="lpar.get")\n'
     )
 
-    literal, non_literal, splat, star, extra, star_tool, outside = report.dispatch_sites(
-        ast.parse(source)
+    literal, non_literal, splat, star, extra, star_tool, outside = (
+        report.dispatch_sites(ast.parse(source))
     )
 
     assert (literal.lineno, literal.function, literal.tool) == (

@@ -790,7 +790,9 @@ def test_installing_the_sink_twice_leaves_one_handler_per_logger():
 def test_served_warnings_use_the_bounded_escaped_sink(capsys, monkeypatch):
     """#550: capture replaces the default fd-2 writer on the served path."""
     called = []
-    monkeypatch.setattr(warnings, "showwarning", lambda *args, **kwargs: called.append(args))
+    monkeypatch.setattr(
+        warnings, "showwarning", lambda *args, **kwargs: called.append(args)
+    )
 
     _serve(_policy(LAB_ONLY))
     with warnings.catch_warnings():
@@ -807,7 +809,9 @@ def test_served_warnings_use_the_bounded_escaped_sink(capsys, monkeypatch):
 def test_library_warnings_keep_the_default_showwarning(monkeypatch):
     """#550: importing and composing without serving do not capture warnings."""
     called = []
-    monkeypatch.setattr(warnings, "showwarning", lambda *args, **kwargs: called.append(args))
+    monkeypatch.setattr(
+        warnings, "showwarning", lambda *args, **kwargs: called.append(args)
+    )
 
     create_mcp(_policy(LAB_ONLY))
     with warnings.catch_warnings():

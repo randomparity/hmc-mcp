@@ -81,9 +81,7 @@ async def test_operation_rejects_install_target_before_submission(
     ssh = _Ssh()
 
     with _patch_ssh(ssh), pytest.raises(HMCError, match=message):
-        await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-        )
+        await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
 
     assert ssh.commands == []
     hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
@@ -131,7 +129,10 @@ def _patch_ssh(ssh: _Ssh):
 
 @pytest.mark.parametrize(
     ("operation", "finder"),
-    [(install_vios_by_lpar_selector, "find_partition_by_name"), (install_vios, "find_vios_by_name")],
+    [
+        (install_vios_by_lpar_selector, "find_partition_by_name"),
+        (install_vios, "find_vios_by_name"),
+    ],
 )
 @pytest.mark.asyncio
 async def test_operation_submits_the_composed_installios_command(operation, finder):
@@ -265,9 +266,7 @@ async def test_operation_surfaces_a_failed_submission(operation):
         patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCCLIError, match="exit status 127"),
     ):
-        await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-        )
+        await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
 
 
 @pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
@@ -293,10 +292,10 @@ def _install_records(text: str) -> list[dict]:
             candidate = json.loads(line)
         except ValueError:
             continue
-        if (
-            isinstance(candidate, dict)
-            and candidate.get("event") in {"install-attempted", "install-submitted"}
-        ):
+        if isinstance(candidate, dict) and candidate.get("event") in {
+            "install-attempted",
+            "install-submitted",
+        }:
             records.append(candidate)
     return records
 
@@ -405,9 +404,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
         patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCCLIError),
     ):
-        await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-        )
+        await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
 
     assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle"
@@ -416,8 +413,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     record = _one_install_record(captured)
     assert (record["system"], record["partition"]) == ("sys1", "target1")
     assert not any(
-        record["event"] == "install-submitted"
-        for record in _install_records(captured)
+        record["event"] == "install-submitted" for record in _install_records(captured)
     )
 
 

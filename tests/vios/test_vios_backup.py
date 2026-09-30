@@ -67,9 +67,7 @@ def _fake_vios_client(monkeypatch):
     hmc = AsyncMock()
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr(
-        "hmcpctl._app.client_from_env", _client_factory(hmc)
-    )
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
 
 
 # ---------------------------------------------------------------------- #
@@ -153,9 +151,7 @@ def test_list_vios_backups_resolves_vios_name(monkeypatch):
     _hmc_env(monkeypatch)
     hmc = AsyncMock()
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr(
-        "hmcpctl._app.client_from_env", _client_factory(hmc)
-    )
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
     conn_mock = _make_ssh_mock("")
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
@@ -451,9 +447,7 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
     hmc = AsyncMock()
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr(
-        "hmcpctl._app.client_from_env", _client_factory(hmc)
-    )
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
@@ -487,9 +481,7 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
         }
     }
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
-    monkeypatch.setattr(
-        "hmcpctl._app.client_from_env", _client_factory(hmc)
-    )
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
@@ -518,14 +510,15 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
     _hmc_env(monkeypatch)
     hmc = AsyncMock()
     hmc.get_managed_system.return_value = managed_system
-    monkeypatch.setattr(
-        "hmcpctl._app.client_from_env", _client_factory(hmc)
-    )
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
 
-    with patch(
-        "hmcpctl.ssh.transport.asyncssh.connect",
-        side_effect=AssertionError("reached the SSH layer"),
-    ), pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
+    with (
+        patch(
+            "hmcpctl.ssh.transport.asyncssh.connect",
+            side_effect=AssertionError("reached the SSH layer"),
+        ),
+        pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"),
+    ):
         hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
@@ -566,14 +559,15 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
     hmc.get_managed_system.return_value = {
         "Resource": {"MachineTypeModelSerialNumber": mtms}
     }
-    monkeypatch.setattr(
-        "hmcpctl._app.client_from_env", _client_factory(hmc)
-    )
+    monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
 
-    with patch(
-        "hmcpctl.ssh.transport.asyncssh.connect",
-        side_effect=AssertionError("reached the SSH layer"),
-    ), pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
+    with (
+        patch(
+            "hmcpctl.ssh.transport.asyncssh.connect",
+            side_effect=AssertionError("reached the SSH layer"),
+        ),
+        pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"),
+    ):
         hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 

@@ -46,26 +46,30 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
-LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+LPAR_ENTRY = (
+    """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:{uuid}</id>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>{name}</PartitionName>
-""" + LPAR_RESOURCE_CONFIG + """\
+"""
+    + LPAR_RESOURCE_CONFIG
+    + """\
       <PartitionState>running</PartitionState>
     </LogicalPartition>
   </content>
 </entry>
 """
+)
 
 
 def _feed(*entries: str) -> str:
     """Wrap rendered Atom entries in the feed envelope ``parse_feed`` expects."""
     inner = "".join(
-        entry.split("?>", 1)[1].strip().replace(
-            ' xmlns="http://www.w3.org/2005/Atom"', "", 1
-        )
+        entry.split("?>", 1)[1]
+        .strip()
+        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
         for entry in entries
     )
     return (
@@ -100,10 +104,7 @@ def _mock_partition_feed(router, system_uuid: str, *lpar_uuids: str) -> None:
         return_value=httpx.Response(
             200,
             text=_feed(
-                *(
-                    LPAR_ENTRY.format(uuid=uuid, name=LPAR_NAME)
-                    for uuid in lpar_uuids
-                )
+                *(LPAR_ENTRY.format(uuid=uuid, name=LPAR_NAME) for uuid in lpar_uuids)
             ),
         )
     )
@@ -163,7 +164,8 @@ async def test_set_lpar_processors_runs_inside_a_running_event_loop(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
     ):
         async with HMCClient(make_config()) as hmc:
             result = await set_lpar_processors(
@@ -190,7 +192,8 @@ async def test_set_lpar_memory_runs_inside_a_running_event_loop(mock_hmc):
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
     ):
         async with HMCClient(make_config()) as hmc:
             result = await set_lpar_memory(
@@ -222,7 +225,9 @@ async def test_foreign_owner_is_rejected_before_any_mutation(mock_hmc, operation
     _mock_system_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
 
-    with patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("bob")):
+    with patch(
+        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("bob")
+    ):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
             with pytest.raises(PermissionError, match="ownership_override=true"):
                 await operation(
@@ -342,7 +347,8 @@ async def test_a_supplied_system_skips_fleet_discovery(mock_hmc):
     _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
     ):
         async with HMCClient(make_config()) as hmc:
             await set_lpar_processors(
@@ -385,9 +391,7 @@ async def test_an_override_without_a_selector_skips_discovery_entirely(
     read.assert_not_awaited()
     assert route.called
     assert [
-        call.request.url.path
-        for call in mock_hmc.calls
-        if call.request.method == "GET"
+        call.request.url.path for call in mock_hmc.calls if call.request.method == "GET"
     ] == [f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"] * 2
 
 
@@ -405,7 +409,9 @@ async def test_an_override_audits_one_partition_and_the_caller_s_selector(
     _mock_modify(mock_hmc)
 
     with (
-        patch("hmcpctl.operations.lpar.ownership.get_lpar_description", new=AsyncMock()),
+        patch(
+            "hmcpctl.operations.lpar.ownership.get_lpar_description", new=AsyncMock()
+        ),
         caplog.at_level(logging.WARNING),
     ):
         async with HMCClient(make_config(agent_id="alice")) as hmc:
@@ -422,7 +428,9 @@ async def test_an_override_audits_one_partition_and_the_caller_s_selector(
         for record in caplog.records
         if record.name == audit_sink.AUDIT_LOGGER_NAME
     ]
-    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert len(records) == 1, (
+        "an absence assertion over an empty capture proves nothing"
+    )
     assert records[0]["event"] == "ownership-override"
     assert records[0]["lpar"] == LPAR_NAME
     assert records[0]["system"] == ""
@@ -696,9 +704,7 @@ async def test_an_unknown_partition_uuid_never_reaches_the_fleet_walk(mock_hmc):
     assert info.value.status_code == 404
     assert LPAR_UUID in str(info.value)
     assert [
-        call.request.url.path
-        for call in mock_hmc.calls
-        if call.request.method == "GET"
+        call.request.url.path for call in mock_hmc.calls if call.request.method == "GET"
     ] == [f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"]
     assert not route.called
 
@@ -756,7 +762,8 @@ async def test_a_partition_name_is_not_re_read_for_containment(mock_hmc, operati
     route = _mock_modify(mock_hmc)
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
     ):
         async with HMCClient(make_config()) as hmc:
             await operation(
@@ -864,7 +871,8 @@ async def test_http_406_is_translated_to_an_actionable_error(mock_hmc, operation
     )
 
     with patch(
-        "hmcpctl.operations.lpar.ownership.get_lpar_description", new=_owned_by("hmcpctl")
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
     ):
         async with HMCClient(make_config()) as hmc:
             with pytest.raises(HMCError, match="HMC_SCHEMA_VERSION"):

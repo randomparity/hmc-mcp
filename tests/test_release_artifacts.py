@@ -480,9 +480,12 @@ def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
     wheel = tmp_path / "malformed.whl"
     wheel.write_bytes(locator + eocd)
 
-    with pytest.raises(
-        validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
-    ), wheel.open("rb") as stream:
+    with (
+        pytest.raises(
+            validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
+        ),
+        wheel.open("rb") as stream,
+    ):
         validator._preflight_zip_directory(stream, wheel.name)
 
 

@@ -83,5 +83,3 @@ async def remove_memory_pool(
 
 
 # LPAR description and MSP (lssyscfg / chsyscfg — no REST equivalent)
-
-

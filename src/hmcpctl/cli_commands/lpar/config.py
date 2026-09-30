@@ -307,7 +307,9 @@ def lpars_get_description(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the description field of an LPAR (HMC CLI via SSH)."""
-    result = run_cli_coroutine(lambda: get_lpar_description(ssh_config(), system_name, lpar_name))
+    result = run_cli_coroutine(
+        lambda: get_lpar_description(ssh_config(), system_name, lpar_name)
+    )
 
     console.print(escape(result.strip()) or "(no description set)")
 
@@ -353,7 +355,9 @@ def lpars_get_msp(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the MSP (Migratable Service Partition) flag of an LPAR (HMC CLI via SSH)."""
-    enabled = run_cli_coroutine(lambda: get_lpar_msp(ssh_config(), system_name, lpar_name))
+    enabled = run_cli_coroutine(
+        lambda: get_lpar_msp(ssh_config(), system_name, lpar_name)
+    )
 
     console.print("enabled" if enabled else "disabled")
 
@@ -369,7 +373,9 @@ def lpars_set_msp(
         f"Set MSP={'1' if enabled else '0'} on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    result = run_cli_coroutine(lambda: set_lpar_msp(ssh_config(), system_name, lpar_name, enabled))
+    result = run_cli_coroutine(
+        lambda: set_lpar_msp(ssh_config(), system_name, lpar_name, enabled)
+    )
 
     console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
     if result.strip():
@@ -391,7 +397,9 @@ def lpars_get_proc_compat(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
-    info = run_cli_coroutine(lambda: get_lpar_proc_compat(ssh_config(), system_name, lpar_name))
+    info = run_cli_coroutine(
+        lambda: get_lpar_proc_compat(ssh_config(), system_name, lpar_name)
+    )
 
     desired = info["desired"]
     curr = info["curr"]

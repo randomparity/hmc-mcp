@@ -101,7 +101,14 @@ def test_a_valid_configuration_reports_the_runner_would_start(
         _env_text(LIVE_TEST_PROVISION_DESIRED_VCPUS="0"),
         _env_text(LIVE_TEST_PROVISION_DESIRED_MEMORY_MIB="99999999"),
     ],
-    ids=["empty", "unknown-key", "duplicate", "not-an-int", "not-positive", "inconsistent"],
+    ids=[
+        "empty",
+        "unknown-key",
+        "duplicate",
+        "not-an-int",
+        "not-positive",
+        "inconsistent",
+    ],
 )
 def test_each_rejection_the_runner_makes_is_a_non_zero_exit(
     workspace, monkeypatch, capsys, env_text
@@ -279,8 +286,9 @@ def test_an_unpinned_slot_predicts_the_io_slots_scenario_will_mutate_two_spares(
 
     output = capsys.readouterr().out
     assert "RUNNABLE" in output
-    assert f"io_slots scenario: two further spare slots {preflight.pcie.AUTO_SELECTED_SLOT}" in (
-        output
+    assert (
+        f"io_slots scenario: two further spare slots {preflight.pcie.AUTO_SELECTED_SLOT}"
+        in (output)
     )
 
 
@@ -454,8 +462,12 @@ def _stub_hardware(monkeypatch, vlan_probe) -> list[tuple[str, int]]:
     return probed
 
 
-@pytest.mark.parametrize("group", [["--group", "round2"], []], ids=["round2", "every-arm"])
-def test_the_provision_vlan_is_reported_under_round2(workspace, monkeypatch, capsys, group):
+@pytest.mark.parametrize(
+    "group", [["--group", "round2"], []], ids=["round2", "every-arm"]
+)
+def test_the_provision_vlan_is_reported_under_round2(
+    workspace, monkeypatch, capsys, group
+):
     async def present(_system, vlan_id):
         return f"{vlan_id} has a virtual network"
 

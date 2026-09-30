@@ -117,7 +117,9 @@ def test_remove_vnic_uses_slot_num(monkeypatch) -> None:
     monkeypatch.setenv("HMC_USER", "u")
     monkeypatch.setenv("HMC_PASSWORD", "p")
     operation = AsyncMock(return_value=_result("remove", "4"))
-    monkeypatch.setattr("hmcpctl.server_tools.virtualization.vnic.remove_vnic", operation)
+    monkeypatch.setattr(
+        "hmcpctl.server_tools.virtualization.vnic.remove_vnic", operation
+    )
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
@@ -135,7 +137,9 @@ def test_remove_vnic_forwards_ownership_override(monkeypatch) -> None:
     monkeypatch.setenv("HMC_USER", "u")
     monkeypatch.setenv("HMC_PASSWORD", "p")
     operation = AsyncMock(return_value=_result("remove", "4"))
-    monkeypatch.setattr("hmcpctl.server_tools.virtualization.vnic.remove_vnic", operation)
+    monkeypatch.setattr(
+        "hmcpctl.server_tools.virtualization.vnic.remove_vnic", operation
+    )
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)

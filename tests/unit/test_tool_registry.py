@@ -29,7 +29,6 @@ from hmcpctl.tool_registry import (
 _GATES = {"permits": lambda _name: True, "authorize": lambda *_args: None}
 
 
-
 def _tool_names(application) -> set[str]:
     return {tool.name for tool in asyncio.run(application.list_tools())}
 
@@ -140,8 +139,11 @@ def test_extra_targets_supply_a_kind_the_table_cannot_name():
     )
     def remove_user(name: str, profile: str | None = None) -> str:
         return "ok"
+
     targets = security()["remove_user"].targets
-    assert [(t.kind, t.argument, t.required) for t in targets] == [("user", "name", True)]
+    assert [(t.kind, t.argument, t.required) for t in targets] == [
+        ("user", "name", True)
+    ]
 
 
 def test_affinity_operations_bind_only_the_managed_system_selector():
@@ -158,7 +160,6 @@ def test_affinity_operations_bind_only_the_managed_system_selector():
         assert [(target.kind, target.argument) for target in security.targets] == [
             ("managed_system", "system_name_or_uuid")
         ]
-
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +210,9 @@ def test_a_dotted_extra_declares_a_nested_selector():
     ) -> str:
         return "ok"
 
-    assert [(t.kind, t.argument, t.required) for t in security()["provision"].targets] == [
+    assert [
+        (t.kind, t.argument, t.required) for t in security()["provision"].targets
+    ] == [
         ("managed_system", "system_name_or_uuid", True),
         ("vios", "vios_uuid", True),
     ]
@@ -263,7 +266,6 @@ def test_a_nested_selector_on_a_pydantic_model_is_declared():
     assert (selector.container, selector.argument) == ("model", "vios_uuid")
 
 
-
 @pytest.mark.parametrize(
     "extra, message",
     [
@@ -313,7 +315,9 @@ def test_two_identical_dotted_extras_are_rejected():
                 ("vios", "storage.vios_uuid"),
             ),
         )
-        def sample(vios_uuid: str, storage: _Storage, profile: str | None = None) -> str:
+        def sample(
+            vios_uuid: str, storage: _Storage, profile: str | None = None
+        ) -> str:
             return "ok"
 
 
@@ -334,9 +338,18 @@ def test_validate_security_rejects_a_nested_container_that_is_not_a_parameter():
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({"effect": "nonsense", "operation": "a.b", "target_kind": "console"}, "effect"),
-        ({"effect": "read", "operation": "a.b", "target_kind": "nowhere"}, "target_kind"),
-        ({"effect": "read", "operation": "nodot", "target_kind": "console"}, "operation"),
+        (
+            {"effect": "nonsense", "operation": "a.b", "target_kind": "console"},
+            "effect",
+        ),
+        (
+            {"effect": "read", "operation": "a.b", "target_kind": "nowhere"},
+            "target_kind",
+        ),
+        (
+            {"effect": "read", "operation": "nodot", "target_kind": "console"},
+            "operation",
+        ),
         (
             {
                 "effect": "read",
@@ -418,12 +431,17 @@ def test_required_uses_absence_of_a_default_not_a_none_default():
     tool, _register, security = tool_module()
 
     @tool(effect="read", operation="pinned.read", target_kind="managed_system")
-    def pinned(system_name_or_uuid: str = "Server-1", profile: str | None = None) -> str:
+    def pinned(
+        system_name_or_uuid: str = "Server-1", profile: str | None = None
+    ) -> str:
         return "ok"
 
     selector = security()["pinned"].targets[0]
     assert selector.required is False
-    assert inspect.signature(pinned).parameters["system_name_or_uuid"].default == "Server-1"
+    assert (
+        inspect.signature(pinned).parameters["system_name_or_uuid"].default
+        == "Server-1"
+    )
 
 
 def test_build_tool_security_rejects_duplicate_names_and_operations():
@@ -586,9 +604,7 @@ def test_the_wrapper_of_a_coroutine_handler_is_itself_a_coroutine_function():
     async def handler(profile: str | None = None) -> str:
         return "ok"
 
-    security = ToolSecurity(
-        effect="read", operation="a.b", target_kind="console"
-    )
+    security = ToolSecurity(effect="read", operation="a.b", target_kind="console")
     guarded = authorized("t", security, handler, lambda name, *_a: calls.append(name))
 
     assert inspect.iscoroutinefunction(guarded)
@@ -607,9 +623,7 @@ def test_the_wrapper_authorizes_before_a_coroutine_handler_runs():
     def deny(*_args) -> None:
         raise RuntimeError("denied")
 
-    security = ToolSecurity(
-        effect="read", operation="a.b", target_kind="console"
-    )
+    security = ToolSecurity(effect="read", operation="a.b", target_kind="console")
     guarded = authorized("t", security, handler, deny)
 
     with pytest.raises(RuntimeError, match="denied"):

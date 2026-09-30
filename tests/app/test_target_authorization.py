@@ -164,7 +164,9 @@ def test_add_vnic_requires_authorization_for_backing_vios():
         "port_vlan_id": 100,
         "profile": "lab",
     }
-    with pytest.raises(AccessPolicyError, match="requires a target constraint for kind 'vios'"):
+    with pytest.raises(
+        AccessPolicyError, match="requires a target constraint for kind 'vios'"
+    ):
         _authorize([grant], "hmc_add_vnic", arguments)
 
 
