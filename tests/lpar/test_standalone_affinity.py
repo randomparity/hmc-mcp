@@ -24,9 +24,14 @@ from hmcpctl.operations.lpar.core import (
 from hmcpctl.server_tools.lpar.lifecycle import hmc_power_on_lpar
 
 
+class _ActivatedClient:
+    async def get_quick_property(self, *args: object) -> str:
+        return "running"
+
+
 class _ClientContext:
     async def __aenter__(self) -> object:
-        return object()
+        return _ActivatedClient()
 
     async def __aexit__(self, *args: object) -> None:
         return None

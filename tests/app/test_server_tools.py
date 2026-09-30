@@ -1483,7 +1483,12 @@ def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text="not activated"))
+    ).mock(
+        side_effect=[
+            httpx.Response(200, text="not activated"),
+            httpx.Response(200, text="running"),
+        ]
+    )
     mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY_WITH_LINK)
     )

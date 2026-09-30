@@ -202,6 +202,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_power_on_lpar` and `power_on_lpar` with `wait` now read the partition
+  state once after the job ends successfully and raise when it is `error` or `not activated`,
+  naming the state and pointing at `hmc_read_lpar_refcodes`. The HMC can finish the PowerOn job
+  `COMPLETED_OK` while activation fails, which was reported as success (#1165).
+
 - `hmc_power_on_lpar`, `lpars power-on` and `power_on_lpar`/`power_lpar` no longer submit a
   PowerOn the HMC is certain to fail (HSCL3681) when the partition is not `not activated`. An
   activated partition — `running`, `starting` or `open firmware` — reports `already_running`

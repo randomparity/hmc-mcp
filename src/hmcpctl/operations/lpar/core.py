@@ -78,6 +78,12 @@ _ACTIVATED_STATES: frozenset[PartitionState] = frozenset(
     {"running", "starting", "open firmware"}
 )
 
+# States a waited PowerOn that completed successfully must not leave the partition
+# in: the job can finish COMPLETED_OK while activation fails (live capture, #1165).
+_FAILED_ACTIVATION_STATES: frozenset[PartitionState] = frozenset(
+    {"error", "not activated"}
+)
+
 ProcessorCompatibilityMode = Literal[
     "default",
     "POWER5",
@@ -256,6 +262,29 @@ def activation_allows_assessment(result: LparPowerResult) -> tuple[bool, str]:
     return True, "PowerOn reached a successful terminal status."
 
 
+async def require_activated(hmc: HMCClient, result: LparPowerResult) -> None:
+    """Raise when a successfully completed waited PowerOn left the partition failed.
+
+    The job status alone does not prove activation: the HMC reports a
+    partition-fails-to-activate condition as a clean ``COMPLETED_OK``, and the
+    partition state reads ``error`` from the first read after the terminal status.
+    """
+    if not activation_allows_assessment(result)[0]:
+        return
+    state = await hmc.get_quick_property(
+        "LogicalPartition", result.lpar_uuid, "PartitionState"
+    )
+    if (state or "").strip().lower() not in _FAILED_ACTIVATION_STATES:
+        return
+    outcome = job_outcome("PowerOn", result.job)
+    raise HMCError(
+        f"PowerOn job {outcome.job_id} ended {outcome.status} but LPAR "
+        f"{result.lpar_uuid} is in state {state!r}, so activation failed. Read the "
+        "reference code with hmc_read_lpar_refcodes; power the partition off "
+        "before retrying."
+    )
+
+
 async def power_on_lpar(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
@@ -309,6 +338,12 @@ async def power_on_lpar(
         operation_type=operation_type,
         keylock=keylock,
     )
+    if (
+        wait
+        and result.job is not None
+        and result.job.get("already_running") is not True
+    ):
+        await require_activated(hmc, result)
     if (
         affinity_assessment is None
         or result.job is None
