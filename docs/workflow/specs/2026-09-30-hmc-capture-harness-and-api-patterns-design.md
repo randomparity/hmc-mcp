@@ -28,11 +28,13 @@ def capture(path: Path) -> Iterator[Capture]
 
 `Capture.step(name)` labels subsequent records, so a probe can mark its phases.
 
-- On entry, before patching anything, it refuses (`ValueError`, naming the path and the fix)
-  a destination for which `git -C <destination's directory> check-ignore -q` exits 1 — the
-  rule `scripts/live_test_runner.py:1541` applies: exit 0 (ignored) and any other status (no
-  repository, or outside one) are safe. Running git from the destination's own directory
-  checks the repository the file actually lands in, whatever the caller's working directory.
+- On entry, before any state changes, it checks in order: no capture is already active
+  (`RuntimeError`); the destination's parent directory exists (`ValueError` — the harness
+  never creates directories); and git ignores the destination (`ValueError`, naming the path
+  and the ignored patterns). The ignore rule is `scripts/live_test_runner.py:1541`'s:
+  `git check-ignore -q` exit 0 (ignored) and any status other than 1 (no repository, or
+  outside one) are safe. Git runs from the destination's existing parent with the resolved
+  absolute path, so it checks the repository the file actually lands in.
 - It patches `hmcpctl.client.core.HMCClient._request` and
   `asyncssh.SSHClientConnection.run` on the class, so every caller — including modules that
   imported `run_hmc_command` by name — is observed. On exit both originals are restored,
@@ -44,13 +46,25 @@ def capture(path: Path) -> Iterator[Capture]
     `exception` (`Type: message`) and the exception is re-raised.
   - `ssh`: `command`, `exit_status`, `stdout`, `stderr`; an `asyncssh.ProcessError` is
     recorded from its fields and re-raised.
+  - Both wrappers record `exception` for any `BaseException`, `CancelledError` included, and
+    re-raise it unchanged.
+  - Text fields are strings: `bytes` decode as UTF-8 with `errors="replace"`, and a `json=`
+    body is serialized with `json.dumps` before redaction.
+- Recording never changes the call's outcome. If building or writing a record raises, the
+  harness prints one line to stderr naming the destination and the error, stops recording
+  for the rest of the context, and still returns the original result or re-raises the
+  original exception.
 - Redaction, applied before anything is written:
   - request and response headers named `X-API-Session`, `Cookie`, `Set-Cookie`, or
     `Authorization` (case-insensitive) are dropped;
   - for a path containing `Logon`, request body, response body, and exception text are
     replaced by `"<redacted: logon>"`;
   - any request body, response body, exception text, SSH command, stdout, or stderr containing
-    `password` (case-insensitive) is replaced by `"<redacted: password>"`.
+    one of `password`, `passwd`, `passphrase`, `sftpkey`, `private key`, `x-api-session`,
+    `x_api_session` (case-insensitive) is replaced by `"<redacted: secret>"`. The list covers
+    the secrets hmcpctl sends today: the logon password, the session memento a template
+    deploy carries (`src/hmcpctl/jobs/requests.py:365`), update-job `SFTPKey`/`PassPhrase`
+    (`src/hmcpctl/operations/updates/models.py:35`), and `chhmcusr … passwd=`.
 - `.gitignore` gains `*.capture.jsonl` and `hmc-captures/`, so a destination inside the
   repository has an ignored place to land.
 
@@ -60,13 +74,19 @@ Opens with a plain-prose note (no generation banner) that every pattern is from 
 POWER9 and says nothing about other releases or families. Sections: envelope structure;
 identifiers and their stability; link forms; media types per endpoint; job lifecycle;
 error-code families and bodies; schema and enumerations; CLI output forms. Each pattern row:
-ID (P1–P47 from the issue comments; `N1`–`N4` for the #879-window observations), the
+ID (P1–P47 from the issue comments; `N1`–`N4` for the #879-window observations the
+orchestrator's dispatch supplied, each tied to its fix: N1 `lshwres -F lpar_name` prints
+`null` for an unowned slot (#1195, fixed by PR #1196); N2 `lshwres -F lpar_id` prints `none`
+for an unowned slot; N3 `lssyscfg -F uuid` prints LPAR UUIDs upper-case and system UUIDs
+lower-case (PR #1197); N4 quick `PartitionState` is always JSON-quoted), the
 observation, capture commit (`2281afd2` for P1–P27, `90c97b5f` for N1–N4, "not stated" for
 P28–P47, whose comments record no commit), conforming or divergent code paths with
 `path:line` citations verified against the branch base, and the fixing PR/issue where one
 exists. A pattern whose comment is ambiguous says so. It is linked from `docs/index.md`
 (Reference list). A closing section states the rule that new HMC-shaped fixtures should cite
-a capture, as #1161 proposes, marked unenforced.
+a capture, as #1161 proposes, marked unenforced. Before commit the page is scanned for
+UUIDs, IPv4 addresses, FQDNs, U-codes and serial/MTMS strings; examples use `sys-R1`-style
+tokens.
 
 ## Failure model
 
@@ -82,13 +102,14 @@ a capture, as #1161 proposes, marked unenforced.
 3. **Accepted failure classes**
    - Non-secret identifiers (hostnames, UUIDs, serials) are recorded verbatim: the capture is
      private by design and git-ignored; tokenizing is the fixture corpus's job (excluded).
-   - A secret whose text contains neither `password` nor a session/cookie header name and
-     does not travel on a `Logon` path is not recognized; no HMC operation the harness
-     observes today carries one.
+   - A secret matching none of the redaction keywords, outside the dropped headers, and off
+     a `Logon` path is recorded; the list names every secret-bearing field hmcpctl sends at
+     the base commit, and the file is private (0600, git-ignored) as a second line.
    - Interactive console sessions (`create_process`, used by the console tools) are not
      `run` calls and are not recorded; #1161's windows did not capture console either.
    - Concurrent `capture()` contexts in one process are unsupported (the patch is global);
-     a nested entry raises `RuntimeError`.
+     a nested entry raises `RuntimeError` before changing anything, so the outer context
+     keeps recording.
    - Line citations drift as `main` moves; the doc states the commit they were verified at.
 4. **Covered elsewhere**
    - Publishing redacted fixtures: #1161's fixture-corpus bullet.
@@ -109,7 +130,9 @@ a capture, as #1161 proposes, marked unenforced.
 
 - Harness: `tests/scripts/test_capture.py` with a fake `httpx` response and fake SSH
   results — one test per recorded field set, per redaction rule, for the ignore refusal,
-  nesting refusal, exception pass-through, and restore-on-exit. No network.
+  nesting refusal (outer context still recording), missing parent, exception and
+  cancellation pass-through, failing recorder pass-through, and restore-on-exit. No
+  network.
 - Doc: `task-test-not-applicable` — human-read prose with no executable consumer; every
   `path:line` is checked by reading it at the base commit during authoring and review.
 - Guardrails: `just verify`, `uv run --no-sync prek run --all-files`.
