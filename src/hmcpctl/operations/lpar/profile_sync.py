@@ -73,13 +73,11 @@ def _text(value: Any) -> str | None:
     return value.strip() or None
 
 
-async def read_change_location(hmc: HMCClient, lpar_uuid: str) -> ChangeLocation:
-    """Read the partition's ``CurrentProfileSync`` once and classify it.
+def change_location_of(entry: dict[str, Any] | None) -> ChangeLocation:
+    """Classify a partition entry's ``CurrentProfileSync``.
 
-    Callers read it before their write, so a failed read fails the command
-    before anything changes rather than hiding a completed write.
+    Accepts a GET or a write's response entry; an absent entry is ``unknown``.
     """
-    entry = await hmc.get_logical_partition(lpar_uuid)
     resource = (entry or {}).get("Resource") or {}
     sync = _text(resource.get("CurrentProfileSync"))
     folded = (sync or "").casefold()
@@ -91,6 +89,15 @@ async def read_change_location(hmc: HMCClient, lpar_uuid: str) -> ChangeLocation
     if folded in {"disabled", "suspended"}:
         return ChangeLocation(sync, "current-configuration")
     return ChangeLocation(sync, "unknown")
+
+
+async def read_change_location(hmc: HMCClient, lpar_uuid: str) -> ChangeLocation:
+    """Read the partition's ``CurrentProfileSync`` once and classify it.
+
+    Callers read it before their write, so a failed read fails the command
+    before anything changes rather than hiding a completed write.
+    """
+    return change_location_of(await hmc.get_logical_partition(lpar_uuid))
 
 
 def _as_list(value: Any) -> list[Any]:

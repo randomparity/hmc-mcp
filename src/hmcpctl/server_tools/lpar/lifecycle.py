@@ -49,8 +49,11 @@ def hmc_modify_lpar(
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars). Only the fields you pass are changed.
     Memory values are in MiB. For a running partition these are dynamic
-    (DLPAR) operations and require an active RMC connection; otherwise the
-    change applies on next activation. The partition is read whole and
+    (DLPAR) operations and require an active RMC connection. The write
+    changes the partition's current configuration, not a partition profile:
+    otherwise it applies on next activation only if that activation uses the
+    current configuration, and activating a profile discards it unless
+    CurrentProfileSync is On (see warnings). The partition is read whole and
     written back under If-Match. dedicated must match the partition's
     current mode (True for whole CPUs, False for shared processing units +
     virtual processors) or be omitted; a switch between them is refused.
@@ -141,8 +144,11 @@ def hmc_dlpar_proc(
     Uncapping a capped partition leaves its uncapped weight 0; no field sets
     the weight.
 
-    If the LPAR does not have an active RMC connection, the change is
-    profile-only and takes effect on next activation (no reboot is triggered).
+    The write changes the partition's current configuration, not a partition
+    profile. With no active RMC connection it applies on next activation only if
+    that activation uses the current configuration; activating a profile discards
+    it unless CurrentProfileSync is On. The result's change_location and warnings
+    say which. No reboot is triggered.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
@@ -181,8 +187,11 @@ def hmc_dlpar_mem(
     Reads the whole partition and writes it back under If-Match with only
     the memory fields you pass changed. Memory values are in MiB.
 
-    If the LPAR does not have an active RMC connection, the change is
-    profile-only and takes effect on next activation (no reboot is triggered).
+    The write changes the partition's current configuration, not a partition
+    profile. With no active RMC connection it applies on next activation only if
+    that activation uses the current configuration; activating a profile discards
+    it unless CurrentProfileSync is On. The result's change_location and warnings
+    say which. No reboot is triggered.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
