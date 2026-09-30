@@ -202,6 +202,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_set_lpar_description`, `lpars set-description` and `set_lpar_ownership_description` no
+  longer strip the ownership stamp. `chsyscfg` replaces the whole field, so plain text set on a
+  stamped partition left it unowned, and mutable and deletable without `ownership_override`.
+  Plain text now replaces the field but keeps the current `[hmcpctl owner:... created:...]`
+  stamp and its `[caller ...]` segment at its start, taken from the same description read the
+  ownership guard makes. Text carrying its own complete stamp is still written as given, the
+  ADR 0066 re-stamp and handover. A `[hmcpctl` or `[caller ` fragment without a complete stamp
+  is refused before any HMC call. Removing a stamp now takes `ownership_override`, which
+  writes the text as given. ADR 0066 carries a dated amendment recording the change (#1169).
 - `hmc_power_on_lpar` and `power_on_lpar` with `wait` now read the partition
   state once after the job ends successfully and raise when it is `error` or `not activated`,
   naming the state and pointing at `hmc_read_lpar_refcodes`. The HMC can finish the PowerOn job
