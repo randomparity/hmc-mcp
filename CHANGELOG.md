@@ -202,6 +202,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
+  identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
+  SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
+  add/remove preflight and PCIe-assignment prevalidation (`lpars create`, DLPAR, provision). One
+  helper in `ssh/commands.py` now owns the `No results were found.` sentinel and that wrap (#892).
 - The vNIC snapshots in `vnic_before`/`vnic_after` from `network add-vnic`/`hmc_add_vnic` and
   `network remove-vnic`/`hmc_remove_vnic` report each embedded backing's `is_active` and
   `status` from the HMC's `backing_device_states`, joined by logical port ID. Before, they were

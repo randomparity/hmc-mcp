@@ -11,9 +11,14 @@ import pytest
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.operations.virtualization.pcie import _is_exact_admitted_environment
-from hmcpctl.ssh.commands import parse_hmc_delimited_rows
+from hmcpctl.ssh.commands import (
+    HMC_NO_RESULTS,
+    parse_hmc_delimited_rows,
+    parse_hmc_result_rows,
+)
 from hmcpctl.ssh.profiles import ProfileIoSlot, parse_profile_io_slots
 from hmcpctl.ssh.sriov import list_sriov_physical_port_rows
+from hmcpctl.ssh.transport import HMCCLIError
 
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "pcie"
@@ -104,6 +109,35 @@ def test_parser_rejects_invalid_contract(
 def test_parser_rejects_malformed_output(text: str) -> None:
     with pytest.raises(ValueError):
         parse_hmc_delimited_rows(text, ("a", "b"))
+
+
+@pytest.mark.parametrize("text", [HMC_NO_RESULTS, f"  {HMC_NO_RESULTS}\n"])
+def test_result_rows_treat_the_hmc_sentinel_as_no_rows(text: str) -> None:
+    assert parse_hmc_result_rows(text, ("a", "b"), "test read") == []
+
+
+@pytest.mark.parametrize("text", ["", " \n\t"])
+def test_result_rows_admit_blank_output_only_when_asked(text: str) -> None:
+    assert (
+        parse_hmc_result_rows(text, ("a", "b"), "test read", blank_is_empty=True) == []
+    )
+    with pytest.raises(HMCCLIError, match="missing its header"):
+        parse_hmc_result_rows(text, ("a", "b"), "test read")
+
+
+def test_result_rows_wrap_parse_failures_with_operation_and_fields() -> None:
+    with pytest.raises(
+        HMCCLIError,
+        match=r"^test read response did not match the expected a,b fields: .*header",
+    ) as caught:
+        parse_hmc_result_rows("a,c\n1,2\n", ("a", "b"), "test read")
+    assert isinstance(caught.value.__cause__, ValueError)
+
+
+def test_result_rows_return_parsed_rows() -> None:
+    assert parse_hmc_result_rows("a,b\n1,2\n", ("a", "b"), "test read") == [
+        {"a": "1", "b": "2"}
+    ]
 
 
 def test_parser_preserves_csv_values_and_empty_rows() -> None:

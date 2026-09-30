@@ -17,7 +17,8 @@ raise `HMCCLIError` for the same fault.
   the sentinel (and for blank text when `blank_is_empty`), otherwise returns
   `parse_hmc_delimited_rows(text, fields)` and re-raises its `ValueError` as `HMCCLIError`:
   `"{operation} response did not match the expected {','.join(fields)} fields: {detail}"`.
-- `sriov.py` drops `_parse_admitted_rows` for the helper with operation `SR-IOV inventory`.
+- `sriov.py`'s `_parse_admitted_rows` becomes a one-line call binding operation
+  `SR-IOV inventory` for its five call sites.
 - `vnic.py` `list_vnic_rows`, `list_vnic_backing_rows`, `read_vios_identity` use it. The
   one-row check in `read_vios_identity` stays a `ValueError`: zero rows means the caller named
   a VIOS the system does not have, which is an input fault, not a malformed response.

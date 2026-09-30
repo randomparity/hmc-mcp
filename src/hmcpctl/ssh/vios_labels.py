@@ -9,7 +9,7 @@ from io import StringIO
 from typing import Literal
 
 from ..config import HMCConfig
-from .commands import build_attribute_record, build_filter
+from .commands import HMC_NO_RESULTS, build_attribute_record, build_filter
 from .transport import HMCCLIError, run_hmc_command
 
 ViosGroupUpdateAction = Literal["rename", "add-members", "remove-members"]
@@ -130,7 +130,9 @@ def _raise_member_payload_too_large(attribute: str) -> None:
 
 
 def _parse_label_rows(output: str, operation: str) -> list[dict[str, str]]:
-    if not output.strip() or output.strip() == "No results were found.":
+    # Not parse_hmc_result_rows: these reads take whatever attributes the HMC
+    # prints, so there is no requested field tuple for the header to match.
+    if not output.strip() or output.strip() == HMC_NO_RESULTS:
         return []
     try:
         records = list(csv.reader(StringIO(output, newline=""), strict=True))

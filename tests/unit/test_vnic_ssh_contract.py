@@ -5,6 +5,7 @@ import shlex
 import pytest
 
 from hmcpctl.config import HMCConfig
+from hmcpctl.ssh.transport import HMCCLIError
 from hmcpctl.ssh.vnic import (
     add_vnic_backing,
     list_vnic_backing_rows,
@@ -123,17 +124,41 @@ async def test_list_vnic_backing_rows_requests_exact_fields(
     ]
 
 
+_HEADER_READS = {
+    "vnic": (lambda config: list_vnic_rows(config, "system", "client"), "lpar_name"),
+    "backing": (lambda config: list_vnic_backing_rows(config, "system"), "adapter_id"),
+    "vios-identity": (
+        lambda config: read_vios_identity(config, "system", "vios"),
+        "lpar_env",
+    ),
+}
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("output", ["bad=value\n", "lpar_name,lpar_id\nvios\n"])
-async def test_collectors_reject_malformed_rows(
-    monkeypatch, config, output: str
+@pytest.mark.parametrize("read", sorted(_HEADER_READS))
+@pytest.mark.parametrize("output", ["", "bad=value\n", "lpar_name,lpar_id\nvios\n"])
+async def test_header_reads_raise_hmc_cli_error_for_malformed_output(
+    monkeypatch, config, read: str, output: str
 ) -> None:
     async def fake_run(_config, _command: str) -> str:
         return output
 
     monkeypatch.setattr("hmcpctl.ssh.vnic.run_hmc_command", fake_run)
-    with pytest.raises(ValueError):
-        await list_vnic_backing_rows(config, "system")
+    call, field = _HEADER_READS[read]
+    with pytest.raises(HMCCLIError, match=rf"response did not match .*{field}"):
+        await call(config)
+
+
+@pytest.mark.asyncio
+async def test_read_vios_identity_treats_empty_result_as_zero_rows(
+    monkeypatch, config
+) -> None:
+    async def fake_run(_config, _command: str) -> str:
+        return "No results were found.\n"
+
+    monkeypatch.setattr("hmcpctl.ssh.vnic.run_hmc_command", fake_run)
+    with pytest.raises(ValueError, match="returned 0 rows; expected 1"):
+        await read_vios_identity(config, "system", "vios")
 
 
 @pytest.mark.asyncio
