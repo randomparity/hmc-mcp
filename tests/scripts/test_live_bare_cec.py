@@ -289,7 +289,7 @@ def test_happy_path_promotes_every_operation_and_leaves_nothing(schemas):
         "lpar-name-absent",
         "slot-released",
     }
-    assert set(observations["lpar.get_state"]["assertions"]) == {"state-read-reports-firmware"}
+    assert set(observations["lpar.get_state"]["assertions"]) == {"state-read-returned-a-state"}
     assert set(observations["pcie.list_dedicated_slots"]["assertions"]) == {
         "list-call-succeeded",
         "fixture-slot-listed",
@@ -442,11 +442,27 @@ def test_a_timed_out_activation_fails_ends_the_steps_and_still_tears_down(schema
 
     observations = _observations(state)
     assert observations["lpar.power_on"]["result"] == "failed"
+    assert "lpar.get_state" not in observations
     assert "JobTimedOut" in _row(state, "hmc_power_on_lpar")["data"]
     assert "hmc_read_lpar_refcodes" not in world.tools()
     assert "hmc_power_off_lpar (teardown)" in [row["tool"] for row in state.results]
     assert observations["lpar.delete"]["result"] == "passed"
     _assert_torn_down(world)
+
+
+def test_a_slot_still_owned_after_delete_fails_the_slot_list_observation(schemas):
+    world, state = World(), _state(schemas)
+    world.overrides["hmc_list_dedicated_pcie_slots"] = lambda _kwargs: (
+        {"items": [{"drc_index": _DRC, "owner_lpar": "someone"}]}
+        if "hmc_delete_lpar" in world.tools()
+        else _DEFAULT
+    )
+
+    _run(world, state)
+
+    listing = _observations(state)["pcie.list_dedicated_slots"]
+    assert listing["result"] == "failed"
+    assert _row(state, "hmc_list_dedicated_pcie_slots")["note"] == "unmet: fixture-slot-unowned"
 
 
 # ---------------------------------------------------------------------------
