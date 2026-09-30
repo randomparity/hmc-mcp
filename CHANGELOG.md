@@ -10,6 +10,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- Live observations for the v0.1.0 bare-CEC path, from the #879 window at `90c97b5f` on HMC
+  V10R3 with a POWER9 (8375-42A) system: `lpar.create`, `pcie.list_dedicated_slots`,
+  `pcie.assign_dedicated_slot`, `lpar.power_on`, `lpar.get_state`, `job.get`, `job.wait`,
+  `lpar.list_refcodes`, `lpar.capture_console`, `lpar.power_off`,
+  `pcie.unassign_dedicated_slot` and `lpar.delete`, plus refreshed observations for the eight
+  inventory reads. `just verification-report` reports 20 operations `current` and none stale.
+  `lpar.power_on` is recorded `partial`: network boot is #868. `docs/recipes/bare-cec-lpar.md`
+  now records the outcomes of its verbatim run (#879).
 - The power-path `ownership_override` cost is now stated as the source has it: the partition
   resolution plus one partition-name GET, with no SSH command and no managed-system name read.
   Corrected in the `_power_on` docstring and `docs/environment-variables.md`, and ADR 0092 §4
