@@ -12,7 +12,7 @@ from .runtime import with_client
 
 
 def jobs_show(
-    job_id: str = typer.Argument(..., help="Job UUID or JobID"),
+    job_id: str = typer.Argument(..., help="JobID"),
     job_href: str | None = typer.Option(
         None, "--job-href", help="SELF link returned by job submission"
     ),
@@ -45,7 +45,7 @@ def jobs_list(
 
 
 def jobs_wait(
-    job_id: str = typer.Argument(..., help="Job UUID or JobID to wait on"),
+    job_id: str = typer.Argument(..., help="JobID to wait on"),
     timeout: int = typer.Option(300, "--timeout", "-t", help="Maximum seconds to wait"),
     interval: int = typer.Option(
         5, "--interval", "-i", help="Poll interval in seconds"
