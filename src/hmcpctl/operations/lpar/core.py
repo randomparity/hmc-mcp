@@ -172,8 +172,9 @@ class LparCreation:
     max_virtual_slots: int | None = None
     caller_token: str | None = None
     stamp_policy: Literal["best-effort", "required"] = "best-effort"
-    # mksyscfg path only (#939): True applies the created profile, False
-    # reports a skipped apply step, None (not requested) adds no step.
+    # True applies the profile mksyscfg created (#939) and, after a REST create,
+    # reports the apply as skipped because none is needed (#1164); False reports a
+    # skipped apply step; None (not requested) adds no step.
     apply_profile: bool | None = None
 
 

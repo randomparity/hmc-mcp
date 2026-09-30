@@ -74,7 +74,9 @@ a dedicated `SharingMode`, and the processing units and minimum virtual processo
 refused with a 500 `REST0126` (P38). `mksyscfg` has no dedicated `sharing_mode` default
 either. Both create paths now take their omitted values from one defaults function,
 `ssh.lpar.complete_create_resources`, so the partition does not depend on which path created
-it. A create with no resource values still goes straight to `mksyscfg`, because only its
+it. A dedicated create without a sharing mode gets `keep_idle_procs`. That is a choice: the
+HMC's own default for a REST create with no processor configuration was `share_idle_procs`
+(P39), and neither path had one for a dedicated request. A create with no resource values still goes straight to `mksyscfg`, because only its
 `all_resources=1` expresses that.
 
 The `mksyscfg` fallback on 406 and on 400 `REST0001` stays. The fallback now logs the HMC's

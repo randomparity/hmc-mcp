@@ -216,8 +216,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   requires. A dedicated create without `sharing_mode` gets `keep_idle_procs` on either path,
   where `mksyscfg` previously refused it. The `mksyscfg` record now honors a capped shared
   request instead of always sending `uncap`, and either path refuses a dedicated
-  `sharing_mode` on a shared request before any HMC call. A create with no memory or
-  processor values still goes straight to `mksyscfg`'s `all_resources=1` (#1164).
+  `sharing_mode` on a shared request before any create call. The vCPU-versus-units guards
+  (#938, #949) now run before the REST create too, not only before `mksyscfg`. A create with
+  no memory or processor values still goes straight to `mksyscfg`'s `all_resources=1`
+  (#1164).
 - The `mksyscfg` fallback after a refused REST create now logs the HMC's message at
   `WARNING`, so a defect in the create document no longer hides behind a successful CLI
   create. `os_type` is documented as having no effect on a create: the HMC treats

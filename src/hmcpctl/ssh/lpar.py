@@ -6,7 +6,7 @@ import shlex
 from dataclasses import replace
 
 from ..config import HMCConfig
-from ..documents import LparResources
+from ..documents import SHARING_MODES, LparResources
 from .commands import build_attribute_record
 from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
@@ -128,9 +128,9 @@ async def create_lpar_via_cli(
 ) -> str:
     """Create an LPAR via ``mksyscfg`` over SSH.
 
-    Uses the HMC CLI (SSH) instead of the REST API because some HMC firmware
-    versions refuse ``PUT ManagedSystem/{uuid}/LogicalPartition``: HTTP 406, or
-    on V10R3 a 400 ``REST0001`` schema rejection (ADR 0178).  This is the same approach used by
+    The create path's fallback when the REST ``PUT ManagedSystem/{uuid}/LogicalPartition``
+    is refused with HTTP 406 or a 400 ``REST0001`` payload rejection (ADR 0178), and its
+    only path for a create with no resource values.  This is the same approach used by
     the IBM ansible-power-hmc collection and IBM internal provisioning toolkits.
 
     When no explicit resource values (memory/proc/vcpu) are provided, the
@@ -206,6 +206,13 @@ def complete_create_resources(resources: LparResources) -> LparResources | None:
     fractional dedicated count, a sharing mode of the other processor mode, or a
     processing-unit default the requested virtual processors cannot use.
     """
+    if (
+        resources.sharing_mode is not None
+        and resources.sharing_mode not in SHARING_MODES
+    ):
+        raise ValueError(
+            f"sharing_mode must be one of: {', '.join(sorted(SHARING_MODES))}"
+        )
     if all(getattr(resources, name) is None for name in _RESOURCE_FIELDS):
         return None
     processors = (

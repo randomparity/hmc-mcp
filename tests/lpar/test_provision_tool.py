@@ -1183,7 +1183,7 @@ def test_provision_rest_create_reports_skipped_apply_step(monkeypatch, mock_hmc)
     assert result.steps[1].step == "apply_profile"
     assert result.steps[1].status == "skipped"
     assert "set the current configuration" in result.steps[1].result
-    assert not any("apply" in w for w in result.warnings)
+    assert not any("not applied" in w or "not performed" in w for w in result.warnings)
     assert result.workflow_completed is True
 
 

@@ -19,7 +19,7 @@ from conftest import LPAR_RESOURCE_CONFIG
 from defusedxml import ElementTree as DET
 
 from hmcpctl.config import HMCConfig
-from hmcpctl.documents import LparResources
+from hmcpctl.documents import LparResources, build_lpar_document
 from hmcpctl.documents.common import UOM_NS
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
@@ -31,7 +31,11 @@ from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_modify_lpar,
 )
 from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
-from hmcpctl.ssh.lpar import apply_lpar_profile_via_cli, create_lpar_via_cli
+from hmcpctl.ssh.lpar import (
+    apply_lpar_profile_via_cli,
+    complete_create_resources,
+    create_lpar_via_cli,
+)
 from hmcpctl.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
@@ -343,12 +347,12 @@ def test_create_lpar_rest_success_reports_skipped_apply(
     assert result.lpar.get("UUID") == LPAR_UUID
     if not apply_partition_profile:
         assert [s.step for s in result.steps] == ["create"]
-        assert not any("apply" in w for w in result.warnings)
+        assert not any("not applied" in w for w in result.warnings)
         return
     assert result.steps[1].step == "apply_profile"
     assert result.steps[1].status == "skipped"
     assert "set the current configuration" in result.steps[1].result
-    assert not any("apply" in w for w in result.warnings)
+    assert not any("not applied" in w or "not performed" in w for w in result.warnings)
 
 
 def test_create_lpar_http_406_apply_error_stops_the_workflow(monkeypatch, mock_hmc):
@@ -930,3 +934,38 @@ def test_create_with_no_resource_values_goes_straight_to_mksyscfg(
     assert create_via_cli.await_args.kwargs["resources"] == LparResources()
     assert order == ["search", "mksyscfg", "search"]
     assert result.lpar.get("UUID") == LPAR_UUID
+
+
+@pytest.mark.parametrize(
+    ("resources", "cli_mode", "rest_mode", "weight"),
+    [
+        (LparResources(desired_procs=0.5, sharing_mode="capped"), "cap", "capped", "0"),
+        (LparResources(desired_procs=0.5, uncapped=False), "cap", "capped", "0"),
+        (LparResources(desired_procs=0.5), "uncap", "uncapped", None),
+        (
+            LparResources(desired_procs=0.5, uncapped=True, sharing_mode="capped"),
+            "uncap",
+            "uncapped",
+            None,
+        ),
+    ],
+)
+def test_both_paths_take_the_same_capping(resources, cli_mode, rest_mode, weight):
+    """``uncapped`` wins over ``sharing_mode``; either one alone decides (#1164)."""
+    complete = complete_create_resources(resources)
+    assert complete is not None
+    root = DET.fromstring(build_lpar_document("p", resources=complete).encode())
+
+    ppc = "PartitionProcessorConfiguration"
+    assert _proc_fields(resources)["sharing_mode"] == cli_mode
+    assert _uom_text(root, f"{ppc}/SharingMode") == rest_mode
+    assert (
+        _uom_text(root, f"{ppc}/SharedProcessorConfiguration/UncappedWeight") == weight
+    )
+
+
+def test_create_defaults_refuse_an_unknown_sharing_mode():
+    with pytest.raises(ValueError, match="sharing_mode must be one of"):
+        complete_create_resources(
+            LparResources(desired_procs=0.5, sharing_mode="bogus")  # type: ignore[arg-type]
+        )
