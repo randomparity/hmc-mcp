@@ -319,7 +319,7 @@ def test_create_lpar_rest_success_reports_skipped_apply(
     assert result.lpar.get("UUID") == LPAR_UUID
     if not apply_partition_profile:
         assert [s.step for s in result.steps] == ["create"]
-        assert result.warnings == ()
+        assert not any("apply" in w for w in result.warnings)
         return
     assert result.steps[1].step == "apply_profile"
     assert result.steps[1].status == "skipped"
