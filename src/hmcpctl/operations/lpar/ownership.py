@@ -339,6 +339,9 @@ _CALLER_TOKEN = re.compile(
     r"\[hmcpctl owner:[^\s\[\]:]+ created:\d{4}-\d{2}-\d{2}\] "
     r"\[caller (?P<token>[^\s\[\]]+)\]"
 )
+# The first stamp plus the caller segment directly after it, never one that
+# belongs to a later stamp.
+_STAMP_PREFIX = re.compile(_OWNERSHIP_TOKEN.pattern + r"(?: \[caller [^\s\[\]]+\])?")
 
 
 def parse_lpar_ownership_owner(description: str) -> str | None:
@@ -729,11 +732,7 @@ def _require_parseable_stamp(description: str) -> None:
 
 def _keep_ownership_prefix(current: str, description: str) -> str:
     """Prefix plain *description* with *current*'s stamp and caller segment."""
-    stamp = _OWNERSHIP_TOKEN.search(current)
+    stamp = _STAMP_PREFIX.search(current)
     if stamp is None or parse_lpar_ownership_owner(description) is not None:
         return description
-    prefix = stamp.group(0)
-    caller_token = parse_lpar_ownership_caller_token(current)
-    if caller_token is not None:
-        prefix = f"{prefix} [caller {caller_token}]"
-    return f"{prefix} {description}" if description else prefix
+    return f"{stamp.group(0)} {description}" if description else stamp.group(0)

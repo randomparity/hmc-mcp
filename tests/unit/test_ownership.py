@@ -1166,10 +1166,28 @@ def test_set_description_keeps_the_captured_stamp_and_caller_token():
             "[hmcpctl owner:alice created:2026-08-14] [caller T-1]",
         ),
         ("free text, no stamp", "replacement", "replacement"),
+        (
+            "lead [hmcpctl owner:alice created:2026-08-14] [caller T-1] tail",
+            "new",
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] new",
+        ),
+        (
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] see [caller U]",
+            "new",
+            "[hmcpctl owner:alice created:2026-08-14] [caller T-1] new",
+        ),
+        (
+            (
+                "[hmcpctl owner:alice created:2026-08-14] x "
+                "[hmcpctl owner:bob created:2026-08-15] [caller T-2]"
+            ),
+            "new",
+            "[hmcpctl owner:alice created:2026-08-14] new",
+        ),
     ],
 )
 def test_set_description_replaces_only_the_user_text(current, text, written):
-    """Plain text replaces what follows the stamp; an unstamped field is replaced."""
+    """Plain text replaces the field, keeping the first stamp and its own caller."""
     _, write = _set_description_over(current, text)
     assert write.call_args.args[3] == written
 

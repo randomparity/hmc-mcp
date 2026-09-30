@@ -291,12 +291,13 @@ def hmc_set_lpar_description(
     Foreign-owned or malformed tokens are rejected. Set ownership_override=True
     only after explicit operator approval.
 
-    Plain text keeps the ownership stamp: on a stamped partition it replaces
-    only what follows ``[hmcpctl owner:<id> created:<date>]`` and any
-    ``[caller <token>]`` segment. Text carrying its own complete stamp
-    re-stamps or hands over the partition and is written as given; a
-    ``[hmcpctl`` or ``[caller `` fragment without a complete stamp is rejected.
-    With ownership_override=True the text is written as given, stamp or not.
+    Plain text keeps the ownership stamp: on a stamped partition the field
+    becomes ``[hmcpctl owner:<id> created:<date>]``, its ``[caller <token>]``
+    segment if any, then the text; read it back with hmc_get_lpar_description.
+    Text carrying its own complete stamp re-stamps or hands over the partition
+    and is written as given; a ``[hmcpctl`` or ``[caller `` fragment without a
+    complete stamp is rejected. With ownership_override=True the text is
+    written as given, stamp or not, which is how a stamp is removed.
 
     A description carrying a character the HMC's attribute record treats as
     structure is rejected, with an error naming the character. The HMC writes

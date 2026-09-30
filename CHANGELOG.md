@@ -205,11 +205,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmc_set_lpar_description`, `lpars set-description` and `set_lpar_ownership_description` no
   longer strip the ownership stamp. `chsyscfg` replaces the whole field, so plain text set on a
   stamped partition left it unowned, and mutable and deletable without `ownership_override`.
-  Plain text now replaces only what follows the current `[hmcpctl owner:... created:...]`
-  stamp and any `[caller ...]` segment, from the same description read the ownership guard
-  makes. Text carrying its own complete stamp is still written as given, the ADR 0066
-  re-stamp and handover. A `[hmcpctl` or `[caller ` fragment without a complete stamp is
-  refused before any HMC call. With `ownership_override` the text is written as given (#1169).
+  Plain text now replaces the field but keeps the current `[hmcpctl owner:... created:...]`
+  stamp and its `[caller ...]` segment at its start, taken from the same description read the
+  ownership guard makes. Text carrying its own complete stamp is still written as given, the
+  ADR 0066 re-stamp and handover. A `[hmcpctl` or `[caller ` fragment without a complete stamp
+  is refused before any HMC call. Removing a stamp now takes `ownership_override`, which
+  writes the text as given (#1169).
 
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
