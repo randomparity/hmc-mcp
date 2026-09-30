@@ -202,6 +202,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 - The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
   set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
   says the client decides per call site whether to send it, and directs the operator to report a

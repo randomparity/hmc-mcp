@@ -1187,7 +1187,8 @@ def test_lpars_create(fake_hmc):
     assert result.exit_code == 0
     assert "Created LPAR 'newlpar'" in result.stdout
     assert fake_hmc.calls[0] == ("find_partition_by_name", ("newlpar",), {})
-    name, args, _ = fake_hmc.calls[1]
+    assert fake_hmc.calls[1] == ("get_managed_system", (SYSTEM_UUID,), {})
+    name, args, _ = fake_hmc.calls[2]
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name

@@ -20,6 +20,7 @@ from .assignments import (
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
+from .memory_bound import require_memory_within_selected_system
 from .workflow_contract import WorkflowStep
 
 _PROCESSOR_FIELDS = (
@@ -65,6 +66,7 @@ async def modify_lpar(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    await require_memory_within_selected_system(hmc, system_name_or_uuid, resources)
     resource = None
     steps: list[WorkflowStep] = []
     if new_name is not None:
@@ -147,6 +149,7 @@ async def _apply_dlpar_change(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    await require_memory_within_selected_system(hmc, system_name_or_uuid, resources)
     try:
         return await hmc.update_logical_partition(
             lpar_uuid,
