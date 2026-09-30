@@ -209,6 +209,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   five header-bearing reads share one helper in `ssh/commands.py` for the `No results were found.`
   sentinel and that wrap, so the SR-IOV and `lsrefcode` messages now read `<read> response did not
   match the expected <fields> fields: <parser detail>` (#892).
+- `hmc_list_lpar_ownership` now reads the text of a `Description` element that carries an
+  attribute, which V10R3 sends as `ksv`. Every stamped partition was reported `owned: false,
+  unparsed: true` and its `description` came back as a mapping; the listing now returns the
+  text, so a stamped partition is `owned: true` with its owner. `hmc_lpar_summary` returns the
+  same text instead of a mapping, and the system-wide profile-restore ownership check, which
+  reads the listing, no longer refuses on an unreadable description (#1168).
 - The job tools' docstrings and parameter help, the server instructions and `hmcpctl jobs`
   help now tell agents to persist the JobID and the stable `jobs/{JobID}` `job_href`, and note
   that an entry UUID stored by an earlier release reads only through its `job_href`. ADR 0093

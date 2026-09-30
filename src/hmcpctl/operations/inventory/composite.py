@@ -9,6 +9,7 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
+from ...xmlutil import leaf_text
 from .capacity import lpar_processing_units
 
 
@@ -78,7 +79,7 @@ def _lpar_summary(
         os_version=res.get("OperatingSystemVersion"),
         os_type=res.get("OperatingSystemType"),
         client_network_adapter_count=len(adapters),
-        description=res.get("Description"),
+        description=leaf_text(res.get("Description")),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
         # (vSCSI adapter → vios_partition_id → VIOS UUID → mapping groups
         #  filtered by LPAR link) and is not included here. List VIOS resources to
