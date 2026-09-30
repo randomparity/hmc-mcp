@@ -105,12 +105,20 @@ def test_vios_stdout_ignores_malformed_job_shapes(job) -> None:
     assert vios_stdout(job) is None
 
 
+_READ_UUID = "65680cb7-0000-4000-8000-000000000002"
+
+
 @pytest.mark.parametrize(
     ("job", "expected"),
     [
         ({"UUID": "top"}, "top"),
         ({"Resource": {"JobID": "nested"}}, "nested"),
+        ({"UUID": "entry-uuid", "Resource": {"JobID": "nested"}}, "nested"),
         ({"link": "https://hmc.test/rest/api/uom/jobs/from-link"}, "from-link"),
+        (
+            {"link": f"https://hmc.test/rest/api/uom/jobs/1787837921263/{_READ_UUID}"},
+            "1787837921263",
+        ),
         ({"UUID": "  trimmed  "}, "trimmed"),
         ({"UUID": 42, "Resource": {"JobID": "nested-id"}}, "nested-id"),
         ({"UUID": "   ", "Resource": {"JobID": "nested-id"}}, "nested-id"),
@@ -120,6 +128,50 @@ def test_vios_stdout_ignores_malformed_job_shapes(job) -> None:
 )
 def test_job_identifier_accepts_only_nonempty_strings(job, expected) -> None:
     assert job_identifier(job) == expected
+
+
+def test_job_identifier_hands_out_the_job_id_of_a_real_job_entry() -> None:
+    """The envelope a V10R3 HMC returns: entry UUID, JobID and per-read link all differ.
+
+    Only the JobID resolves through the global jobs path there; the entry UUID is
+    answered with HTTP 406 (issue #1160).
+    """
+    job = {
+        "UUID": "93f544bb-0000-4000-8000-000000000001",
+        "title": "JobResponse",
+        "link": f"https://hmc.test/rest/api/uom/jobs/1787837921263/{_READ_UUID}",
+        "ResourceType": "JobResponse",
+        "Resource": {"JobID": "1787837921263", "Status": "COMPLETED_OK"},
+    }
+
+    assert job_identifier(job) == "1787837921263"
+    outcome = job_outcome("1787837921263", job)
+    assert (outcome.job_id, outcome.job_href) == (
+        "1787837921263",
+        "https://hmc.test/rest/api/uom/jobs/1787837921263",
+    )
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://hmc.test/rest/api/uom/jobs/1787837921263",
+        "/rest/api/uom/LogicalPartition/l/do/PowerOn/Job/j-1",
+        "https://hmc.test/rest/api/uom/jobs/1787837921263/not-a-uuid",
+    ],
+)
+def test_job_outcome_echoes_any_other_link_verbatim(link) -> None:
+    job = {"Resource": {"JobID": "1787837921263"}, "link": link}
+
+    assert job_outcome("1787837921263", job).job_href == link
+
+
+@pytest.mark.parametrize("link", ["nulljobs/1787837921263", "jobs/1787837921263"])
+def test_job_outcome_hands_out_no_relative_link(link) -> None:
+    """A relative link would be refused by the client when passed back as job_href."""
+    job = {"Resource": {"JobID": "1787837921263"}, "link": link}
+
+    assert job_outcome("1787837921263", job).job_href is None
 
 
 def test_job_identifier_skips_truthy_non_mapping_resource() -> None:

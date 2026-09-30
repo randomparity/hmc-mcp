@@ -106,13 +106,15 @@ _NO_PROFILE_ACTIVATION_REFUSED = ExpectedOutcome(
     transient=True,
 )
 #: osshutdown asks the operating system to shut down over RMC; a partition at
-#: SMS has neither, so the HMC is expected to refuse it. Unconfirmed on hardware.
+#: SMS has neither, so the HMC refuses it. Observed on a V10R3 HMC (issue #1160)
+#: as HSCL0DB4, whose message says the running image does not support remote
+#: execution of the task and never names RMC.
 _OSSHUTDOWN_WITHOUT_RMC = ExpectedOutcome(
     operation="lpar.power_off",
     variant="osshutdown-without-rmc",
     reason="osshutdown needs an operating system with an active RMC connection; "
     "a partition at SMS has neither — expected refusal",
-    error_codes=frozenset({"RMC"}),
+    error_codes=frozenset({"HSCL0DB4"}),
     transient=True,
 )
 
