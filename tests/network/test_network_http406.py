@@ -64,4 +64,5 @@ def test_create_virtual_network_http_406_actionable(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)
     assert "406" in msg
-    assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+    assert "X-HMC-Schema-Version" in msg
+    assert "HMC_SCHEMA_VERSION" not in msg
