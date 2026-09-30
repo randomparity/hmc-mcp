@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from conftest import mock_uuid_resolution
 
 from hmcpctl.server_tools.lpar.configuration import (
@@ -13,6 +14,7 @@ from hmcpctl.server_tools.lpar.configuration import (
 from hmcpctl.server_tools.systems.resources import (
     hmc_get_proc_compat_modes,
 )
+from hmcpctl.ssh.transport import HMCCLIError
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
@@ -75,25 +77,74 @@ def test_get_proc_compat_modes_returns_empty_when_none(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_get_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
-    """hmc_get_lpar_proc_compat issues lssyscfg lpar with correct arguments."""
+def _make_scripted_ssh_mock(*outputs: str) -> MagicMock:
+    """Return an asyncssh mock whose successive commands print *outputs*."""
+    results = []
+    for stdout in outputs:
+        result = MagicMock()
+        result.stdout = stdout
+        results.append(result)
+    conn = AsyncMock()
+    conn.run = AsyncMock(side_effect=results)
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+    return conn
+
+
+def _commands(conn_mock: MagicMock) -> list[str]:
+    return [call.args[0] for call in conn_mock.run.await_args_list]
+
+
+def test_get_lpar_proc_compat_reads_lpar_and_default_profile(monkeypatch, mock_hmc):
+    """The read reports the partition modes and the default profile's mode."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock("POWER9,POWER8\n")
+    conn_mock = _make_scripted_ssh_mock(
+        "default,POWER9_base,default_profile\n", "POWER8\n"
+    )
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
 
-    expected_cmd = (
-        f"lssyscfg -r lpar -m {SYSTEM_NAME} --filter lpar_names={LPAR_NAME} "
-        "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+    assert _commands(conn_mock) == [
+        (
+            f"lssyscfg -r lpar -m {SYSTEM_NAME} --filter lpar_names={LPAR_NAME} "
+            "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode,default_profile"
+        ),
+        (
+            f"lssyscfg -r prof -m {SYSTEM_NAME} "
+            f"--filter lpar_names={LPAR_NAME},profile_names=default_profile "
+            "-F lpar_proc_compat_mode"
+        ),
+    ]
+    assert result == {
+        "desired": "default",
+        "curr": "POWER9_base",
+        "profile": "default_profile",
+        "profile_mode": "POWER8",
+    }
+
+
+def test_get_lpar_proc_compat_reads_the_named_profile(monkeypatch, mock_hmc):
+    """profile_name selects the profile whose mode is reported."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_scripted_ssh_mock(
+        "default,default,default_profile\n", "default\n"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
-    assert result == {"desired": "POWER9", "curr": "POWER8"}
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
+        result = hmc_get_lpar_proc_compat(
+            SYSTEM_UUID, LPAR_UUID, profile_name="test_profile"
+        )
+
+    assert "profile_names=test_profile" in _commands(conn_mock)[1]
+    assert result["profile"] == "test_profile"
+    assert result["profile_mode"] == "default"
 
 
 def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
-    """hmc_get_lpar_proc_compat handles empty CLI output correctly."""
+    """An empty partition record yields empty values and no profile read."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("\n")
@@ -101,7 +152,8 @@ def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
 
-    assert result == {"desired": "", "curr": ""}
+    assert result == {"desired": "", "curr": "", "profile": "", "profile_mode": ""}
+    conn_mock.run.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------- #
@@ -109,18 +161,62 @@ def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_set_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
-    """hmc_set_lpar_proc_compat issues chsyscfg with correct arguments."""
+def test_set_lpar_proc_compat_writes_the_default_profile(monkeypatch, mock_hmc):
+    """With no profile_name the mode is written to the partition's default profile."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock("")
+    conn_mock = _make_scripted_ssh_mock("", "default_profile\n", "")
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID, "POWER9")
 
-    expected_cmd = (
-        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
-        f"-i name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
+    assert _commands(conn_mock)[1:] == [
+        (
+            f"lssyscfg -r lpar -m {SYSTEM_NAME} --filter lpar_names={LPAR_NAME} "
+            "-F default_profile"
+        ),
+        (
+            f"chsyscfg -r prof -m {SYSTEM_NAME} "
+            f"-i name=default_profile,lpar_name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
+        ),
+    ]
+    assert result == (
+        f"Set lpar_proc_compat_mode=POWER9 on profile default_profile of {LPAR_NAME}"
     )
-    conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
-    assert result == ""
+
+
+def test_set_lpar_proc_compat_writes_the_named_profile(monkeypatch, mock_hmc):
+    """profile_name skips the default lookup and is the profile written."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_scripted_ssh_mock("", "")
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
+        result = hmc_set_lpar_proc_compat(
+            SYSTEM_UUID, LPAR_UUID, "POWER9", profile_name="test_profile"
+        )
+
+    assert _commands(conn_mock)[1:] == [
+        (
+            f"chsyscfg -r prof -m {SYSTEM_NAME} "
+            f"-i name=test_profile,lpar_name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
+        ),
+    ]
+    assert "profile test_profile" in result
+
+
+def test_set_lpar_proc_compat_refuses_a_partition_without_a_default_profile(
+    monkeypatch, mock_hmc
+):
+    """An empty default_profile is reported, not written as an empty name."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_scripted_ssh_mock("", "\n")
+
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="no default profile"),
+    ):
+        hmc_set_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID, "POWER9")
+
+    assert conn_mock.run.await_count == 2  # ownership read, default lookup; no write

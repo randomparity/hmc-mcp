@@ -283,7 +283,10 @@ async def test_physical_port_reads_both_levels_before_rejecting_malformed_output
     run = AsyncMock(side_effect=[roce_output, ethc_output])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
-    with pytest.raises(HMCCLIError, match="expected"):
+    with pytest.raises(
+        HMCCLIError,
+        match=r"SR-IOV inventory response did not match the expected .*phys_port_id",
+    ):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
     assert run.await_count == 2

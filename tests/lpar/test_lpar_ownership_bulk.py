@@ -22,12 +22,14 @@ SYSTEM_NAME = "Server-9080-M9S-SN123456"
 LIST_ROUTE = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
 
 
-def _lpar_entry(uuid: str, name: str, description: str | None = None) -> str:
+def _lpar_entry(
+    uuid: str, name: str, description: str | None = None, attrs: str = ""
+) -> str:
     """Render one Atom feed entry; ``None`` omits <Description> entirely."""
     if description is None:
         desc_xml = ""
     else:
-        desc_xml = f"<Description>{description}</Description>"
+        desc_xml = f"<Description{attrs}>{description}</Description>"
     return f"""  <entry>
     <id>urn:uuid:{uuid}</id>
     <title>LogicalPartition:{name}</title>
@@ -112,6 +114,28 @@ def test_bulk_read_parses_mixed_ownership(monkeypatch, mock_hmc):
     assert empty["owner"] is None
     assert empty["unparsed"] is False
     assert empty["description"] is None
+
+
+def test_bulk_read_reads_text_of_attributed_description(monkeypatch, mock_hmc):
+    """V10R3 sends ``<Description ksv=...>``; the stamp is still recognised."""
+    _hmc_env(monkeypatch)
+    stamp = "[hmcpctl owner:hmcpctl created:2026-09-29] [caller w1161]"
+    feed = _feed(
+        _lpar_entry(
+            "11111111-1111-4111-8111-111111111115",
+            "lp-attrs",
+            stamp,
+            attrs=' ksv="V1_2_0"',
+        )
+    )
+    mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=feed))
+
+    (row,) = hmc_list_lpar_ownership(SYSTEM_UUID)
+
+    assert row["owned"] is True
+    assert row["owner"] == "hmcpctl"
+    assert row["unparsed"] is False
+    assert row["description"] == stamp
 
 
 def test_bulk_read_issues_exactly_one_rest_call(monkeypatch, mock_hmc):

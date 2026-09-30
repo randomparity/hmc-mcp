@@ -123,13 +123,13 @@ async def test_get_job_does_not_warn_about_a_relabelled_job_without_a_link(
     The HMC reporting its other identifier is a relabel, not a mispaired handle.
     """
     relabelled = _job_entry("RUNNING").replace(
-        f"<id>urn:uuid:{_JOB_ID}</id>", "<id>urn:uuid:the-uuid-form</id>"
+        f"<JobID>{_JOB_ID}</JobID>", "<JobID>the-jobid-form</JobID>"
     )
     mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(200, text=relabelled))
 
     with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
-            assert (await get_job(hmc, _JOB_ID)).job_id == "the-uuid-form"
+            assert (await get_job(hmc, _JOB_ID)).job_id == "the-jobid-form"
 
     assert caplog.records == []
 

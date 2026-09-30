@@ -966,6 +966,17 @@ EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 
+SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:{SYSTEM_UUID}</id>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <SystemName>sys1</SystemName>
+    </ManagedSystem>
+  </content>
+</entry>
+"""
+
 NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -1009,6 +1020,9 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     mock_hmc.get(
         "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
     ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))

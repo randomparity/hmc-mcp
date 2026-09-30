@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from ..errors import HMCError
 
@@ -27,6 +28,16 @@ TERMINAL_JOB_STATUSES = frozenset(
 )
 SUCCESSFUL_JOB_STATUSES = frozenset({"COMPLETED", "COMPLETED_OK"})
 FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
+
+# The SELF link a V10R3 HMC puts on every *read* of a job:
+# `/rest/api/uom/jobs/{JobID}/{uuid}`, whose trailing UUID changes on every read
+# and which the HMC itself refuses as a request URL (HTTP 400 REST000B, live
+# capture at 2281afd2, issue #1160). The submission's own SELF link is the
+# one-segment `/rest/api/uom/jobs/{JobID}` this reduces to. Only a UUID-shaped
+# trailing segment matches; anything else is left for the job-path guard.
+_READ_SELF_LINK = re.compile(
+    r"(/rest/api/uom/jobs/[^/?#]+)/[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
+)
 
 
 @dataclass(frozen=True)
@@ -62,22 +73,55 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
         raise ValueError("poll_interval must be greater than 0")
 
 
+def canonical_job_path(path: str) -> str:
+    """Reduce a read-side job SELF-link path to the stable JobID path it extends."""
+    read_link = _READ_SELF_LINK.fullmatch(path)
+    return read_link.group(1) if read_link else path
+
+
 def job_identifier(job: dict[str, Any]) -> str | None:
+    """Return the identifier the documented global jobs path resolves.
+
+    ``Resource.JobID`` comes first. It is the one identifier stable from
+    submission through every read: a V10R3 HMC gives the submission entry and
+    the read entries different Atom UUIDs, and answers an entry UUID on
+    ``/rest/api/uom/jobs/{id}`` with HTTP 406 (issue #1160). The entry UUID,
+    then the SELF link, are fallbacks for a response that carries no JobID; a
+    read-side link yields its JobID segment, not its per-read last one.
+    """
     resource = job.get("Resource")
     resource_id = resource.get("JobID") if isinstance(resource, dict) else None
-    for candidate in (job.get("UUID"), resource_id):
+    for candidate in (resource_id, job.get("UUID")):
         if isinstance(candidate, str) and candidate.strip():
             return candidate.strip()
     link = job.get("link")
     if not isinstance(link, str) or not link.strip():
         return None
-    path = urlparse(link.strip()).path.rstrip("/")
-    return path.rsplit("/", 1)[-1] if path else None
+    path = canonical_job_path(urlparse(link.strip()).path.rstrip("/"))
+    return path.rsplit("/", 1)[-1] or None
 
 
 def _job_href(job: dict[str, Any] | None) -> str | None:
+    """Return the entry's SELF link in the form worth persisting and polling.
+
+    A read-side link is reduced to its JobID path, so a handle persisted from
+    any read is the same stable link the submission carried. A relative link —
+    the HMC's malformed ``nulljobs/{JobID}`` — addresses nothing the client will
+    request, so it is not a handle at all.
+    """
     link = (job or {}).get("link")
-    return link.strip() if isinstance(link, str) and link.strip() else None
+    if not isinstance(link, str) or not link.strip():
+        return None
+    if not urlsplit(link.strip()).path.startswith("/"):
+        return None
+    return canonical_job_href(link.strip())
+
+
+def canonical_job_href(link: str) -> str:
+    """Return *link* with a read-side job path reduced; any other link unchanged."""
+    parts = urlsplit(link)
+    path = canonical_job_path(parts.path)
+    return link if path == parts.path else urlunsplit(parts._replace(path=path))
 
 
 def _result_message(resource: dict[str, Any]) -> str | None:
@@ -181,7 +225,7 @@ async def wait_for_submitted_job(
     identifier = job_identifier(job)
     if identifier is None:
         raise HMCError(
-            "Cannot wait for the submitted HMC job: the response contained no usable UUID, JobID, or polling link"
+            "Cannot wait for the submitted HMC job: the response contained no usable JobID, UUID, or polling link"
         )
     return await client.wait_for_job_entry(
         identifier, timeout_seconds, poll_interval, job_href=_job_href(job)
