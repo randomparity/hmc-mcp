@@ -202,6 +202,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
+  report real capacity on a V10R3 HMC instead of zeros. They read the system's
+  `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
+  containers: total is the configurable figure, free the currently available one, and assigned
+  is total minus free, so it now counts hypervisor memory and the VIOS, which the partition feed
+  omits. Partition figures no longer feed capacity, since an inactive partition reads 0. A
+  system that serves no such figure fails with an error naming it rather than reading 0.
+  `hmc_system_summary` returns `mtms` as `type-model*serial` from
+  `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
 - `hmc_set_lpar_proc_compat`, `lpars set-proc-compat` and `set_lpar_proc_compat` now write
   `lpar_proc_compat_mode` with `chsyscfg -r prof`; the HMC accepts it only on a partition profile
   and rejected every `-r lpar` call. They change the profile named by the new `profile_name`
