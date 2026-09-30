@@ -202,6 +202,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_modify_lpar`, `hmc_dlpar_proc` and the other REST modify paths now write a dedicated
+  partition's `sharing_mode` in the HMC's own `SharingMode` spelling (`sre idle proces` for
+  `share_idle_procs`), reusing the create document's mapping. The CLI spelling was refused with
+  `REST0001` (#1185).
 - `hmc_create_lpar`, `lpars create` and provisioning now create partitions through the REST API on
   V10R3 instead of always falling back to `mksyscfg`. The create document now carries
   `schemaVersion` on the processor configurations, follows the element order and enumeration
