@@ -1,4 +1,4 @@
-# ADR 0181: Gate ruff format over Python files, not Markdown
+# ADR 0182: Gate ruff format over Python files, not Markdown
 
 ## Status
 
