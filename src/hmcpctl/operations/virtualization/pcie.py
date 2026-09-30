@@ -540,7 +540,11 @@ async def list_dedicated_slots(
 
 
 def _optional_text(value: str) -> str | None:
-    return value if value.strip() else None
+    """Read an ``lshwres -F`` field, where the HMC prints ``null`` for an absent value.
+
+    An unowned slot's ``lpar_name`` comes back as the literal ``null`` (V10R3, #1195).
+    """
+    return None if value.strip() in {"", "null"} else value
 
 
 def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:

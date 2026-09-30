@@ -82,6 +82,8 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
     rows = [
         {"drc_index": "21010003", "description": "PCIe slot", "lpar_name": "lpar1"},
         {"drc_index": "21010004", "description": "", "lpar_name": ""},
+        # `lshwres -F lpar_name` prints `null` for an unowned slot (V10R3 capture, #1195).
+        {"drc_index": "21010005", "description": "PCIe slot", "lpar_name": "null"},
     ]
     with (
         patch(
@@ -104,6 +106,7 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
     assert result.items[1].description is None
     assert result.items[1].owner_lpar is None
     assert result.items[1].availability is None
+    assert result.items[2].owner_lpar is None
 
 
 @pytest.mark.asyncio

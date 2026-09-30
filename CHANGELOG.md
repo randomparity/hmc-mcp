@@ -202,6 +202,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `pcie.list_dedicated_slots` (and so `hmc_list_dedicated_pcie_slots` and
+  `network list-dedicated-pcie-slots`) reports an unowned slot's `owner_lpar` as `null`. It
+  returned the string `"null"`, which `lshwres -F` prints for an absent partition name on
+  V10R3 (#1195).
 - `operations.jobs.get_job` and `wait_for_job` (and so `hmc_get_job`, `hmc_wait_for_job`,
   `jobs show` and `jobs wait`) no longer report a job as missing when a supplied `job_href`
   returns 404 and the confirming read through the global jobs path returns `HTTP 400 REST000E`.
