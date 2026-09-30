@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from hmcpctl.client.core import HMCClient
+from hmcpctl.xmlutil import leaf_text
 
 _MEMORY = "AssociatedSystemMemoryConfiguration"
 _PROCESSORS = "AssociatedSystemProcessorConfiguration"
@@ -43,17 +44,6 @@ class SystemCapacity:
     free_memory_mib: int
     total_proc_units: float
     free_proc_units: float
-
-
-def leaf_text(value: object) -> str | None:
-    """Text of a parsed leaf, including one its attributes wrapped in a dict.
-
-    A leaf carrying a kept attribute (``ksv`` on V10R3) parses as
-    ``{"@attrs": ..., "text": ...}`` rather than a string.
-    """
-    if isinstance(value, dict):
-        value = value.get("text")
-    return value if isinstance(value, str) else None
 
 
 def system_capacity(system: dict[str, Any]) -> SystemCapacity:
@@ -93,7 +83,8 @@ def _figure(
     convert: Callable[[str], _Number],
 ) -> _Number:
     parent = resource.get(container)
-    raw_value = leaf_text(parent.get(field)) if isinstance(parent, dict) else None
+    text = leaf_text(parent.get(field)) if isinstance(parent, dict) else None
+    raw_value = text if isinstance(text, str) else None
     if raw_value is None:
         raise ValueError(
             f"Managed system {identity!r} reports no {container}/{field}, so its "

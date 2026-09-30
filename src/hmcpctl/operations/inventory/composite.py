@@ -9,7 +9,8 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from .capacity import leaf_text, system_capacity
+from ...xmlutil import leaf_text
+from .capacity import system_capacity
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,7 @@ def _lpar_summary(
         os_version=res.get("OperatingSystemVersion"),
         os_type=res.get("OperatingSystemType"),
         client_network_adapter_count=len(adapters),
-        description=res.get("Description"),
+        description=leaf_text(res.get("Description")),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
         # (vSCSI adapter → vios_partition_id → VIOS UUID → mapping groups
         #  filtered by LPAR link) and is not included here. List VIOS resources to
@@ -146,6 +147,11 @@ async def _fetch_system_summary_data(
     return system, lpars, vios_list
 
 
+def _text_or_none(value: object) -> str | None:
+    text = leaf_text(value)
+    return text if isinstance(text, str) else None
+
+
 def _mtms(value: object) -> str | None:
     """Render the structured MTMS element as ``type-model*serial``."""
     if not isinstance(value, dict):
@@ -177,7 +183,7 @@ def _system_summary(
         name=res.get("SystemName"),
         state=res.get("State"),
         mtms=_mtms(res.get("MachineTypeModelAndSerialNumber")),
-        firmware_version=leaf_text(res.get("SystemFirmware")),
+        firmware_version=_text_or_none(res.get("SystemFirmware")),
         total_memory_mib=capacity.total_memory_mib,
         free_memory_mib=capacity.free_memory_mib,
         total_proc_units=capacity.total_proc_units,

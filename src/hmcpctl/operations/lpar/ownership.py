@@ -27,6 +27,7 @@ from hmcpctl.ssh.description_validation import validate_lpar_description
 from hmcpctl.ssh.lpar import resolve_system_cli_name, stamp_lpar_ownership
 from hmcpctl.ssh.profiles import get_lpar_description, set_lpar_description
 from hmcpctl.ssh.transport import HMCCLIError
+from hmcpctl.xmlutil import leaf_text
 
 _logger = logging.getLogger(__name__)
 
@@ -358,7 +359,7 @@ def parse_lpar_ownership_caller_token(description: str) -> str | None:
 def lpar_ownership_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """Distill one parsed LogicalPartition feed entry into ownership facts."""
     resource = entry.get("Resource") or {}
-    description = resource.get("Description")
+    description = leaf_text(resource.get("Description"))
     owner = (
         parse_lpar_ownership_owner(description)
         if isinstance(description, str)
