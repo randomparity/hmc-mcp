@@ -287,6 +287,19 @@ def _parse_entry(entry: Element) -> dict[str, Any]:
     return result
 
 
+def leaf_text(value: object) -> object:
+    """Return the text of a leaf that ``element_to_dict`` wrapped with attributes.
+
+    A leaf carrying a non-ignored attribute (``ksv`` on V10R3 ``Description``) parses
+    as ``{"@attrs": ..., "text": ...}`` rather than a string. Any other value,
+    including a mapping without string text, is returned unchanged so callers that
+    fail closed on a non-string still see it.
+    """
+    if isinstance(value, dict) and isinstance(value.get("text"), str):
+        return value["text"]
+    return value
+
+
 def parse_feed(xml_text: str) -> list[dict[str, Any]]:
     """Parse an HMC Atom feed into flattened resource dictionaries."""
     root = DET.fromstring(xml_text.encode("utf-8"))
