@@ -112,11 +112,16 @@ def _job_href(job: dict[str, Any] | None) -> str | None:
     link = (job or {}).get("link")
     if not isinstance(link, str) or not link.strip():
         return None
-    parts = urlsplit(link.strip())
-    if not parts.path.startswith("/"):
+    if not urlsplit(link.strip()).path.startswith("/"):
         return None
+    return canonical_job_href(link.strip())
+
+
+def canonical_job_href(link: str) -> str:
+    """Return *link* with a read-side job path reduced; any other link unchanged."""
+    parts = urlsplit(link)
     path = canonical_job_path(parts.path)
-    return link.strip() if path == parts.path else urlunsplit(parts._replace(path=path))
+    return link if path == parts.path else urlunsplit(parts._replace(path=path))
 
 
 def _result_message(resource: dict[str, Any]) -> str | None:

@@ -608,8 +608,10 @@ async def test_a_read_reports_the_stable_job_href_not_the_per_read_link(
 
 
 @pytest.mark.asyncio
-async def test_get_job_resolves_and_echoes_a_supplied_per_read_link(mock_hmc) -> None:
-    """A link persisted from a read before this fix still resolves, as passed."""
+async def test_get_job_resolves_a_supplied_per_read_link_and_echoes_it_stable(
+    mock_hmc,
+) -> None:
+    """A link persisted from a read before this fix resolves; the echo is stable."""
     _refuse_what_the_hmc_refuses(mock_hmc)
     stored_link = _read_link("65680cb7-0000-4000-8000-00000000000e")
     mock_hmc.get(_REAL_JOB_PATH).mock(
@@ -623,7 +625,7 @@ async def test_get_job_resolves_and_echoes_a_supplied_per_read_link(mock_hmc) ->
         outcome = await get_job(hmc, _REAL_JOB_ID, job_href=stored_link)
 
     assert (outcome.found, outcome.job_id) == (True, _REAL_JOB_ID)
-    assert outcome.job_href == stored_link
+    assert outcome.job_href == _REAL_JOB_HREF
 
 
 @pytest.mark.asyncio
