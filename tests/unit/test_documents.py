@@ -290,6 +290,8 @@ def test_new_fields_default_to_none_backward_compat():
     assert "PartitionIOConfiguration" not in xml
 
 
-def test_auto_keylock():
-    xml = build_lpar_document(name="mypart", keylock="auto")
-    assert "<KeylockPosition" in xml and "auto" in xml
+@pytest.mark.parametrize("keylock", ["auto", "unknown", "norm"])
+def test_keylock_outside_the_schema_is_refused(keylock):
+    """V10R3's KeylockPosition.Enum is manual, normal, unknown; unknown is not creatable."""
+    with pytest.raises(ValueError, match="keylock must be one of: normal, manual"):
+        build_lpar_document(name="mypart", keylock=keylock)

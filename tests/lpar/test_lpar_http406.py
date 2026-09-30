@@ -969,3 +969,24 @@ def test_create_defaults_refuse_an_unknown_sharing_mode():
         complete_create_resources(
             LparResources(desired_procs=0.5, sharing_mode="bogus")  # type: ignore[arg-type]
         )
+
+
+def test_create_defaults_refuse_an_unhashable_sharing_mode():
+    with pytest.raises(ValueError, match="sharing_mode must be one of"):
+        complete_create_resources(
+            LparResources(desired_procs=0.5, sharing_mode=["x"])  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_a_keylock_outside_the_schema_before_any_hmc_call():
+    """V10R3's KeylockPosition.Enum has no ``auto``, and mksyscfg takes no keylock (#1164)."""
+    hmc = AsyncMock()
+    creation = LparCreation(
+        "new-lpar", "AIX/Linux", LparResources(desired_memory=2048), keylock="auto"
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="keylock must be one of: normal, manual"):
+        await create_and_stamp_lpar(hmc, SYSTEM_UUID, creation)
+
+    assert hmc.mock_calls == []

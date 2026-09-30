@@ -10,10 +10,11 @@ from .common import UOM_NS, document_envelope
 
 PARTITION_TYPES: tuple[PartitionType, ...] = ("AIX/Linux", "OS400", "Virtual IO Server")
 OS_TYPES = ("aix", "linux", "ibmi")
-KEYLOCK_POSITIONS = ("normal", "manual", "auto")
+# The creatable values of KeylockPosition.Enum in the V10R3 schema (#1161 P39).
+KEYLOCK_POSITIONS = ("normal", "manual")
 PartitionType = Literal["AIX/Linux", "OS400", "Virtual IO Server"]
 OsType = Literal["aix", "linux", "ibmi"]
-Keylock = Literal["normal", "manual", "auto"]
+Keylock = Literal["normal", "manual"]
 SharingMode = Literal[
     "capped",
     "uncapped",
@@ -33,6 +34,15 @@ _REST_SHARING_MODES: dict[str, str] = {
     "share_idle_procs_active": "sre idle procs active",
     "share_idle_procs_always": "sre idle procs always",
 }
+
+
+def validate_keylock(keylock: str | None) -> None:
+    """Refuse a create keylock outside the V10R3 ``KeylockPosition`` enumeration."""
+    if keylock is not None and keylock not in KEYLOCK_POSITIONS:
+        raise ValueError(
+            f"keylock must be one of: {', '.join(KEYLOCK_POSITIONS)}; got {keylock!r}. "
+            "Nothing was created."
+        )
 
 
 def lpar_envelope(body: str) -> str:
@@ -252,8 +262,7 @@ def build_lpar_document(
     os_type: accepted (``aix``, ``linux``, or ``ibmi``) but not sent: the
     schema marks ``OperatingSystemType`` read-only (``kb="ROR"``) and the HMC
     sets ``AIX/Linux`` itself (#1164).
-    keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
-    V10R3's enumeration has no ``auto``, so it refuses that document.
+    keylock: initial keylock position — ``normal`` or ``manual``.
     max_virtual_slots: maximum number of virtual I/O slots.
     """
     if partition_type not in PARTITION_TYPES:
@@ -262,8 +271,7 @@ def build_lpar_document(
         )
     if os_type is not None and os_type not in OS_TYPES:
         raise ValueError(f"os_type must be one of {OS_TYPES}, got {os_type!r}")
-    if keylock is not None and keylock not in KEYLOCK_POSITIONS:
-        raise ValueError(f"keylock must be one of {KEYLOCK_POSITIONS}, got {keylock!r}")
+    validate_keylock(keylock)
 
     resources = resources or LparResources()
 

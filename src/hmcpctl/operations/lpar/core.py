@@ -33,6 +33,7 @@ from ...documents import (
     build_lpar_document,
     partition_updates,
 )
+from ...documents.lpar import validate_keylock
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
@@ -421,6 +422,7 @@ async def create_and_stamp_lpar(
         # stamp's best-effort catch: no create can precede rejection, and a
         # malformed token can never discard the ownership stamp (ADR 0064).
         validate_caller_token(creation.caller_token)
+    validate_keylock(creation.keylock)
     existing = await hmc.find_partition_by_name(creation.name)
     if existing:
         raise ValueError(

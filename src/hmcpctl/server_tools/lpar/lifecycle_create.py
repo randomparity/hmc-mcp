@@ -68,7 +68,7 @@ def hmc_create_lpar(
         partition_id: Optional numeric partition ID; the HMC assigns one when omitted.
         os_type: Accepted (aix, linux, or ibmi) but has no effect on the create: the
             HMC treats the operating-system type as read-only and sets AIX/Linux.
-        keylock: Optional initial keylock position: normal, manual, or auto.
+        keylock: Optional initial keylock position: normal or manual.
         max_virtual_slots: Optional maximum number of virtual I/O slots.
         caller_token: Optional caller tracking reference embedded in the partition
             description as ``[caller <token>]`` after the ownership stamp (ADR 0064);

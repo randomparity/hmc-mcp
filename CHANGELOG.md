@@ -224,6 +224,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `WARNING`, so a defect in the create document no longer hides behind a successful CLI
   create. `os_type` is documented as having no effect on a create: the HMC treats
   `OperatingSystemType` as read-only and sets `AIX/Linux` (#1164).
+- `hmc_create_lpar` and `create_and_stamp_lpar` refuse a `keylock` other than `normal` or
+  `manual` before any HMC call. `auto` was accepted before, but V10R3's `KeylockPosition`
+  enumeration has no such value and `mksyscfg` takes no keylock, so an `auto` create
+  fell back to `mksyscfg` and dropped the keylock silently (#1164).
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
   HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,

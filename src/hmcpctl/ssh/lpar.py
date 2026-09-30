@@ -206,10 +206,8 @@ def complete_create_resources(resources: LparResources) -> LparResources | None:
     fractional dedicated count, a sharing mode of the other processor mode, or a
     processing-unit default the requested virtual processors cannot use.
     """
-    if (
-        resources.sharing_mode is not None
-        and resources.sharing_mode not in SHARING_MODES
-    ):
+    mode = resources.sharing_mode
+    if mode is not None and (not isinstance(mode, str) or mode not in SHARING_MODES):
         raise ValueError(
             f"sharing_mode must be one of: {', '.join(sorted(SHARING_MODES))}"
         )

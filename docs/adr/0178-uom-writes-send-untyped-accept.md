@@ -76,8 +76,10 @@ either. Both create paths now take their omitted values from one defaults functi
 `ssh.lpar.complete_create_resources`, so the partition does not depend on which path created
 it. A dedicated create without a sharing mode gets `keep_idle_procs`. That is a choice: the
 HMC's own default for a REST create with no processor configuration was `share_idle_procs`
-(P39), and neither path had one for a dedicated request. A create with no resource values still goes straight to `mksyscfg`, because only its
-`all_resources=1` expresses that.
+(P39), and neither path had one for a dedicated request. A create with no resource values
+still goes straight to `mksyscfg`, because only its `all_resources=1` expresses that.
+`keylock` is refused before any HMC call unless it is `normal` or `manual`: the schema's
+`KeylockPosition` enumeration has no `auto` (P39), and `mksyscfg` takes no keylock at all.
 
 The `mksyscfg` fallback on 406 and on 400 `REST0001` stays. The fallback now logs the HMC's
 unmarshal message, so a regression in our document shows up in the logs instead of being
