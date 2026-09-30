@@ -202,6 +202,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
+  report real capacity on a V10R3 HMC instead of zeros. They read the system's
+  `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
+  containers: total is the configurable figure, free the currently available one, and assigned
+  is total minus free, so it now counts hypervisor memory and the VIOS, which the partition feed
+  omits. Partition figures no longer feed capacity, since an inactive partition reads 0. A
+  system that serves no such figure fails with an error naming it rather than reading 0.
+  `hmc_system_summary` returns `mtms` as `type-model*serial` from
+  `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
   HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,

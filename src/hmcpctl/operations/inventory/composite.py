@@ -9,7 +9,7 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from .capacity import lpar_processing_units
+from .capacity import leaf_text, system_capacity
 
 
 @dataclass(frozen=True)
@@ -35,11 +35,17 @@ class LparSummary:
 
 @dataclass(frozen=True)
 class SystemSummary:
+    """One managed system's state, capacity, and partition counts.
+
+    Total is the system's configurable memory (MiB) or processor units and free
+    is what it currently reports available.
+    """
+
     uuid: object | None
     name: object | None
     state: object | None
-    mtms: object | None
-    firmware_version: object | None
+    mtms: str | None
+    firmware_version: str | None
     total_memory_mib: int
     free_memory_mib: int
     total_proc_units: float
@@ -140,6 +146,17 @@ async def _fetch_system_summary_data(
     return system, lpars, vios_list
 
 
+def _mtms(value: object) -> str | None:
+    """Render the structured MTMS element as ``type-model*serial``."""
+    if not isinstance(value, dict):
+        return None
+    parts = (value.get("MachineType"), value.get("Model"), value.get("SerialNumber"))
+    if not all(isinstance(part, str) and part for part in parts):
+        return None
+    machine_type, model, serial = parts
+    return f"{machine_type}-{model}*{serial}"
+
+
 def _system_summary(
     system: dict[str, Any],
     lpars: list[dict[str, Any]],
@@ -153,23 +170,18 @@ def _system_summary(
         state = lr.get("PartitionState") or "unknown"
         lpar_states[state] = lpar_states.get(state, 0) + 1
 
-    total_mem = int(res.get("AssignableSystemMemory") or 0)
-    total_procs = float(res.get("ConfigurableSystemProcessorUnits") or 0.0)
-    assigned_mem = sum(
-        int((lpar.get("Resource") or {}).get("DesiredMemory") or 0) for lpar in lpars
-    )
-    assigned_procs = sum(lpar_processing_units(lpar) for lpar in lpars)
+    capacity = system_capacity(system)
 
     return SystemSummary(
         uuid=system.get("UUID"),
         name=res.get("SystemName"),
         state=res.get("State"),
-        mtms=res.get("MachineTypeModelSerialNumber"),
-        firmware_version=res.get("SystemFirmware") or res.get("FirmwareVersion"),
-        total_memory_mib=total_mem,
-        free_memory_mib=total_mem - assigned_mem,
-        total_proc_units=total_procs,
-        free_proc_units=round(total_procs - assigned_procs, 4),
+        mtms=_mtms(res.get("MachineTypeModelAndSerialNumber")),
+        firmware_version=leaf_text(res.get("SystemFirmware")),
+        total_memory_mib=capacity.total_memory_mib,
+        free_memory_mib=capacity.free_memory_mib,
+        total_proc_units=capacity.total_proc_units,
+        free_proc_units=capacity.free_proc_units,
         lpar_count=len(lpars),
         lpar_states=lpar_states,
         vios_count=len(vios_list),
