@@ -73,7 +73,8 @@ def capture(path: Path) -> Iterator[Capture]
 Opens with a plain-prose note (no generation banner) that every pattern is from V10R3 on
 POWER9 and says nothing about other releases or families. Sections: envelope structure;
 identifiers and their stability; link forms; media types per endpoint; job lifecycle;
-error-code families and bodies; schema and enumerations; CLI output forms. Each pattern row:
+error-code families and bodies; schema and enumerations; CLI output forms. Each pattern row
+carries its release and hardware family (`V10R3 / POWER9`) and:
 ID (P1–P47 from the issue comments; `N1`–`N4` for the #879-window observations the
 orchestrator's dispatch supplied, each tied to its fix: N1 `lshwres -F lpar_name` prints
 `null` for an unowned slot (#1195, fixed by PR #1196); N2 `lshwres -F lpar_id` prints `none`
