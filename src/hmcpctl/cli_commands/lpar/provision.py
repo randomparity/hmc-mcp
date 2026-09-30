@@ -130,21 +130,29 @@ def _render_provision_result(
         print_json(asdict(result))
         return
     if dry_run:
-        console.print("[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]")
+        console.print(
+            "[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]"
+        )
     elif result.workflow_completed:
         console.print(f"[green]LPAR '{name}' provisioned successfully[/green]")
     elif result.resource_created:
         identity = result.lpar_uuid or "UUID unavailable"
-        console.print(f"[yellow]LPAR '{name}' was created ({identity}), but provisioning is incomplete — check step results[/yellow]")
+        console.print(
+            f"[yellow]LPAR '{name}' was created ({identity}), but provisioning is incomplete — check step results[/yellow]"
+        )
     else:
-        console.print(f"[yellow]LPAR '{name}' was not created — check step results[/yellow]")
+        console.print(
+            f"[yellow]LPAR '{name}' was not created — check step results[/yellow]"
+        )
 
     table = Table(title=f"Provision steps: {name}")
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
     for step in result.steps:
-        style = "green" if step.status == "ok" else (
-            "yellow" if step.status in ("dry_run", "skipped") else "red"
+        style = (
+            "green"
+            if step.status == "ok"
+            else ("yellow" if step.status in ("dry_run", "skipped") else "red")
         )
         table.add_row(step.step, f"[{style}]{step.status}[/{style}]")
     console.print(table)

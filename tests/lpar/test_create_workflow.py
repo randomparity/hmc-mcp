@@ -24,7 +24,9 @@ def _creation() -> LparCreation:
 
 
 @pytest.mark.asyncio
-async def test_create_lpar_returns_create_step_when_creation_has_no_resource(monkeypatch):
+async def test_create_lpar_returns_create_step_when_creation_has_no_resource(
+    monkeypatch,
+):
     hmc = cast(HMCClient, object())
     assignments = LparPcieAssignments()
     prevalidate = AsyncMock()
@@ -137,9 +139,7 @@ async def test_create_lpar_skips_assignments_when_no_lpar_body(monkeypatch):
     )
     monkeypatch.setattr(
         "hmcpctl.operations.lpar.workflows.create_and_stamp_lpar",
-        AsyncMock(
-            return_value=LparCreationResult(True, None, False, ("no body",))
-        ),
+        AsyncMock(return_value=LparCreationResult(True, None, False, ("no body",))),
     )
     apply = AsyncMock()
     monkeypatch.setattr(

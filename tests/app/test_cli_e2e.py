@@ -178,7 +178,9 @@ def _self_signed_cert(tmp_path: Path) -> tuple[str, str]:
         .not_valid_before(now - timedelta(days=1))
         .not_valid_after(now + timedelta(days=1))
         .add_extension(
-            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
+            x509.SubjectAlternativeName(
+                [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+            ),
             critical=False,
         )
         .sign(key, hashes.SHA256())
@@ -228,7 +230,9 @@ def _env(port: int, certificate_path: str) -> dict[str, str]:
 def test_systems_list_e2e(mock_hmc):
     server, certificate_path = mock_hmc
     result = RUNNER.invoke(
-        cli.app, ["systems", "list"], env=_env(server.server_address[1], certificate_path)
+        cli.app,
+        ["systems", "list"],
+        env=_env(server.server_address[1], certificate_path),
     )
 
     assert result.exit_code == 0

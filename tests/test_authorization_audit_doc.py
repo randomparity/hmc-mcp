@@ -428,9 +428,7 @@ def _documented_field_values(document: str, field: str) -> frozenset[str]:
     cell = _field_row_cell(document, field)
     listing = FIELD_VALUE_LIST.search(cell)
     assert listing is not None, f"no `{field}` list in cell: {cell!r}"
-    return frozenset(
-        value.strip('"') for value in BACKTICKED.findall(listing.group(0))
-    )
+    return frozenset(value.strip('"') for value in BACKTICKED.findall(listing.group(0)))
 
 
 def _records_lead(document: str) -> str:
@@ -544,7 +542,9 @@ def _sample_records(document: str) -> tuple[dict[str, object], ...]:
             raise AssertionError(
                 f"sample is not valid JSON — {rule}: {block!r}"
             ) from error
-        assert isinstance(record, dict), f"sample is not a JSON object — {rule}: {block!r}"
+        assert isinstance(record, dict), (
+            f"sample is not a JSON object — {rule}: {block!r}"
+        )
         assert "event" in record, f"sample carries no `event` — {rule}: {block!r}"
         records.append(record)
     return tuple(records)
@@ -990,7 +990,10 @@ def test_a_drifted_sample_value_is_caught(key: str, vocabulary: frozenset[str]) 
     real = sampled[0]
 
     drifted, replaced = re.subn(
-        rf'"{key}"\s*:\s*"{re.escape(real)}"', f'"{key}": "not-a-{key}"', document, count=1
+        rf'"{key}"\s*:\s*"{re.escape(real)}"',
+        f'"{key}": "not-a-{key}"',
+        document,
+        count=1,
     )
     assert replaced == 1
     assert _sampled_values(drifted, key) - vocabulary == {f"not-a-{key}"}
@@ -1060,7 +1063,10 @@ def test_a_drifted_sample_tls_source_is_caught() -> None:
     real = min(_sampled_tls_sources(document))
 
     drifted, replaced = re.subn(
-        rf'"source"\s*:\s*"{re.escape(real)}"', '"source": "retired-source"', document, 1
+        rf'"source"\s*:\s*"{re.escape(real)}"',
+        '"source": "retired-source"',
+        document,
+        1,
     )
     assert replaced == 1
     expected = {"retired-source"}
@@ -1099,7 +1105,10 @@ def test_an_attribution_source_is_not_read_as_a_tls_source() -> None:
 
     victim = min(nested)
     reworded, replaced = re.subn(
-        rf'"source"\s*:\s*"{re.escape(victim)}"', '"source": "retired-source"', document, 1
+        rf'"source"\s*:\s*"{re.escape(victim)}"',
+        '"source": "retired-source"',
+        document,
+        1,
     )
     assert replaced == 1
     assert _sampled_tls_sources(reworded) == _sampled_tls_sources(document)
@@ -1209,7 +1218,9 @@ def test_a_sample_that_lost_its_event_is_caught() -> None:
     """Otherwise dropping the key would exempt a record from every check above."""
     document = _document()
 
-    dropped, replaced = re.subn(r'"event"\s*:\s*"[a-z-]+"\s*,\s*', "", document, count=1)
+    dropped, replaced = re.subn(
+        r'"event"\s*:\s*"[a-z-]+"\s*,\s*', "", document, count=1
+    )
     assert replaced == 1
     with pytest.raises(AssertionError, match="carries no `event`"):
         _sample_records(dropped)
@@ -1340,7 +1351,9 @@ def _annotation_source(path: Path, function: str, parameter: str) -> str:
         for node in ast.walk(ast.parse(path.read_text()))
         if isinstance(node, ast.FunctionDef) and node.name == function
     ]
-    assert len(defined) == 1, f"expected one {function} in {path.name}, found {len(defined)}"
+    assert len(defined) == 1, (
+        f"expected one {function} in {path.name}, found {len(defined)}"
+    )
 
     for argument in defined[0].args.args + defined[0].args.kwonlyargs:
         if argument.arg == parameter:

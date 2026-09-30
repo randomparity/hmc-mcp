@@ -668,7 +668,11 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
         (hmc_vios_update, {"Name": "image"}, "ResourceType"),
         (hmc_vios_update, {"ResourceType": "NFS", "unknown": "x"}, "unknown"),
         (hmc_vios_update, {"ResourceType": "NFS", "Disks": "hdisk1"}, "Disks"),
-        (hmc_vios_upgrade, {"ResourceType": "NFS", "RestartVIOS": "false"}, "RestartVIOS"),
+        (
+            hmc_vios_upgrade,
+            {"ResourceType": "NFS", "RestartVIOS": "false"},
+            "RestartVIOS",
+        ),
         (hmc_vios_upgrade, {"ResourceType": "IBMWebsite"}, "IBMWebsite"),
         (hmc_vios_update, {"ResourceType": "NFS"}, "RemoteDirectory"),
         (hmc_vios_upgrade, {"ResourceType": "HMC", "Name": "image"}, "Disks"),
@@ -956,7 +960,9 @@ def test_submit_available_hmc_ptfs_query_returns_submitted_job(monkeypatch, mock
     assert "<JobParameter schemaVersion" not in body
 
 
-def test_submit_available_hmc_ptfs_query_preserves_positional_profile(monkeypatch, mock_hmc):
+def test_submit_available_hmc_ptfs_query_preserves_positional_profile(
+    monkeypatch, mock_hmc
+):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
@@ -1379,7 +1385,9 @@ def test_job_tools_reject_parser_deleted_job_href_controls(
 
     with (
         caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"),
-        pytest.raises( ValueError, match="job_href must not contain TAB, CR, or LF" ) as exc_info,
+        pytest.raises(
+            ValueError, match="job_href must not contain TAB, CR, or LF"
+        ) as exc_info,
     ):
         tool("job-uuid-999", job_href=forged)
 

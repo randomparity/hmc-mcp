@@ -173,10 +173,13 @@ async def test_public_policy_setter_validates_before_resolution():
     hmc = AsyncMock()
     hmc.config = _config()
     resolver = AsyncMock()
-    with patch(
-                "hmcpctl.operations.affinity.ssh.resolve_and_authorize_lpar_names",
-        resolver,
-    ), pytest.raises(ValueError, match="none, warn, or fail"):
+    with (
+        patch(
+            "hmcpctl.operations.affinity.ssh.resolve_and_authorize_lpar_names",
+            resolver,
+        ),
+        pytest.raises(ValueError, match="none, warn, or fail"),
+    ):
         await set_minimum_affinity_policy(
             hmc,
             "system",
@@ -199,10 +202,12 @@ async def test_public_policy_setter_authorizes_before_mutation():
     mutate = AsyncMock(side_effect=lambda *args: events.append("mutate") or "changed")
     with (
         patch(
-                "hmcpctl.operations.affinity.ssh.resolve_and_authorize_lpar_names",
+            "hmcpctl.operations.affinity.ssh.resolve_and_authorize_lpar_names",
             authorize,
         ),
-            patch("hmcpctl.operations.affinity.ssh.set_minimum_affinity_policy_cli", mutate),
+        patch(
+            "hmcpctl.operations.affinity.ssh.set_minimum_affinity_policy_cli", mutate
+        ),
     ):
         result = await set_minimum_affinity_policy(
             hmc, "system", "lpar", MinimumAffinityPolicy(80, "warn")
@@ -226,10 +231,10 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
     )
     with (
         patch(
-                "hmcpctl.operations.affinity.ssh.resolve_ssh_names",
+            "hmcpctl.operations.affinity.ssh.resolve_ssh_names",
             AsyncMock(return_value=("resolved-system", "resolved-lpar")),
         ),
-            patch("hmcpctl.operations.affinity.ssh.query_minimum_affinity_policy", query),
+        patch("hmcpctl.operations.affinity.ssh.query_minimum_affinity_policy", query),
     ):
         result = await get_minimum_affinity_policy(_hmc(), "system", "lpar")
 

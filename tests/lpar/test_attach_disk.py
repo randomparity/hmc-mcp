@@ -24,7 +24,8 @@ def _authorize_lpar_mutations(monkeypatch):
         return lpar
 
     monkeypatch.setattr(
-        "hmcpctl.operations.lpar.provision.resolve_and_authorize_lpar_mutation", authorize
+        "hmcpctl.operations.lpar.provision.resolve_and_authorize_lpar_mutation",
+        authorize,
     )
 
 
@@ -161,11 +162,13 @@ async def test_attach_disk_dry_run_makes_no_unclassified_call() -> None:
 
     used = assert_only_these_client_methods_used(
         client,
-        frozenset({
-            "find_partition_by_name",  # read: resolve the LPAR name to a UUID
-            "get_logical_partition",  # read: UUID pass-through validation
-            "list_volume_groups",  # read: volume-group precondition check
-        }),
+        frozenset(
+            {
+                "find_partition_by_name",  # read: resolve the LPAR name to a UUID
+                "get_logical_partition",  # read: UUID pass-through validation
+                "list_volume_groups",  # read: volume-group precondition check
+            }
+        ),
     )
     assert used, "the handler touched nothing; the dry-run path was not exercised"
 

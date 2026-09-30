@@ -135,8 +135,18 @@ async def test_live_profile_shape_covers_its_own_vscsi_slot():
 @pytest.mark.asyncio
 async def test_profile_slots_are_read_from_each_subclass_direct_child():
     profile = _profile(
-        {"ProfileVirtualSCSIClientAdapter": [{"VirtualSlotNumber": "2"}, {"VirtualSlotNumber": "3"}]},
-        {"ProfileClientNetworkAdapter": {"VirtualSlotNumber": "4", "Nested": {"VirtualSlotNumber": "6"}}},
+        {
+            "ProfileVirtualSCSIClientAdapter": [
+                {"VirtualSlotNumber": "2"},
+                {"VirtualSlotNumber": "3"},
+            ]
+        },
+        {
+            "ProfileClientNetworkAdapter": {
+                "VirtualSlotNumber": "4",
+                "Nested": {"VirtualSlotNumber": "6"},
+            }
+        },
         {"@attrs": {"x": "y"}, "Other": "text"},
     )
     hmc = _adapters(
@@ -163,8 +173,15 @@ async def test_profile_slots_are_read_from_each_subclass_direct_child():
         {"Resource": {"IOConfigurationInstance": ""}},
         {"Resource": {"IOConfigurationInstance": {"ProfileVirtualIOAdapters": ""}}},
         # Directly under the profile is not where the HMC puts them.
-        {"Resource": {"ProfileVirtualIOAdapters": {"ProfileVirtualIOAdapterSubclass": {
-            "ProfileVirtualSCSIClientAdapter": {"VirtualSlotNumber": "2"}}}}},
+        {
+            "Resource": {
+                "ProfileVirtualIOAdapters": {
+                    "ProfileVirtualIOAdapterSubclass": {
+                        "ProfileVirtualSCSIClientAdapter": {"VirtualSlotNumber": "2"}
+                    }
+                }
+            }
+        },
         {},
     ],
 )
@@ -202,7 +219,9 @@ async def test_profile_adapter_warnings_report_a_failed_feed_read_instead_of_rai
 
     warnings = await profile_adapter_warnings(hmc, LPAR_UUID, _profile())
 
-    assert warnings == ("Partition profile adapter check not run: GET feed failed (HTTP 500)",)
+    assert warnings == (
+        "Partition profile adapter check not run: GET feed failed (HTTP 500)",
+    )
 
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -214,12 +233,23 @@ def _operations():
     from hmcpctl.operations.virtualization import adapters
 
     return [
-        ("add_network_adapter", lambda h: adapters.add_network_adapter(h, None, LPAR_UUID, 1)),
-        ("add_vscsi_adapter", lambda h: adapters.add_vscsi_adapter(h, None, LPAR_UUID, 1, 2)),
-        ("add_vfc_adapter", lambda h: adapters.add_vfc_adapter(h, None, LPAR_UUID, 1, 2)),
+        (
+            "add_network_adapter",
+            lambda h: adapters.add_network_adapter(h, None, LPAR_UUID, 1),
+        ),
+        (
+            "add_vscsi_adapter",
+            lambda h: adapters.add_vscsi_adapter(h, None, LPAR_UUID, 1, 2),
+        ),
+        (
+            "add_vfc_adapter",
+            lambda h: adapters.add_vfc_adapter(h, None, LPAR_UUID, 1, 2),
+        ),
         (
             "delete_adapter",
-            lambda h: adapters.delete_adapter(h, None, LPAR_UUID, "ClientNetworkAdapter", "a"),
+            lambda h: adapters.delete_adapter(
+                h, None, LPAR_UUID, "ClientNetworkAdapter", "a"
+            ),
         ),
         (
             "map_storage_to_lpar",
@@ -229,7 +259,9 @@ def _operations():
         ),
         (
             "create_optical_mapping",
-            lambda h: storage.mount_optical_media(h, VIOS_UUID, LPAR_UUID, media_name="m"),
+            lambda h: storage.mount_optical_media(
+                h, VIOS_UUID, LPAR_UUID, media_name="m"
+            ),
         ),
         (
             "delete_storage_mapping",
@@ -237,7 +269,9 @@ def _operations():
         ),
         (
             "delete_storage_mapping",
-            lambda h: storage.unmount_optical_media(h, VIOS_UUID, LPAR_UUID, media_name="m"),
+            lambda h: storage.unmount_optical_media(
+                h, VIOS_UUID, LPAR_UUID, media_name="m"
+            ),
         ),
     ]
 
@@ -247,8 +281,14 @@ def _operations():
     ("write", "operation"),
     _operations(),
     ids=[
-        "add-network", "add-vscsi", "add-vfc", "delete-adapter",
-        "map", "mount", "detach", "unmount",
+        "add-network",
+        "add-vscsi",
+        "add-vfc",
+        "delete-adapter",
+        "map",
+        "mount",
+        "detach",
+        "unmount",
     ],
 )
 async def test_each_operation_reads_the_location_before_its_write(
@@ -257,7 +297,8 @@ async def test_each_operation_reads_the_location_before_its_write(
     authorize = AsyncMock(return_value=LPAR_UUID)
     for module in ("virtualization.adapters", "storage.resources"):
         monkeypatch.setattr(
-            f"hmcpctl.operations.{module}.resolve_and_authorize_lpar_mutation", authorize
+            f"hmcpctl.operations.{module}.resolve_and_authorize_lpar_mutation",
+            authorize,
         )
     monkeypatch.setattr(
         "hmcpctl.operations.storage.resources.resolve_vios_uuid",
@@ -268,10 +309,13 @@ async def test_each_operation_reads_the_location_before_its_write(
         lambda _mapping: "vhost0/vtscsi0",
     )
     monkeypatch.setattr(
-        "hmcpctl.operations.storage.resources.mapping_lpar_uuid", lambda _mapping: LPAR_UUID
+        "hmcpctl.operations.storage.resources.mapping_lpar_uuid",
+        lambda _mapping: LPAR_UUID,
     )
     hmc = AsyncMock()
-    hmc.get_logical_partition.return_value = {"Resource": {"CurrentProfileSync": "Disabled"}}
+    hmc.get_logical_partition.return_value = {
+        "Resource": {"CurrentProfileSync": "Disabled"}
+    }
     hmc.list_storage_mappings.return_value = [{}]
     hmc.list_optical_mappings.return_value = [
         {"Storage": {"VirtualOpticalMedia": {"MediaName": "m"}}}

@@ -30,9 +30,7 @@ tool, register_tools, tool_security = tool_module()
     effect="mutate",
     operation="provision.lpar",
     target_kind="managed_system",
-    extra_targets=(
-        ("vios", "storage.vios_uuid"),
-    ),
+    extra_targets=(("vios", "storage.vios_uuid"),),
     exhaustive_targets=False,
 )
 def hmc_provision_lpar(
@@ -95,9 +93,15 @@ def hmc_provision_lpar(
             hmc,
             system_name_or_uuid=system_name_or_uuid,
             request=ProvisionRequest(
-                name=name, adapters=adapters, storage=storage, resources=resources,
-                partition_type=partition_type, power_on=power_on, dry_run=dry_run,
-                assignments=assignments, caller_token=caller_token,
+                name=name,
+                adapters=adapters,
+                storage=storage,
+                resources=resources,
+                partition_type=partition_type,
+                power_on=power_on,
+                dry_run=dry_run,
+                assignments=assignments,
+                caller_token=caller_token,
                 minimum_affinity_policy=minimum_affinity_policy,
                 affinity_assessment=affinity_assessment,
             ),

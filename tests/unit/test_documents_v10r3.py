@@ -54,25 +54,41 @@ def test_vscsi_adapter_matches_fixture() -> None:
 LINK = "https://hmc.example.invalid/rest/api/uom/LogicalPartition/lpar-1"
 RECORDED = [
     (
-        documents.build_client_network_adapter_document(42, 3, 1, True, "02:00:00:00:00:01"),
-        {"VirtualSlotNumber": "COD", "VirtualSwitchID": "ROR", "PortVLANID": "CUR",
-         "MACAddress": "CUR"},
+        documents.build_client_network_adapter_document(
+            42, 3, 1, True, "02:00:00:00:00:01"
+        ),
+        {
+            "VirtualSlotNumber": "COD",
+            "VirtualSwitchID": "ROR",
+            "PortVLANID": "CUR",
+            "MACAddress": "CUR",
+        },
     ),
     (documents.build_volume_group_document("vg1", ["hdisk1"]), {"VolumeName": "CUR"}),
     (
         documents.build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK),
         {"VolumeName": "CUR"},
     ),
-    (documents.build_virtual_optical_mapping_document("a.iso", LINK), {"MediaName": "CUR"}),
+    (
+        documents.build_virtual_optical_mapping_document("a.iso", LINK),
+        {"MediaName": "CUR"},
+    ),
     (
         documents.build_virtual_network_document("n1", 10, 0, tagged=True),
         {"NetworkVLANID": "COD", "VswitchID": "ROR", "TaggedNetwork": "COD"},
     ),
-    (documents.build_lpar_document("p1", os_type="linux"), {"OperatingSystemType": "ROR"}),
+    (
+        documents.build_lpar_document("p1", os_type="linux"),
+        {"OperatingSystemType": "ROR"},
+    ),
     (
         documents.build_vfc_adapter_document(1, 2, 3),
-        {"AdapterType": "ROR", "VirtualSlotNumber": "COD", "ConnectingPartitionID": "CUD",
-         "ConnectingVirtualSlotNumber": "CUD"},
+        {
+            "AdapterType": "ROR",
+            "VirtualSlotNumber": "COD",
+            "ConnectingPartitionID": "CUD",
+            "ConnectingVirtualSlotNumber": "CUD",
+        },
     ),
 ]
 
@@ -86,7 +102,9 @@ def test_recorded_kb_values(xml: str, expected: dict[str, str]) -> None:
 
 
 def test_virtual_disk_create_matches_fixture() -> None:
-    built = _first(_tree(documents.build_virtual_disk_element("lv1", 2048)), "VirtualDisk")
+    built = _first(
+        _tree(documents.build_virtual_disk_element("lv1", 2048)), "VirtualDisk"
+    )
     live = _first(FIXTURE, "VirtualDisk")
     assert _kbx(built) == _kbx(live)
     names = [n for n in _children(built) if n != "Metadata"]
@@ -102,15 +120,25 @@ def test_vscsi_mapping_matches_fixture() -> None:
     live = _first(FIXTURE, "VirtualSCSIMapping")
     assert _kbx(built) == _kbx(live)
     assert _children(built) == [
-        "Metadata", "AssociatedLogicalPartition", "Storage", "TargetDevice"
+        "Metadata",
+        "AssociatedLogicalPartition",
+        "Storage",
+        "TargetDevice",
     ]
     assert _is_subsequence(_children(built), _children(live))
     link = _first(built, "AssociatedLogicalPartition")
     assert link.tag == f"{{{UOM_NS}}}AssociatedLogicalPartition"
     assert link.attrib["href"] == LINK
     assert link.attrib["rel"] == "related"
-    for name in ("AssociatedLogicalPartition", "Storage", "VirtualDisk", "DiskName",
-                 "TargetDevice", "LogicalVolumeVirtualTargetDevice", "TargetName"):
+    for name in (
+        "AssociatedLogicalPartition",
+        "Storage",
+        "VirtualDisk",
+        "DiskName",
+        "TargetDevice",
+        "LogicalVolumeVirtualTargetDevice",
+        "TargetName",
+    ):
         assert _kbx(_first(built, name)) == _kbx(_first(live, name)), name
     assert _children(_first(built, "Storage")) == ["VirtualDisk"]
     assert _first(built, "TargetName").text == "vtscsi9"
@@ -120,7 +148,9 @@ def test_vscsi_mapping_matches_fixture() -> None:
     ("xml", "storage", "target"),
     [
         (
-            documents.build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK, "vt1"),
+            documents.build_vscsi_mapping_document(
+                "PhysicalVolume", "hdisk5", LINK, "vt1"
+            ),
             "PhysicalVolume",
             "PhysicalVolumeVirtualTargetDevice",
         ),
@@ -132,7 +162,9 @@ def test_vscsi_mapping_matches_fixture() -> None:
     ],
     ids=["physical-volume", "optical"],
 )
-def test_mapping_wrappers_and_target_device(xml: str, storage: str, target: str) -> None:
+def test_mapping_wrappers_and_target_device(
+    xml: str, storage: str, target: str
+) -> None:
     root = _tree(xml)
     target_device = _first(root, "TargetDevice")
     assert _first(root, storage).attrib == {"schemaVersion": "V1_0"}
@@ -144,7 +176,9 @@ def test_mapping_wrappers_and_target_device(xml: str, storage: str, target: str)
 def test_mapping_without_target_device_omits_it() -> None:
     root = _tree(documents.build_vscsi_mapping_document("VirtualDisk", "vd1", LINK))
     assert _children(_first(root, "VirtualSCSIMapping")) == [
-        "Metadata", "AssociatedLogicalPartition", "Storage"
+        "Metadata",
+        "AssociatedLogicalPartition",
+        "Storage",
     ]
 
 
@@ -169,7 +203,11 @@ def test_volume_group_physical_volume_attributes() -> None:
 
 
 RESOURCES = documents.LparResources(
-    min_memory=512, desired_memory=1024, max_memory=2048, desired_procs=0.5, desired_vcpus=1
+    min_memory=512,
+    desired_memory=1024,
+    max_memory=2048,
+    desired_procs=0.5,
+    desired_vcpus=1,
 )
 DEDICATED = documents.LparResources(desired_procs=1, dedicated=True)
 BUILT = {
@@ -183,7 +221,9 @@ BUILT = {
     "vscsi-mapping": documents.build_vscsi_mapping_document(
         "PhysicalVolume", "hdisk1", LINK, "vt1"
     ),
-    "optical-mapping": documents.build_virtual_optical_mapping_document("a.iso", LINK, "vt2"),
+    "optical-mapping": documents.build_virtual_optical_mapping_document(
+        "a.iso", LINK, "vt2"
+    ),
     "virtual-network": documents.build_virtual_network_document("n1", 10, 0, LINK),
     "media-repository-delete": documents.build_media_repository_delete_document("vg1"),
     "optical-media-delete": documents.build_virtual_optical_media_delete_document(
@@ -192,14 +232,19 @@ BUILT = {
     "web-file": documents.build_web_file_document(
         "a.iso", 1, "00000000-0000-0000-0000-000000000001"
     ),
-    "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES, os_type="linux"),
+    "lpar-shared": documents.build_lpar_document(
+        "p1", resources=RESOURCES, os_type="linux"
+    ),
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
 }
 # No live evidence records whether V10R3 requires schemaVersion on these; left unchanged (#961).
 PROCESSOR_WRAPPERS_UNVERIFIED = frozenset(
-    {"PartitionProcessorConfiguration", "SharedProcessorConfiguration",
-     "DedicatedProcessorConfiguration"}
+    {
+        "PartitionProcessorConfiguration",
+        "SharedProcessorConfiguration",
+        "DedicatedProcessorConfiguration",
+    }
 )
 
 

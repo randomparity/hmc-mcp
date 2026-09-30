@@ -98,8 +98,7 @@ def _validate(adr_dir: Path, records: list[str]) -> list[str]:
     for number, names in sorted(by_number.items()):
         if len(names) > 1:
             errors.append(
-                f"number {number} is used by {len(names)} records: "
-                + ", ".join(names)
+                f"number {number} is used by {len(names)} records: " + ", ".join(names)
             )
 
     return errors

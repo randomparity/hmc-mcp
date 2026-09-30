@@ -32,7 +32,9 @@ def _logical_partition_element(root: ET.Element, path: str, raw: str) -> ET.Elem
         return root
     found = root.find(f"{{{_ATOM_NS}}}content/{{{_UOM_NS}}}LogicalPartition")
     if found is None:
-        raise HMCError(f"GET {path} contains no LogicalPartition element", 200, raw[:500])
+        raise HMCError(
+            f"GET {path} contains no LogicalPartition element", 200, raw[:500]
+        )
     return found
 
 
@@ -124,7 +126,9 @@ class LparsMixin:
         """
         return await self.update_logical_partition(
             lpar_uuid,
-            lambda _lpar: {"BootListInformation/PendingBootString": boot_string or None},
+            lambda _lpar: {
+                "BootListInformation/PendingBootString": boot_string or None
+            },
             "the boot order",
         )
 
@@ -168,13 +172,17 @@ class LparsMixin:
         try:
             root = DET.fromstring(got.text)
         except DET.ParseError as exc:
-            raise HMCError(f"GET {path} response is not valid XML", 200, got.text[:500]) from exc
+            raise HMCError(
+                f"GET {path} response is not valid XML", 200, got.text[:500]
+            ) from exc
         lpar = _logical_partition_element(root, path, got.text)
         changes = updates(lpar)
         if not changes:
             raise ValueError(f"nothing to write for {subject}; nothing was sent")
         for field, text in changes.items():
-            element = lpar.find("/".join(f"{{{_UOM_NS}}}{part}" for part in field.split("/")))
+            element = lpar.find(
+                "/".join(f"{{{_UOM_NS}}}{part}" for part in field.split("/"))
+            )
             if element is None:
                 raise HMCError(
                     f"GET {path} has no {field}; refusing to write {subject}",

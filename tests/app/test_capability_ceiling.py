@@ -63,7 +63,9 @@ READ_ONLY_GRANT = [
 ]
 
 
-def test_fastmcp_serializes_capacity_dataclasses_without_adapter_conversion(monkeypatch):
+def test_fastmcp_serializes_capacity_dataclasses_without_adapter_conversion(
+    monkeypatch,
+):
     summary = CapacitySummary(
         system_uuid="system-id",
         system_name="system",

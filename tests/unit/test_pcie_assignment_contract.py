@@ -107,7 +107,9 @@ class _FakeHmc:
             if "io_slots+" in fields:
                 entries.append(fields["io_slots+"].replace("//", "/none/"))
             else:
-                entries = self._remove(entries, fields["io_slots-"].replace("//", "/none/"))
+                entries = self._remove(
+                    entries, fields["io_slots-"].replace("//", "/none/")
+                )
             new = ",".join(entries) or "none"
             if self.after_write is not None:
                 new = self.after_write(new)
@@ -127,7 +129,11 @@ class _FakeHmc:
         return [command for command in self.commands if command.startswith("chsyscfg")]
 
     def profile_reads(self) -> list[str]:
-        return [command for command in self.commands if command.startswith("lssyscfg -r prof")]
+        return [
+            command
+            for command in self.commands
+            if command.startswith("lssyscfg -r prof")
+        ]
 
     def value(self) -> str:
         return self.rows[0][2]
@@ -139,7 +145,8 @@ def hmc(monkeypatch) -> AsyncMock:
     client.config = _config()
     authorize = AsyncMock(return_value=("sys", "lpar"))
     monkeypatch.setattr(
-        "hmcpctl.operations.virtualization.pcie.resolve_and_authorize_lpar_names", authorize
+        "hmcpctl.operations.virtualization.pcie.resolve_and_authorize_lpar_names",
+        authorize,
     )
     client.authorize = authorize
     return client
@@ -185,7 +192,8 @@ def test_profile_io_slot_read_is_the_admitted_command(monkeypatch):
 
 def test_profile_io_slot_read_refuses_a_headerless_answer(monkeypatch):
     monkeypatch.setattr(
-        "hmcpctl.ssh.profiles.run_hmc_command", AsyncMock(return_value="lpar,prof,none\n")
+        "hmcpctl.ssh.profiles.run_hmc_command",
+        AsyncMock(return_value="lpar,prof,none\n"),
     )
     with pytest.raises(HMCCLIError, match="unadmitted profile io_slots readback"):
         asyncio.run(read_profile_io_slot_rows(_config(), "sys"))
@@ -287,7 +295,9 @@ def test_foreign_owner_is_refused_before_any_ssh_command(monkeypatch, hmc, opera
 def test_outside_the_envelope_is_capability_unavailable_before_any_profile_command(
     monkeypatch, hmc, operation, model, version
 ):
-    fake = _install(monkeypatch, _FakeHmc(f"{_DRC}/none/0", model=model, version=version))
+    fake = _install(
+        monkeypatch, _FakeHmc(f"{_DRC}/none/0", model=model, version=version)
+    )
 
     with pytest.raises(PcieAssignmentUnavailableError, match="V10R3 M1060.*8375-42A"):
         operation(hmc)
@@ -313,7 +323,12 @@ def test_an_lpar_that_is_not_activated_is_required_before_any_profile_command(
 def test_assign_refuses_a_slot_another_lpars_profile_lists(monkeypatch, hmc):
     fake = _install(
         monkeypatch,
-        _FakeHmc(rows=[("lpar", "prof", "none"), ("other", "p2", f"21020013/none/1,{_DRC}/none/0")]),
+        _FakeHmc(
+            rows=[
+                ("lpar", "prof", "none"),
+                ("other", "p2", f"21020013/none/1,{_DRC}/none/0"),
+            ]
+        ),
     )
 
     with pytest.raises(ValueError, match="already listed by a profile of LPAR other"):
@@ -325,7 +340,9 @@ def test_assign_refuses_a_slot_another_lpars_profile_lists(monkeypatch, hmc):
 def test_assign_refuses_an_already_doubled_listing(monkeypatch, hmc):
     fake = _install(
         monkeypatch,
-        _FakeHmc(rows=[("lpar", "prof", f"{_DRC}/none/0"), ("other", "p2", f"{_DRC}/none/0")]),
+        _FakeHmc(
+            rows=[("lpar", "prof", f"{_DRC}/none/0"), ("other", "p2", f"{_DRC}/none/0")]
+        ),
     )
 
     with pytest.raises(ValueError, match="already listed by a profile of LPAR other"):
@@ -341,13 +358,17 @@ def test_a_concurrent_assign_to_another_lpar_is_a_partial_error(monkeypatch, hmc
 
     fake = _install(monkeypatch, _FakeHmc(after_write=racing_writer))
 
-    with pytest.raises(PcieAssignmentPartialError, match="also listed by a profile of LPAR other"):
+    with pytest.raises(
+        PcieAssignmentPartialError, match="also listed by a profile of LPAR other"
+    ):
         _assign(hmc)
 
     assert len(fake.mutations()) == 1
 
 
-def test_assign_ignores_the_same_lpars_other_profiles_and_unrelated_rows(monkeypatch, hmc):
+def test_assign_ignores_the_same_lpars_other_profiles_and_unrelated_rows(
+    monkeypatch, hmc
+):
     rows = [
         ("lpar", "prof", "none"),
         ("lpar", "backup", f"{_DRC}/none/0"),
@@ -450,7 +471,8 @@ def test_a_required_slot_is_refused_before_any_write_whatever_removal_would_do(
     operation never sends it: each branch the HMC might take stays unreached.
     """
     fake = _install(
-        monkeypatch, _FakeHmc(f"21020013/none/1,{_DRC}/none/1", other_form_removal=branch)
+        monkeypatch,
+        _FakeHmc(f"21020013/none/1,{_DRC}/none/1", other_form_removal=branch),
     )
 
     with pytest.raises(ValueError, match="only .*/none/0"):
@@ -462,9 +484,15 @@ def test_a_required_slot_is_refused_before_any_write_whatever_removal_would_do(
 
 @pytest.mark.parametrize(
     ("branch", "outcome"),
-    [("remove", None), ("noop", PcieAssignmentPartialError), ("error", PcieAssignmentPartialError)],
+    [
+        ("remove", None),
+        ("noop", PcieAssignmentPartialError),
+        ("error", PcieAssignmentPartialError),
+    ],
 )
-def test_a_slot_turned_required_between_read_and_write(monkeypatch, hmc, branch, outcome):
+def test_a_slot_turned_required_between_read_and_write(
+    monkeypatch, hmc, branch, outcome
+):
     """The concurrent-writer case (failure model class 3), pinned per branch.
 
     Only a removal that leaves the DRC absent reads back as the requested state;
@@ -476,7 +504,9 @@ def test_a_slot_turned_required_between_read_and_write(monkeypatch, hmc, branch,
 
     fake = _install(
         monkeypatch,
-        _FakeHmc(f"{_DRC}/none/0", other_form_removal=branch, before_write=turn_required),
+        _FakeHmc(
+            f"{_DRC}/none/0", other_form_removal=branch, before_write=turn_required
+        ),
     )
 
     if outcome is None:
@@ -509,7 +539,9 @@ def test_a_partial_error_says_what_the_profile_may_hold_and_how_to_inspect_it(
 
     message = _partial_error_message(_assign, hmc)
 
-    assert "may hold the change, none of it, or a form this operation refuses" in message
+    assert (
+        "may hold the change, none of it, or a form this operation refuses" in message
+    )
     assert "`lssyscfg -r prof -m sys -F lpar_name,name,io_slots --header`" in message
     assert "Never write the read value back as `io_slots=` input" in message
 
@@ -522,7 +554,9 @@ def _extra_slot(value: str) -> str:
     ("operation", "io_slots", "rendering"),
     [
         pytest.param(_assign, "none", "absent", id="assign-no-op"),
-        pytest.param(_unassign, f"{_DRC}/none/0", f"{_DRC}/none/0", id="unassign-no-op"),
+        pytest.param(
+            _unassign, f"{_DRC}/none/0", f"{_DRC}/none/0", id="unassign-no-op"
+        ),
     ],
 )
 def test_a_readback_in_the_before_state_needs_no_reversal(
@@ -568,13 +602,17 @@ def test_a_slot_read_in_another_form_advises_comparing_and_the_ui(monkeypatch, h
 
     fake = _install(
         monkeypatch,
-        _FakeHmc(f"{_DRC}/none/0", other_form_removal="noop", before_write=turn_required),
+        _FakeHmc(
+            f"{_DRC}/none/0", other_form_removal="noop", before_write=turn_required
+        ),
     )
 
     message = _partial_error_message(_unassign, hmc)
 
     assert "Compare the read value with the before value" in message
-    assert f"make any reversal of slot {_DRC} of profile 'prof' of LPAR 'lpar'" in message
+    assert (
+        f"make any reversal of slot {_DRC} of profile 'prof' of LPAR 'lpar'" in message
+    )
     assert "through the HMC UI" in message
     assert "no reversal is needed" not in message
     assert "as requested" not in message
@@ -584,14 +622,25 @@ def test_a_slot_read_in_another_form_advises_comparing_and_the_ui(monkeypatch, h
     ("operation", "io_slots", "fake_options"),
     [
         pytest.param(
-            _assign, "none", {"after_write": lambda _value: f"{_DRC}//0"}, id="assign-unparsed"
+            _assign,
+            "none",
+            {"after_write": lambda _value: f"{_DRC}//0"},
+            id="assign-unparsed",
         ),
         pytest.param(
-            _unassign, f"{_DRC}/none/0", {"after_write": lambda _value: ""}, id="unassign-empty"
+            _unassign,
+            f"{_DRC}/none/0",
+            {"after_write": lambda _value: ""},
+            id="unassign-empty",
         ),
-        pytest.param(_assign, "none", {"fail_reads_after_write": True}, id="assign-unread"),
         pytest.param(
-            _unassign, f"{_DRC}/none/0", {"fail_reads_after_write": True}, id="unassign-unread"
+            _assign, "none", {"fail_reads_after_write": True}, id="assign-unread"
+        ),
+        pytest.param(
+            _unassign,
+            f"{_DRC}/none/0",
+            {"fail_reads_after_write": True},
+            id="unassign-unread",
         ),
     ],
 )
@@ -614,7 +663,9 @@ def test_the_read_command_quotes_the_system_name(monkeypatch, hmc):
 
     message = _partial_error_message(_assign, hmc)
 
-    assert "`lssyscfg -r prof -m 'my sys' -F lpar_name,name,io_slots --header`" in message
+    assert (
+        "`lssyscfg -r prof -m 'my sys' -F lpar_name,name,io_slots --header`" in message
+    )
 
 
 _HOLDER_ADVICE = (
@@ -628,7 +679,9 @@ def test_a_lost_response_with_a_new_holder_names_both_causes(monkeypatch, hmc):
         fake.rows.append(("other", "p2", f"{_DRC}/none/0"))
         return value
 
-    fake = _install(monkeypatch, _FakeHmc(chsyscfg_error=True, after_write=racing_writer))
+    fake = _install(
+        monkeypatch, _FakeHmc(chsyscfg_error=True, after_write=racing_writer)
+    )
 
     message = _partial_error_message(_assign, hmc)
 
@@ -682,7 +735,9 @@ def test_an_assign_beside_a_new_holder_keeps_the_reversal_open(monkeypatch, hmc)
     assert "do not undo" not in message
 
 
-def test_an_assign_beside_an_unreadable_holder_keeps_the_reversal_open(monkeypatch, hmc):
+def test_an_assign_beside_an_unreadable_holder_keeps_the_reversal_open(
+    monkeypatch, hmc
+):
     def racing_writer(value: str) -> str:
         fake.rows.append(("third", "p3", f"{_DRC}//0"))
         return value
@@ -697,7 +752,9 @@ def test_an_assign_beside_an_unreadable_holder_keeps_the_reversal_open(monkeypat
     assert "do not undo" not in message
 
 
-def test_a_refused_assign_beside_an_unreadable_holder_is_a_partial_error(monkeypatch, hmc):
+def test_a_refused_assign_beside_an_unreadable_holder_is_a_partial_error(
+    monkeypatch, hmc
+):
     def racing_writer() -> None:
         fake.rows.append(("third", "p3", f"{_DRC}//0"))
 
@@ -711,7 +768,9 @@ def test_a_refused_assign_beside_an_unreadable_holder_is_a_partial_error(monkeyp
     assert "could not be verified: response lost" in message
 
 
-def test_an_unassign_that_landed_succeeds_whatever_other_profiles_list(monkeypatch, hmc):
+def test_an_unassign_that_landed_succeeds_whatever_other_profiles_list(
+    monkeypatch, hmc
+):
     fake = _install(
         monkeypatch,
         _FakeHmc(
@@ -758,7 +817,9 @@ def test_a_re_rendered_foreign_slot_is_a_partial_error(monkeypatch, hmc):
         monkeypatch,
         _FakeHmc(
             "21020013/none/1",
-            after_write=lambda value: value.replace("21020013/none/1", "21020013/none/0"),
+            after_write=lambda value: value.replace(
+                "21020013/none/1", "21020013/none/0"
+            ),
         ),
     )
 
@@ -777,7 +838,9 @@ def test_a_failed_readback_after_the_write_is_a_partial_error(monkeypatch, hmc):
     assert isinstance(caught.value.__cause__, HMCCLIError)
 
 
-def test_a_refused_write_that_changed_nothing_re_raises_the_command_error(monkeypatch, hmc):
+def test_a_refused_write_that_changed_nothing_re_raises_the_command_error(
+    monkeypatch, hmc
+):
     fake = _install(monkeypatch, _FakeHmc(applies=False, chsyscfg_error=True))
 
     with pytest.raises(HMCCLIError, match="response lost"):

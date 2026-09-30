@@ -50,11 +50,12 @@ async def test_foreign_partition_blocks_restore_before_ssh(caplog) -> None:
     with (
         caplog.at_level(logging.WARNING),
         pytest.raises(PermissionError, match="db01"),
-        patch( "hmcpctl.operations.lpar.configuration.restore_lpar_profiles", new=write, ),
+        patch(
+            "hmcpctl.operations.lpar.configuration.restore_lpar_profiles",
+            new=write,
+        ),
     ):
-        await restore_system_lpar_profiles(
-            hmc, SYSTEM_UUID, "/tmp/profiles.bak"
-        )
+        await restore_system_lpar_profiles(hmc, SYSTEM_UUID, "/tmp/profiles.bak")
 
     write.assert_not_awaited()
     records = [json.loads(record.message) for record in caplog.records]
@@ -113,8 +114,9 @@ async def test_override_skips_inventory_audits_wildcard_and_restores(caplog) -> 
     hmc = _hmc()
     write = AsyncMock(return_value="restored")
 
-    with caplog.at_level(logging.WARNING), patch(
-        "hmcpctl.operations.lpar.configuration.restore_lpar_profiles", new=write
+    with (
+        caplog.at_level(logging.WARNING),
+        patch("hmcpctl.operations.lpar.configuration.restore_lpar_profiles", new=write),
     ):
         result = await restore_system_lpar_profiles(
             hmc,
@@ -127,7 +129,9 @@ async def test_override_skips_inventory_audits_wildcard_and_restores(caplog) -> 
     hmc.list_logical_partitions.assert_not_awaited()
     write.assert_awaited_once_with(hmc.config, SYSTEM_NAME, "/tmp/profiles.bak")
     records = [json.loads(record.message) for record in caplog.records]
-    record = next(record for record in records if record["event"] == "ownership-override")
+    record = next(
+        record for record in records if record["event"] == "ownership-override"
+    )
     assert record["lpar"] == "*"
     assert record["system"] == SYSTEM_NAME
 
@@ -142,7 +146,9 @@ def test_tool_requires_approval_before_opening_client(monkeypatch) -> None:
     run.assert_not_called()
 
 
-def test_tool_delegates_restore_and_override_through_managed_client(monkeypatch) -> None:
+def test_tool_delegates_restore_and_override_through_managed_client(
+    monkeypatch,
+) -> None:
     captured: dict[str, object] = {}
     hmc = _hmc()
     restore = AsyncMock(return_value="restored")
@@ -172,7 +178,9 @@ def test_tool_delegates_restore_and_override_through_managed_client(monkeypatch)
     )
 
 
-def test_existing_positional_profile_cannot_become_ownership_override(monkeypatch) -> None:
+def test_existing_positional_profile_cannot_become_ownership_override(
+    monkeypatch,
+) -> None:
     captured: dict[str, object] = {}
     hmc = _hmc()
     restore = AsyncMock(return_value="restored")

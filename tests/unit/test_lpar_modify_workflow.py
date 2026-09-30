@@ -49,7 +49,9 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_modify_lpar_propagates_resource_failure_without_partial_state(monkeypatch):
+async def test_modify_lpar_propagates_resource_failure_without_partial_state(
+    monkeypatch,
+):
     hmc = AsyncMock()
     hmc.update_logical_partition.side_effect = HMCError("resource update failed", 500)
     monkeypatch.setattr(
@@ -107,4 +109,6 @@ async def test_modify_lpar_preserves_steps_when_final_readback_fails(monkeypatch
 
     assert result.workflow_completed is True
     assert [(step.step, step.status) for step in result.steps] == [("assign", "ok")]
-    assert result.warnings == ("final LPAR readback failed: readback unavailable (HTTP 503)",)
+    assert result.warnings == (
+        "final LPAR readback failed: readback unavailable (HTTP 503)",
+    )

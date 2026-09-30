@@ -49,7 +49,9 @@ def test_vios_completed_wait_result_projects_stdout_without_mutating_payload():
     ],
 )
 @pytest.mark.parametrize("length", [257, 20_000])
-async def test_console_update_identifier_refused_before_submission(operation, args, length):
+async def test_console_update_identifier_refused_before_submission(
+    operation, args, length
+):
     client = SimpleNamespace(submit_job=AsyncMock(return_value=None))
     value = "B" * length
     with pytest.raises(ValueError) as exc:
@@ -64,11 +66,17 @@ async def test_console_update_identifier_refused_before_submission(operation, ar
 @pytest.mark.parametrize(
     ("operation", "args", "suffix"),
     [
-        (update_console_software, ({"MediaType": "IBMWebsite"},), "UpdateManagementConsole"),
+        (
+            update_console_software,
+            ({"MediaType": "IBMWebsite"},),
+            "UpdateManagementConsole",
+        ),
         (submit_available_hmc_ptfs_query, (), "ListManagementConsoleUpdates"),
     ],
 )
-async def test_console_update_unicode_boundary_preserves_job_path(operation, args, suffix):
+async def test_console_update_unicode_boundary_preserves_job_path(
+    operation, args, suffix
+):
     client = SimpleNamespace(submit_job=AsyncMock(return_value=None))
     value = "\U0001f600" * 256
     await operation(client, value, *args)

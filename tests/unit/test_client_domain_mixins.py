@@ -457,8 +457,12 @@ async def test_storage_mixin_reports_a_possible_side_effect_after_a_5xx():
     snapshot = AsyncMock(return_value=after)
     dispatch = AsyncMock(side_effect=HMCError("write failed", 503, "unavailable"))
 
-    with pytest.raises(HMCError, match="possible side effect.*Do not retry") as exc_info:
-        await client._reconcile_storage_mutation("create_virtual_disk", snapshot, dispatch)
+    with pytest.raises(
+        HMCError, match="possible side effect.*Do not retry"
+    ) as exc_info:
+        await client._reconcile_storage_mutation(
+            "create_virtual_disk", snapshot, dispatch
+        )
 
     assert exc_info.value.__cause__ is dispatch.side_effect
     snapshot.assert_awaited_once()
@@ -473,9 +477,7 @@ async def test_systems_mixin_routes_inventory_and_power_jobs():
     assert await client.list_managed_systems() == []
     assert await client.get_managed_system("system-1") is None
     assert await client.find_vios_by_name("vios-a") is None
-    assert await client.power_off_system(UUID_A, immediate=True) == {
-        "UUID": "job-1"
-    }
+    assert await client.power_off_system(UUID_A, immediate=True) == {"UUID": "job-1"}
 
     client.list_uom.assert_awaited_once_with("ManagedSystem")
     client.get_uom.assert_awaited_once_with("ManagedSystem", "system-1")

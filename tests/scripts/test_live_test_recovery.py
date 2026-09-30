@@ -48,6 +48,7 @@ def _stamped(token: str) -> str:
         f"[hmcpctl owner:hmcpctl created:2026-09-21] [caller {token}]"
     )
 
+
 _INPUTS = recovery.RecoveryInputs(
     system_name=_SYSTEM,
     run_marker=_MARKER,
@@ -156,9 +157,7 @@ async def test_an_unreadable_state_on_a_surviving_partition_is_not_clean():
 @pytest.mark.asyncio
 async def test_a_partition_of_the_same_name_from_another_run_is_not_claimed():
     """The marker is the ownership proof; a name collision is not this run's."""
-    responses = _responses(
-        hmc_get_lpar_description=_stamped("pcie-someoneelse")
-    )
+    responses = _responses(hmc_get_lpar_description=_stamped("pcie-someoneelse"))
 
     assert await recovery.check(_caller(responses), _INPUTS) == []
 
@@ -169,10 +168,7 @@ async def test_this_runs_marker_in_a_stamp_this_checkout_cannot_read_is_not_clea
     unowned. Returning "not ours" there reported CLEAN while the partition survived
     (#899 review). The marker is per-run random, so seeing it is enough to refuse.
     """
-    old_stamp = (
-        "[hmc-mcp owner:hmc-mcp created:2026-09-21] "
-        f"[caller {_MARKER}]"
-    )
+    old_stamp = f"[hmc-mcp owner:hmc-mcp created:2026-09-21] [caller {_MARKER}]"
     responses = _responses(hmc_get_lpar_description=old_stamp)
 
     with pytest.raises(recovery.StateUnreadable, match="tested commit"):
@@ -286,8 +282,7 @@ async def test_an_unreadable_profile_is_not_clean():
     ("answer", "reason"),
     [
         pytest.param(
-            "lpar_name,name,io_slots\n"
-            f"{_LPAR},default,none\n{_LPAR},default,none\n",
+            f"lpar_name,name,io_slots\n{_LPAR},default,none\n{_LPAR},default,none\n",
             "2 rows",
             id="two-rows-for-the-profile",
         ),
@@ -372,9 +367,7 @@ async def test_an_unlistable_system_is_not_clean():
 
 @pytest.mark.asyncio
 async def test_a_run_with_no_drc_index_still_probes_then_checks_the_partition():
-    inputs = recovery.RecoveryInputs(
-        _SYSTEM, _MARKER, _LPAR, None, None, "default"
-    )
+    inputs = recovery.RecoveryInputs(_SYSTEM, _MARKER, _LPAR, None, None, "default")
     seen: list[str] = []
 
     await recovery.check(_caller(_responses(), seen), inputs)
@@ -519,7 +512,9 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
         return []
 
     monkeypatch.setattr(recovery.runner, "served_client", served_client)
-    monkeypatch.setattr(recovery, "_read_only_caller", lambda client, state: seen.append(client))
+    monkeypatch.setattr(
+        recovery, "_read_only_caller", lambda client, state: seen.append(client)
+    )
     monkeypatch.setattr(recovery, "check", no_findings)
 
     assert await recovery._run_checks(_INPUTS) == []

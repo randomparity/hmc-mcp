@@ -92,9 +92,7 @@ class ScenarioState:
         self.cleanup_start: int | None = None
         self.observations: list[dict[str, Any]] = []
 
-    async def call(
-        self, _client: object, tool: str, **kwargs: Any
-    ) -> tuple[str, Any]:
+    async def call(self, _client: object, tool: str, **kwargs: Any) -> tuple[str, Any]:
         index = self.tool_counts.get(tool, 0)
         self.tool_counts[tool] = index + 1
         self.calls.append((tool, kwargs))
@@ -110,13 +108,17 @@ class ScenarioState:
         return status, response
 
     def record(
-        self, subtask: int, tool: str, status: str, data: Any, note: str = "", **_kwargs: Any
+        self,
+        subtask: int,
+        tool: str,
+        status: str,
+        data: Any,
+        note: str = "",
+        **_kwargs: Any,
     ) -> None:
         # `RunState.record` carries the note in `note` and the payload in
         # `data`; keeping whichever is populated lets one assertion read both.
-        self.results.append(
-            (subtask, tool, status, data if data is not None else note)
-        )
+        self.results.append((subtask, tool, status, data if data is not None else note))
 
     def skip(self, subtask: int, tool: str, reason: str) -> None:
         self.results.append((subtask, tool, "SKIP", reason))
@@ -255,9 +257,7 @@ def _happy_responses(
         return f"[hmcpctl owner:hmcpctl created:2026-09-02] [caller {token}]"
 
     def get_lpar(_kwargs: dict[str, Any], index: int) -> dict[str, Any] | None:
-        value = (
-            uuids[min(index, len(uuids) - 1)] if uuids is not None else uuid_value
-        )
+        value = uuids[min(index, len(uuids) - 1)] if uuids is not None else uuid_value
         return {"UUID": value} if value else None
 
     def create_lpar(kwargs: dict[str, Any], _index: int) -> Any:
@@ -360,7 +360,9 @@ def _admitted_readback(io_slots: str, lpar_name: str) -> str:
 
 #: The system's profiles when ST29 selects a slot, before any fixture exists:
 #: another partition's profile lists a slot, but not the one the inventory offers.
-_SELECTION_READBACK = 'lpar_name,name,io_slots\nvios-1,default_profile,"21030030/none/0"\n'
+_SELECTION_READBACK = (
+    'lpar_name,name,io_slots\nvios-1,default_profile,"21030030/none/0"\n'
+)
 
 
 def _rendering_profile_reads(
@@ -481,7 +483,9 @@ async def test_environment_outside_envelope_skips_arm(
     [
         pytest.param(_ADMITTED_VERSION, True, id="admitted"),
         pytest.param(
-            "Version: 10\nRelease: 3\nService Pack: 10600", False, id="service-pack-10600"
+            "Version: 10\nRelease: 3\nService Pack: 10600",
+            False,
+            id="service-pack-10600",
         ),
         pytest.param(
             "Version: 10\nRelease: 3\nService Pack: 1061\nMH01999 - HMC V10R3 M1060 iFix",
@@ -551,7 +555,10 @@ async def test_auto_selection_skips_a_slot_a_profile_lists(
     responses = _happy_responses(holder)
     responses["hmc_list_dedicated_pcie_slots"] = _two_slot_inventory
     state = await _run_arm(
-        monkeypatch, responses, holder, selection_readback=_selection_table(vios_io_slots)
+        monkeypatch,
+        responses,
+        holder,
+        selection_readback=_selection_table(vios_io_slots),
     )
     row = state.row("dedicated slot selection")
     assert row is not None and row[2] == "PASS"
@@ -567,7 +574,10 @@ async def test_unrelated_unparseable_profile_does_not_block_selection(
     holder: dict[str, str] = {}
     responses = _happy_responses(holder)
     state = await _run_arm(
-        monkeypatch, responses, holder, selection_readback=_selection_table("21030030//0")
+        monkeypatch,
+        responses,
+        holder,
+        selection_readback=_selection_table("21030030//0"),
     )
     row = state.row("dedicated slot selection")
     assert row is not None and row[2] == "PASS"
@@ -594,7 +604,9 @@ async def test_every_unowned_slot_listed_by_a_profile_skips_arm(
     ("statuses", "readback"),
     [
         pytest.param(
-            {"hmc_run_command": _command_fails("-r prof")}, _CONNECTION_LOST, id="failed"
+            {"hmc_run_command": _command_fails("-r prof")},
+            _CONNECTION_LOST,
+            id="failed",
         ),
         pytest.param(None, "not the admitted table\n", id="unadmitted"),
     ],
@@ -654,7 +666,9 @@ async def test_configured_drc_absent_from_inventory_skips(
         config={**_CONFIG, "dedicated_pcie_drc_index": "999"},
     )
     assert state.cleanup_start is None
-    assert any("drc_index" in str(r[3]).lower() for r in state.results if r[2] == "SKIP")
+    assert any(
+        "drc_index" in str(r[3]).lower() for r in state.results if r[2] == "SKIP"
+    )
 
 
 @pytest.mark.asyncio
@@ -672,7 +686,9 @@ async def test_refused_probe_create_is_a_fail_row_and_the_fixture_proceeds(
     # The readback answers HSCL8012 for the probe, so its absence is confirmed.
     assert state.row("create-time probe partition not confirmed absent") is None
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
-    assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
+    assert any(not _is_probe(k) for k in creates), (
+        "fixture create must have been called"
+    )
     assert not any(
         str(k.get("lpar_name_or_uuid", "")).endswith("-createtime")
         for t, k in state.calls
@@ -771,7 +787,9 @@ def _index_of(state: ScenarioState, predicate: Any) -> int:
     return next(i for i, (t, k) in enumerate(state.calls) if predicate(t, k))
 
 
-_LOOKUP_LOST = CallFailure("HMCCLIError", "HMCCLIError: connection lost", "", None, False)
+_LOOKUP_LOST = CallFailure(
+    "HMCCLIError", "HMCCLIError: connection lost", "", None, False
+)
 
 
 @pytest.mark.asyncio
@@ -794,7 +812,9 @@ async def test_probe_absence_that_cannot_be_confirmed_is_a_recovery_row(
     # Final cleanup never retries this probe, so the row must say so (#906).
     assert "will not retry cleanup" in str(check_row[3])
     creates = [k for t, k in state.calls if t == "hmc_create_lpar"]
-    assert any(not _is_probe(k) for k in creates), "fixture create must have been called"
+    assert any(not _is_probe(k) for k in creates), (
+        "fixture create must have been called"
+    )
 
 
 @pytest.mark.asyncio
@@ -813,12 +833,15 @@ async def test_create_time_assignment_is_verified_and_removed_before_the_fixture
     assert row is not None and row[2] == "PASS"
     probe_removal = _index_of(
         state,
-        lambda t, k: t == "hmc_run_command"
-        and "io_slots-" in k["cmd"]
-        and "-createtime" in k["cmd"],
+        lambda t, k: (
+            t == "hmc_run_command"
+            and "io_slots-" in k["cmd"]
+            and "-createtime" in k["cmd"]
+        ),
     )
     probe_delete = _index_of(
-        state, lambda t, k: t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "probe-uuid"
+        state,
+        lambda t, k: t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "probe-uuid",
     )
     fixture_create = _index_of(
         state, lambda t, k: t == "hmc_create_lpar" and not _is_probe(k)
@@ -942,7 +965,9 @@ def _emitted(state: ScenarioState) -> dict[str, tuple[str, str, str, str, list[s
         )
         for item in state.observations
     }
-    assert len(emitted) == len(state.observations), "a duplicate id discards the document"
+    assert len(emitted) == len(state.observations), (
+        "a duplicate id discards the document"
+    )
     return emitted
 
 
@@ -954,7 +979,9 @@ async def _run_dedicated_with_probe(
     _probe_create_succeeds(responses)
     if fixture_absent:
         _fixture_absent_after_delete(responses)
-    return await _run_arm(monkeypatch, responses, holder, statuses={"hmc_create_lpar": "PASS"})
+    return await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "PASS"}
+    )
 
 
 @pytest.mark.asyncio
@@ -966,23 +993,38 @@ async def test_dedicated_arm_emits_verified_observations(
     scenario = "st29-dedicated-pcie"
     assert _emitted(state) == {
         "st30-hmc-create-lpar": (
-            "lpar.create", scenario, "passed", "passed",
+            "lpar.create",
+            scenario,
+            "passed",
+            "passed",
             ["create-call-succeeded", "profile-lists-slot"],
         ),
         "st31-hmc-assign-dedicated-pcie-slot": (
-            "pcie.assign_dedicated_slot", scenario, "passed", "passed",
+            "pcie.assign_dedicated_slot",
+            scenario,
+            "passed",
+            "passed",
             ["assign-call-succeeded", "profile-lists-slot"],
         ),
         "st33-chsyscfg-io-slots-remove": (
-            "command.run", scenario, "passed", "not-required",
+            "command.run",
+            scenario,
+            "passed",
+            "not-required",
             ["profile-restored-to-baseline", "remove-command-succeeded"],
         ),
         "st33-chsyscfg-io-slots-add": (
-            "command.run", scenario, "passed", "passed",
+            "command.run",
+            scenario,
+            "passed",
+            "passed",
             ["add-command-succeeded", "profile-lists-slot"],
         ),
         "st34-hmc-delete-lpar": (
-            "lpar.delete", scenario, "passed", "not-required",
+            "lpar.delete",
+            scenario,
+            "passed",
+            "not-required",
             ["delete-call-succeeded", "lpar-name-absent"],
         ),
     }
@@ -1038,7 +1080,9 @@ async def test_happy_path_removes_slot_then_deletes_by_uuid(
     assert state.cleanup_calls()[order[-1]][0] == "hmc_delete_lpar"
 
     deletes = [k for t, k in state.calls if t == "hmc_delete_lpar"]
-    assert len(deletes) == 1, "the probe created nothing, so only the fixture is deleted"
+    assert len(deletes) == 1, (
+        "the probe created nothing, so only the fixture is deleted"
+    )
     assert deletes[0]["lpar_name_or_uuid"] == "fixture-uuid"
     assert "ownership_override" not in deletes[0]
 
@@ -1103,7 +1147,9 @@ async def test_no_uuid_resolved_blocks_arm_before_mutation(
 ) -> None:
     """ST30: no UUID means no hardware mutation and no stranded slot."""
     holder: dict[str, str] = {}
-    state = await _run_arm(monkeypatch, _happy_responses(holder, uuid_value=None), holder)
+    state = await _run_arm(
+        monkeypatch, _happy_responses(holder, uuid_value=None), holder
+    )
 
     # No io_slots mutations were issued
     assert not any("io_slots+" in cmd for cmd in state.commands())
@@ -1264,9 +1310,7 @@ async def test_cleanup_refuses_when_confirming_read_was_lost(
         monkeypatch,
         _happy_responses(holder),
         holder,
-        statuses={
-            "hmc_run_command": _nth_matching_command_fails(_PROFILE_READ, 3)
-        },
+        statuses={"hmc_run_command": _nth_matching_command_fails(_PROFILE_READ, 3)},
     )
 
     assert "hmc_delete_lpar" not in state.cleanup_tools()
@@ -1443,7 +1487,9 @@ async def test_a_fixture_abandoned_before_the_baseline_is_still_recorded(
     and name have to reach the document even though no baseline was captured.
     """
     holder: dict[str, str] = {}
-    state = await _run_arm(monkeypatch, _happy_responses(holder, uuid_value=None), holder)
+    state = await _run_arm(
+        monkeypatch, _happy_responses(holder, uuid_value=None), holder
+    )
 
     assert state.artifacts.pcie_run_marker == holder["marker"]
     assert state.artifacts.pcie_fixture_lpar == f"live-{holder['marker']}"
@@ -1543,7 +1589,9 @@ async def test_profile_read_selects_exactly_the_arms_row(
 ) -> None:
     """The value of the one `lpar_name`/`name` row, or unreadable."""
     state = ScenarioState({"hmc_run_command": output})
-    arm = pcie._DedicatedConfig("sys-one", "live-", pcie._DEFAULT_DEDICATED_PROFILE, _DRC)
+    arm = pcie._DedicatedConfig(
+        "sys-one", "live-", pcie._DEFAULT_DEDICATED_PROFILE, _DRC
+    )
     fixture = pcie._DedicatedFixture(arm, "x", "live-x", "live-x-createtime")
 
     assert await pcie._read_profile_io_slots(None, state, fixture) == expected
@@ -1604,7 +1652,9 @@ async def test_fixture_create_failure_with_no_partition_skips_without_cleanup(
     # Each failed create waits once, then re-reads once: absence takes two
     # HSCL8012 answers, and never a third lookup (#906).
     lookups = [
-        k["lpar_name_or_uuid"] for t, k in state.calls if t == "hmc_get_lpar_description"
+        k["lpar_name_or_uuid"]
+        for t, k in state.calls
+        if t == "hmc_get_lpar_description"
     ]
     assert len(lookups) == 4 and len(set(lookups)) == 2
     assert all(lookups.count(name) == 2 for name in lookups)
@@ -1753,7 +1803,9 @@ def _io_slots_world(
         if sign == "+":
             model["elements"].append(f"{drc}/none/{required}")
         else:
-            model["elements"] = [e for e in model["elements"] if not e.startswith(f"{drc}/")]
+            model["elements"] = [
+                e for e in model["elements"] if not e.startswith(f"{drc}/")
+            ]
 
     def run_command(kwargs: dict[str, Any], _index: int) -> str:
         cmd = kwargs["cmd"]
@@ -1812,20 +1864,35 @@ async def test_io_slots_scenario_emits_verified_observations(
     scenario = "st36-io-slots"
     assert emitted == {
         "st36-hmc-assign-dedicated-pcie-slot": (
-            "pcie.assign_dedicated_slot", scenario, "passed", "passed",
-            ["added-slot-renders-none-pool", "other-slots-stable-on-add",
-             "zero-suffix-add-accepted"],
+            "pcie.assign_dedicated_slot",
+            scenario,
+            "passed",
+            "passed",
+            [
+                "added-slot-renders-none-pool",
+                "other-slots-stable-on-add",
+                "zero-suffix-add-accepted",
+            ],
         ),
         "st36-hmc-unassign-dedicated-pcie-slot": (
-            "pcie.unassign_dedicated_slot", scenario, "passed", "not-required",
+            "pcie.unassign_dedicated_slot",
+            scenario,
+            "passed",
+            "not-required",
             ["other-slots-stable-on-remove", "zero-suffix-remove-accepted"],
         ),
         "st36-chsyscfg-io-slots-remove-required": (
-            "command.run", scenario, "passed", "not-required",
+            "command.run",
+            scenario,
+            "passed",
+            "not-required",
             ["remaining-slot-stable", "required-slot-removed-by-zero-suffix"],
         ),
         "st36-chsyscfg-io-slots-remove-last": (
-            "command.run", scenario, "passed", "not-required",
+            "command.run",
+            scenario,
+            "passed",
+            "not-required",
             ["empty-profile-reads-none", "remove-command-succeeded"],
         ),
     }
@@ -1902,7 +1969,9 @@ async def test_io_slots_scenario_skips_without_two_selectable_spares(
     slots = (_DRC, _SLOT_B, _SLOT_C)[:inventory]
     responses["hmc_list_dedicated_pcie_slots"] = lambda _k, _n: {
         "capability": "available",
-        "items": [{"drc_index": d, "description": "x", "owner_lpar": ""} for d in slots],
+        "items": [
+            {"drc_index": d, "description": "x", "owner_lpar": ""} for d in slots
+        ],
     }
     state = await _run_arm(monkeypatch, responses, holder, config=config)
 

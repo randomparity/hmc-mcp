@@ -16,16 +16,25 @@ from hmcpctl.operations.virtualization.pcie import (
     require_dedicated_pcie_environment,
 )
 
-_CAPTURE = Path(__file__).parents[1] / "fixtures" / "pcie" / "power9-v10r3m1060-live-ioslots.json"
+_CAPTURE = (
+    Path(__file__).parents[1]
+    / "fixtures"
+    / "pcie"
+    / "power9-v10r3m1060-live-ioslots.json"
+)
 _MODEL = "8375-42A"
 _LATER_SERVICE_PACK = (
     "version= Version: 10\n Release: 3\n Service Pack: 1070\n"
     "HMC Build level 2503010000\nMF71689 - HMC V10R3 M1060\nMF72001 - HMC V10R3 M1070\n"
 )
 _GATES = [
-    pytest.param(require_admitted_environment, SriovLogicalPortCapabilityError, id="sriov"),
     pytest.param(
-        require_dedicated_pcie_environment, PcieAssignmentUnavailableError, id="dedicated"
+        require_admitted_environment, SriovLogicalPortCapabilityError, id="sriov"
+    ),
+    pytest.param(
+        require_dedicated_pcie_environment,
+        PcieAssignmentUnavailableError,
+        id="dedicated",
     ),
 ]
 
@@ -57,7 +66,9 @@ async def test_the_captured_v10r3_m1060_output_is_admitted(gate, error) -> None:
     [
         pytest.param(_LATER_SERVICE_PACK, id="later-sp-listing-an-m1060-fix"),
         pytest.param("Version: 10\nRelease: 3\nService Pack: 10600\n", id="sp-10600"),
-        pytest.param("Version: 100\nRelease: 3\nService Pack: 1060\n", id="version-100"),
+        pytest.param(
+            "Version: 100\nRelease: 3\nService Pack: 1060\n", id="version-100"
+        ),
         pytest.param("Version: 10\nRelease: 30\nService Pack: 1060\n", id="release-30"),
         pytest.param("V10R3 M1060 build 2408210051\n", id="release-string-only"),
         pytest.param(
@@ -66,7 +77,9 @@ async def test_the_captured_v10r3_m1060_output_is_admitted(gate, error) -> None:
         ),
     ],
 )
-async def test_anything_but_the_exact_fields_is_refused(gate, error, version: str) -> None:
+async def test_anything_but_the_exact_fields_is_refused(
+    gate, error, version: str
+) -> None:
     with pytest.raises(error, match="V10R3 M1060"):
         await _run(gate, version)
 

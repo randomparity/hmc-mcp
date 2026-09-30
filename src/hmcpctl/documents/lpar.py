@@ -182,7 +182,9 @@ def _shared_processor_body(resources: LparResources) -> list[str]:
         ("MinimumVirtualProcessors", resources.min_vcpus),
     ):
         if value is not None:
-            parts.append(f'      <{name} kb="CUD" kxe="false">{_render_units(value)}</{name}>')
+            parts.append(
+                f'      <{name} kb="CUD" kxe="false">{_render_units(value)}</{name}>'
+            )
     if resources.uncapped is False:
         parts.append('      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>')
     parts.append("    </SharedProcessorConfiguration>")
@@ -364,7 +366,11 @@ def _dedicated_updates(resources: LparResources) -> dict[str, str]:
                 "a whole number. Nothing was written."
             )
     config = f"{_PPC}/DedicatedProcessorConfiguration"
-    return {f"{config}/{name}": str(int(value)) for name, value in fields if value is not None}
+    return {
+        f"{config}/{name}": str(int(value))
+        for name, value in fields
+        if value is not None
+    }
 
 
 def _shared_updates(resources: LparResources) -> dict[str, str]:
@@ -379,7 +385,9 @@ def _shared_updates(resources: LparResources) -> dict[str, str]:
         ("MaximumVirtualProcessors", resources.max_vcpus),
         ("MinimumVirtualProcessors", resources.min_vcpus),
     )
-    updates = {f"{config}/{name}": _render_units(v) for name, v in units if v is not None}
+    updates = {
+        f"{config}/{name}": _render_units(v) for name, v in units if v is not None
+    }
     updates |= {f"{config}/{name}": str(v) for name, v in vcpus if v is not None}
     return updates
 

@@ -49,7 +49,9 @@ def storage_list_vgs(
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
 
-    vgs = with_client(lambda hmc: list_volume_groups(hmc, vios, system_name_or_uuid=system))
+    vgs = with_client(
+        lambda hmc: list_volume_groups(hmc, vios, system_name_or_uuid=system)
+    )
 
     table = None
     if not as_json:
@@ -88,7 +90,9 @@ def storage_create_vg(
         raise typer.Abort()
 
     vg = with_client(
-        lambda hmc: create_volume_group(hmc, vios, name, pv_list, system_name_or_uuid=system)
+        lambda hmc: create_volume_group(
+            hmc, vios, name, pv_list, system_name_or_uuid=system
+        )
     )
 
     console.print(f"[green]Created Volume Group '{name}'[/green]")
@@ -284,7 +288,9 @@ def storage_create_media_repo(
         raise typer.Abort()
 
     result = with_client(
-        lambda hmc: create_media_repository(hmc, vios, vg, size_mib, system_name_or_uuid=system)
+        lambda hmc: create_media_repository(
+            hmc, vios, vg, size_mib, system_name_or_uuid=system
+        )
     )
 
     console.print(f"[green]Created media repository on {vg}[/green]")
@@ -337,7 +343,9 @@ def storage_delete_media_repo(
     ):
         raise typer.Abort()
 
-    with_client(lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system))
+    with_client(
+        lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system)
+    )
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 
 
@@ -478,7 +486,9 @@ def storage_unmount_optical_media(
         "--ownership-override",
         help="Bypass LPAR ownership protection after operator approval",
     ),
-    confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
+    confirm: bool = typer.Option(
+        False, "--confirm", "-y", help="Skip confirmation prompt"
+    ),
 ) -> None:
     """Unmount an ISO mapping while preserving the backing ISO."""
     if not confirm and not typer.confirm(
@@ -542,7 +552,8 @@ def storage_list_mappings(
 def storage_detach_mapping(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     mapping_id: str = typer.Argument(
-        ..., help="Exact mapping ID (e.g. vhost0/vtscsi0) shown by storage list-mappings"
+        ...,
+        help="Exact mapping ID (e.g. vhost0/vtscsi0) shown by storage list-mappings",
     ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"

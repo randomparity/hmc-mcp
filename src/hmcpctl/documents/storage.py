@@ -148,7 +148,9 @@ def build_virtual_optical_mapping_document(
           <Metadata><Atom/></Metadata>
           <MediaName kb="CUR" kxe="false">{media_name}</MediaName>
         </VirtualOpticalMedia>"""
-    target = _target_device(_TARGET_DEVICE_ELEMENTS["VirtualOpticalMedia"], target_device)
+    target = _target_device(
+        _TARGET_DEVICE_ELEMENTS["VirtualOpticalMedia"], target_device
+    )
     return _mapping_document(storage, target, lpar_link)
 
 

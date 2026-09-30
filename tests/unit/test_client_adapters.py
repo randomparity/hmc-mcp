@@ -106,7 +106,9 @@ async def test_list_and_delete_adapter_reject_unknown_adapter_types():
     with pytest.raises(ValueError, match="Invalid adapter_type"):
         await AdaptersMixin.list_adapters(client, "lpar-1", "UnknownAdapter")
     with pytest.raises(ValueError, match="Invalid adapter_type"):
-        await AdaptersMixin.delete_adapter(client, "lpar-1", "UnknownAdapter", "adapter-1")
+        await AdaptersMixin.delete_adapter(
+            client, "lpar-1", "UnknownAdapter", "adapter-1"
+        )
 
     client.list_child.assert_not_awaited()
     client.delete_child.assert_not_awaited()

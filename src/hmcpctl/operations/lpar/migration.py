@@ -84,7 +84,9 @@ class LpmAffinityPreflightRequest:
         metadata={"description": "Bounded limitations on the affinity evidence."}
     )
     response: LpmResponse = field(
-        metadata={"description": "Explicit response to adverse or unavailable evidence."}
+        metadata={
+            "description": "Explicit response to adverse or unavailable evidence."
+        }
     )
     preflight_timeout_seconds: float = field(
         default=5.0,
@@ -335,9 +337,7 @@ async def validate_lpar_migration(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    target_system = await resolve_system_name(
-        hmc, migration.target_system_name_or_uuid
-    )
+    target_system = await resolve_system_name(hmc, migration.target_system_name_or_uuid)
     job = await _submit_migration_job(
         hmc,
         lpar_uuid,
@@ -375,9 +375,7 @@ async def migrate_lpar(
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    target_system = await resolve_system_name(
-        hmc, migration.target_system_name_or_uuid
-    )
+    target_system = await resolve_system_name(hmc, migration.target_system_name_or_uuid)
     if validate_first:
         validation_job = await _submit_migration_job(
             hmc,

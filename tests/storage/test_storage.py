@@ -45,7 +45,9 @@ def test_virtual_disk_element_rejects_16_character_name() -> None:
 
 def test_vscsi_mapping_virtual_disk():
     xml = build_vscsi_mapping_document(
-        "VirtualDisk", "lv_boot", "https://hmc:12443/rest/api/uom/LogicalPartition/lpar-uuid"
+        "VirtualDisk",
+        "lv_boot",
+        "https://hmc:12443/rest/api/uom/LogicalPartition/lpar-uuid",
     )
     assert "VirtualSCSIMapping" in xml
     assert "<VirtualDisk" in xml
@@ -57,7 +59,9 @@ def test_vscsi_mapping_virtual_disk():
 
 def test_vscsi_mapping_physical_volume():
     xml = build_vscsi_mapping_document(
-        "PhysicalVolume", "hdisk5", "https://hmc/rest/api/uom/LogicalPartition/lpar-1",
+        "PhysicalVolume",
+        "hdisk5",
+        "https://hmc/rest/api/uom/LogicalPartition/lpar-1",
         target_device="vtscsi0",
     )
     assert "<PhysicalVolume" in xml

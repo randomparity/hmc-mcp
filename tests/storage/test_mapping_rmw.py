@@ -74,7 +74,9 @@ def _ok(body: str = vios_entry()) -> httpx.Response:
 
 
 async def _map(hmc: HMCClient) -> None:
-    await hmc.map_storage_to_lpar(VIOS_UUID, "VirtualDisk", "vd-R2", LPAR_UUID, "vtscsi9")
+    await hmc.map_storage_to_lpar(
+        VIOS_UUID, "VirtualDisk", "vd-R2", LPAR_UUID, "vtscsi9"
+    )
 
 
 async def _mount(hmc: HMCClient) -> None:
@@ -87,7 +89,9 @@ EXISTING_MAPPING_LPAR = "00000000-0000-4000-8000-0000000000AA"
 
 
 async def _detach(hmc: HMCClient) -> None:
-    await hmc.delete_storage_mapping(VIOS_UUID, EXISTING_MAPPING_ID, EXISTING_MAPPING_LPAR)
+    await hmc.delete_storage_mapping(
+        VIOS_UUID, EXISTING_MAPPING_ID, EXISTING_MAPPING_LPAR
+    )
 
 
 _parametrize_create = pytest.mark.parametrize(
@@ -181,7 +185,9 @@ async def test_create_fails_closed_without_associated_managed_system(mock_hmc, c
 
 @pytest.mark.asyncio
 @_parametrize_create
-async def test_create_fails_closed_with_malformed_associated_managed_system(mock_hmc, create):
+async def test_create_fails_closed_with_malformed_associated_managed_system(
+    mock_hmc, create
+):
     """A present but non-UUID AssociatedManagedSystem segment fails closed too."""
     _, post = _routes(mock_hmc, _ok(body=vios_entry(system_uuid="not-a-uuid")))
 
@@ -213,9 +219,7 @@ async def test_detach_unaffected_without_associated_managed_system(mock_hmc):
             "no VirtualSCSIMappings",
         ),
         (
-            httpx.Response(
-                200, text=vios_entry(uuid=LPAR_UUID), headers={"ETag": "e"}
-            ),
+            httpx.Response(200, text=vios_entry(uuid=LPAR_UUID), headers={"ETag": "e"}),
             "does not match",
         ),
     ],

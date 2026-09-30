@@ -81,6 +81,7 @@ ACTION_PINS = {
 # from both, and which gates must exist is a judgement no file states (ADR 0098 §1b).
 STATIC_GATES = {
     "lint",
+    "format-check",
     "typecheck",
     "secrets",
     "workflow-security",
@@ -95,9 +96,7 @@ STATIC_GATES = {
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [
     ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
-] + [
-    ("arm64", "ubuntu-24.04-arm", version) for version in SUPPORTED_PYTHONS
-]
+] + [("arm64", "ubuntu-24.04-arm", version) for version in SUPPORTED_PYTHONS]
 QEMU_IMAGE = (
     "docker.io/tonistiigi/binfmt@"
     "sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
@@ -157,6 +156,8 @@ def _inactive_ppc64le_job(workflow: str) -> tuple[str, str]:
     )
     active_workflow = workflow[: template.start()] + workflow[template.end() :]
     return active_workflow, body
+
+
 SCORECARD_ACTION_PINS = {
     "actions/checkout": (
         "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
@@ -218,52 +219,44 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     # literal copy of it would only pin how the line happens to wrap today.
     assert (
         "\nadr-numbering:\n"
-        "    uv run --no-sync python scripts/check_adr_numbering.py\n"
-        in justfile
+        "    uv run --no-sync python scripts/check_adr_numbering.py\n" in justfile
     )
     assert (
         "\nverification-report *ARGS:\n"
         "    uv run --no-sync python scripts/check_capability_inventory.py"
-        " --verification-report {{ARGS}}\n"
-        in justfile
+        " --verification-report {{ARGS}}\n" in justfile
     )
     assert (
         "\ndoc-freshness:\n"
-        "    uv run --no-sync python scripts/check_generated_docs.py\n"
-        in justfile
+        "    uv run --no-sync python scripts/check_generated_docs.py\n" in justfile
     )
     assert (
         "\ntool-docs:\n"
-        "    uv run --no-sync python scripts/gen_tool_reference.py\n"
-        in justfile
+        "    uv run --no-sync python scripts/gen_tool_reference.py\n" in justfile
     )
     assert (
         "\ntool-docs-check:\n"
         "    uv run --no-sync python scripts/gen_tool_reference.py --check\n"
         in justfile
     )
-    assert "\nbuild:\n    uv build --clear --wheel --sdist --out-dir dist .\n" in justfile
+    assert (
+        "\nbuild:\n    uv build --clear --wheel --sdist --out-dir dist .\n" in justfile
+    )
     assert (
         "\nverify-artifacts:\n"
         "    uv run --no-sync python tests/validate_release_artifacts.py dist .\n"
         in justfile
     )
     assert "\nverify: static test smoke build verify-artifacts\n" in justfile
-    assert (
-        "\ntest:\n"
-        "    uv run --no-sync python scripts/run_tests.py\n"
-        in justfile
-    )
+    assert "\ntest:\n    uv run --no-sync python scripts/run_tests.py\n" in justfile
     assert (
         "\ntest-verbose:\n"
-        "    uv run --no-sync pytest -q --cov-report=term-missing\n"
-        in justfile
+        "    uv run --no-sync pytest -q --cov-report=term-missing\n" in justfile
     )
     assert "\nsmoke:\n    uv run --no-sync python scripts/smoke_mcp.py\n" in justfile
     assert (
         "\nsmoke-verbose:\n"
-        "    uv run --no-sync python scripts/smoke_mcp.py --verbose\n"
-        in justfile
+        "    uv run --no-sync python scripts/smoke_mcp.py --verbose\n" in justfile
     )
     assert "--baseline .secrets.baseline --no-verify --" in justfile
     assert "uv run --no-sync hmcpctl --help >/dev/null" in justfile
@@ -284,8 +277,7 @@ def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> Non
     assert (
         "setup:\n"
         "    uv sync --locked --extra app --link-mode copy\n"
-        "    uv run --no-sync prek install\n"
-        in justfile
+        "    uv run --no-sync prek install\n" in justfile
     )
     run_lines = [line.strip() for line in justfile.splitlines() if "uv run" in line]
     assert run_lines
@@ -375,7 +367,9 @@ def test_secret_baseline_is_an_exact_reviewed_allowlist() -> None:
         baseline = json.load(file)
 
     results = baseline["results"]
-    assert {path: len(findings) for path, findings in results.items()} == BASELINED_FINDINGS
+    assert {
+        path: len(findings) for path, findings in results.items()
+    } == BASELINED_FINDINGS
     excluded_paths = baseline.get("exclude", {})
     assert not any(
         path == "tests" or path.startswith("tests/") for path in excluded_paths
@@ -446,7 +440,10 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     verification = workflow.index("run: just verify")
     upload = workflow.index("uses: actions/upload-artifact@")
     assert verification < upload
-    assert "name: release-wheel-${{ matrix.architecture }}-py${{ matrix.python-version }}" in workflow
+    assert (
+        "name: release-wheel-${{ matrix.architecture }}-py${{ matrix.python-version }}"
+        in workflow
+    )
     assert "path: dist/*.whl" in workflow
     assert "if-no-files-found: error" in workflow
     assert "retention-days: 7" in workflow
@@ -647,7 +644,10 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
 def test_library_guide_separates_core_and_domain_imports() -> None:
     readme = (ROOT / "docs/python-api.md").read_text()
     assert "from hmcpctl.api import HMCClient, HMCConfig" in readme
-    assert "from hmcpctl.operations.inventory.capacity import fetch_capacity_report" in readme
+    assert (
+        "from hmcpctl.operations.inventory.capacity import fetch_capacity_report"
+        in readme
+    )
     assert "await fetch_capacity_report(hmc)" in readme
     assert " hmc_capacity_report" not in readme
 
@@ -749,7 +749,7 @@ def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
     assert "GOOGLE_" not in body
     assert "AZURE_" not in body
     assert body.count("--platform linux/ppc64le") == 2
-    assert "--mount type=bind,source=\"$GITHUB_WORKSPACE\",target=/workspace" in body
+    assert '--mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace' in body
     assert "-e " not in body
     assert "/var/run/docker.sock" not in body
 
@@ -785,7 +785,9 @@ def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
     assert add_pattern.search(dockerfile)
     assert bootstrap_chain in dockerfile
     assert toolchain_install in dockerfile
-    assert not add_pattern.search(dockerfile.replace("--checksum=sha256:", "# checksum="))
+    assert not add_pattern.search(
+        dockerfile.replace("--checksum=sha256:", "# checksum=")
+    )
     assert bootstrap_chain not in dockerfile.replace(
         "/etc/ssl/certs/ca-certificates.crt", "/tmp/ca-certificates.crt"
     )
@@ -800,7 +802,7 @@ def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
     expected_cmd = (
         'CMD ["bash", "-euo", "pipefail", "-c", \\\n'
         r'    "architecture=$(uname -m) && echo \"runtime architecture: ${architecture}\" '
-        r'&& test \"${architecture}\" = \"ppc64le\" '
+        r"&& test \"${architecture}\" = \"ppc64le\" "
         "&& git config --global --add safe.directory /workspace "
         "&& uv sync --locked --no-install-package prek "
         '&& UV_NO_SYNC=1 just verify"]\n'
@@ -846,10 +848,14 @@ def _development_stack(readme: str) -> str:
     """
     for heading in (DEVELOPMENT_STACK_HEADING, DEVELOPMENT_STACK_NEXT):
         assert heading in readme, f"development guide has no '{heading}' heading"
-    assert readme.index(DEVELOPMENT_STACK_HEADING) < readme.index(DEVELOPMENT_STACK_NEXT), (
+    assert readme.index(DEVELOPMENT_STACK_HEADING) < readme.index(
+        DEVELOPMENT_STACK_NEXT
+    ), (
         f"development guide must keep '{DEVELOPMENT_STACK_HEADING}' before '{DEVELOPMENT_STACK_NEXT}'"
     )
-    return readme.split(DEVELOPMENT_STACK_HEADING, 1)[1].split(DEVELOPMENT_STACK_NEXT, 1)[0]
+    return readme.split(DEVELOPMENT_STACK_HEADING, 1)[1].split(
+        DEVELOPMENT_STACK_NEXT, 1
+    )[0]
 
 
 def test_python_policy_metadata_is_aligned() -> None:
@@ -892,9 +898,7 @@ def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
     )
     assert job_permissions
     assert job_permissions["body"] == (
-        "      contents: read\n"
-        "      security-events: write\n"
-        "      id-token: write\n"
+        "      contents: read\n      security-events: write\n      id-token: write\n"
     )
     assert "runs-on: ubuntu-24.04" in workflow
     assert "timeout-minutes: 10" in workflow
@@ -1215,7 +1219,9 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
                 )
         for number, line in enumerate(text.splitlines(), start=1):
             if "--no-cov" in line:
-                assert "tests" in line, f"{name}:{number}: --no-cov on a package-wide run"
+                assert "tests" in line, (
+                    f"{name}:{number}: --no-cov on a package-wide run"
+                )
 
 
 def test_pyproject_is_the_coverage_configuration_source() -> None:
@@ -1262,7 +1268,9 @@ def test_pyproject_is_the_coverage_configuration_source() -> None:
             assert "[coverage:" not in candidate.read_text(), name
 
 
-def test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor(tmp_path: Path) -> None:
+def test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor(
+    tmp_path: Path,
+) -> None:
     """A total just under the floor must fail, not round up into passing.
 
     Built from the configured floor rather than fixed constants: with 1000
@@ -1314,14 +1322,15 @@ def test_verification_report_job_warns_on_pull_requests_and_fails_on_schedule() 
     untested is the one thing this test exists to prevent (charter amendment 3).
     """
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    job = re.search(
-        r"\n  verification-report:\n(?P<body>(?:(?:    .*)?\n)+)", workflow
-    )
+    job = re.search(r"\n  verification-report:\n(?P<body>(?:(?:    .*)?\n)+)", workflow)
 
     assert job
     body = job["body"]
     assert "timeout-minutes: 5" in body
-    assert "if: github.event_name != 'schedule'\n        run: just verification-report\n" in body
+    assert (
+        "if: github.event_name != 'schedule'\n        run: just verification-report\n"
+        in body
+    )
     assert (
         "if: github.event_name == 'schedule'\n"
         "        run: just verification-report --fail-on-stale\n" in body

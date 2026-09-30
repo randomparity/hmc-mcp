@@ -59,13 +59,18 @@ def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
     # A live VIOS document carries no <UUID> child; its identity is
     # Metadata/Atom/AtomID, with PartitionUUID alongside carrying the same value (#979).
     # Fixtures that invent a <UUID> element describe no observed HMC response.
-    atom_ids = vios_elem.findall(f"{{{_UOM_NS}}}Metadata/{{{_UOM_NS}}}Atom/{{{_UOM_NS}}}AtomID")
+    atom_ids = vios_elem.findall(
+        f"{{{_UOM_NS}}}Metadata/{{{_UOM_NS}}}Atom/{{{_UOM_NS}}}AtomID"
+    )
     partition_uuids = vios_elem.findall(f"{{{_UOM_NS}}}PartitionUUID")
     mismatched = (
         len(atom_ids) != 1
         or (atom_ids[0].text or "").strip() != vios_uuid
         or len(partition_uuids) > 1
-        or (len(partition_uuids) == 1 and (partition_uuids[0].text or "").strip() != vios_uuid)
+        or (
+            len(partition_uuids) == 1
+            and (partition_uuids[0].text or "").strip() != vios_uuid
+        )
     )
     if mismatched:
         raise HMCError(
@@ -365,17 +370,25 @@ class StorageMixin:
             content=build_web_file_document(
                 filename=filename, size_bytes=size_bytes, vios_uuid=vios_uuid
             ),
-            headers=self._web_headers({"Content-Type": _WEB_FILE_TYPE, "Accept": "*/*"}),
+            headers=self._web_headers(
+                {"Content-Type": _WEB_FILE_TYPE, "Accept": "*/*"}
+            ),
         )
         if response.status_code not in (200, 201):
             raise HMCError(
-                f"Web File create failed for {filename}", response.status_code, response.text
+                f"Web File create failed for {filename}",
+                response.status_code,
+                response.text,
             )
         try:
-            identities = DET.fromstring(response.text).findall(f".//{{{WEB_NS}}}FileUUID")
+            identities = DET.fromstring(response.text).findall(
+                f".//{{{WEB_NS}}}FileUUID"
+            )
         except (ET.ParseError, DefusedXmlException) as exc:
             raise HMCError(
-                "Web File create response is not XML", response.status_code, response.text
+                "Web File create response is not XML",
+                response.status_code,
+                response.text,
             ) from exc
         file_uuid = (identities[0].text or "").strip() if len(identities) == 1 else ""
         if not _UUID_PATTERN.match(file_uuid):
@@ -424,7 +437,9 @@ class StorageMixin:
             ) from exc
         if response.status_code not in (200, 201, 202, 204):
             raise HMCError(
-                f"Web File upload failed for {file_uuid}", response.status_code, response.text
+                f"Web File upload failed for {file_uuid}",
+                response.status_code,
+                response.text,
             )
 
     async def _web_file_delete(self: StorageClient, file_uuid: str) -> None:
@@ -437,7 +452,9 @@ class StorageMixin:
         )
         if response.status_code not in (200, 202, 204, 404):
             raise HMCError(
-                f"Web File delete failed for {file_uuid}", response.status_code, response.text
+                f"Web File delete failed for {file_uuid}",
+                response.status_code,
+                response.text,
             )
 
     # Virtual storage (children of VirtualIOServer)
@@ -803,6 +820,7 @@ class StorageMixin:
         if etag:
             headers["If-Match"] = etag
         body = ET.tostring(vg_elem, encoding="unicode", xml_declaration=False)
+
         async def dispatch() -> Any:
             resp = await self._request_with_uuid_path_arguments(
                 "POST",

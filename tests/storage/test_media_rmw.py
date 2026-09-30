@@ -67,11 +67,17 @@ OPERATIONS = [
 IDS = [name for name, _, _ in OPERATIONS]
 
 
-def _routes(mock_hmc, repository: str | None, *, etag: str | None = ETAG, post_status=200):
+def _routes(
+    mock_hmc, repository: str | None, *, etag: str | None = ETAG, post_status=200
+):
     feed = _feed(repository or "")
     headers = {"ETag": etag} if etag else {}
-    mock_hmc.get(VG_PATH).mock(return_value=httpx.Response(200, text=feed, headers=headers))
-    return mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(post_status, text=feed))
+    mock_hmc.get(VG_PATH).mock(
+        return_value=httpx.Response(200, text=feed, headers=headers)
+    )
+    return mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(post_status, text=feed)
+    )
 
 
 async def _run(operation: str, arguments: tuple):
@@ -105,7 +111,9 @@ async def test_media_write_refuses_without_etag(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("operation", "arguments", "repository"), OPERATIONS, ids=IDS)
-async def test_media_write_reports_stale_etag(mock_hmc, operation, arguments, repository):
+async def test_media_write_reports_stale_etag(
+    mock_hmc, operation, arguments, repository
+):
     route = _routes(mock_hmc, repository, post_status=412)
 
     with pytest.raises(HMCError, match="changed since it was read") as exc_info:

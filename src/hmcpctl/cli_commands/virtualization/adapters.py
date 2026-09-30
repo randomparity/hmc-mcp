@@ -61,9 +61,17 @@ def adapters_add_network(
         raise typer.Abort()
 
     result = with_client(
-        lambda hmc: add_network_adapter(hmc, system, lpar, vlan, slot_number=slot,
-            virtual_switch_id=virtual_switch_id, tagged=tagged, mac_address=mac,
-            ownership_override=ownership_override)
+        lambda hmc: add_network_adapter(
+            hmc,
+            system,
+            lpar,
+            vlan,
+            slot_number=slot,
+            virtual_switch_id=virtual_switch_id,
+            tagged=tagged,
+            mac_address=mac,
+            ownership_override=ownership_override,
+        )
     )
     _adapter_mutation(result, lpar, "network")
 
@@ -88,9 +96,17 @@ def adapters_add_vscsi(
     ):
         raise typer.Abort()
 
-    result = with_client(lambda hmc: add_vscsi_adapter(
-        hmc, system, lpar, vios_id, vios_slot, slot_number=slot,
-        ownership_override=ownership_override))
+    result = with_client(
+        lambda hmc: add_vscsi_adapter(
+            hmc,
+            system,
+            lpar,
+            vios_id,
+            vios_slot,
+            slot_number=slot,
+            ownership_override=ownership_override,
+        )
+    )
     _adapter_mutation(result, lpar, "vSCSI")
 
 
@@ -114,9 +130,17 @@ def adapters_add_vfc(
     ):
         raise typer.Abort()
 
-    result = with_client(lambda hmc: add_vfc_adapter(
-        hmc, system, lpar, vios_id, vios_slot, slot_number=slot,
-        ownership_override=ownership_override))
+    result = with_client(
+        lambda hmc: add_vfc_adapter(
+            hmc,
+            system,
+            lpar,
+            vios_id,
+            vios_slot,
+            slot_number=slot,
+            ownership_override=ownership_override,
+        )
+    )
     _adapter_mutation(result, lpar, "vFC")
 
 
@@ -139,9 +163,16 @@ def adapters_delete(
     ):
         raise typer.Abort()
 
-    location = with_client(lambda hmc: delete_adapter(
-        hmc, system, lpar, adapter_type, adapter_uuid,
-        ownership_override=ownership_override))
+    location = with_client(
+        lambda hmc: delete_adapter(
+            hmc,
+            system,
+            lpar,
+            adapter_type,
+            adapter_uuid,
+            ownership_override=ownership_override,
+        )
+    )
 
     console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {lpar}")
     console.print(location.summary())

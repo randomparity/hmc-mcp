@@ -61,9 +61,7 @@ async def _discover_console(client: Client, state: RunState) -> None:
         "hmc_get_console_info",
         operation="console.info",
         scenario="st1-console-identity",
-        assertions=[
-            Assertion("console-uuid-present", bool(console_uuid))
-        ],
+        assertions=[Assertion("console-uuid-present", bool(console_uuid))],
         cleanup="not-required",
         data=data,
     )
@@ -217,7 +215,9 @@ async def _probe_capacity_and_resources(client: Client, state: RunState) -> None
     )
 
     st, data = await state.call(
-        client, "hmc_find_placement", desired_memory_mib=config.placement_memory_mib,
+        client,
+        "hmc_find_placement",
+        desired_memory_mib=config.placement_memory_mib,
         expected=[_FIRMWARE_PLACEMENT_500],
     )
     # find_placement also uses list_systems; firmware 500 applies here too.
@@ -257,7 +257,10 @@ async def _sample_recent_job(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
 
     st, data = await state.call(
-        client, "hmc_list_recent_jobs", limit=10, expected=[_GLOBAL_JOB_LISTING_UNSUPPORTED]
+        client,
+        "hmc_list_recent_jobs",
+        limit=10,
+        expected=[_GLOBAL_JOB_LISTING_UNSUPPORTED],
     )
     job_uuid = None
     if st == "PASS":
@@ -286,9 +289,13 @@ async def _record_inventory_summaries(client: Client, state: RunState) -> None:
         client, "hmc_system_summary", system_name_or_uuid=config.system_name
     )
     # SystemSummary is a dataclass, not a dict; a non-None uuid confirms a real record.
-    has_summary = st == "PASS" and data is not None and (
-        (isinstance(data, dict) and (data.get("uuid") or data.get("UUID")))
-        or getattr(data, "uuid", None) is not None
+    has_summary = (
+        st == "PASS"
+        and data is not None
+        and (
+            (isinstance(data, dict) and (data.get("uuid") or data.get("UUID")))
+            or getattr(data, "uuid", None) is not None
+        )
     )
     state.record_verified(
         1,
@@ -306,9 +313,13 @@ async def _record_inventory_summaries(client: Client, state: RunState) -> None:
         client, "hmc_lpar_summary", lpar_name_or_uuid=config.lp3_name
     )
     # LparSummary is a dataclass, not a dict; a non-None uuid confirms a real record.
-    has_lpar_summary = st == "PASS" and data is not None and (
-        (isinstance(data, dict) and (data.get("uuid") or data.get("UUID")))
-        or getattr(data, "uuid", None) is not None
+    has_lpar_summary = (
+        st == "PASS"
+        and data is not None
+        and (
+            (isinstance(data, dict) and (data.get("uuid") or data.get("UUID")))
+            or getattr(data, "uuid", None) is not None
+        )
     )
     state.record_verified(
         1,

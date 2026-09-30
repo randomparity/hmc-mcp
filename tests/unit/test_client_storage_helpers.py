@@ -12,27 +12,42 @@ def test_extract_optical_media_accepts_documented_and_legacy_shapes():
             "Resource": {
                 "MediaRepositories": {
                     "VirtualMediaRepository": {
-                        "OpticalMedia": {"VirtualOpticalMedia": [{"MediaName": "a.iso"}]}
+                        "OpticalMedia": {
+                            "VirtualOpticalMedia": [{"MediaName": "a.iso"}]
+                        }
                     }
                 }
             }
         },
-        {"Resource": {"VirtualMediaRepository": {"VirtualOpticalMedia": {"MediaName": "b.iso"}}}},
+        {
+            "Resource": {
+                "VirtualMediaRepository": {
+                    "VirtualOpticalMedia": {"MediaName": "b.iso"}
+                }
+            }
+        },
     ]
 
-    assert _extract_optical_media(entries) == [{"MediaName": "a.iso"}, {"MediaName": "b.iso"}]
+    assert _extract_optical_media(entries) == [
+        {"MediaName": "a.iso"},
+        {"MediaName": "b.iso"},
+    ]
 
 
 def test_filter_optical_mappings_keeps_only_requested_lpar():
     mappings = [
         {
             "Storage": {"VirtualOpticalMedia": {}},
-            "AssociatedLogicalPartition": {"href": "/rest/api/uom/LogicalPartition/lpar-1"},
+            "AssociatedLogicalPartition": {
+                "href": "/rest/api/uom/LogicalPartition/lpar-1"
+            },
         },
         {"Storage": {"VirtualDisk": {}}},
         {
             "Storage": {"VirtualOpticalMedia": {}},
-            "AssociatedLogicalPartition": {"href": "/rest/api/uom/LogicalPartition/lpar-2"},
+            "AssociatedLogicalPartition": {
+                "href": "/rest/api/uom/LogicalPartition/lpar-2"
+            },
         },
     ]
 

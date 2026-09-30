@@ -152,19 +152,25 @@ class HMCConfig(BaseSettings):
     port: int = Field(default=443, description="HMC REST API port")
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
-    ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
+    ssh_key_file: str | None = Field(
+        default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)"
+    )
     ssh_verify_host_key: bool = Field(
         default=True, description="Verify SSH host keys against ~/.ssh/known_hosts"
     )
-    verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
+    verify_ssl: bool = Field(
+        default=False, description="Verify the HMC TLS certificate"
+    )
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
     upload_timeout: float = Field(
-        default=600.0, gt=0,
+        default=600.0,
+        gt=0,
         description="Seconds the ISO upload waits for the HMC's response after the last byte "
         "(HMC_UPLOAD_TIMEOUT); the wait is never shorter than HMC_TIMEOUT",
     )
     max_response_bytes: int = Field(
-        default=32 * 1024 * 1024, gt=0,
+        default=32 * 1024 * 1024,
+        gt=0,
         description="Maximum HMC REST response size in bytes (HMC_MAX_RESPONSE_BYTES)",
     )
     ssh_timeout: float = Field(
@@ -287,9 +293,9 @@ class HMCConfig(BaseSettings):
                 "environment variables"
             )
         explicit = {
-            name: values[name] if name in values else field.get_default(
-                call_default_factory=True
-            )
+            name: values[name]
+            if name in values
+            else field.get_default(call_default_factory=True)
             for name, field in cls.model_fields.items()
         }
         config = cls(**explicit)
@@ -393,9 +399,7 @@ class HMCConfig(BaseSettings):
         if require_password and not self.password:
             missing.append("password (HMC_PASSWORD / --password)")
         if missing:
-            raise ValueError(
-                "Missing HMC configuration: " + ", ".join(missing)
-            )
+            raise ValueError("Missing HMC configuration: " + ", ".join(missing))
 
 
 class ConfigError(ValueError):
@@ -789,9 +793,7 @@ def _load_profile_from_document(
     # and init kwargs outrank every environment source.
     env_prefix = "HMC_"
     filtered_entry = {
-        k: v
-        for k, v in entry.items()
-        if env_var_value(env_prefix + k.upper()) is None
+        k: v for k, v in entry.items() if env_var_value(env_prefix + k.upper()) is None
     }
     return HMCConfig(_env_file=None, **filtered_entry)
 
@@ -926,7 +928,9 @@ def load_profile(
         # reported as missing by path rather than as a misleading
         # no-default_profile message (#915). config_dir() stands in for
         # *path* only when resolve_config_path() never had one to report.
-        doc = _read_config_document(path or config_dir() / "config.toml", missing_ok=False)
+        doc = _read_config_document(
+            path or config_dir() / "config.toml", missing_ok=False
+        )
     else:
         doc = {} if path is None else _read_config_document(path)
     return _load_profile_from_document(doc, path, profile)
@@ -956,9 +960,7 @@ def build_config(
                     else load_profile(profile=profile)
                 )
                 if filtered:
-                    merged = {
-                        key: getattr(base, key) for key in base.model_fields_set
-                    }
+                    merged = {key: getattr(base, key) for key in base.model_fields_set}
                     merged.update(filtered)
                     base = HMCConfig(**merged)
                 return base

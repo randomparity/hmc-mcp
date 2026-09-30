@@ -247,7 +247,9 @@ async def _provision_vlan_refusal(client: Client, state: RunState) -> str | None
     """
     vlan_id = state.config.provision_vlan_id
     status, data = await state.call(
-        client, "hmc_list_virtual_networks", system_name_or_uuid=state.config.system_name
+        client,
+        "hmc_list_virtual_networks",
+        system_name_or_uuid=state.config.system_name,
     )
     state.record(14, "hmc_list_virtual_networks (provision VLAN)", status, data)
     fix = "set LIVE_TEST_PROVISION_VLAN_ID to a VLAN with a virtual network"

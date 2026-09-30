@@ -134,9 +134,7 @@ def test_a_pipe_in_a_value_cannot_forge_a_table_column(tmp_path, capsys):
     assert evidence.main([str(_write(tmp_path, document))]) == 0
 
     row = next(
-        line
-        for line in capsys.readouterr().out.splitlines()
-        if "forged" in line
+        line for line in capsys.readouterr().out.splitlines() if "forged" in line
     )
     assert "\\|" in row
     delimiters = len(re.findall(r"(?<!\\)\|", row))
@@ -193,8 +191,13 @@ def test_a_json_document_that_is_not_an_object_is_refused(tmp_path, capsys):
 def test_totals_and_rows_match_the_document(tmp_path, capsys):
     document = _document()
     document["results"] = [
-        {"subtask": n, "tool": f"tool_{n}", "status": status, "result": "r",
-         "timestamp": "t"}
+        {
+            "subtask": n,
+            "tool": f"tool_{n}",
+            "status": status,
+            "result": "r",
+            "timestamp": "t",
+        }
         for n, status in enumerate(["PASS", "PASS", "FAIL", "SKIP"])
     ]
 

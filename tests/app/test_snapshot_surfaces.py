@@ -190,7 +190,9 @@ def test_cli_capture_existing_destination_is_concise(
         "hmcpctl.cli_commands.snapshot.run_cli_coroutine",
         lambda operation: SimpleNamespace(format="hmcpctl.lpar-snapshot", version=1),
     )
-    monkeypatch.setattr("hmcpctl.cli_commands.snapshot.serialize_snapshot", lambda value: "{}")
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.snapshot.serialize_snapshot", lambda value: "{}"
+    )
     result = RUNNER.invoke(
         cli.app,
         ["snapshot", "capture", "sys", "aix", "default", "--output", str(destination)],

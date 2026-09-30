@@ -109,8 +109,13 @@ POWER_OFF_LPAR_DEFAULT_DOCUMENT = (
 
 
 def test_system_power_jobs():
-    assert "PowerOn" in power_on_system_job() and "ManagedSystem" in power_on_system_job()
-    assert "PowerOff" in power_off_system_job() and "ManagedSystem" in power_off_system_job()
+    assert (
+        "PowerOn" in power_on_system_job() and "ManagedSystem" in power_on_system_job()
+    )
+    assert (
+        "PowerOff" in power_off_system_job()
+        and "ManagedSystem" in power_off_system_job()
+    )
 
 
 def test_vios_power_jobs():
@@ -204,7 +209,9 @@ def test_power_off_lpar_job_default_document_is_unchanged():
 def test_power_off_lpar_job_emits_restart_and_operation(immediate, restart):
     """All three parameters are emitted on every call, in the document's order."""
     document = power_off_lpar_job(immediate=immediate, restart=restart)
-    assert _parameter_values(document, "immediate") == ["true" if immediate else "false"]
+    assert _parameter_values(document, "immediate") == [
+        "true" if immediate else "false"
+    ]
     assert _parameter_values(document, "restart") == ["true" if restart else "false"]
     assert _parameter_values(document, "operation") == ["shutdown"]
     assert _parameter_values(
@@ -466,7 +473,9 @@ async def test_power_off_records_the_variant_it_sends(
     ]
     _, document = hmc.submit_job.await_args.args
     assert [record["operation"]] == _parameter_values(document, "operation")
-    assert [str(record["immediate"]).lower()] == _parameter_values(document, "immediate")
+    assert [str(record["immediate"]).lower()] == _parameter_values(
+        document, "immediate"
+    )
     assert [str(record["restart"]).lower()] == _parameter_values(document, "restart")
     assert (record["operation"], record["immediate"], record["restart"]) == (
         operation,
@@ -479,9 +488,9 @@ async def test_power_off_records_the_variant_it_sends(
         "source": "config:agent_id",
         "verified": False,
     }
-    assert [r.levelno for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME] == [
-        logging.WARNING
-    ]
+    assert [
+        r.levelno for r in caplog.records if r.name == audit_sink.AUDIT_LOGGER_NAME
+    ] == [logging.WARNING]
 
 
 @pytest.mark.asyncio
@@ -747,10 +756,13 @@ async def test_power_lpar_refuses_a_profile_the_target_partition_does_not_contai
     hmc = _power_client()
     hmc.list_child.return_value = [{"UUID": OTHER_PROFILE_UUID}]
 
-    with patch(
-        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
-        new=AsyncMock(return_value=LPAR_UUID),
-    ), pytest.raises(ValueError) as refused:
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        pytest.raises(ValueError) as refused,
+    ):
         await power_lpar(
             hmc,
             None,

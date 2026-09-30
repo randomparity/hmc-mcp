@@ -94,7 +94,9 @@ def _hmc_env(monkeypatch):
 def _call_tool_with_resolved_system(monkeypatch, tool, *args, **kwargs):
     _hmc_env(monkeypatch)
     resolver = AsyncMock(return_value=SYSTEM_UUID)
-    with patch("hmcpctl.operations.virtualization.network.resolve_system_uuid", new=resolver):
+    with patch(
+        "hmcpctl.operations.virtualization.network.resolve_system_uuid", new=resolver
+    ):
         result = tool("system-name", *args, **kwargs)
     resolver.assert_awaited_once_with(ANY, "system-name")
     return result
@@ -108,7 +110,9 @@ async def test_create_virtual_network_operation_returns_parent_and_resource(
     hmc = AsyncMock()
     hmc.create_virtual_network.return_value = resource
     resolver = AsyncMock(return_value="sys-uuid")
-    monkeypatch.setattr("hmcpctl.operations.virtualization.network.resolve_system_uuid", resolver)
+    monkeypatch.setattr(
+        "hmcpctl.operations.virtualization.network.resolve_system_uuid", resolver
+    )
 
     result = await create_virtual_network(hmc, "system-name", "prod", 100, 3)
 
@@ -120,7 +124,9 @@ async def test_create_virtual_network_operation_returns_parent_and_resource(
 
 def test_virtual_network_document():
     xml = build_virtual_network_document(
-        "VLAN100-ETHERNET0", 100, 3,
+        "VLAN100-ETHERNET0",
+        100,
+        3,
         switch_link="https://hmc.test:12443/rest/api/uom/ManagedSystem/sys-uuid/VirtualSwitch/vswitch-uuid-1",
     )
     assert "VirtualNetwork" in xml
@@ -160,9 +166,9 @@ async def test_list_virtual_networks(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_virtual_network(mock_hmc):
-    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
-        return_value=httpx.Response(201, text=VNETWORK_ENTRY)
-    )
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork"
+    ).mock(return_value=httpx.Response(201, text=VNETWORK_ENTRY))
     async with HMCClient(make_config()) as hmc:
         net = await hmc.create_virtual_network(
             SYSTEM_UUID, "VLAN100-ETHERNET0", 100, 3, switch_uuid="vswitch-uuid-1"
@@ -199,7 +205,12 @@ async def test_list_network_bridges(mock_hmc):
     [
         (hmc_list_virtual_switches, "VirtualSwitch", VSWITCH_FEED, "VirtualSwitch"),
         (hmc_list_virtual_networks, "VirtualNetwork", VNETWORK_FEED, "VirtualNetwork"),
-        (hmc_list_network_bridges, "NetworkBridge", NETWORKBRIDGE_FEED, "NetworkBridge"),
+        (
+            hmc_list_network_bridges,
+            "NetworkBridge",
+            NETWORKBRIDGE_FEED,
+            "NetworkBridge",
+        ),
     ],
 )
 def test_network_list_tools_resolve_public_system_selector(
@@ -216,9 +227,9 @@ def test_network_list_tools_resolve_public_system_selector(
 
 
 def test_create_virtual_network_tool_maps_public_arguments(monkeypatch, mock_hmc):
-    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
-        return_value=httpx.Response(201, text=VNETWORK_ENTRY)
-    )
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork"
+    ).mock(return_value=httpx.Response(201, text=VNETWORK_ENTRY))
 
     result = _call_tool_with_resolved_system(
         monkeypatch,

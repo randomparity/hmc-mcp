@@ -160,9 +160,7 @@ async def test_waited_deploy_keeps_success_when_snapshot_fails(
     sensitive_body = "SENSITIVE-HMC-RESPONSE-BODY"
     snapshot_error = HMCError("snapshot unavailable", 500, sensitive_body)
     snapshots = (
-        [snapshot_error]
-        if failed_snapshot == "baseline"
-        else [[old], snapshot_error]
+        [snapshot_error] if failed_snapshot == "baseline" else [[old], snapshot_error]
     )
     hmc = _client(snapshots=snapshots)
     stamp = AsyncMock()

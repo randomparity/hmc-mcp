@@ -28,6 +28,7 @@ _ACTIONABLE_TERMINAL_STATUSES = {
     "FAILED_TO_START",
 }
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("job", [{"UUID": "job-1"}, None])
 async def test_wait_for_submitted_job_returns_without_polling(job) -> None:
@@ -46,7 +47,9 @@ async def test_wait_for_submitted_job_forwards_identifier_link_and_timing() -> N
     result = await wait_for_submitted_job(client, job, True, 90, 3)
 
     assert result == {"Status": "COMPLETED"}
-    client.wait_for_job_entry.assert_awaited_once_with("job-2", 90, 3, job_href="/jobs/job-2")
+    client.wait_for_job_entry.assert_awaited_once_with(
+        "job-2", 90, 3, job_href="/jobs/job-2"
+    )
 
 
 @pytest.mark.asyncio

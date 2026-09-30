@@ -46,9 +46,7 @@ async def test_logon_uses_put_on_web_logon_path(mock_hmc):
 @pytest.mark.asyncio
 async def test_logoff_uses_delete_on_web_logon_path(mock_hmc):
     """rest:logon-and-logoff: logoff uses DELETE /rest/api/web/Logon (row L00071)."""
-    delete_route = mock_hmc.delete(_LOGON_PATH).mock(
-        return_value=httpx.Response(204)
-    )
+    delete_route = mock_hmc.delete(_LOGON_PATH).mock(return_value=httpx.Response(204))
     async with HMCClient(make_config()):
         pass
     assert delete_route.called
@@ -67,7 +65,9 @@ async def test_logon_request_carries_web_xml_content_type(mock_hmc):
         pass
     sent = route.calls.last.request.headers.get("content-type", "")
     assert MEDIA_WEB in sent, f"Expected {MEDIA_WEB!r} in Content-Type, got: {sent!r}"
-    assert "LogonRequest" in sent, f"Expected 'LogonRequest' in Content-Type, got: {sent!r}"
+    assert "LogonRequest" in sent, (
+        f"Expected 'LogonRequest' in Content-Type, got: {sent!r}"
+    )
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,9 @@ async def test_uom_write_raises_without_retry(mock_hmc, status):
     )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="PUT") as raised:
-            await hmc._put(f"{_LP_PATH}/uuid1", b"<xml/>", resource_type="LogicalPartition")
+            await hmc._put(
+                f"{_LP_PATH}/uuid1", b"<xml/>", resource_type="LogicalPartition"
+            )
 
     assert raised.value.status_code == status
     assert route.call_count == 1
@@ -226,7 +228,7 @@ async def test_wait_for_job_treats_remaining_terminal_statuses_as_terminal(
     job_entry = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<entry xmlns="http://www.w3.org/2005/Atom">'
-        '  <id>urn:uuid:job-terminal</id>'
+        "  <id>urn:uuid:job-terminal</id>"
         "  <content>"
         f'    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
         f"      <JobID>job-terminal</JobID>"

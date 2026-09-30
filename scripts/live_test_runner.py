@@ -138,7 +138,20 @@ _HOSTNAME_RE = re.compile(
 #: host (#914). None is an IANA TLD — `.py`, `.md`, `.sh` and `.zip` are, so
 #: they stay out; a multi-label name is redacted whatever its last label.
 _FILENAME_EXTENSIONS = frozenset(
-    {"cfg", "conf", "csv", "ini", "iso", "json", "log", "toml", "txt", "xml", "yaml", "yml"}
+    {
+        "cfg",
+        "conf",
+        "csv",
+        "ini",
+        "iso",
+        "json",
+        "log",
+        "toml",
+        "txt",
+        "xml",
+        "yaml",
+        "yml",
+    }
 )
 _ABSOLUTE_PATH_RE = re.compile(r"(?<![:\w])/(?:[^\s/]+/)*[^\s,;:'\")]+")
 
@@ -239,8 +252,7 @@ def _bootstrap_config() -> bool:
         return True
     except ConfigError as exc:
         print(
-            "  ⚠️  config.toml: "
-            f"{_redact_failure_text(str(exc))} — falling back to .env"
+            f"  ⚠️  config.toml: {_redact_failure_text(str(exc))} — falling back to .env"
         )
 
     # Fallback: local .env
@@ -521,7 +533,9 @@ class LiveTestConfig:
         ]
         # Interpolated unquoted into the recovery `chhwres` command strings.
         if not _HEX_ID.fullmatch(parsed["sriov_logical_port_id"]):
-            invalid.append("LIVE_TEST_SRIOV_LOGICAL_PORT_ID must be lowercase hexadecimal digits")
+            invalid.append(
+                "LIVE_TEST_SRIOV_LOGICAL_PORT_ID must be lowercase hexadecimal digits"
+            )
         if parsed["iso_http_port"] > 65535:
             invalid.append("LIVE_TEST_ISO_HTTP_PORT")
         if parsed["provision_vlan_id"] > 4094:
@@ -645,7 +659,9 @@ def _declared_types(schema: Mapping[str, Any]) -> tuple[str, ...]:
     )
 
 
-def _type_problem(tool: str, name: str, value: Any, schema: Mapping[str, Any]) -> str | None:
+def _type_problem(
+    tool: str, name: str, value: Any, schema: Mapping[str, Any]
+) -> str | None:
     """Report a supplied value whose Python type no declared schema type admits."""
     if value is UNRESOLVED_ARGUMENT:
         return None

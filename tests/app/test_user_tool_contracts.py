@@ -144,9 +144,7 @@ def test_delete_user_tool_returns_identified_confirmation() -> None:
     context = _client_context(client)
 
     with patch("hmcpctl._app.client_from_env", return_value=context):
-        result = server_users.hmc_delete_user(
-            "console-1", "profile-1", profile="lab"
-        )
+        result = server_users.hmc_delete_user("console-1", "profile-1", profile="lab")
 
     client.delete_hmc_user.assert_awaited_once_with("console-1", "profile-1")
     context.__aexit__.assert_awaited_once()

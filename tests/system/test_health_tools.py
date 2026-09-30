@@ -30,9 +30,7 @@ def test_fleet_health_handler_delegates_profile_and_preserves_shape() -> None:
     )
     operation = AsyncMock(return_value=result)
     with (
-        patch(
-            "hmcpctl._app.client_from_env", return_value=_Context(client)
-        ) as factory,
+        patch("hmcpctl._app.client_from_env", return_value=_Context(client)) as factory,
         patch("hmcpctl.server_tools.systems.health.fetch_fleet_health", operation),
     ):
         actual = hmc_fleet_health(profile="prod")

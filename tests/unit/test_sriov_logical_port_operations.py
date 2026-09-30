@@ -21,7 +21,12 @@ def _hmc() -> AsyncMock:
 
 
 def _common(
-    monkeypatch, *, state="Not Activated", rmc="inactive", configured=(), granularity=None
+    monkeypatch,
+    *,
+    state="Not Activated",
+    rmc="inactive",
+    configured=(),
+    granularity=None,
 ):
     physical = {
         "adapter_id": "1",
@@ -37,7 +42,9 @@ def _common(
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
-        AsyncMock(return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")),
+        AsyncMock(
+            return_value=("Version: 10\nRelease: 3\nService Pack: 1060", "8375-42A")
+        ),
     )
     monkeypatch.setattr(
         "hmcpctl.operations.virtualization.pcie.list_sriov_adapter_rows",
@@ -268,14 +275,18 @@ async def test_assign_without_reported_granularity_leaves_the_hmc_to_judge(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("granularity", ["abc", "0", "-1", "NaN", "Infinity", "1E-27", "101"])
+@pytest.mark.parametrize(
+    "granularity", ["abc", "0", "-1", "NaN", "Infinity", "1E-27", "101"]
+)
 async def test_assign_rejects_malformed_port_granularity_before_mutation(
     monkeypatch, granularity
 ):
     _common(monkeypatch, granularity=granularity)
     mutate = _dynamic_mutation(monkeypatch)
 
-    with pytest.raises(HMCCLIError, match="malformed physical-port capacity granularity"):
+    with pytest.raises(
+        HMCCLIError, match="malformed physical-port capacity granularity"
+    ):
         await _assign("2")
 
     mutate.assert_not_awaited()
@@ -385,7 +396,11 @@ async def test_assign_reports_hmc_refusal_when_readback_is_unchanged(monkeypatch
     assert caught.value.__cause__ is refusal
     assert caught.value.result.effective_before is None
     assert caught.value.result.effective_after is None
-    assert caught.value.result.profile_before == caught.value.result.profile_after == "none"
+    assert (
+        caught.value.result.profile_before
+        == caught.value.result.profile_after
+        == "none"
+    )
 
 
 @pytest.mark.asyncio
@@ -453,11 +468,17 @@ async def test_unassign_reports_hmc_refusal_when_readback_is_unchanged(monkeypat
     assert "refused by HMC" in message
     assert "HSCL1500E" in message
     assert caught.value.__cause__ is refusal
-    assert caught.value.result.profile_before == caught.value.result.profile_after == record
+    assert (
+        caught.value.result.profile_before
+        == caught.value.result.profile_after
+        == record
+    )
 
 
 @pytest.mark.asyncio
-async def test_unassign_keeps_unverified_wording_when_readback_also_changed(monkeypatch):
+async def test_unassign_keeps_unverified_wording_when_readback_also_changed(
+    monkeypatch,
+):
     _common(monkeypatch)
     record = "0:1:0:3:0:0:0:all::all:0:0:2.0:100.0:none:0::::"
     monkeypatch.setattr(

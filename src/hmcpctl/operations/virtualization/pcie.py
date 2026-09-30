@@ -315,7 +315,9 @@ def _select_profile_io_slots(
     if not rows:
         raise ValueError(f"profile {profile_name!r} not found on LPAR {lpar_name!r}")
     if len(rows) > 1:
-        raise HMCCLIError("profile io_slots readback returned more than one matching row")
+        raise HMCCLIError(
+            "profile io_slots readback returned more than one matching row"
+        )
     return rows[0]["io_slots"]
 
 
@@ -347,7 +349,11 @@ async def _change_dedicated_slot(target: _DedicatedProfileTarget, *, add: bool) 
     error: Exception | None = None
     try:
         await builder(
-            target.config, target.system_name, target.lpar_name, target.profile_name, drc_index
+            target.config,
+            target.system_name,
+            target.lpar_name,
+            target.profile_name,
+            drc_index,
         )
     except Exception as caught:  # noqa: BLE001 - classified by the readback below
         error = caught
@@ -404,7 +410,9 @@ async def _verify_dedicated_change(
     holder_error: HMCCLIError | None = None
     try:
         rows = await read_profile_io_slot_rows(target.config, target.system_name)
-        after_text = _select_profile_io_slots(rows, target.lpar_name, target.profile_name)
+        after_text = _select_profile_io_slots(
+            rows, target.lpar_name, target.profile_name
+        )
         after = _slots_by_drc(after_text)
     except Exception as caught:  # noqa: BLE001 - reported through the partial error
         read_error = caught
@@ -566,14 +574,20 @@ def _is_exact_admitted_environment(version: str, model: str) -> bool:
     )
 
 
-async def require_dedicated_pcie_environment(config: HMCConfig, system_name: str) -> None:
+async def require_dedicated_pcie_environment(
+    config: HMCConfig, system_name: str
+) -> None:
     """Refuse dedicated profile assignment outside the ADR 0165 envelope."""
-    if not _is_exact_admitted_environment(*await read_sriov_environment(config, system_name)):
+    if not _is_exact_admitted_environment(
+        *await read_sriov_environment(config, system_name)
+    ):
         raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
 
 
 async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:
-    if not _is_exact_admitted_environment(*await read_sriov_environment(config, system_name)):
+    if not _is_exact_admitted_environment(
+        *await read_sriov_environment(config, system_name)
+    ):
         raise SriovLogicalPortCapabilityError(
             "SR-IOV operations are admitted only for HMC V10R3 M1060 "
             "with managed-system model 8375-42A"
@@ -662,7 +676,9 @@ def eth_capacity_granularity(row: dict[str, str]) -> Decimal | None:
     return granularity
 
 
-def require_capacity_granularity(capacity: Decimal, granularity: Decimal | None) -> None:
+def require_capacity_granularity(
+    capacity: Decimal, granularity: Decimal | None
+) -> None:
     """Refuse a capacity that is not a multiple of the port's reported granularity."""
     if granularity is not None and capacity % granularity:
         raise ValueError(
@@ -839,10 +855,14 @@ def _raise_sriov_partial_error(
     caller used before this classification existed.
     """
     if error is not None and outcome.matches_pre_mutation:
-        refused = SriovLogicalPortPartialError(f"{operation} refused by HMC: {error}", result)
+        refused = SriovLogicalPortPartialError(
+            f"{operation} refused by HMC: {error}", result
+        )
         raise refused from error
     detail = error or outcome.unverified_detail or "readback mismatch"
-    partial = SriovLogicalPortPartialError(f"{operation} could not be verified: {detail}", result)
+    partial = SriovLogicalPortPartialError(
+        f"{operation} could not be verified: {detail}", result
+    )
     if outcome.cause is not None:
         raise partial from outcome.cause
     raise partial
@@ -940,7 +960,9 @@ async def assign_sriov_logical_port(
             if failure is not None
         )
         matches_pre_mutation = (
-            readback.error is None and after == before and profile_after == profile_before
+            readback.error is None
+            and after == before
+            and profile_after == profile_before
         )
         outcome = _SriovReadbackOutcome(
             error or readback.error, matches_pre_mutation, readback_errors

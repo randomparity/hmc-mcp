@@ -311,8 +311,9 @@ def run_a(child_env, server_binary, tmp_path):
     """Run A — observation. stderr to a file, stdout read frame by frame."""
     log = tmp_path / "stderr.log"
     with log.open("w") as sink:
-        process = _spawn([server_binary, "serve", "--access-policy", "lab-scoped"],
-                         child_env, sink)
+        process = _spawn(
+            [server_binary, "serve", "--access-policy", "lab-scoped"], child_env, sink
+        )
         server = _Server(process, log)
         try:
             server.initialize()
@@ -321,7 +322,9 @@ def run_a(child_env, server_binary, tmp_path):
             server.reap()
 
 
-def _reap(process: subprocess.Popen, pump_thread: threading.Thread | None = None) -> None:
+def _reap(
+    process: subprocess.Popen, pump_thread: threading.Thread | None = None
+) -> None:
     """Terminate a child and deterministically close its parent-owned pipe wrappers."""
     try:
         if process.stdin and not process.stdin.closed:
@@ -453,9 +456,7 @@ def test_stdout_carries_no_non_json_line(run_a):
 def test_a_long_caller_value_arrives_truncated(run_a):
     """L4."""
     server, log = run_a
-    server.call(
-        "hmc_power_off_lpar", {**PERMITTED, "lpar_name_or_uuid": "A" * 500}
-    )
+    server.call("hmc_power_off_lpar", {**PERMITTED, "lpar_name_or_uuid": "A" * 500})
     record = _await_last_record(log, "target-not-granted")
     entry = next(
         item for item in record["targets"] if item["argument"] == "lpar_name_or_uuid"

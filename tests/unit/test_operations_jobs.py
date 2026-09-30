@@ -77,7 +77,9 @@ async def test_wait_for_job_polls_an_identifier_persisted_across_a_process_resta
     database a restarted worker reads its handle back from.
     """
     mock_hmc.put(_SUBMIT_PATH).mock(
-        return_value=httpx.Response(200, text=_job_entry("RUNNING", self_href=_SELF_HREF))
+        return_value=httpx.Response(
+            200, text=_job_entry("RUNNING", self_href=_SELF_HREF)
+        )
     )
     poll = mock_hmc.get(_SELF_HREF).mock(
         return_value=httpx.Response(200, text=_job_entry("COMPLETED_OK"))
@@ -184,7 +186,9 @@ async def test_get_job_reports_an_empty_job_response_as_not_found(
 async def test_get_job_does_not_hand_back_a_link_on_a_missing_job(mock_hmc) -> None:
     """A found=False outcome carries no handle: nothing resolved to persist."""
     mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
-    mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
 
     async with HMCClient(make_config()) as hmc:
         outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
@@ -324,7 +328,9 @@ async def test_get_job_uses_the_persisted_self_link_when_supplied(mock_hmc) -> N
 async def test_get_job_echoes_the_handle_needed_to_poll_again(mock_hmc) -> None:
     """The outcome carries both persistable strings, so the handle round-trips."""
     mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(200, text=_job_entry("RUNNING", self_href=_SELF_HREF))
+        return_value=httpx.Response(
+            200, text=_job_entry("RUNNING", self_href=_SELF_HREF)
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -403,9 +409,7 @@ async def test_get_job_drops_a_stale_link_with_an_equivalent_absolute_spelling(
     mock_hmc,
 ) -> None:
     """A retired resource stays retired when the response makes its link absolute."""
-    mock_hmc.get(_SELF_HREF).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
     absolute_self_href = f"https://hmc.test:443{_SELF_HREF}"
     mock_hmc.get(_GLOBAL_PATH).mock(
         return_value=httpx.Response(
@@ -450,4 +454,6 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
     assert outcome.job_href is None, (
         "a link retired earlier in the wait must not come back on a later poll"
     )
-    assert len([r for r in caplog.records if "no longer resolves" in r.getMessage()]) == 1
+    assert (
+        len([r for r in caplog.records if "no longer resolves" in r.getMessage()]) == 1
+    )

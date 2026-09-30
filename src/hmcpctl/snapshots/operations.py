@@ -75,7 +75,9 @@ def _captured_lpar_score(snapshot: LparSnapshot) -> int | None:
     return _canonical_lpar_score(matches[0].get("curr_lpar_score"))
 
 
-def _matching_lpar_score_rows(value: object, identity: LparIdentity) -> list[dict[str, Any]]:
+def _matching_lpar_score_rows(
+    value: object, identity: LparIdentity
+) -> list[dict[str, Any]]:
     """Return score rows that identify the captured partition."""
     rows = [value] if isinstance(value, dict) else value
     if not isinstance(rows, list):

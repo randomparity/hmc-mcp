@@ -89,8 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         "--config",
         type=Path,
         default=_DEFAULT_CONFIG,
-        help="Path to the config TOML to validate "
-        f"(default: {_DEFAULT_CONFIG})",
+        help=f"Path to the config TOML to validate (default: {_DEFAULT_CONFIG})",
     )
     args = parser.parse_args(argv)
 
