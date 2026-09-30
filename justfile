@@ -20,6 +20,10 @@ setup:
 lint:
     uv run --no-sync ruff check .
 
+# fail when any Python file differs from ruff format's output (Markdown excluded)
+format-check:
+    uv run --no-sync ruff format --check .
+
 # type-check the explicit clean production-module boundary
 typecheck:
     uv run --no-sync ty check
@@ -75,7 +79,7 @@ doc-freshness:
     uv run --no-sync python scripts/check_generated_docs.py
 
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames test-layout \
+static: lint format-check typecheck secrets workflow-security env-vars nicknames test-layout \
         capability-inventory tool-docs-check adr-numbering doc-freshness
 
 # run the full pytest suite with one semantic summary

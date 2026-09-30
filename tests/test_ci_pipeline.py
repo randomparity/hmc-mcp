@@ -81,6 +81,7 @@ ACTION_PINS = {
 # from both, and which gates must exist is a judgement no file states (ADR 0098 §1b).
 STATIC_GATES = {
     "lint",
+    "format-check",
     "typecheck",
     "secrets",
     "workflow-security",

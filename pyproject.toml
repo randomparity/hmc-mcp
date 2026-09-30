@@ -64,7 +64,7 @@ dev = [
 [tool.ruff.format]
 # Ruff formats Python code blocks inside Markdown. Several of those blocks are laid out
 # by hand, and ADR bodies are amended rather than rewritten, so the formatter covers
-# Python sources only.
+# Python sources only. See ADR 0181.
 exclude = ["*.md"]
 
 [tool.ruff.lint]
