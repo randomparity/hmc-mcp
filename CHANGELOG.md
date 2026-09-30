@@ -202,6 +202,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
+  set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
+  says the client decides per call site whether to send it, and directs the operator to report a
+  client defect instead of changing environment settings; the tests pin that the variable is
+  not recommended (#888).
 - `create_and_stamp_lpar` (and so `hmc_create_lpar` and provisioning) no longer drops a requested
   profile apply silently when the REST create succeeds. That path creates no profile, so the
   result now carries a skipped `apply_profile` step and a warning saying the apply was not
