@@ -78,10 +78,6 @@ RECORDED = [
         {"NetworkVLANID": "COD", "VswitchID": "ROR", "TaggedNetwork": "COD"},
     ),
     (
-        documents.build_lpar_document("p1", os_type="linux"),
-        {"OperatingSystemType": "ROR"},
-    ),
-    (
         documents.build_vfc_adapter_document(1, 2, 3),
         {
             "AdapterType": "ROR",
@@ -238,23 +234,111 @@ BUILT = {
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
 }
-# No live evidence records whether V10R3 requires schemaVersion on these; left unchanged (#961).
-PROCESSOR_WRAPPERS_UNVERIFIED = frozenset(
-    {
-        "PartitionProcessorConfiguration",
-        "SharedProcessorConfiguration",
-        "DedicatedProcessorConfiguration",
-    }
-)
 
 
 @pytest.mark.parametrize("xml", BUILT.values(), ids=BUILT.keys())
 def test_metadata_elements_carry_schema_version(xml: str) -> None:
+    """V10R3 refuses a create whose PartitionProcessorConfiguration lacks it (#1164).
+
+    The live refusal was ``400 REST0001 Attribute 'schemaVersion' must appear on element
+    'PartitionProcessorConfiguration'`` (#1161, P18). The modify fixture in
+    tests/lpar/test_lpar_rmw.py, modelled on the live V10R3 read, carries
+    ``schemaVersion="V1_0"`` on that element and on both processor configurations.
+    """
     missing = [
         localname(el.tag)
         for el in _tree(xml).iter()
-        if "Metadata" in _children(el)
-        and "schemaVersion" not in el.attrib
-        and localname(el.tag) not in PROCESSOR_WRAPPERS_UNVERIFIED
+        if "Metadata" in _children(el) and "schemaVersion" not in el.attrib
     ]
     assert missing == []
+
+
+# The create-relevant stretch of BasePartition.Group, and of the processor, shared and IO
+# configuration groups, in the order of the XSDs a V10R3 HMC serves (#1161 P28-P30). The
+# create refuses an out-of-order element with 400 REST0001.
+SCHEMA_SEQUENCES = {
+    "LogicalPartition": [
+        "Metadata",
+        "KeylockPosition",
+        "PartitionID",
+        "PartitionIOConfiguration",
+        "PartitionMemoryConfiguration",
+        "PartitionName",
+        "PartitionProcessorConfiguration",
+        "PartitionProfiles",
+        "PartitionState",
+        "PartitionType",
+    ],
+    "PartitionProcessorConfiguration": [
+        "Metadata",
+        "DedicatedProcessorConfiguration",
+        "HasDedicatedProcessors",
+        "SharedProcessorConfiguration",
+        "SharingMode",
+    ],
+    "SharedProcessorConfiguration": [
+        "Metadata",
+        "DesiredProcessingUnits",
+        "DesiredVirtualProcessors",
+        "MaximumProcessingUnits",
+        "MaximumVirtualProcessors",
+        "MinimumProcessingUnits",
+        "MinimumVirtualProcessors",
+        "SharedProcessorPoolID",
+        "SharedProcessorPoolName",
+        "UncappedWeight",
+    ],
+    "DedicatedProcessorConfiguration": [
+        "Metadata",
+        "DesiredProcessors",
+        "MaximumProcessors",
+        "MinimumProcessors",
+    ],
+    "PartitionMemoryConfiguration": [
+        "Metadata",
+        "DesiredMemory",
+        "MaximumMemory",
+        "MinimumMemory",
+    ],
+    "PartitionIOConfiguration": ["Metadata", "MaximumVirtualIOSlots"],
+}
+FULL_SHARED = documents.LparResources(
+    min_memory=1,
+    desired_memory=2,
+    max_memory=3,
+    min_procs=0.1,
+    desired_procs=0.5,
+    max_procs=1.0,
+    min_vcpus=1,
+    desired_vcpus=1,
+    max_vcpus=2,
+    uncapped=False,
+)
+FULL_DEDICATED = documents.LparResources(
+    desired_memory=2,
+    dedicated=True,
+    min_procs=1,
+    desired_procs=1,
+    max_procs=2,
+    sharing_mode="keep_idle_procs",
+)
+
+
+@pytest.mark.parametrize("resources", [FULL_SHARED, FULL_DEDICATED])
+def test_create_elements_follow_the_schema_sequence(resources) -> None:
+    root = _tree(
+        documents.build_lpar_document(
+            "p1",
+            partition_id=3,
+            resources=resources,
+            os_type="linux",
+            keylock="normal",
+            max_virtual_slots=64,
+        )
+    )
+    for el in root.iter():
+        sequence = SCHEMA_SEQUENCES.get(localname(el.tag))
+        if sequence is not None:
+            children = _children(el)
+            assert set(children) <= set(sequence), localname(el.tag)
+            assert _is_subsequence(children, sequence), localname(el.tag)
