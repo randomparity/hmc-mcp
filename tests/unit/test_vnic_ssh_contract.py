@@ -125,10 +125,19 @@ async def test_list_vnic_backing_rows_requests_exact_fields(
 
 
 _HEADER_READS = {
-    "vnic": (lambda config: list_vnic_rows(config, "system", "client"), "lpar_name"),
-    "backing": (lambda config: list_vnic_backing_rows(config, "system"), "adapter_id"),
+    "vnic": (
+        lambda config: list_vnic_rows(config, "system", "client"),
+        "vNIC inventory",
+        "lpar_name",
+    ),
+    "backing": (
+        lambda config: list_vnic_backing_rows(config, "system"),
+        "vNIC backing-device inventory",
+        "adapter_id",
+    ),
     "vios-identity": (
         lambda config: read_vios_identity(config, "system", "vios"),
+        "VIOS identity read",
         "lpar_env",
     ),
 }
@@ -144,8 +153,10 @@ async def test_header_reads_raise_hmc_cli_error_for_malformed_output(
         return output
 
     monkeypatch.setattr("hmcpctl.ssh.vnic.run_hmc_command", fake_run)
-    call, field = _HEADER_READS[read]
-    with pytest.raises(HMCCLIError, match=rf"response did not match .*{field}"):
+    call, operation, field = _HEADER_READS[read]
+    with pytest.raises(
+        HMCCLIError, match=rf"^{operation} response did not match .*{field}"
+    ):
         await call(config)
 
 
