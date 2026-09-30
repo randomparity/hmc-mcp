@@ -69,6 +69,12 @@ from ...xmlutil import escape_xml
 _logger = logging.getLogger(__name__)
 
 _LPAR_POWER_OPERATIONS = frozenset({"PowerOn", "PowerOff"})
+# The HMC accepts PowerOn only from ``not activated`` (HSCL3681 otherwise). In these
+# states the partition is already activated, so the request is already satisfied;
+# every other state is refused before a job the HMC would fail is submitted.
+_ACTIVATED_STATES: frozenset[PartitionState] = frozenset(
+    {"running", "starting", "open firmware"}
+)
 
 ProcessorCompatibilityMode = Literal[
     "default",
@@ -717,19 +723,28 @@ async def power_lpar(
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"
         )
-        if state == "running":
+        if state in _ACTIVATED_STATES:
             unapplied = _unapplied_activation_clause(
                 boot_mode, partition_profile_uuid, operation_type, keylock
             )
+            described = "running" if state == "running" else f"active ({state})"
             return LparPowerResult(
                 lpar_uuid,
                 {
                     "already_running": True,
                     "message": (
-                        f"LPAR {lpar_uuid} is already running. "
+                        f"LPAR {lpar_uuid} is already {described}. "
                         f"Use force=True to submit PowerOn anyway.{unapplied}"
                     ),
                 },
+            )
+        if state != "not activated":
+            raise HMCError(
+                f"Cannot power on LPAR {lpar_uuid} — current state is {state!r}; "
+                "PowerOn requires 'not activated'. Wait for the partition to "
+                "settle, or power it off, before retrying; force=True submits "
+                "PowerOn anyway.",
+                status_code=409,
             )
     warnings: tuple[str, ...] = ()
     if power_on and partition_profile_uuid:

@@ -202,6 +202,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_power_on_lpar`, `lpars power-on` and `power_on_lpar`/`power_lpar` no longer submit a
+  PowerOn the HMC is certain to fail (HSCL3681) when the partition is not `not activated`. An
+  activated partition — `running`, `starting` or `open firmware` — reports `already_running`
+  with a message naming its state; any other state is refused with an HTTP 409 `HMCError`
+  naming it, and no job is submitted. `force=True` still submits, and the failed job is
+  returned as before (#1162).
 - The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
   set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
   says the client decides per call site whether to send it, and directs the operator to report a

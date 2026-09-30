@@ -29,9 +29,12 @@ from hmcpctl.operations.lpar import decommission
 from hmcpctl.operations.lpar.core import (
     LparPowerResult,
     _unapplied_activation_clause,
+    activation_allows_assessment,
     power_lpar,
     power_on_lpar,
+    power_on_outcome,
 )
+from hmcpctl.operations.partition_state import PARTITION_STATES
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -660,6 +663,91 @@ async def test_power_lpar_already_running_names_the_dropped_activation_parameter
     assert requested.job["message"].count("force=True") == 1
     # An ordinary already-running call says exactly what it always said.
     assert "not applied" not in plain.job["message"]
+
+
+# Every PartitionState except ``not activated`` refuses PowerOn with HSCL3681, so
+# none of them may reach a submit without force=True.
+_ACTIVE_STATES = ("running", "starting", "open firmware")
+_UNSETTLED_STATES = sorted(PARTITION_STATES - {"not activated", *_ACTIVE_STATES})
+
+# The job entry a forced PowerOn returned from ``open firmware`` in the #1161 live
+# capture: the HMC accepts the submit, then fails the job.
+HSCL3681 = (
+    "HSCL3681 Partition 1 cannot be activated since it is not in the "
+    "Not Activated state.\n"
+)
+HSCL3681_JOB = {
+    "UUID": "job-uuid",
+    "Resource": {
+        "JobID": "job-uuid",
+        "Status": "COMPLETED_WITH_ERROR",
+        "Results": {
+            "JobParameter": [
+                {"ParameterName": "returnCode", "ParameterValue": "1"},
+                {"ParameterName": "result", "ParameterValue": HSCL3681},
+            ]
+        },
+    },
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", _ACTIVE_STATES)
+async def test_power_lpar_already_active_state_submits_no_job(state):
+    hmc = _power_client()
+    hmc.get_quick_property.return_value = state
+
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        result = await power_lpar(hmc, None, LPAR_UUID, power_on=True)
+
+    hmc.submit_job.assert_not_awaited()
+    assert result.job["already_running"] is True
+    assert state in result.job["message"]
+    assert "force=True" in result.job["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", [*_UNSETTLED_STATES, "unrecognized"])
+async def test_power_lpar_refuses_power_on_outside_not_activated(state):
+    hmc = _power_client()
+    hmc.get_quick_property.return_value = state
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        pytest.raises(HMCError, match=f"current state is {state!r}") as raised,
+    ):
+        await power_lpar(hmc, None, LPAR_UUID, power_on=True)
+
+    assert raised.value.status_code == 409
+    hmc.submit_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_power_lpar_force_submits_from_open_firmware_and_surfaces_hscl3681():
+    hmc = _power_client()
+    hmc.get_quick_property.return_value = "open firmware"
+    hmc.wait_for_job_entry.return_value = HSCL3681_JOB
+
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        result = await power_lpar(
+            hmc, None, LPAR_UUID, power_on=True, force=True, wait=True
+        )
+
+    hmc.get_quick_property.assert_not_awaited()
+    hmc.submit_job.assert_awaited_once()
+    outcome = power_on_outcome(result)
+    assert outcome.already_running is False
+    assert outcome.job == HSCL3681_JOB
+    assert activation_allows_assessment(result) == (False, HSCL3681.strip())
 
 
 @pytest.mark.parametrize(

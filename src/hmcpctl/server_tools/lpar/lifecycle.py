@@ -349,9 +349,13 @@ def hmc_power_on_lpar(
     SCSI, Fibre Channel or Ethernet client adapter whose slot that profile lacks:
     activating the profile removes it. The job is still submitted.
 
-    If the partition is already in the 'running' state, ``already_running`` is
-    true, ``job`` is null, and ``message`` explains that no job was submitted.
-    Pass force=True to skip this check and submit PowerOn unconditionally.
+    The HMC accepts PowerOn only from the 'not activated' state. If the
+    partition is already activated — 'running', 'starting' or 'open firmware' —
+    ``already_running`` is true, ``job`` is null, and ``message`` names the
+    state and explains that no job was submitted. Any other state is refused
+    with an error naming it, and no job is submitted. Pass force=True to skip
+    this check and submit PowerOn unconditionally; the HMC then fails the job
+    from any state but 'not activated'.
 
     Set wait=True to block until the job reaches a terminal state or until
     timeout_seconds elapses; ``job`` then contains the last polled job.
@@ -361,7 +365,7 @@ def hmc_power_on_lpar(
         wait: Whether to poll the submitted job until terminal or timed out.
         timeout_seconds: Maximum polling duration in seconds when waiting.
         poll_interval: Seconds between job polls when waiting; must be positive.
-        force: Submit PowerOn even when the partition already reports running.
+        force: Submit PowerOn whatever state the partition reports.
         profile: Optional configured HMC connection profile name — not the
             partition profile, which is partition_profile_uuid; uses the default
             when omitted.
