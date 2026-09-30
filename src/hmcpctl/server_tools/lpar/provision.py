@@ -22,10 +22,10 @@ tool, register_tools, tool_security = tool_module()
 # The VIOS this call mutates arrives one level below the signature —
 # `storage.vios_uuid` — and is declared here as a nested selector (#260), so
 # extraction, the audit record, and denial messages see it instead of only the
-# managed system. The nested `adapters.vios_partition_id` selector went with the
-# vSCSI step it fed (#1030). The tool stays `exhaustive_targets=False`, so only
-# `targets = "all-targets"` grants it: whether a `targets` table may now bound it
-# is a policy decision this removal does not make.
+# managed system. It stays `exhaustive_targets=False`, so only
+# `targets = "all-targets"` grants it (#1086): `assignments` names vNIC backing
+# VIOSes in nested entries, dedicated-slot DRC indexes, and SR-IOV adapter and port
+# ids, and no target kind can express those.
 @tool(
     effect="mutate",
     operation="provision.lpar",

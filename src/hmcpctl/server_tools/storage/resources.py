@@ -117,16 +117,11 @@ def hmc_create_volume_group(
     return with_client(operation, profile=profile)
 
 
-# Not exhaustive: this declaration predates #1030, which removed the
-# `vios_partition_id` selector that made the tool unboundable. Whether a
-# `targets` table may now grant it is a policy decision that removal does not
-# make, so only `targets = "all-targets"` grants it.
-@tool(
-    effect="mutate",
-    operation="storage.attach_disk",
-    target_kind="lpar",
-    exhaustive_targets=False,
-)
+# Exhaustive (#1086): the LPAR, its optional system, and `vios_uuid` are declared
+# selectors, and `vg_uuid`/`disk_name` are addressed inside that VIOS, which ADR
+# 0039 treats as contained — the same surface as `hmc_create_virtual_disk` plus
+# `hmc_map_storage_to_lpar`, both table-grantable.
+@tool(effect="mutate", operation="storage.attach_disk", target_kind="lpar")
 def hmc_attach_disk_to_lpar(
     lpar_name_or_uuid: str,
     vios_uuid: str,

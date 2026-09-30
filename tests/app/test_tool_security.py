@@ -1235,9 +1235,6 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_restore_lpar_profiles",
         "hmc_restore_vios",
         "hmc_provision_lpar",
-        # Its slot-number selector went with the vSCSI step (#1030); whether a
-        # table may now grant it is a separate decision, so it stays here.
-        "hmc_attach_disk_to_lpar",
         # Selectors, but one of them is a per-system slot number the fleet-wide
         # `vios` allowlist cannot pin down.
         "hmc_add_vfc_adapter",
@@ -1276,7 +1273,6 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
     assert declared == {
         "hmc_add_vfc_adapter",
         "hmc_add_vscsi_adapter",
-        "hmc_attach_disk_to_lpar",
         "hmc_backup_lpar_profiles",
         "hmc_backup_vios",
         "hmc_create_lpar",
