@@ -48,8 +48,11 @@ mapping comes from epic #871 and issue #872):
 - `operation=dumprestart` crashes the partition and takes a platform dump. It is refused with
   a `ValueError` unless `allow_dump_restart=True`; nothing else asks for confirmation.
 - The vendor's fourth value, `dumpretry`, is not accepted.
-- `on` against a running partition submits no job and reports `already_running`, unless
-  `force=True`.
+- `on` submits a job only from the 'not activated' state, unless `force=True`. An activated
+  partition ('running', 'starting', 'open firmware') submits no job and reports
+  `already_running`; any other state is refused with an HTTP 409 error naming it.
+  With `force=True` the job is always submitted; outside 'not activated' the HMC fails it
+  (HSCL3681).
 - With `wait=True`, a wait that times out returns the last-seen, non-terminal job. Poll it
   with `hmcpctl.operations.jobs.get_job` (tool: `hmc_get_job`); do not resubmit, least of
   all an `operation=dumprestart`.

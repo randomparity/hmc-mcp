@@ -228,6 +228,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `manual` before any HMC call. `auto` was accepted before, but V10R3's `KeylockPosition`
   enumeration has no such value and `mksyscfg` takes no keylock, so an `auto` create
   fell back to `mksyscfg` and dropped the keylock silently (#1164).
+- `hmc_power_on_lpar`, `lpars power-on` and `power_on_lpar`/`power_lpar` no longer submit a
+  PowerOn the HMC is certain to fail (HSCL3681) when the partition is not `not activated`. An
+  activated partition — `running`, `starting` or `open firmware` — reports `already_running`
+  with a message naming its state; any other state, or an empty read, is refused with an HTTP
+  409 `HMCError` naming it, and no job is submitted. The comparison ignores case, so the CLI's
+  title-case rendering is read the same way. `force=True` still submits, and the failed job is
+  returned as before (#1162).
 - `hmc_fleet_health` (and `systems health`) failed-job records carry the identifier
   `hmc_get_job` accepts. Each record's `uuid`, filled from the entry UUID that a V10R3 HMC
   answers with HTTP 406 on `/rest/api/uom/jobs/{id}`, is replaced by `job_id`, taken from
