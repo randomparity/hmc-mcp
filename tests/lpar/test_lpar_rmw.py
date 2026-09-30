@@ -310,7 +310,7 @@ def test_partition_updates_maps_dedicated_processors_in_the_current_mode():
     ) == {
         f"{DEDICATED}/DesiredProcessors": "3",
         f"{DEDICATED}/MaximumProcessors": "4",
-        f"{PPC}/SharingMode": "keep_idle_procs",
+        f"{PPC}/SharingMode": "keep idle procs",
         f"{PPC}/HasDedicatedProcessors": "true",
     }
 
@@ -333,6 +333,24 @@ def test_partition_updates_sets_the_shared_sharing_mode_without_a_weight(
         f"{PPC}/SharingMode": mode,
         f"{PPC}/HasDedicatedProcessors": "false",
     }
+
+
+@pytest.mark.parametrize(
+    ("mode", "rest"),
+    [
+        ("keep_idle_procs", "keep idle procs"),
+        ("share_idle_procs", "sre idle proces"),
+        ("share_idle_procs_active", "sre idle procs active"),
+        ("share_idle_procs_always", "sre idle procs always"),
+    ],
+)
+def test_partition_updates_writes_the_rest_spelling_of_a_dedicated_mode(mode, rest):
+    """The REST schema refuses the CLI spelling with REST0001 (#1185)."""
+    updates = partition_updates(
+        _lpar(_entry(dedicated=True)), resources=LparResources(sharing_mode=mode)
+    )
+
+    assert updates[f"{PPC}/SharingMode"] == rest
 
 
 def test_partition_updates_maps_nothing_for_dedicated_alone():
