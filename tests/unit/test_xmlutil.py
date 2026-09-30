@@ -1,5 +1,7 @@
 """Tests for the Atom/XML parsing helpers."""
 
+import pytest
+
 from hmcpctl.xmlutil import (
     element_to_dict,
     find_all_text,
@@ -128,3 +130,33 @@ def test_repeated_children_become_list():
         __import__("xml.etree.ElementTree", fromlist=["fromstring"]).fromstring(xml)
     )
     assert result["item"] == ["1", "2", "3"]
+
+
+@pytest.mark.parametrize("malformed_first", [True, False])
+def test_a_malformed_relative_self_link_never_displaces_the_real_one(malformed_first):
+    """A job read carries `nulljobs/{JobID}` beside its real SELF link (#1160)."""
+    real = (
+        '<link rel="SELF" href="https://hmc.example.test/rest/api/uom/jobs/'
+        '1787837921264/ae9d19a9-0000-4000-8000-000000000001"/>'
+    )
+    malformed = '<link rel="SELF" href="nulljobs/1787837921264"/>'
+    links = malformed + real if malformed_first else real + malformed
+    entry = (
+        f'<entry xmlns="http://www.w3.org/2005/Atom"><id>2dd9cdd8</id>{links}</entry>'
+    )
+
+    [parsed] = parse_feed(entry)
+
+    assert parsed["link"] == (
+        "https://hmc.example.test/rest/api/uom/jobs/"
+        "1787837921264/ae9d19a9-0000-4000-8000-000000000001"
+    )
+
+
+def test_a_lone_relative_self_link_is_still_reported():
+    entry = (
+        '<entry xmlns="http://www.w3.org/2005/Atom"><id>x</id>'
+        '<link rel="SELF" href="nulljobs/1"/></entry>'
+    )
+
+    assert parse_feed(entry)[0]["link"] == "nulljobs/1"

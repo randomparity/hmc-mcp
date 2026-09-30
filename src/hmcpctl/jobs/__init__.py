@@ -14,6 +14,8 @@ from .core import (
     TERMINAL_JOB_STATUSES,
     JobOutcome,
     JobWaitClient,
+    canonical_job_href,
+    canonical_job_path,
     job_identifier,
     job_outcome,
     validate_wait_timing,
