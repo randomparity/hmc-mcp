@@ -10,7 +10,7 @@ from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,
-    parse_hmc_delimited_rows,
+    parse_hmc_result_rows,
 )
 from .transport import HMCCLIError, run_hmc_command
 
@@ -40,14 +40,7 @@ def validate_sriov_mode(mode: SriovMode) -> SriovMode:
 
 
 def _parse_admitted_rows(output: str, fields: tuple[str, ...]) -> list[dict[str, str]]:
-    if output.strip() == "No results were found.":
-        return []
-    try:
-        return parse_hmc_delimited_rows(output, fields)
-    except ValueError as exc:
-        raise HMCCLIError(
-            f"SR-IOV inventory response did not match the expected {','.join(fields)} fields"
-        ) from exc
+    return parse_hmc_result_rows(output, fields, "SR-IOV inventory")
 
 
 async def list_sriov_adapter_rows(
