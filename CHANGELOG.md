@@ -204,9 +204,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 - The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
   set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
-  says the client decides per call site whether to send it, and points at
-  `docs/compatibility.md`; the tests pin that the variable is not recommended (#888).
-
+  says the client decides per call site whether to send it, and directs the operator to report a
+  client defect instead of changing environment settings; the tests pin that the variable is
+  not recommended (#888).
 - The vNIC snapshots in `vnic_before`/`vnic_after` from `network add-vnic`/`hmc_add_vnic` and
   `network remove-vnic`/`hmc_remove_vnic` report each embedded backing's `is_active` and
   `status` from the HMC's `backing_device_states`, joined by logical port ID. Before, they were
