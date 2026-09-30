@@ -35,7 +35,7 @@ _PROFILE_UUID = "0A1B2C3D-0000-4000-8000-000000000002"
 _JOB_ID = "4711"
 _PROFILE_READ = profile_io_slot_rows_command(_SYSTEM)
 
-#: The ten operations whose evidence this arm exists to produce (issue #876).
+#: The twelve operations whose evidence this arm exists to produce (issue #876).
 _PROMOTED = {
     "lpar.create",
     "pcie.assign_dedicated_slot",
@@ -47,6 +47,8 @@ _PROMOTED = {
     "job.wait",
     "lpar.delete",
     "lpar.list_refcodes",
+    "lpar.get_state",
+    "pcie.list_dedicated_slots",
 }
 
 _DEFAULT = object()
@@ -286,6 +288,12 @@ def test_happy_path_promotes_every_operation_and_leaves_nothing(schemas):
         "delete-call-succeeded",
         "lpar-name-absent",
         "slot-released",
+    }
+    assert set(observations["lpar.get_state"]["assertions"]) == {"state-read-reports-firmware"}
+    assert set(observations["pcie.list_dedicated_slots"]["assertions"]) == {
+        "list-call-succeeded",
+        "fixture-slot-listed",
+        "fixture-slot-unowned",
     }
     _assert_torn_down(world)
 
