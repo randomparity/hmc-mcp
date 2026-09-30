@@ -438,11 +438,12 @@ def _match_uuid_name(raw: str, uuid: str, what: str) -> str:
     """Return the name on the ``uuid,name`` line matching *uuid*.
 
     Non-matching lines are skipped; a matching line with an empty name column
-    (malformed row) is not returned.
+    (malformed row) is not returned. UUIDs compare case-insensitively: V10R3
+    prints LPAR UUIDs in upper case and system UUIDs in lower case.
     """
     for line in raw.splitlines():
         row_uuid, _, name = line.partition(",")
-        if row_uuid.strip() == uuid:
+        if row_uuid.strip().lower() == uuid.lower():
             name = name.strip()
             if name:
                 return name

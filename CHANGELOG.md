@@ -202,6 +202,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- Resolving a partition or managed-system UUID to its CLI name over SSH (used by
+  `lpars capture-console` and the other SSH-passthrough tools) matches the UUID
+  case-insensitively. V10R3's `lssyscfg -F uuid` prints LPAR UUIDs in upper case, so a
+  lower-case LPAR UUID failed with `Could not resolve LPAR UUID` (#879).
 - `pcie.list_dedicated_slots` (and so `hmc_list_dedicated_pcie_slots` and
   `network list-dedicated-pcie-slots`) reports an unowned slot's `owner_lpar` as `null`. It
   returned the string `"null"`, which `lshwres -F` prints for an absent partition name on
