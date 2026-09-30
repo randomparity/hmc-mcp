@@ -40,8 +40,9 @@ def translate_virtual_network_create_error(exc: HMCError) -> HMCError:
             "The HMC rejected the virtual network create request (Not Acceptable). "
             "Likely causes: (1) media-type negotiation — hmcpctl sends Accept */* "
             "with a typed Content-Type, so this HMC level negotiates differently; "
-            "(2) XML schema version mismatch — try setting "
-            "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
+            "(2) the X-HMC-Schema-Version request header — some HMC levels reject it on "
+            "particular endpoints, and hmcpctl decides per call site whether to send it, "
+            "so report this as a client defect rather than changing environment settings.",
             exc.status_code,
             body=exc.body,
         )
