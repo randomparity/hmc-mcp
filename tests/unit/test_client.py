@@ -1958,6 +1958,75 @@ async def test_job_methods_preserve_non_structural_encoding(mock_hmc, method, pa
         assert result is None
 
 
+# The SELF link a V10R3 HMC renders on every read of a job: the global jobs path,
+# the JobID, and a UUID that changes on every read of the same job. The HMC
+# refuses the link itself with HTTP 400 REST000B (live capture at 2281afd2, #1160).
+_READ_UUID = "65680cb7-0000-4000-8000-000000000002"
+_HMC_SELF_LINK = f"https://hmc.test/rest/api/uom/jobs/1787837921263/{_READ_UUID}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+async def test_job_methods_address_the_hmc_self_link_by_its_job_id(mock_hmc, method):
+    """The per-read segment addresses nothing stable; the JobID path resolves."""
+    by_job_id = mock_hmc.route(
+        url="https://hmc.test/rest/api/uom/jobs/1787837921263",
+        method__in=("GET", "DELETE"),
+    ).mock(return_value=httpx.Response(200, text=JOB_ENTRY))
+    by_read_uuid = mock_hmc.route(
+        url=_HMC_SELF_LINK, method__in=("GET", "DELETE")
+    ).mock(return_value=httpx.Response(400, text="REST000B The URL is not valid."))
+
+    async with HMCClient(make_config()) as hmc:
+        await getattr(hmc, method)("1787837921263", job_href=_HMC_SELF_LINK)
+
+    assert by_job_id.called
+    assert not by_read_uuid.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Only a UUID-shaped trailing segment is dropped; anything else stays in
+        # the path and is refused whole.
+        "/rest/api/uom/jobs/1787837921263/HmcUser",
+        "/rest/api/uom/jobs/1787837921263/..",
+        # Dropping the per-read segment must not let an unsafe JobID segment
+        # through: the refusal runs on the path that would be requested.
+        f"/rest/api/uom/jobs/..%2F..%2Fweb%2FHmcUser/{_READ_UUID}",
+        f"/rest/api/uom/jobs/j%3Fx=1/{_READ_UUID}",
+        f"/rest/api/web/jobs/1787837921263/{_READ_UUID}",
+    ],
+)
+async def test_a_self_link_lookalike_is_refused(mock_hmc, method, path):
+    sent = mock_hmc.route(method__in=("GET", "DELETE")).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"^job_href refused: it does not address"):
+            await getattr(hmc, method)("1787837921263", job_href=path)
+
+    assert not sent.called, "a refused job path must not reach the wire"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
+async def test_a_job_id_in_the_self_link_shape_is_still_refused(mock_hmc, method):
+    """The SELF-link allowance is for job_href only; job_id stays one segment."""
+    sent = mock_hmc.route(method__in=("GET", "DELETE")).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"^job_id refused: it does not address"):
+            await getattr(hmc, method)(f"1787837921263/{_READ_UUID}")
+
+    assert not sent.called, "a refused job path must not reach the wire"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method", ["get_job_entry", "delete_job"])
 async def test_job_methods_require_literal_collection_spelling(mock_hmc, method):
