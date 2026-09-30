@@ -211,6 +211,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   ADR 0066 re-stamp and handover. A `[hmcpctl` or `[caller ` fragment without a complete stamp
   is refused before any HMC call. Removing a stamp now takes `ownership_override`, which
   writes the text as given. ADR 0066 carries a dated amendment recording the change (#1169).
+- `hmc_power_on_lpar` and `power_on_lpar` with `wait` now read the partition
+  state once after the job ends successfully and raise when it is `error` or `not activated`,
+  naming the state and pointing at `hmc_read_lpar_refcodes`. The HMC can finish the PowerOn job
+  `COMPLETED_OK` while activation fails, which was reported as success (#1165).
+- The managed-system MTMS is now read from the element V10R3 serves,
+  `MachineTypeModelAndSerialNumber`, through one shared renderer (`xmlutil.render_mtms`).
+  `systems list` showed `-` for every system, a VIOS backup addressed by system UUID always
+  failed its MTMS lookup, and snapshot capture and `console info`
+  read the unserved `MachineTypeModelSerialNumber`. The old name is no longer read (#1184).
 - `hmc_lpar_summary`, `lpars summary` and `lpar_summary` returned null memory and processor
   figures on V10R3, which nests them in `PartitionMemoryConfiguration` and
   `PartitionProcessorConfiguration`. They now read those containers: `current_proc_units` and

@@ -367,7 +367,11 @@ def hmc_power_on_lpar(
     from any state but 'not activated'.
 
     Set wait=True to block until the job reaches a terminal state or until
-    timeout_seconds elapses; ``job`` then contains the last polled job.
+    timeout_seconds elapses; ``job`` then contains the last polled job. When the
+    waited job ends successfully, the partition state is read once: 'error' or
+    'not activated' is raised as a failed activation naming the state, because the
+    HMC can complete the job cleanly while activation fails. Read the reference
+    code with hmc_read_lpar_refcodes.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition to power on.

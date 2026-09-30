@@ -41,7 +41,11 @@ SYSTEMS = b"""<?xml version="1.0"?>
       <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <SystemName>server1</SystemName>
         <State>operating</State>
-        <MachineTypeModelSerialNumber>9179-MHD*06064FV</MachineTypeModelSerialNumber>
+        <MachineTypeModelAndSerialNumber>
+          <MachineType>9179</MachineType>
+          <Model>MHD</Model>
+          <SerialNumber>06064FV</SerialNumber>
+        </MachineTypeModelAndSerialNumber>
         <IPAddress>10.0.0.11</IPAddress>
       </ManagedSystem>
     </content>

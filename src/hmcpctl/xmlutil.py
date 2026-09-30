@@ -31,7 +31,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, ParamSpec, cast
 
 # Element is used only as a type annotation; all XML parsing uses defusedxml.
@@ -298,6 +298,29 @@ def leaf_text(value: object) -> object:
     if isinstance(value, dict) and isinstance(value.get("text"), str):
         return value["text"]
     return value
+
+
+def mtms_parts(resource: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    """Return (machine type, model, serial) from a managed system resource.
+
+    V10R3 serves ``MachineTypeModelAndSerialNumber`` as a nested element. Returns
+    ``None`` unless all three children are nonblank strings.
+    """
+    mtms = resource.get("MachineTypeModelAndSerialNumber")
+    if not isinstance(mtms, Mapping):
+        return None
+    machine_type, model, serial = (
+        leaf_text(mtms.get(name)) for name in ("MachineType", "Model", "SerialNumber")
+    )
+    if all(isinstance(p, str) and p.strip() for p in (machine_type, model, serial)):
+        return cast("str", machine_type), cast("str", model), cast("str", serial)
+    return None
+
+
+def render_mtms(resource: Mapping[str, Any]) -> str | None:
+    """Render ``type-model*serial``, or ``None`` when the MTMS is absent or partial."""
+    parts = mtms_parts(resource)
+    return None if parts is None else "{}-{}*{}".format(*parts)
 
 
 def parse_feed(xml_text: str) -> list[dict[str, Any]]:

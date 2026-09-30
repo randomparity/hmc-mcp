@@ -9,7 +9,7 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from ...xmlutil import leaf_text
+from ...xmlutil import leaf_text, render_mtms
 from .capacity import system_capacity
 
 
@@ -174,17 +174,6 @@ def _text_or_none(value: object) -> str | None:
     return text if isinstance(text, str) else None
 
 
-def _mtms(value: object) -> str | None:
-    """Render the structured MTMS element as ``type-model*serial``."""
-    if not isinstance(value, dict):
-        return None
-    parts = (value.get("MachineType"), value.get("Model"), value.get("SerialNumber"))
-    if not all(isinstance(part, str) and part for part in parts):
-        return None
-    machine_type, model, serial = parts
-    return f"{machine_type}-{model}*{serial}"
-
-
 def _system_summary(
     system: dict[str, Any],
     lpars: list[dict[str, Any]],
@@ -204,7 +193,7 @@ def _system_summary(
         uuid=system.get("UUID"),
         name=res.get("SystemName"),
         state=res.get("State"),
-        mtms=_mtms(res.get("MachineTypeModelAndSerialNumber")),
+        mtms=render_mtms(res),
         firmware_version=_text_or_none(res.get("SystemFirmware")),
         total_memory_mib=capacity.total_memory_mib,
         free_memory_mib=capacity.free_memory_mib,
