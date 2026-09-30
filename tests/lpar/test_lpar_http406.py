@@ -8,6 +8,7 @@ CLI fallback and still surface an actionable HMCError on 406.
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -245,8 +246,14 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     assert result.warnings == ()
 
 
-def test_create_lpar_rest0001_schema_rejection_falls_back_to_cli(monkeypatch, mock_hmc):
-    """A 400 REST0001 created nothing, so the create still reaches mksyscfg (ADR 0178)."""
+def test_create_lpar_rest0001_schema_rejection_falls_back_to_cli(
+    monkeypatch, mock_hmc, caplog
+):
+    """A 400 REST0001 created nothing, so the create still reaches mksyscfg (ADR 0178).
+
+    The fallback logs the HMC's unmarshal message, so a defect in our own document is
+    not hidden behind a successful mksyscfg create (#1164).
+    """
     _hmc_env(monkeypatch)
     order: list[str] = []
     _mock_create_406(
@@ -254,12 +261,19 @@ def test_create_lpar_rest0001_schema_rejection_falls_back_to_cli(monkeypatch, mo
     )
     apply = AsyncMock(return_value="")
 
-    result, create_via_cli = _create_via_406(apply, order)
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.lpar.core"):
+        result, create_via_cli = _create_via_406(apply, order)
 
     create_via_cli.assert_awaited_once()
     apply.assert_awaited_once()
     assert result.lpar.get("UUID") == LPAR_UUID
     assert order == ["search", "mksyscfg", "search"]
+    assert any(
+        "falling back to mksyscfg" in record.getMessage()
+        and "must appear on element 'PartitionProcessorConfiguration'"
+        in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_create_lpar_other_400_is_raised_without_cli_fallback(monkeypatch, mock_hmc):

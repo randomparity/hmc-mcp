@@ -238,23 +238,20 @@ BUILT = {
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
 }
-# No live evidence records whether V10R3 requires schemaVersion on these; left unchanged (#961).
-PROCESSOR_WRAPPERS_UNVERIFIED = frozenset(
-    {
-        "PartitionProcessorConfiguration",
-        "SharedProcessorConfiguration",
-        "DedicatedProcessorConfiguration",
-    }
-)
 
 
 @pytest.mark.parametrize("xml", BUILT.values(), ids=BUILT.keys())
 def test_metadata_elements_carry_schema_version(xml: str) -> None:
+    """V10R3 refuses a create whose PartitionProcessorConfiguration lacks it (#1164).
+
+    The live refusal was ``400 REST0001 Attribute 'schemaVersion' must appear on element
+    'PartitionProcessorConfiguration'`` (#1161, P18). The modify fixture in
+    tests/lpar/test_lpar_rmw.py, modelled on the live V10R3 read, carries
+    ``schemaVersion="V1_0"`` on that element and on both processor configurations.
+    """
     missing = [
         localname(el.tag)
         for el in _tree(xml).iter()
-        if "Metadata" in _children(el)
-        and "schemaVersion" not in el.attrib
-        and localname(el.tag) not in PROCESSOR_WRAPPERS_UNVERIFIED
+        if "Metadata" in _children(el) and "schemaVersion" not in el.attrib
     ]
     assert missing == []

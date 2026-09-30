@@ -136,7 +136,7 @@ def _shared_sharing_mode(resources: LparResources) -> str | None:
 
 def _dedicated_processor_body(resources: LparResources) -> list[str]:
     parts = [
-        '    <DedicatedProcessorConfiguration kb="CUD" kxe="false">',
+        '    <DedicatedProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
         "      <Metadata><Atom/></Metadata>",
     ]
     for name, value in (
@@ -169,7 +169,7 @@ def _shared_processor_body(resources: LparResources) -> list[str]:
     )
     parts.extend(
         (
-            '    <SharedProcessorConfiguration kb="CUD" kxe="false">',
+            '    <SharedProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
             "      <Metadata><Atom/></Metadata>",
         )
     )
@@ -215,7 +215,7 @@ def _processor_config(resources: LparResources) -> str:
     )
     return "\n".join(
         [
-            '  <PartitionProcessorConfiguration kb="CUD" kxe="false">',
+            '  <PartitionProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
             "    <Metadata><Atom/></Metadata>",
             *body(resources),
             "  </PartitionProcessorConfiguration>",
