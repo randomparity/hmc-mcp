@@ -208,6 +208,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   They now raise `HMCError`. On V10R3 that 400 refuses the request's URL form and comes back
   for a live job too; only `404 REST0005 No such Job` means missing. ADR 0093 carries a dated
   amendment with the evidence review of #95 (#1174).
+- `hmc_power_on_lpar` and `power_on_lpar` with `wait` now read the partition
+  state once after the job ends successfully and raise when it is `error` or `not activated`,
+  naming the state and pointing at `hmc_read_lpar_refcodes`. The HMC can finish the PowerOn job
+  `COMPLETED_OK` while activation fails, which was reported as success (#1165).
 - The managed-system MTMS is now read from the element V10R3 serves,
   `MachineTypeModelAndSerialNumber`, through one shared renderer (`xmlutil.render_mtms`).
   `systems list` showed `-` for every system, a VIOS backup addressed by system UUID always

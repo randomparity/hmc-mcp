@@ -1100,3 +1100,71 @@ async def test_power_on_lpar_outcome_carries_the_profile_warnings():
 
     assert len(outcome.warnings) == 1
     assert "virtual slot 2" in outcome.warnings[0]
+
+
+def _ok_job(status: str = "COMPLETED_OK") -> dict:
+    return {
+        "UUID": "job-uuid",
+        "Resource": {
+            "JobID": "job-uuid",
+            "Status": status,
+            "Results": {
+                "JobParameter": [
+                    {"ParameterName": "bootmode", "ParameterValue": "sms"},
+                    {"ParameterName": "returnCode", "ParameterValue": "0"},
+                ]
+            },
+        },
+    }
+
+
+async def _waited_power_on(state, job=None, **kwargs):
+    hmc = _power_client()
+    hmc.get_quick_property.side_effect = ["not activated", state]
+    hmc.wait_for_job_entry.return_value = job or _ok_job()
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        return hmc, await power_on_lpar(hmc, LPAR_UUID, wait=True, **kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["error", "Error", "not activated"])
+async def test_waited_power_on_completed_ok_but_failed_state_raises(state):
+    with pytest.raises(HMCError, match="activation failed") as raised:
+        await _waited_power_on(state)
+
+    assert f"state {state!r}" in str(raised.value)
+    assert "hmc_read_lpar_refcodes" in str(raised.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["running", "starting", "open firmware", "Running"])
+async def test_waited_power_on_accepts_every_activated_state(state):
+    hmc, outcome = await _waited_power_on(state)
+
+    assert outcome.already_running is False
+    assert outcome.job == _ok_job()
+    assert hmc.get_quick_property.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_waited_power_on_failed_job_is_returned_without_a_state_read():
+    job = _ok_job("COMPLETED_WITH_ERROR")
+    hmc, outcome = await _waited_power_on("error", job)
+
+    assert outcome.job == job
+    assert hmc.get_quick_property.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unwaited_power_on_reads_no_state_after_submit():
+    hmc = _power_client()
+    with patch(
+        "hmcpctl.operations.lpar.core.resolve_lpar_uuid",
+        new=AsyncMock(return_value=LPAR_UUID),
+    ):
+        await power_on_lpar(hmc, LPAR_UUID)
+
+    assert hmc.get_quick_property.await_count == 1
