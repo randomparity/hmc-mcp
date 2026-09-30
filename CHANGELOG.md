@@ -208,6 +208,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   text, so a stamped partition is `owned: true` with its owner. `hmc_lpar_summary` returns the
   same text instead of a mapping, and the system-wide profile-restore ownership check, which
   reads the listing, no longer refuses on an unreadable description (#1168).
+- `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
+  HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
+  HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,
+  migration and decommission outcomes carry the JobID. A `job_href` in the SELF-link shape the
+  HMC reports on every read, `/rest/api/uom/jobs/{JobID}/{uuid}`, is accepted and read through
+  its JobID segment: the HMC refuses that link as a request URL and its trailing UUID changes on
+  every read, so it is never requested. An outcome's `job_href` taken from a read is reduced to
+  the same stable `/rest/api/uom/jobs/{JobID}` link, and the entry parser no longer lets the
+  HMC's malformed relative `nulljobs/{JobID}` SELF link displace the real one. The job-path
+  refusal still runs on the path that is requested. An entry UUID stored by an earlier release still reads
+  through a supplied link, with the mismatch warning naming that cause. The bare-cec live arm
+  expects `osshutdown` on a partition with no RMC to fail with the observed `HSCL0DB4` (#1160).
 - The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
   set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
   says the client decides per call site whether to send it, and directs the operator to report a

@@ -249,6 +249,17 @@ def element_to_dict(el: Element) -> dict[str, Any] | str:
     return result
 
 
+def _is_rooted(href: str | None) -> bool:
+    """Whether *href* is an absolute URL or an absolute path.
+
+    A job read carries a malformed relative SELF link beside the real one —
+    ``nulljobs/{JobID}``, "null" where a base URL belonged (live capture at
+    2281afd2, issue #1160) — so a relative SELF link never displaces a rooted one,
+    whichever order the HMC writes them in.
+    """
+    return isinstance(href, str) and (href.startswith("/") or "://" in href)
+
+
 def _parse_entry(entry: Element) -> dict[str, Any]:
     """Flatten one Atom entry and its wrapped HMC resource."""
     result: dict[str, Any] = {
@@ -265,7 +276,9 @@ def _parse_entry(entry: Element) -> dict[str, Any]:
         elif name == "title":
             result["title"] = (child.text or "").strip()
         elif name == "link" and child.attrib.get("rel", "SELF").upper() == "SELF":
-            result["link"] = child.attrib.get("href")
+            href = child.attrib.get("href")
+            if _is_rooted(href) or not _is_rooted(result["link"]):
+                result["link"] = href
         elif name == "content":
             resource = next(iter(child), None)
             if resource is not None:
