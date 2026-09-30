@@ -12,6 +12,8 @@ Amended 2026-09-30 by issues #1160 and #1172: `jobs.job_identifier` now prefers 
 over the entry UUID, and outcomes carry the stable `/rest/api/uom/jobs/{JobID}` `job_href`. On
 V10R3 only the JobID resolves on the global jobs path; entry UUIDs answer HTTP 406 or `400
 REST000B/REST000E` (live evidence, issue #1161 P2–P4).
+Amended 2026-09-30 by issue #1174 — see *Amendment (#1174)* below: an HTTP 400 REST000E is no
+longer read as a missing job on either read; only a 404 means missing.
 
 ## Context
 
@@ -106,15 +108,12 @@ target resource, not just the job — `.../LogicalPartition/{uuid}/do/PowerOn/Jo
 stop resolving while the job is fine, and this package ships decommission operations that remove
 such parents. A 404 raised against a supplied link is therefore **confirmed against the global
 jobs path** before it becomes `found=False`; when the second read finds the job, that result is
-returned and the stale link is logged. The confirmation is best-effort **about absence only**:
-firmware that does not serve the global path — a 404, or the HTTP 400 REST000E the client already
-turns into an actionable message — leaves the original 404 standing rather than replacing a
-documented `found=False` with an exception. It is not best-effort about failure. A 5xx, a
-connection reset, or a read timeout propagates as `HMCError`, exactly as it would on the primary
-read. `HMCTransportError` subclasses `HMCError`, so catching the base class here would quietly
-convert a degraded HMC into the one answer on this path a consumer acts on destructively — and it
-would do so hardest on issue #95 firmware, where a link is supplied and the global path is least
-likely to answer cleanly.
+returned and the stale link is logged. Only a 404 on that second read confirms the absence and
+leaves the original 404 standing. Every other failure propagates as `HMCError`, exactly as it
+would on the primary read: a 5xx, a connection reset, a read timeout, and — since #1174 — an HTTP
+400 REST000E, which refuses the request's URL form and says nothing about the job (see *Amendment
+(#1174)*). `HMCTransportError` subclasses `HMCError`, so catching the base class here would
+quietly convert a degraded HMC into the one answer on this path a consumer acts on destructively.
 
 A link proved stale is then **dropped**, not echoed. The outcome carries the href from the read
 that worked, so a consumer re-persisting the handle from every outcome never stores a link known
@@ -186,8 +185,9 @@ actionable *terminal* outcome and a vanished job has no status to classify.
 
 The translation keys on the status code alone, so it also absorbs a 404 that means "this
 deployment does not serve that path" — a base URL, reverse proxy, or firmware level where the
-global jobs path is absent, as distinct from issue #95's HTTP 400 REST000E, which
-`_check_web_rest000e` already turns into an actionable error. The code cannot tell that apart from
+global jobs path is absent, as distinct from an HTTP 400 REST000E, which refuses the URL form,
+propagates as an `HMCError`, and is never translated (*Amendment (#1174)*). The code cannot tell
+a deployment-level 404 apart from
 a reaped job, and a deployment in that state answers `found=False` for every job forever. What it
 can do is be loud: the translation logs at **warning**, naming the identifier, whether a
 `job_href` was used, and the discarded `HMCError` detail. A `found=False` a consumer acts on
@@ -397,11 +397,12 @@ alone, so an ancestor handler on stderr — what `logging.basicConfig()` leaves 
 the same record with no marker and no escaping, and outside a served process nothing installs
 the sink at all. `%r` remains the layer that holds on those paths.
 
-`_confirm_missing` treats the HTTP 400 REST000E of issue #95 firmware as absence, so on exactly the
-firmware `job_href` exists to serve, a link whose parent resource was removed makes one live job
-read as absent. ADR clause 2 settled that trade at the operations layer on the strength of a
-warning log; an MCP caller cannot read that log, so both tool docstrings now tell a caller who
-supplied a `job_href` to re-read by identifier alone before acting on absence.
+`_confirm_missing` treated the HTTP 400 REST000E of issue #95 as absence, so a link whose parent
+resource was removed could make one live job read as absent. *Amendment (#1174)* removes that
+case: a REST000E on the confirming read now raises. A 404 on both reads is still `found=False`,
+and ADR clause 2 settled that trade at the operations layer on the strength of a warning log; an
+MCP caller cannot read that log, so both tool docstrings still tell a caller who supplied a
+`job_href` to re-read by identifier alone before acting on absence.
 
 ## Amendment (#526): the CLI job commands read through `operations.jobs`
 
@@ -417,6 +418,56 @@ supplied link, clause 2's existing confirmation rule still applies: an absent li
 through the global jobs path before the command reports the job missing. A found job retains the
 existing command behavior: `jobs show` prints the serialized outcome, while `jobs wait` prints the
 status followed by that outcome.
+
+## Amendment (#1174, 2026-09-30): HTTP 400 REST000E is not a missing job
+
+Clause 2 read an HTTP 400 REST000E on the confirming read as "this HMC has no job there", and
+`_confirm_missing` turned it into `found=False`. Clause 2, clause 4 and *Amendment (#474)* cited
+issue #95 as the firmware that answers this way. That evidence does not support the reading, so
+the confirming read now raises the 400 as an `HMCError`, as the primary read already did. On
+both reads only a 404 means missing.
+
+**What #95 recorded.** Issue #95 captured `HTTP 400: REST000B The URL presented to the Management
+Console REST Web Services is not valid. REST000E Unrecognized root REST type of Job.` for
+`GET /rest/api/uom/Job` and `Job/{id}`, on V10R3 HMCs. Its fix (PR #106) polled through the
+submission's SELF link instead, and its live check on a second V10R3 HMC found that link to be
+`/rest/api/uom/jobs/{JobID}`, served with the `web+xml` media type (commit `dbebf96f`); commit
+`d821aeae` then moved the global read to that documented path. The 400 was the answer to a root
+type the HMC does not have — `Job` rather than `jobs` — for every identifier, missing or not.
+Issues #99, #113, #121 and #399 record the same `REST000E Unrecognized root REST type` code for
+`/rest/api/web/Hmc*`, which #399 settled against the IBM documentation: resources that are not
+part of the API. None of those
+issues records REST000E for a well-formed job path whose job was gone, and none records firmware
+that cannot resolve `jobs/{id}`. No case exists to keep, so this amendment keeps none.
+
+**What V10R3 answers** (issue #1161, P4, P5, P9, P11, P12):
+
+| request | answer |
+| --- | --- |
+| `GET jobs/{entry-UUID}`, no `Accept` | `400 REST000B … REST000E Unrecognized root REST type of jobs.` |
+| `GET jobs/{entry-UUID}`, `Accept: web+xml` | `406` |
+| `GET jobs/{JobID}/{uuid}` (read-side SELF link) | `400 REST000B` |
+| `GET jobs/{unknown JobID}` | `404 REST0005 No such Job` |
+| `GET jobs/{JobID}` after `DELETE jobs/{JobID}` answered `204` | `404 REST0005 No such Job` |
+| `GET /rest/api/uom/Job` (global feed) | `400 REST000B/REST000E Unrecognized root REST type of Job` |
+
+REST000E answers a URL form the HMC refuses, and it answers it for a job that is alive. A job
+that is gone answers 404 REST0005. Reading the 400 as absence therefore reports a live job gone
+whenever a read reaches the HMC in a refused form — the answer clause 2 calls the one a consumer
+acts on destructively.
+
+**What changes.** `_says_the_path_has_no_job` is removed. `_confirm_missing` keys on the same
+404 status as `_read_job`, so the two reads share one rule. `is_unsupported_job_listing` is
+unchanged: it classifies the global *feed*'s 400 REST000E as "no listing on this firmware", which
+is what that answer means there, and it never reports a job missing.
+
+**What does not change.** `job_href` stays a supported parameter, and its confirmation rule stays.
+This amendment does not revisit clause 2's reason for it ("some firmware cannot" resolve the
+identifier), beyond noting that #95 is not evidence for that reason.
+
+**Rejected: keep REST000E as absence when its message names the jobs root.** That would key the
+carve-out on text the HMC sends for a live job as readily as for a missing one (#1161 P4), so it
+would keep the misreport the amendment exists to remove. No captured answer needs it.
 
 ## Considered & rejected
 

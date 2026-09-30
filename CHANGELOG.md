@@ -202,6 +202,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `operations.jobs.get_job` and `wait_for_job` (and so `hmc_get_job`, `hmc_wait_for_job`,
+  `jobs show` and `jobs wait`) no longer report a job as missing when a supplied `job_href`
+  returns 404 and the confirming read through the global jobs path returns `HTTP 400 REST000E`.
+  They now raise `HMCError`. On V10R3 that 400 refuses the request's URL form and comes back
+  for a live job too; only `404 REST0005 No such Job` means missing. ADR 0093 carries a dated
+  amendment with the evidence review of #95 (#1174).
 - `hmc_set_lpar_description`, `lpars set-description` and `set_lpar_ownership_description` no
   longer strip the ownership stamp. `chsyscfg` replaces the whole field, so plain text set on a
   stamped partition left it unowned, and mutable and deletable without `ownership_override`.
