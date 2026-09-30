@@ -1210,8 +1210,10 @@ def test_set_description_with_its_own_stamp_is_written_as_given():
         "notes [hmcpctl",
     ],
 )
-def test_set_description_refuses_a_stamp_that_does_not_parse(bad):
-    """A malformed stamp would lock the partition; it is refused before any read."""
+@pytest.mark.parametrize("ownership_override", [False, True])
+def test_set_description_refuses_a_stamp_that_does_not_parse(bad, ownership_override):
+    """A malformed stamp would lock the partition; refused before any read, even
+    with an override."""
     resolve_system = AsyncMock()
     hmc = type("StubHMC", (), {"config": _config()})()
     write = AsyncMock()
@@ -1223,7 +1225,9 @@ def test_set_description_refuses_a_stamp_that_does_not_parse(bad):
         pytest.raises(ValueError, match="well-formed ownership stamp"),
     ):
         asyncio.run(
-            lpar_ownership.set_lpar_ownership_description(hmc, "sys1", "lpar1", bad)
+            lpar_ownership.set_lpar_ownership_description(
+                hmc, "sys1", "lpar1", bad, ownership_override=ownership_override
+            )
         )
     resolve_system.assert_not_awaited()
     write.assert_not_awaited()

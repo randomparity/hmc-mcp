@@ -296,7 +296,7 @@ def hmc_set_lpar_description(
     segment if any, then the text; read it back with hmc_get_lpar_description.
     Text carrying its own complete stamp re-stamps or hands over the partition
     and is written as given; a ``[hmcpctl`` or ``[caller `` fragment without a
-    complete stamp is rejected. With ownership_override=True the text is
+    complete stamp is always rejected. With ownership_override=True the text is
     written as given, stamp or not, which is how a stamp is removed.
 
     A description carrying a character the HMC's attribute record treats as

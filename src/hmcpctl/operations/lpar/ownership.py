@@ -691,7 +691,9 @@ async def set_lpar_ownership_description(
     written after the current well-formed stamp and its caller segment. Text
     that carries its own stamp is the ADR 0066 re-stamp or handover and is
     written as given. An approved override reads nothing (ADR 0092 §4) and
-    writes the text as given.
+    writes the text as given. The kept stamp is the one read here, so a
+    handover completed between that read and the write is overwritten with it:
+    ownership is advisory, and there is no compare-and-set.
     """
     validate_lpar_description(description)
     _require_parseable_stamp(description)
