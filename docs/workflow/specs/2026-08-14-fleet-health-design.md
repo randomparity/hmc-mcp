@@ -19,7 +19,7 @@ five-key mapping at the MCP boundary:
   state is not `running`;
 - `lpars`: `{uuid, name, state, rmc_state, system_uuid, system_name}` entries whose normalized
   RMC state is neither `active` nor `busy`;
-- `failed_jobs`: `{uuid, name, status, error}` entries whose case-normalized status belongs to
+- `failed_jobs`: `{job_id, name, status, error}` entries whose case-normalized status belongs to
   `jobs.FAILED_JOB_STATUSES`, among the first 20 records in HMC Job-feed order;
 - `warnings`: strings describing tolerated optional-data gaps.
 
