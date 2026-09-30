@@ -229,7 +229,7 @@ def power_on_outcome(
             affinity_assessment=affinity_assessment
             or affinity_not_measured(
                 "skipped",
-                "No activation was observed because the LPAR was already running.",
+                "No activation was observed because the LPAR was already activated.",
             ),
             warnings=result.warnings,
         )
@@ -738,16 +738,15 @@ async def power_lpar(
                     "already_running": True,
                     "message": (
                         f"LPAR {lpar_uuid} is already {described}. "
-                        f"Use force=True to submit PowerOn anyway.{unapplied}"
+                        f"No PowerOn job was submitted.{unapplied}"
                     ),
                 },
             )
         if observed != "not activated":
             raise HMCError(
                 f"Cannot power on LPAR {lpar_uuid} — current state is {state!r}; "
-                "PowerOn requires 'not activated'. Wait for the partition to "
-                "settle, or power it off, before retrying; force=True submits "
-                "PowerOn anyway.",
+                "PowerOn requires 'not activated', so no job was submitted. Wait "
+                "for the partition to settle, or power it off, before retrying.",
                 status_code=409,
             )
     warnings: tuple[str, ...] = ()

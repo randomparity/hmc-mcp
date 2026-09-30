@@ -655,13 +655,13 @@ async def test_power_lpar_already_running_names_the_dropped_activation_parameter
 
     hmc.submit_job.assert_not_awaited()
     assert requested.job["already_running"] is True
-    # Only the parameter actually supplied is named, and the force=True advice
-    # is not repeated as a way to apply it.
+    # Only the parameter actually supplied is named, and force=True is not
+    # offered: the HMC fails a PowerOn from any activated state (HSCL3681).
     assert "The requested boot mode was not applied" in requested.job["message"]
     for unsupplied in ("partition profile", "operation type", "keylock"):
         assert unsupplied not in requested.job["message"]
-    assert requested.job["message"].count("force=True") == 1
-    # An ordinary already-running call says exactly what it always said.
+    assert "force=True" not in requested.job["message"]
+    # An ordinary already-running call names no unapplied parameter.
     assert "not applied" not in plain.job["message"]
 
 
@@ -706,7 +706,8 @@ async def test_power_lpar_already_active_state_submits_no_job(state):
     hmc.submit_job.assert_not_awaited()
     assert result.job["already_running"] is True
     assert state in result.job["message"]
-    assert "force=True" in result.job["message"]
+    assert "No PowerOn job was submitted." in result.job["message"]
+    assert "force=True" not in result.job["message"]
 
 
 @pytest.mark.asyncio

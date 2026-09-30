@@ -938,7 +938,7 @@ def test_power_on_lpar_already_running_assessment_does_not_measure(
     assert result.already_running is True
     assert result.affinity_assessment.measured is False
     assert result.affinity_assessment.status == "skipped"
-    assert "already running" in result.affinity_assessment.reason
+    assert "already activated" in result.affinity_assessment.reason
 
 
 # ------------------------------------------------------------------ #
