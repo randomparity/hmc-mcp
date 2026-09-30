@@ -23,6 +23,7 @@ from ..jobs import (
     DEFAULT_JOB_TIMEOUT_SECONDS,
     TERMINAL_JOB_STATUSES,
     JobOutcome,
+    canonical_job_path,
     job_outcome,
     validate_wait_timing,
 )
@@ -212,7 +213,10 @@ def _select_persisted_job_href(
     """Return the link worth persisting from this read, or ``None`` if none is.
 
     A link the caller supplied is kept only when the read through it produced the
-    job. A link already known dead — the one supplied on a read that 404'd, or one
+    job, and is kept as passed: a read-side ``jobs/{JobID}/{uuid}`` link resolves
+    through its JobID path, so it stays usable even though its trailing segment
+    differs from what a later read reports. A link taken from the response is
+    already reduced to that JobID path (``jobs._job_href``). A link already known dead — the one supplied on a read that 404'd, or one
     an earlier read in this wait retired — is never handed back, so a consumer
     re-persisting from every outcome cannot store a link known not to work.
     """
@@ -220,10 +224,9 @@ def _select_persisted_job_href(
         return None
     if link is not None:
         return link
-    if (
-        dead_link is not None
-        and urlsplit(outcome.job_href or "").path == urlsplit(dead_link).path
-    ):
+    if dead_link is not None and canonical_job_path(
+        urlsplit(outcome.job_href or "").path
+    ) == canonical_job_path(urlsplit(dead_link).path):
         return None
     return outcome.job_href
 
@@ -289,8 +292,10 @@ async def get_job(
     from the response would risk replacing it with an untried one on exactly the
     firmware ``job_href`` exists to serve. Where the caller supplied no link, or
     supplied one the confirming read proved stale, the handle is the href the
-    successful read carried — so a consumer that re-persists ``job_href`` from
-    every outcome never stores a link known not to work.
+    successful read carried, reduced to the stable ``/rest/api/uom/jobs/{JobID}``
+    path when the HMC reports a read-side ``jobs/{JobID}/{uuid}`` link — so a
+    consumer that re-persists ``job_href`` from every outcome never stores a link
+    known not to work, nor one that changes on every read.
 
     Re-persist ``job_href``, not ``job_id``. Never overwrite a stored ``job_id``
     from an outcome whose ``job_id`` differs from the identifier you asked about:

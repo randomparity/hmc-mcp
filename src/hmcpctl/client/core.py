@@ -25,7 +25,7 @@ from ..documents import (
     build_logon_request_document,
 )
 from ..errors import HMCError, HMCTransportError
-from ..jobs import TERMINAL_JOB_STATUSES
+from ..jobs import TERMINAL_JOB_STATUSES, canonical_job_path
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
 from .client_contracts import (
@@ -246,16 +246,6 @@ def _reject_dot_segments(method: str, path: str) -> None:
 # delimiter is unsafe in a prefix too, not just in the identifier (ADR 0152).
 _JOB_PATH = re.compile(r"(?:/[^/?#]+)*/(?:Job|jobs)/[^/?#]+")
 
-# The shape a V10R3 HMC renders a job entry's SELF link in:
-# `/rest/api/uom/jobs/{JobID}/{uuid}`, whose trailing UUID changes on every read
-# of the same job (issue #1160). The JobID path it extends is the one the HMC was
-# observed to resolve, so a link of this shape is addressed through that path and
-# the per-read segment is never requested. Only a UUID-shaped trailing segment is
-# dropped: anything else stays in the path and meets `_reject_non_job_path` whole.
-_JOB_SELF_LINK = re.compile(
-    r"(/rest/api/uom/jobs/[^/?#]+)/[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
-)
-
 
 def _reject_non_job_path(path: str, argument: str) -> None:
     """Refuse a job path that does not address a job.
@@ -304,20 +294,17 @@ def _job_request_path(job_id: str, job_href: str | None) -> str:
     """Return the one path a job read or delete requests, refused unless it is a job.
 
     Without *job_href* the path is the documented global one built from *job_id*.
-    With it, the link's path is used, except that the HMC's own SELF-link shape
-    (`_JOB_SELF_LINK`) is addressed by its JobID segment. The refusal runs on the
-    path that will be requested (ADR 0149), after that step, so dropping the
-    per-read segment cannot let a path through the guard that it would not
-    accept on its own.
+    With it, the link's path is used, except that a read-side SELF link
+    (``jobs.canonical_job_path``) is addressed by its JobID segment: the HMC
+    refuses that link as a request URL. The refusal runs on the path that will
+    be requested (ADR 0149), after that step, so dropping the per-read segment
+    cannot let a path through the guard that it would not accept on its own.
     """
     if not job_href:
         path = f"/rest/api/uom/jobs/{job_id}"
         _reject_non_job_path(path, "job_id")
         return path
-    path = urlparse(job_href).path
-    self_link = _JOB_SELF_LINK.fullmatch(path)
-    if self_link:
-        path = self_link.group(1)
+    path = canonical_job_path(urlparse(job_href).path)
     _reject_non_job_path(path, "job_href")
     return path
 
@@ -1519,9 +1506,9 @@ class HMCClient(
 
         When *job_href* is provided (a SELF link from a job entry), its job path
         is preferred so per-operation SELF links work as returned by the HMC
-        (see issue #95). The HMC's ``/rest/api/uom/jobs/{JobID}/{uuid}`` SELF
-        link is addressed by its JobID segment; the trailing UUID changes on
-        every read and is never requested.
+        (see issue #95). A read-side ``/rest/api/uom/jobs/{JobID}/{uuid}`` SELF
+        link is addressed by its JobID segment; the HMC refuses the link itself
+        (HTTP 400 REST000B) and its trailing UUID changes on every read.
 
         Either argument produces one path, and that path is refused as
         :class:`HMCError` unless its raw and decoded forms preserve the job

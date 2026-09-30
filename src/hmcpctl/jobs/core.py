@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from ..errors import HMCError
 
@@ -27,6 +28,16 @@ TERMINAL_JOB_STATUSES = frozenset(
 )
 SUCCESSFUL_JOB_STATUSES = frozenset({"COMPLETED", "COMPLETED_OK"})
 FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
+
+# The SELF link a V10R3 HMC puts on every *read* of a job:
+# `/rest/api/uom/jobs/{JobID}/{uuid}`, whose trailing UUID changes on every read
+# and which the HMC itself refuses as a request URL (HTTP 400 REST000B, live
+# capture at 2281afd2, issue #1160). The submission's own SELF link is the
+# one-segment `/rest/api/uom/jobs/{JobID}` this reduces to. Only a UUID-shaped
+# trailing segment matches; anything else is left for the job-path guard.
+_READ_SELF_LINK = re.compile(
+    r"(/rest/api/uom/jobs/[^/?#]+)/[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
+)
 
 
 @dataclass(frozen=True)
@@ -62,15 +73,21 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
         raise ValueError("poll_interval must be greater than 0")
 
 
+def canonical_job_path(path: str) -> str:
+    """Reduce a read-side job SELF-link path to the stable JobID path it extends."""
+    read_link = _READ_SELF_LINK.fullmatch(path)
+    return read_link.group(1) if read_link else path
+
+
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return the identifier the documented global jobs path resolves.
 
-    ``Resource.JobID`` comes first: a V10R3 HMC answers
-    ``/rest/api/uom/jobs/{id}`` for the JobID and refuses the Atom entry UUID
-    with HTTP 406 (issue #1160). The entry UUID, then the SELF link, are
-    fallbacks for a response that carries no JobID. The HMC renders that link as
-    ``/rest/api/uom/jobs/{JobID}/{uuid}`` with a UUID that changes on every
-    read, so a link of that shape yields its JobID segment, not its last one.
+    ``Resource.JobID`` comes first. It is the one identifier stable from
+    submission through every read: a V10R3 HMC gives the submission entry and
+    the read entries different Atom UUIDs, and answers an entry UUID on
+    ``/rest/api/uom/jobs/{id}`` with HTTP 406 (issue #1160). The entry UUID,
+    then the SELF link, are fallbacks for a response that carries no JobID; a
+    read-side link yields its JobID segment, not its per-read last one.
     """
     resource = job.get("Resource")
     resource_id = resource.get("JobID") if isinstance(resource, dict) else None
@@ -80,15 +97,22 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     link = job.get("link")
     if not isinstance(link, str) or not link.strip():
         return None
-    segments = urlparse(link.strip()).path.rstrip("/").split("/")
-    if len(segments) >= 3 and segments[-3] == "jobs":
-        return segments[-2]
-    return segments[-1] or None
+    path = canonical_job_path(urlparse(link.strip()).path.rstrip("/"))
+    return path.rsplit("/", 1)[-1] or None
 
 
 def _job_href(job: dict[str, Any] | None) -> str | None:
+    """Return the entry's SELF link in the form worth persisting and polling.
+
+    A read-side link is reduced to its JobID path, so a handle persisted from
+    any read is the same stable link the submission carried.
+    """
     link = (job or {}).get("link")
-    return link.strip() if isinstance(link, str) and link.strip() else None
+    if not isinstance(link, str) or not link.strip():
+        return None
+    parts = urlsplit(link.strip())
+    path = canonical_job_path(parts.path)
+    return link.strip() if path == parts.path else urlunsplit(parts._replace(path=path))
 
 
 def _result_message(resource: dict[str, Any]) -> str | None:

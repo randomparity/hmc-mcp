@@ -464,30 +464,35 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
     )
 
 
-# The envelope a V10R3 HMC returns for an LPAR power job (issue #1160): the Atom
-# entry UUID differs from the JobID, and the last SELF link carries a trailing
-# UUID that changes on every read. Only `/rest/api/uom/jobs/{JobID}` resolves;
-# the entry UUID is answered with HTTP 406.
-_REAL_JOB_ID = "1787837921263"
-_REAL_ENTRY_UUID = "93f544bb-0000-4000-8000-000000000001"
+# The envelopes a V10R3 HMC returns for an LPAR power job (live capture at
+# 2281afd2, issue #1160). The submission entry's SELF link is the one-segment
+# `/rest/api/uom/jobs/{JobID}`. Every read of that path returns a *different*
+# Atom `<id>` from the submission's, a malformed `nulljobs/{JobID}` SELF link,
+# and a SELF link `/rest/api/uom/jobs/{JobID}/{uuid}` whose trailing UUID changes
+# on every read. The JobID is the only identifier stable across all of them; the
+# global path answers an entry UUID with HTTP 406, and the two-segment link with
+# HTTP 400 REST000B.
+_REAL_JOB_ID = "1787837921264"
+_SUBMIT_ENTRY_UUID = "82e81d12-0000-4000-8000-000000000001"
+_READ_ENTRY_UUID = "2dd9cdd8-0000-4000-8000-000000000002"
 _REAL_JOB_PATH = f"/rest/api/uom/jobs/{_REAL_JOB_ID}"
-_REAL_POWER_OFF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOff"
+_REAL_JOB_HREF = f"https://hmc.example.test{_REAL_JOB_PATH}"
+_REAL_POWER_ON = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn"
 
 
-def _real_job_entry(status: str, read_uuid: str) -> str:
+def _real_job_entry(status: str, entry_uuid: str, *links: str) -> str:
+    link_elements = "".join(f'  <link rel="SELF" href="{link}"/>\n' for link in links)
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<entry xmlns="http://www.w3.org/2005/Atom">\n'
-        f"  <id>{_REAL_ENTRY_UUID}</id>\n"
+        f"  <id>{entry_uuid}</id>\n"
         "  <title>JobResponse</title>\n"
-        f'  <link rel="SELF" href="nulljobs/{_REAL_JOB_ID}"/>\n'
-        '  <link rel="SELF" href="https://hmc.test:443'
-        f'{_REAL_JOB_PATH}/{read_uuid}"/>\n'
+        f"{link_elements}"
         '  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">\n'
         '    <JobResponse:JobResponse xmlns:JobResponse="http://www.ibm.com/xmlns/'
         'systems/power/firmware/web/mc/2012_10/" xmlns="http://www.ibm.com/xmlns/'
         'systems/power/firmware/web/mc/2012_10/" schemaVersion="V1_0">\n'
-        '      <RequestURL href="LogicalPartition/lpar-uuid/do/PowerOff" rel="via"/>\n'
+        '      <RequestURL href="LogicalPartition/lpar-uuid/do/PowerOn" rel="via"/>\n'
         "      <TargetUuid>lpar-uuid</TargetUuid>\n"
         f"      <JobID>{_REAL_JOB_ID}</JobID>\n"
         f"      <Status>{status}</Status>\n"
@@ -497,42 +502,64 @@ def _real_job_entry(status: str, read_uuid: str) -> str:
     )
 
 
-def _refuse_the_entry_uuid(mock_hmc) -> None:
-    mock_hmc.get(f"/rest/api/uom/jobs/{_REAL_ENTRY_UUID}").mock(
-        return_value=httpx.Response(406, text="Console Internal Error")
+def _submission_entry() -> str:
+    return _real_job_entry("NOT_STARTED", _SUBMIT_ENTRY_UUID, _REAL_JOB_HREF)
+
+
+def _read_entry(status: str, read_uuid: str) -> str:
+    return _real_job_entry(
+        status,
+        _READ_ENTRY_UUID,
+        f"nulljobs/{_REAL_JOB_ID}",
+        f"{_REAL_JOB_HREF}/{read_uuid}",
+    )
+
+
+def _read_link(read_uuid: str) -> str:
+    return f"{_REAL_JOB_HREF}/{read_uuid}"
+
+
+def _refuse_what_the_hmc_refuses(mock_hmc) -> None:
+    for entry_uuid in (_SUBMIT_ENTRY_UUID, _READ_ENTRY_UUID):
+        mock_hmc.get(f"/rest/api/uom/jobs/{entry_uuid}").mock(
+            return_value=httpx.Response(406, text="Console Internal Error")
+        )
+    mock_hmc.get(url__regex=rf"{_REAL_JOB_PATH}/[^/]+$").mock(
+        return_value=httpx.Response(400, text="REST000B The URL is not valid.")
     )
 
 
 @pytest.mark.asyncio
-async def test_a_submitted_real_job_hands_out_a_job_id_the_global_path_resolves(
+async def test_a_submitted_real_job_hands_out_a_handle_every_later_read_resolves(
     mock_hmc, caplog
 ) -> None:
     """Submit, wait, persist, restart, poll: every read goes through the JobID path."""
-    _refuse_the_entry_uuid(mock_hmc)
-    mock_hmc.put(_REAL_POWER_OFF).mock(
-        return_value=httpx.Response(
-            200, text=_real_job_entry("RUNNING", "65680cb7-0000-4000-8000-00000000000a")
-        )
+    _refuse_what_the_hmc_refuses(mock_hmc)
+    mock_hmc.put(_REAL_POWER_ON).mock(
+        return_value=httpx.Response(200, text=_submission_entry())
     )
     by_job_id = mock_hmc.get(_REAL_JOB_PATH).mock(
         side_effect=[
             httpx.Response(
+                200, text=_read_entry("RUNNING", "ae9d19a9-0000-4000-8000-00000000000a")
+            ),
+            httpx.Response(
                 200,
-                text=_real_job_entry(
-                    "COMPLETED_OK", "65680cb7-0000-4000-8000-00000000000b"
+                text=_read_entry(
+                    "COMPLETED_OK", "25fed53a-0000-4000-8000-00000000000b"
                 ),
             ),
             httpx.Response(
                 200,
-                text=_real_job_entry(
-                    "COMPLETED_OK", "65680cb7-0000-4000-8000-00000000000c"
+                text=_read_entry(
+                    "COMPLETED_OK", "25fed53a-0000-4000-8000-00000000000c"
                 ),
             ),
         ]
     )
 
     async with HMCClient(make_config()) as submitting:
-        submitted = await submitting.submit_job(_REAL_POWER_OFF, "<JobRequest/>")
+        submitted = await submitting.submit_job(_REAL_POWER_ON, "<JobRequest/>")
         waited = await wait_for_submitted_job(submitting, submitted, True, 30, 1)
         outcome = job_outcome(job_identifier(submitted) or "", waited)
     handle = json.loads(
@@ -545,26 +572,27 @@ async def test_a_submitted_real_job_hands_out_a_job_id_the_global_path_resolves(
                 polling, handle["job_id"], job_href=handle["job_href"]
             )
 
-    assert handle["job_id"] == _REAL_JOB_ID
-    assert by_job_id.call_count == 2
+    assert handle == {"job_id": _REAL_JOB_ID, "job_href": _REAL_JOB_HREF}
+    assert by_job_id.call_count == 3
     assert (polled.found, polled.status, polled.job_id) == (
         True,
         "COMPLETED_OK",
         _REAL_JOB_ID,
     )
-    assert polled.job_href == handle["job_href"]
+    assert polled.job_href == _REAL_JOB_HREF
     assert caplog.records == []
 
 
 @pytest.mark.asyncio
-async def test_wait_for_job_resolves_a_real_job_by_its_job_id_alone(mock_hmc) -> None:
-    _refuse_the_entry_uuid(mock_hmc)
+async def test_a_read_reports_the_stable_job_href_not_the_per_read_link(
+    mock_hmc,
+) -> None:
+    """Persisting from any read stores one link, not one that changes every poll."""
+    _refuse_what_the_hmc_refuses(mock_hmc)
     mock_hmc.get(_REAL_JOB_PATH).mock(
         return_value=httpx.Response(
             200,
-            text=_real_job_entry(
-                "COMPLETED_OK", "65680cb7-0000-4000-8000-00000000000d"
-            ),
+            text=_read_entry("COMPLETED_OK", "65680cb7-0000-4000-8000-00000000000d"),
         )
     )
 
@@ -576,32 +604,49 @@ async def test_wait_for_job_resolves_a_real_job_by_its_job_id_alone(mock_hmc) ->
         "COMPLETED_OK",
         False,
     )
-    assert outcome.job_id == _REAL_JOB_ID
+    assert (outcome.job_id, outcome.job_href) == (_REAL_JOB_ID, _REAL_JOB_HREF)
 
 
 @pytest.mark.asyncio
-async def test_get_job_explains_a_legacy_entry_uuid_handle_paired_with_its_link(
-    mock_hmc, caplog
-) -> None:
-    """An entry UUID stored by an earlier release reads the right job, and says why."""
-    _refuse_the_entry_uuid(mock_hmc)
-    link = f"https://hmc.test{_REAL_JOB_PATH}/65680cb7-0000-4000-8000-00000000000e"
+async def test_get_job_resolves_and_echoes_a_supplied_per_read_link(mock_hmc) -> None:
+    """A link persisted from a read before this fix still resolves, as passed."""
+    _refuse_what_the_hmc_refuses(mock_hmc)
+    stored_link = _read_link("65680cb7-0000-4000-8000-00000000000e")
     mock_hmc.get(_REAL_JOB_PATH).mock(
         return_value=httpx.Response(
             200,
-            text=_real_job_entry(
-                "COMPLETED_OK", "65680cb7-0000-4000-8000-00000000000f"
-            ),
+            text=_read_entry("COMPLETED_OK", "65680cb7-0000-4000-8000-00000000000f"),
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, _REAL_JOB_ID, job_href=stored_link)
+
+    assert (outcome.found, outcome.job_id) == (True, _REAL_JOB_ID)
+    assert outcome.job_href == stored_link
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_uuid", [_SUBMIT_ENTRY_UUID, _READ_ENTRY_UUID])
+async def test_get_job_explains_a_legacy_entry_uuid_handle_paired_with_its_link(
+    mock_hmc, caplog, stored_uuid
+) -> None:
+    """An entry UUID stored by an earlier release reads the right job, and says why."""
+    _refuse_what_the_hmc_refuses(mock_hmc)
+    mock_hmc.get(_REAL_JOB_PATH).mock(
+        return_value=httpx.Response(
+            200,
+            text=_read_entry("COMPLETED_OK", "65680cb7-0000-4000-8000-000000000010"),
         )
     )
 
     with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
-            outcome = await get_job(hmc, _REAL_ENTRY_UUID, job_href=link)
+            outcome = await get_job(hmc, stored_uuid, job_href=_REAL_JOB_HREF)
 
     assert outcome.job_id == _REAL_JOB_ID
     [warning] = [
         r.getMessage() for r in caplog.records if "returned job" in r.getMessage()
     ]
-    assert _REAL_ENTRY_UUID in warning and _REAL_JOB_ID in warning
+    assert stored_uuid in warning and _REAL_JOB_ID in warning
     assert "entry's UUID" in warning
