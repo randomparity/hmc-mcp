@@ -513,7 +513,8 @@ def test_provision_affinity_response_is_explicit(
     assert result.steps[-1].result["achieved_score"] == 82
     assert result.steps[-1].result["predicted_score"] == 90
     assert result.steps[-1].result["prediction_guaranteed"] is False
-    assert bool(result.warnings) is warning
+    affinity_warnings = [w for w in result.warnings if "profile apply" not in w]
+    assert bool(affinity_warnings) is warning
     assess.assert_awaited_once()
 
 
@@ -925,7 +926,7 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     assert result.steps[0].status == "error"
     assert "no UUID" in result.steps[0].result
     assert result.ownership_stamped is None
-    assert "no LPAR body" in result.warnings[0]
+    assert any("no LPAR body" in w for w in result.warnings)
 
 
 def test_provision_lpar_dry_run_issues_no_mutating_request(monkeypatch, mock_hmc):
@@ -1041,8 +1042,9 @@ def test_provision_applies_explicit_fail_policy_before_network(monkeypatch, mock
             **_provision_args(minimum_affinity_policy=policy, power_on=False)
         )
     assert result.workflow_completed is True
-    assert [step.step for step in result.steps][:3] == [
+    assert [step.step for step in result.steps][:4] == [
         "create",
+        "apply_profile",
         "minimum_affinity_policy",
         "network",
     ]
@@ -1168,7 +1170,7 @@ def test_provision_apply_error_skips_remaining_legs(monkeypatch, mock_hmc):
     assert "redo any skipped steps" in result.warnings[0]
 
 
-def test_provision_rest_create_reports_no_apply_step(monkeypatch, mock_hmc):
+def test_provision_rest_create_reports_skipped_apply_step(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
@@ -1178,7 +1180,9 @@ def test_provision_rest_create_reports_no_apply_step(monkeypatch, mock_hmc):
         result = hmc_provision_lpar(**_provision_args())
 
     apply.assert_not_awaited()
-    assert "apply_profile" not in [s.step for s in result.steps]
+    assert result.steps[1].step == "apply_profile"
+    assert result.steps[1].status == "skipped"
+    assert any("was not performed" in w for w in result.warnings)
     assert result.workflow_completed is True
 
 
