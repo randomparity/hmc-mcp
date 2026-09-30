@@ -765,7 +765,10 @@ async def _slot_released(
             ),
             None,
         )
-    unowned = slot is not None and (slot.get("owner_lpar") or "").strip() in ("", "null")
+    unowned = slot is not None and (slot.get("owner_lpar") or "").strip() in (
+        "",
+        "null",
+    )
     state.record_verified(
         _ROW,
         "hmc_list_dedicated_pcie_slots",

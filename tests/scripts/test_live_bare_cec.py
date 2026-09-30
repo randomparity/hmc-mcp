@@ -303,7 +303,9 @@ def test_happy_path_promotes_every_operation_and_leaves_nothing(schemas):
         "lpar-name-absent",
         "slot-released",
     }
-    assert set(observations["lpar.get_state"]["assertions"]) == {"state-read-returned-a-state"}
+    assert set(observations["lpar.get_state"]["assertions"]) == {
+        "state-read-returned-a-state"
+    }
     assert set(observations["pcie.list_dedicated_slots"]["assertions"]) == {
         "list-call-succeeded",
         "fixture-slot-listed",
@@ -491,7 +493,10 @@ def test_a_slot_still_owned_after_delete_fails_the_slot_list_observation(schemas
 
     listing = _observations(state)["pcie.list_dedicated_slots"]
     assert listing["result"] == "failed"
-    assert _row(state, "hmc_list_dedicated_pcie_slots")["note"] == "unmet: fixture-slot-unowned"
+    assert (
+        _row(state, "hmc_list_dedicated_pcie_slots")["note"]
+        == "unmet: fixture-slot-unowned"
+    )
 
 
 # ---------------------------------------------------------------------------
