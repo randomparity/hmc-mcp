@@ -158,13 +158,20 @@ def test_job_identifier_hands_out_the_job_id_of_a_real_job_entry() -> None:
         "https://hmc.test/rest/api/uom/jobs/1787837921263",
         "/rest/api/uom/LogicalPartition/l/do/PowerOn/Job/j-1",
         "https://hmc.test/rest/api/uom/jobs/1787837921263/not-a-uuid",
-        "nulljobs/1787837921263",
     ],
 )
 def test_job_outcome_echoes_any_other_link_verbatim(link) -> None:
     job = {"Resource": {"JobID": "1787837921263"}, "link": link}
 
     assert job_outcome("1787837921263", job).job_href == link
+
+
+@pytest.mark.parametrize("link", ["nulljobs/1787837921263", "jobs/1787837921263"])
+def test_job_outcome_hands_out_no_relative_link(link) -> None:
+    """A relative link would be refused by the client when passed back as job_href."""
+    job = {"Resource": {"JobID": "1787837921263"}, "link": link}
+
+    assert job_outcome("1787837921263", job).job_href is None
 
 
 def test_job_identifier_skips_truthy_non_mapping_resource() -> None:

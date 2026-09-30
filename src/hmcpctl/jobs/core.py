@@ -105,12 +105,16 @@ def _job_href(job: dict[str, Any] | None) -> str | None:
     """Return the entry's SELF link in the form worth persisting and polling.
 
     A read-side link is reduced to its JobID path, so a handle persisted from
-    any read is the same stable link the submission carried.
+    any read is the same stable link the submission carried. A relative link —
+    the HMC's malformed ``nulljobs/{JobID}`` — addresses nothing the client will
+    request, so it is not a handle at all.
     """
     link = (job or {}).get("link")
     if not isinstance(link, str) or not link.strip():
         return None
     parts = urlsplit(link.strip())
+    if not parts.path.startswith("/"):
+        return None
     path = canonical_job_path(parts.path)
     return link.strip() if path == parts.path else urlunsplit(parts._replace(path=path))
 
