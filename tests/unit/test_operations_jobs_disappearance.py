@@ -461,16 +461,72 @@ async def test_get_job_does_not_report_a_degraded_hmc_as_a_vanished_job(
             await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
 
 
-@pytest.mark.asyncio
-async def test_get_job_treats_an_unsupported_global_path_as_absence(mock_hmc) -> None:
-    """Issue #95 firmware answers the global path with 400 REST000E, not 404.
+def _http_error_response(request_uri: str, message: str) -> str:
+    """An HMC error body carrying the message text captured live on V10R3 (#1161)."""
+    return (
+        '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power'
+        '/firmware/web/mc/2012_10/">'
+        f"<RequestURI>{request_uri}</RequestURI>"
+        f"<Message>{message}</Message>"
+        "</HttpErrorResponse>"
+    )
 
-    That is the case the confirmation is best-effort about, so it must still
-    resolve to found=False rather than raise.
+
+#: #1161 P4: V10R3's answer to a job URL whose form it does not accept.
+_INVALID_JOB_URL = _http_error_response(
+    _GLOBAL_PATH,
+    "REST000B The URL presented to the Management Console REST Web Services is "
+    "not valid.REST000E Unrecognized root REST type of jobs.",
+)
+#: #1161 P5, P11: V10R3's answer to a well-formed job URL whose job is gone.
+_NO_SUCH_JOB = _http_error_response(_SELF_HREF, "REST0005 No such Job")
+
+
+@pytest.mark.asyncio
+async def test_get_job_does_not_report_an_invalid_job_url_as_absence(mock_hmc) -> None:
+    """A confirming read refused as an invalid URL (400 REST000E) raises (#1174).
+
+    On V10R3 only 404 REST0005 means a job is gone. REST000E says the request's
+    URL form is invalid, which is no evidence about the job, so reporting it as
+    found=False would tell a worker a live job is gone.
     """
-    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text=_NO_SUCH_JOB))
     mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(400, text="REST000E: Unrecognized root REST type")
+        return_value=httpx.Response(400, text=_INVALID_JOB_URL)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert raised.value.status_code == 400
+    assert "REST000E" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_does_not_report_an_invalid_job_url_as_absence(
+    mock_hmc,
+) -> None:
+    """The primary read keeps the same rule: 400 REST000E propagates (#1174)."""
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(400, text=_INVALID_JOB_URL)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await wait_for_job(hmc, _JOB_ID, timeout_seconds=0)
+
+    assert raised.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_job_reports_no_such_job_on_both_paths_as_absence(mock_hmc) -> None:
+    """404 REST0005 on the link and on the global path is found=False (#1161 P5)."""
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text=_NO_SUCH_JOB))
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(
+            404, text=_http_error_response(_GLOBAL_PATH, "REST0005 No such Job")
+        )
     )
 
     async with HMCClient(make_config()) as hmc:
