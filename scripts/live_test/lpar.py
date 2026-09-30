@@ -206,7 +206,7 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
             "results file), so the original value is not available from the "
             "results file or anywhere else this harness recorded. Recover it "
             "out of band (CMDB, HMC audit log, or the partition owner) and write "
-            f"it back with chsyscfg -r lpar -m {config.system_name} "
+            f'it back with chsyscfg -r lpar -m {shlex.quote(config.system_name)} '
             f'-i "name={config.lp3_name},description=<original>" or the HMC GUI '
             f"where the CLI record cannot carry it. ST{scenario} left its probe "
             "description in place.",
@@ -218,7 +218,7 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
             scenario,
             "hmc_set_lpar_description (restore)",
             "FAIL",
-            f"MANUAL RECOVERY REQUIRED: chsyscfg -r lpar -m {config.system_name} "
+            f"MANUAL RECOVERY REQUIRED: chsyscfg -r lpar -m {shlex.quote(config.system_name)} "
             f'-i "name={config.lp3_name},description=<original>" (or the HMC GUI where '
             "the CLI record cannot carry it); the unredacted original is "
             "artifacts.lp3_baseline.description in the results file. "
