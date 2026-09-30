@@ -818,6 +818,19 @@ class TestDescriptionBaselineRestore:
         assert "chsyscfg -r lpar" in row["data"]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("baseline", [None, "café stamp"])
+    async def test_manual_recovery_text_quotes_the_system_name(self, baseline) -> None:
+        """#1113: the pasteable chsyscfg line quotes system_name on both paths."""
+        state = _ScriptedSriovState([])
+        state.config = dataclasses.replace(state.config, system_name="sys; reboot")
+        if baseline is not None:
+            state.artifacts.lp3_baseline["description"] = baseline
+
+        await lpar._restore_description(object(), state, 10)
+
+        assert "chsyscfg -r lpar -m 'sys; reboot' " in state.results[-1]["data"]
+
+    @pytest.mark.asyncio
     async def test_an_absent_baseline_key_fails_with_a_manual_recovery_row(self) -> None:
         """No ST0 baseline was ever recorded for this key (e.g. a resumed results
         file that never captured it) — distinct from a baseline that was really
@@ -4737,6 +4750,25 @@ async def test_rmvlog_command_shell_quotes_the_system_name(monkeypatch):
     await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
 
     assert commands[0].startswith("viosvrcmd -m 'sys; reboot' -p vios-uuid ")
+
+
+@pytest.mark.asyncio
+async def test_rmvlog_command_shell_quotes_the_vios_uuid(monkeypatch):
+    """#1113: the HMC-derived vios_uuid reaches viosvrcmd quoted."""
+    commands = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        if tool == "hmc_run_command":
+            commands.append(kwargs["cmd"])
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "uuid; reboot"
+
+    await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
+
+    assert " -p 'uuid; reboot' -c " in commands[0]
 
 
 @pytest.mark.asyncio
