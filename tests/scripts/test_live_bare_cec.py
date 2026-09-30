@@ -161,7 +161,18 @@ class World:
             "https://hmc.example.test/rest/api/uom/LogicalPartition/"
             f"{_LPAR_UUID}/LogicalPartitionProfile/{_PROFILE_UUID}"
         )
-        return {"UUID": _LPAR_UUID, "AssociatedPartitionProfile": {"href": href}}
+        # The Atom entry `hmc_get_lpar` serves on a real HMC: identity at the
+        # top, the partition's own fields under `Resource`.
+        return {
+            "UUID": _LPAR_UUID,
+            "ResourceType": "LogicalPartition",
+            "title": "LogicalPartition",
+            "link": f"https://hmc.example.test/rest/api/uom/LogicalPartition/{_LPAR_UUID}",
+            "Resource": {
+                "PartitionName": self.name,
+                "AssociatedPartitionProfile": {"href": href, "rel": "related"},
+            },
+        }
 
     def _hmc_get_lpar_description(self, kwargs: dict[str, Any]) -> Any:
         if not self.created:
@@ -185,7 +196,12 @@ class World:
 
     def _hmc_power_off_lpar(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         if kwargs.get("operation") == "osshutdown":
-            return _job("COMPLETED_WITH_ERROR", "HSCL0DB4 No active RMC connection")
+            return _job(
+                "COMPLETED_WITH_ERROR",
+                "HSCL0DB4 An Operating System Shutdown cannot be performed because "
+                "the operating system image running does not support remote "
+                "execution of this task from the management console.",
+            )
         restarts = kwargs.get("restart") or kwargs.get("operation") == "dumprestart"
         self.lpar_state = "open firmware" if restarts else "not activated"
         return _job()
@@ -380,7 +396,7 @@ def test_expected_refusals_arriving_as_failed_jobs_record_skip(schemas):
     osshutdown = _row(state, "hmc_power_off_lpar (osshutdown)")
     assert (no_profile["status"], osshutdown["status"]) == ("SKIP", "SKIP")
     assert "HSCL3680" in no_profile["data"]
-    assert "RMC" in osshutdown["data"]
+    assert "HSCL0DB4" in osshutdown["data"]
     assert state.gaps == [], "an environment refusal is not a product gap"
 
 
@@ -731,7 +747,10 @@ def test_a_transient_name_read_after_a_delete_is_re_read_not_alarmed(schemas):
 
 def test_a_missing_profile_link_stops_before_assigning_and_deletes(schemas):
     world, state = World(), _state(schemas)
-    world.overrides["hmc_get_lpar"] = lambda _k: {"UUID": _LPAR_UUID}
+    world.overrides["hmc_get_lpar"] = lambda _k: {
+        "UUID": _LPAR_UUID,
+        "Resource": {"PartitionName": world.name},
+    }
 
     _run(world, state)
 
