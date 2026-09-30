@@ -34,6 +34,7 @@ from ...documents import (
     build_lpar_document,
     partition_updates,
 )
+from ...documents.lpar import validate_keylock
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
@@ -60,6 +61,7 @@ from ...resource_identity import (
 from ...ssh.lpar import (
     DEFAULT_PROFILE_NAME,
     apply_lpar_profile_via_cli,
+    complete_create_resources,
     create_lpar_via_cli,
     resolve_system_cli_name,
     validate_caller_token,
@@ -179,8 +181,9 @@ class LparCreation:
     max_virtual_slots: int | None = None
     caller_token: str | None = None
     stamp_policy: Literal["best-effort", "required"] = "best-effort"
-    # mksyscfg path only (#939): True applies the created profile, False
-    # reports a skipped apply step, None (not requested) adds no step.
+    # True applies the profile mksyscfg created (#939) and, after a REST create,
+    # reports the apply as skipped because none is needed (#1164); False reports a
+    # skipped apply step; None (not requested) adds no step.
     apply_profile: bool | None = None
 
 
@@ -344,15 +347,56 @@ async def power_on_lpar(
 def _rest_create_refused(exc: HMCError) -> bool:
     """Whether the HMC refused the REST create before creating anything (ADR 0178).
 
-    A 406 is a negotiation refusal; a 400 ``REST0001`` is V10R3 rejecting the
-    document against its schema. Either leaves ``mksyscfg`` as the way to create.
+    A 406 is a negotiation refusal. A 400 ``REST0001`` is the HMC failing to
+    unmarshal the document we sent -- a defect in our payload or a caller value,
+    not the firmware refusing the create path (#1164). Either leaves ``mksyscfg``
+    as the way to create, and the caller logs the HMC's message.
     """
     return exc.status_code == 406 or (
         exc.status_code == 400 and "REST0001" in (exc.body or "")
     )
 
 
-_REST_CREATE_NO_PROFILE = "REST create path creates no profile, so none was applied"
+# A V10R3 REST create writes default_profile and a current configuration, and the
+# partition activates without an apply (#1164).
+_REST_CREATE_CONFIGURED = (
+    "the REST create set the current configuration, so no apply was needed"
+)
+
+
+async def _create_via_cli(
+    hmc: HMCClient,
+    system_uuid: str,
+    system_name_or_uuid: str,
+    creation: LparCreation,
+) -> tuple[str, WorkflowStep | None, dict[str, Any] | None, HMCError | None]:
+    """Create with ``mksyscfg``, apply its profile, and read the partition back.
+
+    Returns the CLI system name, the apply step, the created partition (None
+    when the read-back failed) and the read-back error.
+    """
+    try:
+        system_name = await resolve_system_cli_name(hmc.config, system_uuid)
+    except HMCCLIError:
+        system_name = system_name_or_uuid
+    await create_lpar_via_cli(
+        hmc.config,
+        system_name=system_name,
+        name=creation.name,
+        partition_type=creation.partition_type,
+        resources=creation.resources,
+        max_virtual_slots=creation.max_virtual_slots,
+    )
+    apply_step = (
+        await _apply_created_profile(hmc, system_name, creation)
+        if creation.apply_profile is not None
+        else None
+    )
+    try:
+        created_lpar = await hmc.find_partition_by_name(creation.name)
+    except HMCError as exc:
+        return system_name, apply_step, None, exc
+    return system_name, apply_step, created_lpar, None
 
 
 async def create_and_stamp_lpar(
@@ -386,6 +430,7 @@ async def create_and_stamp_lpar(
         # stamp's best-effort catch: no create can precede rejection, and a
         # malformed token can never discard the ownership stamp (ADR 0064).
         validate_caller_token(creation.caller_token)
+    validate_keylock(creation.keylock)
     existing = await hmc.find_partition_by_name(creation.name)
     if existing:
         raise ValueError(
@@ -398,43 +443,43 @@ async def create_and_stamp_lpar(
     system_name: str | None = None
     apply_step: WorkflowStep | None = None
     readback_error: HMCError | None = None
-    document = build_lpar_document(
-        name=creation.name,
-        partition_type=creation.partition_type,
-        partition_id=creation.partition_id,
-        resources=creation.resources,
-        os_type=creation.os_type,
-        keylock=creation.keylock,
-        max_virtual_slots=creation.max_virtual_slots,
-    )
-    try:
-        created_lpar = await hmc.create_logical_partition(system_uuid, document)
-        if creation.apply_profile is True:
-            apply_step = WorkflowStep(
-                "apply_profile", "skipped", _REST_CREATE_NO_PROFILE
-            )
-    except HMCError as exc:
-        if not _rest_create_refused(exc):
-            raise
-        try:
-            system_name = await resolve_system_cli_name(hmc.config, system_uuid)
-        except HMCCLIError:
-            system_name = system_name_or_uuid
-        resources = creation.resources
-        await create_lpar_via_cli(
-            hmc.config,
-            system_name=system_name,
+    resources = complete_create_resources(creation.resources)
+    if resources is None:
+        # Only mksyscfg's all_resources=1 expresses a create with no resource values.
+        system_name, apply_step, created_lpar, readback_error = await _create_via_cli(
+            hmc, system_uuid, system_name_or_uuid, creation
+        )
+    else:
+        document = build_lpar_document(
             name=creation.name,
             partition_type=creation.partition_type,
+            partition_id=creation.partition_id,
             resources=resources,
+            os_type=creation.os_type,
+            keylock=creation.keylock,
             max_virtual_slots=creation.max_virtual_slots,
         )
-        if creation.apply_profile is not None:
-            apply_step = await _apply_created_profile(hmc, system_name, creation)
         try:
-            created_lpar = await hmc.find_partition_by_name(creation.name)
+            created_lpar = await hmc.create_logical_partition(system_uuid, document)
         except HMCError as exc:
-            created_lpar, readback_error = None, exc
+            if not _rest_create_refused(exc):
+                raise
+            _logger.warning(
+                "REST create of LPAR %r was refused, falling back to mksyscfg: %s",
+                creation.name,
+                exc,
+            )
+            (
+                system_name,
+                apply_step,
+                created_lpar,
+                readback_error,
+            ) = await _create_via_cli(hmc, system_uuid, system_name_or_uuid, creation)
+        else:
+            if creation.apply_profile is True:
+                apply_step = WorkflowStep(
+                    "apply_profile", "skipped", _REST_CREATE_CONFIGURED
+                )
     apply_warnings = _unapplied_profile_warnings(creation.name, apply_step)
     apply_note = f" {'; '.join(apply_warnings)}" if apply_warnings else ""
 
@@ -519,15 +564,12 @@ def _unapplied_profile_warnings(
     name: str, apply_step: WorkflowStep | None
 ) -> tuple[str, ...]:
     """Say that a skipped or failed apply left the partition unconfigured."""
-    if apply_step is None or apply_step.status == "ok":
+    if (
+        apply_step is None
+        or apply_step.status == "ok"
+        or apply_step.result == _REST_CREATE_CONFIGURED
+    ):
         return ()
-    if apply_step.result == _REST_CREATE_NO_PROFILE:
-        return (
-            (
-                f"requested profile apply for {name!r} was not performed: "
-                f"{_REST_CREATE_NO_PROFILE}"
-            ),
-        )
     warning = (
         f"partition profile {DEFAULT_PROFILE_NAME!r} was not applied: {name!r} has "
         "no current configuration, so its current memory and processors read as "

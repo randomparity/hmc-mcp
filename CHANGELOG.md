@@ -202,6 +202,32 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_create_lpar`, `lpars create` and provisioning now create partitions through the REST API on
+  V10R3 instead of always falling back to `mksyscfg`. The create document now carries
+  `schemaVersion` on the processor configurations, follows the element order and enumeration
+  spelling of the HMC's own XSDs (`SharingMode` `keep idle procs`, not `keep_idle_procs`),
+  states `HasDedicatedProcessors=false` for a shared partition, and nests
+  `max_virtual_slots` as `PartitionIOConfiguration/MaximumVirtualIOSlots`. A REST-created
+  partition gets `default_profile` and a current configuration and activates without an
+  apply, so the `apply_profile` step reports `skipped` with that reason and no warning
+  (#1164, ADR 0178 amendment).
+- Both create paths take omitted memory and processor values from one defaults function, so
+  the REST document carries the processing units and minimum virtual processors V10R3
+  requires. A dedicated create without `sharing_mode` gets `keep_idle_procs` on either path,
+  where `mksyscfg` previously refused it. The `mksyscfg` record now honors a capped shared
+  request instead of always sending `uncap`, and either path refuses a dedicated
+  `sharing_mode` on a shared request before any create call. The vCPU-versus-units guards
+  (#938, #949) now run before the REST create too, not only before `mksyscfg`. A create with
+  no memory or processor values still goes straight to `mksyscfg`'s `all_resources=1`
+  (#1164).
+- The `mksyscfg` fallback after a refused REST create now logs the HMC's message at
+  `WARNING`, so a defect in the create document no longer hides behind a successful CLI
+  create. `os_type` is documented as having no effect on a create: the HMC treats
+  `OperatingSystemType` as read-only and sets `AIX/Linux` (#1164).
+- `hmc_create_lpar` and `create_and_stamp_lpar` refuse a `keylock` other than `normal` or
+  `manual` before any HMC call. `auto` was accepted before, but V10R3's `KeylockPosition`
+  enumeration has no such value and `mksyscfg` takes no keylock, so an `auto` create
+  fell back to `mksyscfg` and dropped the keylock silently (#1164).
 - `hmc_power_on_lpar`, `lpars power-on` and `power_on_lpar`/`power_lpar` no longer submit a
   PowerOn the HMC is certain to fail (HSCL3681) when the partition is not `not activated`. An
   activated partition — `running`, `starting` or `open firmware` — reports `already_running`
