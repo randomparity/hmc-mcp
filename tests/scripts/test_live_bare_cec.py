@@ -161,7 +161,18 @@ class World:
             "https://hmc.example.test/rest/api/uom/LogicalPartition/"
             f"{_LPAR_UUID}/LogicalPartitionProfile/{_PROFILE_UUID}"
         )
-        return {"UUID": _LPAR_UUID, "AssociatedPartitionProfile": {"href": href}}
+        # The Atom entry `hmc_get_lpar` serves on a real HMC: identity at the
+        # top, the partition's own fields under `Resource`.
+        return {
+            "UUID": _LPAR_UUID,
+            "ResourceType": "LogicalPartition",
+            "title": "LogicalPartition",
+            "link": f"https://hmc.example.test/rest/api/uom/LogicalPartition/{_LPAR_UUID}",
+            "Resource": {
+                "PartitionName": self.name,
+                "AssociatedPartitionProfile": {"href": href, "rel": "related"},
+            },
+        }
 
     def _hmc_get_lpar_description(self, kwargs: dict[str, Any]) -> Any:
         if not self.created:
@@ -731,7 +742,10 @@ def test_a_transient_name_read_after_a_delete_is_re_read_not_alarmed(schemas):
 
 def test_a_missing_profile_link_stops_before_assigning_and_deletes(schemas):
     world, state = World(), _state(schemas)
-    world.overrides["hmc_get_lpar"] = lambda _k: {"UUID": _LPAR_UUID}
+    world.overrides["hmc_get_lpar"] = lambda _k: {
+        "UUID": _LPAR_UUID,
+        "Resource": {"PartitionName": world.name},
+    }
 
     _run(world, state)
 
