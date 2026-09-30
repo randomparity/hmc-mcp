@@ -63,8 +63,10 @@ media type, and with 415 when its `Content-Type` does not name the resource type
 Shared UOM writes therefore send `Accept: */*` with a typed `Content-Type`, and
 shared deletes send `Accept: */*` ([ADR 0178](adr/0178-uom-writes-send-untyped-accept.md)).
 
-LPAR creation (`hmc_create_lpar`, `hmc_provision_lpar`) falls back to `mksyscfg`
-over SSH when the REST create is refused with a 406 or with a 400 `REST0001`
-schema rejection, which V10R3 returns for the current create document.
-`HMC_PASSWORD` (or `HMC_SSH_KEY_FILE`) must be set for SSH auth; the fallback is
-transparent to the caller.
+LPAR creation (`hmc_create_lpar`, `hmc_provision_lpar`) uses the REST create,
+which V10R3 accepts for a document that follows its XSD and gives the partition
+`default_profile` and a current configuration. It falls back to `mksyscfg` over
+SSH when the REST create is refused with a 406 or with a 400 `REST0001` payload
+rejection, logging the HMC's message, and always for a create with no memory or
+processor values. `HMC_PASSWORD` (or `HMC_SSH_KEY_FILE`) must be set for SSH
+auth; the fallback is transparent to the caller.

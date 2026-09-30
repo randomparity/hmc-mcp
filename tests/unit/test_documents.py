@@ -14,6 +14,7 @@ from hmcpctl.documents import (
     build_lpar_document,
     partition_updates,
 )
+from hmcpctl.documents.common import UOM_NS
 
 _EMPTY_LPAR = ET.fromstring(
     '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>'
@@ -119,16 +120,15 @@ def test_shared_processor_config():
     assert "uncapped" in xml
 
 
-def test_processor_config_mode_unchanged_when_unspecified():
-    """A proc modify without dedicated/uncapped must not flip the sharing mode."""
+def test_shared_processor_config_states_the_mode():
+    """V10R3 refuses a shared create without the mode: REST0126 proc_mode (#1161 P38)."""
     xml = build_lpar_document(
         name="m",
         resources=LparResources(desired_procs=0.5, desired_vcpus=1),
     )
     assert "SharedProcessorConfiguration" in xml
     assert "DesiredProcessingUnits" in xml and "0.5" in xml
-    # Mode fields are omitted so the HMC keeps the current mode.
-    assert "HasDedicatedProcessors" not in xml
+    assert ">false</HasDedicatedProcessors>" in xml
     assert "SharingMode" not in xml
     assert "UncappedWeight" not in xml
 
@@ -185,8 +185,20 @@ def test_malformed_sharing_mode_type_raises_actionable_value_error(malformed, bu
     assert all(value in message for value in SHARING_MODES)
 
 
+# LogicalPartitionProcessorSharingMode.Enum in the live V10R3 schema (#1161 P31);
+# "proces" is the HMC's own spelling.
+REST_SHARING_MODES = {
+    "capped": "capped",
+    "uncapped": "uncapped",
+    "keep_idle_procs": "keep idle procs",
+    "share_idle_procs": "sre idle proces",
+    "share_idle_procs_active": "sre idle procs active",
+    "share_idle_procs_always": "sre idle procs always",
+}
+
+
 @pytest.mark.parametrize("sharing_mode", SHARING_MODES)
-def test_all_sharing_modes_serialize_unchanged(sharing_mode):
+def test_all_sharing_modes_serialize_in_rest_spelling(sharing_mode):
     dedicated = sharing_mode not in {"capped", "uncapped"}
     xml = build_lpar_document(
         name="ok",
@@ -195,7 +207,7 @@ def test_all_sharing_modes_serialize_unchanged(sharing_mode):
         ),
     )
 
-    assert f">{sharing_mode}</SharingMode>" in xml
+    assert f">{REST_SHARING_MODES[sharing_mode]}</SharingMode>" in xml
 
 
 def test_partition_id_and_type():
@@ -237,10 +249,10 @@ def test_invalid_authentication_type_is_rejected():
         build_hmc_user_document(user_id="operator", authentication_type="radius")
 
 
-def test_os_type_emitted():
+def test_os_type_is_not_sent():
+    """OperatingSystemType is read-only and needs a ksv; the HMC sets AIX/Linux (#1161 P39)."""
     xml = build_lpar_document(name="mypart", os_type="aix")
-    assert "<OperatingSystemType" in xml
-    assert "aix" in xml
+    assert "OperatingSystemType" not in xml
 
 
 def test_keylock_emitted():
@@ -250,9 +262,13 @@ def test_keylock_emitted():
 
 
 def test_max_virtual_slots_emitted():
-    xml = build_lpar_document(name="mypart", max_virtual_slots=64)
-    assert "<MaximumVirtualIoSlots" in xml
-    assert "64" in xml
+    """The slots live in PartitionIOConfiguration, which V10R3 honors (#1161 P39)."""
+    root = ET.fromstring(
+        build_lpar_document(name="mypart", max_virtual_slots=64).encode("utf-8")
+    )
+    io = root.find(f"{{{UOM_NS}}}PartitionIOConfiguration")
+    assert io is not None and io.get("schemaVersion") == "V1_0"
+    assert io.findtext(f"{{{UOM_NS}}}MaximumVirtualIOSlots") == "64"
 
 
 def test_all_three_new_fields_together():
@@ -262,23 +278,20 @@ def test_all_three_new_fields_together():
         keylock="manual",
         max_virtual_slots=32,
     )
-    assert "<OperatingSystemType" in xml and "linux" in xml
+    assert "OperatingSystemType" not in xml
     assert "<KeylockPosition" in xml and "manual" in xml
-    assert "<MaximumVirtualIoSlots" in xml and "32" in xml
+    assert "<MaximumVirtualIOSlots" in xml and "32" in xml
 
 
 def test_new_fields_default_to_none_backward_compat():
     xml = build_lpar_document(name="mypart")
     assert "OperatingSystemType" not in xml
     assert "KeylockPosition" not in xml
-    assert "MaximumVirtualIoSlots" not in xml
+    assert "PartitionIOConfiguration" not in xml
 
 
-def test_ibmi_os_type():
-    xml = build_lpar_document(name="ibmi-part", os_type="ibmi")
-    assert "<OperatingSystemType" in xml and "ibmi" in xml
-
-
-def test_auto_keylock():
-    xml = build_lpar_document(name="mypart", keylock="auto")
-    assert "<KeylockPosition" in xml and "auto" in xml
+@pytest.mark.parametrize("keylock", ["auto", "unknown", "norm"])
+def test_keylock_outside_the_schema_is_refused(keylock):
+    """V10R3's KeylockPosition.Enum is manual, normal, unknown; unknown is not creatable."""
+    with pytest.raises(ValueError, match="keylock must be one of: normal, manual"):
+        build_lpar_document(name="mypart", keylock=keylock)

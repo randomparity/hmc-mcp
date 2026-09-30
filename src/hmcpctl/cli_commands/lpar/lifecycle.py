@@ -25,7 +25,9 @@ def lpars_power_on(
     interval: int = typer.Option(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
-    force: bool = typer.Option(False, "--force", help="Submit even if already running"),
+    force: bool = typer.Option(
+        False, "--force", help="Submit whatever the partition state"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     system: str | None = typer.Option(
         None,

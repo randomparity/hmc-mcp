@@ -9,7 +9,7 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
-from ...xmlutil import leaf_text
+from ...xmlutil import leaf_text, render_mtms
 from .capacity import system_capacity
 
 
@@ -56,9 +56,36 @@ class SystemSummary:
     vios_count: int
 
 
-def _current_or_desired(resource: dict[str, Any], current: str, desired: str) -> Any:
-    value = resource.get(current)
-    return resource.get(desired) if value is None else value
+def _container(resource: dict[str, Any], name: str) -> dict[str, Any]:
+    value = resource.get(name)
+    return value if isinstance(value, dict) else {}
+
+
+def _processor_figures(resource: dict[str, Any]) -> dict[str, Any]:
+    """Read processors from the container that ``HasDedicatedProcessors`` selects.
+
+    V10R3 nests them in ``PartitionProcessorConfiguration``. A partition whose mode is
+    not ``true`` or ``false`` reads as shared, and a missing container yields ``None``.
+    """
+    config = _container(resource, "PartitionProcessorConfiguration")
+    mode = config.get("HasDedicatedProcessors")
+    if mode == "true":
+        desired = _container(config, "DedicatedProcessorConfiguration")
+        current = _container(config, "CurrentDedicatedProcessorConfiguration")
+        return {
+            "current_proc_units": current.get("CurrentProcessors"),
+            "desired_proc_units": desired.get("DesiredProcessors"),
+            "desired_vcpus": None,
+            "dedicated_procs": True,
+        }
+    desired = _container(config, "SharedProcessorConfiguration")
+    current = _container(config, "CurrentSharedProcessorConfiguration")
+    return {
+        "current_proc_units": current.get("CurrentProcessingUnits"),
+        "desired_proc_units": desired.get("DesiredProcessingUnits"),
+        "desired_vcpus": desired.get("DesiredVirtualProcessors"),
+        "dedicated_procs": False if mode == "false" else None,
+    }
 
 
 def _lpar_summary(
@@ -66,6 +93,7 @@ def _lpar_summary(
     adapters: list[dict[str, Any]],
 ) -> LparSummary:
     res = lpar.get("Resource") or {}
+    memory = _container(res, "PartitionMemoryConfiguration")
     return LparSummary(
         uuid=lpar.get("UUID"),
         name=res.get("PartitionName"),
@@ -73,17 +101,11 @@ def _lpar_summary(
         rmc_state=res.get("ResourceMonitoringControlState") or res.get("RMCState"),
         partition_type=res.get("PartitionType"),
         partition_id=res.get("PartitionID"),
-        current_memory_mib=_current_or_desired(res, "CurrentMemory", "DesiredMemory"),
-        desired_memory_mib=res.get("DesiredMemory"),
-        # Current CPU: shared-processor units or dedicated CPUs
-        current_proc_units=_current_or_desired(
-            res, "CurrentProcessingUnits", "DesiredProcessingUnits"
-        ),
-        desired_proc_units=res.get("DesiredProcessingUnits"),
-        desired_vcpus=res.get("DesiredVirtualProcessors"),
-        dedicated_procs=res.get("DedicatedProcessors"),
+        current_memory_mib=memory.get("CurrentMemory"),
+        desired_memory_mib=memory.get("DesiredMemory"),
+        **_processor_figures(res),
         os_version=res.get("OperatingSystemVersion"),
-        os_type=res.get("OperatingSystemType"),
+        os_type=leaf_text(res.get("OperatingSystemType")),
         client_network_adapter_count=len(adapters),
         description=leaf_text(res.get("Description")),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
@@ -152,17 +174,6 @@ def _text_or_none(value: object) -> str | None:
     return text if isinstance(text, str) else None
 
 
-def _mtms(value: object) -> str | None:
-    """Render the structured MTMS element as ``type-model*serial``."""
-    if not isinstance(value, dict):
-        return None
-    parts = (value.get("MachineType"), value.get("Model"), value.get("SerialNumber"))
-    if not all(isinstance(part, str) and part for part in parts):
-        return None
-    machine_type, model, serial = parts
-    return f"{machine_type}-{model}*{serial}"
-
-
 def _system_summary(
     system: dict[str, Any],
     lpars: list[dict[str, Any]],
@@ -182,7 +193,7 @@ def _system_summary(
         uuid=system.get("UUID"),
         name=res.get("SystemName"),
         state=res.get("State"),
-        mtms=_mtms(res.get("MachineTypeModelAndSerialNumber")),
+        mtms=render_mtms(res),
         firmware_version=_text_or_none(res.get("SystemFirmware")),
         total_memory_mib=capacity.total_memory_mib,
         free_memory_mib=capacity.free_memory_mib,

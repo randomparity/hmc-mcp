@@ -204,7 +204,11 @@ class FakeHMC:
             "Resource": {
                 "SystemName": "sys1",
                 "State": "operating",
-                "MachineTypeModelSerialNumber": "9119-MHE",
+                "MachineTypeModelAndSerialNumber": {
+                    "MachineType": "9119",
+                    "Model": "MHE",
+                    "SerialNumber": "SN00001",
+                },
                 "IPAddress": "10.0.0.1",
             },
         }
@@ -877,10 +881,16 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
         {
             "Resource": {
                 "PartitionName": "zero-lpar",
-                "CurrentMemory": 0,
-                "DesiredMemory": 0,
-                "CurrentProcessingUnits": 0.0,
-                "DesiredProcessingUnits": 0.0,
+                "PartitionMemoryConfiguration": {
+                    "CurrentMemory": 0,
+                    "DesiredMemory": 0,
+                },
+                "PartitionProcessorConfiguration": {
+                    "HasDedicatedProcessors": "false",
+                    "CurrentSharedProcessorConfiguration": {
+                        "CurrentProcessingUnits": 0.0
+                    },
+                },
             }
         },
         [],
@@ -1192,9 +1202,9 @@ def test_lpars_create(fake_hmc):
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
-    # REST create applies no profile; the requested apply is reported as skipped (#1083)
+    # A REST create configures the partition itself; the apply is reported skipped (#1164)
     assert '"status": "skipped"' in result.stdout
-    assert "REST create path creates no profile" in result.stdout
+    assert "the REST create set the current configuration" in result.stdout
 
 
 @pytest.mark.parametrize(("flags", "expected"), [((), True), (("--no-apply",), False)])
@@ -4011,7 +4021,7 @@ def test_systems_list_table(fake_hmc):
 
     assert result.exit_code == 0
     assert "sys1" in result.stdout
-    assert "9119-MHE" in result.stdout
+    assert "9119-MHE*SN00001" in result.stdout
     assert fake_hmc.calls == [("list_managed_systems", (), {})]
 
 
