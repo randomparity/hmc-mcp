@@ -423,7 +423,7 @@ def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, 
         updates = _shared_updates(resources)
         mode = _shared_sharing_mode(resources)
     if mode:
-        updates[f"{_PPC}/SharingMode"] = mode
+        updates[f"{_PPC}/SharingMode"] = _REST_SHARING_MODES[mode]
     if updates:
         updates[f"{_PPC}/HasDedicatedProcessors"] = str(dedicated).lower()
     return updates
