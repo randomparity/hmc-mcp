@@ -361,13 +361,71 @@ def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound(tool
         )
 
 
+ATTACH_DISK_GRANTS = [
+    {
+        "tools": ["hmc_attach_disk_to_lpar"],
+        "connections": ["lab"],
+        "targets": {
+            "lpar": ["victim"],
+            "managed_system": ["sys-1"],
+            "vios": ["vios-uuid-1"],
+        },
+    }
+]
+
+ATTACH_DISK_CALL = {
+    "lpar_name_or_uuid": "victim",
+    "system_name_or_uuid": "sys-1",
+    "vios_uuid": "vios-uuid-1",
+    "vg_uuid": "vg-uuid-1",
+    "disk_name": "data0",
+    "capacity_mib": 1024,
+    "profile": "lab",
+}
+
+
+def test_a_table_grant_reaches_attach_disk_when_every_selector_matches():
+    """#1086: the LPAR, its system, and the VIOS bound every object it touches.
+
+    `vg_uuid` and `disk_name` are addressed inside the declared VIOS, which ADR
+    0039 treats as contained. The named-tool grant loading at all is part of the
+    assertion: a non-exhaustive tool named beside a table is refused at load.
+    """
+    assert _authorize(ATTACH_DISK_GRANTS, "hmc_attach_disk_to_lpar", ATTACH_DISK_CALL) is None
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"lpar_name_or_uuid": "other"},
+        {"system_name_or_uuid": "sys-2"},
+        {"vios_uuid": "vios-uuid-2"},
+    ],
+    ids=["lpar", "system", "vios"],
+)
+def test_attach_disk_denies_any_selector_outside_the_table(override):
+    with pytest.raises(TargetScopeError, match="target"):
+        _authorize(
+            ATTACH_DISK_GRANTS, "hmc_attach_disk_to_lpar", {**ATTACH_DISK_CALL, **override}
+        )
+
+
+def test_attach_disk_denies_an_omitted_system_under_a_table():
+    """The optional system selector (#223): unpinned means any system's `victim`."""
+    with pytest.raises(TargetScopeError, match="system_name_or_uuid"):
+        _authorize(
+            ATTACH_DISK_GRANTS,
+            "hmc_attach_disk_to_lpar",
+            {**ATTACH_DISK_CALL, "system_name_or_uuid": None},
+        )
+
+
 def test_a_table_grant_still_never_reaches_provision_lpar():
     """The tool stays non-exhaustive, so no table grant reaches it.
 
     A well-formed call extracts both identities and still denies under
-    target-unboundable: #1030 removed `adapters.vios_partition_id`, the slot
-    number no table could write precisely, but kept `exhaustive_targets=False`
-    because widening the grant is a separate decision. A call whose structured arguments
+    target-unboundable: `assignments` names vNIC backing VIOSes, DRC indexes and
+    SR-IOV ports that no selector declares (#1086). A call whose structured arguments
     are None is malformed rather than narrow: the second extraction rule reads
     it UNREADABLE, which denies under `all-targets` too.
     """

@@ -621,6 +621,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- A `targets` table can now grant `hmc_attach_disk_to_lpar`: its LPAR, managed-system and
+  `vios_uuid` selectors bound everything it touches, so a grant naming all three reaches it and
+  one that omits any of them, or a call that omits `system_name_or_uuid`, is denied.
+  `hmc_provision_lpar` still requires `targets = "all-targets"`, because its `assignments` name
+  vNIC backing VIOSes, DRC indexes and SR-IOV ports no selector declares (#1086).
+
 - `hmc_detach_storage_mapping` returns `{"mapping_id", "change_location"}` instead of the bare
   mapping ID. `hmc_add_network_adapter`, `hmc_add_vscsi_adapter`, `hmc_add_vfc_adapter` and
   `hmc_mount_optical_media` add a `change_location` key beside the resource's own keys (#981).
