@@ -442,7 +442,8 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)
     assert "406" in msg
-    assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+    assert "X-HMC-Schema-Version" in msg
+    assert "HMC_SCHEMA_VERSION" not in msg
     assert exc_info.value.body == "<error>Not Acceptable</error>"
     assert "Not Acceptable" in msg
 
@@ -471,7 +472,8 @@ def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)
     assert "406" in msg
-    assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+    assert "X-HMC-Schema-Version" in msg
+    assert "HMC_SCHEMA_VERSION" not in msg
 
 
 # ---------------------------------------------------------------------- #
@@ -498,7 +500,8 @@ def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)
     assert "406" in msg
-    assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+    assert "X-HMC-Schema-Version" in msg
+    assert "HMC_SCHEMA_VERSION" not in msg
 
 
 # ---------------------------------------------------------------------- #
