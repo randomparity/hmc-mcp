@@ -393,7 +393,10 @@ def test_a_table_grant_reaches_attach_disk_when_every_selector_matches():
     0039 treats as contained. The named-tool grant loading at all is part of the
     assertion: a non-exhaustive tool named beside a table is refused at load.
     """
-    assert _authorize(ATTACH_DISK_GRANTS, "hmc_attach_disk_to_lpar", ATTACH_DISK_CALL) is None
+    assert (
+        _authorize(ATTACH_DISK_GRANTS, "hmc_attach_disk_to_lpar", ATTACH_DISK_CALL)
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -408,7 +411,9 @@ def test_a_table_grant_reaches_attach_disk_when_every_selector_matches():
 def test_attach_disk_denies_any_selector_outside_the_table(override):
     with pytest.raises(TargetScopeError, match="target"):
         _authorize(
-            ATTACH_DISK_GRANTS, "hmc_attach_disk_to_lpar", {**ATTACH_DISK_CALL, **override}
+            ATTACH_DISK_GRANTS,
+            "hmc_attach_disk_to_lpar",
+            {**ATTACH_DISK_CALL, **override},
         )
 
 
