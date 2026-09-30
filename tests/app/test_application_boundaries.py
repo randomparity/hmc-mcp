@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 from typer.testing import CliRunner
 
 from hmcpctl.cli import app
-from hmcpctl.operations.inventory.composite import _lpar_summary, _system_summary
+from hmcpctl.operations.inventory.composite import SystemSummary, _lpar_summary
 
 
 class _ClientContext:
@@ -216,7 +216,20 @@ def test_lpar_summary_cli_delegates_to_neutral_operation():
 def test_system_summary_cli_delegates_to_neutral_operation():
     client = object()
     summary = AsyncMock(
-        return_value=_system_summary({"Resource": {"SystemName": "system1"}}, [], [])
+        return_value=SystemSummary(
+            uuid=None,
+            name="system1",
+            state=None,
+            mtms=None,
+            firmware_version=None,
+            total_memory_mib=0,
+            free_memory_mib=0,
+            total_proc_units=0.0,
+            free_proc_units=0.0,
+            lpar_count=0,
+            lpar_states={},
+            vios_count=0,
+        )
     )
     with (
         patch("hmcpctl.cli_commands.systems.core.fetch_system_summary", summary),

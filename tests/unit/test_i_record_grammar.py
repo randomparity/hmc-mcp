@@ -294,6 +294,7 @@ HOSTILE_FILTER = "x,injected=1"
         ("get_lpar_description", ()),
         ("get_lpar_msp", ()),
         ("set_lpar_msp", (True,)),
+        ("get_lpar_default_profile", ()),
         ("get_lpar_proc_compat", ()),
     ],
 )
@@ -893,6 +894,7 @@ def test_the_scan_finds_every_known_site():
         "get_lpar_description",
         "get_lpar_msp",
         "set_lpar_msp",
+        "get_lpar_default_profile",
         "get_lpar_proc_compat",
         "query_minimum_affinity_policy",
         "list_vios_backups",

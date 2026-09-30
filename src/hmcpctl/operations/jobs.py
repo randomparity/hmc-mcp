@@ -32,7 +32,9 @@ from ..jobs import (
 _logger = logging.getLogger(__name__)
 
 #: The one HTTP status that means "this HMC does not have that job" rather than
-#: "this request failed". Every other status stays an ``HMCError``.
+#: "this request failed" (V10R3 answers ``404 REST0005 No such Job``). Every other
+#: status stays an ``HMCError`` -- including ``400 REST000E``, which says the
+#: request's URL form is invalid and nothing about the job (ADR 0093, #1174).
 _JOB_MISSING_STATUS = 404
 
 #: Characters that would make an identifier address something other than one job
@@ -98,20 +100,6 @@ def _clean_job_href(job_href: str | None) -> str | None:
     return job_href.strip() if job_href and job_href.strip() else None
 
 
-def _says_the_path_has_no_job(exc: HMCError) -> bool:
-    """Whether *exc* says this HMC has no job there, rather than that it failed.
-
-    Two shapes qualify: the documented 404, and the HTTP 400 REST000E the client
-    turns into "this endpoint is not available on this HMC" (issue #95). A 5xx, a
-    connection reset, or a read timeout is a *degraded* HMC — ``HMCTransportError``
-    subclasses ``HMCError``, so catching the base class would convert one into the
-    load-bearing ``found=False``, which is the one wrong answer this path can give.
-    """
-    if exc.status_code == _JOB_MISSING_STATUS:
-        return True
-    return exc.status_code == 400 and "REST000E" in f"{exc}{exc.body or ''}"
-
-
 async def _confirm_missing(
     hmc: HMCClient, identifier: str, link: str, missing: HMCError
 ) -> dict[str, Any] | None:
@@ -123,17 +111,16 @@ async def _confirm_missing(
     remove such parents. Confirm against the global jobs path, which is keyed on
     the identifier the caller actually asked about, before reporting the job gone.
 
-    The confirmation is best-effort about *absence* only: firmware that does not
-    serve the global path leaves the original 404 standing rather than replacing a
-    documented ``found=False`` with an exception. It is not best-effort about
-    failure — a degraded HMC on this read propagates, exactly as it does on the
-    primary read, because reporting a job gone on the strength of a socket reset
-    is the answer a consumer acts on destructively.
+    Only a 404 on this read confirms the absence. Any other failure propagates,
+    exactly as it does on the primary read, because reporting a job gone on the
+    strength of an answer that says nothing about the job is the one wrong answer
+    this path can give: a 5xx, a socket reset (``HMCTransportError`` subclasses
+    ``HMCError``), or a ``400 REST000E`` refusing the URL form (#1174).
     """
     try:
         job = await hmc.get_job_entry(identifier, job_href=None)
     except HMCError as exc:
-        if not _says_the_path_has_no_job(exc):
+        if exc.status_code != _JOB_MISSING_STATUS:
             raise
         job = None
     if job is not None:

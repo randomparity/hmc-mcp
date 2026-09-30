@@ -87,6 +87,18 @@ def _entry(
 </entry>"""
 
 
+# The live V10R3 read nests the memory figures (MiB) under this container.
+_SYSTEM_ENTRY = f"""<entry xmlns="http://www.w3.org/2005/Atom">
+    <content type="application/vnd.ibm.powervm.uom+xml; type=ManagedSystem">
+        <ManagedSystem:ManagedSystem xmlns:ManagedSystem="{UOM}" xmlns="{UOM}">
+            <AssociatedSystemMemoryConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">
+                {_el("ConfigurableSystemMemory", "131072", "ROR")}
+            </AssociatedSystemMemoryConfiguration>
+        </ManagedSystem:ManagedSystem>
+    </content>
+</entry>"""
+
+
 def _routes(
     mock_hmc,
     *,
@@ -97,6 +109,9 @@ def _routes(
 ):
     headers = {"ETag": etag} if etag else {}
     body = entry if entry is not None else _entry()
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM}").mock(
+        return_value=httpx.Response(200, text=_SYSTEM_ENTRY)
+    )
     get = mock_hmc.get(LPAR_PATH, params={"group": "Advanced"}).mock(
         return_value=httpx.Response(get_status, text=body, headers=headers)
     )
@@ -295,7 +310,7 @@ def test_partition_updates_maps_dedicated_processors_in_the_current_mode():
     ) == {
         f"{DEDICATED}/DesiredProcessors": "3",
         f"{DEDICATED}/MaximumProcessors": "4",
-        f"{PPC}/SharingMode": "keep_idle_procs",
+        f"{PPC}/SharingMode": "keep idle procs",
         f"{PPC}/HasDedicatedProcessors": "true",
     }
 
@@ -318,6 +333,24 @@ def test_partition_updates_sets_the_shared_sharing_mode_without_a_weight(
         f"{PPC}/SharingMode": mode,
         f"{PPC}/HasDedicatedProcessors": "false",
     }
+
+
+@pytest.mark.parametrize(
+    ("mode", "rest"),
+    [
+        ("keep_idle_procs", "keep idle procs"),
+        ("share_idle_procs", "sre idle proces"),
+        ("share_idle_procs_active", "sre idle procs active"),
+        ("share_idle_procs_always", "sre idle procs always"),
+    ],
+)
+def test_partition_updates_writes_the_rest_spelling_of_a_dedicated_mode(mode, rest):
+    """The REST schema refuses the CLI spelling with REST0001 (#1185)."""
+    updates = partition_updates(
+        _lpar(_entry(dedicated=True)), resources=LparResources(sharing_mode=mode)
+    )
+
+    assert updates[f"{PPC}/SharingMode"] == rest
 
 
 def test_partition_updates_maps_nothing_for_dedicated_alone():
@@ -468,6 +501,19 @@ async def test_modify_writes_rename_then_resources_as_two_read_modify_writes(
     assert resources == _expected(
         _entry(), {"PartitionMemoryConfiguration/DesiredMemory": "4096"}
     )
+
+
+@pytest.mark.asyncio
+async def test_modify_refuses_desired_memory_above_configurable_before_any_write(
+    mock_hmc, authorized
+):
+    get, post = _routes(mock_hmc)
+
+    with pytest.raises(ValueError, match=r"8388608 MiB.*131072 MiB"):
+        await _modify(LparResources(desired_memory=8388608), new_name="lpar-b")
+
+    assert not get.called
+    assert not post.called
 
 
 @pytest.mark.asyncio

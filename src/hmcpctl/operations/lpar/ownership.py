@@ -340,6 +340,9 @@ _CALLER_TOKEN = re.compile(
     r"\[hmcpctl owner:[^\s\[\]:]+ created:\d{4}-\d{2}-\d{2}\] "
     r"\[caller (?P<token>[^\s\[\]]+)\]"
 )
+# The first stamp plus the caller segment directly after it, never one that
+# belongs to a later stamp.
+_STAMP_PREFIX = re.compile(_OWNERSHIP_TOKEN.pattern + r"(?: \[caller [^\s\[\]]+\])?")
 
 
 def parse_lpar_ownership_owner(description: str) -> str | None:
@@ -569,16 +572,25 @@ async def resolve_and_authorize_lpar_names(
     ownership_override: bool = False,
 ) -> tuple[str, str]:
     """Resolve an LPAR's CLI names, authorize its mutation, and return the names."""
+    names = await _resolve_contained_lpar_names(
+        hmc, system_name_or_uuid, lpar_name_or_uuid
+    )
+    await authorize_lpar_mutation(hmc, *names, ownership_override=ownership_override)
+    return names
+
+
+async def _resolve_contained_lpar_names(
+    hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str
+) -> tuple[str, str]:
+    """Resolve the CLI names of an LPAR proven to live on the selected system."""
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
     )
     await _verify_partition_on_system(hmc, system_uuid, lpar_uuid, lpar_name_or_uuid)
-    names = await resolve_lpar_ownership_names(
+    return await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )
-    await authorize_lpar_mutation(hmc, *names, ownership_override=ownership_override)
-    return names
 
 
 async def _resolve_system_name(hmc: HMCClient, system_uuid: str, fallback: str) -> str:
@@ -672,12 +684,58 @@ async def set_lpar_ownership_description(
     *,
     ownership_override: bool = False,
 ) -> str:
-    """Validate, authorize, and write one LPAR ownership description."""
+    """Validate, authorize, and write one LPAR ownership description.
+
+    ``chsyscfg`` replaces the whole field, and the ADR 0011 stamp lives in it,
+    so a plain-text write must not be what leaves a stamped partition unowned
+    (#1169). Without an override, text that carries no stamp-shaped fragment is
+    written after the current well-formed stamp and its caller segment. Text
+    that carries its own stamp is the ADR 0066 re-stamp or handover and is
+    written as given. An approved override reads nothing (ADR 0092 §4) and
+    writes the text as given. The kept stamp is the one read here, so a
+    handover completed between that read and the write is overwritten with it:
+    ownership is advisory, and there is no compare-and-set.
+    """
     validate_lpar_description(description)
-    system_name, lpar_name = await resolve_and_authorize_lpar_names(
-        hmc,
-        system_name_or_uuid,
-        lpar_name_or_uuid,
-        ownership_override=ownership_override,
+    _require_parseable_stamp(description)
+    system_name, lpar_name = await _resolve_contained_lpar_names(
+        hmc, system_name_or_uuid, lpar_name_or_uuid
     )
+    if ownership_override:
+        await authorize_lpar_mutation(
+            hmc, system_name, lpar_name, ownership_override=True
+        )
+    else:
+        current = await _read_lpar_description_for_authorization(
+            hmc, system_name, lpar_name
+        )
+        authorize_lpar_ownership_description(
+            hmc, system_name, lpar_name, current, operation="lpar-mutation"
+        )
+        description = _keep_ownership_prefix(current, description)
     return await set_lpar_description(hmc.config, system_name, lpar_name, description)
+
+
+def _require_parseable_stamp(description: str) -> None:
+    """Refuse a stamp-shaped fragment the ownership parse would not accept.
+
+    Written, it would read back as a malformed token, which the guard refuses
+    for every later mutation, the owner's included.
+    """
+    if (
+        "[hmcpctl" in description or "[caller " in description
+    ) and parse_lpar_ownership_owner(description) is None:
+        raise ValueError(
+            "description carries a '[hmcpctl' or '[caller ' fragment but no "
+            "well-formed ownership stamp "
+            "'[hmcpctl owner:<id> created:<YYYY-MM-DD>]'; write plain text, "
+            "which keeps the current stamp, or a complete stamp"
+        )
+
+
+def _keep_ownership_prefix(current: str, description: str) -> str:
+    """Prefix plain *description* with *current*'s stamp and caller segment."""
+    stamp = _STAMP_PREFIX.search(current)
+    if stamp is None or parse_lpar_ownership_owner(description) is not None:
+        return description
+    return f"{stamp.group(0)} {description}" if description else stamp.group(0)

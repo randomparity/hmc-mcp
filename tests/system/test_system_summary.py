@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from conftest import captured_lpar_entry, captured_system_entry
 
 from hmcpctl.server_tools.inventory.composite import hmc_system_summary
 
@@ -26,40 +27,17 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
-def _system_feed(uuid: str, **fields: str) -> str:
-    body = "\n".join(f'        <{k} xmlns="{NS}">{v}</{k}>' for k, v in fields.items())
+def _system_feed(uuid: str, name: str, **kwargs) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:{uuid}</id>
-    <title>ManagedSystem:{uuid}</title>
-    <link rel="SELF" href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{uuid}"/>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <ManagedSystem xmlns="{NS}">
-{body}
-      </ManagedSystem>
-    </content>
-  </entry>
+{captured_system_entry(uuid, name, **kwargs)}
 </feed>
 """
 
 
-def _lpar_feed(*entries: tuple[str, str, str, str]) -> str:
-    """entries: (uuid, name, state, memory) tuples."""
-    parts = []
-    for uuid, name, state, memory in entries:
-        parts.append(f"""  <entry>
-    <id>urn:uuid:{uuid}</id>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <LogicalPartition xmlns="{NS}">
-        <PartitionName>{name}</PartitionName>
-        <PartitionState>{state}</PartitionState>
-        <DesiredMemory>{memory}</DesiredMemory>
-        <DesiredProcessingUnits>0.5</DesiredProcessingUnits>
-      </LogicalPartition>
-    </content>
-  </entry>""")
-    joined = "\n".join(parts)
+def _lpar_feed(*entries: tuple[str, str, str]) -> str:
+    """entries: (uuid, name, state) tuples in the captured partition shape."""
+    joined = "\n".join(captured_lpar_entry(*entry) for entry in entries)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 {joined}
@@ -103,23 +81,15 @@ def test_system_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
             200,
-            text=_system_feed(
-                SYSTEM_UUID,
-                SystemName="p9-prod",
-                State="operating",
-                MachineTypeModelSerialNumber="9009-41A*12345AB",
-                SystemFirmware="FW950.10",
-                AssignableSystemMemory="131072",
-                ConfigurableSystemProcessorUnits="16.0",
-            ),
+            text=_system_feed(SYSTEM_UUID, "p9-prod"),
         )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(
             200,
             text=_lpar_feed(
-                (LPAR_UUID_1, "aix-prod", "running", "8192"),
-                (LPAR_UUID_2, "linux-web", "not activated", "4096"),
+                (LPAR_UUID_1, "aix-prod", "running"),
+                (LPAR_UUID_2, "linux-web", "not activated"),
             ),
         )
     )
@@ -132,12 +102,12 @@ def test_system_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
     assert result.uuid == SYSTEM_UUID
     assert result.name == "p9-prod"
     assert result.state == "operating"
-    assert result.mtms == "9009-41A*12345AB"
-    assert result.firmware_version == "FW950.10"
+    assert result.mtms == "8375-42A*SERIAL0"
+    assert result.firmware_version == "VL950_FW950.00 (39)"
     assert result.total_memory_mib == 131072
-    assert result.free_memory_mib == 131072 - 8192 - 4096
-    assert result.total_proc_units == 16.0
-    assert result.free_proc_units == pytest.approx(16.0 - 1.0)
+    assert result.free_memory_mib == 112448
+    assert result.total_proc_units == 20.0
+    assert result.free_proc_units == 18.0
     assert result.lpar_count == 2
     assert result.lpar_states == {"running": 1, "not activated": 1}
     assert result.vios_count == 2
@@ -151,10 +121,11 @@ def test_system_summary_no_lpars_no_vios(monkeypatch, mock_hmc):
             200,
             text=_system_feed(
                 SYSTEM_UUID,
-                SystemName="empty-sys",
-                State="standby",
-                AssignableSystemMemory="65536",
-                ConfigurableSystemProcessorUnits="8.0",
+                "empty-sys",
+                configurable_mem="65536",
+                available_mem="65536",
+                configurable_proc="8",
+                available_proc="8",
             ),
         )
     )
@@ -195,7 +166,7 @@ def test_system_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
             200,
-            text=_system_feed(SYSTEM_UUID, SystemName="p9-prod", State="operating"),
+            text=_system_feed(SYSTEM_UUID, "p9-prod"),
         )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
@@ -223,25 +194,34 @@ def test_system_summary_name_not_found_raises(monkeypatch, mock_hmc):
         hmc_system_summary("ghost-sys")
 
 
-def test_system_summary_missing_optional_fields(monkeypatch, mock_hmc):
-    """hmc_system_summary tolerates a system entry missing optional fields."""
-    _hmc_env(monkeypatch)
+def _mock_bare_system(mock_hmc, *omit: str) -> None:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
-            200,
-            text=_system_feed(SYSTEM_UUID, SystemName="bare-sys", State="operating"),
+            200, text=_system_feed(SYSTEM_UUID, "bare-sys", omit=omit)
         )
     )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
-    )
+    for child in ("LogicalPartition", "VirtualIOServer"):
+        mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/{child}").mock(
+            return_value=httpx.Response(200, text=EMPTY_FEED)
+        )
+
+
+def test_system_summary_missing_optional_fields(monkeypatch, mock_hmc):
+    """A system without MTMS or firmware reports them as unknown, not as a mapping."""
+    _hmc_env(monkeypatch)
+    _mock_bare_system(mock_hmc, "MachineTypeModelAndSerialNumber", "SystemFirmware")
 
     result = hmc_system_summary(SYSTEM_UUID)
 
     assert result.mtms is None
     assert result.firmware_version is None
-    assert result.total_memory_mib == 0
-    assert result.total_proc_units == 0.0
+    assert result.total_memory_mib == 131072
+
+
+def test_system_summary_missing_capacity_fails(monkeypatch, mock_hmc):
+    """A system that serves no memory container fails instead of reporting 0 MiB."""
+    _hmc_env(monkeypatch)
+    _mock_bare_system(mock_hmc, "AssociatedSystemMemoryConfiguration")
+
+    with pytest.raises(ValueError, match="AssociatedSystemMemoryConfiguration"):
+        hmc_system_summary(SYSTEM_UUID)
