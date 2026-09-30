@@ -1130,7 +1130,8 @@ def _creation(**overrides):
     kwargs = {
         "name": "newlpar",
         "partition_type": "AIX/Linux",
-        "resources": LparResources(),
+        # Any resource value: a create with none goes straight to mksyscfg (#1164).
+        "resources": LparResources(desired_memory=4096),
     }
     kwargs.update(overrides)
     return LparCreation(**kwargs)

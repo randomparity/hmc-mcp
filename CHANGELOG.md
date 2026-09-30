@@ -202,6 +202,26 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_create_lpar`, `lpars create` and provisioning now create partitions through the REST API on
+  V10R3 instead of always falling back to `mksyscfg`. The create document now carries
+  `schemaVersion` on the processor configurations, follows the element order and enumeration
+  spelling of the HMC's own XSDs (`SharingMode` `keep idle procs`, not `keep_idle_procs`),
+  states `HasDedicatedProcessors=false` for a shared partition, and nests
+  `max_virtual_slots` as `PartitionIOConfiguration/MaximumVirtualIOSlots`. A REST-created
+  partition gets `default_profile` and a current configuration and activates without an
+  apply, so the `apply_profile` step reports `skipped` with that reason and no warning
+  (#1164, ADR 0178 amendment).
+- Both create paths take omitted memory and processor values from one defaults function, so
+  the REST document carries the processing units and minimum virtual processors V10R3
+  requires. A dedicated create without `sharing_mode` gets `keep_idle_procs` on either path,
+  where `mksyscfg` previously refused it. The `mksyscfg` record now honors a capped shared
+  request instead of always sending `uncap`, and either path refuses a dedicated
+  `sharing_mode` on a shared request before any HMC call. A create with no memory or
+  processor values still goes straight to `mksyscfg`'s `all_resources=1` (#1164).
+- The `mksyscfg` fallback after a refused REST create now logs the HMC's message at
+  `WARNING`, so a defect in the create document no longer hides behind a successful CLI
+  create. `os_type` is documented as having no effect on a create: the HMC treats
+  `OperatingSystemType` as read-only and sets `AIX/Linux` (#1164).
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
   HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,

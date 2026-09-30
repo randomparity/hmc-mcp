@@ -1191,9 +1191,9 @@ def test_lpars_create(fake_hmc):
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
-    # REST create applies no profile; the requested apply is reported as skipped (#1083)
+    # A REST create configures the partition itself; the apply is reported skipped (#1164)
     assert '"status": "skipped"' in result.stdout
-    assert "REST create path creates no profile" in result.stdout
+    assert "the REST create set the current configuration" in result.stdout
 
 
 @pytest.mark.parametrize(("flags", "expected"), [((), True), (("--no-apply",), False)])

@@ -56,3 +56,27 @@ profile, as before this change. A 400 `REST0001` from a bad caller value is repo
 - **Add `schemaVersion` to the processor wrappers so the REST create succeeds.** judgment: the
   REST path skips the profile apply that provisioning needs on V10R3 (#939), and a REST-created
   partition is unproven there; #961 left those wrappers unchanged.
+
+## Amendment (2026-09-30, #1164): a schema-conformant V10R3 REST create succeeds
+
+The 400 `REST0001` responses in the Context above were refusals of our own document, not of
+the REST create path. With `schemaVersion` on the processor configurations and every element
+in the order and enumeration spelling of the XSDs the HMC serves, a V10R3 `PUT
+ManagedSystem/<S>/LogicalPartition` returns 200 with the created partition (#1161 P28–P31,
+P36). The rejected alternative "Add `schemaVersion` to the processor wrappers" is therefore
+adopted, because its premise no longer holds. A REST create writes `default_profile`,
+populates the current configuration, and activates without a profile apply, for shared and
+dedicated partitions alike (P37). The REST branch reports `apply_profile` as skipped for that
+reason. It does not skip the apply because a profile is missing.
+
+The create logic also enforces requirements the schema leaves optional: the processor mode,
+a dedicated `SharingMode`, and the processing units and minimum virtual processors, each
+refused with a 500 `REST0126` (P38). `mksyscfg` has no dedicated `sharing_mode` default
+either. Both create paths now take their omitted values from one defaults function,
+`ssh.lpar.complete_create_resources`, so the partition does not depend on which path created
+it. A create with no resource values still goes straight to `mksyscfg`, because only its
+`all_resources=1` expresses that.
+
+The `mksyscfg` fallback on 406 and on 400 `REST0001` stays. The fallback now logs the HMC's
+unmarshal message, so a regression in our document shows up in the logs instead of being
+masked by a successful CLI create.

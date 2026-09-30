@@ -8,15 +8,19 @@ CLI fallback and still surface an actionable HMCError on 406.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
+import xml.etree.ElementTree as ET  # nosec B405 - types only; parsing uses defusedxml
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 from conftest import LPAR_RESOURCE_CONFIG
+from defusedxml import ElementTree as DET
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.documents import LparResources
+from hmcpctl.documents.common import UOM_NS
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.ownership import _resolve_system_name as _system_name
@@ -310,8 +314,10 @@ def test_create_lpar_http_406_no_apply_leaves_profile_unapplied(monkeypatch, moc
 def test_create_lpar_rest_success_reports_skipped_apply(
     monkeypatch, mock_hmc, apply_partition_profile
 ):
-    """A successful REST create applies no profile; a requested apply is reported (#1083).
+    """A REST create needs no apply; a requested apply is reported skipped (#1083, #1164).
 
+    A V10R3 REST create writes default_profile and a current configuration, and the
+    partition activates without an apply (#1161 P37), so the skip carries no warning.
     An explicit ``apply_partition_profile=False`` requested nothing, so it reports nothing.
     """
     _hmc_env(monkeypatch)
@@ -341,8 +347,8 @@ def test_create_lpar_rest_success_reports_skipped_apply(
         return
     assert result.steps[1].step == "apply_profile"
     assert result.steps[1].status == "skipped"
-    assert "no profile" in result.steps[1].result
-    assert any("was not performed" in w for w in result.warnings)
+    assert "set the current configuration" in result.steps[1].result
+    assert not any("apply" in w for w in result.warnings)
 
 
 def test_create_lpar_http_406_apply_error_stops_the_workflow(monkeypatch, mock_hmc):
@@ -696,6 +702,7 @@ def test_cli_create_sends_dedicated_record_for_dedicated_request():
         "min_procs": "1",
         "desired_procs": "2",
         "max_procs": "4",
+        "sharing_mode": "keep_idle_procs",
     }
 
 
@@ -703,11 +710,13 @@ def test_cli_create_defaults_omitted_dedicated_counts():
     fields = _proc_fields(
         LparResources(desired_memory=4096, dedicated=True, desired_procs=3.0)
     )
+    # mksyscfg has no dedicated sharing_mode default (#1161 P38), so one is supplied.
     assert fields == {
         "proc_mode": "ded",
         "min_procs": "1",
         "desired_procs": "3",
         "max_procs": "3",
+        "sharing_mode": "keep_idle_procs",
     }
 
 
@@ -791,3 +800,133 @@ def test_cli_create_refuses_shared_sharing_mode_for_dedicated(mode):
             )
         )
     run.assert_not_awaited()
+
+
+def test_cli_create_honors_capped_shared_request():
+    """The record carries the requested capping, not a fixed ``uncap`` (#1164)."""
+    fields = _proc_fields(LparResources(desired_procs=0.5, uncapped=False))
+    assert fields["sharing_mode"] == "cap"
+
+
+@pytest.mark.parametrize("mode", ["keep_idle_procs", "share_idle_procs"])
+def test_cli_create_refuses_dedicated_sharing_mode_for_shared(mode):
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match="dedicated processors only"),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"),
+                "sys1",
+                "lp1",
+                resources=LparResources(desired_procs=0.5, sharing_mode=mode),
+            )
+        )
+    run.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------- #
+# One defaults policy for both create paths (#1164)
+# ---------------------------------------------------------------------- #
+
+
+def _rest_create_body(mock_hmc, **kwargs) -> ET.Element:
+    """Run hmc_create_lpar down a successful REST create and parse the PUT body."""
+    mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
+    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
+    put = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(200, text=LPAR_ENTRY))
+    with patch("hmcpctl.operations.lpar.core.create_lpar_via_cli") as via_cli:
+        hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar", **kwargs)
+    via_cli.assert_not_called()
+    return DET.fromstring(put.calls.last.request.content)
+
+
+def _uom_text(root: ET.Element, path: str) -> str | None:
+    return root.findtext("/".join(f"{{{UOM_NS}}}{part}" for part in path.split("/")))
+
+
+def test_rest_create_fills_the_values_v10r3_requires(monkeypatch, mock_hmc):
+    """The tool's default resources name no processing units or minimum vCPUs.
+
+    V10R3 refuses that document with 500 REST0126 naming min_procs, min_proc_units,
+    max_proc_units and desired_proc_units (#1161 P38), so the REST create fills the
+    defaults the mksyscfg record uses.
+    """
+    _hmc_env(monkeypatch)
+    root = _rest_create_body(mock_hmc)
+
+    ppc = "PartitionProcessorConfiguration"
+    shared = f"{ppc}/SharedProcessorConfiguration"
+    defaults = inspect.signature(hmc_create_lpar).parameters["resources"].default
+    record = _record(_cli_create(defaults).await_args.args[1])
+    assert {
+        "HasDedicatedProcessors": _uom_text(root, f"{ppc}/HasDedicatedProcessors"),
+        "SharingMode": _uom_text(root, f"{ppc}/SharingMode"),
+        "min_proc_units": _uom_text(root, f"{shared}/MinimumProcessingUnits"),
+        "desired_proc_units": _uom_text(root, f"{shared}/DesiredProcessingUnits"),
+        "max_proc_units": _uom_text(root, f"{shared}/MaximumProcessingUnits"),
+        "min_procs": _uom_text(root, f"{shared}/MinimumVirtualProcessors"),
+        "desired_procs": _uom_text(root, f"{shared}/DesiredVirtualProcessors"),
+        "max_procs": _uom_text(root, f"{shared}/MaximumVirtualProcessors"),
+    } == {
+        "HasDedicatedProcessors": "false",
+        "SharingMode": "uncapped",
+        "min_proc_units": "0.1",
+        "desired_proc_units": "0.1",
+        "max_proc_units": "2",
+        "min_procs": record["min_procs"],
+        "desired_procs": record["desired_procs"],
+        "max_procs": record["max_procs"],
+    }
+    assert record["sharing_mode"] == "uncap"
+    assert (
+        float(record["min_proc_units"]),
+        float(record["desired_proc_units"]),
+        float(record["max_proc_units"]),
+    ) == (0.1, 0.1, 2.0)
+
+
+def test_rest_create_supplies_the_dedicated_sharing_mode(monkeypatch, mock_hmc):
+    """V10R3 refuses a dedicated create without SharingMode (#1161 P30, P38)."""
+    _hmc_env(monkeypatch)
+    root = _rest_create_body(
+        mock_hmc,
+        resources=LparResources(desired_memory=2048, dedicated=True, desired_procs=1),
+    )
+
+    ppc = "PartitionProcessorConfiguration"
+    assert _uom_text(root, f"{ppc}/HasDedicatedProcessors") == "true"
+    assert _uom_text(root, f"{ppc}/SharingMode") == "keep idle procs"
+    assert (
+        _uom_text(root, f"{ppc}/DedicatedProcessorConfiguration/MinimumProcessors")
+        == "1"
+    )
+
+
+def test_create_with_no_resource_values_goes_straight_to_mksyscfg(
+    monkeypatch, mock_hmc
+):
+    """Only mksyscfg's all_resources=1 expresses a create with no resource values."""
+    _hmc_env(monkeypatch)
+    order: list[str] = []
+    _mock_create_406(mock_hmc, order)
+
+    result, create_via_cli = _create_via_406(
+        AsyncMock(return_value=""), order, resources=LparResources()
+    )
+
+    assert not any(
+        call.request.url.path.endswith("/LogicalPartition") for call in mock_hmc.calls
+    )
+    create_via_cli.assert_awaited_once()
+    assert create_via_cli.await_args.kwargs["resources"] == LparResources()
+    assert order == ["search", "mksyscfg", "search"]
+    assert result.lpar.get("UUID") == LPAR_UUID

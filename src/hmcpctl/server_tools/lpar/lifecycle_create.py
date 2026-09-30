@@ -66,7 +66,8 @@ def hmc_create_lpar(
         resources: Memory and processor assignments for the new partition.
         partition_type: Partition type: AIX/Linux, OS400, or Virtual IO Server.
         partition_id: Optional numeric partition ID; the HMC assigns one when omitted.
-        os_type: Optional target operating-system family: aix, linux, or ibmi.
+        os_type: Accepted (aix, linux, or ibmi) but has no effect on the create: the
+            HMC treats the operating-system type as read-only and sets AIX/Linux.
         keylock: Optional initial keylock position: normal, manual, or auto.
         max_virtual_slots: Optional maximum number of virtual I/O slots.
         caller_token: Optional caller tracking reference embedded in the partition
@@ -75,9 +76,11 @@ def hmc_create_lpar(
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         apply_partition_profile: When the HMC creates the partition through
             mksyscfg (its REST create was refused: HTTP 406, or a 400 REST0001
-            schema rejection), apply the new
+            payload rejection), apply the new
             default_profile so the partition has a current configuration; the
-            ``apply_profile`` step reports it. False leaves it unapplied.
+            ``apply_profile`` step reports it. False leaves it unapplied. A REST
+            create sets the current configuration itself, so the step reports
+            the apply as skipped.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
     if caller_token is not None:
