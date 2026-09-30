@@ -32,6 +32,14 @@ def test_error_translators_return_translated_errors(translator, status, message)
     assert message in str(translated)
 
 
+def test_virtual_network_create_406_does_not_advise_the_schema_env_var():
+    translated = translate_virtual_network_create_error(HMCError("raw", 406))
+
+    assert "X-HMC-Schema-Version" in str(translated)
+    assert "per call site" in str(translated)
+    assert "HMC_SCHEMA_VERSION" not in str(translated)
+
+
 @pytest.mark.parametrize(
     "translator",
     [

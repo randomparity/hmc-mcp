@@ -9,7 +9,9 @@ def test_lpar_write_error_translation_preserves_406_response_body():
 
     assert translated.status_code == 406
     assert translated.body == "detail"
-    assert "HMC_SCHEMA_VERSION=V1_0" in str(translated)
+    assert "X-HMC-Schema-Version" in str(translated)
+    assert "per call site" in str(translated)
+    assert "HMC_SCHEMA_VERSION" not in str(translated)
 
 
 def test_lpar_write_error_translation_preserves_other_errors_unchanged():

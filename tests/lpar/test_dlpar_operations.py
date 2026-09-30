@@ -875,10 +875,12 @@ async def test_http_406_is_translated_to_an_actionable_error(mock_hmc, operation
         new=_owned_by("hmcpctl"),
     ):
         async with HMCClient(make_config()) as hmc:
-            with pytest.raises(HMCError, match="HMC_SCHEMA_VERSION"):
+            with pytest.raises(HMCError, match="X-HMC-Schema-Version") as exc_info:
                 await operation(
                     hmc,
                     SYSTEM_UUID,
                     LPAR_UUID,
                     LparResources(desired_procs=1.0, desired_memory=1024),
                 )
+
+    assert "HMC_SCHEMA_VERSION" not in str(exc_info.value)
