@@ -451,7 +451,11 @@ def test_direct_construction_still_works(monkeypatch):
     monkeypatch.delenv("HMC_HOST", raising=False)
     monkeypatch.delenv("HMC_USER", raising=False)
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
-    cfg = HMCConfig(host="myhost", user="myuser", password="mypass")  # pragma: allowlist secret
+    cfg = HMCConfig(
+        host="myhost",
+        user="myuser",
+        password="mypass",  # pragma: allowlist secret
+    )
     assert cfg.host == "myhost"
     assert cfg.user == "myuser"
     assert cfg.password == "mypass"  # pragma: allowlist secret
