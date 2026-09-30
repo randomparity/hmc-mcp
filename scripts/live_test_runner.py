@@ -1635,8 +1635,8 @@ def _emit_observations(
 async def served_client() -> AsyncIterator[Client]:
     """A client connected to the application exactly as a live run composes it.
 
-    The one owner of that composition: the run loop, its argument guard and the
-    scenario gap report all read the served schemas through here.
+    The one owner of that composition: every live-test entry point that reads the
+    served schemas goes through here, rather than composing its own application.
     """
     # The escape hatch is opted in because this harness drives `hmc_run_command`
     # against a real HMC. `permits` and `authorize` come from the policy just composed:
