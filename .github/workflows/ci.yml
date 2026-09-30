@@ -143,8 +143,14 @@ jobs:
                       "UUID": "system-1",
                       "Resource": {
                           "SystemName": "p10",
-                          "AssignableSystemMemory": 32768,
-                          "ConfigurableSystemProcessorUnits": 8.0,
+                          "AssociatedSystemMemoryConfiguration": {
+                              "ConfigurableSystemMemory": "32768",
+                              "CurrentAvailableSystemMemory": "24576",
+                          },
+                          "AssociatedSystemProcessorConfiguration": {
+                              "ConfigurableSystemProcessorUnits": "8",
+                              "CurrentAvailableSystemProcessorUnits": "6",
+                          },
                       },
                   }]
 
@@ -152,11 +158,7 @@ jobs:
                   assert system_uuid == "system-1"
                   return [{
                       "UUID": "lpar-1",
-                      "Resource": {
-                          "DesiredMemory": 8192,
-                          "DesiredProcessingUnits": 2.0,
-                          "PartitionState": "running",
-                      },
+                      "Resource": {"PartitionState": "running"},
                   }]
 
           report = asyncio.run(fetch_capacity_report(FakeHMC()))
@@ -285,8 +287,14 @@ jobs:
                       "UUID": "system-1",
                       "Resource": {
                           "SystemName": "p10",
-                          "AssignableSystemMemory": 32768,
-                          "ConfigurableSystemProcessorUnits": 8.0,
+                          "AssociatedSystemMemoryConfiguration": {
+                              "ConfigurableSystemMemory": "32768",
+                              "CurrentAvailableSystemMemory": "24576",
+                          },
+                          "AssociatedSystemProcessorConfiguration": {
+                              "ConfigurableSystemProcessorUnits": "8",
+                              "CurrentAvailableSystemProcessorUnits": "6",
+                          },
                       },
                   }]
 
@@ -294,11 +302,7 @@ jobs:
                   assert system_uuid == "system-1"
                   return [{
                       "UUID": "lpar-1",
-                      "Resource": {
-                          "DesiredMemory": 8192,
-                          "DesiredProcessingUnits": 2.0,
-                          "PartitionState": "running",
-                      },
+                      "Resource": {"PartitionState": "running"},
                   }]
 
           report = asyncio.run(fetch_capacity_report(FakeHMC()))
