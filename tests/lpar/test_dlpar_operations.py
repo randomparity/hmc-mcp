@@ -884,3 +884,67 @@ async def test_http_406_is_translated_to_an_actionable_error(mock_hmc, operation
                 )
 
     assert "HMC_SCHEMA_VERSION" not in str(exc_info.value)
+
+
+# ------------------------------------------------------------------ #
+# Which object the write changed (#1170)
+# ------------------------------------------------------------------ #
+
+
+def _mock_modify_with_sync(router, sync: str) -> None:
+    """The POST response as captured live: it reports the partition's sync setting."""
+    entry = LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME).replace(
+        "<PartitionState>",
+        f"<CurrentProfileSync>{sync}</CurrentProfileSync><PartitionState>",
+    )
+    router.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=entry)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "resources"),
+    [
+        (set_lpar_memory, LparResources(desired_memory=3072)),
+        (set_lpar_processors, LparResources(desired_procs=0.3)),
+    ],
+)
+async def test_a_disabled_sync_warns_that_the_profile_is_unchanged(
+    mock_hmc, operation, resources
+):
+    _mock_lpar_detail(mock_hmc)
+    _mock_system_detail(mock_hmc)
+    _mock_modify_with_sync(mock_hmc, "Disabled")
+
+    with patch(
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
+    ):
+        async with HMCClient(make_config()) as hmc:
+            result = await operation(hmc, SYSTEM_UUID, LPAR_UUID, resources)
+
+    assert result["change_location"]["lives_in"] == "current-configuration"
+    assert result["change_location"]["current_profile_sync"] == "Disabled"
+    (warning,) = result["warnings"]
+    assert "only in the current configuration" in warning
+    assert "discards it" in warning
+
+
+@pytest.mark.asyncio
+async def test_an_on_sync_carries_no_warning(mock_hmc):
+    _mock_lpar_detail(mock_hmc)
+    _mock_system_detail(mock_hmc)
+    _mock_modify_with_sync(mock_hmc, "On")
+
+    with patch(
+        "hmcpctl.operations.lpar.ownership.get_lpar_description",
+        new=_owned_by("hmcpctl"),
+    ):
+        async with HMCClient(make_config()) as hmc:
+            result = await set_lpar_memory(
+                hmc, SYSTEM_UUID, LPAR_UUID, LparResources(desired_memory=3072)
+            )
+
+    assert result["change_location"]["lives_in"] == "current-configuration-and-profile"
+    assert "warnings" not in result
