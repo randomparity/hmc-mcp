@@ -463,15 +463,15 @@ def test_a_composite_a_table_cannot_bound_is_refused_at_load() -> None:
 def test_a_mixed_effect_grant_loads_and_warns_at_startup() -> None:
     """#279: a mixed effect-resolved set loads; its dead subset is diagnosed later.
 
-        `mutate` resolves `hmc_provision_lpar` and three siblings that are
-    `exhaustive_targets=False`, alongside 41 tools this table binds correctly.
+    `mutate` resolves `hmc_provision_lpar` and siblings that are
+    `exhaustive_targets=False`, alongside the tools this table binds correctly.
     Before the fix, the exhaustiveness check ignored effect-resolved tools
-    entirely, so this grant loaded with no diagnostic at all -- every one of
-    the five is silently dead at dispatch under `target-unboundable`
-    (target_scope.py). Refusing the whole grant over the five, mirroring the
-    named-tool rule, would instead discard the 41 working tools to diagnose
-    the 5 dead ones -- so the fix is a load-clean warning naming exactly the
-        four, not a refusal.
+    entirely, so this grant loaded with no diagnostic at all -- every
+    non-exhaustive one is silently dead at dispatch under `target-unboundable`
+    (target_scope.py). Refusing the whole grant over them, mirroring the
+    named-tool rule, would instead discard the working tools to diagnose the
+    dead ones -- so the fix is a load-clean warning naming exactly the dead
+    ones, not a refusal.
     """
     policy = _compile(
         _document(
@@ -489,10 +489,11 @@ def test_a_mixed_effect_grant_loads_and_warns_at_startup() -> None:
     for offender in (
         "hmc_add_vfc_adapter",
         "hmc_add_vscsi_adapter",
-        "hmc_attach_disk_to_lpar",
         "hmc_provision_lpar",
     ):
         assert repr(offender) in message
+    # #1086: its selectors bound it, so a table reaches it and it is not dead.
+    assert "'hmc_attach_disk_to_lpar'" not in message
     assert "all-targets" in message
 
 
