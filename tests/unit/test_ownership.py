@@ -1284,7 +1284,9 @@ def _creation(**overrides):
     kwargs = {
         "name": "newlpar",
         "partition_type": "AIX/Linux",
-        "resources": LparResources(),
+        # A processor value: a create with no resource value goes straight to
+        # mksyscfg (#1164), and a memory value would read the system (#1166).
+        "resources": LparResources(desired_vcpus=1),
     }
     kwargs.update(overrides)
     return LparCreation(**kwargs)

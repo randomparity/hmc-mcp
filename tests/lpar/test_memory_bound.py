@@ -92,8 +92,15 @@ async def test_create_reads_configurable_memory_from_a_ksv_wrapped_leaf():
 async def test_create_without_desired_memory_reads_no_system():
     hmc = _hmc(_system())
     hmc.create_logical_partition.return_value = None
+    # A processor value keeps the create on REST: with no resource value at all it
+    # goes straight to mksyscfg (#1164).
+    creation = LparCreation(
+        name="probe-lpar",
+        partition_type="AIX/Linux",
+        resources=LparResources(desired_vcpus=1),
+    )
 
-    await create_and_stamp_lpar(hmc, SYSTEM_UUID, _creation(None))
+    await create_and_stamp_lpar(hmc, SYSTEM_UUID, creation)
 
     hmc.get_managed_system.assert_not_awaited()
 
