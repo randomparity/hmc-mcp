@@ -103,6 +103,13 @@ def test_lpar_summary_preserves_zero_and_falls_back_only_when_missing(
     assert summary.current_proc_units == expected_processors
 
 
+def test_lpar_summary_reads_text_of_attributed_description():
+    """V10R3 sends ``<Description ksv=...>``, which parses as a mapping (#1168)."""
+    description = {"@attrs": {"ksv": "V1_2_0"}, "text": "Production LPAR"}
+    summary = _lpar_summary({"Resource": {"Description": description}}, [])
+    assert summary.description == "Production LPAR"
+
+
 # ---------------------------------------------------------------------- #
 # Core happy-path
 # ---------------------------------------------------------------------- #

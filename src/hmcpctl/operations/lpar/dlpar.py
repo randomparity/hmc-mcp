@@ -21,6 +21,10 @@ from .assignments import (
 )
 from .errors import translate_lpar_write_error
 from .memory_bound import require_memory_within_selected_system
+from .profile_sync import (
+    change_location_of,
+    resource_with_change_location,
+)
 from .workflow_contract import WorkflowStep
 
 _PROCESSOR_FIELDS = (
@@ -68,6 +72,7 @@ async def modify_lpar(
     )
     await require_memory_within_selected_system(hmc, system_name_or_uuid, resources)
     resource = None
+    resource_warnings: tuple[str, ...] = ()
     steps: list[WorkflowStep] = []
     if new_name is not None:
         resource = await hmc.update_logical_partition(
@@ -107,6 +112,7 @@ async def modify_lpar(
                 (str(translated),),
             )
         steps.append(WorkflowStep("resources", "ok", resource))
+        resource_warnings = _profile_scope_warnings(resource)
 
     assignment_result = await apply_validated_lpar_pcie_assignments(
         hmc,
@@ -116,14 +122,14 @@ async def modify_lpar(
         ownership_override=ownership_override,
     )
     steps.extend(assignment_result.steps)
-    warnings: tuple[str, ...] = ()
+    warnings = resource_warnings
     if resource is None:
         try:
             resource = await hmc.get_logical_partition(lpar_uuid)
         except HMCError as exc:
             if not steps:
                 raise
-            warnings = (f"final LPAR readback failed: {exc}",)
+            warnings = (*warnings, f"final LPAR readback failed: {exc}")
     return LparPcieWorkflowResult(
         False,
         assignment_result.workflow_completed,
@@ -134,6 +140,19 @@ async def modify_lpar(
     )
 
 
+def _profile_scope_warnings(entry: dict[str, Any] | None) -> tuple[str, ...]:
+    """Warn when a resource write reached the current configuration but not the profile.
+
+    Read from the write's own response: with ``CurrentProfileSync`` ``Disabled``
+    the profile keeps its old values (#1170), so an activation that uses the
+    profile discards the change.
+    """
+    location = change_location_of(entry)
+    if location.lives_in == "current-configuration-and-profile":
+        return ()
+    return (location.summary(),)
+
+
 async def _apply_dlpar_change(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
@@ -142,7 +161,11 @@ async def _apply_dlpar_change(
     system_name_or_uuid: str | None,
     ownership_override: bool,
 ) -> dict[str, Any] | None:
-    """Authorize one partition, then change *resources* by read-modify-write."""
+    """Authorize one partition, then change *resources* by read-modify-write.
+
+    The result carries ``change_location`` and, when the change did not reach the
+    partition's profile, ``warnings``.
+    """
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,
@@ -151,7 +174,7 @@ async def _apply_dlpar_change(
     )
     await require_memory_within_selected_system(hmc, system_name_or_uuid, resources)
     try:
-        return await hmc.update_logical_partition(
+        updated = await hmc.update_logical_partition(
             lpar_uuid,
             lambda lpar: partition_updates(lpar, resources=resources),
             subject,
@@ -161,6 +184,10 @@ async def _apply_dlpar_change(
         if translated is exc:
             raise
         raise translated from exc
+    result = resource_with_change_location(updated, change_location_of(updated))
+    if warnings := _profile_scope_warnings(updated):
+        result["warnings"] = list(warnings)
+    return result
 
 
 def _require_fields(
@@ -194,8 +221,11 @@ async def set_lpar_processors(
     sets the weight. A request carrying no processor field is refused before
     any request.
 
-    If the partition has no active RMC connection the change is profile-only
-    and takes effect on its next activation; no reboot is triggered either way.
+    The write changes the partition's current configuration, not a partition
+    profile. With no active RMC connection it applies on the next activation only
+    if that activation uses the current configuration; activating a profile
+    discards it unless ``CurrentProfileSync`` is ``On``. The result's
+    ``change_location`` and ``warnings`` say which. No reboot is triggered either way.
 
     ADR 0092 §3.2 classifies this as Reconfiguring, so
     :func:`authorize_lpar_mutation` runs unconditionally before the write.
@@ -229,8 +259,11 @@ async def set_lpar_memory(
     processor fields of *resources* are ignored. A request carrying no memory
     field is refused before any request.
 
-    If the partition has no active RMC connection the change is profile-only
-    and takes effect on its next activation; no reboot is triggered either way.
+    The write changes the partition's current configuration, not a partition
+    profile. With no active RMC connection it applies on the next activation only
+    if that activation uses the current configuration; activating a profile
+    discards it unless ``CurrentProfileSync`` is ``On``. The result's
+    ``change_location`` and ``warnings`` say which. No reboot is triggered either way.
 
     ADR 0092 §3.2 classifies this as Reconfiguring, so
     :func:`authorize_lpar_mutation` runs unconditionally before the write.

@@ -6,6 +6,7 @@ from hmcpctl.xmlutil import (
     element_to_dict,
     find_all_text,
     find_text,
+    leaf_text,
     localname,
     parse_feed,
 )
@@ -130,6 +131,20 @@ def test_repeated_children_become_list():
         __import__("xml.etree.ElementTree", fromlist=["fromstring"]).fromstring(xml)
     )
     assert result["item"] == ["1", "2", "3"]
+
+
+def test_leaf_text_unwraps_attributed_leaf():
+    attributed = {"@attrs": {"ksv": "V1_2_0"}, "text": "[hmcpctl owner:a]"}
+    assert leaf_text(attributed) == "[hmcpctl owner:a]"
+    assert leaf_text("plain") == "plain"
+
+
+def test_leaf_text_passes_other_values_through():
+    no_text = {"ksv": "V1_2_0"}
+    bad_text = {"@attrs": {"ksv": "V1_2_0"}, "text": 5}
+    assert leaf_text(None) is None
+    assert leaf_text(no_text) is no_text
+    assert leaf_text(bad_text) is bad_text
 
 
 @pytest.mark.parametrize("malformed_first", [True, False])
