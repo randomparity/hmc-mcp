@@ -291,6 +291,13 @@ def hmc_set_lpar_description(
     Foreign-owned or malformed tokens are rejected. Set ownership_override=True
     only after explicit operator approval.
 
+    Plain text keeps the ownership stamp: on a stamped partition it replaces
+    only what follows ``[hmcpctl owner:<id> created:<date>]`` and any
+    ``[caller <token>]`` segment. Text carrying its own complete stamp
+    re-stamps or hands over the partition and is written as given; a
+    ``[hmcpctl`` or ``[caller `` fragment without a complete stamp is rejected.
+    With ownership_override=True the text is written as given, stamp or not.
+
     A description carrying a character the HMC's attribute record treats as
     structure is rejected, with an error naming the character. The HMC writes
     the description through that record, so such text would be read as further
@@ -301,10 +308,12 @@ def hmc_set_lpar_description(
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        description: New printable-ASCII partition description, carrying no
-            character the HMC attribute record treats as structure.
-        ownership_override: Permit overwriting a foreign or malformed ownership token
-            only after explicit operator approval.
+        description: New printable-ASCII partition text, carrying no character
+            the HMC attribute record treats as structure. Written after the
+            current ownership stamp unless it carries its own.
+        ownership_override: Permit overwriting a foreign or malformed ownership token,
+            and replacing the whole description, only after explicit operator
+            approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 

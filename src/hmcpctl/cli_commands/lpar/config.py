@@ -320,13 +320,15 @@ def lpars_set_description(
     description: str = typer.Argument(
         ...,
         help="New description text (printable ASCII, no HMC attribute-record "
-        "structure; the error names the character)",
+        "structure; the error names the character). Written after the current "
+        "ownership stamp unless it carries its own complete stamp",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(
         False,
         "--ownership-override",
-        help="Bypass ownership protection after operator approval",
+        help="Bypass ownership protection and replace the whole description "
+        "after operator approval",
     ),
 ) -> None:
     """Set the description field of an LPAR (HMC CLI via SSH)."""
