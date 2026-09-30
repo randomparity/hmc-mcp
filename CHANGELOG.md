@@ -202,6 +202,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The managed-system MTMS is now read from the element V10R3 serves,
+  `MachineTypeModelAndSerialNumber`, through one shared renderer (`xmlutil.render_mtms`).
+  `systems list` showed `-` for every system, a VIOS backup addressed by system UUID always
+  failed its MTMS lookup, and snapshot capture and `console info`
+  read the unserved `MachineTypeModelSerialNumber`. The old name is no longer read (#1184).
 - `hmc_lpar_summary`, `lpars summary` and `lpar_summary` returned null memory and processor
   figures on V10R3, which nests them in `PartitionMemoryConfiguration` and
   `PartitionProcessorConfiguration`. They now read those containers: `current_proc_units` and

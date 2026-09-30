@@ -26,7 +26,7 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
     for key in (
         "VersionInfo",
         "ManagementConsoleName",
-        "MachineTypeModelSerialNumber",
+        "MachineTypeModelAndSerialNumber",
         "NetworkInfo",
     ):
         if key in res:
