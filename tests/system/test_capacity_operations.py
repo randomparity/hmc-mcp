@@ -16,12 +16,22 @@ def _parsed(entry: str) -> dict:
     return parse_feed(feed)[0]
 
 
-SYSTEM = _parsed(captured_system_entry("system-1", "system-1"))
 INACTIVE_LPAR = _parsed(captured_lpar_entry("lpar-1", "aix-1"))
 
 
 def test_capacity_reads_the_captured_configuration_containers():
-    summary = calculate_system_capacity(SYSTEM, [INACTIVE_LPAR])
+    system = _parsed(captured_system_entry("system-1", "system-1"))
+    resource = system["Resource"]
+    # The captured installed and pending figures equal the ones read; make them
+    # differ so these assertions pin which fields capacity comes from.
+    resource["AssociatedSystemMemoryConfiguration"].update(
+        InstalledSystemMemory="262144", PendingAvailableSystemMemory="1024"
+    )
+    resource["AssociatedSystemProcessorConfiguration"][
+        "InstalledSystemProcessorUnits"
+    ] = "40"
+
+    summary = calculate_system_capacity(system, [INACTIVE_LPAR])
 
     assert summary.total_memory_mib == 131072
     assert summary.free_memory_mib == 112448

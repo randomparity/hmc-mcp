@@ -41,7 +41,8 @@ def hmc_find_placement(
     """Rank systems able to host an LPAR with the requested capacity.
 
     A system qualifies when the memory and processor units it currently reports
-    available cover the request.
+    available cover the request. A system that reports no capacity figure fails
+    the search.
 
     Args:
         desired_memory_mib: Required LPAR memory in MiB.
