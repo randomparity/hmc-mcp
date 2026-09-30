@@ -18,7 +18,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_get_lpar_description` | `read` | `lpar.get_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only description, resolving names or UUIDs. |
 | `hmc_get_lpar_memopt_score` | `read` | `lpar.get_memopt_score` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's current memory-optimization affinity score. |
 | `hmc_get_lpar_msp` | `read` | `lpar.get_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only Migratable Service Partition flag. |
-| `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's desired and current processor compatibility modes. |
+| `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's processor compatibility modes and a profile's mode. |
 | `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return the current state of one LPAR by partition name or UUID. |
 | `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's minimum-affinity policy when supported. |
 | `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
@@ -40,5 +40,5 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_rename_lpar` | `mutate` | `lpar.rename` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rename one LPAR after enforcing its ownership token. |
 | `hmc_set_lpar_description` | `mutate` | `lpar.set_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's CLI-only description after validating printable ASCII. |
 | `hmc_set_lpar_msp` | `mutate` | `lpar.set_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set a VIOS partition's Migratable Service Partition flag. |
-| `hmc_set_lpar_proc_compat` | `mutate` | `lpar.set_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's processor compatibility mode. |
+| `hmc_set_lpar_proc_compat` | `mutate` | `lpar.set_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set the processor compatibility mode on an LPAR's partition profile. |
 | `hmc_set_minimum_affinity_policy` | `mutate` | `lpar.set_minimum_affinity_policy` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's POWER11 minimum-affinity policy after authorization. |

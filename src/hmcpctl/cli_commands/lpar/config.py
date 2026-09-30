@@ -394,11 +394,14 @@ def lpars_get_proc_compat_modes(
 def lpars_get_proc_compat(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
+    profile_name: str | None = typer.Option(
+        None, "--profile-name", help="Partition profile to read (default profile)"
+    ),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
-    """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
+    """Get an LPAR's processor compatibility modes and a profile's mode (HMC CLI via SSH)."""
     info = run_cli_coroutine(
-        lambda: get_lpar_proc_compat(ssh_config(), system_name, lpar_name)
+        lambda: get_lpar_proc_compat(ssh_config(), system_name, lpar_name, profile_name)
     )
 
     desired = info["desired"]
@@ -412,6 +415,9 @@ def lpars_get_proc_compat(
         table.add_column("Value", style="green")
         table.add_row("Desired Mode", desired or "-")
         table.add_row("Current Mode", curr or "-")
+        table.add_row(
+            f"Profile Mode ({info['profile'] or '-'})", info["profile_mode"] or "-"
+        )
         console.print(table)
 
 
@@ -421,22 +427,28 @@ def lpars_set_proc_compat(
     mode: ProcessorCompatibilityMode = typer.Argument(
         ..., help="Processor compatibility mode supported by the managed system"
     ),
+    profile_name: str | None = typer.Option(
+        None, "--profile-name", help="Partition profile to change (default profile)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Set the processor compatibility mode of an LPAR (HMC CLI via SSH)."""
+    """Set the processor compatibility mode on an LPAR profile (HMC CLI via SSH)."""
+    target = f"profile '{profile_name}'" if profile_name else "the default profile"
     if not yes and not typer.confirm(
-        f"Set processor compatibility mode to '{mode}' on LPAR '{lpar_name}' (system {system_name})?"
+        f"Set processor compatibility mode to '{mode}' on {target} of LPAR "
+        f"'{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    result = run_cli_coroutine(
-        lambda: set_lpar_proc_compat(ssh_config(), system_name, lpar_name, mode)
+    profile = run_cli_coroutine(
+        lambda: set_lpar_proc_compat(
+            ssh_config(), system_name, lpar_name, mode, profile_name
+        )
     )
 
     console.print(
-        f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]"
+        f"[green]Processor compatibility mode updated on profile "
+        f"'{escape(profile)}' of '{lpar_name}'[/green]"
     )
-    if result.strip():
-        console.print(escape(result.strip()))
 
 
 def register_commands(group: typer.Typer) -> None:

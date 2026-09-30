@@ -202,6 +202,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_set_lpar_proc_compat`, `lpars set-proc-compat` and `set_lpar_proc_compat` now write
+  `lpar_proc_compat_mode` with `chsyscfg -r prof`; the HMC accepts it only on a partition profile
+  and rejected every `-r lpar` call. They change the profile named by the new `profile_name`
+  argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
+  default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
+  get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
+
 - The HTTP 406 errors for LPAR writes and virtual-network create no longer tell the operator to
   set `HMC_SCHEMA_VERSION=V1_0`. Cause (2) now names the `X-HMC-Schema-Version` request header,
   says the client decides per call site whether to send it, and directs the operator to report a
