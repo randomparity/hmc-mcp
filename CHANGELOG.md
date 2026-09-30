@@ -211,6 +211,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   system that serves no such figure fails with an error naming it rather than reading 0.
   `hmc_system_summary` returns `mtms` as `type-model*serial` from
   `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
+- A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
+  identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
+  SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
+  add/remove preflight and PCIe-assignment prevalidation (`lpars create`, DLPAR, provision). These
+  five header-bearing reads share one helper in `ssh/commands.py` for the `No results were found.`
+  sentinel and that wrap, so the SR-IOV and `lsrefcode` messages now read `<read> response did not
+  match the expected <fields> fields: <parser detail>` (#892).
 - `hmc_modify_lpar`, `hmc_dlpar_mem` and `hmc_dlpar_proc` now state which object they change.
   The write reaches the partition's current configuration; with `CurrentProfileSync` `Disabled`
   the partition profile keeps its old values (live: `desired_mem` and `desired_procs` unchanged),
