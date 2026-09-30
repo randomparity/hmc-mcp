@@ -8,6 +8,10 @@ record's Consequences section said it did not. Amended 2026-08-28 by issue #532 
 delay before a confirming disappearance read. Amended 2026-08-28 by issue #537 to reject the
 three ASCII controls URL parsing deletes before validating a persisted link. Amended 2026-08-30
 by issue #526 to apply the operations contract to the CLI job commands.
+Amended 2026-09-30 by issues #1160 and #1172: `jobs.job_identifier` now prefers `Resource.JobID`
+over the entry UUID, and outcomes carry the stable `/rest/api/uom/jobs/{JobID}` `job_href`. On
+V10R3 only the JobID resolves on the global jobs path; entry UUIDs answer HTTP 406 or `400
+REST000B/REST000E` (live evidence, issue #1161 P2–P4).
 
 ## Context
 
@@ -72,8 +76,8 @@ a *different* job". That residual was accepted for the MCP surface, where an ADR
 grant already means "any job". Here the pair is read back from storage, where the two columns of
 one row can be written out of step, so the residual becomes a mispaired handle returning another
 job's terminal status. `get_job` does not raise on the mismatch: `jobs.job_identifier` prefers the
-response's UUID or JobID over the link's last segment, so the two legitimately differ on some
-firmware, and refusing would break the case `job_href` exists to serve. It logs a warning instead,
+response's JobID (the entry UUID only when no JobID is present) over the link's last segment, so
+the two legitimately differ on some firmware, and refusing would break the case `job_href` exists to serve. It logs a warning instead,
 returns the **response-derived** `job_id` — which names the job actually read — and both the
 docstring and this clause tell a consumer to compare `job_id` against what it stored before acting.
 
