@@ -434,11 +434,18 @@ async def _activate_to_sms(
     st, data, failure = await _power_on(client, state, fixture, profile_uuid)
     job = _power_job(data) if st == "PASS" else None
     job_status = job_outcome("", job).status if job is not None else None
-    reached = (
-        await _read_state(client, state, fixture, _FIRMWARE_STATES)
-        if st == "PASS" and failure is None
-        else None
-    )
+    reached = None
+    if st == "PASS" and failure is None:
+        reached = await _read_state(client, state, fixture, _FIRMWARE_STATES)
+        state.record_verified(
+            _ROW,
+            "hmc_get_lpar_state",
+            operation="lpar.get_state",
+            scenario=_SCENARIO,
+            assertions=[Assertion("state-read-returned-a-state", reached is not None)],
+            cleanup="not-required",
+            data={"partition_state": reached},
+        )
     state.record_verified(
         _ROW,
         "hmc_power_on_lpar",
@@ -722,17 +729,31 @@ async def _slot_released(
     st, data = await state.call(
         client, "hmc_list_dedicated_pcie_slots", system_name_or_uuid=arm.system_name
     )
-    if st != "PASS" or not isinstance(data, dict):
-        return False
-    slot = next(
-        (
-            item
-            for item in data.get("items") or []
-            if isinstance(item, dict) and item.get("drc_index") == fixture.drc_index
-        ),
-        None,
+    slot = None
+    if st == "PASS" and isinstance(data, dict):
+        slot = next(
+            (
+                item
+                for item in data.get("items") or []
+                if isinstance(item, dict) and item.get("drc_index") == fixture.drc_index
+            ),
+            None,
+        )
+    unowned = slot is not None and (slot.get("owner_lpar") or "").strip() in ("", "null")
+    state.record_verified(
+        _ROW,
+        "hmc_list_dedicated_pcie_slots",
+        operation="pcie.list_dedicated_slots",
+        scenario=_SCENARIO,
+        assertions=[
+            Assertion("list-call-succeeded", st == "PASS"),
+            Assertion("fixture-slot-listed", slot is not None),
+            Assertion("fixture-slot-unowned", unowned),
+        ],
+        cleanup="not-required",
+        data=data if st != "PASS" else {"listed": slot is not None, "unowned": unowned},
     )
-    if slot is None or (slot.get("owner_lpar") or "").strip() not in ("", "null"):
+    if not unowned:
         return False
     st, data = await state.call(
         client, "hmc_run_command", cmd=profile_io_slot_rows_command(arm.system_name)
