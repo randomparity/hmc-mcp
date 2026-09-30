@@ -877,10 +877,16 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
         {
             "Resource": {
                 "PartitionName": "zero-lpar",
-                "CurrentMemory": 0,
-                "DesiredMemory": 0,
-                "CurrentProcessingUnits": 0.0,
-                "DesiredProcessingUnits": 0.0,
+                "PartitionMemoryConfiguration": {
+                    "CurrentMemory": 0,
+                    "DesiredMemory": 0,
+                },
+                "PartitionProcessorConfiguration": {
+                    "HasDedicatedProcessors": "false",
+                    "CurrentSharedProcessorConfiguration": {
+                        "CurrentProcessingUnits": 0.0
+                    },
+                },
             }
         },
         [],
