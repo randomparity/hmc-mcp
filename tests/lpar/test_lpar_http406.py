@@ -288,6 +288,31 @@ def test_create_lpar_http_406_no_apply_leaves_profile_unapplied(monkeypatch, moc
     assert "no current configuration" in result.warnings[0]
 
 
+def test_create_lpar_rest_success_reports_skipped_apply(monkeypatch, mock_hmc):
+    """A successful REST create applies no profile; the requested apply is reported (#1083)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
+    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    apply = AsyncMock(return_value="")
+
+    with patch("hmcpctl.operations.lpar.core.apply_lpar_profile_via_cli", new=apply):
+        result = hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar")
+
+    apply.assert_not_awaited()
+    assert result.lpar.get("UUID") == LPAR_UUID
+    assert result.steps[1].step == "apply_profile"
+    assert result.steps[1].status == "skipped"
+    assert "no profile" in result.steps[1].result
+    assert any("was not performed" in w for w in result.warnings)
+
+
 def test_create_lpar_http_406_apply_error_stops_the_workflow(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_create_406(mock_hmc)
