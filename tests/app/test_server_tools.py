@@ -437,6 +437,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
         result = hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
             name="newlpar",
+            apply_partition_profile=False,
             resources=LparResources(
                 min_memory=512,
                 desired_memory=2048,

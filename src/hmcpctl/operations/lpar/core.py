@@ -398,7 +398,7 @@ async def create_and_stamp_lpar(
     )
     try:
         created_lpar = await hmc.create_logical_partition(system_uuid, document)
-        if creation.apply_profile is not None:
+        if creation.apply_profile is True:
             apply_step = WorkflowStep("apply_profile", "skipped", _REST_CREATE_NO_PROFILE)
     except HMCError as exc:
         if not _rest_create_refused(exc):

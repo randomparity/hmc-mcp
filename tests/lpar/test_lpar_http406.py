@@ -288,8 +288,14 @@ def test_create_lpar_http_406_no_apply_leaves_profile_unapplied(monkeypatch, moc
     assert "no current configuration" in result.warnings[0]
 
 
-def test_create_lpar_rest_success_reports_skipped_apply(monkeypatch, mock_hmc):
-    """A successful REST create applies no profile; the requested apply is reported (#1083)."""
+@pytest.mark.parametrize("apply_partition_profile", [True, False])
+def test_create_lpar_rest_success_reports_skipped_apply(
+    monkeypatch, mock_hmc, apply_partition_profile
+):
+    """A successful REST create applies no profile; a requested apply is reported (#1083).
+
+    An explicit ``apply_partition_profile=False`` requested nothing, so it reports nothing.
+    """
     _hmc_env(monkeypatch)
     mock_hmc.get(
         "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
@@ -303,10 +309,18 @@ def test_create_lpar_rest_success_reports_skipped_apply(monkeypatch, mock_hmc):
     apply = AsyncMock(return_value="")
 
     with patch("hmcpctl.operations.lpar.core.apply_lpar_profile_via_cli", new=apply):
-        result = hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar")
+        result = hmc_create_lpar(
+            system_name_or_uuid=SYSTEM_UUID,
+            name="new-lpar",
+            apply_partition_profile=apply_partition_profile,
+        )
 
     apply.assert_not_awaited()
     assert result.lpar.get("UUID") == LPAR_UUID
+    if not apply_partition_profile:
+        assert [s.step for s in result.steps] == ["create"]
+        assert result.warnings == ()
+        return
     assert result.steps[1].step == "apply_profile"
     assert result.steps[1].status == "skipped"
     assert "no profile" in result.steps[1].result
