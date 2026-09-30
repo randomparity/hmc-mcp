@@ -914,6 +914,9 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     """A successful create with no response body is not reported as no creation."""
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201)
     )

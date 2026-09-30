@@ -66,7 +66,9 @@ lssyscfg -r lpar -m <system> -F uuid,name
 lssyscfg -r lpar -m <system> --filter lpar_names=<lpar> -F description
 lssyscfg -r lpar -m <system> --filter lpar_names=<lpar> -F msp,lpar_env
 lssyscfg -r lpar -m <system> --filter lpar_names=<lpar> \
-    -F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode
+    -F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode,default_profile
+lssyscfg -r prof -m <system> --filter lpar_names=<lpar>,profile_names=<profile> \
+    -F lpar_proc_compat_mode
 
 # list processor compatibility modes a system supports
 lssyscfg -r sys -m <system> -F lpar_proc_compat_modes
@@ -325,9 +327,9 @@ chsyscfg -r lpar -m <system> -i "name=<lpar>,description=<text>"
 # set MSP flag on a VIOS partition
 chsyscfg -r lpar -m <system> -i "name=<vios>,msp=1"
 
-# set processor compatibility mode
-chsyscfg -r lpar -m <system> \
-    -i "name=<lpar>,lpar_proc_compat_mode=POWER10"
+# set processor compatibility mode (a profile attribute; -r lpar rejects it)
+chsyscfg -r prof -m <system> \
+    -i "name=<profile>,lpar_name=<lpar>,lpar_proc_compat_mode=POWER10"
 
 # sync running config back to the active profile
 chsyscfg -r lpar -m <system> -i "name=<lpar>,sync_curr_profile=1"

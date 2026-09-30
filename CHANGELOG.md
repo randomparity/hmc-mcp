@@ -210,6 +210,45 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   identifier and no documented consumer reads `failed_jobs[].uuid`; the other health buckets
   keep `uuid` for the resources they describe (#1173).
 
+- `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
+  report real capacity on a V10R3 HMC instead of zeros. They read the system's
+  `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
+  containers: total is the configurable figure, free the currently available one, and assigned
+  is total minus free, so it now counts hypervisor memory and the VIOS, which the partition feed
+  omits. Partition figures no longer feed capacity, since an inactive partition reads 0. A
+  system that serves no such figure fails with an error naming it rather than reading 0.
+  `hmc_system_summary` returns `mtms` as `type-model*serial` from
+  `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
+- `hmc_set_lpar_proc_compat`, `lpars set-proc-compat` and `set_lpar_proc_compat` now write
+  `lpar_proc_compat_mode` with `chsyscfg -r prof`; the HMC accepts it only on a partition profile
+  and rejected every `-r lpar` call. They change the profile named by the new `profile_name`
+  argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
+  default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
+  get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
+- A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
+  identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
+  SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
+  add/remove preflight and PCIe-assignment prevalidation (`lpars create`, DLPAR, provision). These
+  five header-bearing reads share one helper in `ssh/commands.py` for the `No results were found.`
+  sentinel and that wrap, so the SR-IOV and `lsrefcode` messages now read `<read> response did not
+  match the expected <fields> fields: <parser detail>` (#892).
+- `hmc_modify_lpar`, `hmc_dlpar_mem` and `hmc_dlpar_proc` now state which object they change.
+  The write reaches the partition's current configuration; with `CurrentProfileSync` `Disabled`
+  the partition profile keeps its old values (live: `desired_mem` and `desired_procs` unchanged),
+  so activating a profile discards the change. The DLPAR results carry `change_location` and a
+  `warnings` list, and `hmc_modify_lpar` adds the same warning to its `warnings`; the docstrings
+  no longer claim the change always applies on next activation. Write behaviour is unchanged
+  (#1170).
+- `hmc_list_lpar_ownership` now reads the text of a `Description` element that carries an
+  attribute, which V10R3 sends as `ksv`. Every stamped partition was reported `owned: false,
+  unparsed: true` and its `description` came back as a mapping; the listing now returns the
+  text, so a stamped partition is `owned: true` with its owner. `hmc_lpar_summary` returns the
+  same text instead of a mapping, and the system-wide profile-restore ownership check, which
+  reads the listing, no longer refuses on an unreadable description (#1168).
+- The job tools' docstrings and parameter help, the server instructions and `hmcpctl jobs`
+  help now tell agents to persist the JobID and the stable `jobs/{JobID}` `job_href`, and note
+  that an entry UUID stored by an earlier release reads only through its `job_href`. ADR 0093
+  records the identifier change (#1172).
 - `hmc_get_job` and `hmc_wait_for_job` resolve the job identifiers hmcpctl hands out on a V10R3
   HMC. `jobs.job_identifier` now prefers `Resource.JobID` over the Atom entry UUID, which that
   HMC answers with HTTP 406 on `/rest/api/uom/jobs/{id}`; `JobOutcome.job_id` and the power,
@@ -647,6 +686,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
   networks and stops before deleting the test partition when the VLAN is not there, and
   `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 
 ### Changed
 

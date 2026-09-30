@@ -25,6 +25,9 @@ _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
     ),
 }
 _ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*[+-]?$")
+# An empty HMC read exits 0 and prints this sentinel, not an empty string
+# (docs/HMC_HINTS.md).
+HMC_NO_RESULTS = "No results were found."
 
 
 def parse_hmc_delimited_rows(
@@ -64,6 +67,33 @@ def parse_hmc_delimited_rows(
             )
         rows.append(dict(zip(expected, values, strict=True)))
     return rows
+
+
+def parse_hmc_result_rows(
+    text: str,
+    fields: Sequence[str],
+    operation: str,
+    *,
+    blank_is_empty: bool = False,
+) -> list[dict[str, str]]:
+    """Parse a header-bearing HMC read, treating the empty-result sentinel as no rows.
+
+    Blank output is a missing header unless *blank_is_empty*.
+
+    Raises:
+        HMCCLIError: If the response does not parse as *fields* rows; the
+            message names *operation* and the expected fields.
+    """
+    stripped = text.strip()
+    if stripped == HMC_NO_RESULTS or (blank_is_empty and not stripped):
+        return []
+    try:
+        return parse_hmc_delimited_rows(text, fields)
+    except ValueError as error:
+        raise HMCCLIError(
+            f"{operation} response did not match the expected "
+            f"{','.join(fields)} fields: {error}"
+        ) from error
 
 
 def build_attribute_record(

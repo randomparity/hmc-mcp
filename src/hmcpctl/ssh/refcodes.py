@@ -5,13 +5,12 @@ from __future__ import annotations
 import shlex
 
 from ..config import HMCConfig
-from .commands import build_filter, parse_hmc_delimited_rows
+from .commands import build_filter, parse_hmc_result_rows
 from .install import validate_hmc_name
 from .transport import HMCCLIError, run_hmc_command
 
 MAX_REFCODE_COUNT = 100
 REFCODE_FIELDS = ("lpar_name", "time_stamp", "refcode")
-_NO_RESULTS = "No results were found."
 
 
 async def list_lpar_refcodes(
@@ -58,19 +57,12 @@ async def list_lpar_refcodes(
         f" --filter {shlex.quote(selector)}"
         f" -n {count} -F {','.join(REFCODE_FIELDS)} --header"
     )
-    raw = await run_hmc_command(config, command)
-    # An empty HMC read exits 0 and prints a sentinel, not an empty string
-    # (docs/HMC_HINTS.md); ssh/sriov.py, ssh/vnic.py and ssh/vios_labels.py
-    # each guard the same literal.
-    if not raw.strip() or raw.strip() == _NO_RESULTS:
-        return []
-    try:
-        rows = parse_hmc_delimited_rows(raw, REFCODE_FIELDS)
-    except ValueError as error:
-        raise HMCCLIError(
-            f"lsrefcode response did not parse as {','.join(REFCODE_FIELDS)} "
-            f"rows: {error}"
-        ) from error
+    rows = parse_hmc_result_rows(
+        await run_hmc_command(config, command),
+        REFCODE_FIELDS,
+        "lsrefcode",
+        blank_is_empty=True,
+    )
     # The --filter is the HMC's narrowing, not ours; check it landed, the way
     # ssh/affinity.py does for its own filtered lsmemopt read.
     for row in rows:
