@@ -211,6 +211,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   system that serves no such figure fails with an error naming it rather than reading 0.
   `hmc_system_summary` returns `mtms` as `type-model*serial` from
   `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
+- `hmc_set_lpar_proc_compat`, `lpars set-proc-compat` and `set_lpar_proc_compat` now write
+  `lpar_proc_compat_mode` with `chsyscfg -r prof`; the HMC accepts it only on a partition profile
+  and rejected every `-r lpar` call. They change the profile named by the new `profile_name`
+  argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
+  default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
+  get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
 - A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
   identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
   SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
@@ -672,6 +678,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
   networks and stops before deleting the test partition when the VLAN is not there, and
   `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 
 ### Changed
 

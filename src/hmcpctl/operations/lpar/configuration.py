@@ -74,13 +74,21 @@ async def configure_lpar_processor_compatibility(
     lpar_name_or_uuid: str,
     mode: ProcessorCompatibilityMode,
     *,
+    profile_name: str | None = None,
     ownership_override: bool = False,
 ) -> str:
-    """Authorize and set an LPAR's processor compatibility mode."""
+    """Authorize and set the processor compatibility mode on an LPAR profile.
+
+    Returns a sentence naming the profile changed (the default profile when
+    *profile_name* is omitted).
+    """
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    return await set_lpar_proc_compat(hmc.config, system_name, lpar_name, mode)
+    profile = await set_lpar_proc_compat(
+        hmc.config, system_name, lpar_name, mode, profile_name
+    )
+    return f"Set lpar_proc_compat_mode={mode} on profile {profile} of {lpar_name}"

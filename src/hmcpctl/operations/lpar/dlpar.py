@@ -20,6 +20,7 @@ from .assignments import (
     prevalidate_lpar_pcie_assignments,
 )
 from .errors import translate_lpar_write_error
+from .memory_bound import require_memory_within_selected_system
 from .profile_sync import (
     change_location_of,
     resource_with_change_location,
@@ -69,6 +70,7 @@ async def modify_lpar(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    await require_memory_within_selected_system(hmc, system_name_or_uuid, resources)
     resource = None
     resource_warnings: tuple[str, ...] = ()
     steps: list[WorkflowStep] = []
@@ -170,6 +172,7 @@ async def _apply_dlpar_change(
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
+    await require_memory_within_selected_system(hmc, system_name_or_uuid, resources)
     try:
         updated = await hmc.update_logical_partition(
             lpar_uuid,
