@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ..._app import with_client
-from ...documents import Keylock, LparResources, OsType, PartitionType
+from ...documents import Keylock, LparResources, PartitionType
+from ...documents.lpar import validate_partition_type
 from ...operations.lpar.assignments import LparPcieAssignments, LparPcieWorkflowResult
 from ...operations.lpar.core import LparCreation
 from ...operations.lpar.workflows import create_lpar
@@ -34,7 +35,6 @@ def hmc_create_lpar(
     ),
     partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
-    os_type: OsType | None = None,
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
     caller_token: str | None = None,
@@ -64,10 +64,9 @@ def hmc_create_lpar(
         system_name_or_uuid: SystemName or UUID of the managed system to create on.
         name: Unique PartitionName for the new logical partition.
         resources: Memory and processor assignments for the new partition.
-        partition_type: Partition type: AIX/Linux, OS400, or Virtual IO Server.
+        partition_type: Partition type: AIX/Linux or OS400. A Virtual I/O Server
+            cannot be created here; use hmc_create_vios.
         partition_id: Optional numeric partition ID; the HMC assigns one when omitted.
-        os_type: Accepted (aix, linux, or ibmi) but has no effect on the create: the
-            HMC treats the operating-system type as read-only and sets AIX/Linux.
         keylock: Optional initial keylock position: normal or manual.
         max_virtual_slots: Optional maximum number of virtual I/O slots.
         caller_token: Optional caller tracking reference embedded in the partition
@@ -85,6 +84,7 @@ def hmc_create_lpar(
     """
     if caller_token is not None:
         validate_caller_token(caller_token)
+    validate_partition_type(partition_type)
     return with_client(
         lambda hmc: create_lpar(
             hmc,
@@ -93,11 +93,10 @@ def hmc_create_lpar(
                 name,
                 partition_type,
                 resources,
-                partition_id,
-                os_type,
-                keylock,
-                max_virtual_slots,
-                caller_token,
+                partition_id=partition_id,
+                keylock=keylock,
+                max_virtual_slots=max_virtual_slots,
+                caller_token=caller_token,
                 apply_profile=apply_partition_profile,
             ),
             assignments,

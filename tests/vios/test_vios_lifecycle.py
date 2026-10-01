@@ -1,12 +1,15 @@
 """Tests for VIOS lifecycle tools: create, delete, install (CLI bridge)."""
 
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 import httpx
 import pytest
-from conftest import live_fixture
+from conftest import live_fixture, make_config
 
+from hmcpctl.client.core import HMCClient
 from hmcpctl.documents import LparResources, build_vios_document
+from hmcpctl.documents.lpar import _partition_body, lpar_envelope
 from hmcpctl.errors import HMCError
 from hmcpctl.ssh.install import (
     INSTALLIOS_PID_PREFIX,
@@ -14,6 +17,7 @@ from hmcpctl.ssh.install import (
 )
 
 BASE = "https://hmc.test"
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
 # The captured V10R3 VirtualIOServer entry, read while the VIOS ran; the install
 # preflight needs it powered off, so only the PartitionState text is changed.
@@ -58,6 +62,74 @@ def test_build_vios_document_custom_resources():
     assert "8192" in xml
     assert "16384" in xml
     assert "1024" in xml
+
+
+# ---------------------------------------------------------------------- #
+# hmc_create_vios: the VirtualIOServer collection (#1214)
+# ---------------------------------------------------------------------- #
+
+CREATED = live_fixture("rest-vios-create")
+REFUSED = live_fixture("rest-vios-create-lpar-path-refused")
+CREATE_SYSTEM = "00000003-abcd-4ef0-8abc-000000000003"
+
+
+def test_build_vios_document_is_rooted_at_virtual_io_server():
+    root = ET.fromstring(build_vios_document(name="vios1").encode())
+    assert root.tag == f"{{{UOM_NS}}}VirtualIOServer"
+    assert root.findtext(f"{{{UOM_NS}}}PartitionType") == "Virtual IO Server"
+
+
+def test_create_vios_puts_to_the_virtual_io_server_collection(monkeypatch, mock_hmc):
+    """V10R3 creates a VIOS only from a VirtualIOServer PUT to that collection."""
+    from hmcpctl.server_tools.vios.core import hmc_create_vios
+
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "test-password")
+    route = mock_hmc.put(CREATED["path"]).mock(
+        return_value=httpx.Response(
+            CREATED["status"],
+            text=CREATED["body"],
+            headers={"Content-Type": CREATED["content_type"]},
+        )
+    )
+
+    result = hmc_create_vios(CREATE_SYSTEM, "sys-R1-pcie-v1214")
+
+    request = route.calls.last.request
+    assert request.headers["Content-Type"].endswith("; type=VirtualIOServer")
+    assert request.headers["Accept"] == "*/*"
+    assert "X-HMC-Schema-Version" not in request.headers
+    root = ET.fromstring(request.content)
+    assert root.tag == f"{{{UOM_NS}}}VirtualIOServer"
+    assert result["UUID"] == "00000057-ABCD-4EF0-8ABC-000000000057"
+    assert result["Resource"]["PartitionState"] == "not activated"
+
+
+@pytest.mark.asyncio
+async def test_logical_partition_create_of_a_vios_surfaces_rest0140(mock_hmc):
+    """The LogicalPartition collection refuses a VIOS; the HMC's Message reaches the caller.
+
+    ``build_lpar_document`` now refuses this type before any request (#1179), so the
+    captured request body is composed from the shared partition body directly.
+    """
+    mock_hmc.put(REFUSED["path"]).mock(
+        return_value=httpx.Response(REFUSED["status"], text=REFUSED["body"])
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.create_logical_partition(
+                CREATE_SYSTEM,
+                lpar_envelope(
+                    _partition_body("sys-R1-pcie-v1214", "Virtual IO Server")
+                ),
+            )
+
+    assert raised.value.status_code == 500
+    assert "REST0140 Invalid Partition Type associated with LogicalPartition" in str(
+        raised.value
+    )
 
 
 # ---------------------------------------------------------------------- #

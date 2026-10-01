@@ -253,6 +253,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_create_vios` and `create_vios` now create the VIOS. They sent a `LogicalPartition`
+  document to the system's `LogicalPartition` collection, which V10R3 refuses with 500
+  `REST0140 Invalid Partition Type associated with LogicalPartition`, so no VIOS was ever
+  created. The create now PUTs a `VirtualIOServer` document to
+  `ManagedSystem/{uuid}/VirtualIOServer` and returns the created entry (#1214).
 - `scripts/live_capture_export.py tokenize` no longer leaks the rest of a lab-prefixed name:
   collected names are tokenized before any `--private` pattern, a `--private` match takes
   its whole word, and a private token left joined to a word fails the export (#1202).
@@ -470,8 +475,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   (#1164).
 - The `mksyscfg` fallback after a refused REST create now logs the HMC's message at
   `WARNING`, so a defect in the create document no longer hides behind a successful CLI
-  create. `os_type` is documented as having no effect on a create: the HMC treats
-  `OperatingSystemType` as read-only and sets `AIX/Linux` (#1164).
+  create (#1164).
 - `hmc_create_lpar` and `create_and_stamp_lpar` refuse a `keylock` other than `normal` or
   `manual` before any HMC call. `auto` was accepted before, but V10R3's `KeylockPosition`
   enumeration has no such value and `mksyscfg` takes no keylock, so an `auto` create
@@ -984,6 +988,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and step 5 notes the second Enter that Debian's GRUB needs after its client-architecture-support
   reboot. `lpars set-boot-order` help and the `hmc_set_lpar_boot_order` docstring say how to
   build the optical path.
+- **Breaking (pre-release):** `hmc_create_lpar`, `create_and_stamp_lpar` (`LparCreation`) and
+  `build_lpar_document` no longer take `os_type`, and `OsType` / `OS_TYPES` are removed from
+  `hmcpctl.documents`. V10R3 treats `OperatingSystemType` as read-only, refuses a create that
+  sends it, and sets `AIX/Linux` itself; `partition_type` (`AIX/Linux` or `OS400`) is the
+  distinction a create can make (#1179).
+- **Breaking (pre-release):** `hmc_create_lpar`, `hmc_provision_lpar`, `lpars create`,
+  `lpars provision`, `create_and_stamp_lpar` and `provision_lpar` no longer offer
+  `partition_type="Virtual IO Server"`. V10R3 answers a LogicalPartition create typed Virtual IO
+  Server with HTTP 500 `REST0140 Invalid Partition Type associated with LogicalPartition`. The
+  MCP schemas list only `AIX/Linux` and `OS400` and point to `hmc_create_vios`; every other
+  caller is refused before any HMC request with a message naming the VIOS create path.
+  `PARTITION_TYPES` and `PartitionType` are now `AIX/Linux` and `OS400`, and the CLI `--type`
+  error reads `--type: partition_type must be one of …` (#1179).
 - SR-IOV physical-port inventory reads the `roce`, `ethc` and `eth` levels and merges the
   rows, refusing a port listed at two levels. It read `roce` and `ethc` and accepted only one
   non-empty level, so an adapter with ports at both `ethc` and `eth` (captured on V11R2 with a

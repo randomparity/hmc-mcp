@@ -226,9 +226,7 @@ BUILT = {
     "web-file": documents.build_web_file_document(
         "a.iso", 1, "00000000-0000-0000-0000-000000000001"
     ),
-    "lpar-shared": documents.build_lpar_document(
-        "p1", resources=RESOURCES, os_type="linux"
-    ),
+    "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES),
     "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
     "vios": documents.build_vios_document("v1"),
 }
@@ -329,7 +327,6 @@ def test_create_elements_follow_the_schema_sequence(resources) -> None:
             "p1",
             partition_id=3,
             resources=resources,
-            os_type="linux",
             keylock="normal",
             max_virtual_slots=64,
         )

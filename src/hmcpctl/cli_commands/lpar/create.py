@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from ...documents import PARTITION_TYPES, LparResources
+from ...documents.lpar import validate_partition_type
 from ...operations.lpar.core import LparCreation
 from ...operations.lpar.workflows import create_lpar
 from ...ssh.lpar import validate_caller_token
@@ -83,10 +84,10 @@ def lpars_create(
     """
     if caller_token is not None:
         validate_caller_token(caller_token)
-    if partition_type not in PARTITION_TYPES:
-        usage_error(
-            f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
-        )
+    try:
+        lpar_type = validate_partition_type(partition_type)
+    except ValueError as exc:
+        usage_error(f"--type: {exc}")
     if not yes:
         typer.confirm(
             f"Create LPAR '{name}' ({partition_type}, {memory} MiB) on system {system}?",
@@ -113,7 +114,7 @@ def lpars_create(
             system,
             LparCreation(
                 name,
-                partition_type,
+                lpar_type,
                 resources,
                 partition_id=partition_id,
                 caller_token=caller_token,

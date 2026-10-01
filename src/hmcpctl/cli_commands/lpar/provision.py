@@ -15,6 +15,7 @@ from ...documents import (
     LparResources,
     StorageKind,
 )
+from ...documents.lpar import validate_partition_type
 from ...operations.lpar.provision import (
     ProvisionAdapters,
     ProvisionRequest,
@@ -78,10 +79,10 @@ def lpars_provision(
     """
     assignments = load_pcie_assignments(pcie_assignments)
 
-    if partition_type not in PARTITION_TYPES:
-        usage_error(
-            f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
-        )
+    try:
+        lpar_type = validate_partition_type(partition_type)
+    except ValueError as exc:
+        usage_error(f"--type: {exc}")
     if storage_kind not in STORAGE_KINDS:
         usage_error(
             "--storage-kind must be one of "
@@ -107,7 +108,7 @@ def lpars_provision(
             desired_vcpus=vcpus,
             max_vcpus=max_vcpus,
         ),
-        partition_type=partition_type,
+        partition_type=lpar_type,
         power_on=power_on,
         dry_run=dry_run,
         assignments=assignments,
