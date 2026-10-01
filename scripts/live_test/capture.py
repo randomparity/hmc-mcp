@@ -18,6 +18,7 @@ import contextlib
 import functools
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -33,6 +34,9 @@ from hmcpctl.client.core import HMCClient
 STREAM_NOT_RECORDED = "<stream: not recorded>"
 LOGON_REDACTED = "<redacted: logon>"
 SECRET_REDACTED = "<redacted: secret>"
+#: Replaces a session value inside text that is otherwise kept. No angle brackets, so
+#: an XML body stays well formed.
+SESSION_REDACTED = "redacted-session"
 
 _SECRET_KEYWORDS = (
     "password",
@@ -43,6 +47,26 @@ _SECRET_KEYWORDS = (
     "private key",
     "x-api-session",
     "x_api_session",
+    "jsessionid",
+    "ccfwsession",
+    "cookie:",
+)
+# V10R3 echoes the request headers in every HttpErrorResponse body, as
+# `{…, cookie=JSESSIONID=…; CCFWSESSION=…, …, x-api-session=…, …}` (#1161).
+# These forms lose only their values. The text is still replaced wholesale when a
+# redacted value is not followed by its form's delimiter, or when any other secret
+# keyword is left in it.
+_LIST_VALUE = r"\[[^\]]*\]"
+_SESSION_VALUES = (
+    re.compile(rf"(?i)\b(cookie=)(?:{_LIST_VALUE}|[^,}}\n<\[]+)"),
+    re.compile(rf"(?i)\b(x-api-session=)(?:{_LIST_VALUE}|[^,}}\s\[]+)"),
+    re.compile(r"(?i)\b((?:jsessionid|ccfwsession)=)[^;,}\s]+"),
+    re.compile(r"(?i)(<x-api-session>)[^<]+"),
+)
+_UNDELIMITED_SESSION = re.compile(rf"{SESSION_REDACTED}(?![,;}}]|</|$)")
+_REDACTED_SESSION_FORMS = re.compile(
+    rf"(?i)\b(?:x-api-session|jsessionid|ccfwsession)={SESSION_REDACTED}"
+    rf"|<x-api-session>{SESSION_REDACTED}</x-api-session>"
 )
 _DROPPED_HEADERS = frozenset({"x-api-session", "cookie", "set-cookie", "authorization"})
 
@@ -73,14 +97,21 @@ def _text(value: str | bytes | None) -> str | None:
 
 
 def _redact(text: str | bytes | None, *, logon: bool = False) -> str | None:
-    """Replace *text* wholesale when it is a logon exchange or names a secret."""
+    """Redact session values in *text*; replace it wholesale when it still names a secret.
+
+    A logon exchange is always replaced wholesale.
+    """
     value = _text(text)
     if value is None:
         return None
     if logon:
         return LOGON_REDACTED
-    lowered = value.lower()
-    if any(word in lowered for word in _SECRET_KEYWORDS):
+    for pattern in _SESSION_VALUES:
+        value = pattern.sub(rf"\g<1>{SESSION_REDACTED}", value)
+    if _UNDELIMITED_SESSION.search(value):
+        return SECRET_REDACTED
+    residue = _REDACTED_SESSION_FORMS.sub("", value).lower()
+    if any(word in residue for word in _SECRET_KEYWORDS):
         return SECRET_REDACTED
     return value
 
