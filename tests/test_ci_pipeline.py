@@ -47,6 +47,8 @@ BASELINED_FINDINGS = {
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
     "tests/conftest.py": 1,
+    # An enum type name long enough to read as Base64 entropy (#1202).
+    "tests/fixtures/live/vocabulary/enums-v10r3.json": 1,
     "tests/unit/test_ssh.py": 1,
     "tests/unit/test_client.py": 1,
 }
