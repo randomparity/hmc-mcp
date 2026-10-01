@@ -16,17 +16,11 @@ SYSTEM_NAME = "Server-9009-42A-SN12345"
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "my-lpar"
 
-# Without -F, lshwres prints each row as name=value pairs
-# (docs/refs/hmc-commands-p10/commands/lshwres.md:104), as the captured virtual
-# Ethernet default listing shows. No populated vfc row is captured: these rows
-# carry the chhwres vfc attribute names (chhwres.md:238) and lpar_name/slot_num
-# as the virtual Ethernet listing prints them (#1202).
-FC_DEFAULT_OUTPUT = (
-    "lpar_name=my-lpar,lpar_id=2,slot_num=2,adapter_type=client,"
-    "remote_lpar_id=1,remote_slot_num=5\n"
-    "lpar_name=other-lpar,lpar_id=3,slot_num=3,adapter_type=client,"
-    "remote_lpar_id=1,remote_slot_num=6\n"
-)
+# Without -F, lshwres prints each row as name=value pairs and quotes a list
+# value (`"wwpns=..."`); V11R2 on a POWER9 with client and server vfc adapters.
+# hmcpctl once read this as a header CSV and returned a `wwpns=...` key (#1202).
+FC_CAPTURE = live_fixture("cli-vio-fc-default-v11r2")
+FC_DEFAULT_OUTPUT = FC_CAPTURE["stdout"]
 # A system with no virtual Fibre Channel adapters, and an LPAR with no virtual
 # Ethernet adapters: the read exits 0 and prints the empty-result line.
 FC_EMPTY = live_fixture("cli-vio-fc-default")
@@ -65,9 +59,22 @@ def test_list_fc_ports_returns_list(monkeypatch, mock_hmc):
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID)
 
-    assert [row["lpar_name"] for row in result] == ["my-lpar", "other-lpar"]
-    assert result[0]["remote_slot_num"] == "5"
-    assert result[1]["slot_num"] == "3"
+    assert len(result) == len(FC_DEFAULT_OUTPUT.splitlines())
+    client, server = result[0], result[2]
+    assert client == {
+        "lpar_name": "lpar-3",
+        "lpar_id": "1",
+        "slot_num": "301",
+        "adapter_type": "client",
+        "state": "1",
+        "is_required": "0",
+        "remote_lpar_id": "100",
+        "remote_lpar_name": "lpar-4",
+        "remote_slot_num": "301",
+        "wwpns": "c050760000000000",
+    }
+    assert server["adapter_type"] == "server" and "wwpns" not in server
+    assert all(isinstance(value, str) for row in result for value in row.values())
 
 
 def test_list_fc_ports_filter_by_lpar(monkeypatch, mock_hmc):
