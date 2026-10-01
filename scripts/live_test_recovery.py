@@ -596,8 +596,15 @@ async def _unmapped_server_adapters(call, inputs: LparResidueInputs) -> Finding 
             f"a storage mapping for {inputs.lpar_name} names no server adapter; {compare}"
         )
     mapped = {id_.split("/", 1)[0] for id_ in ids}
-    if len(slots) <= len(mapped):
+    if len(slots) == len(mapped):
         return None
+    if len(slots) < len(mapped):
+        # A mapped adapter the listing does not name for this partition would
+        # cancel out an unmapped one, so the count cannot say which is which.
+        raise StateUnreadable(
+            f"{len(mapped)} mapped server adapter(s) toward {inputs.lpar_name} but "
+            f"{len(slots)} listed for it; {compare}"
+        )
     return Finding(
         "unmapped server adapter",
         f"VIOS {vios_id} has {len(slots)} vSCSI server adapter(s) toward "

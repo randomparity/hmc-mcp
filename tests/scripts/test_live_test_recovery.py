@@ -1126,3 +1126,14 @@ async def test_an_unreadable_pcie_check_still_reads_the_test_partition():
     assert "test partition running" in [
         finding.what for finding in raised.value.findings
     ]
+
+
+@pytest.mark.asyncio
+async def test_more_mapped_adapters_than_listed_ones_is_unreadable():
+    """The surplus could cancel out an unmapped adapter, so the count cannot judge."""
+    responses = _lpar_responses(
+        hmc_list_storage_mappings=[{"id": "vhost0/vtscsi0"}, {"id": "vhost1/vtopt0"}]
+    )
+
+    with pytest.raises(recovery.StateUnreadable, match="2 mapped"):
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)

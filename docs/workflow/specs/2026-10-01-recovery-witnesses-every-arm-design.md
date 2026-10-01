@@ -53,7 +53,8 @@ partition id because the document records the VIOS's id, not its name (`lpar_ids
 --rsubtype scsi -m <system> --level lpar --filter lpar_ids=<vios id> -F
 slot_num,remote_lpar_name,remote_slot_num`. It counts rows naming the test partition against
 the distinct server adapters (`id` before `/`) in `hmc_list_storage_mappings` for it. Mappings
-carry an adapter name, not a slot, so a count is the honest comparison. A mapping with no
+carry an adapter name, not a slot, so a count is the honest comparison; more mapped adapters
+than listed ones is unjudgeable, since the surplus could cancel an unmapped one. A mapping with no
 `<adapter>/<device>` id makes the class unjudgeable — the shape an unmapped adapter takes in
 REST is #1250's question — and the message still prints the slot rows and the listing to
 compare by hand.
