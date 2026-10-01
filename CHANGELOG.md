@@ -227,6 +227,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_deploy_partition_template(wait=True)` and `deploy_partition_template` now stamp the
+  deployed partition's ownership when the job finishes `COMPLETED_OK`. They accepted only a
+  bare `COMPLETED`, a status the HMC does not report, so a real deployment was never stamped
+  (#1161).
 - The capture harness no longer discards every HMC error body. V10R3 echoes the request
   headers in each `HttpErrorResponse`, so the harness now redacts only the echoed session and
   cookie values and keeps the rest of the body; text that still names a secret is replaced

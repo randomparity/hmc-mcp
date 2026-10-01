@@ -10,7 +10,7 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, JOB_ID
+from conftest import COMPLETED_JOB_ENTRY, JOB_ENTRY, JOB_ID
 
 from hmcpctl.errors import HMCError
 from hmcpctl.server_tools.templates.core import (
@@ -164,22 +164,14 @@ def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock
 # wait=True path: deploy blocks until job reaches terminal state
 # ---------------------------------------------------------------------- #
 
-JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED</Status>
-    </Job>
-  </content>
-</entry>
-"""
+# A finished job reads COMPLETED_OK: IBM documents a template deploy job ending
+# Completed_OK (docs/refs/hmc-rest-api-p10/template-library/196-template-rest-job-api.md:541),
+# the documented job statuses have no bare COMPLETED
+# (docs/refs/hmc-rest-api-p10/016-job-status.md:16-27), and V10R3 answers so (#1161).
 
 
 def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_deploy_partition_template(wait=True) submits then polls until COMPLETED."""
+    """hmc_deploy_partition_template(wait=True) submits then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     mock_hmc.get(
         f"/rest/api/uom/ManagedSystem/{TARGET_SYSTEM_UUID}/LogicalPartition"
@@ -188,7 +180,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     result = hmc_deploy_partition_template(
         "draft-uuid", TARGET_SYSTEM_UUID, wait=True, timeout_seconds=60, poll_interval=1
@@ -196,7 +188,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     assert submit_route.called
     assert poll_route.called
     assert set(result) == {"job", "ownership_stamped", "warnings"}
-    assert result["job"]["Resource"]["Status"] == "COMPLETED"
+    assert result["job"]["Resource"]["Status"] == "COMPLETED_OK"
     assert result["ownership_stamped"] is None
 
 
@@ -237,7 +229,7 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     stamp = AsyncMock(return_value=(True, []))
     with patch(
