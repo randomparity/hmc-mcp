@@ -2,25 +2,49 @@
 
 import httpx
 import pytest
-from conftest import live_fixture, make_config
+from conftest import live_fixture, live_response, make_config
 
 from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
 
 VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
 COMMA = live_fixture("rest-vios-groups-comma")
-REPEAT = live_fixture("rest-vios-groups-repeat")
 
 
-def test_repeated_group_parameter_drops_the_second_group():
-    """V10R3 honours only the first of two repeated ``group`` parameters (#1202).
+@pytest.mark.parametrize("level", ["", "-v11r2"], ids=["V10R3", "V11R2"])
+def test_repeated_group_parameter_drops_the_second_group(level):
+    """V10R3 and V11R2 honour only the first of two repeated ``group`` parameters.
 
     The same VIOS read with ``group=A&group=B`` carries no ViosFCMapping group;
-    the comma form carries both. Pinned so the client's choice of form stays
-    grounded in the capture.
+    the comma form carries both (#1202). Pinned so the client's choice of form
+    stays grounded in the captures.
     """
-    assert "VirtualFibreChannelMappings" not in REPEAT["body"]
-    assert 'group="ViosFCMapping"' in COMMA["body"]
-    assert COMMA["path"].endswith("?group=ViosSCSIMapping,ViosFCMapping")
+    repeat = live_fixture(f"rest-vios-groups-repeat{level}")
+    comma = live_fixture(f"rest-vios-groups-comma{level}")
+    assert "VirtualFibreChannelMappings" not in repeat["body"]
+    assert 'group="ViosFCMapping"' in comma["body"]
+    assert comma["path"].endswith("?group=ViosSCSIMapping,ViosFCMapping")
+
+
+@pytest.mark.asyncio
+async def test_list_vios_reports_the_hmc_side_viosstorage_failure(mock_hmc):
+    """A V11R2 HMC that cannot reach a VIOS answers the VIOS feed with 500 (#1202).
+
+    The request is the one every other captured HMC answers with 200; the HMC
+    names the VIOS it could not query, and that message reaches the caller.
+    """
+    path, response = live_response("rest-vios-feed-500-v11r2")
+    mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.list_vios()
+
+    assert raised.value.status_code == 500
+    assert "Error occurred while querying for ViosStorage from VIOS" in str(
+        raised.value
+    )
+    assert "Data cannot be retrieved from VIOS" in str(raised.value)
 
 
 @pytest.mark.asyncio

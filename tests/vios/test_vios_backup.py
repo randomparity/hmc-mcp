@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.config import build_config
 from hmcpctl.server_tools.vios.core import (
@@ -107,14 +108,17 @@ def test_list_vios_backups_preserves_embedded_newline_in_quoted_name(monkeypatch
     assert result == [{"name": "night\nly", "type": "ssp"}]
 
 
-def test_list_vios_backups_returns_empty_list(monkeypatch):
+@pytest.mark.parametrize("capture", ["cli-lsviosbk-empty", "cli-lsviosbk-empty-v11r2"])
+def test_list_vios_backups_returns_empty_list(monkeypatch, capture):
     """The HMC's no-results sentinel is an empty backup catalog.
 
-    V10R3 answers `lsviosbk ... -F name,type --header` for a VIOS with no
-    backups with exit 0 and this line, not an empty string (#1202).
+    V10R3 and V11R2 both answer `lsviosbk ... -F name,type --header` for a VIOS
+    with no backups with exit 0 and this line, not an empty string (#1202).
     """
     _hmc_env(monkeypatch)
-    conn_mock = _make_ssh_mock(NO_RESULTS)
+    recorded = live_fixture(capture)
+    assert recorded["exit_status"] == 0
+    conn_mock = _make_ssh_mock(recorded["stdout"])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_vios_backups(VIOS_UUID)

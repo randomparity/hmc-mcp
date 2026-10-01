@@ -11,7 +11,9 @@ raised in tests with `live_process_error(name)`.
 
 The VIOS and storage REST captures from that sweep are `rest-lpar-path-vios`,
 `rest-lpar-quick-vios`, `rest-vios-*`, `rest-ms-vios-feed-media` and
-`rest-volume-group`, with the same `capture` prefix.
+`rest-volume-group`, with the same `capture` prefix. Files ending `-v11r2` come
+from the same sweep on HMCs at V11R2: the `rest-vios-feed-500-v11r2` answer from
+one managing a POWER9 system, the others from one managing a POWER11 system.
 
 ## Format
 
@@ -38,10 +40,11 @@ two captures has the same token in both:
   (`sys-R1-lp3`, `sys-R1-vios1`).
 - The HMC host is `hmc.test:443` (the port in an echoed `Host` header is the
   one the capture used), and the client IP address is `192.0.2.1`.
-- Location codes are `<REDACTED-LOC>`, including one embedded in a server
-  adapter's `UniqueDeviceID`. Device identifiers that carry a disk or volume
-  group serial (`UniqueDeviceID`, `VolumeUniqueID`, `DescriptorPage83`,
-  `GroupSerialID`) are `<REDACTED-SERIAL>` whole.
+- A location code's unit prefix is `<REDACTED-LOC>`; its slot suffix is kept,
+  except a disk WWN or array identifier inside it (`-L<id>-L0`), which is
+  `<REDACTED-DEVID>`. Device identifiers that carry a disk or volume group serial
+  (`UniqueDeviceID`, `VolumeUniqueID`, `DescriptorPage83`, `GroupSerialID`) are
+  `<REDACTED-DEVID>` whole.
 - Serial numbers, session tokens and cookies are `<REDACTED-SERIAL>`,
   `<REDACTED-SESSION>` and `<REDACTED-COOKIE>`. Inside an XML body the token is escaped
   (`&lt;REDACTED-SESSION&gt;`), so the body stays well-formed XML and parses
