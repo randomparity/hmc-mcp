@@ -46,8 +46,9 @@ read 79e24009 made it use (same #1202 feed split).
    name; the public tool contract (error text and description) for both outcomes.
 3. **Accepted failure classes**
    - A VIOS **UUID** passed to the selector is not probed: `resolve_lpar_uuid` passes it
-     through and the `LogicalPartition/{uuid}` read fails as it does today. The operator
-     decision covers the name miss; the live 404 shape is #1202's.
+     through and the `LogicalPartition/{uuid}` read fails as it does today (the 404 captured
+     in `tests/fixtures/live/rest-lpar-path-vios.json`). Nothing is submitted. The operator
+     decision covers the name miss only; a UUID refusal is a follow-up candidate.
    - A failed or ambiguous VIOS-feed read during the probe propagates its own error in place
      of the "No LPAR named" miss. Truthful, and nothing is submitted.
 4. **Covered elsewhere** — widening the selector, merging `hmc_install_vios`, and the VIOS
