@@ -48,6 +48,9 @@ NAME_ELEMENTS = {
     "SystemName": "sys",
     "PartitionName": "lpar",
     "UserName": "user",
+    "UserID": "user",
+    "BMCConnectionUserName": "user",
+    "UserDescription": "desc",
     "ManagementConsoleName": "hmc",
     "ProfileName": "prof",
     "PartitionProfileName": "prof",
@@ -90,6 +93,9 @@ NAME_FIELDS = {
 TOKEN_KINDS = sorted(set(NAME_ELEMENTS.values()) | set(NAME_FIELDS.values()))
 #: Values that look like names but are words every HMC prints.
 _NOT_NAMES = {"null", "none", "default", "default_profile", "true", "false"}
+#: Accounts every HMC ships with. They identify no one, and `root` also appears in HMC
+#: messages ("Unrecognized root REST type"), which replacing it would corrupt.
+BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe"}
 
 Replacement = str | Callable[[re.Match[str]], str]
 
@@ -296,6 +302,7 @@ class NameCollector:
             or value in self._excluded
             or value.lower() in _NOT_NAMES
             or value.rstrip(".") in SENTINELS
+            or value in BUILT_IN_ACCOUNTS
             or value.startswith(("HSCL", "No results"))
             or re.fullmatch(r"[0-9.]+", value)
             or UUID.fullmatch(value)

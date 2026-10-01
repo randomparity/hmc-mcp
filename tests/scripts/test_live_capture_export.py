@@ -596,3 +596,28 @@ def test_surviving_location_suffix_wwn_fails_closed(
     monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
     with pytest.raises(export.LeakError):
         export.tokenize_records(_records(_ssh("lshwres", "x-P1-L5000C50098A124EF-L0")))
+
+
+@pytest.mark.parametrize(
+    "element", ["UserID", "BMCConnectionUserName", "UserDescription"]
+)
+def test_user_identity_elements_are_names(element: str) -> None:
+    """Regression: a real HMC user id survived in UserProfile bodies."""
+    body = f'<UserProfile><{element} ksv="V1_0">opsadmin7</{element}></UserProfile>'
+    tool = {
+        "kind": "tool",
+        "step": "u",
+        "tool": "hmc_list_users",
+        "ok": True,
+        "data": [{element: "opsadmin7"}],
+    }
+    corpus = export.tokenize_records(_records(_rest("/u", body), tool))
+    assert "opsadmin7" not in _text(corpus)
+
+
+def test_built_in_accounts_are_not_names() -> None:
+    """Regression: UserID `root` was tokenized and rewrote an HMC error message."""
+    body = "<UserProfile><UserID>root</UserID></UserProfile>"
+    message = "<Message>REST000E Unrecognized root REST type of Job.</Message>"
+    corpus = export.tokenize_records(_records(_rest("/u", body), _rest("/j", message)))
+    assert corpus[-1]["body"] == message
