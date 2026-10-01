@@ -69,7 +69,7 @@ Three subcommands, all offline:
   - SSH public keys (with their comment, up to the next `<`), the
     `PublicSSHKeyValue`/`AuthorizedKeysValue` elements whole, session tokens, cookies,
     MAC addresses, device identifiers (`VolumeUniqueID`, `UniqueDeviceID`,
-    `DescriptorPage83`, `UDID`, WWPN elements, `unique_id=`, `udid=`, `wwpn=`,
+    `MediaUDID`, `DescriptorPage83`, `UDID`, WWPN elements, `unique_id=`, `udid=`, `wwpn=`,
     `serial_num=`), serial numbers, address elements (`IPAddress`, `NetworkAddress`,
     …) whole, IPv4 and IPv6 addresses (but not colon-separated SR-IOV records of short
     decimal fields), e-mail addresses and every host found in an `https://` URL
@@ -91,7 +91,7 @@ Three subcommands, all offline:
 ### Committed data — `tests/fixtures/live/vocabulary/`
 
 - one `<release>-<family>[-<model>].json` per HMC release and system (`v10r3-p9`,
-  `v11r2-p9-9009-42a`, `v11r2-p11-9824-42a`, `v11r2-p11-9242-21b`), naming its
+  `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a`, `v11r2-p11-9242-21b`), naming its
   `sources`: `rest.endpoints` (method, path
   template, `Accept`, status, response content type); `rest.values` (per XML element
   local name, sorted observed literals or shape classes `<int>`, `<float>`, `<empty>`,
@@ -111,7 +111,7 @@ Three subcommands, all offline:
   marked captured or documented-only, binding `Status`. Names only, no prose.
 - `allowlist.json`: gate violations not yet fixed.
 
-The first four come from the 2026-09-30 tokenized corpora. `v10r3-p9` also folds in
+The first five come from the 2026-09-30 tokenized corpora. `v10r3-p9` also folds in
 the vocabulary derived from the #1161 and #879 mutation windows on the same HMC, the
 only source of job statuses.
 

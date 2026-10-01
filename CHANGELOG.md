@@ -18,7 +18,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   name, host, address, serial, location code, session or SSH key survives, and derives the
   committed vocabularies under `tests/fixtures/live/vocabulary/`: one vocabulary and one
   schema enum list per HMC release and system, from the 2026-09-30 sweeps of V10R3 with
-  POWER9 and V11R2 with POWER9 and two POWER11 systems. `scripts/live_test/capture.py`
+  POWER9 and V11R2 with POWER9, POWER10 and two POWER11 systems. `scripts/live_test/capture.py`
   gains a raw mode for the sweep, which keeps secret-bearing answers for the exporter and
   refuses a destination inside any git work tree; the default stays wholesale.
   `just live-vocabulary` (a `static` member with its prek hook) fails when a schema-enum

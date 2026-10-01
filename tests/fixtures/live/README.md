@@ -76,8 +76,9 @@ fixtures across the two exports by UUID. Other names in that export (`lpar-N`,
 
 `vocabulary/` holds what was derived from the 2026-09-30 corpora, not captured
 records: one vocabulary and one schema enum list per HMC release and system
-(`v10r3-p9.json` with `enums-v10r3-p9.json`, and the three V11R2 pairs
-`v11r2-p9-9009-42a`, `v11r2-p11-9824-42a` and `v11r2-p11-9242-21b`), plus the
+(`v10r3-p9.json` with `enums-v10r3-p9.json`, and the four V11R2 pairs
+`v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
+`v11r2-p11-9242-21b`), plus the
 documented job statuses (`enums-documented-jobs.json`, names cited to
 `docs/refs/`, each marked captured or documented-only) and the allowlist of
 `just live-vocabulary`. Each vocabulary names its sources;
