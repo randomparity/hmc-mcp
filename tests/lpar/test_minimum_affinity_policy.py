@@ -85,6 +85,27 @@ async def test_policy_query_accepts_quoted_compatibility_modes():
 
 
 @pytest.mark.asyncio
+async def test_policy_query_reads_captured_power11_answer():
+    """V11R2 on POWER11: the modes advertise POWER11 and the policy row parses."""
+    policy = live_fixture("cli-min-affinity-policy-p11")
+    runner = AsyncMock(
+        side_effect=[
+            live_fixture("cli-proc-compat-modes-p11")["stdout"],
+            policy["stdout"],
+        ]
+    )
+    with (
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
+    ):
+        result = await query_minimum_affinity_policy(_config(), "sys-2", "lpar-5")
+
+    assert runner.await_args_list[1].args[1] == policy["command"]
+    assert (result.min_affinity_score, result.min_affinity_score_action) == (0, "none")
+    assert result.unavailable_reason is None
+
+
+@pytest.mark.asyncio
 async def test_policy_query_returns_capability_absence_without_policy_command():
     # The captured POWER9 answer. Asking that system for min_affinity_score
     # exits 1 with "An invalid attribute was entered" (#1202), so the gate

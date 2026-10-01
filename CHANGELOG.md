@@ -228,6 +228,25 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_list_io_slots` with a `pci_class` other than `all` filters the slot listing in
+  hmcpctl instead of piping it through `grep` on the HMC, so a class with no slots returns
+  `[]`; `grep` exits 1 when nothing matches, which failed the whole call (#1202).
+- `hmc_list_sea_adapters` returns `[]` when the HMC prints its empty-result line,
+  `No results were found.`, instead of one row whose `lpar_name` is that sentence.
+  `hmc_list_fc_ports` returns `[]` for that line too, and reads the default `lshwres`
+  output as the `name=value` rows the HMC prints rather than as a CSV with a header row,
+  which it never has (#1202).
+- `hmc_list_sriov_adapters` and `pcie.list_sriov_adapters` report a dedicated-mode adapter's
+  `adapter_id` as `null` rather than the string `"null"` the HMC prints for it, and
+  `hmc_set_sriov_adapter_mode` refuses an `adapter_id` that is not a positive decimal before
+  any HMC command; given `"null"` it used to answer that the dedicated adapter was "already in
+  dedicated mode". Its docstring now names `hmc_list_sriov_adapters` as the source of
+  `adapter_id`; it named `hmc_list_io_slots`, whose DRC indexes never match (#1202).
+- The `hmc_list_resources` docstring no longer offers VirtualSwitch, VirtualNetwork,
+  SharedMemoryPool, SharedProcessorPool, HostEthernetAdapter, LogicalPartitionProfile or
+  SRIOVAdapter as listable: the tool reads `/rest/api/uom/{type}`, those types exist only
+  under a parent, and a V10R3 HMC answers a root `SRIOVAdapter` read with HTTP 400
+  `INVALID_URL` (#1202).
 
 - `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
   fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
@@ -245,6 +264,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - A job read the HMC refuses with `400 REST000B`/`REST000E` now reports the HMC's own message
   ("Unrecognized root REST type of jobs") with the response body attached. It used to replace
   it with a guess that the endpoint needed a licence or PTF level (#1202).
+- The SSH LPAR UUID lookup with no system given skips a system whose partition listing fails,
+  such as one in No Connection state, and keeps searching. It used to abort on the first
+  failing system; when nothing matches, the error now names each system it could not search
+  (#1202).
+- `hmc_list_memory_pools` returns an empty list for a system without Active Memory Sharing.
+  On HMC V11R2 with POWER11 systems, `lshwres -r mempool` exits 1 with `HSCLA4A0`, so the
+  tool failed instead of reporting that the system has no pools; `hmc_remove_memory_pool`
+  now refuses there with "no pool with that name exists" (#1202).
+- `hmc_add_network_adapter`, `hmcpctl adapters add-network --mac` and
+  `build_client_network_adapter_document` now refuse a `mac_address` that is not 12
+  hexadecimal digits with no separators, the form chhwres documents and the HMC prints;
+  a colon-separated MAC was previously sent to the HMC unchanged (#1202).
 - The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
   systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
   `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector

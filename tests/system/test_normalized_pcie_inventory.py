@@ -468,3 +468,26 @@ async def test_unconfigured_logical_port_requires_unique_physical_parent() -> No
         pytest.raises(RuntimeError, match="ambiguous physical-port parent"),
     ):
         await list_sriov_logical_ports(_hmc(), "system-uuid", "a1")
+
+
+@pytest.mark.asyncio
+async def test_sriov_adapter_inventory_reads_a_dedicated_adapter_id_as_absent() -> None:
+    # V10R3 prints `null` for a dedicated-mode adapter's adapter_id (#1202).
+    output = live_fixture("cli-sriov-adapters")["stdout"]
+    with (
+        patch(
+            "hmcpctl.operations.virtualization.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys-R1", None)),
+        ),
+        patch(
+            "hmcpctl.operations.virtualization.pcie.require_admitted_environment",
+            AsyncMock(),
+        ),
+        patch("hmcpctl.ssh.sriov.run_hmc_command", AsyncMock(return_value=output)),
+    ):
+        result = await list_sriov_adapters(_hmc(), "sys-R1")
+
+    assert [(item.adapter_id, item.mode) for item in result.items] == [
+        ("1", "sriov"),
+        (None, "dedicated"),
+    ]

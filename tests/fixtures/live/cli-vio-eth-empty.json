@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#66",
+  "command": "lshwres -r virtualio --rsubtype eth --level lpar -m sys-R1 --filter lpar_names=sys-R1-lp3 -F lpar_name",
+  "exit_status": 0,
+  "stdout": "No results were found.\n",
+  "stderr": ""
+}
