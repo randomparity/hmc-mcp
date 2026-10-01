@@ -10,6 +10,17 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- A tracked read-only capture pipeline and an offline gate over it (#1202).
+  `scripts/live_capture_sweep.py` calls every read-only MCP tool and a declared list of raw
+  GETs and `ls*` commands against one HMC profile, below a guard that refuses any other
+  REST method (logon and logoff excepted) or CLI command before it is sent.
+  `scripts/live_capture_export.py` tokenizes the private output, failing closed when a name,
+  host, address, serial, location code, session or SSH key survives, and derives the
+  committed vocabularies under `tests/fixtures/live/vocabulary/`; the first is V10R3 with
+  POWER9 from the 2026-09-30 sweep, with the HMC's schema enum lists. `just live-vocabulary`
+  (a `static` member with its prek hook) fails when a schema-enum element value in `src/` or
+  `tests/` is neither captured nor an enum value, or when a REST read or `ls*` command in
+  `src/` has no capture; unfixed cases are listed in `allowlist.json` with their reasons.
 - `docs/api-patterns.md` records the HMC REST and CLI behaviour verified live on V10R3 with
   POWER9 hardware: the 47 patterns from the #1161 capture windows and four observations from
   the #879 window, grouped by envelope, identifiers, links, media types, jobs, error codes,
