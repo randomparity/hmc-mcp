@@ -342,6 +342,7 @@ def test_error_body_keeps_everything_but_the_echoed_session(
         "x-api-session=hunter2",
         "x-api-session=[hunter2, hunter2]",
         "cookie=JSESSIONID=hunter2; CCFWSESSION=hunter2",
+        "cookie=JSESSIONID=hunter2; LtpaToken2=hunter2",
         "cookie=[JSESSIONID=hunter2, CCFWSESSION=hunter2]",
         "JSESSIONID=hunter2",
         "<X-API-Session>hunter2</X-API-Session>",
