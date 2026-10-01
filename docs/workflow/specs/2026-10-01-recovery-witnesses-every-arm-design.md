@@ -108,12 +108,14 @@ whose step 4 carries the coverage and the by-hand list.
 
 1. **Boundaries** — widened: the read-only guard on `hmc_run_command` now admits a second
    command family. Added: a command string built from results-document values (system name,
-   VIOS partition id).
+   VIOS partition id), and printed remedies and read-tool arguments built from the LPAR name,
+   VIOS uuid, VG uuid, ISO names and boot paths.
 2. **Actors** — the local operator, who chose the document; the document's writer, the
    runner, from `.env` the operator controls. No remote or tenant actor reaches the script.
 3. **Controls** — the system name is `shlex.quote`d and the VIOS id must be an `int`; the
    guard refuses any command not opening with `lssyscfg ` or `lshwres `, or carrying a shell
-   metacharacter, before it is sent; tools stay on an allowlist whose members are `read`.
+   metacharacter, before it is sent; tools stay on an allowlist whose members are `read`;
+   every document value in a printed remedy is `shlex.quote`d, and remedies are never run.
 4. **Out of scope** — a hostile results document beyond what the guard refuses: the operator
    wrote it with their own run.
 
