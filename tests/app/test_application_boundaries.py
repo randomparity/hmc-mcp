@@ -100,15 +100,16 @@ def test_create_mcp_returns_independent_complete_applications():
     # operation; #362 removes hmc_detach_optical_mapping, which duplicated
     # hmc_unmount_optical_media, for 147 total. ADR 0103 splits VIOS updates and
     # upgrades into separate tools, for 148 total. Issue #874 adds the read-only
-    # hmc_read_lpar_refcodes, the bounded LPAR reference-code read.
+    # hmc_read_lpar_refcodes, the bounded LPAR reference-code read. Issue #1202
+    # removes hmc_list_recent_jobs, whose Job feed no HMC serves.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 156
-    assert len(asyncio.run(second.list_tools())) == 156
+    assert len(asyncio.run(first.list_tools())) == 155
+    assert len(asyncio.run(second.list_tools())) == 155
 
 
 def test_operations_do_not_import_application_modules():
@@ -246,7 +247,7 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
     from hmcpctl.operations.systems.health import FleetHealthResult
 
     client = object()
-    health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
+    health = AsyncMock(return_value=FleetHealthResult((), (), (), ()))
     with (
         patch("hmcpctl.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
@@ -256,15 +257,16 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
         result = CliRunner().invoke(app, ["systems", "health", "--json"])
     assert result.exit_code == 0
     health.assert_awaited_once_with(client)
-    assert '"failed_jobs": []' in result.stdout
+    assert '"lpars": []' in result.stdout
+    assert "failed_jobs" not in result.stdout
 
 
 def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable():
     from hmcpctl.operations.systems.health import FleetHealthResult
 
     client = object()
-    warning = "Recent job health is unavailable"
-    health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
+    warning = "Partition inventory is unavailable"
+    health = AsyncMock(return_value=FleetHealthResult((), (), (), (warning,)))
     with (
         patch("hmcpctl.cli_commands.systems.core.fetch_fleet_health", health),
         patch(

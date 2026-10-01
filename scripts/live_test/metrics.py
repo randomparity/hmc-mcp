@@ -10,7 +10,6 @@ from fastmcp import Client
 from hmcpctl.jobs import SUCCESSFUL_JOB_STATUSES, JobOutcome, job_outcome
 
 from .observation import Assertion, ExpectedOutcome
-from .results import entries
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
@@ -180,15 +179,6 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
     else:
         state.skip(12, "hmc_get_job", "no job UUID captured (ST8 may have failed)")
         state.skip(12, "hmc_wait_for_job", "no job UUID")
-
-    st, data = await state.call(client, "hmc_list_recent_jobs", limit=20)
-    state.record(12, "hmc_list_recent_jobs (post-tests)", st, data)
-    # Opportunistically capture a job UUID if we still don't have one
-    if not artifacts.job_uuid_sample and st == "PASS":
-        for e in entries(data):
-            if isinstance(e, dict) and e.get("type") != "error":
-                artifacts.job_uuid_sample = e.get("UUID") or e.get("uuid")
-                break
 
 
 # ---------------------------------------------------------------------------

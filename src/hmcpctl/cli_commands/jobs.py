@@ -7,7 +7,7 @@ from dataclasses import asdict
 import typer
 
 from ..operations import jobs as operations_jobs
-from .output import console, err_console, output, print_json, usage_error
+from .output import console, err_console, print_json
 from .runtime import with_client
 
 
@@ -29,21 +29,6 @@ def jobs_show(
     print_json(asdict(outcome))
 
 
-def jobs_list(
-    limit: int = typer.Option(
-        20, "--limit", "-n", help="Maximum number of jobs to return"
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
-) -> None:
-    """List recent HMC jobs."""
-    if limit < 0:
-        usage_error("--limit must be greater than or equal to 0")
-
-    jobs = with_client(operations_jobs.list_jobs)
-    jobs = jobs[:limit]
-    output(jobs, as_json, empty_msg="No jobs found")
-
-
 def jobs_wait(
     job_id: str = typer.Argument(..., help="JobID to wait on"),
     timeout: int = typer.Option(300, "--timeout", "-t", help="Maximum seconds to wait"),
@@ -54,7 +39,7 @@ def jobs_wait(
         None, "--job-href", help="SELF link returned by job submission"
     ),
 ) -> None:
-    """Wait for an HMC job to reach a terminal state (COMPLETED / FAILED / EXCEPTION).
+    """Wait for an HMC job to reach a terminal state (COMPLETED_OK, COMPLETED_WITH_ERROR, ...).
 
     Prints the final job entry once a terminal state is reached or the
     timeout elapses.
@@ -81,5 +66,4 @@ def jobs_wait(
 def register_commands(group: typer.Typer) -> None:
     """Register this module’s commands on *group*."""
     group.command("show")(jobs_show)
-    group.command("list")(jobs_list)
     group.command("wait")(jobs_wait)

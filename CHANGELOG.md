@@ -265,6 +265,22 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   decommission storage inventory now sees them. Both asked for the two mapping groups as
   repeated `group` parameters, which V10R3 answers with the first group only; the request now
   sends `?group=ViosSCSIMapping,ViosFCMapping` (#1202).
+- `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
+  fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
+  which every captured HMC (V10R3 and V11R2) answers with `500 Unable to parse expression`
+  for `not activated`; they now read the partition feed and filter it (#1202).
+- `hmc_provision_lpar` no longer reports an existing volume group as missing when its UUID
+  is given in upper case. A V10R3 HMC reads VolumeGroup ids in lower case, and the check
+  compared them case-sensitively (#1202).
+- Job polling no longer treats `EXCEPTION` or `FAILED` as terminal statuses, and no longer
+  reads a `ResponseException` element. Neither appears in the HMC's job-status reference
+  (`CANCELED_*`, `COMPLETED_OK`, `COMPLETED_WITH_*`, `FAILED_*`, `NOT_STARTED`, `RUNNING`) or
+  in any capture; a failed job's text comes from its `Results`. Bare `COMPLETED` stays a
+  success status because two console job pages document it. `hmc_wait_for_job`,
+  `hmcpctl jobs wait` and `hmc_migrate_lpar` now name the documented statuses (#1202).
+- A job read the HMC refuses with `400 REST000B`/`REST000E` now reports the HMC's own message
+  ("Unrecognized root REST type of jobs") with the response body attached. It used to replace
+  it with a guess that the endpoint needed a licence or PTF level (#1202).
 - The SSH LPAR UUID lookup with no system given skips a system whose partition listing fails,
   such as one in No Connection state, and keeps searching. It used to abort on the first
   failing system; when nothing matches, the error now names each system it could not search
@@ -877,6 +893,24 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   return `media_type`, and the CLI table drops its Type column. No captured V10R3 or V11R2
   medium and no IBM reference page carries a `MediaType` element, so the field was always
   null. Each medium is now `name` and `size_mib` (#1202).
+- **Output-schema change:** `hmc_fleet_health`, `fetch_fleet_health` and `hmcpctl systems
+  health` no longer return `failed_jobs`, and no longer read `GET /rest/api/uom/Job`. That
+  feed is not in the HMC REST reference, and every captured HMC (V10R3 and V11R2) refused it
+  with `400 REST000E`, so the field was always empty alongside an "unavailable" warning. The
+  envelope is now `systems`, `vios`, `lpars` and `warnings`; ADR 0019 carries the amendment
+  (#1202).
+- **Interface change:** the `state` values `hmc_list_lpars`, `hmc_list_vios`,
+  `hmcpctl lpars list --state` and `hmcpctl vios list --state` accept are now the HMC
+  schema's `LogicalPartitionState.Enum` (identical on V10R3 and V11R2). `stopping`,
+  `migrating` and lower-case `unknown`, which no HMC reports, are rejected; `not available`,
+  `migrating not active`, `migrating running`, `hardware discovery`, `suspending` and
+  `Unknown` are accepted (#1202).
+- **Interface change:** `job_href` on `hmc_get_job`, `hmc_wait_for_job`, `get_job`,
+  `wait_for_job` and `hmcpctl jobs show|wait --job-href` must be a
+  `/rest/api/uom/jobs/{JobID}` link (a read-side `jobs/{JobID}/{uuid}` link is still reduced
+  to it). The per-operation `.../do/{Operation}/Job/{id}` form accepted for #95, the
+  `/rest/api/uom/Job/{id}` form and relative `jobs/{id}` paths are refused: no HMC capture or
+  reference shows them, and the reference documents only `rest/api/uom/jobs/{job_id}` (#1202).
 - The `HMC_TIMEOUT` default (TOML `timeout`) is now 180 seconds, raised from 60. A read-only
   sweep found that a `GET /rest/api/uom/ManagedSystem` feed read on a large V11R2 HMC took longer
   than 60 seconds, and neither IBM's documentation nor hmcpctl sets an upper bound on how long
@@ -1386,6 +1420,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Removed
 
+- `hmc_list_recent_jobs` and `hmcpctl jobs list`. Both read `GET /rest/api/uom/Job`, which
+  the HMC REST reference does not document (it documents only `GET`/`DELETE
+  /rest/api/uom/jobs/{job_id}`), and which every captured HMC refused with
+  `400 REST000B/REST000E "Unrecognized root REST type of Job"` (one V10R3 and three V11R2
+  HMCs). Poll a submitted job with `hmc_get_job` or `hmc_wait_for_job` and the JobID the
+  submitting tool returned (#1202).
 - The inputs that only fed the removed `vscsi` step (#1030): `vios_partition_id` and
   `vios_slot` on `hmc_attach_disk_to_lpar` and `attach_disk_to_lpar`, `--vios-id` and
   `--vios-slot` on `storage attach-disk`, `ProvisionAdapters.vios_partition_id` and
