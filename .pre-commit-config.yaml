@@ -68,3 +68,8 @@ repos:
         entry: just live-vocabulary
         language: system
         pass_filenames: false
+      - id: scenario-gap
+        name: Scenario gap guard
+        entry: just scenario-gap
+        language: system
+        pass_filenames: false
