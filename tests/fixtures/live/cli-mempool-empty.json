@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#62",
+  "command": "lshwres -r mempool -m sys-R1",
+  "exit_status": 0,
+  "stdout": "No results were found.\n",
+  "stderr": ""
+}
