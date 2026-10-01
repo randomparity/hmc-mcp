@@ -323,7 +323,7 @@ def report_utilization(
         300.0, "--hmc-timeout", min=1.0, help="Seconds allowed per profile."
     ),
 ) -> None:
-    """Survey configured HMCs and write CPU and memory allocation as CSV.
+    """Survey configured HMCs and write CPU, memory, disk and adapter allocation as CSV.
 
     The report holds internal hostnames, system names and serials: never commit it
     or post it publicly.

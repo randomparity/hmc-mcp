@@ -17,7 +17,7 @@ hmcpctl systems list                 # table of managed systems
 hmcpctl systems show <uuid>
 hmcpctl systems summary <uuid>       # one-call summary: state, MTMS, firmware, LPARs, free resources
 hmcpctl systems health               # issue-only fleet health; add --json for automation
-hmcpctl report utilization --csv fleet.csv   # CPU/memory allocation across every profile
+hmcpctl report utilization --csv fleet.csv   # CPU/memory/disk/adapter allocation, every profile
 hmcpctl lpars list                   # all LPARs
 hmcpctl lpars list --system <uuid>   # LPARs of one system
 hmcpctl lpars show mylpar            # by name or UUID (JSON)
@@ -143,9 +143,10 @@ hmcpctl lpars power-on web01
 ## Fleet utilization report
 
 `hmcpctl report utilization --csv PATH` reads every profile in `config.toml`, or only those
-named with repeated `--profile NAME`, and writes one CSV of CPU and memory allocation. It only
-reads; it changes nothing on any HMC. The accounting follows
-[ADR 0184](adr/0184-fleet-utilization-accounting-model.md).
+named with repeated `--profile NAME`, and writes one CSV of CPU, memory, VIOS disk and adapter
+allocation. It only reads; it changes nothing on any HMC. The accounting follows
+[ADR 0184](adr/0184-fleet-utilization-accounting-model.md) and, for disk and adapters,
+[ADR 0185](adr/0185-fleet-utilization-disk-and-adapter-accounting.md).
 
 > **The report holds internal hostnames, system names and serial numbers. Never commit it or
 > post it in a public place.** It is written with owner-only permissions.
@@ -176,6 +177,26 @@ Each CPU (processor units) and memory (MiB) figure means:
 - `profile_claims`, `profile_claim_mem_mib`, `profile_claim_cpu`: partitions that have never had
   a profile applied, and what their profiles would claim. The hypervisor reserves nothing for
   them, so these are not counted as allocated.
+
+Disk and adapter columns follow `notes`:
+
+- `disk_internal_*_mib` and `disk_san_*_mib`: the capacity of the physical volumes the system's
+  VIOS report, as `total`, `assigned` and `free`. SAN means Fibre Channel- or iSCSI-backed. A
+  volume two VIOS of one system both see counts once; it is assigned when either VIOS reports it
+  unavailable for use (mapped, in a volume group, or otherwise in use), and free otherwise. Only
+  VIOS-reported volumes count: NPIV-mapped LUNs and disks behind adapters a client partition
+  owns are absent, and a system without VIOS reads 0. A LUN that VIOS of two systems see counts
+  in both systems. `disk_util_pct` is assigned over total.
+- `slots_assigned`, `slots_unassigned`, `slots_sriov`, `slots_empty`: physical I/O slots owned
+  by a partition, occupied but unowned, holding an adapter in SR-IOV shared mode, and empty. An
+  empty slot counts as empty even when a partition owns it. `slots_util_pct` is assigned plus
+  SR-IOV over occupied slots.
+- `sriov_adapters`, `sriov_logical_ports`, `sriov_logical_ports_free`: adapters in SR-IOV shared
+  mode, the logical ports they support, and those not yet configured. `sriov_util_pct` is
+  configured over supported ports.
+
+A VIOS that is not running reports no storage, so its system's disk columns are `unknown`, and
+so are every system's when the HMC cannot read VIOS storage at all.
 
 `unknown` means the HMC did not report a figure or a read failed; it is never written as 0. A
 system row's `notes` names the failed read. A roll-up figure sums the systems that reported it,
