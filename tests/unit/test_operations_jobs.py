@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import httpx
 import pytest
@@ -24,56 +25,37 @@ from hmcpctl.jobs import (
 )
 from hmcpctl.operations.jobs import (
     get_job,
-    is_unsupported_job_listing,
-    list_jobs,
     wait_for_job,
 )
 
-_JOB_ID = "job-uuid-999"
-_GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"
-_SELF_HREF = f"/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/{_JOB_ID}"
-_SUBMIT_PATH = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn"
+# Every job body here is the captured V10R3 read of a finished PowerOn job
+# (#1161), with only its Status and, where a test needs one, its SELF links
+# replaced. _SELF_HREF is a stored `jobs/{JobID}` link whose path differs from
+# the global path built from _JOB_ID, so the tests can tell which one was read
+# (the per-operation link form issue #95 accepted is refused since #1202).
+_COMPLETED_PATH, _COMPLETED = live_response("rest-job-completed-ok")
+_JOB_ID = _COMPLETED_PATH.rsplit("/", 1)[-1]
+_GLOBAL_PATH = _COMPLETED_PATH
+_SELF_HREF = "/rest/api/uom/jobs/1787837921299"
+_SUBMIT_PATH, _SUBMITTED = live_response("rest-poweron-submit")
+_CAPTURED_LINKS = re.compile(r'    <link rel="SELF" href="[^"]*"/>\n')
 
 
 def _job_entry(status: str, *, self_href: str | None = None) -> str:
-    """One Atom job entry as the HMC returns it, optionally carrying its SELF link."""
-    link = f'  <link rel="SELF" href="{self_href}"/>\n' if self_href else ""
-    return (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-        '<entry xmlns="http://www.w3.org/2005/Atom">\n'
-        f"  <id>urn:uuid:{_JOB_ID}</id>\n"
-        "  <title>Job:PowerOn</title>\n"
-        f"{link}"
-        '  <content type="application/vnd.ibm.powervm.uom+xml">\n'
-        '    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/'
-        'mc/2012_10/">\n'
-        f"      <JobID>{_JOB_ID}</JobID>\n"
-        f"      <Status>{status}</Status>\n"
-        "    </Job>\n"
-        "  </content>\n"
-        "</entry>\n"
-    )
+    """The captured job read with *status*, and *self_href* as its only SELF link."""
+    body = _COMPLETED.text.replace(">COMPLETED_OK<", f">{status}<")
+    if self_href is not None:
+        body = _CAPTURED_LINKS.sub("", body).replace(
+            '    <link rel="MANAGEMENT_CONSOLE"',
+            f'    <link rel="SELF" href="{self_href}"/>\n'
+            '    <link rel="MANAGEMENT_CONSOLE"',
+        )
+    return body
 
 
-_FAILED_ENTRY = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    '<entry xmlns="http://www.w3.org/2005/Atom">\n'
-    f"  <id>urn:uuid:{_JOB_ID}</id>\n"
-    '  <content type="application/vnd.ibm.powervm.uom+xml">\n'
-    '    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/'
-    'mc/2012_10/">\n'
-    f"      <JobID>{_JOB_ID}</JobID>\n"
-    "      <Status>FAILED</Status>\n"
-    "      <Results>\n"
-    "        <JobParameter>\n"
-    "          <ParameterName>result</ParameterName>\n"
-    "          <ParameterValue>boot device missing</ParameterValue>\n"
-    "        </JobParameter>\n"
-    "      </Results>\n"
-    "    </Job>\n"
-    "  </content>\n"
-    "</entry>\n"
-)
+def _no_such_job() -> httpx.Response:
+    """The captured V10R3 answer for a job the HMC does not have (404 REST0005)."""
+    return live_response("rest-job-not-found")[1]
 
 
 @pytest.mark.asyncio
@@ -86,18 +68,16 @@ async def test_wait_for_job_polls_an_identifier_persisted_across_a_process_resta
     the only thing crossing between them is a JSON round trip — the stand-in for the
     database a restarted worker reads its handle back from.
     """
-    mock_hmc.put(_SUBMIT_PATH).mock(
-        return_value=httpx.Response(
-            200, text=_job_entry("RUNNING", self_href=_SELF_HREF)
-        )
-    )
-    poll = mock_hmc.get(_SELF_HREF).mock(
-        return_value=httpx.Response(200, text=_job_entry("COMPLETED_OK"))
-    )
+    mock_hmc.put(_SUBMIT_PATH).mock(return_value=_SUBMITTED)
+    poll = mock_hmc.get(_GLOBAL_PATH).mock(return_value=_COMPLETED)
 
     async with HMCClient(make_config()) as submitting:
         submitted = await submitting.submit_job(_SUBMIT_PATH, "<JobRequest/>")
-    stored = json.dumps({"job_id": submitted["UUID"], "job_href": submitted["link"]})
+    # The entry UUID is not a handle: V10R3 refuses it on jobs/{id} (#1160).
+    assert submitted["UUID"] != job_identifier(submitted)
+    stored = json.dumps(
+        {"job_id": job_identifier(submitted), "job_href": submitted["link"]}
+    )
 
     handle = json.loads(stored)
     assert isinstance(handle["job_id"], str) and isinstance(handle["job_href"], str)
@@ -124,7 +104,7 @@ async def test_wait_for_job_polls_an_identifier_persisted_across_a_process_resta
 async def test_wait_for_job_returns_a_terminal_job_after_one_poll(mock_hmc) -> None:
     """An already-finished job returns its outcome instead of blocking."""
     route = mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(200, text=_job_entry("COMPLETED"))
+        return_value=httpx.Response(200, text=_job_entry("COMPLETED_OK"))
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -133,33 +113,15 @@ async def test_wait_for_job_returns_a_terminal_job_after_one_poll(mock_hmc) -> N
         )
 
     assert route.call_count == 1
-    assert outcome.status == "COMPLETED"
+    assert outcome.status == "COMPLETED_OK"
     assert outcome.timed_out is False
     assert outcome.found is True
-
-
-@pytest.mark.asyncio
-async def test_wait_for_job_reports_an_actionable_terminal_job(mock_hmc) -> None:
-    """A failed job keeps its ADR 0081 classification: terminal, with an error."""
-    mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(200, text=_FAILED_ENTRY)
-    )
-
-    async with HMCClient(make_config()) as hmc:
-        outcome = await wait_for_job(hmc, _JOB_ID, timeout_seconds=0, poll_interval=1)
-
-    assert outcome.found is True
-    assert outcome.timed_out is False
-    assert outcome.status == "FAILED"
-    assert outcome.error == "boot device missing"
 
 
 @pytest.mark.asyncio
 async def test_get_job_reports_a_reaped_identifier_as_not_found(mock_hmc) -> None:
     """A 404 becomes a documented outcome, not an opaque transport error."""
-    mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    mock_hmc.get(_GLOBAL_PATH).mock(return_value=_no_such_job())
 
     async with HMCClient(make_config()) as hmc:
         outcome = await get_job(hmc, _JOB_ID)
@@ -195,10 +157,8 @@ async def test_get_job_reports_an_empty_job_response_as_not_found(
 @pytest.mark.asyncio
 async def test_get_job_does_not_hand_back_a_link_on_a_missing_job(mock_hmc) -> None:
     """A found=False outcome carries no handle: nothing resolved to persist."""
-    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
-    mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    mock_hmc.get(_SELF_HREF).mock(return_value=_no_such_job())
+    mock_hmc.get(_GLOBAL_PATH).mock(return_value=_no_such_job())
 
     async with HMCClient(make_config()) as hmc:
         outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
@@ -227,8 +187,8 @@ async def test_wait_for_job_confirms_a_disappearance_then_stops(mock_hmc) -> Non
     route = mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING")),
-            httpx.Response(404, text="Unknown job"),
-            httpx.Response(404, text="Unknown job"),
+            _no_such_job(),
+            _no_such_job(),
         ]
     )
 
@@ -254,7 +214,7 @@ async def test_wait_for_job_does_not_report_a_momentary_404_as_a_vanished_job(
     route = mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING")),
-            httpx.Response(404, text="Unknown job"),
+            _no_such_job(),
             httpx.Response(200, text=_job_entry("COMPLETED_OK")),
         ]
     )
@@ -271,9 +231,7 @@ async def test_wait_for_job_does_not_report_a_momentary_404_as_a_vanished_job(
 @pytest.mark.asyncio
 async def test_wait_for_job_reports_a_first_read_miss_immediately(mock_hmc) -> None:
     """With no earlier observation to contradict, one missing read is the answer."""
-    route = mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    route = mock_hmc.get(_GLOBAL_PATH).mock(return_value=_no_such_job())
 
     async with HMCClient(make_config()) as hmc:
         outcome = await wait_for_job(
@@ -323,7 +281,7 @@ async def test_get_job_uses_the_persisted_self_link_when_supplied(mock_hmc) -> N
         return_value=httpx.Response(200, text=_job_entry("COMPLETED_OK"))
     )
     global_route = mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+        return_value=live_response("rest-job-entry-uuid-refused")[1]
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -352,7 +310,7 @@ async def test_get_job_echoes_the_handle_needed_to_poll_again(mock_hmc) -> None:
 @pytest.mark.asyncio
 async def test_get_job_keeps_the_link_the_caller_polled_with(mock_hmc) -> None:
     """A stored handle does not rotate to an untried link the response advertises."""
-    other_link = f"/rest/api/uom/LogicalPartition/other/do/PowerOn/Job/{_JOB_ID}"
+    other_link = "/rest/api/uom/jobs/1787837921298"
     mock_hmc.get(_SELF_HREF).mock(
         return_value=httpx.Response(
             200, text=_job_entry("RUNNING", self_href=other_link)
@@ -374,9 +332,7 @@ async def test_get_job_warns_with_the_discarded_detail_when_a_job_is_missing(
     A deployment whose job path 404s answers ``found=False`` for every job, and a
     consumer acts on that signal, so it is not an INFO-level event.
     """
-    mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(404, text="<Message>Unknown job</Message>")
-    )
+    mock_hmc.get(_GLOBAL_PATH).mock(return_value=_no_such_job())
 
     with caplog.at_level(logging.WARNING, logger="hmcpctl.operations.jobs"):
         async with HMCClient(make_config()) as hmc:
@@ -385,7 +341,7 @@ async def test_get_job_warns_with_the_discarded_detail_when_a_job_is_missing(
     assert any(
         record.levelno == logging.WARNING
         and _JOB_ID in record.getMessage()
-        and "Unknown job" in record.getMessage()
+        and "REST0005 No such Job" in record.getMessage()
         for record in caplog.records
     )
 
@@ -395,9 +351,7 @@ async def test_get_job_confirms_a_stale_link_against_the_global_path(
     mock_hmc, caplog
 ) -> None:
     """A SELF link can stop resolving while the job is fine; do not call that gone."""
-    stale = mock_hmc.get(_SELF_HREF).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    stale = mock_hmc.get(_SELF_HREF).mock(return_value=_no_such_job())
     fallback = mock_hmc.get(_GLOBAL_PATH).mock(
         return_value=httpx.Response(
             200, text=_job_entry("RUNNING", self_href=_SELF_HREF)
@@ -419,7 +373,7 @@ async def test_get_job_drops_a_stale_link_with_an_equivalent_absolute_spelling(
     mock_hmc,
 ) -> None:
     """A retired resource stays retired when the response makes its link absolute."""
-    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_SELF_HREF).mock(return_value=_no_such_job())
     absolute_self_href = f"https://hmc.test:443{_SELF_HREF}"
     mock_hmc.get(_GLOBAL_PATH).mock(
         return_value=httpx.Response(
@@ -438,9 +392,7 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
     mock_hmc, caplog
 ) -> None:
     """The confirming read and its warning happen once, not on every poll."""
-    stale = mock_hmc.get(_SELF_HREF).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    stale = mock_hmc.get(_SELF_HREF).mock(return_value=_no_such_job())
     fallback = mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING", self_href=_SELF_HREF)),
@@ -708,7 +660,11 @@ async def test_captured_entry_uuid_refusal_is_an_error_not_a_missing_job(
             await get_job(hmc, path.rsplit("/", 1)[-1])
 
     assert excinfo.value.status_code == 400
-    assert "REST000E" in str(excinfo.value)
+    # The HMC's own words reach the caller; it says the URL is invalid, and
+    # nothing about licences or PTF levels (#1202).
+    assert "REST000E Unrecognized root REST type of jobs." in str(excinfo.value)
+    assert excinfo.value.body == response.text
+    assert "PTF" not in str(excinfo.value)
 
 
 @pytest.mark.asyncio
@@ -727,15 +683,3 @@ async def test_captured_entry_uuid_refusal_on_the_confirming_read_propagates(
 
     assert global_route.called
     assert excinfo.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_captured_job_feed_refusal_is_an_unsupported_listing(mock_hmc) -> None:
-    path, response = live_response("rest-job-feed-refused")
-    mock_hmc.get(path).mock(return_value=response)
-
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError) as excinfo:
-            await list_jobs(hmc)
-
-    assert is_unsupported_job_listing(excinfo.value)

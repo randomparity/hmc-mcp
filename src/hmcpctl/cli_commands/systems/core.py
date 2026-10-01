@@ -32,7 +32,7 @@ def systems_health(
         return
     if not any(result.values()):
         console.print("[green]No fleet health issues found[/green]")
-    for category in ("systems", "vios", "lpars", "failed_jobs"):
+    for category in ("systems", "vios", "lpars"):
         entries = result[category]
         if not entries:
             continue

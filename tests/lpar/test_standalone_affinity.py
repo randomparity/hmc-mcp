@@ -183,7 +183,7 @@ def test_completed_activation_runs_and_returns_assessment() -> None:
         ),
         patch(
             "hmcpctl.operations.lpar.core.power_lpar",
-            new=AsyncMock(return_value=_power_result("COMPLETED")),
+            new=AsyncMock(return_value=_power_result("COMPLETED_OK")),
         ),
         patch(
             "hmcpctl.operations.lpar.core.assess_post_activation_affinity",
@@ -198,12 +198,12 @@ def test_completed_activation_runs_and_returns_assessment() -> None:
         )
 
     assessment.assert_awaited_once()
-    assert result.job == _power_result("COMPLETED").job
+    assert result.job == _power_result("COMPLETED_OK").job
     assert result.affinity_assessment.status == "passed"
     assert result.affinity_assessment.reason == "passed reason"
 
 
-@pytest.mark.parametrize("status", ["RUNNING", "FAILED"])
+@pytest.mark.parametrize("status", ["RUNNING", "COMPLETED_WITH_ERROR"])
 def test_unconfirmed_activation_never_runs_assessment(status: str) -> None:
     assessment = AsyncMock()
     with (

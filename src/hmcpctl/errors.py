@@ -35,7 +35,7 @@ class HMCError(Exception):
             # that leaves the XML malformed. Fall back to raw body text if it is not
             # valid XML.
             try:
-                msg = find_text(body, "Message", "msg", "error") or body[:500]
+                msg = find_text(body, "Message") or body[:500]
             except (DET.ParseError, DefusedXmlException):
                 msg = body[:500]
             # Bound the rendered detail independently of the extracted message's own

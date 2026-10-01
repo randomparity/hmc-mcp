@@ -31,6 +31,7 @@ from hmcpctl.operations.lpar.provision import (
     ProvisionAffinityAssessment,
     ProvisionRequest,
     ProvisionStorage,
+    _check_vg_exists,
     _power_on,
 )
 from hmcpctl.server_tools.lpar.provision import hmc_provision_lpar
@@ -76,7 +77,7 @@ EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:{LPAR_UUID}</id>
-    <title>LogicalPartition:existing-lpar</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>existing-lpar</PartitionName>
@@ -91,7 +92,7 @@ CREATED_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:{LPAR_UUID}</id>
-    <title>LogicalPartition:web01</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>web01</PartitionName>
@@ -626,7 +627,7 @@ def test_provision_change_location_read_failure_is_advisory(monkeypatch, mock_hm
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(500, text="<error>boom</error>")
+        return_value=httpx.Response(500)
     )
 
     result = hmc_provision_lpar(**_provision_args())
@@ -830,7 +831,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
         )
     )
     storage_route = mock_hmc.post(VIOS_MAPPINGS_PATH).mock(
-        return_value=httpx.Response(500, text="<error>mapping failed</error>")
+        return_value=httpx.Response(500)
     )
 
     # power_on should not be called
@@ -867,7 +868,7 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
     )
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
-    ).mock(return_value=httpx.Response(500, text="<error>network failed</error>"))
+    ).mock(return_value=httpx.Response(500))
     with (
         patch(
             "hmcpctl.operations.lpar.provision.resolve_ssh_names",
@@ -1076,9 +1077,7 @@ def _provision_via_406(
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==web01)").mock(
         side_effect=lambda request: next(searches)
     )
-    _mock_execution_steps(mock_hmc).mock(
-        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
-    )
+    _mock_execution_steps(mock_hmc).mock(return_value=httpx.Response(406))
     network = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     ).mock(
@@ -1131,7 +1130,7 @@ def test_provision_readback_error_after_mksyscfg_reports_the_create(
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     order: list[str] = []
-    readback = httpx.Response(500, text="<error>boom</error>")
+    readback = httpx.Response(500)
 
     result, network = _provision_via_406(mock_hmc, AsyncMock(), order, readback)
 
@@ -1212,3 +1211,18 @@ def test_provision_reports_apply_step_when_create_returns_no_uuid(
         ("power_on", "skipped"),
     ]
     assert result.workflow_completed is False
+
+
+@pytest.mark.asyncio
+async def test_volume_group_check_ignores_uuid_case() -> None:
+    """VolumeGroup atom ids read lower-case on V10R3 (#1202); a caller may not."""
+    hmc = AsyncMock()
+    hmc.list_volume_groups.return_value = [
+        {"UUID": "00000051-abcd-4ef0-8abc-000000000051"}
+    ]
+
+    await _check_vg_exists(
+        hmc,
+        "00000005-ABCD-4EF0-8ABC-000000000005",
+        "00000051-ABCD-4EF0-8ABC-000000000051",
+    )

@@ -42,7 +42,7 @@ def _client(validation: dict, migration: dict | None = None) -> AsyncMock:
     return client
 
 
-@pytest.mark.parametrize("status", ["COMPLETED", "COMPLETED_OK"])
+@pytest.mark.parametrize("status", ["COMPLETED_OK"])
 @pytest.mark.asyncio
 async def test_default_waits_for_validation_then_submits_migration(status: str) -> None:
     client = _client(_job(status))
@@ -84,7 +84,10 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
     client.wait_for_job_entry.assert_awaited_once()
 
 
-@pytest.mark.parametrize("status", ["FAILED", "EXCEPTION", "COMPLETED_WITH_WARNINGS"])
+@pytest.mark.parametrize(
+    "status",
+    ["COMPLETED_WITH_ERROR", "FAILED_BEFORE_COMPLETION", "COMPLETED_WITH_WARNINGS"],
+)
 @pytest.mark.asyncio
 async def test_failed_validation_blocks_migration_and_surfaces_detail(
     status: str,
@@ -120,7 +123,7 @@ async def test_timed_out_validation_blocks_migration() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure_point", ["submit", "poll"])
 async def test_validation_exception_blocks_migration(failure_point: str) -> None:
-    client = _client(_job("COMPLETED"))
+    client = _client(_job("COMPLETED_OK"))
     error = HMCError(f"validation {failure_point} failed")
     if failure_point == "submit":
         client.lpar_migrate_validate.side_effect = error
@@ -136,7 +139,7 @@ async def test_validation_exception_blocks_migration(failure_point: str) -> None
 
 @pytest.mark.asyncio
 async def test_validate_first_false_preserves_direct_submission() -> None:
-    client = _client(_job("FAILED"))
+    client = _client(_job("COMPLETED_WITH_ERROR"))
 
     result = await migrate_lpar(
         client, None, "lpar", LpmMigrationRequest("target"), validate_first=False
@@ -150,7 +153,7 @@ async def test_validate_first_false_preserves_direct_submission() -> None:
 
 @pytest.mark.asyncio
 async def test_effective_validation_timing_fails_before_resolution() -> None:
-    client = _client(_job("COMPLETED"))
+    client = _client(_job("COMPLETED_OK"))
 
     with pytest.raises(ValueError, match="poll_interval"):
         await migrate_lpar(
@@ -164,7 +167,7 @@ async def test_effective_validation_timing_fails_before_resolution() -> None:
 async def test_failed_validation_message_is_repr_quoted() -> None:
     """HMC-supplied validation text cannot carry control characters into str()."""
     hostile = "boom\n\x1b[31moverridden\u2028mid"
-    client = _client(_job("FAILED", error=hostile))
+    client = _client(_job("COMPLETED_WITH_ERROR", error=hostile))
 
     with pytest.raises(HMCError) as exc_info:
         await migrate_lpar(client, None, "lpar", LpmMigrationRequest("target"))

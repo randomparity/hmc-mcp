@@ -949,7 +949,7 @@ EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:{LPAR_UUID}</id>
-    <title>LogicalPartition:existing-lpar</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>existing-lpar</PartitionName>
@@ -981,7 +981,7 @@ NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:new-lpar-uuid-0001</id>
-    <title>LogicalPartition:new-lpar</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>new-lpar</PartitionName>

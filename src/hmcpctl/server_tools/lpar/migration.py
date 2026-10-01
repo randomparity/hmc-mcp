@@ -45,10 +45,11 @@ def hmc_migrate_lpar(
     then submits migration. Validation failure, exception, or timeout raises
     without submitting migration. Set validate_first=False for direct submission.
 
-    Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
-    (or until timeout_seconds elapses). The returned ``JobOutcome`` describes
-    this submission: ``found`` is false when the submission returned no job
-    entry, and ``job_href`` is the HMC submission link when one was returned.
+    Set wait=True to block until the job reaches a terminal status such as
+    COMPLETED_OK or COMPLETED_WITH_ERROR (or until timeout_seconds elapses).
+    The returned ``JobOutcome`` describes this submission: ``found`` is false
+    when the submission returned no job entry, and ``job_href`` is the HMC
+    submission link when one was returned.
     ``job_id`` may be a synthetic, non-pollable label, so poll only an HMC
     handle returned in the outcome.
 

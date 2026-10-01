@@ -246,7 +246,7 @@ class FakeHMC:
         ]
         self.metrics_json = {"data": [1, 2, 3]}
         self.fetch_json_404 = False
-        self.wait_job_status = "COMPLETED"
+        self.wait_job_status = "COMPLETED_OK"
 
     def _record(self, name: str, *args, **kwargs) -> None:
         self.calls.append((name, args, kwargs))
@@ -870,9 +870,8 @@ def test_lpars_list_state_filter(fake_hmc):
 
     assert result.exit_code == 0
     assert LPAR_NAME in result.stdout
-    assert fake_hmc.calls == [
-        ("search_uom", ("LogicalPartition", "PartitionState", "running"), {})
-    ]
+    # The partition feed, filtered locally: V10R3 cannot search a state (#1202).
+    assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
@@ -4674,35 +4673,12 @@ def test_jobs_show_forwards_self_link(fake_hmc):
     assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": href})]
 
 
-def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "-1"])
-
-    assert result.exit_code == 2
-    assert "--limit must be greater than or equal to 0" in result.stderr
-    assert fake_hmc.calls == []
-
-
-def test_jobs_list_limits_and_renders_json(fake_hmc, monkeypatch):
-    async def fake_list(hmc):
-        assert hmc is fake_hmc
-        return [{"UUID": "job-1"}, {"UUID": "job-2"}]
-
-    monkeypatch.setattr(
-        "hmcpctl.cli_commands.jobs.operations_jobs.list_jobs", fake_list
-    )
-
-    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "1", "--json"])
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"UUID": "job-1"}]
-
-
 def test_jobs_wait(fake_hmc):
-    fake_hmc.job["Resource"]["Status"] = "COMPLETED"
+    fake_hmc.job["Resource"]["Status"] = "COMPLETED_OK"
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
 
     assert result.exit_code == 0
-    assert "COMPLETED" in result.stdout
+    assert "COMPLETED_OK" in result.stdout
     assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": None})]
 
 
