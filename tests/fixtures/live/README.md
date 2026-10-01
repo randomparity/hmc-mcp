@@ -32,7 +32,7 @@ two captures has the same token in both:
   printed. LPAR UUIDs are upper case, as V10R3 prints them.
 - The managed system is `sys-R1`, and partition names keep their suffix
   (`sys-R1-lp3`, `sys-R1-vios1`).
-- HMC user names become `user-U1`.
+- HMC user names and user descriptions become `user-N` and `desc-N`.
 - The HMC host is `hmc.test:443` (the port in an echoed `Host` header is the
   one the capture used), and the client IP address is `192.0.2.1`.
 - Serial numbers, session tokens and cookies are `<REDACTED-SERIAL>`,

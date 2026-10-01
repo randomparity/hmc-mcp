@@ -34,7 +34,7 @@ async def test_list_users_filters_authentication_type_and_rejects_unknown_values
 
     users = await UsersMixin.list_hmc_users(client, "console/a", "local")
 
-    assert [leaf_text(user["Resource"]["UserID"]) for user in users] == ["user-U1"]
+    assert [leaf_text(user["Resource"]["UserID"]) for user in users] == ["user-1"]
     assert await UsersMixin.list_hmc_users(client, "console/a", "ldap") == []
     client._get.assert_awaited_with(
         "/rest/api/uom/ManagementConsole/console%2Fa/UserProfile", "UserProfile"
