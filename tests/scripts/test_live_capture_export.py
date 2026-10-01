@@ -621,3 +621,7 @@ def test_built_in_accounts_are_not_names() -> None:
     message = "<Message>REST000E Unrecognized root REST type of Job.</Message>"
     corpus = export.tokenize_records(_records(_rest("/u", body), _rest("/j", message)))
     assert corpus[-1]["body"] == message
+    for account in ("hscroot", "hscpe", "admin"):
+        body = f"<UserProfile><UserID>{account}</UserID></UserProfile>"
+        corpus = export.tokenize_records(_records(_rest("/u", body)))
+        assert corpus[-1]["body"] == body

@@ -95,7 +95,7 @@ TOKEN_KINDS = sorted(set(NAME_ELEMENTS.values()) | set(NAME_FIELDS.values()))
 _NOT_NAMES = {"null", "none", "default", "default_profile", "true", "false"}
 #: Accounts every HMC ships with. They identify no one, and `root` also appears in HMC
 #: messages ("Unrecognized root REST type"), which replacing it would corrupt.
-BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe"}
+BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 
 Replacement = str | Callable[[re.Match[str]], str]
 
