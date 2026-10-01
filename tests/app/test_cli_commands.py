@@ -4674,29 +4674,6 @@ def test_jobs_show_forwards_self_link(fake_hmc):
     assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": href})]
 
 
-def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "-1"])
-
-    assert result.exit_code == 2
-    assert "--limit must be greater than or equal to 0" in result.stderr
-    assert fake_hmc.calls == []
-
-
-def test_jobs_list_limits_and_renders_json(fake_hmc, monkeypatch):
-    async def fake_list(hmc):
-        assert hmc is fake_hmc
-        return [{"UUID": "job-1"}, {"UUID": "job-2"}]
-
-    monkeypatch.setattr(
-        "hmcpctl.cli_commands.jobs.operations_jobs.list_jobs", fake_list
-    )
-
-    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "1", "--json"])
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"UUID": "job-1"}]
-
-
 def test_jobs_wait(fake_hmc):
     fake_hmc.job["Resource"]["Status"] = "COMPLETED_OK"
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])

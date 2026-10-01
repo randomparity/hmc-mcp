@@ -37,7 +37,6 @@ from hmcpctl.operations.updates.models import (
 from hmcpctl.server_tools.command import hmc_run_command
 from hmcpctl.server_tools.jobs import (
     hmc_get_job,
-    hmc_list_recent_jobs,
     hmc_wait_for_job,
 )
 from hmcpctl.server_tools.lpar.lifecycle import (
@@ -1035,75 +1034,6 @@ def test_submit_available_hmc_ptfs_query_validates_wait_timing_before_io(
     assert not route.called
 
 
-# ---------------------------------------------------------------------- #
-# hmc_list_recent_jobs (job list)
-# ---------------------------------------------------------------------- #
-
-# No capture shows a 200 Job feed: V10R3 refuses GET /rest/api/uom/Job (see
-# test_recent_jobs_unsupported_endpoint_raises_actionable_error). The entries
-# are the captured COMPLETED_OK and RUNNING job reads (#1161).
-JOB_FEED_2 = (
-    '<feed xmlns="http://www.w3.org/2005/Atom">'
-    f"{COMPLETED_JOB_ENTRY.split('?>', 1)[-1]}{RUNNING_JOB_ENTRY.split('?>', 1)[-1]}"
-    "</feed>"
-)
-
-
-def test_recent_jobs_parses_feed(monkeypatch, mock_hmc):
-    """hmc_list_recent_jobs returns a list of parsed job dicts from the feed."""
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=httpx.Response(200, text=JOB_FEED_2)
-    )
-    result = hmc_list_recent_jobs()
-    assert isinstance(result, list)
-    assert len(result) == 2
-    job_ids = {j["Resource"]["JobID"] for j in result}
-    assert job_ids == {JOB_ID, RUNNING_JOB_ID}
-
-
-def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
-    """hmc_list_recent_jobs(limit=1) returns only the first 1 entry."""
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=httpx.Response(200, text=JOB_FEED_2)
-    )
-    result = hmc_list_recent_jobs(limit=1)
-    assert len(result) == 1
-    assert result[0]["Resource"]["JobID"] == JOB_ID
-
-
-def test_recent_jobs_zero_limit_still_fetches_and_parses(monkeypatch, mock_hmc):
-    """A zero cap does not skip the HMC request or feed parsing."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=httpx.Response(200, text=JOB_FEED_2)
-    )
-
-    assert hmc_list_recent_jobs(limit=0) == []
-    assert route.called
-
-
-def test_recent_jobs_rejects_negative_limit_before_request(monkeypatch, mock_hmc):
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/Job")
-
-    with pytest.raises(ValueError, match="limit must be greater"):
-        hmc_list_recent_jobs(limit=-1)
-
-    assert not route.called
-
-
-def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
-    """hmc_list_recent_jobs returns an empty list when the HMC has no jobs."""
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
-    )
-    result = hmc_list_recent_jobs()
-    assert result == []
-
-
 # hmc_wait_for_job
 # ---------------------------------------------------------------------- #
 
@@ -1344,28 +1274,6 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     # A supplied link that resolved is echoed back, which is what makes a null
     # job_href on a found outcome mean "your link was retired" (#474).
     assert result.job_href == _JOB_OP_HREF
-
-
-def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
-    monkeypatch, mock_hmc
-):
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=live_response("rest-job-feed-refused")[1]
-    )
-    with pytest.raises(HMCError, match="hmc_get_job") as exc_info:
-        hmc_list_recent_jobs()
-    assert exc_info.value.status_code == 400
-
-
-def test_recent_jobs_unrelated_400_propagates(monkeypatch, mock_hmc):
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=httpx.Response(400, text="REST0123E Invalid filter expression")
-    )
-
-    with pytest.raises(HMCError, match="Invalid filter expression"):
-        hmc_list_recent_jobs()
 
 
 def test_power_on_with_wait_polls_the_submission_jobid(monkeypatch, mock_hmc):

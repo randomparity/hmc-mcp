@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import run_limited_collection, with_client
-from ..errors import HMCError
+from .._app import with_client
 from ..jobs import JobOutcome
 from ..operations import jobs as operations_jobs
 from ..tool_registry import tool_module
@@ -70,36 +69,6 @@ def hmc_get_job(
         return outcome.job
 
     return with_client(operation, profile=profile)
-
-
-@tool(effect="read", operation="job.list", target_kind="console")
-def hmc_list_recent_jobs(
-    limit: int = 20,
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """List recent jobs.
-
-    Raises HMCError when this HMC does not support global Job listing; use
-    hmc_get_job with a job identifier and submission link on those firmware versions.
-
-    Args:
-        limit: Maximum entries returned after the complete HMC feed is transferred
-            and parsed; zero returns none. This client-side cap does not reduce HMC
-            work or network transfer.
-        profile: Optional configured HMC profile name; uses the default when omitted.
-    """
-
-    try:
-        return run_limited_collection(operations_jobs.list_jobs, limit, profile=profile)
-    except HMCError as exc:
-        if not operations_jobs.is_unsupported_job_listing(exc):
-            raise
-        raise HMCError(
-            "This HMC version does not support global Job listing. Use "
-            "hmc_get_job(job_id, job_href=<submission link>) instead.",
-            status_code=400,
-            body=exc.body,
-        ) from exc
 
 
 # Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the

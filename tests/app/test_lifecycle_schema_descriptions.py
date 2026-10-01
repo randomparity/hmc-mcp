@@ -50,7 +50,6 @@ SCOPED_TOOLS = {
     "hmc_power_on_vios",
     "hmc_power_off_vios",
     "hmc_get_job",
-    "hmc_list_recent_jobs",
     "hmc_wait_for_job",
     "hmc_lpar_summary",
     "hmc_system_summary",

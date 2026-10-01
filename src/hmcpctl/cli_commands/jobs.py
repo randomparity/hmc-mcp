@@ -7,7 +7,7 @@ from dataclasses import asdict
 import typer
 
 from ..operations import jobs as operations_jobs
-from .output import console, err_console, output, print_json, usage_error
+from .output import console, err_console, print_json
 from .runtime import with_client
 
 
@@ -27,21 +27,6 @@ def jobs_show(
         err_console.print(f"[yellow]Job {job_id} not found[/yellow]")
         raise typer.Exit(code=1)
     print_json(asdict(outcome))
-
-
-def jobs_list(
-    limit: int = typer.Option(
-        20, "--limit", "-n", help="Maximum number of jobs to return"
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
-) -> None:
-    """List recent HMC jobs."""
-    if limit < 0:
-        usage_error("--limit must be greater than or equal to 0")
-
-    jobs = with_client(operations_jobs.list_jobs)
-    jobs = jobs[:limit]
-    output(jobs, as_json, empty_msg="No jobs found")
 
 
 def jobs_wait(
@@ -81,5 +66,4 @@ def jobs_wait(
 def register_commands(group: typer.Typer) -> None:
     """Register this module’s commands on *group*."""
     group.command("show")(jobs_show)
-    group.command("list")(jobs_list)
     group.command("wait")(jobs_wait)

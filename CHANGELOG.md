@@ -1349,6 +1349,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Removed
 
+- `hmc_list_recent_jobs` and `hmcpctl jobs list`. Both read `GET /rest/api/uom/Job`, which
+  the HMC REST reference does not document (it documents only `GET`/`DELETE
+  /rest/api/uom/jobs/{job_id}`), and which every captured HMC refused with
+  `400 REST000B/REST000E "Unrecognized root REST type of Job"` (one V10R3 and three V11R2
+  HMCs). Poll a submitted job with `hmc_get_job` or `hmc_wait_for_job` and the JobID the
+  submitting tool returned (#1202).
 - The inputs that only fed the removed `vscsi` step (#1030): `vios_partition_id` and
   `vios_slot` on `hmc_attach_disk_to_lpar` and `attach_disk_to_lpar`, `--vios-id` and
   `--vios-slot` on `storage attach-disk`, `ProvisionAdapters.vios_partition_id` and
