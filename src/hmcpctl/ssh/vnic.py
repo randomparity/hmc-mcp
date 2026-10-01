@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 
 from ..config import HMCConfig
 from .commands import (
+    HMC_NO_RESULTS,
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,
@@ -59,7 +60,7 @@ async def list_vnics(
 ) -> list[dict[str, Any]]:
     command = f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     output = await run_hmc_command(config, command)
-    if not output.strip() or output.strip() == "No results were found.":
+    if not output.strip() or output.strip() == HMC_NO_RESULTS:
         return []
     return _parse_lshwres_output(output)
 

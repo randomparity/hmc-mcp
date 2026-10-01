@@ -126,10 +126,9 @@ async def test_policy_query_returns_capability_absence_without_policy_command():
 @pytest.mark.parametrize(
     "output",
     [
-        "",
         "min_affinity_score,min_affinity_score_action\n",
+        "No results were found.\n",
         "min_affinity_score,min_affinity_score_action\n0,none\n1,warn\n",
-        "wrong,min_affinity_score_action\n0,none\n",
         "min_affinity_score,min_affinity_score_action\n,none\n",
         "min_affinity_score,min_affinity_score_action\n101,warn\n",
         "min_affinity_score,min_affinity_score_action\n1.5,warn\n",
@@ -143,6 +142,22 @@ async def test_policy_query_rejects_malformed_output(output):
         patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
         patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
         pytest.raises(HMCCLIError, match="malformed lssyscfg minimum-affinity"),
+    ):
+        await query_minimum_affinity_policy(_config(), "system", "lpar")
+
+
+@pytest.mark.parametrize("output", ["", "wrong,min_affinity_score_action\n0,none\n"])
+@pytest.mark.asyncio
+async def test_policy_query_rejects_an_unheaded_reply(output):
+    runner = AsyncMock(side_effect=["POWER11\n", output])
+    with (
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        patch("hmcpctl.ssh.profiles.run_hmc_command", runner),
+        pytest.raises(
+            HMCCLIError,
+            match="lssyscfg minimum-affinity policy response did not match the "
+            "expected min_affinity_score,min_affinity_score_action fields",
+        ),
     ):
         await query_minimum_affinity_policy(_config(), "system", "lpar")
 
