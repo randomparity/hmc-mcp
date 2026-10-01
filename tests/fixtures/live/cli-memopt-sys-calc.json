@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture.jsonl#267",
+  "command": "lsmemopt -m sys-R1 -r sys -o calcscore",
+  "exit_status": 0,
+  "stdout": "curr_sys_score=100,predicted_sys_score=100,requested_lpar_ids=none,protected_lpar_ids=none\n",
+  "stderr": ""
+}

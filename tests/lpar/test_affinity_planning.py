@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from conftest import live_fixture
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -472,6 +473,23 @@ def test_current_and_predicted_results_have_distinct_shapes():
         "curr_sys_score": "84",
         "predicted_sys_score": "96",
         "firmware_extension": "kept",
+        "prediction_guaranteed": False,
+    }
+
+
+def test_system_prediction_reads_captured_v10r3_answer():
+    """The captured V10R3 calcscore answer: unrequested selectors print none."""
+    capture = live_fixture("cli-memopt-sys-calc")
+    connection = _connection(capture["stdout"])
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=connection):
+        predicted = asyncio.run(plan_system_memopt_score(_config(), "sys-R1"))
+
+    assert connection.run.call_args[0][0] == capture["command"]
+    assert predicted == {
+        "curr_sys_score": "100",
+        "predicted_sys_score": "100",
+        "requested_lpar_ids": "none",
+        "protected_lpar_ids": "none",
         "prediction_guaranteed": False,
     }
 
