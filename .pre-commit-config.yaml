@@ -63,3 +63,8 @@ repos:
         entry: just doc-freshness
         language: system
         pass_filenames: false
+      - id: live-vocabulary
+        name: Live vocabulary guard
+        entry: just live-vocabulary
+        language: system
+        pass_filenames: false

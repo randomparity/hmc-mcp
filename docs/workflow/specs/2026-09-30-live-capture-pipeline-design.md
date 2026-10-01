@@ -88,7 +88,8 @@ The first vocabulary comes from the 2026-09-30 tokenized corpus and its enum lis
 ### Gate — `scripts/check_live_vocabulary.py`, `just live-vocabulary`
 
 Offline; a `static` member with its matching prek hook. Over `git ls-files src tests`
-(excluding `tests/fixtures/live/`):
+(excluding `tests/fixtures/live/`, which is captured already, and the gate's and
+exporter's own test modules, which hold uncaptured values on purpose):
 
 1. **Literals.** XML leaf values in string literals (`.py`) and in `.xml`/`.json` files,
    and AST comparisons and dict entries keyed by an element name

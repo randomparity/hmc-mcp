@@ -1,0 +1,72 @@
+[
+ {
+  "kind": "cli-command",
+  "file": "src/hmcpctl/ssh/lpar.py",
+  "subject": "lssyscfg -r sys -F uuid,name",
+  "value": "",
+  "reason": "not captured; the 2026-09-30 sweep ran only the -m form. live_capture_sweep.py now probes it (sys-no-m) (#1202)"
+ },
+ {
+  "kind": "cli-command",
+  "file": "src/hmcpctl/ssh/vnic.py",
+  "subject": "lshwres -r virtualio --rsubtype vnicbkdev -m {} -F {} --header",
+  "value": "",
+  "reason": "not captured; no tool reached it on 2026-09-30. live_capture_sweep.py now probes it (vio-vnicbkdev) (#1202)"
+ },
+ {
+  "kind": "literal",
+  "file": "tests/lpar/test_lpar_ownership_bulk.py",
+  "subject": "PartitionState",
+  "value": "Not Activated",
+  "reason": "the HMC prints PartitionState in lower case ('not activated'); awaiting the #1202 jobs/LPAR fix"
+ },
+ {
+  "kind": "literal",
+  "file": "tests/unit/test_documents_v10r3.py",
+  "subject": "AdapterType",
+  "value": "ROR",
+  "reason": "a kb attribute code in a map keyed by element name, not an element value; this entry stays (#1202 gate)"
+ },
+ {
+  "kind": "literal",
+  "file": "tests/unit/test_profile_sync.py",
+  "subject": "CurrentProfileSync",
+  "value": "Sideways",
+  "reason": "deliberately outside the enum: the test exercises the unknown-mode branch, so this entry stays (#1202 gate)"
+ },
+ {
+  "kind": "rest-path",
+  "file": "src/hmcpctl/client/client_cluster.py",
+  "subject": "/rest/api/uom/Cluster/{}",
+  "value": "",
+  "reason": "the 2026-09-30 HMC has no cluster (the feed answered 204); capture on an HMC that has one (#1202)"
+ },
+ {
+  "kind": "rest-path",
+  "file": "src/hmcpctl/client/client_cluster.py",
+  "subject": "/rest/api/uom/SharedStoragePool/{}",
+  "value": "",
+  "reason": "the 2026-09-30 HMC has no shared storage pool (the feed answered 204); capture on an HMC that has one (#1202)"
+ },
+ {
+  "kind": "rest-path",
+  "file": "src/hmcpctl/client/client_systems.py",
+  "subject": "/rest/api/uom/VirtualIOServer/search/(PartitionName=={})",
+  "value": "",
+  "reason": "not captured; the VIOS was given by UUID on 2026-09-30. live_capture_sweep.py now probes it (vios-search-name) (#1202)"
+ },
+ {
+  "kind": "rest-path",
+  "file": "src/hmcpctl/client/client_templates.py",
+  "subject": "/rest/api/templates/PartitionTemplate/{}",
+  "value": "",
+  "reason": "the template feed refused the typed Accept (406), so the sweep had no template UUID to read (#1202)"
+ },
+ {
+  "kind": "rest-path",
+  "file": "src/hmcpctl/client/core.py",
+  "subject": "/rest/api/uom/jobs/{}",
+  "value": "",
+  "reason": "a job read needs a job, and the read-only sweep starts none; capture it from a live run that submits one (#1202)"
+ }
+]
