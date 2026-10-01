@@ -427,6 +427,18 @@ def test_existing_file_is_tightened_to_mode_0600(dest: Path) -> None:
     assert stat.S_IMODE(dest.stat().st_mode) == 0o600
 
 
+def test_symlinked_destination_is_refused(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path / "repo")
+    tracked = repo / "notes.md"
+    tracked.write_text("kept\n")
+    link = repo / "probe.capture.jsonl"
+    link.symlink_to(tracked)
+    with pytest.raises(ValueError, match="symlink"), capture.capture(link):
+        pass
+    assert tracked.read_text() == "kept\n"
+    assert not capture._ACTIVE
+
+
 async def _chunks() -> Any:
     yield b"iso-bytes"
 

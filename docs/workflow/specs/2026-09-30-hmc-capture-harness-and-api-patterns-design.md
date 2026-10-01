@@ -34,7 +34,9 @@ def capture(path: Path) -> Iterator[Capture]
   and the ignored patterns). The ignore rule is `scripts/live_test_runner.py:1541`'s:
   `git check-ignore -q` exit 0 (ignored) and any status other than 1 (no repository, or
   outside one) are safe. Git runs from the destination's existing parent with the resolved
-  absolute path, so it checks the repository the file actually lands in.
+  absolute path, so it checks the repository the file actually lands in. The file is opened
+  with `O_NOFOLLOW`: a symlinked destination is refused (`ValueError`), because git judged
+  the link's name, not its target.
 - It patches `hmcpctl.client.core.HMCClient._request` and
   `asyncssh.SSHClientConnection.run` on the class, so every caller — including modules that
   imported `run_hmc_command` by name — is observed. On exit both originals are restored,

@@ -208,7 +208,18 @@ def capture(path: Path) -> Iterator[Capture]:
             f"capture destination {path} is not git-ignored; use a name ending in "
             ".capture.jsonl or a path under hmc-captures/"
         )
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    # O_NOFOLLOW: git judged the link's own name, not its target, so a link to a
+    # tracked file would pass the ignore check and land captures in that file.
+    try:
+        fd = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600
+        )
+    except OSError as exc:
+        if path.is_symlink():
+            raise ValueError(
+                f"capture destination {path} is a symlink; name a regular file"
+            ) from exc
+        raise
     os.fchmod(fd, 0o600)
     _ACTIVE = True
     original_request = HMCClient._request
