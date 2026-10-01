@@ -193,3 +193,15 @@ def test_caller_token_parameter_documents_grammar():
         ]
         assert "[caller " in description
         assert "64" in description
+
+
+def test_lpar_create_tools_do_not_offer_a_vios_or_an_os_type():
+    """A LogicalPartition PUT typed Virtual IO Server returns 500 REST0140 on V10R3, and
+    OperatingSystemType is read-only (#1179); ``hmc_create_vios`` creates a VIOS."""
+    tools = _tools_by_name()
+    for name in ("hmc_create_lpar", "hmc_provision_lpar"):
+        properties = tools[name].parameters["properties"]
+        assert "os_type" not in properties, name
+        partition_type = properties["partition_type"]
+        assert partition_type["enum"] == ["AIX/Linux", "OS400"], name
+        assert "hmc_create_vios" in partition_type["description"], name

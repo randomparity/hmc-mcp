@@ -1264,14 +1264,14 @@ def test_lpars_create_rejects_invalid_partition_type_before_client_call(fake_hmc
     )
 
     assert result.exit_code == 2
-    assert "--type must be one of" in result.stderr
+    assert "--type: partition_type must be one of" in result.stderr
     assert fake_hmc.calls == []
 
 
 @pytest.mark.parametrize(
     ("option", "value", "message"),
     [
-        ("--type", "Windows", "--type must be one of"),
+        ("--type", "Windows", "--type: partition_type must be one of"),
         ("--storage-kind", "Tape", "--storage-kind must be one of"),
     ],
 )
@@ -5140,3 +5140,32 @@ def test_storage_mount_optical_media_help_names_the_rest0269_precondition():
     assert result.exit_code == 0
     assert "REST0269" in result.stdout
     assert "activate or apply a profile" in " ".join(result.stdout.split())
+
+
+@pytest.mark.parametrize("command", ["create", "provision"])
+def test_lpars_create_and_provision_refuse_a_vios_type_before_client_call(
+    fake_hmc, command
+):
+    """V10R3 answers a LogicalPartition PUT typed Virtual IO Server with 500 REST0140."""
+    args = ["lpars", command]
+    args += (
+        ["acmesys9-lp3", "--system", SYSTEM_UUID]
+        if command == "create"
+        else [
+            "--system",
+            SYSTEM_UUID,
+            "--name",
+            "acmesys9-lp3",
+            "--vlan",
+            "100",
+            "--vios-uuid",
+            VIOS_UUID,
+            "--storage-name",
+            "rootvg",
+        ]
+    )
+    result = RUNNER.invoke(cli.app, [*args, "--type", "Virtual IO Server", "--yes"])
+
+    assert result.exit_code == 2
+    assert "hmc_create_vios" in result.stderr
+    assert fake_hmc.calls == []

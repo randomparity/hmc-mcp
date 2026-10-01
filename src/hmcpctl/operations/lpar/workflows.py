@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from hmcpctl.client.core import HMCClient
 
+from ...documents.lpar import validate_partition_type
 from ...errors import HMCError
 from .assignments import (
     LparPcieAssignments,
@@ -24,6 +25,7 @@ async def create_lpar(
     assignments: LparPcieAssignments,
 ) -> LparPcieWorkflowResult:
     """Validate, create, stamp, and apply ordered PCIe assignments."""
+    validate_partition_type(creation.partition_type)
     await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
     try:
         created = await create_and_stamp_lpar(hmc, system_name_or_uuid, creation)

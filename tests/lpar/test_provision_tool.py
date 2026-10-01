@@ -1226,3 +1226,36 @@ async def test_volume_group_check_ignores_uuid_case() -> None:
         "00000005-ABCD-4EF0-8ABC-000000000005",
         "00000051-ABCD-4EF0-8ABC-000000000051",
     )
+
+
+def test_provision_operation_refuses_a_vios_type_before_any_round_trip(monkeypatch):
+    """V10R3 answers a LogicalPartition PUT typed Virtual IO Server with 500 REST0140."""
+    _hmc_env(monkeypatch)
+    from hmcpctl.operations.lpar.provision import provision_lpar
+
+    args = _provision_args()
+
+    with pytest.raises(ValueError, match="hmc_create_vios"):
+        asyncio.run(
+            provision_lpar(
+                None,
+                args["system_name_or_uuid"],
+                ProvisionRequest(
+                    name=args["name"],
+                    adapters=args["adapters"],
+                    storage=args["storage"],
+                    resources=args["resources"],
+                    partition_type="Virtual IO Server",
+                ),
+            )  # type: ignore[arg-type]
+        )
+
+
+def test_provision_tool_refuses_a_vios_type_before_logon(monkeypatch, mock_hmc):
+    """A direct Python call bypasses the MCP schema; the tool still refuses first."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="hmc_create_vios"):
+        hmc_provision_lpar(
+            **_provision_args(partition_type="Virtual IO Server"),
+        )
+    assert not mock_hmc.calls

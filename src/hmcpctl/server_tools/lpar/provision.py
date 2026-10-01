@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..._app import with_client
 from ...documents import LparResources, PartitionType
+from ...documents.lpar import validate_partition_type
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.provision import (
@@ -62,7 +63,8 @@ def hmc_provision_lpar(
         adapters: Virtual Ethernet attachment settings.
         storage: VIOS-backed storage mapping settings.
         resources: Memory and processor settings for the partition.
-        partition_type: Partition environment: AIX/Linux, OS400, or VIOS.
+        partition_type: Partition environment: AIX/Linux or OS400. A Virtual I/O
+            Server cannot be created here; use hmc_create_vios.
         power_on: Power on the partition after configuration succeeds.
         dry_run: Validate preconditions without creating or changing resources.
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
@@ -87,7 +89,7 @@ def hmc_provision_lpar(
         ``power-on --partition-profile`` would keep them; ``None`` when no adapter or
         mapping step ran, or when the read itself failed (see ``warnings``).
     """
-
+    validate_partition_type(partition_type)
     return with_client(
         lambda hmc: provision_lpar(
             hmc,

@@ -20,7 +20,9 @@ from hmcpctl.operations.lpar.workflows import create_lpar
 
 
 def _creation() -> LparCreation:
-    return cast(LparCreation, SimpleNamespace(name="app-lpar"))
+    return cast(
+        LparCreation, SimpleNamespace(name="app-lpar", partition_type="AIX/Linux")
+    )
 
 
 @pytest.mark.asyncio
