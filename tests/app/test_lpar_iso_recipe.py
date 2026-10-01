@@ -30,6 +30,8 @@ EXPECTED_COMMANDS = {
     ("lpars", "list"),
     ("lpars", "power-off"),
     ("lpars", "power-on"),
+    ("lpars", "read-boot-order"),
+    ("lpars", "set-boot-order"),
     ("lpars", "show"),
     ("lpars", "state"),
     ("network", "list-networks"),
