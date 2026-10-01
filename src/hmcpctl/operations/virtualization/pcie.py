@@ -36,6 +36,7 @@ from hmcpctl.ssh.sriov import (
     read_sriov_lpar_state,
     read_sriov_profile_ports,
     unassign_sriov_logical_port_profile,
+    validate_adapter_id,
     validate_sriov_mode,
 )
 from hmcpctl.ssh.transport import HMCCLIError
@@ -90,7 +91,8 @@ class DedicatedSlot:
 @dataclass(frozen=True)
 class SriovAdapter:
     system: str
-    adapter_id: str
+    # None for a dedicated-mode adapter, which the HMC lists with adapter_id `null`.
+    adapter_id: str | None
     mode: str | None
     availability: str | None
     location_code: str | None
@@ -1141,13 +1143,14 @@ async def set_sriov_adapter_mode(
     """
     config = hmc.config
     validate_sriov_mode(mode)
+    validate_adapter_id(adapter_id)
     system_name = await _system_name(config, system_name_or_uuid)
     # Only reads: the check confirms the current mode and never changes it.
     await require_sriov_read_environment(config, system_name, "adapter")
     rows = [
         row
         for row in await list_sriov_adapter_rows(config, system_name)
-        if row["adapter_id"] == require_command_safe_text(adapter_id, "adapter_id")
+        if row["adapter_id"] == adapter_id
     ]
     if len(rows) == 1 and rows[0]["config_state"] == mode:
         return f"Adapter {adapter_id} already in {mode} mode"
@@ -1174,7 +1177,7 @@ async def list_sriov_adapters(
     items = [
         SriovAdapter(
             system_name,
-            row["adapter_id"],
+            _optional_text(row["adapter_id"]),
             row["config_state"],
             row["functional_state"],
             row["phys_loc"],

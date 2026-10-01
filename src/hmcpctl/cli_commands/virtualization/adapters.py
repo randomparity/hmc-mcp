@@ -48,7 +48,9 @@ def adapters_add_network(
     tagged: bool = typer.Option(
         False, "--tagged", help="VLAN-tagged (trunking) adapter"
     ),
-    mac: str | None = typer.Option(None, "--mac", help="Pin the MAC address"),
+    mac: str | None = typer.Option(
+        None, "--mac", help="Pin the MAC address: 12 hex digits, no separators"
+    ),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(

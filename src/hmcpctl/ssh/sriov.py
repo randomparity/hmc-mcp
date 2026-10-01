@@ -40,6 +40,19 @@ def validate_sriov_mode(mode: SriovMode) -> SriovMode:
     return mode
 
 
+def validate_adapter_id(adapter_id: str) -> str:
+    """Require an SR-IOV adapter_id the HMC can list: a positive decimal.
+
+    A dedicated-mode adapter lists ``adapter_id`` as ``null`` (V10R3, #1202), so
+    that text names no adapter.
+    """
+    if not adapter_id.isascii() or not adapter_id.isdecimal() or int(adapter_id) <= 0:
+        raise ValueError(
+            f"adapter_id must be a positive decimal ID, got {adapter_id!r}"
+        )
+    return adapter_id
+
+
 def _parse_admitted_rows(output: str, fields: tuple[str, ...]) -> list[dict[str, str]]:
     return parse_hmc_result_rows(output, fields, "SR-IOV inventory")
 
@@ -92,10 +105,7 @@ async def list_sriov_physical_port_rows(
         f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level {level} --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(fields)} --header"
         for level in _PHYSICAL_PORT_LEVELS
     ]
-    if not adapter_id.isascii() or not adapter_id.isdecimal() or int(adapter_id) <= 0:
-        raise ValueError(
-            f"adapter_id must be a positive decimal ID, got {adapter_id!r}"
-        )
+    validate_adapter_id(adapter_id)
     outputs = [await run_hmc_command(config, command) for command in commands]
     result: list[dict[str, str]] = []
     seen: set[str] = set()

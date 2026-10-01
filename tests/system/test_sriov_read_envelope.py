@@ -203,8 +203,10 @@ async def test_v11r2_9009_42a_inventory_replays_the_captured_projections() -> No
         ports = await list_sriov_physical_ports(hmc, "sys-2", "2")
         logical = await list_sriov_logical_ports(hmc, "sys-2", "2")
 
-    assert adapters.items[0].adapter_id == "2"
-    assert [item.mode for item in adapters.items] == ["sriov", "dedicated"]
+    assert [(item.adapter_id, item.mode) for item in adapters.items] == [
+        ("2", "sriov"),
+        (None, "dedicated"),
+    ]
     assert [
         (
             port.physical_port_id,

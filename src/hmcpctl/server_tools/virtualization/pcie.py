@@ -184,8 +184,10 @@ def hmc_set_sriov_adapter_mode(
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
     the REST API is unreachable) before the command runs.
 
-    ``adapter_id`` is the physical adapter identifier as reported by
-    ``hmc_list_io_slots``.
+    ``adapter_id`` is the numeric SR-IOV adapter ID that
+    ``hmc_list_sriov_adapters`` reports, not an I/O slot's DRC index. A
+    dedicated-mode adapter has no adapter ID (the HMC lists it as ``null``), so
+    it cannot be selected here.
 
     ``mode`` must be one of:
       - ``"sriov"``      — enable SR-IOV mode (shared virtual functions)
@@ -196,7 +198,8 @@ def hmc_set_sriov_adapter_mode(
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
-        adapter_id: Physical adapter ID returned by ``hmc_list_io_slots``.
+        adapter_id: Positive decimal SR-IOV adapter ID from
+            ``hmc_list_sriov_adapters``.
         mode: ``sriov`` for shared virtual functions or ``dedicated`` for
             passthrough use.
         profile: TOML profile name, or the environment-default HMC when omitted.

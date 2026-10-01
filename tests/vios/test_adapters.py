@@ -1,5 +1,7 @@
 """Tests for the virtual adapter document builders."""
 
+import pytest
+
 from hmcpctl.documents import (
     build_client_network_adapter_document,
     build_vfc_adapter_document,
@@ -45,10 +47,21 @@ def test_network_adapter_full():
         slot_number=9,
         virtual_switch_id=3,
         tagged=True,
-        mac_address="02:00:00:00:00:01",
+        mac_address="020000000001",
     )
     assert ">200<" in xml
     assert "<VirtualSlotNumber" in xml and ">9<" in xml
     assert "<VirtualSwitchID" in xml and ">3<" in xml
     assert "IsTaggedVLAN" in xml and "true" in xml
-    assert "02:00:00:00:00:01" in xml
+    assert "020000000001" in xml
+
+
+# chhwres documents a virtual Ethernet `mac_addr` as "12 hexadecimal
+# characters" (docs/refs/hmc-commands-p10/commands/chhwres.md:238), and the
+# captured vNIC readback and profile listing print MACs in that form (#1202).
+@pytest.mark.parametrize(
+    "mac", ["02:00:00:00:00:01", "02-00-00-00-00-01", "02000000001", "02000000000G"]
+)
+def test_network_adapter_rejects_mac_not_twelve_hex_digits(mac):
+    with pytest.raises(ValueError, match="12 hexadecimal digits"):
+        build_client_network_adapter_document(port_vlan_id=1, mac_address=mac)
