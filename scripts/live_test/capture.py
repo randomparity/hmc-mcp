@@ -49,17 +49,21 @@ _SECRET_KEYWORDS = (
     "x_api_session",
     "jsessionid",
     "ccfwsession",
+    "cookie:",
 )
 # V10R3 echoes the request headers in every HttpErrorResponse body, as
 # `{…, cookie=JSESSIONID=…; CCFWSESSION=…, …, x-api-session=…, …}` (#1161).
-# These forms lose only their values; any other session keyword left in the text
-# still redacts it wholesale.
+# These forms lose only their values. The text is still replaced wholesale when a
+# redacted value is not followed by its form's delimiter, or when any other secret
+# keyword is left in it.
+_LIST_VALUE = r"\[[^\]]*\]"
 _SESSION_VALUES = (
-    re.compile(r"(?i)\b(cookie=)[^,}]*"),
-    re.compile(r"(?i)\b(x-api-session=)[^,}\s]*"),
-    re.compile(r"(?i)\b((?:jsessionid|ccfwsession)=)[^;,}\s]*"),
-    re.compile(r"(?i)(<x-api-session>)[^<]*"),
+    re.compile(rf"(?i)\b(cookie=)(?:{_LIST_VALUE}|[^,}}\n<\[]+)"),
+    re.compile(rf"(?i)\b(x-api-session=)(?:{_LIST_VALUE}|[^,}}\s\[]+)"),
+    re.compile(r"(?i)\b((?:jsessionid|ccfwsession)=)[^;,}\s]+"),
+    re.compile(r"(?i)(<x-api-session>)[^<]+"),
 )
+_UNDELIMITED_SESSION = re.compile(rf"{SESSION_REDACTED}(?![,;}}<]|$)")
 _REDACTED_SESSION_FORMS = re.compile(
     rf"(?i)\b(?:x-api-session|jsessionid|ccfwsession)={SESSION_REDACTED}"
     rf"|<x-api-session>{SESSION_REDACTED}</x-api-session>"
@@ -104,6 +108,8 @@ def _redact(text: str | bytes | None, *, logon: bool = False) -> str | None:
         return LOGON_REDACTED
     for pattern in _SESSION_VALUES:
         value = pattern.sub(rf"\g<1>{SESSION_REDACTED}", value)
+    if _UNDELIMITED_SESSION.search(value):
+        return SECRET_REDACTED
     residue = _REDACTED_SESSION_FORMS.sub("", value).lower()
     if any(word in residue for word in _SECRET_KEYWORDS):
         return SECRET_REDACTED

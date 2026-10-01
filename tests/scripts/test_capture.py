@@ -340,8 +340,9 @@ def test_error_body_keeps_everything_but_the_echoed_session(
     "secret",
     [
         "x-api-session=hunter2",
-        # A cookie value runs to the echo's next `,` separator.
-        "cookie=JSESSIONID=hunter2; CCFWSESSION=hunter2,",
+        "x-api-session=[hunter2, hunter2]",
+        "cookie=JSESSIONID=hunter2; CCFWSESSION=hunter2",
+        "cookie=[JSESSIONID=hunter2, CCFWSESSION=hunter2]",
         "JSESSIONID=hunter2",
         "<X-API-Session>hunter2</X-API-Session>",
     ],
@@ -349,7 +350,7 @@ def test_error_body_keeps_everything_but_the_echoed_session(
 def test_session_values_are_redacted_and_the_rest_kept(
     monkeypatch: pytest.MonkeyPatch, dest: Path, field: str, secret: str
 ) -> None:
-    text = f"before {secret} after"
+    text = f"{{before=1, {secret}, after=2}}"
     kwargs: dict[str, Any] = {}
     if field == "request":
         kwargs["content"] = text
@@ -366,12 +367,21 @@ def test_session_values_are_redacted_and_the_rest_kept(
     written = dest.read_text()
     assert "hunter2" not in written
     assert capture.SECRET_REDACTED not in written
-    assert "before " in written and " after" in written
+    assert "{before=1, " in written and ", after=2}" in written
 
 
 @pytest.mark.parametrize(
     "text",
-    ["X-API-Session: hunter2", "x-api-session=redacted-session X-API-Session hunter2"],
+    [
+        "X-API-Session: hunter2",
+        "x-api-session=redacted-session X-API-Session hunter2",
+        "x-api-session= hunter2",
+        "x-api-session=abc hunter2",
+        'x-api-session="abc hunter2"',
+        "JSESSIONID= hunter2",
+        "Cookie: LtpaToken2=hunter2",
+        "cookie=JSESSIONID=abc\nhunter2",
+    ],
 )
 def test_a_session_keyword_outside_a_known_form_is_still_wholesale(
     monkeypatch: pytest.MonkeyPatch, dest: Path, text: str
