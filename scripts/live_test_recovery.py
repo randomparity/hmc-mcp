@@ -1,24 +1,32 @@
-"""Confirm from outside a run that the dedicated PCIe arm left nothing behind.
+"""Confirm from outside a run that it left nothing behind.
 
-The arm's cleanup guards refuse to mutate on a mismatch and emit a manual-
-recovery row, which is correct. But the only witness that recovery happened is
-the same run that failed to complete it. This script is the outside witness.
+Arm cleanup guards refuse to mutate on a mismatch and emit a manual-recovery
+row, which is correct. But the only witness that recovery happened is the same
+run that failed to complete it. This script is the outside witness.
 
 Usage:
-    uv run --no-sync python scripts/live_test_recovery.py
     uv run --no-sync python scripts/live_test_recovery.py --results PATH
 
-Exit 0 means nothing is stranded. Exit 1 means something is, and the output
-names it with the command that clears it. Exit 2 means the state could not be
-read, which is not the same as clean.
+It witnesses the dedicated PCIe and bare-cec arms (subtasks 24-25) by their run
+marker, and the vMedia arm (subtasks 16-22) by what it can leave on the run's
+configured test partition: a running partition, a changed pending boot string,
+an optical mapping, a VIOS vSCSI server adapter with no mapping, and the media
+repository it created. Every other subtask the run dispatched is listed as NOT
+WITNESSED, to be checked by hand (docs/live-testing.md, step 4).
+
+Exit 0 means every dispatched subtask was witnessed and nothing is stranded.
+Exit 1 means something is, and the output names it with the command that
+clears it. Exit 2 means some state could not be read, or the run dispatched a
+subtask this script does not witness, which is not the same as clean.
 
 **This never remediates.** It issues no mutating call: a remediator acting on
 a partial read strands exactly what the arm's cleanup guards exist to refuse.
 Every command it prints is for a human to run and check.
 
-Its inputs come from the run's own results document — `artifacts.pcie_run_marker`
-and the three beside it. The marker is per-run random (`pcie-<8 hex>`), so a
-run's traces cannot be identified without them.
+Its inputs come from the run's own results document: `run.subtasks`, the
+`config` the run used, and its `artifacts` and result rows. The PCIe marker is
+per-run random (`pcie-<8 hex>`), so a run's traces cannot be identified without
+them.
 """
 
 from __future__ import annotations
@@ -26,6 +34,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,8 +49,13 @@ from live_test.pcie import (
     partition_not_found,
     select_profile_io_slots,
 )
+from live_test.vmedia import (
+    _BOOT_BASELINE_STEP,
+    _mapping_identity,
+)
 
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
+from hmcpctl.ssh.commands import HMC_NO_RESULTS
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command
 from hmcpctl.ssh.transport import HMCCLIError
 
@@ -54,6 +68,10 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_get_lpar_description",
         "hmc_get_lpar_state",
         "hmc_run_command",
+        "hmc_read_lpar_boot_order",
+        "hmc_list_optical_mappings",
+        "hmc_list_storage_mappings",
+        "hmc_get_media_repository",
     }
 )
 
@@ -61,9 +79,40 @@ _READ_ONLY_TOOLS = frozenset(
 #: found in any other state needs a shutdown first (#950).
 _NOT_ACTIVATED = "Not Activated"
 
-#: `hmc_run_command` is read-only only for the command given. `lssyscfg` lists;
-#: `chsyscfg` would mutate, and shares the tool.
-_READ_ONLY_COMMAND_PREFIX = "lssyscfg"
+#: `hmc_run_command` is read-only only for the commands given. `lssyscfg` and
+#: `lshwres` list; `chsyscfg` would mutate, and shares the tool.
+_READ_ONLY_COMMAND_PREFIXES = ("lssyscfg ", "lshwres ")
+
+#: A command built from a results document must not be able to chain a second
+#: one behind an admitted prefix.
+_SHELL_METACHARACTERS = frozenset(";|&$`<>()\n")
+
+#: The vMedia arm (`SUBTASK_GROUPS["vmedia"]`) and the PCIe arms the marker
+#: checks cover. Any other dispatched subtask is reported as not witnessed.
+_VMEDIA_SUBTASKS = frozenset(range(16, 23))
+_WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {24, 25}
+
+#: vMedia calls that leave a repository behind only in one this run owns: the
+#: arm skips each of them on a repository it did not create (#967).
+_REPOSITORY_TOOLS = frozenset(
+    {
+        "hmc_create_media_repository",
+        "hmc_delete_media_repository",
+        "hmc_upload_iso",
+        "hmc_delete_optical_media",
+    }
+)
+
+#: Every mutating call the vMedia arm makes, each covered by a class below:
+#: power-off is the arm's own end state, and mount/unmount residue is read
+#: whenever the arm ran. A test pins this against the arm's source.
+_VMEDIA_MUTATIONS = _REPOSITORY_TOOLS | {
+    "hmc_power_on_lpar",
+    "hmc_power_off_lpar",
+    "hmc_set_lpar_boot_order",
+    "hmc_mount_optical_media",
+    "hmc_unmount_optical_media",
+}
 
 
 class MutatingCallRefused(RuntimeError):
@@ -144,14 +193,16 @@ def guard_read_only(tool: str, arguments: dict[str, Any]) -> None:
     """Refuse a call that could change the managed system."""
     if tool not in _READ_ONLY_TOOLS:
         raise MutatingCallRefused(f"{tool} is not on the read-only allowlist")
-    command = arguments.get("cmd", "")
-    if tool == "hmc_run_command" and not str(command).strip().startswith(
-        _READ_ONLY_COMMAND_PREFIX
-    ):
+    if tool != "hmc_run_command":
+        return
+    command = str(arguments.get("cmd", "")).strip()
+    if not command.startswith(_READ_ONLY_COMMAND_PREFIXES):
         raise MutatingCallRefused(
-            f"hmc_run_command is read-only only for {_READ_ONLY_COMMAND_PREFIX}; "
-            f"refused: {str(command).split()[0] if command else '(empty)'}"
+            "hmc_run_command is read-only only for lssyscfg and lshwres; "
+            f"refused: {command.split()[0] if command else '(empty)'}"
         )
+    if _SHELL_METACHARACTERS & set(command):
+        raise MutatingCallRefused("hmc_run_command refused a shell metacharacter")
 
 
 async def _read_slots(call, inputs: RecoveryInputs) -> list[dict[str, Any]]:
@@ -316,6 +367,383 @@ async def check(call, inputs: RecoveryInputs) -> list[Finding]:
     return findings + [drift] if drift else findings
 
 
+# ---------------------------------------------------------------------------
+# The configured test partition (vMedia arm, and round2's ST14 provision)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LparResidueInputs:
+    """What a run did to its configured test partition, as its document records.
+
+    A subset run restores artifacts from an earlier document, so ST17-ST22 can
+    act on ownership a previous invocation recorded. The flags therefore read the
+    outstanding artifacts as well as this document's rows.
+    """
+
+    system_name: str
+    lpar_name: str
+    vios_uuid: str | None
+    vios_partition_id: int | None
+    vg_uuid: str | None
+    iso_names: frozenset[str]
+    vmedia_ran: bool
+    provisioned: bool
+    repository_owned: bool
+    powered_on: bool
+    boot_written: bool
+    boot_baseline: str | None
+
+    @property
+    def applies(self) -> bool:
+        return (
+            self.vmedia_ran
+            or self.provisioned
+            or self.repository_owned
+            or self.powered_on
+            or self.boot_written
+        )
+
+
+def dispatched_subtasks(document: Any) -> list[int] | None:
+    """The subtasks the run dispatched, or `None` when the document does not say."""
+    run = document.get("run") if isinstance(document, dict) else None
+    subtasks = run.get("subtasks") if isinstance(run, dict) else None
+    if not isinstance(subtasks, list) or any(type(n) is not int for n in subtasks):
+        return None
+    return subtasks
+
+
+def _calls(document: dict[str, Any], subtasks: set[int], tools: set[str]) -> list[dict]:
+    """Rows in *subtasks* recording a call to one of *tools*.
+
+    A row's label opens with the tool it called. A `SKIP` row is a call never
+    made, or one answered with a declared expected outcome, which by declaration
+    changed nothing.
+    """
+    rows = document.get("results")
+    return [
+        row
+        for row in (rows if isinstance(rows, list) else [])
+        if isinstance(row, dict)
+        and row.get("subtask") in subtasks
+        and row.get("status") != "SKIP"
+        and str(row.get("tool", "")).split(" ", 1)[0] in tools
+    ]
+
+
+def _boot_baseline(document: dict[str, Any], saved: list[str]) -> str | None:
+    """ST20's pending boot string before its write, else the saved boot order."""
+    for row in _calls(document, {20}, {"hmc_read_lpar_boot_order"}):
+        data = row.get("data")
+        if (
+            row.get("tool") == _BOOT_BASELINE_STEP
+            and row.get("status") == "PASS"
+            and isinstance(data, dict)
+            and isinstance(data.get("pending_boot_string"), str)
+        ):
+            return data["pending_boot_string"]
+    return " ".join(saved) if saved else None
+
+
+def lpar_inputs_from_document(
+    document: Any, subtasks: list[int]
+) -> LparResidueInputs | None:
+    """Read the test-partition residue a run could have left, or `None` for none."""
+    if not isinstance(document, dict):
+        return None
+    config = document.get("config")
+    artifacts = document.get("artifacts")
+    if not isinstance(config, dict) or not isinstance(artifacts, dict):
+        return None
+    saved_boot = artifacts.get("vmedia_orig_boot_order")
+    saved_boot = saved_boot if isinstance(saved_boot, list) else []
+    inputs = LparResidueInputs(
+        system_name=str(config.get("system_name") or ""),
+        lpar_name=str(config.get("lp3_name") or ""),
+        vios_uuid=artifacts.get("vios_uuid"),
+        vios_partition_id=artifacts.get("vios_partition_id"),
+        vg_uuid=artifacts.get("vg_uuid"),
+        iso_names=frozenset(
+            str(name)
+            for name in (config.get("iso_media_name"), artifacts.get("vmedia_iso_name"))
+            if name
+        ),
+        vmedia_ran=bool(_VMEDIA_SUBTASKS & set(subtasks)),
+        provisioned=bool(
+            _calls(document, {14}, {"hmc_provision_lpar", "hmc_delete_lpar"})
+        ),
+        repository_owned=artifacts.get("vmedia_repo_created") is True
+        or bool(_calls(document, set(_VMEDIA_SUBTASKS), set(_REPOSITORY_TOOLS))),
+        powered_on=bool(_calls(document, {20}, {"hmc_power_on_lpar"})),
+        boot_written=bool(saved_boot)
+        or bool(_calls(document, {20, 22}, {"hmc_set_lpar_boot_order"})),
+        boot_baseline=_boot_baseline(document, saved_boot),
+    )
+    return inputs if inputs.applies else None
+
+
+def _required(value: Any, field: str, purpose: str) -> Any:
+    if not value:
+        raise StateUnreadable(
+            f"the document records no {field}, needed to read {purpose}"
+        )
+    return value
+
+
+def _q(value: object) -> str:
+    return shlex.quote(str(value))
+
+
+async def _optical_mapping_left(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether the run's ISO is still mounted to the test partition."""
+    if not inputs.vmedia_ran:
+        return None
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "optical mappings")
+    status, data = await call(
+        "hmc_list_optical_mappings",
+        vios_name_or_uuid=vios,
+        lpar_name_or_uuid=inputs.lpar_name,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(data, list):
+        raise StateUnreadable(
+            f"could not list optical mappings for {inputs.lpar_name} ({status})"
+        )
+    identities = [_mapping_identity(entry) for entry in data]
+    if None in identities:
+        raise StateUnreadable(
+            f"an optical mapping for {inputs.lpar_name} names no partition or media"
+        )
+    left = sorted({media for _, media in identities if media in inputs.iso_names})
+    if not left:
+        return None
+    return Finding(
+        "optical mapping left",
+        f"{', '.join(left)} is still mounted to {inputs.lpar_name} from VIOS {vios}",
+        "; ".join(
+            f"hmcpctl storage unmount-optical-media {_q(vios)} {_q(inputs.lpar_name)} "
+            f"{_q(media)} --system {_q(inputs.system_name)}"
+            for media in left
+        ),
+    )
+
+
+def _server_adapter_listing(system_name: str, vios_id: int) -> str:
+    """The #1237 listing, by partition id: the document records the VIOS's id."""
+    return (
+        f"lshwres -r virtualio --rsubtype scsi -m {_q(system_name)} --level lpar "
+        f"--filter lpar_ids={vios_id} -F slot_num,remote_lpar_name,remote_slot_num"
+    )
+
+
+def _adapter_slots_toward(listing: str, lpar_name: str) -> list[str]:
+    """Slots of the listed server adapters whose client is *lpar_name*."""
+    text = listing.strip()
+    if not text or text == HMC_NO_RESULTS:
+        return []
+    slots = []
+    for line in text.splitlines():
+        fields = line.strip().split(",")
+        if len(fields) < 2 or not fields[0].isdigit():
+            raise StateUnreadable(f"unexpected server adapter row {line!r}")
+        if fields[1] == lpar_name:
+            slots.append(fields[0])
+    return slots
+
+
+async def _unmapped_server_adapters(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether a VIOS server adapter toward the test partition has no mapping.
+
+    A mapping names its adapter (`vhost0`), the listing its slot, so the two are
+    compared by count; joining them needs the REST shape #1250 captures.
+    """
+    if not (inputs.vmedia_ran or inputs.provisioned):
+        return None
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "server adapters")
+    vios_id = inputs.vios_partition_id
+    if type(vios_id) is not int:
+        raise StateUnreadable(
+            "the document records no integer artifacts.vios_partition_id, "
+            "needed to list server adapters"
+        )
+    status, listing = await call(
+        "hmc_run_command", cmd=_server_adapter_listing(inputs.system_name, vios_id)
+    )
+    if status != "PASS" or not isinstance(listing, str):
+        raise StateUnreadable(
+            f"could not list server adapters on VIOS {vios_id} ({status})"
+        )
+    slots = _adapter_slots_toward(listing, inputs.lpar_name)
+    status, mappings = await call(
+        "hmc_list_storage_mappings",
+        vios_name_or_uuid=vios,
+        lpar_name_or_uuid=inputs.lpar_name,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(mappings, list):
+        raise StateUnreadable(
+            f"could not list storage mappings for {inputs.lpar_name} ({status})"
+        )
+    ids = [entry.get("id") if isinstance(entry, dict) else None for entry in mappings]
+    compare = (
+        f"compare slots {', '.join(slots) or '(none)'} with `hmcpctl storage "
+        f"list-mappings {_q(vios)} --lpar {_q(inputs.lpar_name)} "
+        f"--system {_q(inputs.system_name)}`"
+    )
+    if any(not isinstance(id_, str) or "/" not in id_ for id_ in ids):
+        raise StateUnreadable(
+            f"a storage mapping for {inputs.lpar_name} names no server adapter; {compare}"
+        )
+    mapped = {id_.split("/", 1)[0] for id_ in ids}
+    if len(slots) <= len(mapped):
+        return None
+    return Finding(
+        "unmapped server adapter",
+        f"VIOS {vios_id} has {len(slots)} vSCSI server adapter(s) toward "
+        f"{inputs.lpar_name} (slots {', '.join(slots)}) but {len(mapped)} mapped",
+        f"{compare}; remove each unmapped one with `chhwres -r virtualio --rsubtype "
+        f"scsi -m {_q(inputs.system_name)} -o r --id {vios_id} -s <slot>`",
+    )
+
+
+async def _repository_left(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether the media repository this run owned is still there."""
+    if not inputs.repository_owned:
+        return None
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "the media repository")
+    vg = _required(inputs.vg_uuid, "artifacts.vg_uuid", "the media repository")
+    status, data = await call(
+        "hmc_get_media_repository",
+        vios_name_or_uuid=vios,
+        vg_uuid=vg,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS":
+        raise StateUnreadable(f"could not read the media repository in {vg} ({status})")
+    if not data:
+        return None
+    where = f"{_q(vios)} {_q(vg)}"
+    system = f"--system {_q(inputs.system_name)}"
+    return Finding(
+        "media repository left",
+        f"the repository the run created in volume group {vg} on VIOS {vios} "
+        "still exists",
+        f"hmcpctl storage list-optical-media {where} {system}; "
+        f"hmcpctl storage delete-media {where} <each ISO> {system}; "
+        f"hmcpctl storage delete-media-repo {where} {system}",
+    )
+
+
+async def _partition_running(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether ST20 left the test partition running after its boot probe."""
+    if not inputs.powered_on:
+        return None
+    status, state = await call(
+        "hmc_get_lpar_state",
+        system_name_or_uuid=inputs.system_name,
+        lpar_name_or_uuid=inputs.lpar_name,
+    )
+    if status != "PASS" or not isinstance(state, str):
+        raise StateUnreadable(
+            f"could not read the state of {inputs.lpar_name} ({status})"
+        )
+    if state == _NOT_ACTIVATED:
+        return None
+    return Finding(
+        "test partition running",
+        f"{inputs.lpar_name} on {inputs.system_name} is {state!r}; ST20 powered it "
+        f"on and its cleanup leaves it {_NOT_ACTIVATED}",
+        f"hmcpctl lpars power-off {_q(inputs.lpar_name)} --system "
+        f"{_q(inputs.system_name)} --immediate --yes",
+    )
+
+
+async def _boot_string_drift(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether the pending boot string differs from the one the run captured."""
+    if not inputs.boot_written:
+        return None
+    baseline = inputs.boot_baseline
+    if not baseline:
+        raise StateUnreadable(
+            f"the run wrote the boot order of {inputs.lpar_name} but the document "
+            "records no baseline to compare with"
+        )
+    status, data = await call(
+        "hmc_read_lpar_boot_order",
+        system_name_or_uuid=inputs.system_name,
+        lpar_name_or_uuid=inputs.lpar_name,
+    )
+    observed = data.get("pending_boot_string") if isinstance(data, dict) else None
+    if (
+        status != "PASS"
+        or not isinstance(data, dict)
+        or not isinstance(observed or "", str)
+    ):
+        raise StateUnreadable(
+            f"could not read the boot order of {inputs.lpar_name} ({status})"
+        )
+    if (observed or "").split() == baseline.split():
+        return None
+    return Finding(
+        "boot string drift",
+        f"pending boot string of {inputs.lpar_name} is {observed!r}, not the "
+        f"captured baseline {baseline!r}",
+        f"hmcpctl lpars set-boot-order {_q(inputs.system_name)} "
+        f"{_q(inputs.lpar_name)} {' '.join(_q(path) for path in baseline.split())}",
+    )
+
+
+#: In the order an operator should clear them.
+_PARTITION_CHECKS = (
+    _partition_running,
+    _optical_mapping_left,
+    _unmapped_server_adapters,
+    _repository_left,
+    _boot_string_drift,
+)
+
+
+async def check_test_partition(call, inputs: LparResidueInputs) -> list[Finding]:
+    """Every applicable test-partition class, each read even if another fails.
+
+    The reads are independent, unlike the PCIe chain, so one unreadable class
+    does not hide another's residue.
+    """
+    findings: list[Finding] = []
+    unread: list[str] = []
+    for check_one in _PARTITION_CHECKS:
+        try:
+            finding = await check_one(call, inputs)
+        except StateUnreadable as unreadable:
+            unread.append(str(unreadable))
+            continue
+        if finding:
+            findings.append(finding)
+    if unread:
+        raise StateUnreadable("; ".join(unread), findings)
+    return findings
+
+
+async def check_run(
+    call, pcie: RecoveryInputs | None, partition: LparResidueInputs | None
+) -> list[Finding]:
+    """The PCIe checks, then the test-partition checks, each read whatever the other found."""
+    findings: list[Finding] = []
+    unread: list[str] = []
+    for run_checks, inputs in ((check, pcie), (check_test_partition, partition)):
+        if inputs is None:
+            continue
+        try:
+            findings += await run_checks(call, inputs)
+        except StateUnreadable as unreadable:
+            findings += unreadable.findings
+            unread.append(str(unreadable))
+    if unread:
+        raise StateUnreadable("; ".join(unread), findings)
+    return findings
+
+
 def _read_only_caller(client, state: runner.RunState):
     """A call path that refuses anything off the read-only surface."""
 
@@ -326,7 +754,9 @@ def _read_only_caller(client, state: runner.RunState):
     return call
 
 
-async def _run_checks(inputs: RecoveryInputs) -> list[Finding]:
+async def _run_checks(
+    pcie: RecoveryInputs | None, partition: LparResidueInputs | None
+) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
     # The checks need the live run's composition, not bare ``create_mcp``:
     # ``hmc_run_command`` is an opt-in escape hatch that only it registers. Without
@@ -335,26 +765,44 @@ async def _run_checks(inputs: RecoveryInputs) -> list[Finding]:
     # clean it had never looked at. The 2026-09-21 live run showed review alone had
     # missed that, so a test asserts the read-only tools are registered here.
     async with runner.served_client() as client:
-        return await check(_read_only_caller(client, state), inputs)
+        return await check_run(_read_only_caller(client, state), pcie, partition)
 
 
-def _report(inputs: RecoveryInputs, findings: list[Finding]) -> None:
-    print(f"recovery check for run marker {inputs.run_marker}")
+def _report(
+    document: dict[str, Any],
+    findings: list[Finding],
+    unwitnessed: list[int],
+    unread: list[str],
+) -> None:
+    run = document.get("run") if isinstance(document.get("run"), dict) else {}
+    artifacts = document.get("artifacts")
+    print(
+        f"recovery check for the {run.get('group') or '(no group)'} run at "
+        f"{run.get('tested_commit') or '(no commit)'}, finished "
+        f"{run.get('finished') or '(unknown)'}"
+    )
+    marker = artifacts.get("pcie_run_marker") if isinstance(artifacts, dict) else None
+    if marker:
+        print(f"PCIe run marker {marker}")
     print("=" * 60)
-    if not findings:
-        print(
-            f"CLEAN  nothing carrying {inputs.run_marker} survives on "
-            f"{inputs.system_name}"
-        )
-        return
     for finding in findings:
         print(f"STRANDED  {finding.what}")
         print(f"          {finding.detail}")
         print(f"  clear with:  {finding.remedy}")
-    print(
-        "\nThis script issues no mutating call. Run the commands above "
-        "yourself, then re-run this check."
-    )
+    for message in unread:
+        print(f"NOT READ  {message}")
+    if unwitnessed:
+        print(
+            f"NOT WITNESSED  subtasks {', '.join(map(str, unwitnessed))}: check what "
+            "they change by hand (docs/live-testing.md, step 4)"
+        )
+    if findings:
+        print(
+            "\nThis script issues no mutating call. Run the commands above "
+            "yourself, then re-run this check."
+        )
+    elif not unwitnessed and not unread:
+        print("CLEAN  nothing this run dispatched was left behind")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -375,34 +823,39 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: cannot read {args.results}: {error}", file=sys.stderr)
         return 2
 
-    inputs = inputs_from_document(document)
-    if inputs is None:
+    subtasks = dispatched_subtasks(document)
+    if subtasks is None:
         print(
-            f"{args.results} records no dedicated PCIe fixture — that run created "
-            "nothing to recover."
+            f"ERROR: {args.results} records no run.subtasks, so what the run "
+            "changed is unknown; check the system by hand",
+            file=sys.stderr,
         )
-        return 0
-
-    if not runner._bootstrap_config():
-        print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
         return 2
+    unwitnessed = sorted(set(subtasks) - _WITNESSED_SUBTASKS)
+    pcie = inputs_from_document(document)
+    partition = lpar_inputs_from_document(document, subtasks)
 
-    try:
-        findings = asyncio.run(_run_checks(inputs))
-    except MutatingCallRefused as refused:
-        print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
-        return 2
-    except StateUnreadable as unreadable:
-        if unreadable.findings:
-            _report(inputs, unreadable.findings)
-        print(f"ERROR: {unreadable}", file=sys.stderr)
+    findings: list[Finding] = []
+    unread: list[str] = []
+    if pcie is not None or partition is not None:
+        if not runner._bootstrap_config():
+            print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
+            return 2
+        try:
+            findings = asyncio.run(_run_checks(pcie, partition))
+        except MutatingCallRefused as refused:
+            print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
+            return 2
+        except StateUnreadable as unreadable:
+            findings, unread = unreadable.findings, [str(unreadable)]
+        except Exception as error:  # noqa: BLE001 - an unreadable system is not a clean one
+            print(f"ERROR: could not read the managed system: {error}", file=sys.stderr)
+            return 2
+
+    _report(document, findings, unwitnessed, unread)
+    if unread or unwitnessed:
         print("The system was NOT confirmed clean.", file=sys.stderr)
         return 2
-    except Exception as error:  # noqa: BLE001 - an unreadable system is not a clean one
-        print(f"ERROR: could not read the managed system: {error}", file=sys.stderr)
-        return 2
-
-    _report(inputs, findings)
     return 1 if findings else 0
 
 
