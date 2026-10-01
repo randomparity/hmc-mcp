@@ -17,6 +17,7 @@ hmcpctl systems list                 # table of managed systems
 hmcpctl systems show <uuid>
 hmcpctl systems summary <uuid>       # one-call summary: state, MTMS, firmware, LPARs, free resources
 hmcpctl systems health               # issue-only fleet health; add --json for automation
+hmcpctl report utilization --csv fleet.csv   # CPU/memory allocation across every profile
 hmcpctl lpars list                   # all LPARs
 hmcpctl lpars list --system <uuid>   # LPARs of one system
 hmcpctl lpars show mylpar            # by name or UUID (JSON)
@@ -138,3 +139,56 @@ hmcpctl lpars power-on web01
 > **Cluster / SSP Logical Unit** model are wrapped. Once a disk is mapped,
 > partitioning it into filesystems is the guest OS's job (NIM, cloud-init,
 > `mkfs`), not the HMC's.
+
+## Fleet utilization report
+
+`hmcpctl report utilization --csv PATH` reads every profile in `config.toml`, or only those
+named with repeated `--profile NAME`, and writes one CSV of CPU and memory allocation. It only
+reads; it changes nothing on any HMC. The accounting follows
+[ADR 0184](adr/0184-fleet-utilization-accounting-model.md).
+
+> **The report holds internal hostnames, system names and serial numbers. Never commit it or
+> post it in a public place.** It is written with owner-only permissions.
+
+The first column, `row_type`, says what each row is:
+
+- `system`: one managed system. A system two HMCs manage appears once, with both profiles in
+  `profiles`, and its most complete reading.
+- `hmc`: the totals for one profile's HMC.
+- `fleet`: the totals over the `system` rows.
+- `failure`: a profile that could not be surveyed, with the reason in `notes`.
+
+Each CPU (processor units) and memory (MiB) figure means:
+
+- `installed`, `configurable`: the system's own totals.
+- `vios`: the current configuration of the system's VIOS partitions.
+- `client_active`: the current configuration of client partitions in any state except
+  `not activated`.
+- `idle_reserved`: the current configuration of `not activated` partitions. The hypervisor
+  keeps it reserved, so it is allocated capacity that nothing is running on.
+- `hypervisor` (memory only): memory the hypervisor itself uses.
+- `other_reserved`: what remains of configurable capacity after free, the hypervisor and the
+  partitions.
+- `free`: what the system reports available.
+- `allocated` and `util_pct`: configurable minus free, and that as a share of configurable.
+- `dedicated`, `shared`, `shared_pools`: units held by dedicated and shared-processor
+  partitions, and the shared pools in use.
+- `profile_claims`, `profile_claim_mem_mib`, `profile_claim_cpu`: partitions that have never had
+  a profile applied, and what their profiles would claim. The hypervisor reserves nothing for
+  them, so these are not counted as allocated.
+
+`unknown` means the HMC did not report a figure or a read failed; it is never written as 0. A
+system row's `notes` names the failed read. A roll-up figure sums the systems that reported it,
+and the roll-up row's `notes` names every column some of its systems lack, for example
+`mem_vios_mib: 1 of 4 systems unknown`. A roll-up's percentage uses only the systems that
+reported both configurable and free capacity.
+
+The command surveys 4 profiles at a time (`--concurrency`) and gives each one 300 seconds
+(`--hmc-timeout`) for logon and every read. A profile that runs out of time becomes a `failure`
+row and keeps none of its readings. Ending its HMC session afterwards can take up to that
+profile's `HMC_TIMEOUT` more. A system the HMC cannot list is absent from the report, with only
+a warning on stderr. The CSV replaces `PATH` only once it is complete.
+
+The command refuses to run when `HMC_HOST` is exported, or when a global connection option
+(`--host`, `--user`, `--password`, `--verify-ssl`, `--profile`) is given. `HMC_HOST` would send
+every profile to the same host, and the global options would be ignored.
