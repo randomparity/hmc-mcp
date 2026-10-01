@@ -167,7 +167,7 @@ and no target is itself a nickname.
 | User              | `HMC_USER`           | `--user, -u`      | —         |
 | Password          | `HMC_PASSWORD`       | `--password, -p`  | —         |
 | Verify TLS        | `HMC_VERIFY_SSL`     | `--verify-ssl`    | `false`   |
-| HTTP timeout (s)  | `HMC_TIMEOUT`        | —                 | `60.0`    |
+| HTTP timeout (s)  | `HMC_TIMEOUT`        | —                 | `180.0`   |
 | SSH timeout (s)   | `HMC_SSH_TIMEOUT`    | —                 | `300.0`   |
 | SSH key file      | `HMC_SSH_KEY_FILE`   | —                 | —         |
 | Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmcpctl` |
