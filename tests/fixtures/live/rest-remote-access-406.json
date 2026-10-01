@@ -1,0 +1,8 @@
+{
+  "capture": "2026-09-30-ro/capture-2.jsonl#81",
+  "method": "GET",
+  "path": "/rest/api/uom/ManagementConsole/00000002-abcd-4ef0-8abc-000000000002?group=RemoteAccess",
+  "status": 406,
+  "content_type": "text/html;charset=ISO-8859-1",
+  "body": "<!doctype html public \"-//IETF//DTD HTML 2.0//EN\"> <html><head><title>Console Internal Error</title> <link href=\"/skin/HMCskin.css\" rel=\"stylesheet\" type=\"text/css\"/></head> <body><h1>Console Internal Error</h1> <br><hr size=\"1\" noshade><h2>Details:</h2><p><br> HTTP status code: 406<p><br>http.406<hr size=\"1\" noshade></body></html>"
+}

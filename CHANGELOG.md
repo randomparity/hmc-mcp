@@ -229,6 +229,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_snapshot_capture` reads the profile record a V10R3 HMC prints. It refused every
+  partition with "native profile contains an invalid attribute name", because the HMC quotes
+  the list-valued `virtual_serial_adapters` pair (`"name=v1,v2"`) and splits a pair at its
+  first `=`. A dedicated profile, which has no `*_proc_units`, now projects its processor
+  counts instead of failing (#1202).
 - `hmc_deploy_partition_template(wait=True)` and `deploy_partition_template` now stamp the
   deployed partition's ownership when the job finishes `COMPLETED_OK`. They accepted only a
   bare `COMPLETED`, a status the HMC does not report, so a real deployment was never stamped

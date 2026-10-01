@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import math
 import re
@@ -487,23 +488,57 @@ def _load(text: str) -> Any:
 
 
 def _parse_profile(record: str) -> dict[str, str]:
+    """Parse one ``lssyscfg -r prof`` attribute record into ordered pairs.
+
+    A V10R3 HMC wraps a list-valued pair in double quotes (``"name=v1,v2"``, the
+    ADR 0061 rendering) and splits each pair at its first ``=``, so a value may
+    itself hold ``=`` (``sriov_eth_logical_ports=config_id=0:...``).
+    """
+    if len(record.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
+        raise ValueError("native profile exceeds the 1 MiB snapshot limit")
+    try:
+        items = next(csv.reader([record], strict=True), [])
+    except csv.Error as exc:
+        raise ValueError(
+            "native profile contains unsupported quoting or delimiters"
+        ) from exc
+    if not items:
+        raise ValueError("native profile contains an unsupported attribute record")
     values: dict[str, str] = {}
-    for item in record.split(","):
-        if item.count("=") != 1:
+    for item in items:
+        key, separator, value = item.partition("=")
+        if not separator:
             raise ValueError("native profile contains an unsupported attribute record")
-        key, value = item.split("=", 1)
         if not key or not key.replace("_", "a").isalnum() or not key.isascii():
             raise ValueError("native profile contains an invalid attribute name")
         if key in values:
             raise ValueError("native profile contains a duplicate attribute")
         if any(ord(character) < 32 or ord(character) == 127 for character in value):
             raise ValueError("native profile contains a control character")
-        if any(character in value for character in ',="'):
+        if '"' in value:
             raise ValueError(
                 "native profile contains unsupported quoting or delimiters"
             )
         values[key] = value
     return values
+
+
+def _processor_values(values: dict[str, str]) -> tuple[str, str, str]:
+    """Return the processor figures the profile's ``proc_mode`` selects.
+
+    A dedicated profile has no processing units: the HMC omits
+    ``*_proc_units`` from the record, or prints ``null`` under ``-F``, and the
+    processor figures are the ``*_procs`` counts.
+    """
+    names = ("min_proc_units", "desired_proc_units", "max_proc_units")
+    if values["proc_mode"] == "ded" and all(
+        values.get(name, "null") == "null" for name in names
+    ):
+        names = ("min_procs", "desired_procs", "max_procs")
+    if any(name not in values for name in names):
+        raise ValueError("native profile is missing required normalized attributes")
+    minimum, desired, maximum = (values[name] for name in names)
+    return minimum, desired, maximum
 
 
 def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
@@ -512,9 +547,6 @@ def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
         "desired_mem",
         "max_mem",
         "proc_mode",
-        "min_proc_units",
-        "desired_proc_units",
-        "max_proc_units",
         "min_procs",
         "desired_procs",
         "max_procs",
@@ -534,6 +566,7 @@ def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
     mode = modes.get(values["sharing_mode"])
     if values["proc_mode"] not in {"ded", "shared"} or mode is None:
         raise ValueError("native profile contains unsupported processor values")
+    minimum, desired, maximum = _processor_values(values)
     try:
         return NormalizedConfiguration(
             memory_mib=MemoryProjection(
@@ -543,9 +576,9 @@ def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
             ),
             processors=ProcessorProjection(
                 dedicated=values["proc_mode"] == "ded",
-                minimum=float(values["min_proc_units"]),
-                desired=float(values["desired_proc_units"]),
-                maximum=float(values["max_proc_units"]),
+                minimum=float(minimum),
+                desired=float(desired),
+                maximum=float(maximum),
                 virtual_minimum=int(values["min_procs"]),
                 virtual_desired=int(values["desired_procs"]),
                 virtual_maximum=int(values["max_procs"]),
