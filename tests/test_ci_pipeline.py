@@ -47,6 +47,12 @@ BASELINED_FINDINGS = {
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
     "tests/conftest.py": 1,
+    # An enum type name long enough to read as Base64 entropy, once per enum list (#1202).
+    "tests/fixtures/live/vocabulary/enums-v10r3-p9.json": 1,
+    "tests/fixtures/live/vocabulary/enums-v11r2-p10-9028-21b.json": 1,
+    "tests/fixtures/live/vocabulary/enums-v11r2-p11-9242-21b.json": 1,
+    "tests/fixtures/live/vocabulary/enums-v11r2-p11-9824-42a.json": 1,
+    "tests/fixtures/live/vocabulary/enums-v11r2-p9-9009-42a.json": 1,
     "tests/unit/test_ssh.py": 1,
     "tests/unit/test_client.py": 1,
 }
@@ -92,6 +98,7 @@ STATIC_GATES = {
     "tool-docs-check",
     "adr-numbering",
     "doc-freshness",
+    "live-vocabulary",
 }
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [

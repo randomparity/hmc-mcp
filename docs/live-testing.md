@@ -240,3 +240,71 @@ an existing matrix, check whether the branch has moved since.
 Redact before posting anywhere public: hostnames, IP addresses, serial numbers,
 U-code location strings, usernames, internal domain suffixes. The evidence
 script's output is already filtered for this; anything you add by hand is not.
+
+## Capturing an HMC's vocabulary
+
+This is a separate, read-only procedure. It records what an HMC answers to every
+read hmcpctl makes, so `just live-vocabulary` can check `src/` and `tests/`
+against real answers instead of guesses (#1202). It creates, changes and deletes
+nothing: a guard refuses any REST method but `GET` (logon and logoff excepted)
+and any command not starting with `ls` before it is sent.
+
+The output is raw HMC data: hostnames, serial numbers, location codes, account
+names, and answers that name a secret keyword, which the default capture would
+have blanked. Write it to a private directory **outside every repository** (the
+sweep refuses one inside a git work tree), and never commit or paste it.
+
+1. Sweep one HMC profile. `--system`, `--lpar` and `--vios` are optional; without
+   them the sweep picks the first operating system, a running partition on it and
+   a VIOS on it.
+
+   ```sh
+   uv run --no-sync python scripts/live_capture_sweep.py \
+     --out ~/hmc-live-evidence/<date>-<profile> --profile <profile>
+   ```
+
+   It writes `sweep.capture.jsonl` and `tools.capture.jsonl`. A tool whose required
+   parameter the sweep cannot supply is logged as a `skip` naming the parameter.
+
+2. Tokenize. Pass every lab name, host prefix and site word that could appear in
+   the output as `--private`; the export fails, writing nothing, when one survives,
+   and does the same for any collected name, URL host, IP address, location code,
+   session value or SSH key.
+
+   ```sh
+   uv run --no-sync python scripts/live_capture_export.py tokenize \
+     ~/hmc-live-evidence/<date>-<profile>/*.capture.jsonl \
+     --out ~/hmc-live-evidence/<date>-<profile>/corpus.json --private '<lab-pattern>'
+   ```
+
+   The corpus is still private: it keeps every response body.
+
+3. Derive the committed files, one vocabulary and one enum list per HMC release
+   and system, named for both (`v11r2-p11-9824-42a`). `enums` needs the corpus to
+   hold the `Enumerations.xsd` read the sweep makes.
+
+   ```sh
+   C=~/hmc-live-evidence/<date>-<profile>/corpus.json
+   V=tests/fixtures/live/vocabulary
+   P=v11r2-p11-9824-42a
+   uv run --no-sync python scripts/live_capture_export.py enums "$C" \
+     --firmware V11R2 --out "$V/enums-$P.json"
+   uv run --no-sync python scripts/live_capture_export.py vocabulary "$C" \
+     --enums "$V/enums-$P.json" --firmware "$P" \
+     --source '<date> read-only sweep: HMC <release> managing a <family> <model>' \
+     --out "$V/$P.json" --private '<lab-pattern>'
+   ```
+
+   `--fold <derived.json> --fold-source '<where it came from>'` adds the REST values
+   and endpoints of a vocabulary derived earlier from the same pair.
+
+   Read the vocabulary diff before committing it: name-bearing elements and fields
+   keep only their shape (`<text>`, `<int>`, `<uuid-upper>`), so a literal that
+   looks like a name is a bug in the exporter, not data.
+
+4. Run `just live-vocabulary`. A new capture can retire allowlist entries, which
+   the gate then reports as stale; delete them, or regenerate the list with
+   `uv run --no-sync python scripts/check_live_vocabulary.py --write-allowlist`,
+   which keeps the reasons of entries that still apply. Give every new entry a
+   reason that cites #1202. A test value that is deliberately not an HMC answer
+   is not allowlisted: end its line with `# live-vocabulary: allow <reason>`.

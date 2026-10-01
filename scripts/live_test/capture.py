@@ -10,6 +10,12 @@ Every REST request (`HMCClient._request`) and SSH command
 (`asyncssh.SSHClientConnection.run`) becomes one JSON line. Both are patched on
 the class, so modules that imported `run_hmc_command` by name are still seen.
 Secrets are redacted before anything is written; see the issue #1161 design spec.
+
+``capture(path, raw=True)`` keeps response bodies, command output and exception text
+whole even when they name a secret keyword, for the read-only sweep of issue #1202,
+whose exporter tokenizes them afterwards. Logon exchanges, request bodies, commands,
+session headers and echoed session values are still redacted, and a raw destination must be outside every
+git work tree.
 """
 
 from __future__ import annotations
@@ -90,6 +96,17 @@ def destination_is_ignored(path: Path) -> bool:
     return proc.returncode != 1
 
 
+def inside_work_tree(path: Path) -> bool:
+    """Report whether *path*'s directory lies inside any git work tree."""
+    proc = subprocess.run(
+        ["git", "-C", str(path.parent.resolve()), "rev-parse", "--is-inside-work-tree"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
+
+
 def _text(value: str | bytes | None) -> str | None:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
@@ -131,15 +148,25 @@ def _exception_text(exc: BaseException) -> str:
 class Capture:
     """Writes records to one destination and labels them with the current step."""
 
-    def __init__(self, path: Path, fd: int) -> None:
+    def __init__(self, path: Path, fd: int, *, raw: bool = False) -> None:
         self._path = path
         self._fd = fd
+        self._raw = raw
         self._step = "init"
         self._enabled = True
 
     def step(self, name: str) -> None:
         """Label the records that follow."""
         self._step = name
+
+    def _answer(self, text: str | bytes | None, *, logon: bool = False) -> str | None:
+        """Redact what the HMC answered; raw keeps all of it but logons and sessions."""
+        if not self._raw or logon:
+            return _redact(text, logon=logon)
+        value = _text(text)
+        for pattern in _SESSION_VALUES:
+            value = value and pattern.sub(rf"\g<1>{SESSION_REDACTED}", value)
+        return value
 
     def _emit(self, build: Callable[..., dict[str, Any]], *args: Any) -> None:
         """Write one record; on any recorder failure, disable and say so once."""
@@ -173,11 +200,11 @@ class Capture:
             "request_body": _redact(body, logon=logon),
         }
         if isinstance(outcome, BaseException):
-            record["exception"] = _redact(_exception_text(outcome), logon=logon)
+            record["exception"] = self._answer(_exception_text(outcome), logon=logon)
         else:
             record["status"] = outcome.status_code
             record["response_headers"] = _safe_headers(outcome.headers)
-            record["body"] = _redact(outcome.text, logon=logon)
+            record["body"] = self._answer(outcome.text, logon=logon)
         return record
 
     def _ssh_record(self, command: Any, outcome: Any) -> dict[str, Any]:
@@ -187,11 +214,11 @@ class Capture:
             outcome, asyncssh.ProcessError
         )
         if not completed or isinstance(outcome, asyncssh.TimeoutError):
-            record["exception"] = _redact(_exception_text(outcome))
+            record["exception"] = self._answer(_exception_text(outcome))
         if completed:
             record["exit_status"] = outcome.exit_status
-            record["stdout"] = _redact(outcome.stdout)
-            record["stderr"] = _redact(outcome.stderr)
+            record["stdout"] = self._answer(outcome.stdout)
+            record["stderr"] = self._answer(outcome.stderr)
         return record
 
     def wrap_request(self, original: Callable[..., Any]) -> Callable[..., Any]:
@@ -223,8 +250,12 @@ class Capture:
 
 
 @contextlib.contextmanager
-def capture(path: Path) -> Iterator[Capture]:
-    """Record every HMC REST call and SSH command made inside the block to *path*."""
+def capture(path: Path, *, raw: bool = False) -> Iterator[Capture]:
+    """Record every HMC REST call and SSH command made inside the block to *path*.
+
+    *raw* keeps answers unredacted (see the module docstring) and refuses a
+    destination inside any git work tree, ignored or not.
+    """
     global _ACTIVE
     if _ACTIVE:
         raise RuntimeError(
@@ -233,6 +264,11 @@ def capture(path: Path) -> Iterator[Capture]:
     if not path.parent.is_dir():
         raise ValueError(
             f"capture destination parent {path.parent} does not exist; create it first"
+        )
+    if raw and inside_work_tree(path):
+        raise ValueError(
+            f"raw capture destination {path} is inside a git work tree; "
+            "write raw captures to a private directory outside every repository"
         )
     if not destination_is_ignored(path):
         raise ValueError(
@@ -255,7 +291,7 @@ def capture(path: Path) -> Iterator[Capture]:
     _ACTIVE = True
     original_request = HMCClient._request
     original_run = asyncssh.SSHClientConnection.run
-    cap = Capture(path, fd)
+    cap = Capture(path, fd, raw=raw)
     try:
         HMCClient._request = cap.wrap_request(original_request)  # type: ignore[method-assign]
         asyncssh.SSHClientConnection.run = cap.wrap_run(original_run)  # type: ignore[method-assign]

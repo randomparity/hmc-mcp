@@ -583,3 +583,70 @@ def test_record_completing_after_exit_writes_nothing(
     asyncio.run(scenario())
     assert dest.read_text() == ""
     assert capsys.readouterr().err == ""  # no write attempted on the closed fd
+
+
+# --- raw mode (#1202) ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("keyword", _KEYWORDS[:6])
+def test_raw_mode_keeps_answers_that_name_a_secret_keyword(
+    monkeypatch: pytest.MonkeyPatch, dest: Path, keyword: str
+) -> None:
+    body = f"<UserProfile><{keyword}Policy>on</{keyword}Policy></UserProfile>"
+    _install_rest(monkeypatch, _response(body))
+    with capture.capture(dest, raw=True):
+        _rest("GET")
+    assert _records(dest)[0]["body"] == body
+
+
+def test_raw_mode_keeps_command_output_and_exceptions(
+    monkeypatch: pytest.MonkeyPatch, dest: Path
+) -> None:
+    _install_ssh(monkeypatch, _Result(0, "passwd_policy=on", "SSHKey missing"))
+    with capture.capture(dest, raw=True):
+        _ssh("lshmcusr -F passwd_policy")
+    (rec,) = _records(dest)
+    assert (rec["stdout"], rec["stderr"]) == ("passwd_policy=on", "SSHKey missing")
+
+
+def test_raw_mode_still_redacts_requests_logons_and_sessions(
+    monkeypatch: pytest.MonkeyPatch, dest: Path
+) -> None:
+    _install_rest(
+        monkeypatch, _response("{cookie=JSESSIONID=abc123, x-api-session=tok}")
+    )
+    with capture.capture(dest, raw=True):
+        _rest("PUT", "/rest/api/uom/x", content="password=hunter2")
+        _rest("PUT", "/rest/api/web/Logon", content="<user>u</user>")
+    first, logon = _records(dest)
+    assert first["request_body"] == capture.SECRET_REDACTED
+    assert "abc123" not in first["body"]
+    assert "tok}" not in first["body"]
+    assert logon["body"] == logon["request_body"] == capture.LOGON_REDACTED
+
+
+def test_default_mode_is_still_wholesale(
+    monkeypatch: pytest.MonkeyPatch, dest: Path
+) -> None:
+    _install_rest(monkeypatch, _response("<PasswordPolicy>on</PasswordPolicy>"))
+    with capture.capture(dest):
+        _rest("GET")
+    assert _records(dest)[0]["body"] == capture.SECRET_REDACTED
+
+
+def test_raw_mode_refuses_any_destination_in_a_work_tree(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path / "repo")
+    target = repo / "a.capture.jsonl"
+    assert capture.destination_is_ignored(target)
+    with (
+        pytest.raises(ValueError, match="inside a git work tree"),
+        capture.capture(target, raw=True),
+    ):
+        pass
+    assert not target.exists()
+
+
+def test_raw_mode_accepts_a_destination_outside_any_repository(dest: Path) -> None:
+    with capture.capture(dest, raw=True):
+        pass
+    assert dest.exists()

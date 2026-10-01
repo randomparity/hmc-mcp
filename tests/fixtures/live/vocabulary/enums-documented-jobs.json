@@ -1,0 +1,39 @@
+{
+ "firmware": "documented",
+ "sources": [
+  "docs/refs/hmc-rest-api-p10/016-job-status.md:16-27 (the ten job statuses)",
+  "docs/refs/hmc-rest-api-p10/jobs/managementconsole-jobs/091-listmanagementconsoleupdates_managementconsole-job.md:39 (COMPLETED)",
+  "docs/refs/hmc-rest-api-p10/jobs/managementconsole-jobs/092-liststoragemediadevices_managementconsole-job.md:41 (COMPLETED)"
+ ],
+ "types": {
+  "JobStatus.Enum": [
+   "CANCELED_BEFORE_START",
+   "CANCELED_WHILE_RUNNING",
+   "COMPLETED_WITH_WARNINGS",
+   "COMPLETED_WITH_ERROR",
+   "FAILED_TO_START",
+   "FAILED_BEFORE_COMPLETION",
+   "NOT_STARTED",
+   "RUNNING",
+   "FAILED_BEFORE_COMPLETION_RETRY",
+   "COMPLETED_OK",
+   "COMPLETED"
+  ]
+ },
+ "elements": {
+  "Status": "JobStatus.Enum"
+ },
+ "evidence": {
+  "CANCELED_BEFORE_START": "documented-only",
+  "CANCELED_WHILE_RUNNING": "documented-only",
+  "COMPLETED_WITH_WARNINGS": "documented-only",
+  "COMPLETED_WITH_ERROR": "captured",
+  "FAILED_TO_START": "documented-only",
+  "FAILED_BEFORE_COMPLETION": "documented-only",
+  "NOT_STARTED": "captured",
+  "RUNNING": "captured",
+  "FAILED_BEFORE_COMPLETION_RETRY": "documented-only",
+  "COMPLETED_OK": "captured",
+  "COMPLETED": "documented-only"
+ }
+}

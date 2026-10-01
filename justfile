@@ -78,9 +78,13 @@ adr-numbering:
 doc-freshness:
     uv run --no-sync python scripts/check_generated_docs.py
 
+# verify HMC-shaped literals and read paths in src/ and tests/ match captured vocabularies
+live-vocabulary:
+    uv run --no-sync python scripts/check_live_vocabulary.py
+
 # local and hosted static-analysis gate
 static: lint format-check typecheck secrets workflow-security env-vars nicknames test-layout \
-        capability-inventory tool-docs-check adr-numbering doc-freshness
+        capability-inventory tool-docs-check adr-numbering doc-freshness live-vocabulary
 
 # run the full pytest suite with one semantic summary
 test:

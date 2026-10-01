@@ -42,27 +42,6 @@ def _job_entry(status: str, *, self_href: str | None = None) -> str:
     )
 
 
-_FAILED_ENTRY = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    '<entry xmlns="http://www.w3.org/2005/Atom">\n'
-    f"  <id>urn:uuid:{_JOB_ID}</id>\n"
-    '  <content type="application/vnd.ibm.powervm.uom+xml">\n'
-    '    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/'
-    'mc/2012_10/">\n'
-    f"      <JobID>{_JOB_ID}</JobID>\n"
-    "      <Status>FAILED</Status>\n"
-    "      <Results>\n"
-    "        <JobParameter>\n"
-    "          <ParameterName>result</ParameterName>\n"
-    "          <ParameterValue>boot device missing</ParameterValue>\n"
-    "        </JobParameter>\n"
-    "      </Results>\n"
-    "    </Job>\n"
-    "  </content>\n"
-    "</entry>\n"
-)
-
-
 def _no_such_job() -> httpx.Response:
     """The captured V10R3 answer for a job the HMC does not have (404 REST0005)."""
     return live_response("rest-job-not-found")[1]
