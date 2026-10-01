@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import stat
 from dataclasses import replace
 from pathlib import Path
 
@@ -111,6 +112,7 @@ def test_report_writes_system_hmc_fleet_and_failure_rows(configured, tmp_path) -
     result = RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(out)])
 
     assert result.exit_code == 0, result.output
+    assert stat.S_IMODE(out.stat().st_mode) == 0o600
     rows = _rows(out)
     assert [row["row_type"] for row in rows] == [
         "system", "system", "hmc", "hmc", "fleet", "failure",
@@ -222,6 +224,7 @@ def test_unknown_profile_is_a_usage_error(configured, tmp_path) -> None:
     [
         ("HMC_HOST", "elsewhere.test"),
         ("HMC_HOST", ""),
+        ("hmc_host", "elsewhere.test"),
         ("HMC_USER", "someone"),
         ("HMC_PASSWORD", "secret"),
         ("HMC_PORT", "12443"),
@@ -237,7 +240,7 @@ def test_exported_connection_override_is_refused(
     )
 
     assert result.exit_code == 2
-    assert f"unset {name}" in result.stderr
+    assert f"unset {name.upper()}" in result.stderr
     assert "profiles" not in configured
 
 
@@ -273,8 +276,8 @@ def test_root_connection_option_is_refused(configured, tmp_path) -> None:
 def test_write_failure_keeps_failure_lines_and_leaves_no_file(
     configured, tmp_path, monkeypatch
 ) -> None:
-    def broken(path, rows):
-        path.write_text("partial", encoding="utf-8")
+    def broken(stream, rows):
+        stream.write("partial")
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(report, "write_csv", broken)
@@ -286,6 +289,40 @@ def test_write_failure_keeps_failure_lines_and_leaves_no_file(
     assert "hmc-c" in result.stderr
     assert "No space left on device" in result.stderr
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("value", ["nan", "inf"])
+def test_non_finite_hmc_timeout_is_a_usage_error(configured, tmp_path, value) -> None:
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(tmp_path / "r.csv"),
+         "--hmc-timeout", value],
+    )  # fmt: skip
+
+    assert result.exit_code == 2
+    assert "profiles" not in configured
+
+
+def test_fleet_row_discloses_systems_it_cannot_deduplicate(
+    configured, tmp_path, monkeypatch
+) -> None:
+    unidentified = replace(_reading("hmc-b", "SER0002"), serial=None)
+
+    async def fake(profiles, open_client, *, concurrency, hmc_timeout):
+        return FleetSurvey(
+            ("hmc-a", "hmc-b"), (_reading("hmc-a", "SER0001"), unidentified), ()
+        )
+
+    monkeypatch.setattr(report, "survey_fleet", fake)
+    out = tmp_path / "r.csv"
+    result = RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(out)])
+
+    assert result.exit_code == 0, result.output
+    fleet = next(row for row in _rows(out) if row["row_type"] == "fleet")
+    assert fleet["notes"] == (
+        "1 systems have no machine type-model-serial, so one managed by two HMCs "
+        "is counted twice"
+    )
 
 
 def test_missing_directory_is_a_usage_error_before_surveying(

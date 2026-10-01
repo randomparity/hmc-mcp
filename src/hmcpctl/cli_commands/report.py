@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import csv
+import math
 import os
 import tempfile
 from dataclasses import fields
 from pathlib import Path
+from typing import TextIO
 
 import typer
 from pydantic import ValidationError
@@ -202,13 +204,23 @@ def report_rows(survey: FleetSurvey) -> list[dict[str, str]]:
         if profile not in failed
     )
     fleet = _rollup_row("fleet", "", rollup(s.reading for s in systems))
-    if survey.failures:
-        missing = (
-            f"{len(survey.failures)} of {len(survey.profiles)} profiles failed "
-            f"({', '.join(failure.profile for failure in survey.failures)}); "
-            "systems only they manage are absent"
-        )
-        fleet["notes"] = "; ".join(note for note in (missing, fleet["notes"]) if note)
+    missing = (
+        f"{len(survey.failures)} of {len(survey.profiles)} profiles failed "
+        f"({', '.join(failure.profile for failure in survey.failures)}); "
+        "systems only they manage are absent"
+        if survey.failures
+        else ""
+    )
+    unidentified = sum(1 for system in systems if system.reading.serial is None)
+    doubled = (
+        f"{unidentified} systems have no machine type-model-serial, so one managed by "
+        "two HMCs is counted twice"
+        if unidentified
+        else ""
+    )
+    fleet["notes"] = "; ".join(
+        note for note in (missing, doubled, fleet["notes"]) if note
+    )
     rows.append(fleet)
     rows.extend(
         {"row_type": "failure", "profiles": failure.profile, "notes": failure.reason}
@@ -217,12 +229,11 @@ def report_rows(survey: FleetSurvey) -> list[dict[str, str]]:
     return rows
 
 
-def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
-    """Write *rows* under the stable ``COLUMNS`` header."""
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS, restval="")
-        writer.writeheader()
-        writer.writerows(_inert(row) for row in rows)
+def write_csv(stream: TextIO, rows: list[dict[str, str]]) -> None:
+    """Write *rows* to *stream* under the stable ``COLUMNS`` header."""
+    writer = csv.DictWriter(stream, fieldnames=COLUMNS, restval="")
+    writer.writeheader()
+    writer.writerows(_inert(row) for row in rows)
 
 
 def _inert(row: dict[str, str]) -> dict[str, str]:
@@ -235,16 +246,19 @@ def _inert(row: dict[str, str]) -> dict[str, str]:
     }
 
 
-def _scratch_file(csv_path: Path) -> Path:
-    """Create the owner-only temporary file the report is written to, beside *csv_path*."""
+def _scratch_file(csv_path: Path) -> tuple[int, Path]:
+    """Create the owner-only temporary file the report is written to, beside *csv_path*.
+
+    The open descriptor is returned so the report is written to the file mkstemp
+    created, not to whatever its name points at by the time the survey ends.
+    """
     try:
         handle, name = tempfile.mkstemp(
             prefix=f".{csv_path.name}.", suffix=".tmp", dir=csv_path.parent
         )
     except OSError as exc:
         usage_error(f"cannot write the report beside {csv_path}: {exc}")
-    os.close(handle)
-    return Path(name)
+    return handle, Path(name)
 
 
 def _selected_profiles(requested: list[str] | None) -> list[str]:
@@ -288,6 +302,10 @@ def report_utilization(
     The report holds internal hostnames, system names and serials: never commit it
     or post it publicly.
     """
+    if not math.isfinite(hmc_timeout):
+        usage_error(
+            f"--hmc-timeout must be a finite number of seconds, got {hmc_timeout}"
+        )
     exported = [name for name in _PROFILE_OVERRIDES if env_var_value(name) is not None]
     if exported:
         usage_error(
@@ -319,18 +337,19 @@ def report_utilization(
             raise ConfigError(f"profile {profile!r} is invalid: {problems}") from None
         return HMCClient(config)
 
-    scratch = _scratch_file(csv_path)
+    handle, scratch = _scratch_file(csv_path)
     try:
-        survey = run_cli_coroutine(
-            lambda: survey_fleet(
-                selected, opened, concurrency=concurrency, hmc_timeout=hmc_timeout
+        with os.fdopen(handle, "w", newline="", encoding="utf-8") as stream:
+            survey = run_cli_coroutine(
+                lambda: survey_fleet(
+                    selected, opened, concurrency=concurrency, hmc_timeout=hmc_timeout
+                )
             )
-        )
-        for failure in survey.failures:
-            err_console.print(
-                f"[yellow]{escape(failure.profile)}[/yellow]: {escape(failure.reason)}"
-            )
-        write_csv(scratch, report_rows(survey))
+            for failure in survey.failures:
+                err_console.print(
+                    f"[yellow]{escape(failure.profile)}[/yellow]: {escape(failure.reason)}"
+                )
+            write_csv(stream, report_rows(survey))
         scratch.replace(csv_path)
     except OSError as exc:
         fail(exc)

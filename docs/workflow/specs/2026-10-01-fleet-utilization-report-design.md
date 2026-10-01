@@ -25,8 +25,9 @@ read-only: it issues only the GETs below.
 - `survey_fleet(profiles, open_client, *, concurrency=4, hmc_timeout=300.0) -> FleetSurvey`
   surveys each named profile at most `concurrency` at a time. Each profile gets one
   `open_client(profile)` client and one `hmc_timeout`-second deadline covering logon and every
-  read. Closing the session after the deadline fires is not covered by it, so the client's own
-  logoff can add up to that profile's request timeout (`HMC_TIMEOUT`, 180 s by default).
+  read. Closing the session after the deadline fires is not covered by it; the client's own
+  logoff is bounded only by its per-request `HMC_TIMEOUT` settings (180 s by default), which
+  httpx applies per phase.
 - Per profile: `list_managed_systems()`; then, per system, `list_logical_partitions(uuid)`,
   `list_vios(uuid)`, and, for each never-applied partition only,
   `list_child("LogicalPartition", uuid, "LogicalPartitionProfile")`.
@@ -41,7 +42,8 @@ read-only: it issues only the GETs below.
 - A never-applied partition whose profile claim cannot be read records a gap naming why: no
   `AssociatedPartitionProfile` link, a linked profile absent from the partition's profile
   feed, or a profile without `HasDedicatedProcessors`.
-- A figure missing from, or not numeric in, an HMC answer is `None`. No figure defaults to 0.
+- A figure missing from, or not a finite number in, an HMC answer is `None`. No figure
+  defaults to 0.
 
 Records (frozen dataclasses; figures are `None` when unknown):
 
@@ -113,7 +115,10 @@ columns are `cpu_util_pct` and `mem_util_pct`, beside `cpu_allocated` and `mem_a
 (configurable minus free, over the same systems as the percentage). A system row's `notes` holds its gaps. A roll-up
 row's `notes` names each column some of its systems lack, as
 `<column>: <n> of <systems> systems unknown`. When profiles failed, the `fleet` row's `notes`
-begins `<n> of <m> profiles failed (<names>); systems only they manage are absent`. A text
+begins `<n> of <m> profiles failed (<names>); systems only they manage are absent`, followed,
+when any fleet system lacks a machine type-model-serial, by `<n> systems have no machine
+type-model-serial, so one managed by two HMCs is counted twice`. A roll-up over no systems
+reports 0 for each figure and `unknown` utilization. A text
 cell (`profiles`, `system`, identity, `firmware`, `state`) starting with `=`, `+`, `-`, `@`,
 tab or carriage return is written with a leading `'`, so a spreadsheet does not evaluate it.
 

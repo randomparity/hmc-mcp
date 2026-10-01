@@ -185,9 +185,9 @@ reported both configurable and free capacity.
 
 The command surveys 4 profiles at a time (`--concurrency`) and gives each one 300 seconds
 (`--hmc-timeout`) for logon and every read. A profile that runs out of time becomes a `failure`
-row and keeps none of its readings. Ending its HMC session afterwards can take up to that
-profile's `HMC_TIMEOUT` more. A profile whose reads all finished keeps them even if ending its
-session fails; stderr carries a warning instead. A system the HMC cannot list is absent from the report, with only
+row and keeps none of its readings. Ending its HMC session afterwards is bounded by the client's
+own per-request `HMC_TIMEOUT` settings, not by `--hmc-timeout`. A profile whose reads all
+finished keeps them even if ending its session fails; stderr carries a warning instead. A system the HMC cannot list is absent from the report, with only
 a warning on stderr. The CSV replaces `PATH` only once it is complete.
 
 The command refuses to run when `HMC_HOST`, `HMC_USER`, `HMC_PASSWORD`, `HMC_PORT` or
@@ -198,6 +198,8 @@ them; the global options would be ignored. `HMC_TIMEOUT` and `HMC_SCHEMA_VERSION
 to every profile.
 
 When profiles fail, the `fleet` row's `notes` says how many and which: a system that only a
-failed profile manages is missing from the fleet totals. A text cell that would start with
+failed profile manages is missing from the fleet totals. It also says how many systems
+reported no machine type-model-serial: those cannot be deduplicated, so one managed by two
+HMCs counts twice. A roll-up over no systems reads 0. A text cell that would start with
 `=`, `+`, `-` or `@` is written with a leading `'` so a spreadsheet shows it rather than
 evaluating it.
