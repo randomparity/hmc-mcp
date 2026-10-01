@@ -57,8 +57,10 @@ The operator decided on 2026-10-01 that the crash gets an operation id distinct 
 - The MCP crash no longer carries `immediate` or `restart`. The live arm sent both as `false`,
   and no recorded use sends anything else. Adding them later is an additive parameter.
 - `lpar.power_off` loses its `dump-restart` implemented-scope variant in
-  `docs/capabilities/maturity.json`. `lpar.dump_restart` enters with that variant and no live
-  evidence, so it reads `unevidenced`. The bare-CEC arm's opt-in dump step records an ordinary
+  `docs/capabilities/maturity.json`. Its existing live observation stays with it and no longer
+  covers the crash. That observation already reads `stale` (`closure-changed`) on `main`, so no
+  verified operation leaves a current state. `lpar.dump_restart` enters with that variant and no
+  live evidence, so it reads `unevidenced`. The bare-CEC arm's opt-in dump step records an ordinary
   row, not a `record_verified` one, so promoting the operation needs a verified step this change
   does not add.
 - The tool count rises by one.
