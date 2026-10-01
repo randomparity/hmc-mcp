@@ -64,13 +64,15 @@ Three subcommands, all offline:
     attribute or JSON key name, or a CLI field name), a value of any schema enum
     found in the captured `Enumerations.xsd`, or an HMC sentinel or message
     (`No results were found.`, `null`, `none`, `N/A`, `unavailable`, `Unknown`,
-    `HSCL…` text);
+    `HSCL…` text), a built-in account (`root`, `hscroot`, `hscpe`, `admin`), or text
+    found inside fixed HMC vocabulary such as a `ManagedTaskName` (`View HMC Logs`);
   - replacement is whole-word, longest first;
   - SSH public keys (with their comment, up to the next `<`), the
     `PublicSSHKeyValue`/`AuthorizedKeysValue` elements whole, session tokens, cookies,
     MAC addresses, device identifiers (`VolumeUniqueID`, `UniqueDeviceID`,
-    `MediaUDID`, `DescriptorPage83`, `UDID`, WWPN elements, `unique_id=`, `udid=`, `wwpn=`,
-    `serial_num=`), serial numbers, address elements (`IPAddress`, `NetworkAddress`,
+    `MediaUDID`, `DescriptorPage83`, `UDID`, WWPN and WWNN elements, `unique_id=`, `udid=`,
+    `wwpn(s)=`, `wwnn=`, `serial_num=`, a quoted CSV field whole, and any other 16-hex
+    token that is not a LUN address), serial numbers, address elements (`IPAddress`, `NetworkAddress`,
     …) whole, IPv4 and IPv6 addresses (but not colon-separated SR-IOV records of short
     decimal fields), e-mail addresses and every host found in an `https://` URL
     become fixed tokens;
@@ -84,7 +86,7 @@ Three subcommands, all offline:
   - UUIDs map to `NNNNNNNN-abcd-4ef0-8abc-NNNNNNNNNNNN` in the case printed;
   - **fail closed:** after tokenizing, the run exits 1 without writing when any collected
     name, URL host, `--private` pattern match, IP address, location code, `-L` disk
-    WWN segment or run of twenty or more upper-case hex digits survives,
+    WWN segment, 16-hex WWN or run of twenty or more upper-case hex digits survives,
     or when a body that parsed as XML no longer parses.
 - `vocabulary CORPUS --enums ENUMS --firmware F --source TEXT [--fold D --fold-source
   TEXT]... --out V.json` derives a vocabulary; `--fold` adds the REST values and

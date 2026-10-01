@@ -209,8 +209,24 @@ def test_ssh_key_element_is_redacted_and_escaped() -> None:
         ),
         (
             "wwpns=c0507609abcd0001,c0507609abcd0002",
-            "c0507609abcd0001",
-            "c050760000000000",
+            "c0507609abcd0002",
+            "wwpns=<REDACTED-DEVID>,<REDACTED-DEVID>",
+        ),
+        (
+            'x,"wwpns=c0507609abcd0001,c0507609abcd0002",y',
+            "c0507609abcd0002",
+            'x,"wwpns=<REDACTED-DEVID>",y',
+        ),
+        ("wwnn=c0507600000000ff", "c0507600000000ff", "wwnn=<REDACTED-DEVID>"),
+        (
+            "/vdevice/vfc-client@30000002/disk@5005076800000001,0",
+            "5005076800000001",
+            "disk@<REDACTED-DEVID>,0",
+        ),
+        (
+            "AIX-VDASD-00C1000000000007 disk",
+            "00C1000000000007",
+            "AIX-VDASD-<REDACTED-DEVID>",
         ),
         ("8375-42A*1234ABC", "1234ABC", "<REDACTED-SERIAL>"),
         ("serial_num=1234ABC", "1234ABC", "serial_num=<REDACTED-DEVID>"),
@@ -635,7 +651,7 @@ def test_built_in_accounts_are_not_names() -> None:
         ("UniqueDeviceID", "<REDACTED-DEVID>"),
         ("volume_unique_id", "<REDACTED-DEVID>"),
         ("udid", "<REDACTED-DEVID>"),
-        ("AvailableWWPNs", "<REDACTED-DEVID>"),
+        ("WWPNs", "<REDACTED-DEVID>"),
         ("LogicalUnitUDID", "<REDACTED-DEVID>"),
         ("SerialNumber", "<REDACTED-SERIAL>"),
         ("LogicalSerialNumber", "<REDACTED-SERIAL>"),
@@ -677,3 +693,58 @@ def test_long_uppercase_hex_fails_closed(monkeypatch: pytest.MonkeyPatch) -> Non
     }
     with pytest.raises(export.LeakError):
         export.tokenize_records(_records(tool))
+
+
+def test_lun_address_is_not_a_wwn() -> None:
+    corpus = export.tokenize_records(_records(_ssh("lsmap", "lun 8100000000000000\n")))
+    assert corpus[-1]["stdout"] == "lun 8100000000000000\n"
+
+
+def test_surviving_16_hex_wwn_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    rules = tuple(r for r in export.IDENTIFIER_RULES if r[0].pattern != export._WWN_16)
+    monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_ssh("lsmap", "disk@5005076800000001,0")))
+
+
+def test_wrapped_wwnn_text_is_redacted_in_tool_output() -> None:
+    wrapped = {"@attrs": {"ksv": "V1_0"}, "text": "c05076000001"}
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "hmc_list_fc_ports",
+        "ok": True,
+        "data": [{"WWNN": wrapped, "WorldWideNodeName": "c05076000002"}],
+    }
+    corpus = export.tokenize_records(_records(tool))
+    port = corpus[-1]["record"]["data"][0]
+    assert port["WWNN"] == {"@attrs": {"ksv": "V1_0"}, "text": "<REDACTED-DEVID>"}
+    assert port["WorldWideNodeName"] == "<REDACTED-DEVID>"
+
+
+@pytest.mark.parametrize(
+    ("name", "task"), [("HMC Logs", "View HMC Logs"), ("HMC User", "View HMC Users")]
+)
+def test_names_inside_built_in_task_names_are_not_collected(
+    name: str, task: str
+) -> None:
+    """Regression: a name inside `View HMC …` task names failed four real exports."""
+    body = (
+        f"<TaskRole><Description>{name}</Description>"
+        f'<ManagedTaskName kb="ROR">{task}</ManagedTaskName></TaskRole>'
+    )
+    corpus = export.tokenize_records(_records(_rest("/roles", body)))
+    assert corpus[-1]["body"] == body
+
+
+def test_available_wwpn_count_is_not_an_identifier() -> None:
+    """AvailableWWPNs is how many WWPNs remain, a count the vocabulary keeps as <int>."""
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "hmc_get_system",
+        "ok": True,
+        "data": {"AvailableWWPNs": "65536"},
+    }
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"] == {"AvailableWWPNs": "65536"}

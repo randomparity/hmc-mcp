@@ -99,10 +99,13 @@ BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 
 Replacement = str | Callable[[re.Match[str]], str]
 
+_WWN_16 = r"\b(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
+
 #: Elements whose whole text is a device identifier.
 _DEVICE_ID_ELEMENTS = (
     "VolumeUniqueID|UniqueDeviceID|MediaUDID|DescriptorPage83|GroupSerialID|UDID|UniqueID"
     "|SerialNumberOfDisk|DeviceSerialNumber|WorldWidePortName|WWPN|PortWWPN"
+    "|WorldWideNodeName|WWNN"
 )
 _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 
@@ -177,8 +180,13 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b[^>]*>)[^<]+"),
         r"\g<1><REDACTED-DEVID>",
     ),
+    # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
-        re.compile(r"(?i)\b(unique_id|udid|wwpn|serial_num)=[^,\n\"]+"),
+        re.compile(r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num)=[^"\n]*"'),
+        r'"\g<1>=<REDACTED-DEVID>"',
+    ),
+    (
+        re.compile(r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num)=[^,\n\"]+"),
         r"\g<1>=<REDACTED-DEVID>",
     ),
     (
@@ -190,19 +198,24 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (re.compile(r"(?i)\b(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"), _ipv6),
-    (re.compile(r"(?i)\bc0?50[0-9a-f]{13,14}\b"), "c050760000000000"),
-    (re.compile(r"(?i)\b(wwpns=)[0-9a-f,]+"), r"\g<1>c050760000000000"),
+    # Any other 16-hex token is a WWN: a `disk@<target WWPN>` path, an
+    # `AIX-VDASD-<hex>` descriptor. A LUN address (`81` and fourteen zeros) is not.
+    (re.compile(_WWN_16), "<REDACTED-DEVID>"),
 )
 #: Shapes that may never appear in a tokenized output, whatever was collected.
 ALWAYS_LEAKS = (
     re.compile(rf"\b(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
     re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"-L[0-9A-F]{8,}"),
+    re.compile(_WWN_16),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
     # A long upper-case hex run is a volume id or WWN; no UUID, etag or count is one.
     re.compile(r"(?<![0-9A-Za-z])[0-9A-F]{20,}"),
 )
+#: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
+#: A candidate name found inside one is HMC wording, never a private name.
+BUILT_IN_VOCABULARY_ELEMENTS = ("ManagedTaskName", "ManagedTaskType", "ManagedTaskKey")
 #: HMC sentinels and messages: data the tests need verbatim, never a name.
 SENTINELS = {
     "No results were found",
@@ -291,9 +304,10 @@ def cli_rows(command: str, stdout: str) -> list[dict[str, str]]:
 class NameCollector:
     """Maps each name found in the captures to a stable token."""
 
-    def __init__(self, excluded: set[str]) -> None:
+    def __init__(self, excluded: set[str], phrases: Iterable[str] = ()) -> None:
         self.names: dict[str, str] = {}
         self._excluded = excluded
+        self._phrases = tuple(phrases)
         self._counts: collections.Counter[str] = collections.Counter()
 
     def add(self, kind: str, value: str | None) -> None:
@@ -308,6 +322,7 @@ class NameCollector:
             or value.startswith(("HSCL", "No results"))
             or re.fullmatch(r"[0-9.]+", value)
             or UUID.fullmatch(value)
+            or any(value in phrase for phrase in self._phrases)
         ):
             return
         self._counts[kind] += 1
@@ -327,8 +342,15 @@ class NameCollector:
 def collect_names(records: Sequence[dict[str, Any]]) -> dict[str, str]:
     texts = [_text_of(record) for record in records]
     excluded = structural_identifiers(texts) | schema_enum_values(records)
-    collector = NameCollector(excluded)
     blob = "\n".join(texts)
+    phrases = {
+        value.strip()
+        for element in BUILT_IN_VOCABULARY_ELEMENTS
+        for value in re.findall(
+            rf"<(?:\w+:)?{element}(?:\s[^>]*)?>([^<]+)</(?:\w+:)?{element}>", blob
+        )
+    }
+    collector = NameCollector(excluded, phrases)
     for element, kind in NAME_ELEMENTS.items():
         pattern = rf"<(?:\w+:)?{element}(?:\s[^>]*)?>([^<]+)</(?:\w+:)?{element}>"
         for value in re.findall(pattern, blob):
@@ -447,7 +469,6 @@ def _key(name: str) -> str:
 #: rules see only XML elements and `key=value` fields, never this JSON form.
 _DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
     "wwpns",
-    "availablewwpns",
     "wwpnprefix",
     "logicalunitudid",
     "luudid",
