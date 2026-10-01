@@ -9,10 +9,11 @@ from dataclasses import fields
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 from rich.markup import escape
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.config import config_inventory, env_var_value, load_profile
+from hmcpctl.config import ConfigError, config_inventory, env_var_value, load_profile
 from hmcpctl.operations.inventory.utilization import (
     CpuFigures,
     FleetSurvey,
@@ -262,7 +263,17 @@ def report_utilization(
         fail(exc)
 
     def opened(profile: str) -> HMCClient:
-        return HMCClient(load_profile(profile))
+        try:
+            config = load_profile(profile)
+        except ValidationError as exc:
+            # The failure reason lands in a circulated CSV; pydantic's own text echoes
+            # each rejected input, which can be the profile's password.
+            problems = "; ".join(
+                f"{'.'.join(map(str, error['loc']))}: {error['msg']}"
+                for error in exc.errors()
+            )
+            raise ConfigError(f"profile {profile!r} is invalid: {problems}") from None
+        return HMCClient(config)
 
     scratch = _scratch_file(csv_path)
     try:

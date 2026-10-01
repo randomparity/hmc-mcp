@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from hmcpctl import cli
 from hmcpctl.cli_commands import report
+from hmcpctl.config import ConfigError, HMCConfig
 from hmcpctl.operations.inventory.utilization import (
     CpuFigures,
     FleetSurvey,
@@ -182,6 +183,22 @@ def test_default_selects_every_profile_and_opens_each_with_load_profile(
     assert (configured["concurrency"], configured["hmc_timeout"]) == (2, 30.0)
     configured["open_client"]("hmc-b")
     assert loaded == ["hmc-b"]
+
+
+def test_invalid_profile_error_names_fields_without_their_values(
+    configured, tmp_path, monkeypatch
+) -> None:
+    def invalid(name: str) -> HMCConfig:
+        return HMCConfig.from_mapping({"host": "h", "user": "u", "password": 99887766})
+
+    monkeypatch.setattr(report, "load_profile", invalid)
+    RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(tmp_path / "r.csv")])
+
+    with pytest.raises(ConfigError) as caught:
+        configured["open_client"]("hmc-b")
+    assert "99887766" not in str(caught.value)
+    assert "hmc-b" in str(caught.value)
+    assert "password" in str(caught.value)
 
 
 def test_unknown_profile_is_a_usage_error(configured, tmp_path) -> None:
