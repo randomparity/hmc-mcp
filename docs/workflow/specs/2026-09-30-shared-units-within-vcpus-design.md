@@ -20,9 +20,12 @@ with desired vcpus defaulted to 1 reach the HMC and fail there.
 - REST: `_processor_config` raises `ValueError(message)` for a non-dedicated resource set
   before rendering, so `build_lpar_document` (create, provision, VIOS create) refuses before
   the PUT. `units == vcpus` is accepted.
-- `mksyscfg`: `_shared_processor_pairs` takes its vcpu defaults from `shared_vcpu_defaults`
-  (the duplicated literals are removed) and raises `HMCCLIError(message)` after the existing
-  #938/#949 guards, before any command runs.
+- `ssh/lpar.py`: `_shared_processors` (inside `complete_create_resources`, which #1164 made
+  the defaulting step of both the LPAR REST create and `mksyscfg`) takes its vcpu defaults from
+  `shared_vcpu_defaults` (the duplicated literals are removed) and raises
+  `HMCCLIError(message)` after the existing #938/#949 guards, before any command or PUT. LPAR
+  create, provision and the 406 fallback therefore refuse with `HMCCLIError` there; the
+  `_processor_config` `ValueError` is what refuses VIOS create and direct document builds.
 - Omitted vcpus on REST are validated as the `mksyscfg` defaults, per the issue's "effective
   vcpu count after defaults"; both paths therefore refuse the same input, and a REST 406 never
   reaches the fallback with a violating record. Omitted units are not checked on REST (the HMC
@@ -42,7 +45,7 @@ with desired vcpus defaulted to 1 reach the HMC and fail there.
    (`find_partition_by_name`, system UUID resolution) still precede the refusal, as for the
    existing document validation. `provision_lpar(dry_run=True)` does not build the document and
    does not refuse (provision preflight is out of this surface). A non-positive explicit vcpu
-   count is validated as its `mksyscfg` default (`or` semantics, as `_shared_processor_pairs`
+   count is validated as its `mksyscfg` default (`or` semantics, as `_shared_processors`
    sends it); REST renders it verbatim and leaves it to the HMC to reject (defaulting rules are
    excluded).
 4. Covered elsewhere: the per-vcpu minimum (#938, platform-specific); modify validation,
@@ -64,7 +67,7 @@ with desired vcpus defaulted to 1 reach the HMC and fail there.
 - REST refusal (S1): focused-test, parametrized case in `tests/unit/test_documents.py`; red
   before the `_processor_config` edit (no exception raised).
 - SSH refusal (S2): focused-test, parametrized case in `tests/lpar/test_lpar_http406.py`
-  asserting `run.assert_not_awaited()`; red before the `_shared_processor_pairs` edit.
+  asserting `run.assert_not_awaited()`; red before the `_shared_processors` edit.
 - Boundary and dedicated (S3): focused-test, same modules, `units == vcpus` renders/sends.
 - Unchanged behaviour (S4): focused-test, the existing #938/#949 and document tests.
 - CHANGELOG: task-test-not-applicable; prose read by humans, no executable consumer.

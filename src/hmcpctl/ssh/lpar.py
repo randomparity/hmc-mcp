@@ -144,7 +144,8 @@ async def create_lpar_via_cli(
     Raises :class:`HMCCLIError` on non-zero exit, and before any command when
     more than one virtual processor is requested without processing units,
     when the guessed ``max_proc_units`` default would exceed the requested
-    max vCPUs, or a request carries a fractional dedicated count or the other
+    max vCPUs, when explicit shared processing units exceed their level's
+    vCPUs, or a request carries a fractional dedicated count or the other
     processor mode's ``sharing_mode``. Omitted values take the defaults of
     :func:`complete_create_resources`, which the REST create uses too.
     """
@@ -204,8 +205,9 @@ def complete_create_resources(resources: LparResources) -> LparResources | None:
     and processor field the V10R3 create requires is filled -- its REST create
     refuses a document without them (``REST0126``), and ``mksyscfg`` has no
     default for a dedicated ``sharing_mode``. Raises :class:`HMCCLIError` for a
-    fractional dedicated count, a sharing mode of the other processor mode, or a
-    processing-unit default the requested virtual processors cannot use.
+    fractional dedicated count, a sharing mode of the other processor mode, or
+    processing units -- defaulted or explicit -- the requested virtual processors
+    cannot use.
     """
     mode = resources.sharing_mode
     if mode is not None and (not isinstance(mode, str) or mode not in SHARING_MODES):
