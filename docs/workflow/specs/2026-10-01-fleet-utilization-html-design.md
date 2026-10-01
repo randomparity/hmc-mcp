@@ -63,8 +63,8 @@ Rendering rules:
 
 - A cell whose value is `unknown` renders the word `unknown` (class `unknown`), never 0; an
   unknown utilization draws no bar. A bar's width is the percentage clamped to 0–100.
-- Every value from `rows` and `profiles` passes through `html.escape(value, quote=True)` at the
-  single interpolation helper; no other path writes row text.
+- Every interpolation of text from `rows` or `profiles` calls `html.escape(value, quote=True)`;
+  numbers the renderer formats itself are the only unescaped values.
 - Sorting: inline script; clicking a header sorts by each cell's `data-sort` (numeric when every
   known cell parses as a number), unknown cells always last.
 - A `<meta http-equiv="Content-Security-Policy">` sets `default-src 'none'`, `style-src
@@ -116,8 +116,8 @@ names both formats; `CHANGELOG.md` records the addition.
   quote config errors) into an HTML document. Widened — none.
 - **Actors**: whoever controls an HMC's reported names (an HMC administrator or a compromised
   HMC), and the page's reader, whose browser executes it. The operator is trusted.
-- **Controls**: escaping at one helper with `quote=True` (covers element and attribute contexts;
-  no row text is placed in script, style or URL contexts); the CSP hash blocks any inline script
+- **Controls**: `html.escape(..., quote=True)` at every interpolation of row or profile text
+  (covers element and attribute contexts; no row text is placed in script, style or URL contexts); the CSP hash blocks any inline script
   but the renderer's own and every network fetch; owner-only file mode from mkstemp.
 - **Out of scope**: a reader's browser ignoring CSP (escaping still holds); disclosure through the
   operator sharing the file (documented warning).
