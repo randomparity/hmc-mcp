@@ -223,9 +223,38 @@ def _literals(node: ast.AST) -> list[str] | None:
     return None
 
 
+def _assigned_element(name: str) -> str:
+    """The element an assignment target or keyword names: itself, or `Status` for a job.
+
+    `PartitionState="down"` names its element outright; `wait_job_status = "running"`
+    names a job's `Status`. Other snake_case names are hmcpctl's own parameters, whose
+    values are CLI or API forms rather than XML values, so they are not mapped.
+    """
+    return "Status" if name.lower().endswith("job_status") else name
+
+
+def _assignments(node: ast.AST) -> Iterator[tuple[str, ast.AST]]:
+    """(name, value) for `x = v`, `obj.x = v` and `f(x=v)`."""
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Attribute):
+                yield target.attr, node.value
+            elif isinstance(target, ast.Name):
+                yield target.id, node.value
+    elif isinstance(node, ast.keyword) and node.arg:
+        yield node.arg, node.value
+
+
 def _python_comparisons(tree: ast.AST) -> Iterator[tuple[str, str, int, Any]]:
-    """(element, value, line, case) for comparisons and dict entries keyed by an element."""
+    """(element, value, line, case) for comparisons, dict entries and assignments.
+
+    Each is keyed by an element: `x.get("PartitionState") == "running"`,
+    `{"PartitionState": "running"}`, `PartitionState="running"`.
+    """
     for node in ast.walk(tree):
+        for name, value in _assignments(node):
+            for literal in _literals(value) or ():
+                yield _assigned_element(name), literal, value.lineno, None
         if isinstance(node, ast.Compare):
             operands = [node.left, *node.comparators]
             for left, right in itertools.pairwise(operands):
