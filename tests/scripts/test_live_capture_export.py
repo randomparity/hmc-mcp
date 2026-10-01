@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -212,8 +213,20 @@ def test_ssh_key_element_is_redacted_and_escaped() -> None:
             "c050760000000000",
         ),
         ("8375-42A*1234ABC", "1234ABC", "<REDACTED-SERIAL>"),
-        ("serial_num=1234ABC", "1234ABC", "<REDACTED-SERIAL>"),
-        ("at U78D2.001.WZS01AB-P1-C2", "WZS01AB", "<REDACTED-LOC>"),
+        ("serial_num=1234ABC", "1234ABC", "serial_num=<REDACTED-DEVID>"),
+        ("at U78D2.001.WZS01AB-P1-C2", "WZS01AB", "at <REDACTED-LOC>-P1-C2"),
+        ("1eU8375.42A.ABCD123-V100-C3", "ABCD123", "1e<REDACTED-LOC>-V100-C3"),
+        (
+            "unique_id=3E21360050768,udid=AB12",
+            "3E21360050768",  # pragma: allowlist secret
+            "unique_id=<REDACTED-DEVID>",
+        ),
+        (
+            "udid=AB12CD34EF,x=1",  # pragma: allowlist secret
+            "AB12CD34EF",  # pragma: allowlist secret
+            "udid=<REDACTED-DEVID>,x=1",
+        ),
+        ("v6 2001:0:0:0:0:0:0:78 end", "2001:0:0", "v6 2001:db8::1 end"),
         ("from 10.20.30.40 ok", "10.20.30.40", "192.0.2.1"),
         ("from fe80::1a2b:3c4d ok", "fe80::1a2b", "2001:db8::1"),
         ("mail ops@example.org", "ops@example.org", "user@example.test"),
@@ -231,7 +244,11 @@ def test_identifier_rules(raw: str, gone: str, token: str) -> None:
     [
         ("MACAddress", "0A1B2C3D4E5F", "000000000000"),  # pragma: allowlist secret
         ("SerialNumber", "1234ABC", "&lt;REDACTED-SERIAL&gt;"),
-        ("WWPN", "c0507609abcd0001", "c050760000000000"),
+        ("WWPN", "c0507609abcd0001", "&lt;REDACTED-DEVID&gt;"),
+        ("VolumeUniqueID", "3E213600507680", "&lt;REDACTED-DEVID&gt;"),
+        ("IPAddress", "lab-console-7", "192.0.2.1"),
+        ("IPv6Address", "fe80::1", "192.0.2.1"),
+        ("NetworkAddress", "10.1.2.3", "192.0.2.1"),
         ("X-API-Session", "Zm9vYmFy", "&lt;REDACTED-SESSION&gt;"),
     ],
 )
@@ -438,3 +455,74 @@ def test_cli_reports_a_leak_without_writing(tmp_path: Path, capsys) -> None:
         export.IDENTIFIER_RULES = real
     assert not (tmp_path / "c2.json").exists()
     assert "nothing written" in capsys.readouterr().err
+
+
+def test_hmc_sentinels_are_never_names() -> None:
+    """Regression: `No results were found.` was collected as a name and tokenized."""
+    records = _records(
+        _ssh("lsviosbk -F name,type", "No results were found.\n"),
+        _ssh("lssyscfg -r lpar -F name", "HSCL8012 The partition was not found\n", 1),
+        _rest(
+            "/n",
+            "<Description>N/A</Description><PartitionName>unavailable</PartitionName>",
+        ),
+    )
+    corpus = export.tokenize_records(records)
+    assert corpus[-3]["stdout"] == "No results were found.\n"
+    assert corpus[-2]["stdout"] == "HSCL8012 The partition was not found\n"
+    assert "<Description>N/A</Description>" in corpus[-1]["body"]
+    assert "<PartitionName>unavailable</PartitionName>" in corpus[-1]["body"]
+
+
+def test_colon_positional_records_are_not_ipv6() -> None:
+    """SR-IOV and slot records are colon-separated short fields, not addresses."""
+    corpus = export.tokenize_records(
+        _records(_ssh("lshwres -r sriov", "1:0:1:3:0:5:1\n"))
+    )
+    assert corpus[-1]["stdout"] == "1:0:1:3:0:5:1\n"
+
+
+def test_replacements_never_put_a_digit_after_a_group_reference() -> None:
+    """Regression: `\\1000000000000` is an octal escape and ate the <MACAddress> tag."""
+    for _, replacement in (*export.SECRET_RULES, *export.IDENTIFIER_RULES):
+        if isinstance(replacement, str):
+            assert not re.search(r"\\\d\d", replacement), replacement
+
+
+def test_authorized_keys_element_is_redacted_whole() -> None:
+    """Regression: the key-comment match ate `</AuthorizedKeysValue>`."""
+    body = (
+        "<ManagementConsole><AuthorizedKeysValue>ssh-rsa AAAAB3NzaC1yc2EAAAADAQAB "
+        "root@hmcbox7</AuthorizedKeysValue></ManagementConsole>"
+    )
+    corpus = export.tokenize_records(_records(_rest("/mc", body)))
+    out = corpus[-1]["body"]
+    assert out == (
+        "<ManagementConsole><AuthorizedKeysValue>&lt;REDACTED-SSHKEY&gt;"
+        "</AuthorizedKeysValue></ManagementConsole>"
+    )
+
+
+def test_ssh_key_comment_stops_at_a_tag() -> None:
+    body = "<Keys><Key>ssh-rsa AAAAB3NzaC1yc2EAAAADAQAB root@hmcbox7</Key></Keys>"
+    corpus = export.tokenize_records(_records(_rest("/k2", body)))
+    assert (
+        corpus[-1]["body"] == "<Keys><Key>ssh-rsa &lt;REDACTED-SSHKEY&gt;</Key></Keys>"
+    )
+
+
+def test_broken_xml_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rule that corrupts a body that parsed is caught, and nothing is returned."""
+    rules = ((re.compile(r"<MACAddress>"), ""), *export.IDENTIFIER_RULES)
+    monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
+    body = "<Adapter><MACAddress>0A1B2C3D4E5F</MACAddress></Adapter>"  # pragma: allowlist secret
+    with pytest.raises(export.BrokenBodyError):
+        export.tokenize_records(_records(_rest("/m", body)))
+
+
+def test_surviving_location_code_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(export, "IDENTIFIER_RULES", ())
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(
+            _records(_ssh("lshwres", "drc 1eU8375.42A.ABCD123-V100-C3"))
+        )

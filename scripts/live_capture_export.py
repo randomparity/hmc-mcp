@@ -29,7 +29,7 @@ import re
 import shlex
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -91,29 +91,60 @@ TOKEN_KINDS = sorted(set(NAME_ELEMENTS.values()) | set(NAME_FIELDS.values()))
 #: Values that look like names but are words every HMC prints.
 _NOT_NAMES = {"null", "none", "default", "default_profile", "true", "false"}
 
-SECRET_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    # An SSH public key, base64 body and trailing comment both: the comment is
-    # conventionally user@host and leaked a lab host on 2026-09-30.
+Replacement = str | Callable[[re.Match[str]], str]
+
+#: Elements whose whole text is a device identifier.
+_DEVICE_ID_ELEMENTS = (
+    "VolumeUniqueID|UniqueDeviceID|DescriptorPage83|GroupSerialID|UDID|UniqueID"
+    "|SerialNumberOfDisk|DeviceSerialNumber|WorldWidePortName|WWPN|PortWWPN"
+)
+_ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
+
+
+def _ipv6(match: re.Match[str]) -> str:
+    """Redact an IPv6 address, but not a colon-separated HMC record such as `1:0:1:3`.
+
+    An address has a `::`, a group of three or more digits, a hex letter, or the
+    link-local prefix; SR-IOV and slot records are short decimal fields only.
+    """
+    text = match.group(0)
+    groups = text.split(":")
+    if (
+        "::" in text
+        or text.lower().startswith("fe80")
+        or any(len(g) >= 3 or re.search("[a-f]", g, re.IGNORECASE) for g in groups)
+    ):
+        return "2001:db8::1"
+    return text
+
+
+# Replacements write `\g<1>`, never `\1` before a digit: `\1000000000000` is the
+# octal escape for `@` and deleted the opening <MACAddress> tag 959 times.
+SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
+    # Both key elements are redacted whole; an SSH key in free text loses its body
+    # and its comment, which is conventionally user@host, up to the next `<`.
+    (
+        re.compile(
+            r"(<(?:\w+:)?(?:PublicSSHKeyValue|AuthorizedKeysValue)\b[^>]*>)[^<]+"
+        ),
+        r"\g<1><REDACTED-SSHKEY>",
+    ),
     (
         re.compile(
             r"\b(ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+|sk-[\w@.-]+)"
             r"\s+[A-Za-z0-9+/=]{16,}(?:[ \t]+[^\s<\"',}\]]+)?"
         ),
-        r"\1 <REDACTED-SSHKEY>",
+        r"\g<1> <REDACTED-SSHKEY>",
     ),
-    (
-        re.compile(r"(<(?:\w+:)?PublicSSHKeyValue\b[^>]*>)[^<]+"),
-        r"\1<REDACTED-SSHKEY>",
-    ),
-    (re.compile(r"(?i)\b(x-api-session=)[^,}\s]+"), r"\1<REDACTED-SESSION>"),
-    (re.compile(r"(?i)(<X-API-Session\b[^>]*>)[^<]+"), r"\1<REDACTED-SESSION>"),
+    (re.compile(r"(?i)\b(x-api-session=)[^,}\s]+"), r"\g<1><REDACTED-SESSION>"),
+    (re.compile(r"(?i)(<X-API-Session\b[^>]*>)[^<]+"), r"\g<1><REDACTED-SESSION>"),
     (
         re.compile(r"(?i)\b(JSESSIONID|CCFWSESSION|LtpaToken2)=[^;,}\s]+"),
-        r"\1=<REDACTED-COOKIE>",
+        r"\g<1>=<REDACTED-COOKIE>",
     ),
-    (re.compile(r"(?i)\b(cookie=)[^,}\n]+"), r"\1<REDACTED-COOKIE>"),
+    (re.compile(r"(?i)\b(cookie=)[^,}\n]+"), r"\g<1><REDACTED-COOKIE>"),
 )
-IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     (
         re.compile(r"(?i)\b[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b"),
         "user@example.test",
@@ -125,44 +156,63 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         HMC_HOST,
     ),
-    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
     (
-        re.compile(r"\bU[0-9A-Z]{4}\.[0-9A-Z]{3}\.[0-9A-Z]{7}(?:-[A-Z0-9]+)*"),
-        "<REDACTED-LOC>",
+        re.compile(rf"(<(?:\w+:)?(?:{_ADDRESS_ELEMENTS})\b[^>]*>)[^<]+"),
+        rf"\g<1>{PLACEHOLDER_IP}",
+    ),
+    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
+    # Anywhere, even inside `1eU8375.42A.XXXXXXX-V100-C3`; the slot suffix after the
+    # prefix is generic and code joins on it, so it stays.
+    (re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"), "<REDACTED-LOC>"),
+    (
+        re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b[^>]*>)[^<]+"),
+        r"\g<1><REDACTED-DEVID>",
+    ),
+    (
+        re.compile(r"(?i)\b(unique_id|udid|wwpn|serial_num)=[^,\n\"]+"),
+        r"\g<1>=<REDACTED-DEVID>",
     ),
     (
         re.compile(r"(<(?:\w+:)?(?:Logical)?SerialNumber\b[^>]*>)[^<]+"),
-        r"\1<REDACTED-SERIAL>",
+        r"\g<1><REDACTED-SERIAL>",
     ),
-    (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\1<REDACTED-SERIAL>"),
-    (re.compile(r"(serial_num=)[0-9A-Z]+"), r"\1<REDACTED-SERIAL>"),
+    (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
     (re.compile(r"(<(?:\w+:)?MACAddress\b[^>]*>)[^<]+"), r"\g<1>000000000000"),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
-    # The lookahead keeps a MAC address, placeholder included, out of the IPv6 rule.
-    (
-        re.compile(
-            r"(?i)(?<![\w:])(?!(?:[0-9a-f]{2}:){5}[0-9a-f]{2}(?![\w:]))"
-            r"(?:[0-9a-f]{1,4}:){3,7}[0-9a-f]{1,4}(?![\w:])"
-            r"|\bfe80::[0-9a-f:]*"
-        ),
-        "2001:db8::1",
-    ),
-    (re.compile(r"(?i)(<(?:\w+:)?\w*WWPN\w*\b[^>]*>)[^<]+"), r"\1c050760000000000"),
+    (re.compile(r"(?i)\b(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"), _ipv6),
     (re.compile(r"(?i)\bc0?50[0-9a-f]{13,14}\b"), "c050760000000000"),
-    (re.compile(r"(?i)\b(wwpns?=)[0-9a-f,]+"), r"\1c050760000000000"),
+    (re.compile(r"(?i)\b(wwpns=)[0-9a-f,]+"), r"\g<1>c050760000000000"),
 )
 #: Shapes that may never appear in a tokenized output, whatever was collected.
 ALWAYS_LEAKS = (
     re.compile(rf"\b(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
-    re.compile(r"\bU\d{4}\.[0-9A-Z]{3}\.[0-9A-Z]{7}"),
+    re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
 )
+#: HMC sentinels and messages: data the tests need verbatim, never a name.
+SENTINELS = {
+    "No results were found",
+    "null",
+    "none",
+    "None",
+    "N/A",
+    "unavailable",
+    "Unknown",
+}
 
 
-class LeakError(RuntimeError):
-    """A tokenized output still carries something private; nothing was written."""
+class ExportError(RuntimeError):
+    """The export is unsafe or corrupt; nothing was written."""
+
+
+class LeakError(ExportError):
+    """A tokenized output still carries something private."""
+
+
+class BrokenBodyError(ExportError):
+    """Tokenizing turned a body that parsed as XML into one that does not."""
 
 
 # --- collection -------------------------------------------------------------
@@ -241,6 +291,8 @@ class NameCollector:
             or value in self.names
             or value in self._excluded
             or value.lower() in _NOT_NAMES
+            or value.rstrip(".") in SENTINELS
+            or value.startswith(("HSCL", "No results"))
             or re.fullmatch(r"[0-9.]+", value)
             or UUID.fullmatch(value)
         ):
@@ -420,7 +472,28 @@ def tokenize_records(
         raise LeakError(
             f"{len(leaks)} private value(s) survived tokenizing; nothing written"
         )
+    broken = [
+        out["capture"]
+        for raw, out in zip(records, corpus, strict=True)
+        if _parses(raw.get("body")) and not _parses(out.get("body"))
+    ]
+    if broken:
+        raise BrokenBodyError(
+            f"tokenizing broke the XML of {len(broken)} body(ies), first {broken[0]}; "
+            "nothing written"
+        )
     return corpus
+
+
+def _parses(body: Any) -> bool:
+    """Whether *body* is an XML document (feed, entry or schema) that parses."""
+    if not isinstance(body, str) or not body.lstrip().startswith("<"):
+        return False
+    try:
+        ET.fromstring(body.encode("utf-8"))
+    except ET.ParseError:
+        return False
+    return True
 
 
 def load_raw(paths: Sequence[Path]) -> list[dict[str, Any]]:
@@ -793,7 +866,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _write_scanned(data, args.out, args.private)
         print(f"wrote {args.out}")
         return 0
-    except (LeakError, ValueError, OSError) as exc:
+    except (ExportError, ValueError, OSError) as exc:
         print(f"live_capture_export: {exc}", file=sys.stderr)
         return 1
 
