@@ -9,6 +9,7 @@ defaults to zero.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, fields
@@ -16,6 +17,8 @@ from typing import Any, Protocol, TypeVar
 
 from hmcpctl.errors import HMCError
 from hmcpctl.xmlutil import leaf_text, mtms_parts
+
+_logger = logging.getLogger(__name__)
 
 _NOT_ACTIVATED = "not activated"
 _RUNNING = "running"
@@ -440,7 +443,8 @@ async def survey_fleet(
     """Survey *profiles*, at most *concurrency* at once, *hmc_timeout* s each.
 
     A profile whose client, logon, reads or deadline fail becomes a
-    ``ProfileFailure`` and contributes no readings.
+    ``ProfileFailure`` and contributes no readings. A failure closing the
+    session after every read finished keeps the readings and logs a warning.
     """
     if concurrency < 1:
         raise ValueError(f"concurrency must be at least 1, got {concurrency}")
@@ -450,15 +454,26 @@ async def survey_fleet(
     gate = asyncio.Semaphore(concurrency)
 
     async def survey(profile: str) -> list[SystemReading] | ProfileFailure:
+        readings: list[SystemReading] | None = None
         async with gate:
             try:
                 async with asyncio.timeout(hmc_timeout):
                     async with open_client(profile) as hmc:
-                        return await survey_hmc(hmc, profile)
+                        readings = await survey_hmc(hmc, profile)
             except TimeoutError:
-                return ProfileFailure(profile, f"no answer within {hmc_timeout:g} s")
+                failure = f"no answer within {hmc_timeout:g} s"
             except Exception as exc:  # noqa: BLE001 - every profile failure is reported as a row, never dropped (ADR 0184)
-                return ProfileFailure(profile, f"{type(exc).__name__}: {exc}")
+                failure = f"{type(exc).__name__}: {exc}"
+            else:
+                return readings
+        if readings is None:
+            return ProfileFailure(profile, failure)
+        _logger.warning(
+            "%s: every read finished, but closing the session failed: %s",
+            profile,
+            failure,
+        )
+        return readings
 
     results = await asyncio.gather(*(survey(name) for name in names))
     readings = tuple(

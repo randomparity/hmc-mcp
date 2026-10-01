@@ -366,6 +366,21 @@ async def test_survey_fleet_names_each_failed_profile() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cleanup_failure_after_a_complete_read_keeps_the_readings(caplog) -> None:
+    @asynccontextmanager
+    async def logoff_fails(profile: str):
+        yield FakeClient()
+        raise HMCError("HMC logoff failed", 500)
+
+    survey = await survey_fleet(["hmc-1"], logoff_fails)
+
+    assert [reading.profile for reading in survey.readings] == ["hmc-1"]
+    assert survey.failures == ()
+    assert "hmc-1" in caplog.text
+    assert "logoff failed" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_survey_fleet_bounds_concurrency() -> None:
     active = 0
     peak = 0

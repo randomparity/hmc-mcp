@@ -186,7 +186,8 @@ reported both configurable and free capacity.
 The command surveys 4 profiles at a time (`--concurrency`) and gives each one 300 seconds
 (`--hmc-timeout`) for logon and every read. A profile that runs out of time becomes a `failure`
 row and keeps none of its readings. Ending its HMC session afterwards can take up to that
-profile's `HMC_TIMEOUT` more. A system the HMC cannot list is absent from the report, with only
+profile's `HMC_TIMEOUT` more. A profile whose reads all finished keeps them even if ending its
+session fails; stderr carries a warning instead. A system the HMC cannot list is absent from the report, with only
 a warning on stderr. The CSV replaces `PATH` only once it is complete.
 
 The command refuses to run when `HMC_HOST` is exported, or when a global connection option
