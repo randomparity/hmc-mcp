@@ -229,6 +229,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_update_firmware` reads the HMC level from the nested `VersionInfo` element
+  (`Version`, `Release`, `ServicePackName`) that V10R3 returns. It expected a
+  `V11R1M1111` text leaf, so it refused every HMC as "version is unavailable" (#1202).
 - `hmc_snapshot_capture` reads the partition's running allocation from the nested
   `PartitionMemoryConfiguration` and `PartitionProcessorConfiguration` containers V10R3
   returns; it read flat leaves that do not exist and refused every partition with "requires

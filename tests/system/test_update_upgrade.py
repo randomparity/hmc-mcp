@@ -378,7 +378,11 @@ CONSOLE_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <title>ManagementConsole</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagementConsole xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VersionInfo>V10R1M1010</VersionInfo>
+      <VersionInfo>
+        <Version>10</Version>
+        <Release>1</Release>
+        <ServicePackName>1010</ServicePackName>
+      </VersionInfo>
     </ManagementConsole>
   </content>
 </entry>
