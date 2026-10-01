@@ -506,9 +506,7 @@ async def test_logon_silent_when_verify_ssl_enabled(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_logon_failure(mock_hmc):
-    mock_hmc.put("/rest/api/web/Logon").mock(
-        return_value=httpx.Response(401, text="<error>bad credentials</error>")
-    )
+    mock_hmc.put("/rest/api/web/Logon").mock(return_value=httpx.Response(401))
     client = HMCClient(make_config())
     with pytest.raises(HMCError) as exc_info:
         async with client:
@@ -723,9 +721,7 @@ async def test_logon_refuses_a_password_xml_cannot_carry_before_sending(mock_hmc
 async def test_logon_failure_never_quotes_the_credentials(mock_hmc):
     """The defect lives in the credential path, so the fix must not leak it."""
     leaky = "unleakable&<value>"
-    mock_hmc.put("/rest/api/web/Logon").mock(
-        return_value=httpx.Response(401, text="<error>bad credentials</error>")
-    )
+    mock_hmc.put("/rest/api/web/Logon").mock(return_value=httpx.Response(401))
 
     with pytest.raises(HMCError) as raised:
         async with HMCClient(make_config(password=leaky)):

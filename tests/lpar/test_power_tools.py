@@ -173,7 +173,7 @@ def test_dlpar_proc_error_propagates(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_dlpar_authorization(mock_hmc)
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(500, text="<error>boom</error>")
+        return_value=httpx.Response(500)
     )
     with _unowned_partition(), pytest.raises(HMCError) as exc_info:
         hmc_dlpar_proc(

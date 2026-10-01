@@ -309,7 +309,7 @@ def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
     """A non-2xx job submission surfaces as HMCError naming the failing PUT."""
     _hmc_env(monkeypatch)
     mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate").mock(
-        return_value=httpx.Response(500, text="<error>boom</error>")
+        return_value=httpx.Response(500)
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", validate_first=False)

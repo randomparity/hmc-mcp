@@ -626,7 +626,7 @@ def test_provision_change_location_read_failure_is_advisory(monkeypatch, mock_hm
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(500, text="<error>boom</error>")
+        return_value=httpx.Response(500)
     )
 
     result = hmc_provision_lpar(**_provision_args())
@@ -830,7 +830,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
         )
     )
     storage_route = mock_hmc.post(VIOS_MAPPINGS_PATH).mock(
-        return_value=httpx.Response(500, text="<error>mapping failed</error>")
+        return_value=httpx.Response(500)
     )
 
     # power_on should not be called
@@ -867,7 +867,7 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
     )
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
-    ).mock(return_value=httpx.Response(500, text="<error>network failed</error>"))
+    ).mock(return_value=httpx.Response(500))
     with (
         patch(
             "hmcpctl.operations.lpar.provision.resolve_ssh_names",
@@ -1076,9 +1076,7 @@ def _provision_via_406(
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==web01)").mock(
         side_effect=lambda request: next(searches)
     )
-    _mock_execution_steps(mock_hmc).mock(
-        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
-    )
+    _mock_execution_steps(mock_hmc).mock(return_value=httpx.Response(406))
     network = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     ).mock(
@@ -1131,7 +1129,7 @@ def test_provision_readback_error_after_mksyscfg_reports_the_create(
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     order: list[str] = []
-    readback = httpx.Response(500, text="<error>boom</error>")
+    readback = httpx.Response(500)
 
     result, network = _provision_via_406(mock_hmc, AsyncMock(), order, readback)
 

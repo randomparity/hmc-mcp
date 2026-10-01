@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import LPAR_RESOURCE_CONFIG, live_fixture
+from conftest import LPAR_RESOURCE_CONFIG, live_fixture, live_response
 from defusedxml import ElementTree as DET
 
 from hmcpctl.config import HMCConfig
@@ -156,6 +156,8 @@ def _unowned_partition():
 # The 400 a V10R3 HMC returned for the LPAR create PUT once writes sent Accept */*
 # (#935, 2026-09-24), as captured in window 2 of #1161.
 _REST0001_BODY = live_fixture("rest-lpar-create-refused")["body"]
+# Every V10R3 406 captured for a REST type the HMC serves came back with an empty
+# body (template and PCM reads, 2026-09-30); the 406s here carry none (#1202).
 
 
 def _mock_create_406(
@@ -184,8 +186,7 @@ def _mock_create_406(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=rejection
-        or httpx.Response(406, text="<error>Not Acceptable</error>")
+        return_value=rejection or httpx.Response(406)
     )
 
 
@@ -283,11 +284,11 @@ def test_create_lpar_other_400_is_raised_without_cli_fallback(monkeypatch, mock_
     _hmc_env(monkeypatch)
     _mock_create_406(
         mock_hmc,
-        rejection=httpx.Response(400, text="<error>HSCL0622 bad value</error>"),
+        rejection=live_response("rest-job-entry-uuid-refused")[1],
     )
     apply = AsyncMock(return_value="")
 
-    with pytest.raises(HMCError, match="HSCL0622"):
+    with pytest.raises(HMCError, match="REST000B"):
         _create_via_406(apply)
 
     apply.assert_not_awaited()
@@ -371,7 +372,7 @@ def test_create_lpar_http_406_readback_error_still_reports_the_create(
 ):
     """A failed read-back after mksyscfg keeps the create and apply result (#1014)."""
     _hmc_env(monkeypatch)
-    _mock_create_406(mock_hmc, readback=httpx.Response(500, text="<error>boom</error>"))
+    _mock_create_406(mock_hmc, readback=httpx.Response(500))
     apply = AsyncMock(return_value="")
 
     result, _ = _create_via_406(apply)
@@ -481,7 +482,7 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
     )
     # modify returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+        return_value=httpx.Response(406)
     )
 
     with (
@@ -501,8 +502,7 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
     assert "406" in msg
     assert "X-HMC-Schema-Version" in msg
     assert "HMC_SCHEMA_VERSION" not in msg
-    assert exc_info.value.body == "<error>Not Acceptable</error>"
-    assert "Not Acceptable" in msg
+    assert exc_info.value.body == ""
 
 
 # ---------------------------------------------------------------------- #
@@ -516,7 +516,7 @@ def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
     _mock_dlpar_authorization(mock_hmc)
     # DLPAR POST returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+        return_value=httpx.Response(406)
     )
 
     with _unowned_partition(), pytest.raises(HMCError) as exc_info:
@@ -544,7 +544,7 @@ def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
     _mock_dlpar_authorization(mock_hmc)
     # DLPAR POST returns 406
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+        return_value=httpx.Response(406)
     )
 
     with _unowned_partition(), pytest.raises(HMCError) as exc_info:
