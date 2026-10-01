@@ -697,7 +697,9 @@ def test_vios_invalid_source_fails_before_submission(
     assert not route.called
 
 
-def _vios_job_with_stdout(status="COMPLETED", top_level=None):
+# A finished job reads COMPLETED_OK; the documented statuses have no bare COMPLETED
+# (docs/refs/hmc-rest-api-p10/016-job-status.md:16-27).
+def _vios_job_with_stdout(status="COMPLETED_OK", top_level=None):
     job = {
         "Resource": {
             "Status": status,
