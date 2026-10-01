@@ -10,6 +10,24 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `docs/api-patterns.md` records the HMC REST and CLI behaviour verified live on V10R3 with
+  POWER9 hardware: the 47 patterns from the #1161 capture windows and four observations from
+  the #879 window, grouped by envelope, identifiers, links, media types, jobs, error codes,
+  schema and CLI output. Each row names the capture commit and the hmcpctl code that conforms
+  or diverges, with the fixing issue or PR (#1161).
+- A capture harness for live probes, `scripts/live_test/capture.py`. `capture(path)` records
+  every REST request and SSH command hmcpctl makes inside the block as one JSON line, drops
+  session headers and redacts logon exchanges and secret-bearing text before writing, and
+  refuses a destination git does not ignore; `.gitignore` now ignores `*.capture.jsonl` and
+  `hmc-captures/` (#1161).
+- Live observations for the v0.1.0 bare-CEC path, from the #879 window at `90c97b5f` on HMC
+  V10R3 with a POWER9 (8375-42A) system: `lpar.create`, `pcie.list_dedicated_slots`,
+  `pcie.assign_dedicated_slot`, `lpar.power_on`, `lpar.get_state`, `job.get`, `job.wait`,
+  `lpar.list_refcodes`, `lpar.capture_console`, `lpar.power_off`,
+  `pcie.unassign_dedicated_slot` and `lpar.delete`, plus refreshed observations for the eight
+  inventory reads. `just verification-report` reports 20 operations `current` and none stale.
+  `lpar.power_on` is recorded `partial`: network boot is #868. `docs/recipes/bare-cec-lpar.md`
+  now records the outcomes of its verbatim run (#879).
 - The power-path `ownership_override` cost is now stated as the source has it: the partition
   resolution plus one partition-name GET, with no SSH command and no managed-system name read.
   Corrected in the `_power_on` docstring and `docs/environment-variables.md`, and ADR 0092 §4
@@ -205,6 +223,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmcpctl storage attach-disk` and `hmc_attach_disk_to_lpar` refuse a disk name over the
   15-character VIOS limit or a capacity that is not a positive multiple of 1024 MiB before
   any HMC request, on a dry run as on a real run, with the builder's message (#1032).
+- Resolving a partition or managed-system UUID to its CLI name over SSH (used by
+  `lpars capture-console` and the other SSH-passthrough tools) matches the UUID
+  case-insensitively. V10R3's `lssyscfg -F uuid` prints LPAR UUIDs in upper case, so a
+  lower-case LPAR UUID failed with `Could not resolve LPAR UUID` (#879).
+- `pcie.list_dedicated_slots` (and so `hmc_list_dedicated_pcie_slots` and
+  `network list-dedicated-pcie-slots`) reports an unowned slot's `owner_lpar` as `null`. It
+  returned the string `"null"`, which `lshwres -F` prints for an absent partition name on
+  V10R3 (#1195).
 - `operations.jobs.get_job` and `wait_for_job` (and so `hmc_get_job`, `hmc_wait_for_job`,
   `jobs show` and `jobs wait`) no longer report a job as missing when a supplied `job_href`
   returns 404 and the confirming read through the global jobs path returns `HTTP 400 REST000E`.

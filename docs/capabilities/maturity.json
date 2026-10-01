@@ -65,15 +65,17 @@
         {
           "id": "st1-hmc-get-console-info",
           "channel": "live",
-          "result": "failed",
+          "result": "passed",
           "scenario": "st1-console-identity",
-          "observed_at": "2026-09-10T21:53:54Z",
+          "observed_at": "2026-09-30T22:54:49Z",
           "cleanup": "not-required",
-          "assertions": [],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "assertions": [
+            "console-uuid-present"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
     },
@@ -109,15 +111,15 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-system-inventory",
-          "observed_at": "2026-09-10T21:54:03Z",
+          "observed_at": "2026-09-30T22:55:08Z",
           "cleanup": "not-required",
           "assertions": [
             "system-uuid-present"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
     },
@@ -157,15 +159,15 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-lpar-inventory",
-          "observed_at": "2026-09-10T21:54:06Z",
+          "observed_at": "2026-09-30T22:55:12Z",
           "cleanup": "not-required",
           "assertions": [
             "lpar-list-non-empty"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
     },
@@ -201,15 +203,15 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-lpar-inventory",
-          "observed_at": "2026-09-10T21:54:09Z",
+          "observed_at": "2026-09-30T22:55:13Z",
           "cleanup": "not-required",
           "assertions": [
             "lpar-uuid-present"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
     },
@@ -249,16 +251,16 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-vios-inventory",
-          "observed_at": "2026-09-10T21:54:14Z",
+          "observed_at": "2026-09-30T22:55:17Z",
           "cleanup": "not-required",
           "assertions": [
             "vios-list-non-empty",
             "vios-uuid-present"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
     },
@@ -285,15 +287,15 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-resource-inventory",
-          "observed_at": "2026-09-10T21:54:32Z",
+          "observed_at": "2026-09-30T22:56:21Z",
           "cleanup": "not-required",
           "assertions": [
             "resource-list-non-empty"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "4717c9b36202ae7c754db57d64859e5063098e3b2f79fa3cf55303c0cdc586dd"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
     },
@@ -320,15 +322,15 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-system-inventory",
-          "observed_at": "2026-09-10T21:54:43Z",
+          "observed_at": "2026-09-30T22:56:28Z",
           "cleanup": "not-required",
           "assertions": [
             "system-summary-returned"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "af935cc3368e9d8ac173069bb77b3ac4ee741a919b5d462cd90bb7e346a2341d"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "7e725cbf8a7e34b53c9fd28c8ed2c58d28eecf6e9160dbbc4e0501efbe94ef30"
         }
       ]
     },
@@ -355,15 +357,539 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st1-lpar-inventory",
-          "observed_at": "2026-09-10T21:54:45Z",
+          "observed_at": "2026-09-30T22:56:30Z",
           "cleanup": "not-required",
           "assertions": [
             "lpar-summary-returned"
           ],
-          "tested_commit": "8158c365c9e6b9b33cc201afb16764ea67379b38",
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
-          "hardware_family": "POWER10",
-          "closure_fingerprint": "af935cc3368e9d8ac173069bb77b3ac4ee741a919b5d462cd90bb7e346a2341d"
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "7e725cbf8a7e34b53c9fd28c8ed2c58d28eecf6e9160dbbc4e0501efbe94ef30"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.get_state",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-name-or-uuid",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-get-lpar-state",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:49:59Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "state-read-returned-a-state"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.power_on",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "profile-activation",
+            "parameters": [
+              {
+                "name": "boot_mode",
+                "constraint": "norm, dd, ds, of or sms"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "current-configuration",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "network-boot",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-power-on-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:49:59Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "activation-job-successful",
+            "lpar-reached-firmware"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
+        }
+      ]
+    },
+    {
+      "operation": "job.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-job-id",
+            "parameters": [
+              {
+                "name": "job_id",
+                "constraint": "JobID"
+              }
+            ]
+          },
+          {
+            "variant": "by-job-href",
+            "parameters": [
+              {
+                "name": "job_href",
+                "constraint": "submission SELF link"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-get-job",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:50:00Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "28b5af9901c2a4f46ee8c46dc0954c98f507c2622da2c67e50df7b83a8349f38"
+        }
+      ]
+    },
+    {
+      "operation": "job.wait",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-job-id",
+            "parameters": [
+              {
+                "name": "job_id",
+                "constraint": "JobID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-wait-for-job",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:50:01Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "job-found",
+            "job-identity-matches",
+            "job-status-successful"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "28b5af9901c2a4f46ee8c46dc0954c98f507c2622da2c67e50df7b83a8349f38"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.list_refcodes",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-partition",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-read-lpar-refcodes",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:50:02Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "refcodes-returned",
+            "refcodes-name-the-fixture"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "a6008e3ae10ece502f6e7ed9a8a7ffe6fd8200dcca837504fadbdf855590dd5f"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.capture_console",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "bounded-read-only",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-capture-lpar-console",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:51:01Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "console-captured",
+            "console-released"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "6f06a4606b3ab392c8fde97db058046774b199b9d0f8fde75ae8243b5e05be9f"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.power_off",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "shutdown",
+            "parameters": [
+              {
+                "name": "immediate",
+                "constraint": "boolean"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "restart",
+                "constraint": "boolean"
+              }
+            ]
+          },
+          {
+            "variant": "os-shutdown",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "dump-restart",
+            "parameters": [
+              {
+                "name": "allow_dump_restart",
+                "constraint": "true"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-power-off-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:51:20Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "power-off-job-successful",
+            "lpar-not-activated"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.unassign_dedicated_slot",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "profile-io-slot",
+            "parameters": [
+              {
+                "name": "drc_index",
+                "constraint": "ADR 0053 admitted envelope"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-unassign-dedicated-pcie-slot",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:53:38Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "unassign-call-succeeded",
+            "profile-restored-to-baseline"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "213055828d77e05559b2217100d945bc7c890866c4c161314bb272d317ad9d15"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.list_dedicated_slots",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "system-scoped",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-list-dedicated-pcie-slots",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:54:01Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "list-call-succeeded",
+            "fixture-slot-listed",
+            "fixture-slot-unowned"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "ea0e0b387f2c9e65e4d276d7d6d1871cc313c1e216d308112c5091d847b648f3"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.delete",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "owner-stamped",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-delete-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:54:03Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "delete-call-succeeded",
+            "lpar-name-absent",
+            "slot-released"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.create",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "aix-linux-partition",
+            "parameters": [
+              {
+                "name": "name",
+                "constraint": "PartitionName"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-create-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:54:03Z",
+          "cleanup": "passed",
+          "assertions": [
+            "lpar-uuid-resolved",
+            "ownership-and-baseline-confirmed"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "ea9b69d0435d441f4e58859579cb6661c138313b880a73db5591582cd3b6f593"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.assign_dedicated_slot",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "profile-io-slot",
+            "parameters": [
+              {
+                "name": "drc_index",
+                "constraint": "ADR 0053 admitted envelope"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st35-hmc-assign-dedicated-pcie-slot",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st35-bare-cec",
+          "observed_at": "2026-09-30T22:54:03Z",
+          "cleanup": "passed",
+          "assertions": [
+            "assign-call-succeeded",
+            "profile-lists-slot"
+          ],
+          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
+          "hmc_release": "V10R3",
+          "hardware_family": "POWER9",
+          "closure_fingerprint": "213055828d77e05559b2217100d945bc7c890866c4c161314bb272d317ad9d15"
         }
       ]
     }

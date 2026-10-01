@@ -26,6 +26,7 @@ an HMC, and use the CLI or an MCP client.
 - [Authorization audit](authorization-audit.md): events, reason codes, and log delivery.
 - [HMC CLI cheatsheet](hmc-cli-cheatsheet.md): underlying IBM commands used over SSH.
 - [HMC hints](HMC_HINTS.md): SSH access, host-key trust, and command troubleshooting.
+- [HMC API patterns](api-patterns.md): verified V10R3/POWER9 REST and CLI behaviour, with the code paths that conform.
 
 ## Project records
 
