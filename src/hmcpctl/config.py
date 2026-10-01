@@ -30,7 +30,14 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlsplit
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    Field,
+    TypeAdapter,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _logger = logging.getLogger(__name__)
@@ -800,6 +807,19 @@ def _load_profile_from_document(
     return HMCConfig(_env_file=None, **filtered_entry)
 
 
+def _inventory_field(path: Path, name: str, entry: dict[str, Any], field: str) -> Any:
+    """Return *entry*'s *field* as ``HMCConfig`` would coerce it, else raise ConfigError."""
+    info = HMCConfig.model_fields[field]
+    value = entry.get(field, info.default)
+    try:
+        return TypeAdapter(info.annotation).validate_python(value)
+    except ValidationError:
+        raise ConfigError(
+            f"{path}: profile {name!r}: {field} must be "
+            f"{'an integer' if field == 'port' else 'a boolean'}, got {value!r}"
+        ) from None
+
+
 def config_inventory(
     config_path: Path | None = None,
     *,
@@ -821,9 +841,6 @@ def config_inventory(
     nicknames = _coerce_nicknames(doc.get("nicknames"), path)
     default_profile = doc.get("default_profile")
 
-    fields = HMCConfig.model_fields
-    default_port = int(fields["port"].default)
-    default_verify_ssl = bool(fields["verify_ssl"].default)
     profile_entries: list[dict[str, Any]] = []
     for name, entry in profiles.items():
         if not isinstance(entry, dict):
@@ -836,8 +853,8 @@ def config_inventory(
                 "name": name,
                 "host": entry.get("host", ""),
                 "user": entry.get("user", ""),
-                "port": int(entry.get("port", default_port)),
-                "verify_ssl": bool(entry.get("verify_ssl", default_verify_ssl)),
+                "port": _inventory_field(path, name, entry, "port"),
+                "verify_ssl": _inventory_field(path, name, entry, "verify_ssl"),
                 "is_default": name == default_profile,
                 "has_password": "password" in entry  # pragma: allowlist secret
                 or "password_env" in entry,  # pragma: allowlist secret
