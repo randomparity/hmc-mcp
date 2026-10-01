@@ -745,3 +745,31 @@ def test_resolution_403_not_wrapped_as_pcm_error(monkeypatch, mock_hmc):
     msg = str(exc_info.value)
     assert "media type" not in msg.lower()
     assert "does not have PCM authority" not in msg
+
+
+def test_processed_metric_links_404_names_collection_preferences(monkeypatch, mock_hmc):
+    """V11R2 answers a metric feed with 404 while every collection preference is off."""
+    _hmc_env(monkeypatch)
+    capture = live_fixture("rest-pcm-metrics-404-v11r2")
+    mock_hmc.get(
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics"
+    ).mock(
+        return_value=httpx.Response(
+            capture["status"],
+            text=capture["body"],
+            headers={"Content-Type": capture["content_type"]},
+        )
+    )
+
+    with pytest.raises(HMCError) as exc_info:
+        hmc_processed_metric_links(
+            "ManagedSystem",
+            "00000000-0000-0000-0000-000000000001",
+            "2026-08-07T11:00:00Z",
+        )
+
+    assert exc_info.value.status_code == 404
+    message = str(exc_info.value)
+    assert "no ProcessedMetrics feed" in message
+    assert "hmc_get_pcm_preferences" in message
+    assert exc_info.value.body == capture["body"]

@@ -229,6 +229,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The PCM metric tools explain an HTTP 404 on a metric feed. The captured V11R2 HMC answers
+  both `ProcessedMetrics` and `AggregatedMetrics` with 404 while every collection
+  preference is disabled; the error now names the missing feed and points at
+  `hmc_get_pcm_preferences` (#1202).
 - `hmc_fleet_health` reports the rest of the estate when one system's VIOS feed is refused,
   adding a warning that names the system, instead of failing whole on the V11R2 HTTP 500. A
   refused partition feed still fails the result (#1202).
