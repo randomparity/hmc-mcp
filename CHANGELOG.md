@@ -256,6 +256,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
+  numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error

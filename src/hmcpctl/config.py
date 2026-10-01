@@ -146,6 +146,8 @@ class HMCConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="HMC_",
         extra="ignore",
+        # A rejected value can be the password; keep it out of every error text.
+        hide_input_in_errors=True,
     )
 
     host: str = Field(default="", description="HMC hostname or IP address")

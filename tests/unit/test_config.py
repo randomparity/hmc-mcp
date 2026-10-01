@@ -143,6 +143,27 @@ def test_response_bytes_invalid_toml(tmp_path, value):
         load_profile("dev", config_path=path)
 
 
+def test_validation_error_hides_rejected_password():
+    with pytest.raises(ValidationError) as caught:
+        HMCConfig.from_mapping({"host": "h", "user": "u", "password": 99887766})
+    text = str(caught.value)
+    assert "99887766" not in text
+    assert "input_value" not in text
+    assert "password" in text
+
+
+def test_load_profile_error_hides_unquoted_numeric_password(tmp_path):
+    path = _write_toml(
+        tmp_path / "config.toml",
+        '[profiles.dev]\nhost = "h"\nuser = "u"\npassword = 99887766\n',
+    )
+    with pytest.raises(ValidationError) as caught:
+        load_profile("dev", config_path=path)
+    text = str(caught.value)
+    assert "99887766" not in text
+    assert "password" in text
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
