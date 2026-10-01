@@ -240,17 +240,21 @@ async def test_operation_rejects_invalid_input_before_any_io(
 
 
 @pytest.mark.parametrize(
-    ("operation", "finder", "message"),
+    ("operation", "misses", "message"),
     [
-        (install_vios_by_lpar_selector, "find_partition_by_name", "No LPAR named"),
-        (install_vios, "find_vios_by_name", "No VIOS named"),
+        (
+            install_vios_by_lpar_selector,
+            ("find_partition_by_name", "find_vios_by_name"),
+            "No LPAR named",
+        ),
+        (install_vios, ("find_vios_by_name",), "No VIOS named"),
     ],
 )
 @pytest.mark.asyncio
 async def test_operation_fails_before_submission_for_an_unknown_target(
-    operation, finder, message
+    operation, misses, message
 ):
-    hmc = _hmc(**{finder: None})
+    hmc = _hmc(**dict.fromkeys(misses))
     ssh = _Ssh()
 
     with _patch_ssh(ssh), pytest.raises(ValueError, match=message):
@@ -258,6 +262,20 @@ async def test_operation_fails_before_submission_for_an_unknown_target(
             hmc, *_operation_args(operation, "nosuchtarget", "sys1"), _REQUEST
         )
 
+    assert ssh.commands == []
+
+
+@pytest.mark.asyncio
+async def test_lpar_selector_refuses_a_vios_name_with_a_pointer():
+    """A VIOS is listed only under ``VirtualIOServer``, so the selector refuses it (#1247)."""
+    hmc = _hmc(find_partition_by_name=None)
+    ssh = _Ssh()
+
+    with _patch_ssh(ssh), pytest.raises(ValueError, match="hmc_install_vios"):
+        await install_vios_by_lpar_selector(hmc, "sys1", "vios1", _REQUEST)
+
+    hmc.find_vios_by_name.assert_awaited_once_with("vios1", system_uuid=SYSTEM_UUID)
+    hmc.get_logical_partition.assert_not_awaited()
     assert ssh.commands == []
 
 
