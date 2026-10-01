@@ -7,13 +7,15 @@ REST answers and the refcode listing from captures recorded with
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
 records the patterns they show. CLI captures whose `capture` begins `2026-09-30-ro/` come
 from the read-only sweep for #1202, on the same HMC and system; a nonzero-exit one is
-raised in tests with `live_process_error(name)`.
+raised in tests with `live_process_error(name)`. Captures whose `capture` begins
+`2026-09-30-v11r2-p9/` come from the same sweep on an HMC at V11R2 SP1120 managing a
+POWER9 9009-42A.
 
 The VIOS and storage REST captures from that sweep are `rest-lpar-path-vios`,
 `rest-lpar-quick-vios`, `rest-vios-*`, `rest-ms-vios-feed-media` and
-`rest-volume-group`, with the same `capture` prefix. Files ending `-v11r2` come
-from the same sweep on HMCs at V11R2: the `rest-vios-feed-500-v11r2` answer from
-one managing a POWER9 system, the others from one managing a POWER11 system.
+`rest-volume-group`, with the same `capture` prefix. The other VIOS files ending
+`-v11r2` begin `2026-09-30-v11r2-p11-9824/`: the same sweep on an HMC at V11R2
+SP1120 managing a POWER11 9824-42A.
 
 ## Format
 

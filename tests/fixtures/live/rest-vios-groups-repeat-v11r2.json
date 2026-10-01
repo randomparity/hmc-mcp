@@ -1,5 +1,5 @@
 {
-  "capture": "2026-09-30-ro/capture-raw.jsonl#44",
+  "capture": "2026-09-30-v11r2-p11-9824/capture-raw.jsonl#44",
   "method": "GET",
   "path": "/rest/api/uom/VirtualIOServer/00000005-ABCD-4EF0-8ABC-000000000005?group=ViosSCSIMapping&group=ViosFCMapping",
   "status": 200,

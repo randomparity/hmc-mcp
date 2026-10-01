@@ -25,6 +25,7 @@ import click
 import pytest
 import typer
 from click import unstyle
+from conftest import live_fixture
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -3701,7 +3702,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
             ("chsyscfg -r prof", "lpar_name=lpar1", "lpar_proc_compat_mode=POWER10"),
         ),
         (
-            ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
+            ["network", "set-sriov-mode", "sys1", "1", "sriov"],
             ("lshwres", "sriov", "adapter"),
         ),
     ],
@@ -3719,7 +3720,7 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
             return "8375-42A\n"
         if "--rsubtype adapter" in command:
             fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
-            return f"{fields}\nP1-C1,1,sriov,1,U,2,120,120,running\n"
+            return f"{fields}\n1,21010020,sriov,1,U,2,120,120,running\n"
         if command.startswith("lssyscfg"):
             return "vioserver\n"
         return "updated\n"
@@ -3777,9 +3778,7 @@ def test_network_set_sriov_mode_preserves_bracketed_result(monkeypatch, fake_hmc
         "hmcpctl.cli_commands.virtualization.pcie.set_sriov_adapter_mode",
         fake_set_mode,
     )
-    result = RUNNER.invoke(
-        cli.app, ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"]
-    )
+    result = RUNNER.invoke(cli.app, ["network", "set-sriov-mode", "sys1", "1", "sriov"])
 
     assert result.exit_code == 0, result.output
     assert OWNERSHIP_STAMP in result.stdout
@@ -3912,14 +3911,14 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
 
 def test_network_list_io_slots_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
-        return "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,lpar_name=lpar1\n"
+        return live_fixture("cli-io-slots-default")["stdout"]
 
     _patch_ssh_command(monkeypatch, fake)
-    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1"])
+    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys-R1"])
 
     assert result.exit_code == 0
-    assert "U78DA.ND1.ABC1234-P1-C1" in result.stdout
-    assert "lpar1" in result.stdout
+    assert "21020013" in result.stdout
+    assert "sys-R1-vios1" in result.stdout
 
 
 def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):
