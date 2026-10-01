@@ -227,6 +227,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The capture harness no longer discards every HMC error body. V10R3 echoes the request
+  headers in each `HttpErrorResponse`, so the harness now redacts only the echoed session and
+  cookie values and keeps the rest of the body; text that still names a secret is replaced
+  whole, as before (#1161).
 - Resolving a partition or managed-system UUID to its CLI name over SSH (used by
   `lpars capture-console` and the other SSH-passthrough tools) matches the UUID
   case-insensitively. V10R3's `lssyscfg -F uuid` prints LPAR UUIDs in upper case, so a
