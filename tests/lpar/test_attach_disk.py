@@ -125,19 +125,27 @@ async def test_attach_disk_reports_a_failed_mapping_after_the_disk() -> None:
 
 
 @pytest.mark.asyncio
-async def test_attach_disk_rejects_invalid_capacity_before_mutating() -> None:
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize(
+    ("storage_name", "capacity_mib", "message"),
+    [
+        ("disk01", 0, "positive multiple of 1024"),
+        ("disk01", 1500, "positive multiple of 1024"),
+        ("a_sixteen_chars_", 1024, "15 characters"),
+    ],
+)
+async def test_attach_disk_refuses_invalid_disk_before_any_hmc_request(
+    dry_run: bool, storage_name: str, capacity_mib: int, message: str
+) -> None:
     client = _client()
+    storage = ProvisionStorage(VIOS_UUID, storage_name, vg_uuid=VG_UUID)
 
-    with pytest.raises(ValueError, match="capacity_mib must be greater than zero"):
+    with pytest.raises(ValueError, match=message):
         await attach_disk_to_lpar(
-            client,
-            None,
-            LPAR_UUID,
-            _storage(),
-            capacity_mib=0,
+            client, None, LPAR_UUID, storage, capacity_mib=capacity_mib, dry_run=dry_run
         )
 
-    client.create_virtual_disk.assert_not_awaited()
+    assert client.mock_calls == []
 
 
 @pytest.mark.asyncio
