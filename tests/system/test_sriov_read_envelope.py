@@ -17,6 +17,7 @@ from hmcpctl.operations.virtualization.pcie import (
     require_admitted_environment,
     require_sriov_read_environment,
 )
+from hmcpctl.ssh.commands import _parse_lshwres_output
 
 V10R3 = live_fixture("cli-lshmc-version")["stdout"]
 V11R2 = live_fixture("cli-lshmc-version-v11r2")["stdout"]
@@ -125,3 +126,35 @@ async def test_inventory_answers_per_admitted_read_on_a_power11_pair() -> None:
         assert result.capability == "capability-unavailable"
         assert "9009-42A" in result.unavailable_reason
         assert "9242-21B" not in result.unavailable_reason
+
+
+def test_the_captures_show_the_evidence_adr_0183_rests_on() -> None:
+    def rows(name: str) -> list[dict[str, str]]:
+        return _parse_lshwres_output(live_fixture(name)["stdout"])
+
+    # The 9009-42A adapter lists ports at two levels, with disjoint port IDs.
+    levels = {
+        level: [
+            (row["adapter_id"], row["phys_port_id"], row["phys_port_type"])
+            for row in rows(f"cli-sriov-physport-{level}-default-v11r2-p9")
+        ]
+        for level in ("roce", "ethc", "eth")
+    }
+    assert levels == {
+        "roce": [],
+        "ethc": [("2", "0", "ethc"), ("2", "1", "ethc")],
+        "eth": [("2", "2", "eth"), ("2", "3", "eth")],
+    }
+    assert [
+        row["config_state"] for row in rows("cli-sriov-adapter-default-v11r2-p9")
+    ] == [
+        "sriov",
+        "dedicated",
+    ]
+    # Neither POWER11 system holds an SR-IOV-mode adapter.
+    for model in ("9824-42a", "9242-21b"):
+        adapters = rows(f"cli-sriov-adapter-default-v11r2-p11-{model}")
+        assert adapters
+        assert {(row["adapter_id"], row["config_state"]) for row in adapters} == {
+            ("null", "dedicated")
+        }
