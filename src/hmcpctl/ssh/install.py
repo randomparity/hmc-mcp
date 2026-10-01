@@ -111,9 +111,9 @@ def validate_hmc_name(value: str, field: str) -> str:
 
     HMC object names are free-form on the console side, so the rules here are
     printable, non-empty text with no leading ``-``. ``shlex.quote`` stops word
-    splitting and metacharacters but not a value that lands in option position
-    once the remote shell has split the command, and the HMC CLI has no ``--``
-    end-of-options terminator to neutralise it per call site. A name that
+    splitting and metacharacters but not a value the HMC CLI may parse as an
+    option once the remote shell has split the command, and the CLI has no
+    ``--`` end-of-options terminator to neutralise it per call site. A name that
     legitimately begins with ``-`` is therefore refused rather than passed
     through; rename the object on the HMC to use it here.
     """
@@ -125,7 +125,7 @@ def validate_hmc_name(value: str, field: str) -> str:
         raise ValueError(f"{field} must be non-empty printable text")
     if value.startswith("-"):
         raise ValueError(
-            f"{field} {value!r} starts with '-'; it would be parsed as an HMC "
+            f"{field} {value!r} starts with '-'; it may be parsed as an HMC "
             "CLI option, not a name"
         )
     return value
