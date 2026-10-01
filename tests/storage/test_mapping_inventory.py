@@ -6,7 +6,6 @@ UUID, is identified by server adapter and target device, and names its client
 LPAR by an absolute, system-scoped href.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -16,7 +15,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import captured, make_config
 
 from hmcpctl.client.client_parse import _parse_feed
 from hmcpctl.client.client_storage import lpar_uuid_from_href, storage_mapping_id
@@ -203,14 +202,7 @@ async def test_list_storage_mappings_filters_by_lpar(mock_hmc):
 @pytest.mark.asyncio
 async def test_list_storage_mappings_filters_live_lpar_case_insensitively(mock_hmc):
     """A lower-case LPAR selector matches the upper-case UUID V10R3 links (#1202)."""
-    capture = json.loads(
-        (
-            Path(__file__).parents[1]
-            / "fixtures"
-            / "live"
-            / "rest-vios-scsi-mapping.json"
-        ).read_text()
-    )
+    capture = captured("rest-vios-scsi-mapping")
     mock_hmc.get(capture["path"]).mock(
         return_value=httpx.Response(200, text=capture["body"])
     )

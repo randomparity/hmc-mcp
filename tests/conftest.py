@@ -597,3 +597,16 @@ def captured_lpar_entry(uuid: str, name: str, state: str = "not activated") -> s
       </LogicalPartition>
     </content>
   </entry>"""
+
+
+def captured(name: str) -> dict:
+    """Return the tokenized V10R3 capture ``tests/fixtures/live/<name>.json`` (#1202).
+
+    Imports stay local so this helper adds no module-level import beside #1161's
+    ``live_fixture``, which reads the same directory.
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / "fixtures" / "live" / f"{name}.json"
+    return json.loads(path.read_text())

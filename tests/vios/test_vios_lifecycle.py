@@ -1,11 +1,10 @@
 """Tests for VIOS lifecycle tools: create, delete, install (CLI bridge)."""
 
-import json
-from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 import pytest
+from conftest import captured
 
 from hmcpctl.documents import LparResources, build_vios_document
 from hmcpctl.errors import HMCError
@@ -16,16 +15,9 @@ from hmcpctl.ssh.install import (
 
 BASE = "https://hmc.test"
 
-LIVE_FIXTURES = Path(__file__).parents[1] / "fixtures" / "live"
-
-
-def _live(name: str) -> dict:
-    return json.loads((LIVE_FIXTURES / f"{name}.json").read_text())
-
-
 # The captured V10R3 VirtualIOServer entry, read while the VIOS ran; the install
 # preflight needs it powered off, so only the PartitionState text is changed.
-VIOS_ENTRY = _live("rest-vios-entry")["body"].replace(
+VIOS_ENTRY = captured("rest-vios-entry")["body"].replace(
     '<PartitionState kxe="false" kb="ROO">running<',
     '<PartitionState kxe="false" kb="ROO">not activated<',
 )
@@ -134,7 +126,7 @@ def _mock_resolution(mock_hmc) -> None:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
-    lpar_path = _live("rest-lpar-path-vios")
+    lpar_path = captured("rest-lpar-path-vios")
     mock_hmc.get(lpar_path["path"]).mock(
         return_value=httpx.Response(lpar_path["status"], text=lpar_path["body"])
     )

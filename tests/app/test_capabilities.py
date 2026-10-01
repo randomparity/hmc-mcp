@@ -11,14 +11,13 @@ hmc_remove_memory_pool.
 """
 
 import asyncio
-import json
 from dataclasses import asdict
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from conftest import captured
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
@@ -741,15 +740,8 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     assert guard.await_args.kwargs == {"ownership_override": True}
 
 
-LIVE_FIXTURES = Path(__file__).parents[1] / "fixtures" / "live"
-
-
-def _live(name: str) -> dict:
-    return json.loads((LIVE_FIXTURES / f"{name}.json").read_text())
-
-
 def _live_response(name: str, text: str | None = None) -> tuple[str, httpx.Response]:
-    capture = _live(name)
+    capture = captured(name)
     return capture["path"], httpx.Response(
         capture["status"],
         text=capture["body"] if text is None else text,
