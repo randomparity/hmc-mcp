@@ -84,10 +84,12 @@ Roll-ups (pure functions):
 
 - Without `--profile`, it surveys every profile `config_inventory()` lists, in file order. A
   named profile absent from the config is a usage error (exit 2) that lists the known names.
-- An exported `HMC_HOST`, or any root connection option given on the command line (`--host`,
-  `--user`, `--password`, `--verify-ssl`, `--profile`), is a usage error (exit 2). `HMC_HOST`
-  would retarget every profile under the documented env-over-TOML precedence, and a root option
-  would be silently ignored.
+- An exported `HMC_HOST`, `HMC_USER`, `HMC_PASSWORD`, `HMC_PORT` or `HMC_VERIFY_SSL` (any value,
+  empty included), or any root connection option given on the command line (`--host`, `--user`,
+  `--password`, `--verify-ssl`, `--profile`), is a usage error (exit 2). Under the documented
+  env-over-TOML precedence an exported value would send one HMC's host, credentials or TLS
+  setting to every profile, and a root option would be silently ignored (operator decision
+  after the security review, 2026-10-01).
 - No configured profile is an error (exit 1) naming the config path.
 - Each profile's client is `HMCClient(load_profile(name))`.
 - Before surveying, it creates a temporary file beside `PATH`; failing to is a usage error
@@ -110,7 +112,10 @@ A field that does not apply to a row type is empty. An unknown figure is `unknow
 columns are `cpu_util_pct` and `mem_util_pct`, beside `cpu_allocated` and `mem_allocated_mib`
 (configurable minus free, over the same systems as the percentage). A system row's `notes` holds its gaps. A roll-up
 row's `notes` names each column some of its systems lack, as
-`<column>: <n> of <systems> systems unknown`.
+`<column>: <n> of <systems> systems unknown`. When profiles failed, the `fleet` row's `notes`
+begins `<n> of <m> profiles failed (<names>); systems only they manage are absent`. A text
+cell (`profiles`, `system`, identity, `firmware`, `state`) starting with `=`, `+`, `-`, `@`,
+tab or carriage return is written with a leading `'`, so a spreadsheet does not evaluate it.
 
 ### Documentation
 
@@ -141,9 +146,9 @@ publicly. `CHANGELOG.md` records the addition.
      `CurrentAssignedMemoryToPartitions`. Other states (`power off`, `error`) were not checked.
      The `state` column shows each system's state, and dedup may prefer such a reading.
    - The CPU other-reserved remainder is unexplained. It is reported, not attributed (ADR 0184).
-   - `HMC_USER`, `HMC_PASSWORD` and other `HMC_*` overrides still apply to every profile, per
-     `load_profile`'s documented precedence. A wrong value fails that profile's logon, so the
-     effect shows as named failure rows rather than wrong figures.
+   - `HMC_TIMEOUT` and `HMC_SCHEMA_VERSION` still apply to every profile, per `load_profile`'s
+     documented precedence; they change no host, credential or TLS setting. The connection
+     overrides are refused (CLI section).
 4. **Covered elsewhere**:
    - Credential storage and TLS verification: `load_profile` and `HMCClient` (ADR 0096 and the
      TLS warning path).

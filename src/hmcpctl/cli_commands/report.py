@@ -72,6 +72,27 @@ COLUMNS = (
     "notes",
 )
 _UNKNOWN = "unknown"
+# An exported value would override every profile's own, sending one HMC's host,
+# credentials or TLS setting to all of them (load_profile's env-over-TOML precedence).
+_PROFILE_OVERRIDES = (
+    "HMC_HOST",
+    "HMC_USER",
+    "HMC_PASSWORD",
+    "HMC_PORT",
+    "HMC_VERIFY_SSL",
+)
+# Columns holding HMC- or operator-supplied text, which a spreadsheet would evaluate
+# when it starts with a formula character.
+_TEXT_COLUMNS = (
+    "profiles",
+    "system",
+    "machine_type",
+    "model",
+    "serial",
+    "firmware",
+    "state",
+)
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 _PARTITION_COLUMNS = {
     "running": "partitions_running",
     "not_activated": "partitions_not_activated",
@@ -180,7 +201,15 @@ def report_rows(survey: FleetSurvey) -> list[dict[str, str]]:
         for profile in survey.profiles
         if profile not in failed
     )
-    rows.append(_rollup_row("fleet", "", rollup(s.reading for s in systems)))
+    fleet = _rollup_row("fleet", "", rollup(s.reading for s in systems))
+    if survey.failures:
+        missing = (
+            f"{len(survey.failures)} of {len(survey.profiles)} profiles failed "
+            f"({', '.join(failure.profile for failure in survey.failures)}); "
+            "systems only they manage are absent"
+        )
+        fleet["notes"] = "; ".join(note for note in (missing, fleet["notes"]) if note)
+    rows.append(fleet)
     rows.extend(
         {"row_type": "failure", "profiles": failure.profile, "notes": failure.reason}
         for failure in survey.failures
@@ -193,7 +222,17 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=COLUMNS, restval="")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(_inert(row) for row in rows)
+
+
+def _inert(row: dict[str, str]) -> dict[str, str]:
+    """Quote text cells a spreadsheet would otherwise evaluate as a formula."""
+    return {
+        column: f"'{value}"
+        if column in _TEXT_COLUMNS and value.startswith(_FORMULA_START)
+        else value
+        for column, value in row.items()
+    }
 
 
 def _scratch_file(csv_path: Path) -> Path:
@@ -249,11 +288,16 @@ def report_utilization(
     The report holds internal hostnames, system names and serials: never commit it
     or post it publicly.
     """
-    if current_options().command_line_options or env_var_value("HMC_HOST"):
+    exported = [name for name in _PROFILE_OVERRIDES if env_var_value(name) is not None]
+    if exported:
         usage_error(
-            "report utilization connects to each profile's own host; unset HMC_HOST "
-            "and drop the global --host, --user, --password, --verify-ssl and "
-            "--profile options"
+            "report utilization logs on to each profile's own host with that profile's "
+            f"credentials and TLS setting; unset {', '.join(exported)}"
+        )
+    if current_options().command_line_options:
+        usage_error(
+            "report utilization connects to each profile's own host; drop the global "
+            "--host, --user, --password, --verify-ssl and --profile options"
         )
     try:
         selected = _selected_profiles(profiles)

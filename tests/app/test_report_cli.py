@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,8 @@ SURVEY = FleetSurvey(
 
 @pytest.fixture
 def configured(monkeypatch):
-    monkeypatch.delenv("HMC_HOST", raising=False)
+    for name in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD", "HMC_PORT", "HMC_VERIFY_SSL"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
     names = ["hmc-a", "hmc-b", "hmc-c"]
     monkeypatch.setattr(
@@ -128,7 +130,10 @@ def test_report_writes_system_hmc_fleet_and_failure_rows(configured, tmp_path) -
     assert hmc_b["mem_configurable_mib"] == "131072"
     assert hmc_b["notes"] == "mem_vios_mib: 1 of 2 systems unknown"
     fleet = rows[4]
-    assert (fleet["systems"], fleet["notes"]) == ("2", "")
+    assert fleet["systems"] == "2"
+    assert fleet["notes"] == (
+        "1 of 3 profiles failed (hmc-c); systems only they manage are absent"
+    )
     assert (fleet["mem_configurable_mib"], fleet["mem_util_pct"]) == ("131072", "23.4")
     assert fleet["mem_allocated_mib"] == "30720"
     assert fleet["system"] == ""
@@ -212,15 +217,46 @@ def test_unknown_profile_is_a_usage_error(configured, tmp_path) -> None:
     assert "hmc-a, hmc-b, hmc-c" in result.stderr
 
 
-def test_hmc_host_env_is_refused(configured, tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("HMC_HOST", "elsewhere.test")
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("HMC_HOST", "elsewhere.test"),
+        ("HMC_HOST", ""),
+        ("HMC_USER", "someone"),
+        ("HMC_PASSWORD", "secret"),
+        ("HMC_PORT", "12443"),
+        ("HMC_VERIFY_SSL", "false"),
+    ],
+)
+def test_exported_connection_override_is_refused(
+    configured, tmp_path, monkeypatch, name, value
+) -> None:
+    monkeypatch.setenv(name, value)
     result = RUNNER.invoke(
         cli.app, ["report", "utilization", "--csv", str(tmp_path / "r.csv")]
     )
 
     assert result.exit_code == 2
-    assert "unset HMC_HOST" in result.stderr
+    assert f"unset {name}" in result.stderr
     assert "profiles" not in configured
+
+
+def test_hmc_text_cells_cannot_start_a_spreadsheet_formula(
+    configured, tmp_path, monkeypatch
+) -> None:
+    reading = replace(_reading("hmc-a", "SER0001"), name='=HYPERLINK("x")', state="-x")
+
+    async def fake(profiles, open_client, *, concurrency, hmc_timeout):
+        return FleetSurvey(("hmc-a",), (reading,), ())
+
+    monkeypatch.setattr(report, "survey_fleet", fake)
+    out = tmp_path / "r.csv"
+    result = RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(out)])
+
+    assert result.exit_code == 0, result.output
+    system = _rows(out)[0]
+    assert (system["system"], system["state"]) == ('\'=HYPERLINK("x")', "'-x")
+    assert system["cpu_installed"] == "48"
 
 
 def test_root_connection_option_is_refused(configured, tmp_path) -> None:

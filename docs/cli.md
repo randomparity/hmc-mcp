@@ -190,6 +190,14 @@ profile's `HMC_TIMEOUT` more. A profile whose reads all finished keeps them even
 session fails; stderr carries a warning instead. A system the HMC cannot list is absent from the report, with only
 a warning on stderr. The CSV replaces `PATH` only once it is complete.
 
-The command refuses to run when `HMC_HOST` is exported, or when a global connection option
-(`--host`, `--user`, `--password`, `--verify-ssl`, `--profile`) is given. `HMC_HOST` would send
-every profile to the same host, and the global options would be ignored.
+The command refuses to run when `HMC_HOST`, `HMC_USER`, `HMC_PASSWORD`, `HMC_PORT` or
+`HMC_VERIFY_SSL` is exported, even as an empty value, or when a global connection option
+(`--host`, `--user`, `--password`, `--verify-ssl`, `--profile`) is given. An exported value
+overrides every profile's own, so one HMC's host, credentials or TLS setting would reach all of
+them; the global options would be ignored. `HMC_TIMEOUT` and `HMC_SCHEMA_VERSION` still apply
+to every profile.
+
+When profiles fail, the `fleet` row's `notes` says how many and which: a system that only a
+failed profile manages is missing from the fleet totals. A text cell that would start with
+`=`, `+`, `-` or `@` is written with a leading `'` so a spreadsheet shows it rather than
+evaluating it.
