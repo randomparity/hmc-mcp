@@ -42,8 +42,9 @@ def lpars_set_boot_order(
         ...,
         help=(
             "Open Firmware device paths, first to last, as read-boot-order reports them. "
-            "A never-booted partition reports none: take the path from SMS or leave the "
-            "boot order unset"
+            "A never-booted partition reports none. Firmware names a virtual optical "
+            "(ISO) device disk@<LUN>, not cdrom@: "
+            "/vdevice/v-scsi@<0x30000000 + client slot, hex>/disk@<LogicalUnitAddress>"
         ),
     ),
     *,

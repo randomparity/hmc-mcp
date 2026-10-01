@@ -447,7 +447,13 @@ def storage_mount_optical_media(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ) -> None:
-    """Mount an ISO from a VIOS media repository to an LPAR."""
+    """Mount an ISO from a VIOS media repository to an LPAR.
+
+    A partition not activated since its profile changed refuses the mount with
+    REST0269: activate or apply a profile once first. A refused mount can still
+    leave a VIOS server adapter with no mapping; the error names the lshwres
+    listing that shows it.
+    """
     target = f"; target device {target_device}" if target_device else ""
     selected_system = f" in managed system {system}" if system else ""
     if not yes and not typer.confirm(

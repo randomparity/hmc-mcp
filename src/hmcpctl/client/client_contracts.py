@@ -333,6 +333,7 @@ class StorageClient(Protocol):
         operation: str,
         snapshot: Callable[[], Awaitable[Any]],
         dispatch: Callable[[], Awaitable[Any]],
+        note: str = "",
     ) -> Any: ...
 
     async def list_volume_groups(self, vios_uuid: str) -> list[dict[str, Any]]: ...
