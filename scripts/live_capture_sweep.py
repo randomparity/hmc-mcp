@@ -480,6 +480,7 @@ RAW_COMMANDS: tuple[tuple[str, str], ...] = (
     ("lshmc-V", "lshmc -V"),
     ("sys-native", "lssyscfg -r sys -m {system_name}"),
     ("sys-no-m", "lssyscfg -r sys -F uuid,name"),
+    ("sys-no-m-name", "lssyscfg -r sys -F name"),
     ("lpar-native", "lssyscfg -r lpar -m {system_name}"),
     ("lpar-no-m", "lssyscfg -r lpar -F uuid,name"),
     (

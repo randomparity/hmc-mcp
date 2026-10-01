@@ -74,11 +74,13 @@ different objects, and the same object can carry different tokens. Never join
 fixtures across the two exports by UUID. Other names in that export (`lpar-N`,
 `prof-N`, `vg-N`, `dev-N`, ...) are tokens of its own map too.
 
-`vocabulary/` holds what was derived from the 2026-09-30 corpora, not captured
-records: one vocabulary and one schema enum list per HMC release and system
-(`v10r3-p9.json` with `enums-v10r3-p9.json`, and the four V11R2 pairs
+`vocabulary/` holds what was derived from the read-only corpora, not captured
+records: one vocabulary and one schema enum list per HMC release and system.
+From the 2026-09-30 prototype export: `v10r3-p9` and the V11R2 pairs
 `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
-`v11r2-p11-9242-21b`), plus the
+`v11r2-p11-9242-21b`. From the first run of the tracked sweep and exporter on
+2026-10-01: `v10r3-p8-8247-22l`, `v11r2-p10-9080-hex` and `v11r2-p10-9043-mrx`
+(two HMCs folded together). Beside them sit the
 documented job statuses (`enums-documented-jobs.json`, names cited to
 `docs/refs/`, each marked captured or documented-only) and the allowlist of
 `just live-vocabulary`. Each vocabulary names its sources;

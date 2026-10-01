@@ -434,3 +434,32 @@ def test_exemption_errors_fail_the_guard(repo: Path, capsys) -> None:
     guard.main(["--root", str(repo), "--write-allowlist"])
     assert guard.main(["--root", str(repo)]) == 1
     assert "stale live-vocabulary exemption" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'fake.PartitionState = "Running"',
+        'PartitionState = "Running"',
+        '_entry("vios-z", PartitionState="Running")',
+    ],
+)
+def test_assignments_naming_an_element_are_checked(statement: str) -> None:
+    assert _values("t.py", statement + "\n") == [("PartitionState", "Running")]
+
+
+def test_job_status_assignments_are_checked_as_status() -> None:
+    """Regression: `fake_hmc.wait_job_status = "running"` passed the gate."""
+    evidence = _evidence()
+    evidence.allowed["Status"] = {"RUNNING", "COMPLETED_OK"}
+    found = guard.literal_violations(
+        "t.py",
+        'fake_hmc.wait_job_status = "running"\nok = f(job_status="RUNNING")\n',
+        evidence,
+    )
+    assert [(v.subject, v.value, v.line) for v in found] == [("Status", "running", 1)]
+
+
+def test_other_snake_case_parameters_are_not_mapped() -> None:
+    """hmcpctl's own parameters take CLI forms (`sharing_mode="keep_idle_procs"`)."""
+    assert _values("t.py", 'f(partition_state="Running", status="Degraded")\n') == []

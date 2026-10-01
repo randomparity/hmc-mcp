@@ -68,7 +68,11 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
 
     async def vios(system_uuid: str) -> list[dict]:
         if system_uuid == "sys-b":
-            return [_entry("vios-z", PartitionName="zeta-vios", PartitionState="down")]
+            return [
+                _entry(
+                    "vios-z", PartitionName="zeta-vios", PartitionState="not activated"
+                )
+            ]
         return []
 
     client.list_logical_partitions.side_effect = lpars
@@ -83,7 +87,7 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
         {
             "uuid": "vios-z",
             "name": "zeta-vios",
-            "state": "down",
+            "state": "not activated",
             "system_uuid": "sys-b",
             "system_name": "system-b",
         },
