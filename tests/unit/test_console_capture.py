@@ -2067,17 +2067,26 @@ async def test_every_write_is_audited_first_and_carries_no_content():
     assert "secret" not in repr(record.call_args_list)
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "written"),
+    [
+        # The default: Ctrl-O, verified live on V10R3 M1060 / FW950 (#1149).
+        ({}, b"\x0fh"),
+        ({"prefix": b"\x1b\x0f"}, b"\x1b\x0fh"),
+    ],
+    ids=["default-ctrl-o", "override"],
+)
 @pytest.mark.asyncio
-async def test_send_sysrq_is_one_write_of_prefix_and_key():
+async def test_send_sysrq_is_one_write_of_prefix_and_key(kwargs, written):
     process = FakeProcess(BANNER, None)
     connect, run_command, probe_seconds = _session_patches(
         FakeConnection([process]), FakeConnection([FakeProcess(BANNER)])
     )
     with connect, run_command, probe_seconds, _audited():
         async with _writable() as session:
-            await session.send_sysrq("c", prefix=b"\x0f")
+            await session.send_sysrq("h", **kwargs)
 
-    assert process.stdin.written == [b"\x0fc"]
+    assert process.stdin.written == [written]
 
 
 @pytest.mark.parametrize(

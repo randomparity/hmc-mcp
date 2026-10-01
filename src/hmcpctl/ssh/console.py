@@ -1347,6 +1347,11 @@ class ConsoleSession:
         return chunk
 
 
+#: Ctrl-O, the Linux hvc console's SysRq trigger (``drivers/tty/hvc/hvc_console.c``),
+#: observed passing through the HMC vterm on V10R3 M1060 / FW950 (#1149).
+SYSRQ_PREFIX = b"\x0f"
+
+
 class WritableConsoleSession(ConsoleSession):
     """A console session that can write to the partition console (ADR 0176).
 
@@ -1366,8 +1371,14 @@ class WritableConsoleSession(ConsoleSession):
     asyncssh queues a write's whole buffer before draining, so a returned write
     proves only that it was queued, and cancelling one does not withdraw it:
     never retry a cancelled write. A writable session does not consult the
-    ADR 0011 ownership guard. ``~.`` in written bytes may end the vterm session
-    (the ``mkvterm`` manual page).
+    ADR 0011 ownership guard.
+
+    Observed live on HMC V10R3 M1060 with partition firmware FW950 (#1149):
+    written ``~.`` did not end the vterm, whether mid-line or after a CR, at
+    the SMS menu, at GRUB or in a Linux installer, although the ``mkvterm``
+    manual page documents it as the end sequence. The held session needed no
+    stdin EOF to stay held for 85-230 s. Written keystrokes reach the
+    partition firmware as well as a booted guest: SMS answers them.
     """
 
     def _new_stdin(self) -> _Stdin:
@@ -1384,13 +1395,15 @@ class WritableConsoleSession(ConsoleSession):
         """
         await self._write_for(self, data, mode="shared", input_kind="raw")
 
-    async def send_sysrq(self, key: str, *, prefix: bytes) -> None:
+    async def send_sysrq(self, key: str, *, prefix: bytes = SYSRQ_PREFIX) -> None:
         """Send ``prefix`` followed by the SysRq *key* as one write.
 
-        hmcpctl ships no SysRq sequence: the HMC documents none, and the
-        caller-supplied *prefix* stays unverified until live evidence exists
-        (#879). Linux's hvc console treats ``b"\\x0f"`` (Ctrl-O) as the prefix
-        on the guest side (ADR 0176).
+        The default *prefix* is ``b"\\x0f"`` (Ctrl-O), which Linux's hvc
+        console reads as the SysRq trigger (ADR 0176). The HMC documents no
+        SysRq sequence; the vterm was observed passing it through on HMC V10R3
+        M1060 with partition firmware FW950, where ``h`` drew the guest's
+        SysRq help within about a second (#1149). Pass *prefix* for any other
+        console.
 
         Raises:
 
@@ -1406,7 +1419,7 @@ class WritableConsoleSession(ConsoleSession):
         if not isinstance(prefix, bytes):
             raise TypeError(f"SysRq prefix must be bytes, got {type(prefix).__name__}")
         if not prefix:
-            raise ValueError("SysRq prefix must not be empty; hmcpctl ships no default")
+            raise ValueError("SysRq prefix must not be empty")
         await self._write_for(
             self, prefix + key.encode("ascii"), mode="shared", input_kind="sysrq"
         )
