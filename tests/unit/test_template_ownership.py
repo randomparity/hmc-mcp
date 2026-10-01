@@ -200,7 +200,8 @@ async def test_non_completed_waited_deploy_does_not_post_list_or_stamp(monkeypat
     monkeypatch.setattr(
         operations_templates,
         "wait_for_submitted_job",
-        AsyncMock(return_value={"Resource": {"Status": "FAILED"}}),
+        # A documented, captured failed status (016-job-status.md:16-27).
+        AsyncMock(return_value={"Resource": {"Status": "COMPLETED_WITH_ERROR"}}),
     )
     monkeypatch.setattr(operations_templates, "stamp_created_lpar_ownership", stamp)
 
@@ -215,7 +216,7 @@ async def test_non_completed_waited_deploy_does_not_post_list_or_stamp(monkeypat
 
     assert hmc.list_logical_partitions.await_count == 1
     assert result["ownership_stamped"] is None
-    assert "FAILED" in result["warnings"][0]
+    assert "COMPLETED_WITH_ERROR" in result["warnings"][0]
     stamp.assert_not_awaited()
 
 
