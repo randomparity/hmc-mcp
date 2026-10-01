@@ -14,6 +14,8 @@ from typing import Any
 import asyncssh
 import httpx
 import pytest
+from conftest import live_fixture
+from defusedxml import ElementTree
 
 LIVE_TEST_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(LIVE_TEST_ROOT))
@@ -258,8 +260,8 @@ _KEYWORDS = [
     "SFTPKey",
     "SSHKey",
     "Private Key",
-    "X-API-Session",
     "X_API_SESSION",
+    "JSESSIONID: ",
 ]
 
 
@@ -299,6 +301,97 @@ def test_secret_text_is_redacted_ssh(
         _ssh(parts["command"])
     assert "hunter2" not in dest.read_text()
     assert capture.SECRET_REDACTED in dest.read_text()
+
+
+def _captured_error_body(session: str, cookie: str) -> str:
+    """The captured 404 REST0005 body with a live-looking header echo put back."""
+    body = live_fixture("rest-job-not-found")["body"]
+    for redacted, value in (("SESSION", session), ("COOKIE", cookie)):
+        token = next(
+            form
+            for form in (f"<REDACTED-{redacted}>", f"&lt;REDACTED-{redacted}&gt;")
+            if form in body
+        )
+        body = body.replace(token, value)
+    return body
+
+
+def test_error_body_keeps_everything_but_the_echoed_session(
+    monkeypatch: pytest.MonkeyPatch, dest: Path
+) -> None:
+    body = _captured_error_body(
+        "sess-0123abcd=", "JSESSIONID=js-4567:-1; CCFWSESSION=cc-89ef"
+    )
+    _install_rest(monkeypatch, _response(body, status=404))
+    with capture.capture(dest):
+        _rest()
+    text = dest.read_text()
+    for value in ("sess-0123abcd", "js-4567", "cc-89ef"):
+        assert value not in text
+    recorded = _records(dest)[0]["body"]
+    assert "REST0005 No such Job" in recorded
+    assert "cookie=redacted-session, " in recorded
+    assert "x-api-session=redacted-session, " in recorded
+    ElementTree.fromstring(recorded.strip())
+
+
+@pytest.mark.parametrize("field", ["request", "response", "exception"])
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "x-api-session=hunter2",
+        "x-api-session=[hunter2, hunter2]",
+        "cookie=JSESSIONID=hunter2; CCFWSESSION=hunter2",
+        "cookie=JSESSIONID=hunter2; LtpaToken2=hunter2",
+        "cookie=[JSESSIONID=hunter2, CCFWSESSION=hunter2]",
+        "JSESSIONID=hunter2",
+        "<X-API-Session>hunter2</X-API-Session>",
+    ],
+)
+def test_session_values_are_redacted_and_the_rest_kept(
+    monkeypatch: pytest.MonkeyPatch, dest: Path, field: str, secret: str
+) -> None:
+    text = f"{{before=1, {secret}, after=2}}"
+    kwargs: dict[str, Any] = {}
+    if field == "request":
+        kwargs["content"] = text
+        _install_rest(monkeypatch, _response())
+    elif field == "response":
+        _install_rest(monkeypatch, _response(text))
+    else:
+        _install_rest(monkeypatch, RuntimeError(text))
+    with capture.capture(dest):
+        try:
+            _rest("PUT", **kwargs)
+        except RuntimeError:
+            pass
+    written = dest.read_text()
+    assert "hunter2" not in written
+    assert capture.SECRET_REDACTED not in written
+    assert "{before=1, " in written and ", after=2}" in written
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "X-API-Session: hunter2",
+        "x-api-session=redacted-session X-API-Session hunter2",
+        "x-api-session= hunter2",
+        "x-api-session=abc hunter2",
+        'x-api-session="abc hunter2"',
+        "JSESSIONID= hunter2",
+        "Cookie: LtpaToken2=hunter2",
+        "cookie=JSESSIONID=abc\nhunter2",
+        "cookie=JSESSIONID=abc<hunter2",
+    ],
+)
+def test_a_session_keyword_outside_a_known_form_is_still_wholesale(
+    monkeypatch: pytest.MonkeyPatch, dest: Path, text: str
+) -> None:
+    _install_rest(monkeypatch, _response(text))
+    with capture.capture(dest):
+        _rest()
+    assert _records(dest)[0]["body"] == capture.SECRET_REDACTED
 
 
 def test_template_deploy_memento_is_redacted(

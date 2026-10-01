@@ -320,7 +320,7 @@ def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text="running"))
+    ).mock(return_value=httpx.Response(200, text='"running"'))
     result = hmc_get_lpar_state(LPAR_UUID)
     assert route.called
     assert result == "running"

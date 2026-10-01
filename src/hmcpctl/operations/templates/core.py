@@ -12,6 +12,7 @@ from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
     DEFAULT_JOB_TIMEOUT_SECONDS,
+    SUCCESSFUL_JOB_STATUSES,
     validate_wait_timing,
     wait_for_submitted_job,
 )
@@ -138,7 +139,7 @@ async def deploy_partition_template(
         }
 
     status = ((selected_job or {}).get("Resource") or {}).get("Status")
-    if status != "COMPLETED":
+    if status not in SUCCESSFUL_JOB_STATUSES:
         return {
             "job": selected_job,
             "ownership_stamped": None,

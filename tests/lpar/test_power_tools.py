@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, LPAR_RESOURCE_CONFIG, SYSTEM_ENTRY
+from conftest import JOB_ENTRY, JOB_ID, LPAR_RESOURCE_CONFIG, SYSTEM_ENTRY
 
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
@@ -321,7 +321,7 @@ def test_power_on_system_submits_job(monkeypatch, mock_hmc):
     result = hmc_power_on_system(SYSTEM_UUID)
     body = route.calls.last.request.content.decode()
     assert "PowerOn</OperationName>" in body and "ManagedSystem" in body
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
 
 
 def test_power_off_system_submits_job(monkeypatch, mock_hmc):
@@ -346,7 +346,7 @@ def test_power_on_vios_submits_job(monkeypatch, mock_hmc):
     result = hmc_power_on_vios(VIOS_UUID)
     body = route.calls.last.request.content.decode()
     assert "PowerOn</OperationName>" in body and "VirtualIOServer" in body
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
 
 
 def test_power_off_vios_submits_job(monkeypatch, mock_hmc):

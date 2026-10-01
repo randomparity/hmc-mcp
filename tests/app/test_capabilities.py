@@ -699,7 +699,7 @@ def test_lpm_recovery_tools_have_standard_wait_contract():
 
 def _mock_state_and_delete(router, state: str, status: int = 200):
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
-        return_value=httpx.Response(status, text=state)
+        return_value=httpx.Response(status, text=f'"{state}"')
     )
     return router.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(204)
@@ -810,7 +810,7 @@ POWER_ON_JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def _mock_power_on_guard(router, state: str):
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
-        return_value=httpx.Response(200, text=state)
+        return_value=httpx.Response(200, text=f'"{state}"')
     )
     return router.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY)

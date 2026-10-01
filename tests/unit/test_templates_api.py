@@ -4,7 +4,7 @@ from xml.etree import ElementTree
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, make_config
+from conftest import JOB_ENTRY, JOB_ID, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCTransportError
@@ -104,4 +104,4 @@ async def test_deploy_partition_template(mock_hmc):
     assert parameters["K_X_API_SESSION_MEMENTO"]
     assert parameters["TargetUuid"] == "sys-uuid"
     assert parameters["TemplateUuid"] == "draft-uuid"
-    assert job is not None and job["Resource"]["JobID"] == "job-uuid-999"
+    assert job is not None and job["Resource"]["JobID"] == JOB_ID

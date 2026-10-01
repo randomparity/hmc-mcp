@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.operations.virtualization.pcie import (
@@ -107,6 +108,32 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
     assert result.items[1].owner_lpar is None
     assert result.items[1].availability is None
     assert result.items[2].owner_lpar is None
+
+
+@pytest.mark.asyncio
+async def test_dedicated_inventory_reads_the_captured_slot_listing() -> None:
+    capture = live_fixture("cli-io-slots")
+    with (
+        patch(
+            "hmcpctl.operations.virtualization.pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys-R1", None)),
+        ),
+        patch(
+            "hmcpctl.ssh.io_inventory.run_hmc_command",
+            AsyncMock(return_value=capture["stdout"]),
+        ) as run,
+    ):
+        result = await list_dedicated_slots(_hmc(), "system-uuid")
+
+    assert run.await_args.args[1] == capture["command"]
+    owners = {item.drc_index: item.owner_lpar for item in result.items}
+    assert len(owners) == 15
+    assert {drc for drc, owner in owners.items() if owner is not None} == {
+        "21020013",
+        "21040015",
+    }
+    assert owners["21020013"] == "sys-R1-vios1"
+    assert "null" not in owners.values()
 
 
 @pytest.mark.asyncio

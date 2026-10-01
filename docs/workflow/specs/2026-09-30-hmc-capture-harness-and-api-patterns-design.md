@@ -65,9 +65,16 @@ def capture(path: Path) -> Iterator[Capture]
     `Authorization` (case-insensitive) are dropped;
   - for a path containing `Logon`, request body, response body, and exception text are
     replaced by `"<redacted: logon>"`;
-  - any request body, response body, exception text, SSH command, stdout, or stderr containing
+  - in any request body, response body, exception text, SSH command, stdout, or stderr, the
+    values of the header echo every V10R3 `HttpErrorResponse` carries (`x-api-session=…`,
+    `cookie=…`, `JSESSIONID=…`, `CCFWSESSION=…`) and the text of an `<X-API-Session>` element
+    are replaced by `redacted-session`, and the rest of the text is kept (#1161 follow-up: the
+    wholesale rule alone discarded every error body);
+  - any of those fields where a replaced value is not followed by `,`, `;`, `}`, `</` or the end
+    of the text, or that still contains
     one of `password`, `passwd`, `passphrase`, `sftpkey`, `sshkey`, `private key`, `x-api-session`,
-    `x_api_session` (case-insensitive) is replaced by `"<redacted: secret>"`. The list covers
+    `x_api_session`, `jsessionid`, `ccfwsession`, `cookie:` (case-insensitive) after that step, is
+    replaced by `"<redacted: secret>"`. The list covers
     the secrets hmcpctl sends today: the logon password, the session memento a template
     deploy carries (`src/hmcpctl/jobs/requests.py:365`), VIOS update-job `SFTPKey`/`PassPhrase`
     (`src/hmcpctl/operations/updates/models.py:35`), VIOS update `SSHKey`
