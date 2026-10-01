@@ -125,17 +125,6 @@ def _lpar_issue(
     }
 
 
-def _operation_name(resource: dict[str, Any]) -> object:
-    """Return ``JobRequestInstance/RequestedOperation/OperationName``.
-
-    A JobResponse has no ``JobName``; it names the operation in its request
-    instance (`PowerOn` in the captured V10R3 job reads, #1202).
-    """
-    request = resource.get("JobRequestInstance")
-    operation = request.get("RequestedOperation") if isinstance(request, dict) else None
-    return operation.get("OperationName") if isinstance(operation, dict) else None
-
-
 def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     resource = _resource(job)
     _check_job_parameter_budget(resource)
@@ -152,7 +141,7 @@ def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     )
     return {
         "job_id": job_id,
-        "name": _bounded_text_or_unknown(_operation_name(resource)),
+        "name": _bounded_text_or_unknown(resource.get("JobName")),
         "status": status,
         "error": bounded_error,
     }
