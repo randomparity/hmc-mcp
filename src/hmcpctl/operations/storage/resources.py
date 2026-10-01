@@ -143,7 +143,7 @@ def _optional_gib_as_mib(
 def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
     operation = "list_volume_groups"
     resource = _resource(entry, operation)
-    uuid = entry.get("UUID") or resource.get("VolumeGroupUUID")
+    uuid = entry.get("UUID")
     if not isinstance(uuid, str) or not uuid:
         raise HMCError(f"{operation} returned no usable UUID")
     capacity_gib = _optional_number(resource, "GroupCapacity", operation)

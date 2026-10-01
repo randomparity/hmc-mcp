@@ -1,6 +1,7 @@
 """Tool-layer tests for media repository and optical media tools."""
 
 import httpx
+from conftest import volume_group_with_repository
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "22222222-2222-2222-2222-222222220001"
@@ -34,23 +35,7 @@ def _feed(uuid: str, rtype: str, **fields: str) -> str:
 """
 
 
-VG_FEED_WITH_REPO = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:{VG_UUID}</id>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <VolumeGroupUUID>{VG_UUID}</VolumeGroupUUID>
-        <GroupName>VMLibrary</GroupName>
-        <VirtualMediaRepository schemaVersion="V1_0">
-          <RepositoryName>VMLibrary</RepositoryName>
-          <RepositorySize>40960</RepositorySize>
-        </VirtualMediaRepository>
-      </VolumeGroup>
-    </content>
-  </entry>
-</feed>
-"""
+VG_FEED_WITH_REPO = volume_group_with_repository()
 
 
 def test_get_media_repository(monkeypatch, mock_hmc):
@@ -67,43 +52,16 @@ def test_get_media_repository(monkeypatch, mock_hmc):
 
     assert route.called
     assert result is not None
-    assert result["UUID"] == VG_UUID
+    assert result["UUID"] == "00000050-abcd-4ef0-8abc-000000000050"
 
 
 def test_list_optical_media(monkeypatch, mock_hmc):
     """hmc_list_optical_media GETs the VolumeGroup and extracts optical media."""
     _hmc_env(monkeypatch)
 
-    media_feed = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:{VG_UUID}</id>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <VolumeGroupUUID>{VG_UUID}</VolumeGroupUUID>
-        <VirtualMediaRepository schemaVersion="V1_0">
-          <RepositoryName>VMLibrary</RepositoryName>
-          <RepositorySize>40960</RepositorySize>
-          <VirtualOpticalMedia schemaVersion="V1_0">
-            <MediaName>aix.iso</MediaName>
-            <Size kb="CUR">1.0801</Size>
-            <MediaType>BLANK</MediaType>
-          </VirtualOpticalMedia>
-          <VirtualOpticalMedia schemaVersion="V1_0">
-            <MediaName>linux.iso</MediaName>
-            <Size kb="CUR">2</Size>
-            <MediaType>BLANK</MediaType>
-          </VirtualOpticalMedia>
-        </VirtualMediaRepository>
-      </VolumeGroup>
-    </content>
-  </entry>
-</feed>
-"""
-
     route = mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(200, text=media_feed))
+    ).mock(return_value=httpx.Response(200, text=VG_FEED_WITH_REPO))
 
     from hmcpctl.server_tools.storage.resources import hmc_list_optical_media
 
@@ -111,11 +69,13 @@ def test_list_optical_media(monkeypatch, mock_hmc):
 
     assert route.called
     assert len(media_list) == 2
-    assert media_list[0]["name"] == "aix.iso"
-    assert media_list[1]["name"] == "linux.iso"
+    assert media_list[0]["name"] == "media-1"
+    assert media_list[1]["name"] == "media-2"
     # The HMC's Size is GiB; the tool reports it in MiB (#963).
-    assert media_list[0]["size_mib"] == 1106.0224
-    assert media_list[1]["size_mib"] == 2048
+    assert media_list[0]["size_mib"] == 928.0512
+    assert media_list[1]["size_mib"] == 987.9552
+    # The captured media carry no MediaType.
+    assert media_list[0]["media_type"] is None
 
 
 def test_get_media_repository_not_found(monkeypatch, mock_hmc):
@@ -140,7 +100,9 @@ def test_list_optical_media_empty(monkeypatch, mock_hmc):
 
     route = mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(200, text=VG_FEED_WITH_REPO))
+    ).mock(
+        return_value=httpx.Response(200, text=volume_group_with_repository(media=False))
+    )
 
     from hmcpctl.server_tools.storage.resources import hmc_list_optical_media
 

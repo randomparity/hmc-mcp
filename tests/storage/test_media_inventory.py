@@ -2,76 +2,15 @@
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import captured, make_config, volume_group_with_repository
 
 from hmcpctl.client import client_storage
 from hmcpctl.client.core import HMCClient
 
-VG_ENTRY_WITH_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:22222222-2222-2222-2222-222222220001</id>
-  <title>VolumeGroup:VMLibrary</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>22222222-2222-2222-2222-222222220001</VolumeGroupUUID>
-      <GroupName>VMLibrary</GroupName>
-      <VirtualMediaRepository schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <RepositoryName>VMLibrary</RepositoryName>
-        <RepositorySize>40960</RepositorySize>
-        <VirtualOpticalMedia schemaVersion="V1_0">
-          <Metadata><Atom/></Metadata>
-          <MediaName>aix.iso</MediaName>
-          <MediaSize>1400</MediaSize>
-          <MediaType>BLANK</MediaType>
-        </VirtualOpticalMedia>
-        <VirtualOpticalMedia schemaVersion="V1_0">
-          <Metadata><Atom/></Metadata>
-          <MediaName>linux.iso</MediaName>
-          <MediaSize>2048</MediaSize>
-          <MediaType>BLANK</MediaType>
-        </VirtualOpticalMedia>
-      </VirtualMediaRepository>
-    </VolumeGroup>
-  </content>
-</entry>
-"""
-
-VG_ENTRY_EMPTY_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:22222222-2222-2222-2222-222222220002</id>
-  <title>VolumeGroup:VMLibrary</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>22222222-2222-2222-2222-222222220002</VolumeGroupUUID>
-      <GroupName>VMLibrary</GroupName>
-      <VirtualMediaRepository schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <RepositoryName>VMLibrary</RepositoryName>
-        <RepositorySize>8192</RepositorySize>
-      </VirtualMediaRepository>
-    </VolumeGroup>
-  </content>
-</entry>
-"""
-
-VG_ENTRY_WITHOUT_REPO = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:22222222-2222-2222-2222-222222220003</id>
-  <title>VolumeGroup:data</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VolumeGroupUUID>22222222-2222-2222-2222-222222220003</VolumeGroupUUID>
-      <GroupName>data</GroupName>
-    </VolumeGroup>
-  </content>
-</entry>
-"""
-
-VG_ENTRY_WRAPPED_REPO = VG_ENTRY_WITH_REPO.replace(
-    '<VirtualMediaRepository schemaVersion="V1_0">',
-    '<MediaRepositories><VirtualMediaRepository schemaVersion="V1_0">',
-).replace("</VirtualMediaRepository>", "</VirtualMediaRepository></MediaRepositories>")
+VG_ENTRY_WITH_REPO = volume_group_with_repository()
+VG_ENTRY_EMPTY_REPO = volume_group_with_repository(media=False)
+# The captured clientvg1 entry: a volume group with no media repository.
+VG_ENTRY_WITHOUT_REPO = captured("rest-volume-group")["body"]
 
 
 @pytest.mark.asyncio
@@ -89,13 +28,12 @@ async def test_get_media_repository(mock_hmc):
 
     assert route.called
     assert result is not None
-    resource = result["Resource"]
-    repo = resource["VirtualMediaRepository"]
+    repo = result["Resource"]["MediaRepositories"]["VirtualMediaRepository"]
     assert repo["RepositoryName"] == "VMLibrary"
-    assert repo["RepositorySize"] == "40960"
-    assert "VirtualOpticalMedia" in repo
-    assert isinstance(repo["VirtualOpticalMedia"], list)
-    assert len(repo["VirtualOpticalMedia"]) == 2
+    # RepositorySize is GiB (#963).
+    assert repo["RepositorySize"] == "15"
+    media = repo["OpticalMedia"]["VirtualOpticalMedia"]
+    assert [item["MediaName"] for item in media] == ["media-1", "media-2"]
 
 
 @pytest.mark.asyncio
@@ -113,31 +51,10 @@ async def test_get_media_repository_empty(mock_hmc):
 
     assert route.called
     assert result is not None
-    resource = result["Resource"]
-    repo = resource["VirtualMediaRepository"]
+    repo = result["Resource"]["MediaRepositories"]["VirtualMediaRepository"]
     assert repo["RepositoryName"] == "VMLibrary"
-    assert repo["RepositorySize"] == "8192"
-    # Empty list or absent when no media
-    media = repo.get("VirtualOpticalMedia", [])
-    assert isinstance(media, list)
-    assert len(media) == 0
-
-
-@pytest.mark.asyncio
-async def test_get_media_repository_accepts_media_repositories_wrapper(mock_hmc):
-    route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/11111111-1111-1111-1111-111111111111/VolumeGroup/22222222-2222-2222-2222-222222220001"
-    ).mock(return_value=httpx.Response(200, text=VG_ENTRY_WRAPPED_REPO))
-
-    async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_media_repository(
-            "11111111-1111-1111-1111-111111111111",
-            "22222222-2222-2222-2222-222222220001",
-        )
-
-    assert route.called
-    assert result is not None
-    assert "MediaRepositories" in result["Resource"]
+    assert repo["RepositorySize"] == "15"
+    assert "VirtualOpticalMedia" not in repo["OpticalMedia"]
 
 
 @pytest.mark.asyncio
@@ -188,13 +105,13 @@ async def test_list_optical_media(mock_hmc):
         )
 
     assert route.called
-    assert len(media_list) == 2
-    assert media_list[0]["MediaName"] == "aix.iso"
-    assert media_list[0]["MediaSize"] == "1400"
-    assert media_list[0]["MediaType"] == "BLANK"
-    assert media_list[1]["MediaName"] == "linux.iso"
-    assert media_list[1]["MediaSize"] == "2048"
-    assert media_list[1]["MediaType"] == "BLANK"
+    # The captured media carry MediaName, MediaUDID, MountType and Size (GiB);
+    # no MediaType.
+    assert [(m["MediaName"], m["Size"]) for m in media_list] == [
+        ("media-1", "0.9063"),
+        ("media-2", "0.9648"),
+    ]
+    assert all("MediaType" not in m for m in media_list)
 
 
 @pytest.mark.asyncio
@@ -230,13 +147,15 @@ async def test_list_optical_media_discards_malformed_response_elements(
             {"Resource": {"MediaRepositories": []}},
             {
                 "Resource": {
-                    "VirtualMediaRepository": {
-                        "OpticalMedia": {
-                            "VirtualOpticalMedia": [
-                                {"MediaName": "kept.iso"},
-                                "discarded",
-                                None,
-                            ]
+                    "MediaRepositories": {
+                        "VirtualMediaRepository": {
+                            "OpticalMedia": {
+                                "VirtualOpticalMedia": [
+                                    {"MediaName": "kept.iso"},
+                                    "discarded",
+                                    None,
+                                ]
+                            }
                         }
                     }
                 }

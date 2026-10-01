@@ -464,7 +464,8 @@ def hmc_list_optical_media(
     """List Virtual Optical Media in the Virtual Media Repository.
 
     Returns a list of optical media entries (ISO containers) with their
-    name, size_mib (converted from the HMC's GiB Size), and media_type.
+    name, size_mib (converted from the HMC's GiB Size), and media_type, which
+    is null when the HMC sends no MediaType, as V10R3 does.
     The repository must exist (VMLibrary on the specified Volume Group).
 
     Args:
