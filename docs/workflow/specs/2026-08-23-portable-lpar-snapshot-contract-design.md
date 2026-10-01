@@ -97,15 +97,17 @@ the validated record as the data argument of `chsyscfg -r prof -m <target-system
 normal command construction and authorization escape it as one argument. Artifact text is never a
 shell command, and the system-wide `bkprofdata`/`rstprofdata` file is not part of this contract.
 
-Version 1 accepts the attribute-record grammar a V10R3 HMC prints (live capture for #1202,
-2026-09-30). The record is a non-empty comma-separated sequence of `key=value` pairs. Keys are
+Version 1 accepts the attribute-record grammar V10R3 and V11R2 HMCs print (live captures for
+#1202, 2026-09-30). The record is a non-empty comma-separated sequence of `key=value` pairs. Keys are
 non-empty ASCII letters, digits, and underscores. A pair is split at its first equals sign, so a
 value may itself contain `=` (`sriov_eth_logical_ports=config_id=0:adapter_id=1:...`). A pair
 whose value contains commas is wrapped whole in double quotes, `"name=v1,v2"`, the rendering ADR
-0061 adopted; every partition's `virtual_serial_adapters` pair is printed that way. Values are
-printable and may contain spaces and semicolons, but not a double quote or a control character.
-Empty values are valid. Duplicate keys are invalid. Any other quoting, such as an unterminated
-quoted pair, makes capture fail. Replay is not implemented; a future replay design must
+0061 adopted; every partition's `virtual_serial_adapters` pair is printed that way. V11R2 also
+quotes a list element that itself holds commas inside the quoted pair, doubling its quotes (a
+`virtual_fc_adapters` element carrying two WWPNs). That is CSV quoting: a record is accepted
+only when it re-renders byte for byte under minimal CSV quoting, so a quote anywhere else, or an
+unterminated quoted pair, makes capture fail. Values may contain spaces and semicolons but no
+control character. Empty values are valid. Duplicate keys are invalid. Replay is not implemented; a future replay design must
 reconstruct the ordered pairs through the repository's `build_attribute_record` boundary, marking
 list-valued attributes as quoted, and pass that result as one shell-escaped argument.
 

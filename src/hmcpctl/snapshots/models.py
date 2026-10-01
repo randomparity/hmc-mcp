@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import math
 import re
@@ -492,7 +493,11 @@ def _parse_profile(record: str) -> dict[str, str]:
 
     A V10R3 HMC wraps a list-valued pair in double quotes (``"name=v1,v2"``, the
     ADR 0061 rendering) and splits each pair at its first ``=``, so a value may
-    itself hold ``=`` (``sriov_eth_logical_ports=config_id=0:...``).
+    itself hold ``=`` (``sriov_eth_logical_ports=config_id=0:...``). V11R2 also
+    quotes a list element that holds commas inside the quoted pair, doubling its
+    quotes (a ``virtual_fc_adapters`` element carrying two WWPNs). That is CSV
+    quoting, so a record is accepted only when it re-renders byte for byte under
+    it: a quote anywhere else is refused.
     """
     if len(record.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         raise ValueError("native profile exceeds the 1 MiB snapshot limit")
@@ -515,11 +520,11 @@ def _parse_profile(record: str) -> dict[str, str]:
             raise ValueError("native profile contains a duplicate attribute")
         if any(ord(character) < 32 or ord(character) == 127 for character in value):
             raise ValueError("native profile contains a control character")
-        if '"' in value:
-            raise ValueError(
-                "native profile contains unsupported quoting or delimiters"
-            )
         values[key] = value
+    rendered = io.StringIO()
+    csv.writer(rendered, lineterminator="").writerow(items)
+    if rendered.getvalue() != record:
+        raise ValueError("native profile contains unsupported quoting or delimiters")
     return values
 
 

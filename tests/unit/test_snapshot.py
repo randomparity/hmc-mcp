@@ -567,10 +567,32 @@ def test_shared_profile_still_requires_processor_units() -> None:
         _normalized_from_profile(_parse_profile(record))
 
 
+def test_native_profile_accepts_a_quoted_element_inside_a_quoted_pair() -> None:
+    """V11R2 quotes a list element that holds commas, doubling the inner quotes.
+
+    The shape is a captured V11R2 POWER11 `virtual_fc_adapters` pair (#1202),
+    with the two WWPNs replaced by placeholders.
+    """
+    record = (
+        live_fixture("cli-prof-lp3")["stdout"]
+        .strip()
+        .replace(
+            "virtual_fc_adapters=none",
+            '"virtual_fc_adapters=""201/client/100/sys-R1-vios1/201/'
+            'c05076000000000a,c05076000000000b/0"""',
+        )
+    )
+    values = _parse_profile(record)
+    assert values["virtual_fc_adapters"] == (
+        '"201/client/100/sys-R1-vios1/201/c05076000000000a,c05076000000000b/0"'
+    )
+
+
 @pytest.mark.parametrize(
     "record",
     [
         'name=default,description=a"b',
+        '"name=default",lpar_name=aix',
         'name=default,"description=a,b',
         "name=default,lpar_name",
         "",
