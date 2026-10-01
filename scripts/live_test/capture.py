@@ -151,13 +151,13 @@ class Capture:
 
     def _ssh_record(self, command: Any, outcome: Any) -> dict[str, Any]:
         record: dict[str, Any] = {"kind": "ssh", "command": _redact(command)}
-        failed = isinstance(outcome, BaseException)
-        if failed and (
-            not isinstance(outcome, asyncssh.ProcessError)
-            or isinstance(outcome, asyncssh.TimeoutError)
-        ):
+        # A ProcessError still carries the command's exit status and output.
+        completed = not isinstance(outcome, BaseException) or isinstance(
+            outcome, asyncssh.ProcessError
+        )
+        if not completed or isinstance(outcome, asyncssh.TimeoutError):
             record["exception"] = _redact(_exception_text(outcome))
-        if not failed or isinstance(outcome, asyncssh.ProcessError):
+        if completed:
             record["exit_status"] = outcome.exit_status
             record["stdout"] = _redact(outcome.stdout)
             record["stderr"] = _redact(outcome.stderr)
