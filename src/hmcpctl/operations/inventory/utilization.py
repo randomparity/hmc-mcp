@@ -186,11 +186,13 @@ def _int(text: str | None) -> int | None:
 
 
 def _float(text: str | None) -> float | None:
+    if text is None:
+        return None
     try:
-        value = None if text is None else float(text)
+        value = float(text)
     except ValueError:
         return None
-    return value if value is not None and math.isfinite(value) else None
+    return value if math.isfinite(value) else None
 
 
 def _total(values: Iterable[Any]) -> Any:

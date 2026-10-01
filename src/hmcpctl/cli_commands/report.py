@@ -189,6 +189,26 @@ def _rollup_row(row_type: str, profiles: str, total: Rollup) -> dict[str, str]:
     }
 
 
+def _fleet_shortfalls(
+    survey: FleetSurvey, systems: tuple[FleetSystem, ...]
+) -> list[str]:
+    """What the fleet totals miss beyond per-figure unknowns."""
+    shortfalls: list[str] = []
+    if survey.failures:
+        names = ", ".join(failure.profile for failure in survey.failures)
+        shortfalls.append(
+            f"{len(survey.failures)} of {len(survey.profiles)} profiles failed "
+            f"({names}); systems only they manage are absent"
+        )
+    unidentified = sum(1 for system in systems if system.reading.serial is None)
+    if unidentified:
+        shortfalls.append(
+            f"{unidentified} systems have no machine type-model-serial, so one managed "
+            "by two HMCs is counted twice"
+        )
+    return shortfalls
+
+
 def report_rows(survey: FleetSurvey) -> list[dict[str, str]]:
     """System rows, then per-profile roll-ups, the fleet roll-up, and failures."""
     systems = fleet_systems(survey.readings)
@@ -204,23 +224,8 @@ def report_rows(survey: FleetSurvey) -> list[dict[str, str]]:
         if profile not in failed
     )
     fleet = _rollup_row("fleet", "", rollup(s.reading for s in systems))
-    missing = (
-        f"{len(survey.failures)} of {len(survey.profiles)} profiles failed "
-        f"({', '.join(failure.profile for failure in survey.failures)}); "
-        "systems only they manage are absent"
-        if survey.failures
-        else ""
-    )
-    unidentified = sum(1 for system in systems if system.reading.serial is None)
-    doubled = (
-        f"{unidentified} systems have no machine type-model-serial, so one managed by "
-        "two HMCs is counted twice"
-        if unidentified
-        else ""
-    )
-    fleet["notes"] = "; ".join(
-        note for note in (missing, doubled, fleet["notes"]) if note
-    )
+    notes = [*_fleet_shortfalls(survey, systems), fleet["notes"]]
+    fleet["notes"] = "; ".join(note for note in notes if note)
     rows.append(fleet)
     rows.extend(
         {"row_type": "failure", "profiles": failure.profile, "notes": failure.reason}
