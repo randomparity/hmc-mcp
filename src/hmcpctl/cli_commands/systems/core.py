@@ -173,11 +173,15 @@ def systems_summary(
     table.add_row("Free Memory (MiB)", str(result.get("free_memory_mib", 0)))
     table.add_row("Total Proc Units", str(result.get("total_proc_units", 0.0)))
     table.add_row("Free Proc Units", str(result.get("free_proc_units", 0.0)))
-    table.add_row("Total LPARs", str(result.get("lpar_count", 0)))
+    lpar_count = result.get("lpar_count")
+    table.add_row("Total LPARs", "-" if lpar_count is None else str(lpar_count))
     for state, count in sorted((result.get("lpar_states") or {}).items()):
         table.add_row(f"  LPARs ({state})", str(count))
-    table.add_row("VIOS Count", str(result.get("vios_count", 0)))
+    vios_count = result.get("vios_count")
+    table.add_row("VIOS Count", "-" if vios_count is None else str(vios_count))
     console.print(table)
+    for warning in result.get("warnings") or ():
+        err_console.print(f"[yellow]{warning}[/yellow]")
 
 
 def systems_capacity(

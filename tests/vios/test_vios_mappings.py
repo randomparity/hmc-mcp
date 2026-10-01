@@ -38,7 +38,7 @@ async def test_list_vios_reports_the_hmc_side_viosstorage_failure(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as raised:
-            await hmc.list_vios()
+            await hmc.list_vios("00000001-abcd-4ef0-8abc-000000000001")
 
     assert raised.value.status_code == 500
     assert "Error occurred while querying for ViosStorage from VIOS" in str(

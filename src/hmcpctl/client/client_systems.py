@@ -70,7 +70,9 @@ class SystemsMixin:
 
         Not documented in this repo's vendored HMC REST API reference (only
         the per-UUID quick/{Property} form is); evidenced by IBM's public
-        project-pim repository (ADR 0138). No typed Accept header, matching
+        project-pim repository (ADR 0138), and captured on V10R3 as a JSON
+        array of objects keyed ``UUID`` (lower case) and ``SystemName``; the
+        map is keyed by the lower-cased UUID. No typed Accept header, matching
         get_quick_property's precedent (core.py) that a uom+xml header 406s
         on quick/ endpoints, and project-pim's own quick/All calls, which
         send none either. Used only as a fallback when the direct/unfiltered
@@ -109,9 +111,11 @@ class SystemsMixin:
                 f"{type(summaries).__name__}; expected an array"
             )
         return {
-            entry["UUID"]: entry["SystemName"]
+            entry["UUID"].lower(): entry["SystemName"]
             for entry in summaries
-            if isinstance(entry, dict) and "UUID" in entry and "SystemName" in entry
+            if isinstance(entry, dict)
+            and isinstance(entry.get("UUID"), str)
+            and "SystemName" in entry
         }
 
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
@@ -181,7 +185,7 @@ class SystemsMixin:
             fallback_exc: Exception | None = None
             try:
                 names = await self._quick_all_system_names()
-                name = names.get(uuid)
+                name = names.get(uuid.lower())
                 if name:
                     entry = await self.find_system_by_name(name)
             except (HMCError, ValueError) as fb_exc:

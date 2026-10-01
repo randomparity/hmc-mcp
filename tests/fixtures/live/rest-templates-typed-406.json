@@ -1,0 +1,8 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#33",
+  "method": "GET",
+  "path": "/rest/api/templates/PartitionTemplate",
+  "status": 406,
+  "content_type": null,
+  "body": ""
+}

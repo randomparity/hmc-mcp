@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from conftest import captured_lpar_entry, captured_system_entry
+from conftest import captured_lpar_entry, captured_system_entry, live_fixture
 
 from hmcpctl.server_tools.inventory.composite import hmc_system_summary
 
@@ -225,3 +225,36 @@ def test_system_summary_missing_capacity_fails(monkeypatch, mock_hmc):
 
     with pytest.raises(ValueError, match="AssociatedSystemMemoryConfiguration"):
         hmc_system_summary(SYSTEM_UUID)
+
+
+def test_system_summary_degrades_when_the_vios_feed_fails(monkeypatch, mock_hmc):
+    """A V11R2 HMC answers the system's VIOS feed with HTTP 500 (#1202).
+
+    The summary keeps every figure the other reads returned and names the
+    missing source, instead of failing as "unhandled errors in a TaskGroup".
+    """
+    _hmc_env(monkeypatch)
+    refused = live_fixture("rest-vios-feed-500-v11r2")
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=_system_feed(SYSTEM_UUID, "p9-prod"))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200, text=_lpar_feed((LPAR_UUID_1, "aix-prod", "running"))
+        )
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
+        return_value=httpx.Response(
+            refused["status"],
+            text=refused["body"],
+            headers={"Content-Type": refused["content_type"]},
+        )
+    )
+
+    result = hmc_system_summary(SYSTEM_UUID)
+
+    assert result.lpar_count == 1
+    assert result.vios_count is None
+    (warning,) = result.warnings
+    assert warning.startswith("VIOS inventory is unavailable")
+    assert "HTTP 500" in warning and "ViosStorage" in warning

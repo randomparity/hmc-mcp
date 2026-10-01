@@ -5,7 +5,7 @@ REST answers and the refcode listing from captures recorded with
 `scripts/live_test/capture.py`, and two CLI listings (`cli-io-slots.json`,
 `cli-lpar-uuid-name.json`) from raw read-only command output. The captures were
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
-records the patterns they show. Captures whose `capture` begins `2026-09-30-ro/` come
+records the patterns they show. REST and CLI captures whose `capture` begins `2026-09-30-ro/` come
 from the read-only sweep for #1202, on the same HMC and system; a nonzero-exit one is
 raised in tests with `live_process_error(name)`. Captures whose `capture` begins
 `2026-09-30-v11r2-p9/` come from the same sweep on an HMC at V11R2 SP1120 managing a
@@ -40,6 +40,7 @@ two captures has the same token in both:
   printed. LPAR UUIDs are upper case, as V10R3 prints them.
 - The managed system is `sys-R1`, and partition names keep their suffix
   (`sys-R1-lp3`, `sys-R1-vios1`).
+- HMC user names and user descriptions become `user-N` and `desc-N`.
 - The HMC host is `hmc.test:443` (the port in an echoed `Host` header is the
   one the capture used), and the client IP address is `192.0.2.1`.
 - A location code's unit prefix is `<REDACTED-LOC>`; its slot suffix is kept,
