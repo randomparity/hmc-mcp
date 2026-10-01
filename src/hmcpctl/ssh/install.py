@@ -109,9 +109,13 @@ def validate_install_source(value: str) -> str:
 def validate_hmc_name(value: str, field: str) -> str:
     """Return *value* when it can name an HMC object, else raise.
 
-    HMC object names are free-form on the console side, so the only hard rule
-    here is printable, non-empty text: anything else cannot be a name, and
-    everything legitimate survives ``shlex.quote`` intact.
+    HMC object names are free-form on the console side, so the rules here are
+    printable, non-empty text with no leading ``-``. ``shlex.quote`` stops word
+    splitting and metacharacters but not a value the HMC CLI may parse as an
+    option once the remote shell has split the command, and the CLI has no
+    ``--`` end-of-options terminator to neutralise it per call site. A name that
+    legitimately begins with ``-`` is therefore refused rather than passed
+    through; rename the object on the HMC to use it here.
     """
     if (
         not isinstance(value, str)
@@ -119,6 +123,11 @@ def validate_hmc_name(value: str, field: str) -> str:
         or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
     ):
         raise ValueError(f"{field} must be non-empty printable text")
+    if value.startswith("-"):
+        raise ValueError(
+            f"{field} {value!r} starts with '-'; it may be parsed as an HMC "
+            "CLI option, not a name"
+        )
     return value
 
 

@@ -34,7 +34,8 @@ async def list_lpar_refcodes(
             it is an ``int`` subclass, so ``True`` would otherwise reach the
             command string as ``-n 1``.
         ValueError: If *count* is outside ``1..MAX_REFCODE_COUNT``, or either
-            selector is empty, blank, or carries a control character.
+            selector is empty, blank, starts with ``-``, or carries a
+            control character.
         HMCCLIError: If the selector carries a record delimiter, the response
             header does not name the three fields, the HMC reports a partition
             other than the one asked for, or the HMC refuses the command.
