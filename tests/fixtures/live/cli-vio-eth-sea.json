@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture.jsonl#251",
+  "command": "lshwres -r virtualio --rsubtype eth --level lpar -m sys-R1 -F lpar_name,port_vlan_id,vswitch,state,trunk_priority",
+  "exit_status": 0,
+  "stdout": "sys-R1-vios1,1,ETHERNET0,1,1\nsys-R1-vios1,2,ETHERNET0,1,1\n",
+  "stderr": ""
+}

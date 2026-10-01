@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import csv
-import io
 import shlex
 from typing import Any, Literal, get_args
 
 from ..config import HMCConfig
-from .commands import _parse_lshwres_output, build_filter, parse_hmc_delimited_rows
+from .commands import (
+    HMC_NO_RESULTS,
+    _parse_lshwres_output,
+    build_filter,
+    parse_hmc_delimited_rows,
+)
 from .transport import run_hmc_command
 
 _IO_SLOT_PCI_CLASS = {"eth": "0200", "sas": "0104", "san": "0C04", "nvme": "0108"}
@@ -48,11 +51,9 @@ async def list_fc_ports(
     if lpar_name:
         command += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     raw = await run_hmc_command(config, command)
-    return (
-        []
-        if not raw.strip()
-        else [dict(row) for row in csv.DictReader(io.StringIO(raw.strip()))]
-    )
+    if raw.strip() in {"", HMC_NO_RESULTS}:
+        return []
+    return _parse_lshwres_output(raw)
 
 
 async def list_sea_adapters(
@@ -64,7 +65,7 @@ async def list_sea_adapters(
     if lpar_name:
         command += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     raw = await run_hmc_command(config, command)
-    if not raw.strip():
+    if raw.strip() in {"", HMC_NO_RESULTS}:
         return []
     keys = fields.split(",")
     return [

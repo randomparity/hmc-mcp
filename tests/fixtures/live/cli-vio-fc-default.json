@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture.jsonl#247",
+  "command": "lshwres -r virtualio --rsubtype fc --level lpar -m sys-R1",
+  "exit_status": 0,
+  "stdout": "No results were found.\n",
+  "stderr": ""
+}

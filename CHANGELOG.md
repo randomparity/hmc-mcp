@@ -228,6 +228,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_list_sea_adapters` returns `[]` when the HMC prints its empty-result line,
+  `No results were found.`, instead of one row whose `lpar_name` is that sentence.
+  `hmc_list_fc_ports` returns `[]` for that line too, and reads the default `lshwres`
+  output as the `name=value` rows the HMC prints rather than as a CSV with a header row,
+  which it never has (#1202).
 - `hmc_list_sriov_adapters` and `pcie.list_sriov_adapters` report a dedicated-mode adapter's
   `adapter_id` as `null` rather than the string `"null"` the HMC prints for it, and
   `hmc_set_sriov_adapter_mode` refuses an `adapter_id` that is not a positive decimal before
