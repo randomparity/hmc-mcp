@@ -244,7 +244,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   (`CANCELED_*`, `COMPLETED_OK`, `COMPLETED_WITH_*`, `FAILED_*`, `NOT_STARTED`, `RUNNING`) or
   in any capture; a failed job's text comes from its `Results`. Bare `COMPLETED` stays a
   success status because two console job pages document it. `hmc_wait_for_job`,
-  `hmcpctl job wait` and `hmc_migrate_lpar` now name the documented statuses (#1202).
+  `hmcpctl jobs wait` and `hmc_migrate_lpar` now name the documented statuses (#1202).
 - A job read the HMC refuses with `400 REST000B`/`REST000E` now reports the HMC's own message
   ("Unrecognized root REST type of jobs") with the response body attached. It used to replace
   it with a guess that the endpoint needed a licence or PTF level (#1202).
