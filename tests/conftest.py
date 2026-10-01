@@ -1,13 +1,17 @@
 """Shared pytest fixtures for the hmcpctl suite."""
 
 import io
+import json
 import logging
 import os
 import select
 import sys
 import warnings
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+import asyncssh
 import fastmcp  # noqa: F401 — imported for its import-time logging configuration
 import httpx
 import pytest
@@ -312,18 +316,55 @@ LOGON_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </LogonResponse>
 """
 
-JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>RUNNING</Status>
-    </Job>
-  </content>
-</entry>
-"""
+LIVE_FIXTURES = Path(__file__).parent / "fixtures" / "live"
+
+
+def live_fixture(name: str) -> dict[str, Any]:
+    """Return the tokenized capture ``tests/fixtures/live/<name>.json`` (#1161)."""
+    return json.loads((LIVE_FIXTURES / f"{name}.json").read_text())
+
+
+def live_response(name: str) -> tuple[str, httpx.Response]:
+    """Return a captured REST request path and the HMC's answer, for respx."""
+    capture = live_fixture(name)
+    response = httpx.Response(
+        capture["status"],
+        text=capture["body"],
+        headers={"Content-Type": capture["content_type"]},
+    )
+    return capture["path"], response
+
+
+def live_process_error(name: str) -> asyncssh.ProcessError:
+    """Return a captured nonzero-exit CLI answer as asyncssh raises it (#1202).
+
+    The HMC prints its refusal on stdout and leaves stderr empty.
+    """
+    capture = live_fixture(name)
+    return asyncssh.ProcessError(
+        env={},
+        command=capture["command"],
+        subsystem=None,
+        exit_status=capture["exit_status"],
+        exit_signal=None,
+        returncode=capture["exit_status"],
+        stdout=capture["stdout"],
+        stderr=capture["stderr"],
+    )
+
+
+# A PowerOn submission as a V10R3 HMC answers it: a `JobResponse` whose numeric
+# JobID differs from the entry UUID, with a one-segment SELF link (#1161, P1).
+JOB_ENTRY = live_fixture("rest-poweron-submit")["body"]
+JOB_ID = "1787837921266"
+# A read of another PowerOn job while it runs: the entry UUID is per read and the
+# first SELF link is the HMC's malformed `nulljobs/{JobID}` (#1161, P2).
+RUNNING_JOB_ENTRY = live_fixture("rest-job-running")["body"]
+RUNNING_JOB_ID = "1787837921267"
+# A read of the JOB_ENTRY job after it finished (#1161, P2). A finished job reads
+# COMPLETED_OK; the documented job statuses have no bare COMPLETED
+# (docs/refs/hmc-rest-api-p10/016-job-status.md:16-27).
+COMPLETED_JOB_ENTRY = live_fixture("rest-job-completed-ok")["body"]
 
 # The memory and processor elements a whole-partition read-modify-write edits
 # (#1057), for LogicalPartition entries that tests hand to rename or DLPAR.

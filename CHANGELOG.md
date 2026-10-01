@@ -31,6 +31,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   session headers and redacts logon exchanges and secret-bearing text before writing, and
   refuses a destination git does not ignore; `.gitignore` now ignores `*.capture.jsonl` and
   `hmc-captures/` (#1161).
+- `tests/fixtures/live/` holds 15 tokenized captures from the #1161 windows, each citing its
+  capture, and these guessed mocks now replay them: the shared job entry is a captured
+  `JobResponse` with a numeric JobID that differs from its entry UUID; the guessed
+  `COMPLETED` job reads in the template, server-tool, storage, LPM and client tests are the
+  captured `COMPLETED_OK` read, and the client's running reads the captured `RUNNING` one;
+  quick `PartitionState` answers are JSON-quoted, an unowned slot's owner is `null`, and refcode
+  timestamps read `MM/DD/YYYY HH:MM:SS`. New tests feed the captured 404 REST0005,
+  400 REST000E and job-feed refusals through the job read paths, and the captured LPAR
+  create, read and miss through the client (#1161).
 - Live observations for the v0.1.0 bare-CEC path, from the #879 window at `90c97b5f` on HMC
   V10R3 with a POWER9 (8375-42A) system: `lpar.create`, `pcie.list_dedicated_slots`,
   `pcie.assign_dedicated_slot`, `lpar.power_on`, `lpar.get_state`, `job.get`, `job.wait`,
@@ -231,6 +240,24 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
+  systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
+  `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector
+  failed whenever REST was unreachable (#1202).
+- The default `name=value` CLI reads (`lshwres`, `lsmemopt`) no longer turn the HMC's empty
+  answer into a row: `hmc_list_memory_pools` on a system with no pool returned the phantom pool
+  `{"No results were found.": ""}`, and `hmc_list_lpar_memopt_scores` failed with "missing
+  required fields" on an empty answer. A list-valued pair, which the HMC prints quoted
+  (`"curr_lpar_names=a,b"`), is now one attribute instead of a key with a leading quote, so
+  `hmc_remove_memory_pool`'s assigned-partition guard sees the partitions it lists (#1202).
+- `hmc_deploy_partition_template(wait=True)` and `deploy_partition_template` now stamp the
+  deployed partition's ownership when the job finishes `COMPLETED_OK`. They accepted only a
+  bare `COMPLETED`, a status the HMC does not report, so a real deployment was never stamped
+  (#1161).
+- The capture harness no longer discards every HMC error body. V10R3 echoes the request
+  headers in each `HttpErrorResponse`, so the harness now redacts only the echoed session and
+  cookie values and keeps the rest of the body; text that still names a secret is replaced
+  whole, as before (#1161).
 - A shared-processor create whose explicit processing units exceed that level's virtual
   processors (a virtual processor uses at most 1.0 unit) is now refused before any request is
   sent, naming each `<level>_procs`/`<level>_vcpus` pair and the CLI options to change. This

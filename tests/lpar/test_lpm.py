@@ -2,7 +2,7 @@
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, make_config
+from conftest import JOB_ENTRY, JOB_ID, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.jobs import (
@@ -110,7 +110,7 @@ async def test_lpar_migrate(mock_hmc):
         job = await hmc.lpar_migrate(LPAR_UUID, "vrml12-fsp")
     body = route.calls.last.request.content.decode()
     assert "Migrate" in body and "vrml12-fsp" in body
-    assert job is not None and job["Resource"]["JobID"] == "job-uuid-999"
+    assert job is not None and job["Resource"]["JobID"] == JOB_ID
 
 
 @pytest.mark.asyncio

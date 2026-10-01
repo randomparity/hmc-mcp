@@ -11,6 +11,6 @@
   "fields": ["drc_index", "description", "lpar_name"],
   "parser_examples": {
     "kind": "synthetic",
-    "stdout": "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n"
+    "stdout": "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,null\n"
   }
 }

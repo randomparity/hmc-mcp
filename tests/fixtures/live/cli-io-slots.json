@@ -1,0 +1,7 @@
+{
+  "capture": "fixtures/raw-slots.out (read-only, 2026-09-30)",
+  "command": "lshwres -r io --rsubtype slot -m sys-R1 -F drc_index,description,lpar_name --header",
+  "exit_status": 0,
+  "stdout": "drc_index,description,lpar_name\n21010010,Empty slot,null\n21010012,Empty slot,null\n21020013,1 Gigabit Ethernet (UTP) 4 Port Adapter PCIE-4x/Short,sys-R1-vios1\n21030014,Empty slot,null\n21040015,PCIe3 x8 SAS RAID Internal Adapter 6Gb,sys-R1-vios1\n21010017,Universal Serial Bus UHC Spec,null\n21010018,Empty slot,null\n2101001A,Empty slot,null\n2102001B,Empty slot,null\n2103001C,Empty slot,null\n2104001D,Empty slot,null\n2105001E,Empty slot,null\n21010020,PCIe4 2-port 100GbE RoCE Adapter x16,null\n21010021,PCIe4 2-port 100GbE RoCE Adapter x16,null\n21010022,Ethernet controller,null\n",
+  "stderr": ""
+}

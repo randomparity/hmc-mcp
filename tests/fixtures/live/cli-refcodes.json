@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-probes/p1165-capture.jsonl#22",
+  "command": "lsrefcode -r lpar -m sys-R1 --filter lpar_names=sys-R1-pcie-p1165bad -n 3 -F lpar_name,time_stamp,refcode --header",
+  "exit_status": 0,
+  "stdout": "lpar_name,time_stamp,refcode\nsys-R1-pcie-p1165bad,09/30/2026 20:41:31,B2001230 LP=00002\nsys-R1-pcie-p1165bad,09/30/2026 20:41:31,D200C301\nsys-R1-pcie-p1165bad,09/30/2026 20:41:31,D200C300\n",
+  "stderr": ""
+}

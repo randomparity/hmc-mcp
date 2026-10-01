@@ -1,0 +1,7 @@
+{
+  "capture": "fixtures/raw-uuid.out (read-only, 2026-09-30)",
+  "command": "lssyscfg -r lpar -m sys-R1 -F uuid,name",
+  "exit_status": 0,
+  "stdout": "00000015-ABCD-4EF0-8ABC-000000000015,sys-R1-vios1\n00000001-ABCD-4EF0-8ABC-000000000001,sys-R1-lp3\n",
+  "stderr": ""
+}

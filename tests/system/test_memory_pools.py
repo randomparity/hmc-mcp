@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import mock_uuid_resolution
+from conftest import live_fixture, mock_uuid_resolution
 
 from hmcpctl.server_tools.systems.resources import (
     hmc_list_memory_pools,
@@ -36,8 +36,12 @@ def _hmc_env(monkeypatch):
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
+# A pool attribute whose value is a list prints as one quoted pair, the way
+# the captured `lssyscfg -r sys` prints `"lpar_proc_compat_modes=..."`
+# (tests/fixtures/live/cli-sys-attrs.json). The pool attribute names themselves
+# are uncaptured: the V10R3 POWER9 capture has no pool (#1202).
 _POOL_OUTPUT_WITH_LPARS = (
-    "pool_name=SharedMemPool1,size=4096,lpar_names=lpar1 lpar2,curr_lpar_names=lpar1,lpar2\n"
+    'pool_name=SharedMemPool1,size=4096,lpar_names=lpar1 lpar2,"curr_lpar_names=lpar1,lpar2"\n'
     "pool_name=SharedMemPool2,size=2048,lpar_names=,curr_lpar_names=\n"
 )
 
@@ -81,10 +85,10 @@ def test_list_memory_pools_returns_parsed_dicts(monkeypatch, mock_hmc):
 
 
 def test_list_memory_pools_empty_output(monkeypatch, mock_hmc):
-    """hmc_list_memory_pools returns an empty list when there are no pools."""
+    """A system with no pool prints the empty-result sentinel, which is no pools."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock("")
+    conn_mock = _make_ssh_mock(live_fixture("cli-mempool-empty")["stdout"])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_memory_pools(SYSTEM_UUID)
@@ -102,9 +106,9 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
-    # lshwres output: SharedMemPool1 has curr_lpar_names=lpar1,lpar2
+    # lshwres output: SharedMemPool1 has curr_lpar_names=lpar1,lpar2, quoted
     pool_list_output = (
-        "pool_name=SharedMemPool1,size=4096,curr_lpar_names=lpar1,lpar2\n"
+        'pool_name=SharedMemPool1,size=4096,"curr_lpar_names=lpar1,lpar2"\n'
     )
     list_result = MagicMock()
     list_result.stdout = pool_list_output

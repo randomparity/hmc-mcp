@@ -11,7 +11,12 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY
+from conftest import (
+    COMPLETED_JOB_ENTRY,
+    JOB_ENTRY,
+    JOB_ID,
+    RUNNING_JOB_ENTRY,
+)
 
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.migration import (
@@ -102,7 +107,7 @@ def test_migrate_lpar_submits_job(monkeypatch, mock_hmc):
     assert "TargetManagedSystemName" in body and "vrml12-fsp" in body
     assert "TargetProfileName" in body and "prof1" in body
     assert "WaitTime" in body and "60" in body
-    assert result.job_id == "job-uuid-999"
+    assert result.job_id == JOB_ID
 
 
 def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
@@ -166,16 +171,16 @@ def test_lpm_recovery_tools_wait_for_terminal_outcome(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
     result = tool_fn(*args, wait=True, timeout_seconds=60, poll_interval=1)
 
     assert poll_route.called
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == "job-uuid-999"
-    assert result.status == "COMPLETED"
+    assert result.job_id == JOB_ID
+    assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
     assert result.error is None
 
@@ -190,14 +195,15 @@ def test_lpm_recovery_tools_return_explicit_timeout(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY)
+    # The corpus holds a running read of another job only; this test pins the
+    # timeout fields, not which job the read named.
+    mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
 
     result = tool_fn(*args, wait=True, timeout_seconds=0, poll_interval=1)
 
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == "job-uuid-999"
     assert result.status == "RUNNING"
     assert result.timed_out is True
     assert result.error is None
@@ -315,26 +321,13 @@ def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
 # wait=True path: migrate_lpar blocks until job reaches terminal state
 # ---------------------------------------------------------------------- #
 
-JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED</Status>
-    </Job>
-  </content>
-</entry>
-"""
-
 
 def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED."""
+    """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     result = hmc_migrate_lpar(
         LPAR_UUID,
@@ -346,27 +339,27 @@ def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     )
     assert submit_route.called
     assert poll_route.called
-    assert result.status == "COMPLETED"
+    assert result.status == "COMPLETED_OK"
 
 
 def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
     """hmc_migrate_lpar(wait=False) returns the submitted job entry without polling."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", wait=False, validate_first=False)
     assert submit_route.called
     assert not poll_route.called
-    assert result.job_id == "job-uuid-999"
+    assert result.job_id == JOB_ID
 
 
 def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "MigrateValidate")
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
     result = hmc_migrate_validate_lpar(
@@ -375,4 +368,4 @@ def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
 
     assert submit_route.called
     assert poll_route.called
-    assert result.status == "COMPLETED"
+    assert result.status == "COMPLETED_OK"

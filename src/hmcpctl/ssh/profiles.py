@@ -108,20 +108,15 @@ async def set_lpar_msp(
     and returns the raw command output.
 
     Raises:
-        HMCCLIError: If the partition is not found on the system, or if its
-            ``lpar_env`` is not ``vioserver``.
+        HMCCLIError: If the partition is not found on the system (the HMC's
+            ``HSCL8012``), or if its ``lpar_env`` is not ``vioserver``.
     """
     env_cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
         f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F lpar_env"
     )
+    # An unknown partition exits 1 with HSCL8012, which run_hmc_command raises.
     lpar_env = (await run_hmc_command(config, env_cmd)).strip()
-    if not lpar_env:
-        raise HMCCLIError(
-            f"Cannot set MSP on '{lpar_name}': lssyscfg returned no output — "
-            f"partition not found on system '{system_name}'. "
-            "Check the partition name with hmc_list_lpars."
-        )
     if lpar_env != "vioserver":
         raise HMCCLIError(
             f"Cannot set MSP on '{lpar_name}': the msp attribute is only valid "
@@ -211,8 +206,6 @@ async def get_lpar_proc_compat(
         "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode,default_profile"
     )
     raw = await run_hmc_command(config, cmd)
-    if not raw.strip():
-        return {"desired": "", "curr": "", "profile": "", "profile_mode": ""}
     parts = [part.strip() for part in raw.strip().split(",")]
     parts += [""] * (3 - len(parts))
     profile = profile_name or parts[2]
