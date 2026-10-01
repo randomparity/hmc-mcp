@@ -256,6 +256,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
+  numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
 - `hmcpctl` output no longer reads HMC-sourced text or command arguments as Rich markup or
   emoji codes. Before this fix, Rich read a `[word]` segment as markup and dropped it, and
   turned a `:word:` code into an emoji. This applied to confirmation lines, warnings, error messages,
