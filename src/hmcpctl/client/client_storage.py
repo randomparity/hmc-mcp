@@ -63,13 +63,15 @@ def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
         f"{{{_UOM_NS}}}Metadata/{{{_UOM_NS}}}Atom/{{{_UOM_NS}}}AtomID"
     )
     partition_uuids = vios_elem.findall(f"{{{_UOM_NS}}}PartitionUUID")
+    # V10R3 prints partition UUIDs upper case and answers either case in a path.
+    expected = vios_uuid.casefold()
     mismatched = (
         len(atom_ids) != 1
-        or (atom_ids[0].text or "").strip() != vios_uuid
+        or (atom_ids[0].text or "").strip().casefold() != expected
         or len(partition_uuids) > 1
         or (
             len(partition_uuids) == 1
-            and (partition_uuids[0].text or "").strip() != vios_uuid
+            and (partition_uuids[0].text or "").strip().casefold() != expected
         )
     )
     if mismatched:
@@ -104,19 +106,24 @@ def _same_gib(stored: str | None, size_gib: int) -> bool:
 
 
 def _extract_optical_media(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return media entries from documented and legacy repository shapes."""
+    """Return media entries from the repository nesting V10R3 sends.
+
+    ``MediaRepositories/VirtualMediaRepository/OpticalMedia/VirtualOpticalMedia``
+    is the only nesting captured (#1202) or documented
+    (docs/refs/hmc-rest-api-p10/virtual-storage-management/215-virtual-media-repository.md).
+    """
     optical_media: list[dict[str, Any]] = []
     for entry in entries:
         resource = entry.get("Resource")
         if not isinstance(resource, dict):
             continue
-        repositories = resource.get("MediaRepositories") or resource
+        repositories = resource.get("MediaRepositories")
         if not isinstance(repositories, dict):
             continue
         repository = repositories.get("VirtualMediaRepository")
         if not isinstance(repository, dict):
             continue
-        media_container = repository.get("OpticalMedia") or repository
+        media_container = repository.get("OpticalMedia")
         if not isinstance(media_container, dict):
             continue
         media = media_container.get("VirtualOpticalMedia", [])
@@ -211,7 +218,9 @@ def mapping_lpar_uuid(mapping: Mapping[str, Any]) -> str | None:
 
 
 def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
-    return mapping_lpar_uuid(mapping) == lpar_uuid
+    # The HMC links LPARs by upper-case UUID; a selector may use either case.
+    linked = mapping_lpar_uuid(mapping)
+    return linked is not None and linked.casefold() == lpar_uuid.casefold()
 
 
 def _children_named(parent: ET.Element, name: str) -> list[ET.Element]:
@@ -865,9 +874,7 @@ class StorageMixin:
 
     def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None:
         """Return the VirtualMediaRepository (VMLibrary) element, or None."""
-        return vg_elem.find(f".//{{{_UOM_NS}}}VirtualMediaRepository") or vg_elem.find(
-            ".//VirtualMediaRepository"
-        )
+        return vg_elem.find(f".//{{{_UOM_NS}}}VirtualMediaRepository")
 
     def _build_mr_element(self, size_mib: int) -> ET.Element:
         """Build a MediaRepositories element with a VMLibrary inside.
@@ -1019,7 +1026,7 @@ class StorageMixin:
             )
 
         opt_media_tag = f"{{{_UOM_NS}}}OpticalMedia"
-        opt_media = vmlib.find(opt_media_tag) or vmlib.find(".//OpticalMedia")
+        opt_media = vmlib.find(opt_media_tag)
         if opt_media is None:
             repo_name_tag = f"{{{_UOM_NS}}}RepositoryName"
             repo_name_idx = next(
@@ -1108,19 +1115,19 @@ class StorageMixin:
         vom_tag = f"{{{_UOM_NS}}}VirtualOpticalMedia"
         name_tag = f"{{{_UOM_NS}}}MediaName"
 
-        # Older firmware may place media directly beneath the repository.
-        opt_media = vmlib.find(opt_media_tag) or vmlib.find(".//OpticalMedia")
-        search_in = opt_media if opt_media is not None else vmlib
+        opt_media = vmlib.find(opt_media_tag)
+        if opt_media is None:
+            return None  # Nothing to remove.
 
         to_remove: ET.Element | None = None
-        for vom in list(search_in.findall(vom_tag)):
+        for vom in list(opt_media.findall(vom_tag)):
             n = vom.find(name_tag)
             if n is not None and n.text == media_name:
                 to_remove = vom
                 break
         if to_remove is None:
             return None
-        search_in.remove(to_remove)
+        opt_media.remove(to_remove)
 
         return await self._post_vg_xml(
             vios_uuid, vg_uuid, vg_elem, etag=_required_etag(etag)
@@ -1156,7 +1163,7 @@ class StorageMixin:
         resource = entry.get("Resource")
         if not isinstance(resource, dict):
             return None
-        repositories = resource.get("MediaRepositories") or resource
+        repositories = resource.get("MediaRepositories")
         if not isinstance(repositories, dict):
             return None
         if "VirtualMediaRepository" not in repositories:
@@ -1168,8 +1175,9 @@ class StorageMixin:
     ) -> list[dict[str, Any]]:
         """List Virtual Optical Media in the Virtual Media Repository.
 
-        Returns a list of optical media entries (ISO containers) with their
-        MediaName, Size (GiB), and MediaType. Returns empty list if the
+        Returns a list of optical media entries (ISO containers) as the HMC sends
+        them: V10R3 gives MediaName, MediaUDID, MountType and Size (GiB), with no
+        MediaType. Returns empty list if the
         Volume Group does not exist or has no media repository.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"

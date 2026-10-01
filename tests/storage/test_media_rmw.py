@@ -5,9 +5,11 @@ virtual-disk writes, the POST carries If-Match set to the GET's ETag, a GET with
 refuses before any POST, and a 412 is the concurrent-change error with nothing written.
 """
 
+import xml.etree.ElementTree as ET
+
 import httpx
 import pytest
-from conftest import make_config
+from conftest import make_config, volume_group_with_repository
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
@@ -16,6 +18,7 @@ VIOS = "11111111-1111-1111-1111-111111111111"
 VG = "22222222-2222-2222-2222-222222222222"
 VG_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS}/VolumeGroup/{VG}"
 ETAG = '"etag-1"'
+UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
 _REPOSITORY = """
         <MediaRepositories>
@@ -157,3 +160,25 @@ async def test_delete_media_repository_refuses_medium_seen_at_its_own_read(mock_
         await _run("delete_media_repository", ())
 
     assert not route.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("media", [True, False], ids=["two-media", "no-media"])
+async def test_create_optical_media_adds_to_the_captured_container(mock_hmc, media):
+    """A new medium joins the one captured OpticalMedia container (#1202)."""
+    body = volume_group_with_repository(media=media)
+    mock_hmc.get(VG_PATH).mock(
+        return_value=httpx.Response(200, text=body, headers={"ETag": ETAG})
+    )
+    route = mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=body))
+
+    await _run("create_optical_media", ("new.iso", 3072))
+
+    posted = ET.fromstring(route.calls.last.request.content)
+    containers = posted.findall(f".//{{{UOM_NS}}}OpticalMedia")
+    assert len(containers) == 1
+    names = [
+        item.findtext(f"{{{UOM_NS}}}MediaName")
+        for item in containers[0].findall(f"{{{UOM_NS}}}VirtualOpticalMedia")
+    ]
+    assert names == (["media-1", "media-2"] if media else []) + ["new.iso"]

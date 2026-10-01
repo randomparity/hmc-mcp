@@ -248,6 +248,23 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   under a parent, and a V10R3 HMC answers a root `SRIOVAdapter` read with HTTP 400
   `INVALID_URL` (#1202).
 
+- `hmc_list_vios_backups` and `list_vios_backups` return `[]` for a VIOS with no backups.
+  V10R3 answers that `lsviosbk` read with exit 0 and `No results were found.`, which the
+  header check refused as "Malformed lsviosbk CSV" (#1202).
+- `hmc_delete_vios` and `delete_vios` read the VIOS state from
+  `VirtualIOServer/{uuid}/quick/PartitionState` and delete through `VirtualIOServer/{uuid}`,
+  and the `hmc_install_vios` preflight reads the VIOS entry there. V10R3 answers 404 for a
+  VIOS UUID under `LogicalPartition`, so every VIOS delete and install failed before reaching
+  its precondition check. Their refusal messages now point at `hmc_list_vios`, since
+  `hmc_get_lpar_state` cannot read a VIOS (#1202).
+- Storage-mapping reads and writes compare VIOS and LPAR UUIDs case-insensitively. V10R3
+  prints both upper case, so a lower-case `lpar` selector made `hmc_list_storage_mappings`
+  return `[]` and `hmc_detach_storage_mapping` refuse the mapping as not belonging to it, and a
+  lower-case VIOS UUID failed every map and detach with "identity does not match" (#1202).
+- `hmc_get_vios_storage_detail` now returns the VIOS's virtual Fibre Channel mappings, and the
+  decommission storage inventory now sees them. Both asked for the two mapping groups as
+  repeated `group` parameters, which V10R3 answers with the first group only; the request now
+  sends `?group=ViosSCSIMapping,ViosFCMapping` (#1202).
 - The PCM metric tools explain an HTTP 404 on a metric feed. The captured V11R2 HMC answers
   both `ProcessedMetrics` and `AggregatedMetrics` with 404 while every collection
   preference is disabled; the error now names the missing feed and points at
@@ -928,6 +945,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_list_optical_media`, `storage list-optical-media` and `list_optical_media` no longer
+  return `media_type`, and the CLI table drops its Type column. No captured V10R3 or V11R2
+  medium and no IBM reference page carries a `MediaType` element, so the field was always
+  null. Each medium is now `name` and `size_mib` (#1202).
 - **Output-schema change:** `hmc_fleet_health`, `fetch_fleet_health` and `hmcpctl systems
   health` no longer return `failed_jobs`, and no longer read `GET /rest/api/uom/Job`. That
   feed is not in the HMC REST reference, and every captured HMC (V10R3 and V11R2) refused it

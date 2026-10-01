@@ -12,6 +12,9 @@ recorded here stands, one signature it lists has changed.
 > element is read as carrying `Size`, not `MediaSize`: the HMC XSD names the field `Size` and
 > measures it in GiB, and live V10R3 responses do not include `MediaSize`. The decision itself,
 > that no checksum field is exposed, is unchanged. The original sentence is left in place.
+>
+> **Correction (2026-10-01, via #1202).** Captured V10R3 and V11R2 media carry `MediaName`,
+> `MediaUDID`, `MountType` and `Size`, and no `MediaType`. The decision is unchanged.
 
 ## Context
 

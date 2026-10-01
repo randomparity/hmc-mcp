@@ -176,6 +176,13 @@ _NEW_UUID_PATH_CALLS = (
         f"ManagedSystem/{UUID_B}/do/PowerOff",
     ),
     (
+        "delete_vios",
+        (UUID_B,),
+        "vios_uuid",
+        0,
+        f"VirtualIOServer/{UUID_B}",
+    ),
+    (
         "power_on_vios",
         (UUID_B,),
         "vios_uuid",
@@ -201,7 +208,7 @@ _NEW_UUID_PATH_CALLS = (
         (UUID_B,),
         "vios_uuid",
         0,
-        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping&group=ViosFCMapping",
+        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping,ViosFCMapping",
     ),
 )
 
@@ -1112,6 +1119,7 @@ _UUID_UOM_REQUEST_SITES = {
     "client_storage.StorageMixin.list_storage_mappings": "vios_uuid",
     "client_storage.StorageMixin.list_volume_groups": "vios_uuid",
     "client_storage.StorageMixin.map_storage_to_lpar": "vios_uuid",
+    "client_systems.SystemsMixin.delete_vios": "vios_uuid",
     "client_systems.SystemsMixin.get_vios_storage_detail": "vios_uuid",
     "client_systems.SystemsMixin.list_vios": "system_uuid",
     "client_systems.SystemsMixin.modify_managed_system": "system_uuid",

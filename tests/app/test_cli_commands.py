@@ -2723,7 +2723,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
 def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
     async def fake_list(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
-        return [OpticalMedia("aix.iso", 4096, "ISO")]
+        return [OpticalMedia("aix.iso", 4096)]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
@@ -2736,6 +2736,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
     assert result.exit_code == 0
     assert "aix.iso" in result.stdout
     assert "4096" in result.stdout
+    assert "Type" not in result.stdout
 
 
 def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
@@ -2756,7 +2757,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
-        return [OpticalMedia("aix.iso", None, None)]
+        return [OpticalMedia("aix.iso", None)]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
@@ -2767,9 +2768,7 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == [
-        {"name": "aix.iso", "size_mib": None, "media_type": None}
-    ]
+    assert json.loads(result.stdout) == [{"name": "aix.iso", "size_mib": None}]
 
 
 def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
