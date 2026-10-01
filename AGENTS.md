@@ -231,7 +231,7 @@ Common causes worth checking first:
   ```
 
   Every value differs from the field's declared default, deliberately.
-  `HMC_PORT`, `HMC_TIMEOUT` and `HMC_SSH_TIMEOUT` default to 443, 60 and 300; a
+  `HMC_PORT`, `HMC_TIMEOUT` and `HMC_SSH_TIMEOUT` default to 443, 180 and 300; a
   probe set to the default is invisible to a test that asserts the default, so
   it would prove nothing. A leak has to surface as a wrong-value assertion.
 

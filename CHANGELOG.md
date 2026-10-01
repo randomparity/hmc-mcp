@@ -890,6 +890,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   to it). The per-operation `.../do/{Operation}/Job/{id}` form accepted for #95, the
   `/rest/api/uom/Job/{id}` form and relative `jobs/{id}` paths are refused: no HMC capture or
   reference shows them, and the reference documents only `rest/api/uom/jobs/{job_id}` (#1202).
+- The `HMC_TIMEOUT` default (TOML `timeout`) is now 180 seconds, raised from 60. A read-only
+  sweep found that a `GET /rest/api/uom/ManagedSystem` feed read on a large V11R2 HMC took longer
+  than 60 seconds, and neither IBM's documentation nor hmcpctl sets an upper bound on how long
+  such a read may take. `HMC_UPLOAD_TIMEOUT` (600 seconds) still exceeds it (#1202).
 - A `targets` table can now grant `hmc_attach_disk_to_lpar`: its LPAR, managed-system and
   `vios_uuid` selectors bound everything it touches, so a grant naming all three reaches it and
   one that omits any of them, or a call that omits `system_name_or_uuid`, is denied.
