@@ -157,6 +157,12 @@ def test_dedicated_processor_config():
             LparResources(desired_procs=1.5),
             r"desired_procs=1\.5 exceeds desired_vcpus=1.*--vcpus",
         ),
+        (
+            LparResources(
+                min_procs=1.5, desired_procs=2.0, desired_vcpus=2, max_vcpus=4
+            ),
+            r"min_procs=1\.5 exceeds min_vcpus=1.*--min-procs",
+        ),
     ],
 )
 def test_build_refuses_units_above_vcpus(resources, match):
