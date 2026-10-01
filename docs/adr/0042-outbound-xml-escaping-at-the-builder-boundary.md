@@ -150,7 +150,7 @@ re-serialized whitespace is; the difference is that entity expansion is required
 XML parser, while indentation and namespace placement are not.
 
 A rejection message for a closed-vocabulary parameter now quotes the *escaped* form of an illegal
-value, because the decorator runs before the builder validates. `build_lpar_document(os_type="a<b")`
+value, because the decorator runs before the builder validates. `build_lpar_document(keylock="a<b")`
 reports `'a&lt;b'`. The value stays recognizable, and the existing test that an illegal
 `sharing_mode` never appears in its own rejection message still holds, because
 `_validate_sharing_mode` does not quote the value at all.

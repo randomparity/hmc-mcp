@@ -539,7 +539,7 @@ async def test_create_refuses_off_granularity_capacity_before_creating_the_lpar(
         await create_lpar(
             SimpleNamespace(config=config),
             "sys",
-            SimpleNamespace(name="new-lpar"),
+            SimpleNamespace(name="new-lpar", partition_type="AIX/Linux"),
             LparPcieAssignments(sriov=(_sriov_at("7.5"),)),
         )
     create.assert_not_awaited()
@@ -587,7 +587,7 @@ async def test_create_refuses_sriov_items_outside_the_mutation_envelope(
         await create_lpar(
             SimpleNamespace(config=config),
             "sys",
-            SimpleNamespace(name="new-lpar"),
+            SimpleNamespace(name="new-lpar", partition_type="AIX/Linux"),
             assignments,
         )
     create.assert_not_awaited()

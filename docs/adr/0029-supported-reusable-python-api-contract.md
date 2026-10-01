@@ -143,7 +143,7 @@ names are internal everywhere and are never inventoried.
     constructor, not a domain operation, and the synchronous-exclusion reason above does not
     reach it.
 - `documents` — exports: `AuthenticationType`, `BootDeviceSelector`, `Keylock`, `LparResources`,
-  `MemoryMirroringMode`, `OsType`, `PartitionType`, `PowerOffPolicy`,
+  `MemoryMirroringMode`, `PartitionType`, `PowerOffPolicy`,
   `PowerOnLparStartPolicy`, `SharingMode`, `StorageKind`.
 - `errors` — exports: `HMCError`, `HMCTransportError`.
 - `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`, `RemoteRestartOperation`.

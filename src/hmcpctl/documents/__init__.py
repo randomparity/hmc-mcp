@@ -17,13 +17,11 @@ from .adapters import (  # noqa: F401
 from .boot import join_boot_device_paths  # noqa: F401
 from .lpar import (  # noqa: F401
     KEYLOCK_POSITIONS,
-    OS_TYPES,
     PARTITION_TYPES,
     SHARING_MODES,
     VIOS_DEFAULT_RESOURCES,
     Keylock,
     LparResources,
-    OsType,
     PartitionType,
     SharingMode,
     build_lpar_document,
