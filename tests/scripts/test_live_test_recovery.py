@@ -804,7 +804,7 @@ _LPAR_CLEAN = {
     "hmc_run_command": f"5,{_TEST_LPAR},3\n6,other-lpar,3\n",
     "hmc_list_storage_mappings": [{"id": "vhost0/vtscsi0"}],
     "hmc_get_media_repository": None,
-    "hmc_get_lpar_state": "Not Activated",
+    "hmc_get_lpar_state": "not activated",
     "hmc_read_lpar_boot_order": {"pending_boot_string": "/a  /b"},
 }
 
@@ -871,7 +871,7 @@ async def test_the_adapter_listing_is_the_1237_command_by_vios_id():
             f"hmcpctl storage delete-media-repo {_VIOS} {_VG}",
         ),
         (
-            {"hmc_get_lpar_state": "Running"},
+            {"hmc_get_lpar_state": "running"},
             "test partition running",
             f"hmcpctl lpars power-off {_TEST_LPAR} --system {_TEST_SYSTEM}",
         ),
@@ -1117,7 +1117,7 @@ def test_the_report_names_the_run_it_witnessed(capsys):
 async def test_an_unreadable_pcie_check_still_reads_the_test_partition():
     responses = {
         **{key: value for key, value in _LPAR_CLEAN.items()},
-        "hmc_get_lpar_state": "Running",
+        "hmc_get_lpar_state": "running",
     }
 
     with pytest.raises(recovery.StateUnreadable) as raised:
@@ -1137,3 +1137,12 @@ async def test_more_mapped_adapters_than_listed_ones_is_unreadable():
 
     with pytest.raises(recovery.StateUnreadable, match="2 mapped"):
         await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+
+@pytest.mark.parametrize("state", ["not activated", "Not Activated"])
+@pytest.mark.asyncio
+async def test_a_powered_off_test_partition_reads_clean_in_either_spelling(state):
+    """REST answers lower case; the CLI answers title case."""
+    responses = _lpar_responses(hmc_get_lpar_state=state)
+
+    assert await recovery.check_test_partition(_lpar_caller(responses), _ALL) == []

@@ -655,7 +655,8 @@ async def _partition_running(call, inputs: LparResidueInputs) -> Finding | None:
         raise StateUnreadable(
             f"could not read the state of {inputs.lpar_name} ({status})"
         )
-    if state == _NOT_ACTIVATED:
+    # REST's PartitionState is lower case ("not activated"); only the CLI title-cases it.
+    if state.strip().lower() == _NOT_ACTIVATED.lower():
         return None
     return Finding(
         "test partition running",
