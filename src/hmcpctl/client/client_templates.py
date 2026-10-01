@@ -15,14 +15,14 @@ from .client_parse import _parse_feed
 
 
 class TemplatesMixin:
-    # Template Library (/rest/api/templates/, templates+xml media type)
-    TEMPLATES_MEDIA = "application/vnd.ibm.powervm.templates+xml"
+    # Template Library (/rest/api/templates/). V10R3 answers the typed
+    # `templates+xml; type=PartitionTemplate` Accept with HTTP 406 and serves the
+    # library feed for `application/atom+xml` (#1202).
+    TEMPLATES_ACCEPT = "application/atom+xml"
 
     async def _templates_get(self: TemplatesClient, path: str) -> str:
         resp = await self._request(
-            "GET",
-            path,
-            headers={"Accept": f"{self.TEMPLATES_MEDIA}; type=PartitionTemplate"},
+            "GET", path, headers={"Accept": self.TEMPLATES_ACCEPT}
         )
         if resp.status_code == 204:
             return ""

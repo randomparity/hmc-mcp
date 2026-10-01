@@ -70,7 +70,9 @@ class SystemsMixin:
 
         Not documented in this repo's vendored HMC REST API reference (only
         the per-UUID quick/{Property} form is); evidenced by IBM's public
-        project-pim repository (ADR 0138). No typed Accept header, matching
+        project-pim repository (ADR 0138), and captured on V10R3 as a JSON
+        array of objects keyed ``UUID`` (lower case) and ``SystemName``; the
+        map is keyed by the lower-cased UUID. No typed Accept header, matching
         get_quick_property's precedent (core.py) that a uom+xml header 406s
         on quick/ endpoints, and project-pim's own quick/All calls, which
         send none either. Used only as a fallback when the direct/unfiltered
@@ -109,9 +111,11 @@ class SystemsMixin:
                 f"{type(summaries).__name__}; expected an array"
             )
         return {
-            entry["UUID"]: entry["SystemName"]
+            entry["UUID"].lower(): entry["SystemName"]
             for entry in summaries
-            if isinstance(entry, dict) and "UUID" in entry and "SystemName" in entry
+            if isinstance(entry, dict)
+            and isinstance(entry.get("UUID"), str)
+            and "SystemName" in entry
         }
 
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
@@ -181,7 +185,7 @@ class SystemsMixin:
             fallback_exc: Exception | None = None
             try:
                 names = await self._quick_all_system_names()
-                name = names.get(uuid)
+                name = names.get(uuid.lower())
                 if name:
                     entry = await self.find_system_by_name(name)
             except (HMCError, ValueError) as fb_exc:
@@ -321,18 +325,34 @@ class SystemsMixin:
             return _parse_feed(xml, path) if xml else []
         return await self.list_uom("VirtualIOServer")
 
+    async def get_vios(self: SystemsClient, vios_uuid: str) -> dict[str, Any] | None:
+        """GET one VIOS entry.
+
+        A VIOS answers only under ``VirtualIOServer``: V10R3 returns 404 for
+        ``LogicalPartition/{vios_uuid}`` and its quick properties (#1202).
+        """
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        return await self.get_uom("VirtualIOServer", vios_uuid)
+
+    async def delete_vios(self: SystemsClient, vios_uuid: str) -> None:
+        """Delete a VIOS partition. It must be powered off first."""
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        await self._delete(f"/rest/api/uom/VirtualIOServer/{vios_uuid}")
+
     async def get_vios_storage_detail(
         self: SystemsClient, vios_uuid: str
     ) -> dict[str, Any] | None:
         """GET VirtualIOServer device mappings.
 
         Requests the documented ViosSCSIMapping and ViosFCMapping groups and
-        returns the parsed entry with both mapping collections populated.
+        returns the parsed entry with both mapping collections populated. The
+        groups go in one comma-separated value: V10R3 answers a repeated
+        ``group`` parameter with the first group only (#1202).
         """
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = (
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-            "?group=ViosSCSIMapping&group=ViosFCMapping"
+            "?group=ViosSCSIMapping,ViosFCMapping"
         )
         xml = await self._get(path, "VirtualIOServer")
         if not xml:

@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from conftest import live_fixture
 from typer.testing import CliRunner
 
 from hmcpctl import cli
@@ -56,7 +57,7 @@ LPARS = b"""<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
-    <title>LogicalPartition:aixprod</title>
+    <title>LogicalPartition</title>
     <link rel="SELF" href="https://hmc/rest/api/uom/LogicalPartition/11111111-1111-1111-1111-111111111111"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -71,7 +72,7 @@ LPARS = b"""<?xml version="1.0"?>
   </entry>
   <entry>
     <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
-    <title>LogicalPartition:linuxdev</title>
+    <title>LogicalPartition</title>
     <link rel="SELF" href="https://hmc/rest/api/uom/LogicalPartition/22222222-2222-2222-2222-222222222222"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -84,20 +85,8 @@ LPARS = b"""<?xml version="1.0"?>
   </entry>
 </feed>"""
 
-JOB_FEED = b"""<?xml version="1.0"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:job-uuid-999</id>
-    <title>Job:PowerOn</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <JobID>job-uuid-999</JobID>
-        <Status>RUNNING</Status>
-        <RequestedOperation>PowerOn</RequestedOperation>
-      </Job>
-    </content>
-  </entry>
-</feed>"""
+# The captured V10R3 answer to a PowerOn submission (#1161).
+JOB_ENTRY = live_fixture("rest-poweron-submit")["body"].encode()
 
 
 class _MockHMC(BaseHTTPRequestHandler):
@@ -137,7 +126,7 @@ class _MockHMC(BaseHTTPRequestHandler):
             "/rest/api/uom/LogicalPartition/"
             "11111111-1111-1111-1111-111111111111/do/PowerOn"
         ):
-            self._send(JOB_FEED, 202)
+            self._send(JOB_ENTRY)
         else:
             self._send(b"", 404)
 

@@ -24,7 +24,9 @@ class PcmMixin:
         _require_managed_system_preferences(category)
 
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
-        xml = await self._get(path)
+        # V10R3 answers the documented `application/xml` and the uom media type
+        # with HTTP 406 and serves `*/*` as an Atom feed (#1202).
+        xml, _ = await self.raw_get(path)
         return _pcm_preferences(xml, path) if xml else {}
 
     async def set_pcm_preferences(

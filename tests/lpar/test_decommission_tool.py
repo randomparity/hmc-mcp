@@ -880,11 +880,16 @@ async def test_decommission_stops_when_detach_state_cannot_be_read(
                 "UUID": "job-uuid",
                 "Resource": {
                     "JobID": "job-uuid",
-                    "Status": "FAILED",
-                    "ResponseException": {"Message": "power failed"},
+                    "Status": "COMPLETED_WITH_ERROR",
+                    "Results": {
+                        "JobParameter": {
+                            "ParameterName": "result",
+                            "ParameterValue": "power failed",
+                        }
+                    },
                 },
             },
-            "status 'FAILED'",
+            "status 'COMPLETED_WITH_ERROR'",
         ),
         (
             {

@@ -5,12 +5,18 @@ REST answers and the refcode listing from captures recorded with
 `scripts/live_test/capture.py`, and two CLI listings (`cli-io-slots.json`,
 `cli-lpar-uuid-name.json`) from raw read-only command output. The captures were
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
-records the patterns they show. CLI captures whose `capture` begins `2026-09-30-ro/` come
+records the patterns they show. REST and CLI captures whose `capture` begins `2026-09-30-ro/` come
 from the read-only sweep for #1202, on the same HMC and system; a nonzero-exit one is
 raised in tests with `live_process_error(name)`. Captures whose `capture` begins
 `2026-09-30-v11r2-p9/`, `2026-09-30-v11r2-p11-9824/` or `2026-09-30-v11r2-p11-9242/` come
 from the same sweep on HMCs at V11R2 SP1120 managing a POWER9 9009-42A, a POWER11 9824-42A
 and a POWER11 9242-21B.
+
+The VIOS and storage REST captures from that sweep are `rest-lpar-path-vios`,
+`rest-lpar-quick-vios`, `rest-vios-*`, `rest-ms-vios-feed-media` and
+`rest-volume-group`, with the same `capture` prefix. The other VIOS files ending
+`-v11r2` begin `2026-09-30-v11r2-p11-9824/`: the same sweep on an HMC at V11R2
+SP1120 managing a POWER11 9824-42A.
 
 ## Format
 
@@ -35,8 +41,14 @@ two captures has the same token in both:
   printed. LPAR UUIDs are upper case, as V10R3 prints them.
 - The managed system is `sys-R1`, and partition names keep their suffix
   (`sys-R1-lp3`, `sys-R1-vios1`).
+- HMC user names and user descriptions become `user-N` and `desc-N`.
 - The HMC host is `hmc.test:443` (the port in an echoed `Host` header is the
   one the capture used), and the client IP address is `192.0.2.1`.
+- A location code's unit prefix is `<REDACTED-LOC>`; its slot suffix is kept,
+  except a disk WWN or array identifier inside it (`-L<id>-L0`), which is
+  `<REDACTED-DEVID>`. Device identifiers that carry a disk or volume group serial
+  (`UniqueDeviceID`, `VolumeUniqueID`, `DescriptorPage83`, `GroupSerialID`) are
+  `<REDACTED-DEVID>` whole.
 - Serial numbers, session tokens and cookies are `<REDACTED-SERIAL>`,
   `<REDACTED-SESSION>` and `<REDACTED-COOKIE>`. Inside an XML body the token is escaped
   (`&lt;REDACTED-SESSION&gt;`), so the body stays well-formed XML and parses

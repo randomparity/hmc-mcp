@@ -557,7 +557,6 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
             ("hmc_find_placement", "PASS", {}),
             ("hmc_get_system", "PASS", {}),
             ("hmc_list_resources", "PASS", {}),
-            ("hmc_list_recent_jobs", "PASS", {"entries": [{"UUID": "job-uuid"}]}),
             ("hmc_system_summary", "PASS", {}),
             ("hmc_lpar_summary", "PASS", {}),
         ]
@@ -578,7 +577,7 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
         "vios-uuid",
         3,
     )
-    assert state.artifacts.job_uuid_sample == "job-uuid"
+    assert state.artifacts.job_uuid_sample is None
     assert state.calls[7] == (
         "hmc_find_placement",
         {"desired_memory_mib": state.config.placement_memory_mib},
@@ -596,7 +595,6 @@ async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
             ("hmc_set_pcm_preferences", "PASS", {}),
             ("hmc_get_job", "PASS", {}),
             ("hmc_wait_for_job", "PASS", {}),
-            ("hmc_list_recent_jobs", "PASS", {"entries": []}),
             ("hmc_get_pcm_preferences", "FAIL", _failure("PCM unavailable")),
             ("hmc_processed_metric_links", "FAIL", _failure("PCM unavailable")),
             ("hmc_aggregated_metric_links", "FAIL", _failure("PCM unavailable")),
@@ -4173,7 +4171,6 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
             ],
             "hmc_get_lpar": {"UUID": "lpar-uuid"},
             "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
-            "hmc_list_recent_jobs": [{"UUID": "job-uuid"}],
         }
         return "PASS", responses.get(tool, {})
 
@@ -4193,7 +4190,6 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "hmc_find_placement",
         "hmc_get_system",
         "hmc_list_resources",
-        "hmc_list_recent_jobs",
         "hmc_system_summary",
         "hmc_lpar_summary",
     ]
@@ -4201,13 +4197,12 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     assert calls[4][1] == {"lpar_name_or_uuid": "example-lt-609-lpar"}
     assert calls[7][1] == {"desired_memory_mib": 3072}
     assert calls[9][1] == {"resource_type": "LogicalPartition"}
-    assert calls[10][1] == {"limit": 10}
     assert state.artifacts.console_uuid == "console-uuid"
     assert state.artifacts.system_uuid == "system-uuid"
     assert state.artifacts.lp3_uuid == "lpar-uuid"
     assert state.artifacts.vios_uuid == "vios-uuid"
     assert state.artifacts.vios_partition_id == 7
-    assert state.artifacts.job_uuid_sample == "job-uuid"
+    assert state.artifacts.job_uuid_sample is None
 
 
 @pytest.mark.asyncio
@@ -4398,7 +4393,6 @@ async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_option
         "hmc_set_pcm_preferences",
         "hmc_get_job",
         "hmc_wait_for_job",
-        "hmc_list_recent_jobs",
     ]
     set_calls = [kwargs for tool, kwargs in calls if tool == "hmc_set_pcm_preferences"]
     assert [kwargs["long_term_monitor"] for kwargs in set_calls] == [True, False]

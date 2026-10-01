@@ -26,9 +26,7 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
         for col in ("Name", "UUID"):
             table.add_column(col)
         for t in templates:
-            table.add_row(
-                first_field(t, "templateName", "TemplateName"), t.get("UUID") or "-"
-            )
+            table.add_row(first_field(t, "partitionTemplateName"), t.get("UUID") or "-")
     output(templates, as_json, table, "No partition templates found")
 
 

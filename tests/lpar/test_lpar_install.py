@@ -35,7 +35,7 @@ def _lpar_feed(name: str, uuid: str = LPAR_UUID) -> str:
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:{uuid}</id>
-    <title>LogicalPartition:{name}</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>{name}</PartitionName>

@@ -44,6 +44,13 @@ def test_upload_timeout_default():
     assert HMCConfig.from_mapping({}).upload_timeout == 600.0
 
 
+def test_timeout_default_allows_a_slow_feed_read():
+    """A ManagedSystem feed read on a large HMC has taken over 60 s (#1202)."""
+    config = HMCConfig.from_mapping({})
+    assert config.timeout == 180.0
+    assert config.upload_timeout > config.timeout
+
+
 def test_upload_timeout_reads_the_environment(monkeypatch):
     monkeypatch.setenv("HMC_UPLOAD_TIMEOUT", "900")
     assert HMCConfig().upload_timeout == 900.0

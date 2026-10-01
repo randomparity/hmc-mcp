@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
@@ -261,3 +261,33 @@ async def test_create_reports_a_concurrent_change_on_412(mock_hmc):
 
     assert raised.value.status_code == 412
     assert post.call_count == 1
+
+
+LIVE_MAPPING = live_fixture("rest-vios-scsi-mapping")
+LIVE_VIOS = "00000005-ABCD-4EF0-8ABC-000000000005"
+LIVE_LPAR = "00000004-ABCD-4EF0-8ABC-000000000004"
+
+
+@pytest.mark.asyncio
+async def test_detach_matches_upper_case_live_identities_case_insensitively(mock_hmc):
+    """V10R3 prints VIOS and LPAR UUIDs upper case; a lower-case selector names them too.
+
+    The captured grouped read carries AtomID, PartitionUUID and the mapping's
+    AssociatedLogicalPartition href in upper case (#1202); the HMC answers the
+    lower-case path with the same VIOS.
+    """
+    path = f"/rest/api/uom/VirtualIOServer/{LIVE_VIOS.lower()}?group=ViosSCSIMapping"
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(
+            200, text=LIVE_MAPPING["body"], headers={"ETag": '"etag-1"'}
+        )
+    )
+    post = mock_hmc.post(path).mock(return_value=httpx.Response(200, text=""))
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_storage_mapping(
+            LIVE_VIOS.lower(), "dev-369/dev-256", LIVE_LPAR.lower()
+        )
+
+    assert post.call_count == 1
+    assert _mappings(post.calls.last.request.content.decode()) == []

@@ -380,9 +380,7 @@ async def test_templates_mixin_handles_http_response_contracts():
     client._request.assert_awaited_once_with(
         "GET",
         "/rest/api/templates/PartitionTemplate",
-        headers={
-            "Accept": f"{client.TEMPLATES_MEDIA}; type=PartitionTemplate",
-        },
+        headers={"Accept": "application/atom+xml"},
     )
 
     client._request.return_value = httpx.Response(503, text="unavailable")

@@ -5,14 +5,25 @@ from __future__ import annotations
 from ..errors import HMCError
 
 
+def _not_acceptable(feature: str, exc: HMCError) -> HMCError:
+    """Explain an HTTP 406 as the media-type refusal it is.
+
+    A 406 means the HMC cannot answer in the media type the Accept header named
+    (docs/refs/hmc-rest-api-p10/http-protocol/014-request-headers.md); V10R3
+    returns it for a typed Accept on templates and PCM preferences (#1202).
+    """
+    return HMCError(
+        f"The HMC refused the media type hmcpctl requested for {feature} "
+        "(HTTP 406 Not Acceptable). This is media-type negotiation, not "
+        "licensing: report it as an hmcpctl defect, with the HMC version.",
+        exc.status_code,
+        body=exc.body,
+    )
+
+
 def translate_pcm_error(exc: HMCError) -> HMCError:
     if exc.status_code == 406:
-        return HMCError(
-            "PCM is not licensed or not enabled on this HMC. "
-            "Enable PCM in the HMC settings or use an HMC that has the PCM feature licensed.",
-            exc.status_code,
-            body=exc.body,
-        )
+        return _not_acceptable("PCM", exc)
     if exc.status_code == 403:
         return HMCError(
             "The connecting user does not have PCM authority on this HMC. "
@@ -25,12 +36,7 @@ def translate_pcm_error(exc: HMCError) -> HMCError:
 
 def translate_template_error(exc: HMCError) -> HMCError:
     if exc.status_code == 406:
-        return HMCError(
-            "Partition templates are not licensed or not supported on this HMC. "
-            "Enable the partition template feature in HMC settings or use an HMC with the feature licensed.",
-            exc.status_code,
-            body=exc.body,
-        )
+        return _not_acceptable("partition templates", exc)
     return exc
 
 

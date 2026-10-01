@@ -127,12 +127,10 @@ async def list_lpars(
     system_uuid = (
         await resolve_system_uuid(hmc, selector) if selector is not None else None
     )
-    lpars = (
-        await hmc.search_uom("LogicalPartition", "PartitionState", state)
-        if system_uuid is None and state is not None
-        else await hmc.list_logical_partitions(system_uuid)
-    )
-    if state is None or system_uuid is None:
+    # No PartitionState search: a V10R3 HMC answers a value with a space
+    # ("not activated") with 500 "Unable to parse expression" (#1202).
+    lpars = await hmc.list_logical_partitions(system_uuid)
+    if state is None:
         return lpars
     return [
         entry

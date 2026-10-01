@@ -638,3 +638,31 @@ def captured_lpar_entry(uuid: str, name: str, state: str = "not activated") -> s
       </LogicalPartition>
     </content>
   </entry>"""
+
+
+def volume_group_with_repository(*, media: bool = True) -> str:
+    """The captured VolumeGroup entry carrying the captured media repository (#1202).
+
+    No captured VolumeGroup holds a repository: the one captured repository came in
+    a VirtualIOServer feed, under its ``ViosStorage`` group. The reference places
+    the same object in both reads (docs/refs/hmc-rest-api-p10/
+    virtual-storage-management/215-virtual-media-repository.md:23-24), so it is
+    spliced in ahead of the VolumeGroup's PhysicalVolumes. ``media=False`` drops
+    the two VirtualOpticalMedia and leaves the OpticalMedia container holding only
+    its Metadata, as every captured empty container does.
+    """
+    import re
+
+    feed = live_fixture("rest-ms-vios-feed-media")["body"]
+    found = re.search(r"<MediaRepositories\b.*?</MediaRepositories>", feed, re.DOTALL)
+    assert found is not None
+    repository = found.group(0)
+    if not media:
+        repository = re.sub(
+            r"\s*<VirtualOpticalMedia\b.*?</VirtualOpticalMedia>",
+            "",
+            repository,
+            flags=re.DOTALL,
+        )
+    entry = live_fixture("rest-volume-group")["body"]
+    return entry.replace("<PhysicalVolumes ", f"{repository}\n    <PhysicalVolumes ", 1)

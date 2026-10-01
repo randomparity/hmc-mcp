@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import LPAR_RESOURCE_CONFIG, make_config
+from conftest import LPAR_RESOURCE_CONFIG, live_response, make_config
 
 from hmcpctl.audit import sink as audit_sink
 from hmcpctl.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
@@ -531,7 +531,7 @@ async def test_discovery_reports_frames_it_could_not_read(mock_hmc):
     )
     mock_hmc.get(
         f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(500, text="<error>frame down</error>"))
+    ).mock(return_value=httpx.Response(500))
     route = _mock_modify(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
@@ -566,7 +566,7 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
     )
     mock_hmc.get(
         f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(500, text="<error>frame down</error>"))
+    ).mock(return_value=httpx.Response(500))
     _mock_lpar_detail(mock_hmc)
     _mock_system_detail(mock_hmc)
     route = _mock_modify(mock_hmc)
@@ -688,7 +688,7 @@ async def test_an_unknown_partition_uuid_never_reaches_the_fleet_walk(mock_hmc):
     Registering no fleet route is the assertion.
     """
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(404, text="<error>no such partition</error>")
+        return_value=live_response("rest-lpar-not-found")[1]
     )
     route = _mock_modify(mock_hmc)
 
@@ -788,7 +788,7 @@ async def test_an_unreadable_containment_feed_names_the_retry(mock_hmc, operatio
         )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(500, text="<error>feed down</error>")
+        return_value=httpx.Response(500)
     )
     route = _mock_modify(mock_hmc)
 
@@ -816,9 +816,7 @@ async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc
     not be the one failure that never mentions it.
     """
     _mock_lpar_detail(mock_hmc)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(503, text="<error>inventory offline</error>")
-    )
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(return_value=httpx.Response(503))
     route = _mock_modify(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
@@ -867,7 +865,7 @@ async def test_http_406_is_translated_to_an_actionable_error(mock_hmc, operation
     _mock_lpar_detail(mock_hmc)
     _mock_system_detail(mock_hmc)
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(406, text="<error>nope</error>")
+        return_value=httpx.Response(406)
     )
 
     with patch(

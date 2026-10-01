@@ -14,7 +14,7 @@ from ...operations.virtualization.pcie import (
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
 )
-from ...ssh.profiles import backup_lpar_profiles
+from ...ssh.profiles import ProfileRestoreType, backup_lpar_profiles
 from ...tool_registry import tool_module
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
@@ -88,11 +88,13 @@ def hmc_restore_lpar_profiles(
     system_wide_restore_approved: bool = False,
     profile: str | None = None,
     ownership_override: bool = False,
+    *,
+    restore_type: ProfileRestoreType,
 ) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
-    Runs ``rstprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
-    and returns the raw command output.
+    Runs ``rstprofdata -m <system_name> -l <restore_type> -f <file_path>`` on
+    the HMC via SSH and returns the raw command output.
 
     The system may be given by CLI name or by UUID; a UUID is resolved to
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
@@ -116,6 +118,10 @@ def hmc_restore_lpar_profiles(
         profile: optional TOML profile name; when omitted the env-default HMC is used.
         ownership_override: Bypass current and opaque-backup ownership rejection after
             operator approval; emits an audit record covering every profile.
+        restore_type: The HMC restore type, required with no default: 1 restores the
+            backup file in full; 2 merges current and backup data, the backup winning
+            conflicts; 3 merges them, the current data winning conflicts. Type 4
+            (initialize, which deletes every partition) is not offered.
 
     Returns:
         The raw HMC CLI output."""
@@ -129,6 +135,7 @@ def hmc_restore_lpar_profiles(
             hmc,
             system_name_or_uuid,
             file_path,
+            restore_type,
             ownership_override=ownership_override,
         ),
         profile=profile,
