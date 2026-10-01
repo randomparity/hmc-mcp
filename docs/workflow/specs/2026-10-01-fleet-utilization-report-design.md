@@ -104,7 +104,8 @@ come in this order:
 4. one `failure` row per failed profile.
 
 A field that does not apply to a row type is empty. An unknown figure is `unknown`. Utilization
-columns are `cpu_util_pct` and `mem_util_pct`. A system row's `notes` holds its gaps. A roll-up
+columns are `cpu_util_pct` and `mem_util_pct`, beside `cpu_allocated` and `mem_allocated_mib`
+(configurable minus free, over the same systems as the percentage). A system row's `notes` holds its gaps. A roll-up
 row's `notes` names each column some of its systems lack, as
 `<column>: <n> of <systems> systems unknown`.
 
