@@ -42,7 +42,7 @@ Page sections, in order:
 1. Title, `Generated <YYYY-MM-DD HH:MM> UTC`, the profiles surveyed (every name in `profiles`),
    and a warning that the page holds internal hostnames and serials.
 2. Fleet tiles from the `fleet` row, each showing that row's existing columns as they stand (the
-   renderer adds no arithmetic) and, where it has one, its `*_util_pct` as text and an inline SVG
+   renderer adds no sums; `*_mib` shows as GiB) and, where it has one, its `*_util_pct` as text and an inline SVG
    bar: CPU (`allocated`, `free`), memory (`allocated`, `free`), disk (internal and SAN
    `assigned`, `free`), I/O slots (`assigned`, `sriov`, `unassigned`, `empty`), SR-IOV
    (`logical_ports`, `logical_ports_free`), and idle (`partitions_not_activated`,
@@ -52,7 +52,7 @@ Page sections, in order:
 3. Fleet notes: the fleet row's `notes` once, verbatim, or nothing when empty.
 4. Per-HMC table (one row per `hmc` row) with utilization bars as inline SVG.
 5. Sortable per-system table (`system` rows); only this table carries class `sortable`.
-6. Failed profiles, each with its reason, or "none". Failures appear only here.
+6. Failed profiles, each with its reason, or "none". Failure rows appear only here.
 
 Table columns are one `(csv column, label)` tuple shared by both tables: system, profiles, machine
 type, model, serial, state, CPU configurable/allocated/util, memory configurable/allocated/util, idle
