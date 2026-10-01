@@ -82,9 +82,14 @@ doc-freshness:
 live-vocabulary:
     uv run --no-sync python scripts/check_live_vocabulary.py
 
+# fail when a live-scenario dispatch is unregistered, mismatched, or unreadable (offline)
+scenario-gap:
+    uv run --no-sync python scripts/scenario_gap_report.py --fail-on-dispatch
+
 # local and hosted static-analysis gate
 static: lint format-check typecheck secrets workflow-security env-vars nicknames test-layout \
-        capability-inventory tool-docs-check adr-numbering doc-freshness live-vocabulary
+        capability-inventory tool-docs-check adr-numbering doc-freshness live-vocabulary \
+        scenario-gap
 
 # run the full pytest suite with one semantic summary
 test:

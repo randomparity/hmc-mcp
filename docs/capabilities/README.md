@@ -173,7 +173,8 @@ Scenario coverage remains hand-written until #706.
 and rows no registered live scenario exercises, dispatches in scenario functions `SUBTASKS`
 no longer reaches, tools or operations the registry no longer has, and dispatches whose
 argument names the served input schema rejects. It exits 0; `--fail-on-dispatch` exits 1
-on an unregistered, mismatched or unreadable dispatch.
+on an unregistered, mismatched or unreadable dispatch. `just scenario-gap`
+runs it with that flag as a `static` member, so a dispatch finding fails `just verify`.
 
 The catalog records no runtime eligibility. `existing-runtime-guards` neither grants
 nor revokes admission: authorization, ownership, validation, capability, and safety
