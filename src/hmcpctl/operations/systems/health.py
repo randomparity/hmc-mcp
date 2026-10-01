@@ -108,19 +108,32 @@ def _lpar_issue(
     lpar: dict[str, Any], system_uuid: str, system_name: str
 ) -> dict[str, Any] | None:
     resource = _resource(lpar)
+    state = _bounded_text_or_unknown(resource.get("PartitionState")).lower()
     rmc_state = _bounded_text_or_unknown(
-        resource.get("ResourceMonitoringControlState") or resource.get("RMCState")
+        resource.get("ResourceMonitoringControlState")
     ).lower()
-    if rmc_state in {"active", "busy"}:
+    # A partition that is not activated has no RMC connection to report.
+    if state == "not activated" or rmc_state in {"active", "busy"}:
         return None
     return {
         "uuid": _bounded_text_or_unknown(lpar.get("UUID")),
         "name": _bounded_text_or_unknown(resource.get("PartitionName")),
-        "state": _bounded_text_or_unknown(resource.get("PartitionState")).lower(),
+        "state": state,
         "rmc_state": rmc_state,
         "system_uuid": system_uuid,
         "system_name": system_name,
     }
+
+
+def _operation_name(resource: dict[str, Any]) -> object:
+    """Return ``JobRequestInstance/RequestedOperation/OperationName``.
+
+    A JobResponse has no ``JobName``; it names the operation in its request
+    instance (`PowerOn` in the captured V10R3 job reads, #1202).
+    """
+    request = resource.get("JobRequestInstance")
+    operation = request.get("RequestedOperation") if isinstance(request, dict) else None
+    return operation.get("OperationName") if isinstance(operation, dict) else None
 
 
 def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
@@ -139,7 +152,7 @@ def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     )
     return {
         "job_id": job_id,
-        "name": _bounded_text_or_unknown(resource.get("JobName")),
+        "name": _bounded_text_or_unknown(_operation_name(resource)),
         "status": status,
         "error": bounded_error,
     }

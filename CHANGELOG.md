@@ -229,6 +229,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_fleet_health` names a failed job by its `RequestedOperation/OperationName`
+  (`PowerOn`); a JobResponse has no `JobName`, so every failed job read `unknown`. A
+  partition that is not activated is no longer reported for its inactive RMC connection,
+  which listed every powered-off partition as unhealthy (#1202).
 - `hmc_list_partition_templates` and `hmc_get_partition_template` send
   `Accept: application/atom+xml`. V10R3 answers the typed
   `templates+xml; type=PartitionTemplate` Accept with an empty HTTP 406, so both tools

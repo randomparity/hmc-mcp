@@ -7,11 +7,13 @@ from collections import Counter
 from unittest.mock import AsyncMock
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.systems import health as operations_health
 from hmcpctl.operations.systems.health import FleetHealthResult
 from hmcpctl.operations.systems.health import fetch_fleet_health as fleet_health
+from hmcpctl.xmlutil import parse_feed
 
 _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_BEFORE_START",
@@ -28,6 +30,11 @@ _ACTIONABLE_TERMINAL_STATUSES = {
 
 def _entry(uuid: object, **resource: object) -> dict:
     return {"UUID": uuid, "Resource": resource}
+
+
+def _operation(name: object) -> dict:
+    """A JobResponse names its operation in `JobRequestInstance/RequestedOperation`."""
+    return {"JobRequestInstance": {"RequestedOperation": {"OperationName": name}}}
 
 
 def _job_entry(job_id: str | None, **resource: object) -> dict:
@@ -95,7 +102,7 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
     client.list_uom.return_value = [
         _job_entry(
             "1712345678",
-            JobName="failed-job",
+            **_operation("PowerOn"),
             Status="failed_to_start",
             ResponseException={"Message": "could not start"},
         )
@@ -128,12 +135,40 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
     assert result.failed_jobs == (
         {
             "job_id": "1712345678",
-            "name": "failed-job",
+            "name": "PowerOn",
             "status": "FAILED_TO_START",
             "error": "could not start",
         },
     )
     assert result.warnings == ()
+
+
+@pytest.mark.asyncio
+async def test_captured_failed_job_reports_its_operation_name() -> None:
+    client = _healthy_client()
+    client.list_uom.return_value = parse_feed(
+        live_fixture("rest-job-completed-with-error")["body"]
+    )
+
+    (failed,) = (await fleet_health(client)).failed_jobs
+
+    assert failed["job_id"] == "1787837921267"
+    assert failed["name"] == "PowerOn"
+    assert failed["status"] == "COMPLETED_WITH_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_not_activated_partition_is_not_an_rmc_issue() -> None:
+    """A powered-off partition has no RMC connection by definition (#1202)."""
+    client = _healthy_client()
+    client.list_logical_partitions.return_value = parse_feed(
+        live_fixture("rest-lpar-entry-lp3")["body"]
+    )
+    lpar = client.list_logical_partitions.return_value[0]["Resource"]
+    assert lpar["PartitionState"] == "not activated"
+    assert lpar["ResourceMonitoringControlState"] == "inactive"
+
+    assert (await fleet_health(client)).lpars == ()
 
 
 @pytest.mark.asyncio
@@ -161,12 +196,12 @@ async def test_failed_job_without_job_id_falls_back_to_entry_uuid() -> None:
 async def test_all_actionable_terminal_job_statuses_are_reported() -> None:
     client = _healthy_client()
     client.list_uom.return_value = [
-        _entry(f"job-{status}", JobName=status, Status=status)
+        _entry(f"job-{status}", **_operation(status), Status=status)
         for status in sorted(_ACTIONABLE_TERMINAL_STATUSES)
     ] + [
-        _entry("job-ok", JobName="ok", Status="COMPLETED_OK"),
-        _entry("job-running", JobName="running", Status="RUNNING"),
-        _entry("job-unknown", JobName="unknown", Status="mystery"),
+        _entry("job-ok", **_operation("ok"), Status="COMPLETED_OK"),
+        _entry("job-running", **_operation("running"), Status="RUNNING"),
+        _entry("job-unknown", **_operation("unknown"), Status="mystery"),
     ]
 
     result = await fleet_health(client)
@@ -184,15 +219,15 @@ async def test_all_actionable_terminal_job_statuses_are_reported() -> None:
 async def test_job_filter_uses_first_twenty_feed_records_and_bounds_error() -> None:
     client = _healthy_client()
     client.list_uom.return_value = [
-        _entry(f"ok-{index}", JobName=f"ok-{index}", Status="COMPLETED_OK")
+        _entry(f"ok-{index}", **_operation(f"ok-{index}"), Status="COMPLETED_OK")
         for index in range(20)
-    ] + [_entry("late-failure", JobName="late", Status="FAILED")]
+    ] + [_entry("late-failure", **_operation("late"), Status="FAILED")]
     assert (await fleet_health(client)).failed_jobs == ()
 
     client.list_uom.return_value = [
         _entry(
             "failed",
-            JobName=None,
+            **_operation(None),
             Status="EXCEPTION",
             ResponseException={"Message": "x" * 600},
         )
@@ -214,7 +249,7 @@ async def test_malformed_child_identities_remain_visible_as_unknown() -> None:
         )
     ]
     client.list_vios.return_value = [_entry(None, PartitionName=7, PartitionState=None)]
-    client.list_uom.return_value = [_entry(None, JobName=7, Status="FAILED")]
+    client.list_uom.return_value = [_entry(None, **_operation(7), Status="FAILED")]
 
     result = await fleet_health(client)
 
@@ -401,7 +436,9 @@ async def test_aggregate_issue_budget_includes_failed_jobs(monkeypatch) -> None:
             ResourceMonitoringControlState="inactive",
         )
     ]
-    client.list_uom.return_value = [_entry("job-1", JobName="failed", Status="FAILED")]
+    client.list_uom.return_value = [
+        _entry("job-1", **_operation("failed"), Status="FAILED")
+    ]
 
     with pytest.raises(ValueError, match="safe limit of 1 issues"):
         await fleet_health(client)
@@ -441,7 +478,7 @@ async def test_oversized_job_parameter_collection_fails_closed(monkeypatch) -> N
     client.list_uom.return_value = [
         _entry(
             "job-1",
-            JobName="failed",
+            **_operation("failed"),
             Status="FAILED",
             Results={
                 "JobParameter": [

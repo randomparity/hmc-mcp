@@ -98,7 +98,7 @@ def _lpar_summary(
         uuid=lpar.get("UUID"),
         name=res.get("PartitionName"),
         state=res.get("PartitionState"),
-        rmc_state=res.get("ResourceMonitoringControlState") or res.get("RMCState"),
+        rmc_state=res.get("ResourceMonitoringControlState"),
         partition_type=res.get("PartitionType"),
         partition_id=res.get("PartitionID"),
         current_memory_mib=memory.get("CurrentMemory"),
