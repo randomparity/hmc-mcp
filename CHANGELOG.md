@@ -21,6 +21,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmcpctl report utilization` adds VIOS disk capacity (internal and SAN; assigned and free),
   I/O slot occupancy and SR-IOV logical ports per system and in each roll-up, appended after
   `notes` (#1253, ADR 0185).
+- `hmcpctl report utilization --html PATH` writes the same survey as one self-contained,
+  printable HTML page: fleet tiles, a per-HMC table, a sortable per-system table and failed
+  profiles, with no network references. `--csv` is now optional; give either or both (#1254).
 - A tracked read-only capture pipeline and an offline gate over it (#1202).
   `scripts/live_capture_sweep.py` calls every read-only MCP tool and a declared list of
   raw GETs and `ls*` commands against one HMC profile, below a guard that refuses any

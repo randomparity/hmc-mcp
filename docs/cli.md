@@ -18,6 +18,7 @@ hmcpctl systems show <uuid>
 hmcpctl systems summary <uuid>       # one-call summary: state, MTMS, firmware, LPARs, free resources
 hmcpctl systems health               # issue-only fleet health; add --json for automation
 hmcpctl report utilization --csv fleet.csv   # CPU/memory/disk/adapter allocation, every profile
+hmcpctl report utilization --html fleet.html # the same survey as one offline HTML page
 hmcpctl lpars list                   # all LPARs
 hmcpctl lpars list --system <uuid>   # LPARs of one system
 hmcpctl lpars show mylpar            # by name or UUID (JSON)
@@ -148,8 +149,18 @@ allocation. It only reads; it changes nothing on any HMC. The accounting follows
 [ADR 0184](adr/0184-fleet-utilization-accounting-model.md) and, for disk and adapters,
 [ADR 0185](adr/0185-fleet-utilization-disk-and-adapter-accounting.md).
 
-> **The report holds internal hostnames, system names and serial numbers. Never commit it or
-> post it in a public place.** It is written with owner-only permissions.
+> **Both reports hold internal hostnames, system names and serial numbers. Never commit them or
+> post them in a public place.** They are written with owner-only permissions.
+
+`--html PATH` writes the same survey as one self-contained HTML page, instead of or beside the
+CSV: give `--csv PATH`, `--html PATH`, or both, and both are written from one survey. The page
+is stamped with the UTC time the survey finished and names every profile surveyed. It shows
+fleet tiles for CPU, memory, disk, I/O slots, SR-IOV logical ports and idle (`not activated`)
+partitions, the fleet notes, a per-HMC table, a per-system table sorted by clicking a column
+heading, and every failed profile with its reason. Memory and disk show in GiB; the CSV keeps
+exact MiB. A figure the survey could not read shows `unknown`, never 0. The page loads nothing
+from the network: its style and sort script are inline and its content security policy blocks
+any other script and every fetch, so it reads offline and prints.
 
 The first column, `row_type`, says what each row is:
 
