@@ -45,8 +45,10 @@ V11R2, POWER9 to POWER11; private evidence, public-safe summary here) establishe
 3. A never-applied partition's profile claim is read from its `LogicalPartitionProfile` feed,
    selecting the profile its `AssociatedPartitionProfile` link names. It is reported beside the
    reserved figures and never added to them, because the hypervisor holds nothing for it.
-4. A figure the HMC did not report, or that a failed read prevented, is unknown, never 0. A
-   roll-up counts only systems whose figures are all known, and says how many systems it counted.
+4. A figure the HMC did not report, or that a failed read prevented, is unknown, never 0. Each
+   roll-up figure sums the systems that reported that figure, and the roll-up names every
+   figure some of its systems lack, with how many. Its utilization percentage uses only the
+   systems that reported both configurable and free capacity.
 5. Fleet totals count a managed system once per machine type-model-serial. The reading with the
    fewest unknown figures wins; ties go to the first profile name. Each HMC roll-up still counts
    every system its HMC manages.
@@ -54,8 +56,11 @@ V11R2, POWER9 to POWER11; private evidence, public-safe summary here) establishe
 ## Consequences
 
 - Idle reserved capacity is real hypervisor allocation, so it shows as allocated, not free.
-- A system whose VIOS feed fails still contributes memory figures but drops out of the CPU and
-  fleet-complete counts; the CSV names the failed read.
+- A system whose VIOS feed fails still contributes every figure it reported; its VIOS figures
+  and the CPU remainder are missing from the sums, and the roll-up row says how many systems
+  lack them.
+- A roll-up's split columns can sum to less than its capacity columns when some systems lack a
+  split figure; the shortfall note is what tells a reader so.
 - The two systems whose CPU remainder is non-zero show it as other reserved rather than hiding it.
 
 ## Considered & rejected
@@ -70,4 +75,9 @@ V11R2, POWER9 to POWER11; private evidence, public-safe summary here) establishe
   hypervisor reserves nothing for them.
 - **Sum known values and ignore unknown systems silently.** judgment: fit; #1252 forbids
   under-reporting through dropped systems.
+- **Count a system in roll-ups only when all its figures are known.** judgment: fit; one
+  failed VIOS feed would remove known capacity and free figures, and the 2026-10-01 capture saw
+  that feed fail on two HMCs. The operator chose per-figure sums with disclosed shortfalls.
+- **Count per resource group (CPU, memory, partitions).** judgment: fit; a VIOS failure would
+  still drop the system's known memory capacity, because the VIOS figure sits in that group.
 - **First-profile-wins dedup.** judgment: fit; the operator chose the most complete reading.

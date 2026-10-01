@@ -24,7 +24,9 @@ read-only: it issues only the GETs below.
 
 - `survey_fleet(profiles, open_client, *, concurrency=4, hmc_timeout=300.0) -> FleetSurvey`
   surveys each named profile at most `concurrency` at a time. Each profile gets one
-  `open_client(profile)` client and one `hmc_timeout`-second deadline over its whole survey.
+  `open_client(profile)` client and one `hmc_timeout`-second deadline covering logon and every
+  read. Closing the session after the deadline fires is not covered by it, so the client's own
+  logoff can add up to that profile's request timeout (`HMC_TIMEOUT`, 180 s by default).
 - Per profile: `list_managed_systems()`; then, per system, `list_logical_partitions(uuid)`,
   `list_vios(uuid)`, and, for each never-applied partition only,
   `list_child("LogicalPartition", uuid, "LogicalPartitionProfile")`.
@@ -34,6 +36,9 @@ read-only: it issues only the GETs below.
 - A per-system read that raises `HMCError` is recorded as a gap. The gap names the feed and
   the error text, and the system keeps its other figures. The figures that depend on the failed
   feed are `None`, per ADR 0184 decision 2.
+- A never-applied partition whose profile claim cannot be read records a gap naming why: no
+  `AssociatedPartitionProfile` link, a linked profile absent from the partition's profile
+  feed, or a profile without `HasDedicatedProcessors`.
 - A figure missing from, or not numeric in, an HMC answer is `None`. No figure defaults to 0.
 
 Records (frozen dataclasses; figures are `None` when unknown):
@@ -61,8 +66,11 @@ Roll-ups (pure functions):
   type-model-serial. A reading with no MTMS is its own group. Each `FleetSystem` carries the
   chosen reading (fewest `None` figures; ties go to the first profile name) and the sorted
   managing profiles.
-- `rollup(readings) -> Rollup` with `systems`, `systems_counted`, and figure sums over the
-  counted readings. A reading is counted when none of its figures is `None`.
+- `rollup(readings) -> Rollup` with `systems`, per-figure sums, `cpu_util_pct`,
+  `mem_util_pct`, and `unknown`. Each figure sums the readings that reported it, and is `None`
+  only when none did. `unknown` lists `(group, figure, count)` for every figure that some
+  readings lack. Each utilization percentage is `utilization_pct` over the readings that
+  reported both configurable and free capacity (ADR 0184 decision 4).
 - `utilization_pct(configurable, free) -> float | None` returns
   `round(100 * (configurable - free) / configurable, 1)`, or `None` when either figure is
   unknown or `configurable` is 0.
@@ -80,8 +88,11 @@ Roll-ups (pure functions):
   would be silently ignored.
 - No configured profile is an error (exit 1) naming the config path.
 - Each profile's client is `HMCClient(load_profile(name))`.
-- It writes the CSV, then prints one stderr line per failed profile and a summary line. It
-  exits 0 once the CSV is written, failures included.
+- Before surveying, it creates a temporary file beside `PATH`; failing to is a usage error
+  (exit 2). After the survey it prints one stderr line per failed profile and writes the CSV to
+  the temporary file. It then renames that file over `PATH`, so a failed write leaves no partial
+  report and no temporary file. It prints a summary line, and it exits 0 once the CSV is in
+  place, failures included.
 
 CSV (stdlib `csv`, UTF-8, header row): the first column is `row_type`, one of `system`, `hmc`,
 `fleet` or `failure`, and the columns that follow are fixed (the plan lists them in order). Rows
@@ -93,7 +104,9 @@ come in this order:
 4. one `failure` row per failed profile.
 
 A field that does not apply to a row type is empty. An unknown figure is `unknown`. Utilization
-columns are `cpu_util_pct` and `mem_util_pct`.
+columns are `cpu_util_pct` and `mem_util_pct`. A system row's `notes` holds its gaps. A roll-up
+row's `notes` names each column some of its systems lack, as
+`<column>: <n> of <systems> systems unknown`.
 
 ### Documentation
 
@@ -107,15 +120,22 @@ publicly. `CHANGELOG.md` records the addition.
    `config.toml` profiles and can reach the HMCs. There is no MCP surface and no CI job.
 2. **Invariants and assets at stake**:
    - The read-only contract: the survey issues GETs only.
-   - The figures leadership acts on must not under-report: no figure reads 0 when unknown,
-     and no failed profile is dropped.
+   - For the systems each HMC's `ManagedSystem` feed returns, the figures leadership acts on
+     must not under-report: no figure reads 0 when unknown, no failed profile is dropped, and
+     every roll-up shortfall is named.
    - Internal identifiers in the output file.
 3. **Accepted failure classes**:
    - Readings are not a point-in-time snapshot. They are taken seconds to minutes apart, and
      partitions may change state between reads. The report is for allocation planning, not
      audit.
-   - A system a profile's HMC omits from its `ManagedSystem` feed (`list_managed_systems`
-     skips a system it cannot read and logs a warning) is absent from the report.
+   - A system a profile's HMC omits from its `ManagedSystem` feed is absent from the report.
+     This includes a system `list_managed_systems` skips in its firmware fallback, which it
+     reports only as a warning on stderr; the docs say so.
+   - System figures are reported as the HMC gives them, whatever the state. The 2026-10-01
+     capture checked them for `operating`, `standby` and `initializing` systems, where they
+     reconciled with their partitions. A `no connection` system lacked
+     `CurrentAssignedMemoryToPartitions`. Other states (`power off`, `error`) were not checked.
+     The `state` column shows each system's state, and dedup may prefer such a reading.
    - The CPU other-reserved remainder is unexplained. It is reported, not attributed (ADR 0184).
    - `HMC_USER`, `HMC_PASSWORD` and other `HMC_*` overrides still apply to every profile, per
      `load_profile`'s documented precedence. A wrong value fails that profile's logon, so the
@@ -126,7 +146,8 @@ publicly. `CHANGELOG.md` records the addition.
    - Keeping generated reports out of git and out of public places: the operator, per the doc
      warning.
    - HMC REST read paths: the `just live-vocabulary` gate (the `LogicalPartitionProfile` child
-     feed is captured).
+     feed is captured). Element nesting is not covered by that gate; the live run under
+     Validation covers it.
 
 ## Success
 
@@ -137,7 +158,8 @@ publicly. `CHANGELOG.md` records the addition.
 - A failed profile (logon error, deadline, client build) appears as a `failure` row, and its
   readings are absent.
 - An HTTP 500 VIOS feed leaves `cpu_vios`, `mem_vios` and `cpu_other_reserved` `unknown` on that
-  system only. `systems_counted` excludes the system.
+  system only. The roll-ups still sum its other figures, and their notes name the VIOS columns'
+  shortfall.
 - The header row equals the plan's column list exactly.
 
 ## Validation
@@ -145,5 +167,10 @@ publicly. `CHANGELOG.md` records the addition.
 Offline tests use respx and synthetic names. Their XML follows the 2026-10-01 captured shapes:
 `tests/system/test_utilization_survey.py` covers the operation, and
 `tests/app/test_report_cli.py` covers the CLI. Guardrails: `just test`, `just verify`, and
-`uv run --no-sync prek run --all-files`. A read-only live run of the command against the
-configured profiles, on minimus, is the end-to-end proof; its output stays private.
+`uv run --no-sync prek run --all-files`. The end-to-end proof is a read-only live run of the
+command against the configured profiles on the live-test host, at the branch head; its output
+stays private. It must show:
+- profile-claim columns populated on systems known to hold never-applied partitions;
+- gaps rather than failure rows on the HMCs whose VIOS feed answers 500;
+- for each fully read system, client, idle and VIOS memory summing to the system's
+  `CurrentAssignedMemoryToPartitions`, checked by hand against the HMC.
