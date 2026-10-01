@@ -229,6 +229,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_memory_pools` returns an empty list for a system without Active Memory Sharing.
+  On HMC V11R2 with POWER11 systems, `lshwres -r mempool` exits 1 with `HSCLA4A0`, so the
+  tool failed instead of reporting that the system has no pools; `hmc_remove_memory_pool`
+  now refuses there with "no pool with that name exists" (#1202).
 - The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
   systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
   `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector
