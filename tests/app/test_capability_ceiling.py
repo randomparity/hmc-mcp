@@ -1266,7 +1266,7 @@ POWER_OFF_ONLY = [
 
 
 def test_a_power_off_grant_does_not_serve_dump_restart():
-    """ADR 0185: granting the stop no longer grants the crash; naming both does."""
+    """ADR 0188: granting the stop no longer grants the crash; naming both does."""
     stop_only = _names(create_mcp(_policy(POWER_OFF_ONLY)))
     both = _names(
         create_mcp(
@@ -1287,7 +1287,7 @@ def test_a_power_off_grant_does_not_serve_dump_restart():
 
 
 def test_served_power_off_admits_no_dump_restart():
-    """ADR 0185: the served schema cannot express the crash on the stop tool."""
+    """ADR 0188: the served schema cannot express the crash on the stop tool."""
     application = create_mcp(_policy(POWER_OFF_ONLY))
     (tool,) = [
         tool

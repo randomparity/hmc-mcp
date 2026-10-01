@@ -4,7 +4,7 @@
 
 Accepted (2026-09-22)
 
-> **Amended by [0185](0185-dump-restart-is-its-own-operation.md)** (2026-10-01):
+> **Amended by [0188](0188-dump-restart-is-its-own-operation.md)** (2026-10-01):
 > `dumprestart` is served by `hmc_dump_restart_lpar`, not `hmc_power_off_lpar`, so a grant of
 > the power-off tool no longer reaches the crash. The `allow_dump_restart` opt-in stands.
 

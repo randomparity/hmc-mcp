@@ -669,7 +669,7 @@ async def _osshutdown_refusal(
 async def _dump_restart(
     client: Client, state: RunState, fixture: pcie._DedicatedFixture
 ) -> bool:
-    # The crash is its own tool and grant (ADR 0185), not a hmc_power_off_lpar operation.
+    # The crash is its own tool and grant (ADR 0188), not a hmc_power_off_lpar operation.
     st, data = await state.call(
         client,
         "hmc_dump_restart_lpar",

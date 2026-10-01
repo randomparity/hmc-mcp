@@ -290,7 +290,7 @@ Four rules explain why:
 
 **Granting power-off without the crash.** `hmc_power_off_lpar` cannot crash a partition;
 the PowerOff `dumprestart` crash and platform dump is its own tool, `hmc_dump_restart_lpar`
-([ADR 0185](adr/0185-dump-restart-is-its-own-operation.md)). A grant that names only
+([ADR 0188](adr/0188-dump-restart-is-its-own-operation.md)). A grant that names only
 `hmc_power_off_lpar`, like the example above, withholds the crash. Name
 `hmc_dump_restart_lpar` beside it to allow the crash. `effects = ["destructive"]` admits
 both, which is one more reason to name tools.

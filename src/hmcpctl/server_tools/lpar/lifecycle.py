@@ -29,7 +29,7 @@ from ...tool_registry import tool_module
 tool, register_tools, tool_security = tool_module()
 
 # PowerOff operations hmc_power_off_lpar admits. dumprestart is served only by
-# hmc_dump_restart_lpar, so a grant of this tool cannot reach the crash (ADR 0185).
+# hmc_dump_restart_lpar, so a grant of this tool cannot reach the crash (ADR 0188).
 PowerOffToolOperation = Literal["shutdown", "osshutdown"]
 
 
@@ -459,7 +459,7 @@ def hmc_power_off_lpar(
     RMC connection to the partition's operating system.
 
     The force-crash, operation=dumprestart, is not this tool's: it is
-    hmc_dump_restart_lpar, a separate grant (ADR 0185). The vendor's fourth value,
+    hmc_dump_restart_lpar, a separate grant (ADR 0188). The vendor's fourth value,
     dumpretry, is not accepted.
 
     Args:
@@ -514,7 +514,7 @@ def hmc_dump_restart_lpar(
     """Crash a logical partition and take a platform dump (PowerOff operation=dumprestart).
 
     This is kdive's force-crash. It is a separate tool from hmc_power_off_lpar so an
-    access policy can grant the ordinary stop without it (ADR 0185). It is refused
+    access policy can grant the ordinary stop without it (ADR 0188). It is refused
     unless allow_dump_restart is true. Returns the submitted job; with wait=True it
     blocks until the job is terminal. Do not resubmit a timed-out wait: poll the job.
 

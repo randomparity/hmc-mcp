@@ -1,6 +1,6 @@
 # Dump-restart as its own operation — design (#896)
 
-Decision record: [ADR 0185](../../adr/0185-dump-restart-is-its-own-operation.md).
+Decision record: [ADR 0188](../../adr/0188-dump-restart-is-its-own-operation.md).
 
 ## Problem
 
@@ -41,7 +41,7 @@ or its effect class, so no grant can admit the stop and withhold the crash.
    - An `effects = ["destructive"]` grant reaches the crash. This is effect-class semantics,
      documented in `docs/mcp-server.md`.
    - The CLI and Python API still crash on request. Credential holders are outside policy
-     (ADR 0185 Consequences).
+     (ADR 0188 Consequences).
    - Existing policies lose the crash silently until they name the new tool. This is the
      accepted contract change, recorded in the CHANGELOG.
 4. **Covered elsewhere:** the crash audit trail (ADR 0180); `dumpretry` (unowned exclusion);

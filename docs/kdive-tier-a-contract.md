@@ -49,7 +49,7 @@ mapping comes from epic #871 and issue #872):
 - `operation=dumprestart` crashes the partition and takes a platform dump. It is refused with
   a `ValueError` unless `allow_dump_restart=True`; nothing else asks for confirmation.
 - Over MCP the force crash is `hmc_dump_restart_lpar`, not `hmc_power_off_lpar`, so an access
-  policy grants it separately ([ADR 0185](adr/0185-dump-restart-is-its-own-operation.md)).
+  policy grants it separately ([ADR 0188](adr/0188-dump-restart-is-its-own-operation.md)).
 - The vendor's fourth value, `dumpretry`, is not accepted.
 - `on` submits a job only from the 'not activated' state, unless `force=True`. An activated
   partition ('running', 'starting', 'open firmware') submits no job and reports

@@ -399,7 +399,7 @@ def test_power_off_lpar_tool_forwards_shutdown_parameters(monkeypatch, mock_hmc)
 
 
 def test_power_off_lpar_tool_cannot_send_dumprestart(monkeypatch, mock_hmc):
-    """ADR 0185: the crash is not this tool's, so a direct call cannot reach it."""
+    """ADR 0188: the crash is not this tool's, so a direct call cannot reach it."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
@@ -412,7 +412,7 @@ def test_power_off_lpar_tool_cannot_send_dumprestart(monkeypatch, mock_hmc):
 
 
 def test_dump_restart_lpar_tool_submits_dumprestart(monkeypatch, mock_hmc):
-    """ADR 0185: the crash is its own tool and sends operation=dumprestart."""
+    """ADR 0188: the crash is its own tool and sends operation=dumprestart."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
