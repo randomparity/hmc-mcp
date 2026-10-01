@@ -14,7 +14,7 @@ from .commands import (
     build_attribute_record,
     build_filter,
     hmc_error_code,
-    parse_hmc_delimited_rows,
+    parse_hmc_result_rows,
 )
 from .profiles import get_proc_compat_modes
 from .transport import HMCCLIError, run_hmc_command
@@ -225,12 +225,7 @@ async def query_resource_group_memopt_scores(
             "The managed system does not support multiple resource groups; "
             "use POWER11 resource-group affinity on a supported system.",
         )
-    try:
-        rows = parse_hmc_delimited_rows(output, fields)
-    except ValueError as error:
-        raise HMCCLIError(
-            f"malformed lsmemopt resource-group output: {error}"
-        ) from error
+    rows = parse_hmc_result_rows(output, fields, "lsmemopt resource-group")
     required = {*_RESOURCE_GROUP_CURRENT_FIELDS}
     if calculated:
         required.add("predicted_score")
@@ -268,8 +263,12 @@ async def query_minimum_affinity_policy(
         f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} "
         f"-F {','.join(fields)} --header"
     )
+    rows = parse_hmc_result_rows(
+        await run_hmc_command(config, command),
+        fields,
+        "lssyscfg minimum-affinity policy",
+    )
     try:
-        rows = parse_hmc_delimited_rows(await run_hmc_command(config, command), fields)
         if len(rows) != 1:
             raise ValueError(f"expected exactly one policy row; received {len(rows)}")
         row = rows[0]

@@ -87,6 +87,17 @@ second contract applied to data rather than to a schema identifier.
   `get_vios_storage_detail` serves the package's one multi-group read from its
   own literal path. The remedy, if it is ever wanted, is a sequence parameter
   joining encoded names with `&group=`.
+
+  > **Amended by #1251** (2026-10-01). The remedy above is not the form the
+  > client uses. `get_vios_storage_detail` joins the names with a comma
+  > (`?group=ViosSCSIMapping,ViosFCMapping`, `src/hmcpctl/client/client_systems.py`),
+  > and the V10R3 capture records both that form and the repeated
+  > `?group=ViosSCSIMapping&group=ViosFCMapping` at HTTP 200
+  > (`tests/fixtures/live/vocabulary/v10r3-p9.json`, the two
+  > `VirtualIOServer/{uuid}?group=` rows). The status alone does not separate
+  > them: the client's docstring records that V10R3 answers the repeated
+  > parameter with the first group only (#1202), which is why it sends one
+  > comma-separated value.
 - **No refusal moves, and one narrow residual opens.** `_reject_dot_segments`
   checks the percent-decoded form as well as the raw one (`core.py:253`), so a
   `group` whose decoded form holds a `.` or `..` segment is refused with

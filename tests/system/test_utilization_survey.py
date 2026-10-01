@@ -17,8 +17,11 @@ from conftest import assert_no_mutating_requests, make_config
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.inventory.utilization import (
+    AdapterFigures,
+    DiskFigures,
     ProfileFailure,
     SystemReading,
+    capacity_pairs,
     fleet_systems,
     read_system,
     rollup,
@@ -46,10 +49,56 @@ def _feed(*entries: str) -> str:
     return '<feed xmlns="http://www.w3.org/2005/Atom">' + "".join(entries) + "</feed>"
 
 
+def _slot(drc: int, description: str, partition: int | None = None) -> str:
+    owner = "" if partition is None else f"<PartitionID>{partition}</PartitionID>"
+    return (
+        f"<IOSlot><Description>{description}</Description>{owner}"
+        "<SlotDynamicReconfigurationConnectorIndex>"
+        f"{drc}</SlotDynamicReconfigurationConnectorIndex></IOSlot>"
+    )
+
+
+def _sriov_adapter(drc: int, mode: str, ports: int, unconfigured: str) -> str:
+    return (
+        f"<IOAdapterChoice><SRIOVAdapter><AdapterID>{drc}</AdapterID>"
+        f"<AdapterMode>{mode}</AdapterMode>"
+        f"<MaximumLogicalPortsSupported>{ports}</MaximumLogicalPortsSupported>"
+        f"{unconfigured}</SRIOVAdapter></IOAdapterChoice>"
+    )
+
+
+_FREE_PORT = (
+    "<SRIOVUnconfiguredLogicalPort><DynamicReconfigurationConnectorName>PHB 4098"
+    "</DynamicReconfigurationConnectorName></SRIOVUnconfiguredLogicalPort>"
+)
+# Slot DRC indexes are decimal in REST answers; 553713696 is lshwres's 21010020.
+IO_SLOTS = (
+    "<IOSlots><Metadata><Atom/></Metadata>"
+    + _slot(553713680, "Empty slot")
+    + _slot(553713681, "PCIe3 4-port 10GbE SR Adapter", partition=1)
+    + _slot(553713696, "PCIe4 2-port 100GbE RoCE Adapter x16")
+    + _slot(553713697, "Universal Serial Bus UHC Spec")
+    + "</IOSlots>"
+)
+SRIOV_ADAPTERS = (
+    "<SRIOVAdapters><Metadata><Atom/></Metadata>"
+    + _sriov_adapter(
+        553713696,
+        "Sriov",
+        48,
+        f"<UnconfiguredLogicalPorts>{_FREE_PORT * 2}</UnconfiguredLogicalPorts>",
+    )
+    + _sriov_adapter(553713681, "Dedicated", 0, "")
+    + "</SRIOVAdapters>"
+)
+IO_CONFIGURATION = IO_SLOTS + SRIOV_ADAPTERS
+
+
 def _system(
     name: str = "system-a",
     serial: str = "SER0001",
     omit: tuple[str, ...] = (),
+    io: str | None = IO_CONFIGURATION,
 ) -> str:
     memory = {
         "ConfigurableSystemMemory": "1000000",
@@ -76,7 +125,13 @@ def _system(
         f"<AssociatedSystemMemoryConfiguration>{mem}"
         "</AssociatedSystemMemoryConfiguration>"
         f"<AssociatedSystemProcessorConfiguration>{proc}"
-        "</AssociatedSystemProcessorConfiguration>",
+        "</AssociatedSystemProcessorConfiguration>"
+        + (
+            ""
+            if io is None
+            else f"<AssociatedSystemIOConfiguration>{io}"
+            "</AssociatedSystemIOConfiguration>"
+        ),
     )
 
 
@@ -90,6 +145,7 @@ def _partition(
     pool: int = 0,
     element: str = "LogicalPartition",
     profile_uuid: str | None = None,
+    extra: str = "",
 ) -> str:
     if dedicated:
         processors = (
@@ -120,7 +176,7 @@ def _partition(
         "<PartitionMemoryConfiguration>"
         f"<CurrentMemory>{memory}</CurrentMemory><RuntimeMemory>256</RuntimeMemory>"
         f"</PartitionMemoryConfiguration><PartitionProcessorConfiguration>"
-        f"{processors}</PartitionProcessorConfiguration>",
+        f"{processors}</PartitionProcessorConfiguration>{extra}",
     )
 
 
@@ -162,15 +218,43 @@ LPARS = _feed(
         NEVER_UUID, "not activated", 0, 0, dedicated=False, profile_uuid=PROFILE_UUID
     ),
 )
-VIOS = _feed(
-    _partition(
-        "cccccccc-0000-0000-0000-000000000001",
-        "running",
+
+
+def _volume(
+    udid: str | None, capacity: int, *, fc: str = "false", available: str = "false"
+) -> str:
+    device = "" if udid is None else f"<UniqueDeviceID>{udid}</UniqueDeviceID>"
+    return (
+        f"<PhysicalVolume>{device}"
+        f"<AvailableForUsage>{available}</AvailableForUsage>"
+        f"<VolumeCapacity>{capacity}</VolumeCapacity><VolumeName>hdisk0</VolumeName>"
+        f"<IsFibreChannelBacked>{fc}</IsFibreChannelBacked>"
+        "<IsISCSIBacked>false</IsISCSIBacked></PhysicalVolume>"
+    )
+
+
+def _volumes(*volumes: str) -> str:
+    return (
+        '<PhysicalVolumes group="ViosStorage"><Metadata><Atom/></Metadata>'
+        + "".join(volumes)
+        + "</PhysicalVolumes>"
+    )
+
+
+def _vios(number: int, storage: str, state: str = "running") -> str:
+    return _partition(
+        f"cccccccc-0000-0000-0000-00000000000{number}",
+        state,
         20000,
         2,
         element="VirtualIOServer",
+        extra=f"<PartitionName>vios-{number}</PartitionName>{storage}",
     )
-)
+
+
+INTERNAL = _volume("UDID-1", 286102)
+SAN = _volume("UDID-9", 102400, fc="true", available="true")
+VIOS = _feed(_vios(1, _volumes(INTERNAL, SAN)))
 PROFILES = _feed(
     _profile("bbbbbbbb-0000-0000-0000-000000000009", 1, 1, dedicated=True),
     _profile(PROFILE_UUID, 16384, 0.5, dedicated=False),
@@ -486,6 +570,7 @@ async def test_rollup_sums_each_figure_and_names_shortfalls() -> None:
         ("cpu", "dedicated", 1),
         ("cpu", "shared", 1),
         ("memory", "vios", 1),
+        *(("disk", item, 1) for item in DISK_FIELDS),
     )
 
 
@@ -531,3 +616,173 @@ async def test_survey_hmc_through_client_issues_only_gets(mock_hmc) -> None:
     assert readings[0].memory.vios is None
     assert readings[0].gaps[0].startswith("VirtualIOServer feed:")
     assert_no_mutating_requests(mock_hmc)
+
+
+DISK_FIELDS = (
+    "internal_total",
+    "internal_assigned",
+    "internal_free",
+    "san_total",
+    "san_assigned",
+    "san_free",
+)
+UNKNOWN_DISK = DiskFigures(None, None, None, None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_disk_and_adapter_figures_per_adr_0185() -> None:
+    reading = await _read(FakeClient())
+
+    assert reading.disk == DiskFigures(286102, 286102, 0, 102400, 0, 102400)
+    assert reading.adapters == AdapterFigures(1, 1, 1, 1, 1, 48, 2)
+    assert capacity_pairs(reading)["disk"] == (388502, 102400)
+    assert capacity_pairs(reading)["slots"] == (3, 1)
+    assert capacity_pairs(reading)["sriov"] == (48, 2)
+    assert reading.gaps == ()
+
+
+@pytest.mark.asyncio
+async def test_disk_figures_count_a_shared_lun_once() -> None:
+    mapped_san = _volume("UDID-9", 102400, fc="true", available="false")
+    spare = _volume("UDID-2", 50000, available="true")
+    vios = parse_feed(
+        _feed(_vios(1, _volumes(INTERNAL, SAN)), _vios(2, _volumes(mapped_san, spare)))
+    )
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk == DiskFigures(336102, 286102, 50000, 102400, 102400, 0)
+
+
+@pytest.mark.asyncio
+async def test_failed_vios_feed_leaves_disk_unknown() -> None:
+    reading = await _read(FakeClient(vios=HMCError("ViosStorage", 500)))
+
+    assert reading.disk == UNKNOWN_DISK
+    assert reading.adapters == AdapterFigures(1, 1, 1, 1, 1, 48, 2)
+    assert reading.gaps == ("VirtualIOServer feed: ViosStorage (HTTP 500)",)
+
+
+@pytest.mark.asyncio
+async def test_vios_without_physical_volumes_leaves_disk_unknown() -> None:
+    vios = parse_feed(
+        _feed(
+            _vios(1, _volumes(INTERNAL)),
+            _vios(2, "", state="not activated"),
+            _vios(3, "", state="running"),
+        )
+    )
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk == UNKNOWN_DISK
+    assert reading.gaps == (
+        "PhysicalVolumes: VIOS vios-2 (not activated) reported no storage",
+        "PhysicalVolumes: VIOS vios-3 (running) reported no storage",
+    )
+
+
+@pytest.mark.asyncio
+async def test_volume_figures_the_hmc_omits_are_unknown() -> None:
+    unflagged = _volume("UDID-1", 286102).replace(
+        "<AvailableForUsage>false</AvailableForUsage>", ""
+    )
+    unbacked = SAN.replace("<IsFibreChannelBacked>true</IsFibreChannelBacked>", "")
+    vios = parse_feed(_feed(_vios(1, _volumes(unflagged, SAN))))
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk == DiskFigures(286102, None, None, 102400, 0, 102400)
+    assert reading.gaps == (
+        "PhysicalVolumes: VIOS vios-1 volume hdisk0 has no readable AvailableForUsage",
+    )
+    vios = parse_feed(_feed(_vios(1, _volumes(INTERNAL, unbacked))))
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk == UNKNOWN_DISK
+    assert reading.gaps == (
+        (
+            "PhysicalVolumes: VIOS vios-1 volume hdisk0 has no readable "
+            "IsFibreChannelBacked/IsISCSIBacked"
+        ),
+    )
+    pre_iscsi = INTERNAL.replace("<IsISCSIBacked>false</IsISCSIBacked>", "")
+    vios = parse_feed(_feed(_vios(1, _volumes(pre_iscsi, SAN))))
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk == DiskFigures(286102, 286102, 0, 102400, 0, 102400)
+
+
+@pytest.mark.asyncio
+async def test_volume_without_device_id_is_counted_per_vios_with_a_gap() -> None:
+    blank = _volume("UDID-0", 1000).replace("UDID-0", "")
+    vios = parse_feed(
+        _feed(
+            _vios(1, _volumes(_volume(None, 1000))),
+            _vios(2, _volumes(blank)),
+        )
+    )
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk.internal_total == 2000
+    assert reading.gaps == tuple(
+        f"PhysicalVolumes: VIOS vios-{n} lists a volume without UniqueDeviceID; "
+        "it is not deduplicated"
+        for n in (1, 2)
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_containers_report_zero() -> None:
+    fully_configured = _sriov_adapter(
+        553713696, "Sriov", 48, '<UnconfiguredLogicalPorts kb="ROR" kxe="false"/>'
+    )
+    io = (
+        '<IOSlots kb="CUD" kxe="false"/>'
+        f"<SRIOVAdapters>{fully_configured}"
+        f"{_sriov_adapter(553713700, 'Sriov', 0, '')}</SRIOVAdapters>"
+    )
+    systems = parse_feed(_feed(_system(io=io)))
+    vios = parse_feed(_feed(_vios(1, '<PhysicalVolumes kb="CUD" kxe="false"/>')))
+    reading = await _read(FakeClient(systems=systems, vios=vios))
+
+    assert reading.disk == DiskFigures(0, 0, 0, 0, 0, 0)
+    assert reading.adapters == AdapterFigures(0, 0, 0, 0, 2, 48, 0)
+    assert reading.gaps == ()
+    reading = await _read(FakeClient(vios=parse_feed(_feed())))
+
+    assert reading.disk == DiskFigures(0, 0, 0, 0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_system_without_io_configuration_leaves_adapters_unknown() -> None:
+    reading = await _read(FakeClient(systems=parse_feed(_feed(_system(io=None)))))
+
+    assert reading.adapters == AdapterFigures(None, None, None, None, None, None, None)
+    assert reading.gaps == (
+        "SRIOVAdapters: the system reported no SR-IOV adapter list",
+        "IOSlots: the system reported no I/O slot list",
+    )
+    reading = await _read(FakeClient(systems=parse_feed(_feed(_system(io=IO_SLOTS)))))
+
+    assert reading.adapters == AdapterFigures(1, None, None, 1, None, None, None)
+    unreported = _sriov_adapter(553713696, "Sriov", 48, "")
+    io = f"{IO_SLOTS}<SRIOVAdapters>{unreported}</SRIOVAdapters>"
+    reading = await _read(FakeClient(systems=parse_feed(_feed(_system(io=io)))))
+
+    assert reading.adapters == AdapterFigures(1, 1, 1, 1, 1, 48, None)
+    assert reading.gaps == (
+        "SRIOVAdapters: adapter 553713696 has no readable UnconfiguredLogicalPorts",
+    )
+
+
+@pytest.mark.asyncio
+async def test_rollup_sums_disk_and_adapter_figures() -> None:
+    complete = await _read(FakeClient())
+    no_io = await _read(FakeClient(systems=parse_feed(_feed(_system(io=None)))))
+
+    total = rollup([complete, complete, no_io])
+
+    assert total.disk == DiskFigures(858306, 858306, 0, 307200, 0, 307200)
+    assert total.adapters == AdapterFigures(2, 2, 2, 2, 2, 96, 4)
+    assert total.disk_util_pct == 73.6
+    assert total.slots_util_pct == 66.7
+    assert total.sriov_util_pct == 95.8
+    assert ("adapters", "slots_assigned", 1) in total.unknown
