@@ -869,9 +869,8 @@ def test_lpars_list_state_filter(fake_hmc):
 
     assert result.exit_code == 0
     assert LPAR_NAME in result.stdout
-    assert fake_hmc.calls == [
-        ("search_uom", ("LogicalPartition", "PartitionState", "running"), {})
-    ]
+    # The partition feed, filtered locally: V10R3 cannot search a state (#1202).
+    assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
