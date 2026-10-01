@@ -37,10 +37,9 @@ CLI_COMMANDS = Path(hmcpctl.cli_commands.__file__).parent
 CONSOLES = frozenset({"console", "err_console"})
 # Modules that may build a Rich console or table directly: the shared owner only.
 RICH_OWNERS = frozenset({"output.py"})
-# rich.text builds Text renderables; rich.markup.escape is tolerated in profiles.py.
-RICH_ALLOWED = frozenset({"rich.text", "rich.markup"})
 # #1248 owns lpar/profiles.py's set-boot-order line, which still interpolates an
-# escape()d value into markup; that form is tolerated there and nowhere else.
+# escape()d value into markup; that form, and its rich.markup import, are tolerated
+# there and nowhere else.
 ESCAPE_TOLERATED = frozenset({"lpar/profiles.py"})
 
 
@@ -139,17 +138,30 @@ def _is_console_print(node: ast.AST) -> bool:
     return isinstance(receiver, ast.Name) and receiver.id in CONSOLES
 
 
-def _imports_rich_owner_module(node: ast.AST) -> bool:
-    """Any ``rich`` import except the two modules that never parse markup themselves."""
+def _imports_rich_directly(node: ast.AST, allowed: frozenset[str]) -> bool:
+    """A ``rich`` import outside *allowed*, or ``output``'s plain ``Table`` re-imported."""
     if isinstance(node, ast.Import):
         modules = [alias.name for alias in node.names]
     elif isinstance(node, ast.ImportFrom) and node.module:
+        if node.module.endswith("output") and any(
+            alias.name == "Table" for alias in node.names
+        ):
+            return True
         modules = [node.module]
     else:
         return False
     return any(
-        (module == "rich" or module.startswith("rich.")) and module not in RICH_ALLOWED
+        (module == "rich" or module.startswith("rich.")) and module not in allowed
         for module in modules
+    )
+
+
+def _parses_markup(node: ast.AST) -> bool:
+    """``Text.from_markup(...)`` or ``rich.markup.render(...)``: markup by another door."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("from_markup", "render")
     )
 
 
@@ -172,8 +184,9 @@ def markup_violations(source: str, filename: str) -> list[str]:
 
     A ``console``/``err_console`` ``print`` call anywhere in the module must pass
     ``markup=False`` or print only literals, ``Text`` renderables and names its function
-    binds exactly once to ``VerbatimTable``. Only ``output.py`` may import from ``rich``
-    beyond ``rich.text`` and ``rich.markup``. Aliasing ``console.print`` to another
+    binds exactly once to ``VerbatimTable``. No module calls ``from_markup`` or
+    ``render``, and only ``output.py`` may import ``output.Table`` or from ``rich``
+    beyond ``rich.text``. Aliasing ``console.print`` to another
     name, or assigning ``table.title`` after construction, is not detected.
     """
     tree = ast.parse(source)
@@ -181,14 +194,16 @@ def markup_violations(source: str, filename: str) -> list[str]:
     tolerate_escape = filename in ESCAPE_TOLERATED
     found: list[str] = []
     for node in ast.walk(tree):
-        if not _is_console_print(node) or _passes_markup_false(node):
-            continue
-        tables = _table_names(owner[node])
-        if not all(_markup_safe(arg, tables, tolerate_escape) for arg in node.args):
-            found.append(f"{filename}:{node.lineno}: interpolated console.print")
+        if _parses_markup(node):
+            found.append(f"{filename}:{node.lineno}: parses markup")
+        if _is_console_print(node) and not _passes_markup_false(node):
+            tables = _table_names(owner[node])
+            if not all(_markup_safe(arg, tables, tolerate_escape) for arg in node.args):
+                found.append(f"{filename}:{node.lineno}: interpolated console.print")
+    allowed = frozenset({"rich.text"} | ({"rich.markup"} if tolerate_escape else set()))
     if Path(filename).name not in RICH_OWNERS:
         for node in ast.walk(tree):
-            if _imports_rich_owner_module(node):
+            if _imports_rich_directly(node, allowed):
                 found.append(f"{filename}:{node.lineno}: imports rich directly")
     return sorted(set(found))
 
@@ -229,6 +244,9 @@ def test_cli_commands_print_external_text_verbatim():
         ("def f(t: VerbatimTable):\n    t = x\n    console.print(t)", True),
         ('def f():\n    output.console.print(f"{x}")', True),
         ("from rich import print", True),
+        ("from rich.markup import escape", True),
+        ("from .output import Table", True),
+        ("def f(t):\n    t.add_row(Text.from_markup(name))", True),
         ("from rich.panel import Panel", True),
         ("from rich.table import Table", True),
         ("import rich.console", True),
@@ -283,10 +301,11 @@ def test_verbatim_table_renders_title_header_and_cells_as_given():
 # A value Rich would read as a bold tag pair and an emoji code if it parsed it, ending in
 # the backslash that rich.markup.escape doubles.
 MARKED = "x[bold]y[/bold]:smile:\\"
-# A raw body Rich would also reflow: longer than its 80-column non-tty width, with a tab.
+# A raw body Rich would reflow and click would strip from a pipe: longer than 80
+# columns, with a tab and an ANSI colour code.
 # MARKED exactly, not followed by the extra backslash escape() would have added.
 PRINTED_VERBATIM = re.compile(re.escape(MARKED) + r"(?!\\)")
-RAW_BODY = f"<V>{MARKED}\t{'word ' * 30}</V>"
+RAW_BODY = f"<V>{MARKED}\t\x1b[31m{'word ' * 30}</V>"
 
 
 def _stub(monkeypatch, module, value, *names):
@@ -396,7 +415,7 @@ def test_systems_list_table_prints_bracketed_system_name_verbatim(monkeypatch):
         (RAW_BODY, ["raw", "post", "/p", "<x/>", "--yes"]),
     ),
 )
-def test_raw_commands_print_the_body_byte_for_byte(monkeypatch, value, argv):
+def test_raw_commands_print_the_body_as_received(monkeypatch, value, argv):
     _stub(monkeypatch, cli_raw, value, "with_client")
 
     result = RUNNER.invoke(cli.app, argv)

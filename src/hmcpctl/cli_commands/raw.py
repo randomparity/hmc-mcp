@@ -18,9 +18,10 @@ def raw_get(
     """Raw GET against the HMC; prints the XML response body."""
 
     body, _headers = with_client(lambda hmc: hmc.raw_get(path))
-    # typer.echo, not Rich: the body must reach the pipe byte-for-byte, with no
-    # markup parsing, wrapping or tab expansion (#1029).
-    typer.echo(body)
+    # typer.echo, not Rich: the body is printed as received, with no markup parsing,
+    # wrapping or tab expansion; color=True stops click stripping ANSI codes from a
+    # pipe (#1029).
+    typer.echo(body, color=True)
 
 
 def raw_post(
@@ -46,7 +47,8 @@ def raw_post(
         raise typer.Abort()
 
     typer.echo(
-        with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type))
+        with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type)),
+        color=True,
     )
 
 
