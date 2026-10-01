@@ -109,7 +109,7 @@ def lpars_modify(
         raise typer.Exit(code=1)
     if result.lpar is None:
         partition_not_found(name_or_uuid)
-    uuid = result.lpar.get("UUID") or name_or_uuid
+    uuid = result.lpar.get("UUID", name_or_uuid)
     console.print(f"Modified LPAR {uuid}", style="green", markup=False)
     print_json(asdict(result))
 
