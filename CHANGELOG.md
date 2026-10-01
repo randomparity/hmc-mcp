@@ -945,6 +945,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Interface change:** `hmc_restore_lpar_profiles` takes a required keyword `restore_type`
+  with no default, and `rstprofdata` now carries it as `-l`, which the HMC requires
+  (`rstprofdata -m S -l type -f F`). `1` restores the backup in full, `2` merges with the
+  backup winning conflicts, and `3` merges with the current data winning. Any other value,
+  including `4` (initialize, which deletes every partition), is refused before the command
+  runs. The tool used to send `rstprofdata` without `-l`, which the HMC's synopsis does not
+  allow (#1202).
 - `hmc_list_optical_media`, `storage list-optical-media` and `list_optical_media` no longer
   return `media_type`, and the CLI table drops its Type column. No captured V10R3 or V11R2
   medium and no IBM reference page carries a `MediaType` element, so the field was always
