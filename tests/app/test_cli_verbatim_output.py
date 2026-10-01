@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from rich.table import Table
 from typer.testing import CliRunner
 
 import hmcpctl.cli_commands
@@ -36,7 +37,8 @@ CLI_COMMANDS = Path(hmcpctl.cli_commands.__file__).parent
 CONSOLES = frozenset({"console", "err_console"})
 # Modules that may build a Rich console or table directly: the shared owner only.
 RICH_OWNERS = frozenset({"output.py"})
-RICH_MODULES = frozenset({"rich", "rich.table", "rich.console"})
+# rich.text builds Text renderables; rich.markup.escape is tolerated in profiles.py.
+RICH_ALLOWED = frozenset({"rich.text", "rich.markup"})
 # #1248 owns lpar/profiles.py's set-boot-order line, which still interpolates an
 # escape()d value into markup; that form is tolerated there and nowhere else.
 ESCAPE_TOLERATED = frozenset({"lpar/profiles.py"})
@@ -64,24 +66,33 @@ def _is_text(node: ast.AST) -> bool:
 
 
 def _table_names(function: ast.AST | None) -> set[str]:
-    """Names *function* binds only to ``VerbatimTable(...)`` (or annotates as one)."""
-    bound: dict[str, bool] = {}
-    for node in ast.walk(function) if function is not None else ():
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    is_table = _is_call_to(node.value, frozenset({"VerbatimTable"}))
-                    bound[target.id] = bound.get(target.id, True) and is_table
-        elif isinstance(node, (ast.For, ast.AsyncFor, ast.withitem, ast.NamedExpr)):
-            rebound = (
-                node.optional_vars if isinstance(node, ast.withitem) else node.target
+    """Names *function* binds exactly once, to ``VerbatimTable(...)`` or by annotation.
+
+    Any second binding -- a loop, ``with``, ``except``, comprehension or tuple target,
+    or another assignment -- makes the name untrusted.
+    """
+    if function is None:
+        return set()
+    bindings: dict[str, list[bool]] = {}
+    for node in ast.walk(function):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            bindings.setdefault(node.id, []).append(False)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bindings.setdefault(node.name, []).append(False)
+        elif isinstance(node, ast.arg):
+            annotated = node.annotation is not None and "VerbatimTable" in ast.unparse(
+                node.annotation
             )
-            for name in ast.walk(rebound) if rebound is not None else ():
-                if isinstance(name, ast.Name):
-                    bound[name.id] = False
-        elif isinstance(node, ast.arg) and node.annotation is not None:
-            bound[node.arg] = "VerbatimTable" in ast.unparse(node.annotation)
-    return {name for name, is_table in bound.items() if is_table}
+            bindings.setdefault(node.arg, []).append(annotated)
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and _is_call_to(node.value, frozenset({"VerbatimTable"}))
+        ):
+            bindings[node.targets[0].id] = [True] * len(bindings[node.targets[0].id])
+    return {name for name, kinds in bindings.items() if kinds == [True]}
 
 
 def _markup_safe(node: ast.AST, tables: set[str], tolerate_escape: bool) -> bool:
@@ -115,21 +126,31 @@ def _passes_markup_false(call: ast.Call) -> bool:
 
 
 def _is_console_print(node: ast.AST) -> bool:
-    return (
+    """``console.print(...)``, also reached through a module (``output.console``)."""
+    if not (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "print"
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id in CONSOLES
-    )
+    ):
+        return False
+    receiver = node.func.value
+    if isinstance(receiver, ast.Attribute):
+        return receiver.attr in CONSOLES
+    return isinstance(receiver, ast.Name) and receiver.id in CONSOLES
 
 
 def _imports_rich_owner_module(node: ast.AST) -> bool:
+    """Any ``rich`` import except the two modules that never parse markup themselves."""
     if isinstance(node, ast.Import):
-        return any(alias.name in RICH_MODULES for alias in node.names)
-    if isinstance(node, ast.ImportFrom) and node.module == "rich":
-        return any(f"rich.{alias.name}" in RICH_MODULES for alias in node.names)
-    return isinstance(node, ast.ImportFrom) and node.module in RICH_MODULES
+        modules = [alias.name for alias in node.names]
+    elif isinstance(node, ast.ImportFrom) and node.module:
+        modules = [node.module]
+    else:
+        return False
+    return any(
+        (module == "rich" or module.startswith("rich.")) and module not in RICH_ALLOWED
+        for module in modules
+    )
 
 
 def _enclosing_functions(tree: ast.AST) -> dict[ast.AST, ast.AST | None]:
@@ -151,8 +172,9 @@ def markup_violations(source: str, filename: str) -> list[str]:
 
     A ``console``/``err_console`` ``print`` call anywhere in the module must pass
     ``markup=False`` or print only literals, ``Text`` renderables and names its function
-    binds to ``VerbatimTable``. Only ``output.py`` may import ``rich``,
-    ``rich.table`` or ``rich.console``.
+    binds exactly once to ``VerbatimTable``. Only ``output.py`` may import from ``rich``
+    beyond ``rich.text`` and ``rich.markup``. Aliasing ``console.print`` to another
+    name, or assigning ``table.title`` after construction, is not detected.
     """
     tree = ast.parse(source)
     owner = _enclosing_functions(tree)
@@ -199,6 +221,15 @@ def test_cli_commands_print_external_text_verbatim():
             "def f():\n    t = VerbatimTable()\n    for t in x:\n        console.print(t)",
             True,
         ),
+        (
+            "def f():\n    t = VerbatimTable()\n    (t,) = (x,)\n    console.print(t)",
+            True,
+        ),
+        ("def f():\n    t = VerbatimTable()\n    [console.print(t) for t in xs]", True),
+        ("def f(t: VerbatimTable):\n    t = x\n    console.print(t)", True),
+        ('def f():\n    output.console.print(f"{x}")', True),
+        ("from rich import print", True),
+        ("from rich.panel import Panel", True),
         ("from rich.table import Table", True),
         ("import rich.console", True),
         ("import rich", True),
@@ -217,6 +248,19 @@ def test_markup_guard_flags_interpolated_sites(snippet, flagged):
 def test_markup_guard_tolerates_escape_only_where_1248_owns_the_line():
     snippet = 'def f():\n    console.print(f"[green]{escape(name)}[/green]")'
     assert markup_violations(snippet, "lpar/profiles.py") == []
+
+
+def test_verbatim_table_title_and_caption_keep_rich_default_styles():
+    def render(table_class):
+        table = table_class(title="Title", caption="Caption")
+        table.add_column("h")
+        table.add_row("c")
+        recorder = Console(force_terminal=True, color_system="truecolor", width=40)
+        with recorder.capture() as capture:
+            recorder.print(table)
+        return capture.get()
+
+    assert render(VerbatimTable) == render(Table)
 
 
 def test_verbatim_table_renders_title_header_and_cells_as_given():

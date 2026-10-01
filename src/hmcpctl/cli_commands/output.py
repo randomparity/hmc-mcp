@@ -33,7 +33,11 @@ class VerbatimTable(Table):
         caption: TextType | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(title=_verbatim(title), caption=_verbatim(caption), **kwargs)
+        super().__init__(**kwargs)
+        # Rich styles a str title/caption itself but renders a Text one as given, so the
+        # Text carries the style Rich would have applied.
+        self.title = _verbatim(title, self.title_style or "table.title")
+        self.caption = _verbatim(caption, self.caption_style or "table.caption")
 
     def add_column(
         self, header: RenderableType = "", footer: RenderableType = "", **kwargs: Any
@@ -50,8 +54,8 @@ class VerbatimTable(Table):
         super().add_row(*cells, style=style, end_section=end_section)
 
 
-def _verbatim(value: _T) -> _T | Text:
-    return Text(value) if isinstance(value, str) else value
+def _verbatim(value: _T, style: StyleType = "") -> _T | Text:
+    return Text(value, style=style) if isinstance(value, str) else value
 
 
 def print_json(data: Any) -> None:

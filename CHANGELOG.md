@@ -265,8 +265,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `raw get` and `raw post` now write the body byte for byte; before, they also wrapped it
   at 80 columns when piped and expanded tabs. An AST test fails when a
   `console.print`/`err_console.print` call interpolates a value without `markup=False` or
-  `Text`, and when a module other than `output.py` imports `rich`, `rich.table` or
-  `rich.console` (#1029).
+  `Text`, and when a module other than `output.py` imports from `rich` beyond `rich.text`
+  and `rich.markup` (#1029).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error
