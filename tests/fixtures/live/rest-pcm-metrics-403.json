@@ -1,0 +1,8 @@
+{
+  "capture": "2026-09-30-ro/capture-2.jsonl#87",
+  "method": "GET",
+  "path": "/rest/api/pcm/ManagedSystem/00000003-abcd-4ef0-8abc-000000000003/LogicalPartition/00000004-ABCD-4EF0-8ABC-000000000004/ProcessedMetrics?StartTS=2026-10-01T00%3A58%3A23Z",
+  "status": 403,
+  "content_type": "application/atom+xml;charset=ISO-8859-1",
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<HttpErrorResponse xmlns=\"http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/\" xmlns:ns2=\"http://www.w3.org/XML/1998/namespace/k2\" schemaVersion=\"V1_0\">\n    <Metadata>\n        <Atom/>\n    </Metadata>\n    <HTTPStatus kb=\"ROR\" kxe=\"false\">403</HTTPStatus>\n    <RequestURI kxe=\"false\" kb=\"ROR\">/rest/api/pcm/ManagedSystem/00000003-abcd-4ef0-8abc-000000000003/LogicalPartition/00000004-ABCD-4EF0-8ABC-000000000004/ProcessedMetrics</RequestURI>\n    <ReasonCode kb=\"ROR\" kxe=\"false\">The user does not have the role authority to perform the request.</ReasonCode>\n    <Message kb=\"ROO\" kxe=\"false\">User does not have the requested authority to perform the request</Message>\n    <RequestHeaders kxe=\"false\" kb=\"ROO\">{x-forwarded-server=hmc.test, cookie=&lt;REDACTED-COOKIE&gt;, x-forwarded-host=hmc.test:12443, host=hmc.test:12443, x-audit-memento=hmcpctl, connection=Keep-Alive, x-api-session=&lt;REDACTED-SESSION&gt;, x-forwarded-for=192.0.2.1, accept-encoding=identity, user-agent=python-httpx/0.28.1, accept=application/vnd.ibm.powervm.uom+xml}</RequestHeaders>\n</HttpErrorResponse>\n"
+}

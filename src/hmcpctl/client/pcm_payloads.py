@@ -47,8 +47,9 @@ class PCMPreferenceFlags(TypedDict, total=False):
 def build_pcm_preferences_document(**flags: Unpack[PCMPreferenceFlags]) -> str:
     """Build a PCM preferences XML document.
 
-    Only the flags you pass are included; omitted flags are left unchanged on
-    the HMC (it merges). Flags use the exact HMC field names, e.g.
+    The root is the ``ManagedSystemPcmPreference`` element a V10R3 HMC returns
+    for a managed system's preferences (#1202). Only the flags you pass are
+    included; omitted flags are left unchanged on the HMC (it merges). Flags use the exact HMC field names, e.g.
     LongTermMonitorEnabled=True, AggregationEnabled=True.
     """
     unsupported = sorted(set(flags) - set(PREFERENCE_FIELDS))
@@ -62,10 +63,10 @@ def build_pcm_preferences_document(**flags: Unpack[PCMPreferenceFlags]) -> str:
             lines.append(f'  <{name} kb="CUD" kxe="false">{val}</{name}>')
     body = "\n".join(lines)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ManagementConsolePcmPreference xmlns="{PCM_NS}" schemaVersion="V1_1_0">
+<ManagedSystemPcmPreference xmlns="{PCM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
 {body}
-</ManagementConsolePcmPreference>
+</ManagedSystemPcmPreference>
 """
 
 

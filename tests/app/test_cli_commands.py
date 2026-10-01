@@ -4542,14 +4542,14 @@ def test_templates_list_json(fake_hmc):
     assert fake_hmc.calls == [("list_partition_templates", (), {})]
 
 
-def test_templates_cli_translates_not_licensed_error(fake_hmc):
+def test_templates_cli_translates_not_acceptable_error(fake_hmc):
     fake_hmc.fail_on = "list_partition_templates"
     fake_hmc.fail_status = 406
 
     result = RUNNER.invoke(cli.app, ["templates", "list"])
 
     assert result.exit_code == 1
-    assert "not licensed or not supported" in result.stderr
+    assert "refused the media type" in result.stderr
 
 
 def test_templates_show(fake_hmc):

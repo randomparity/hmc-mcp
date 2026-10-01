@@ -233,6 +233,10 @@ class PcmClient(Protocol):
         include_schema_version: bool = True,
     ) -> str: ...
 
+    async def raw_get(
+        self, path: str, accept: str = "*/*"
+    ) -> tuple[str, dict[str, str]]: ...
+
     async def _post_pcm(self, path: str, body: str) -> str: ...
 
     async def _metrics_links(

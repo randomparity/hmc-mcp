@@ -74,8 +74,8 @@ def test_partition_templates_with_uuid_error_propagates(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 404
 
 
-def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
-    """hmc_list_partition_templates() returns clear message when templates not licensed (HTTP 406)."""
+def test_partition_templates_list_http_406_names_media_type(monkeypatch, mock_hmc):
+    """hmc_list_partition_templates() explains an HTTP 406 as media-type refusal."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
@@ -85,12 +85,13 @@ def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     # The message should be actionable and mention templates specifically, not raw HTTP error
-    assert "not licensed" in error_msg.lower()
+    assert "refused the media type" in error_msg.lower()
+    assert "not licensing" in error_msg.lower()
     assert "partition templates" in error_msg.lower()
 
 
-def test_partition_templates_get_http_406_not_licensed(monkeypatch, mock_hmc):
-    """A single template lookup explains when templates are not licensed."""
+def test_partition_templates_get_http_406_names_media_type(monkeypatch, mock_hmc):
+    """A single template lookup explains an HTTP 406 as media-type refusal."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
@@ -99,12 +100,13 @@ def test_partition_templates_get_http_406_not_licensed(monkeypatch, mock_hmc):
         hmc_get_partition_template(TEMPLATE_UUID)
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
-    assert "not licensed" in error_msg.lower()
+    assert "refused the media type" in error_msg.lower()
+    assert "not licensing" in error_msg.lower()
     assert "partition templates" in error_msg.lower()
 
 
-def test_deploy_partition_template_http_406_not_licensed(monkeypatch, mock_hmc):
-    """hmc_deploy_partition_template returns clear message when templates not licensed (HTTP 406)."""
+def test_deploy_partition_template_http_406_names_media_type(monkeypatch, mock_hmc):
+    """hmc_deploy_partition_template explains an HTTP 406 as media-type refusal."""
     _hmc_env(monkeypatch)
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
@@ -113,7 +115,8 @@ def test_deploy_partition_template_http_406_not_licensed(monkeypatch, mock_hmc):
         hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
-    assert "not licensed" in error_msg.lower()
+    assert "refused the media type" in error_msg.lower()
+    assert "not licensing" in error_msg.lower()
     assert "partition templates" in error_msg.lower()
 
 

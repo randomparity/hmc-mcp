@@ -229,6 +229,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_get_pcm_preferences` sends `Accept: */*`, which V10R3 serves; it sent the uom media
+  type, which V10R3 answers (like the documented `application/xml`) with an empty HTTP 406.
+  `hmc_set_pcm_preferences` posts the `ManagedSystemPcmPreference` root the HMC returns for a
+  managed system. A PCM or partition-template HTTP 406 is now reported as the media-type
+  refusal it is, not as "not licensed" (#1202).
 - `hmc_get_remote_access` and `hmc_configure_remote_access` read the console with the uom
   `ManagementConsole` media type. V10R3 answers the documented `web+xml` Accept with an
   HTML HTTP 406 page, so both tools always failed. The update now writes each field inside
