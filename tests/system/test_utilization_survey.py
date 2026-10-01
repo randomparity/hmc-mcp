@@ -703,6 +703,11 @@ async def test_volume_figures_the_hmc_omits_are_unknown() -> None:
             "IsFibreChannelBacked/IsISCSIBacked"
         ),
     )
+    pre_iscsi = INTERNAL.replace("<IsISCSIBacked>false</IsISCSIBacked>", "")
+    vios = parse_feed(_feed(_vios(1, _volumes(pre_iscsi, SAN))))
+    reading = await _read(FakeClient(vios=vios))
+
+    assert reading.disk == DiskFigures(286102, 286102, 0, 102400, 0, 102400)
 
 
 @pytest.mark.asyncio

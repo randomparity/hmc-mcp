@@ -40,7 +40,8 @@ private evidence, public-safe counts here) established:
 3. SR-IOV figures count `Sriov`-mode adapters, their `MaximumLogicalPortsSupported` (capacity)
    and their unconfigured logical ports (free). Utilization is configured over capacity.
 4. A physical volume counts once per system by `UniqueDeviceID`; it is SAN when
-   `IsFibreChannelBacked` or `IsISCSIBacked` is `true`, otherwise internal; free when every VIOS
+   `IsFibreChannelBacked` or `IsISCSIBacked` is `true`, otherwise internal (`IsISCSIBacked` carries
+   `ksv="V1_8_0"` in every capture, so its absence reads as `false`); free when every VIOS
    listing it reports `AvailableForUsage` `true`, assigned when any reports `false`. Capacity is
    `VolumeCapacity` in MiB. Disk utilization is assigned over total.
 5. A missing container is unknown with a named gap: no `PhysicalVolumes` on a VIOS makes the

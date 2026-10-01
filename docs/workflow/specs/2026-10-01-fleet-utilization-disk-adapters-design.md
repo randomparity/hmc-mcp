@@ -42,7 +42,8 @@ reads or command families (out of scope).
   gap naming the field. A system with no VIOS reports 0.
 - Adapter figures: per ADR 0185 decisions 2, 3 and 5, from the system's
   `AssociatedSystemIOConfiguration`. Without `IOSlots`, the four slot figures are unknown; without
-  `SRIOVAdapters`, the three SR-IOV figures and `slots_sriov` and `slots_unassigned` are unknown.
+  `SRIOVAdapters`, the three SR-IOV figures are unknown, and so are `slots_sriov` and
+  `slots_unassigned` when an occupied slot no partition owns needs that classification.
   Each missing container adds a gap naming it. An `Sriov`-mode adapter whose
   `UnconfiguredLogicalPorts` is absent has 0 free ports when its capacity is 0, else unknown; an
   adapter without a readable capacity or free count adds a gap naming the field.

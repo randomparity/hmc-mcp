@@ -292,7 +292,9 @@ def _add(sums: dict[str, Any], key: str, value: int | None) -> None:
 
 
 def _backing(volume: dict[str, Any]) -> str | None:
-    flags = [_flag(volume, f"Is{kind}Backed") for kind in ("FibreChannel", "ISCSI")]
+    # IsISCSIBacked exists only from schema V1_8_0 (its ksv), so its absence is "false".
+    iscsi = _flag(volume, "IsISCSIBacked") if "IsISCSIBacked" in volume else False
+    flags = [_flag(volume, "IsFibreChannelBacked"), iscsi]
     return "san" if True in flags else None if None in flags else "internal"
 
 

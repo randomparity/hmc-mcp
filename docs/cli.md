@@ -195,6 +195,9 @@ Disk and adapter columns follow `notes`:
   mode, the logical ports they support, and those not yet configured. `sriov_util_pct` is
   configured over supported ports.
 
+An absent `IsISCSIBacked` (schema versions before V1_8_0) reads as not iSCSI-backed. A
+`*_util_pct` is also `unknown` when its capacity is 0.
+
 A VIOS that is not running reports no storage, so its system's disk columns are `unknown`, and
 so are every system's when the HMC cannot read VIOS storage at all.
 
