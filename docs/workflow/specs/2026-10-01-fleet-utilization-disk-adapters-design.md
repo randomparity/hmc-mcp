@@ -37,13 +37,15 @@ reads or command families (out of scope).
   feed leaves them unknown with the existing gap. Each VIOS without `PhysicalVolumes` adds gap
   `PhysicalVolumes: VIOS <name> (<state>) reported no storage` and makes them unknown. A volume without
   `UniqueDeviceID` counts per VIOS, with gap `PhysicalVolumes: VIOS <name> lists a volume without
-  UniqueDeviceID; it is not deduplicated`. A volume missing `VolumeCapacity`, the backing flags or
-  `AvailableForUsage` makes the figures it feeds unknown. A system with no VIOS reports 0.
+  UniqueDeviceID; it is not deduplicated` (a blank ID counts as none). A volume without a readable
+  `VolumeCapacity`, backing flag or `AvailableForUsage` makes the figures it feeds unknown, with a
+  gap naming the field. A system with no VIOS reports 0.
 - Adapter figures: per ADR 0185 decisions 2, 3 and 5, from the system's
   `AssociatedSystemIOConfiguration`. Without `IOSlots`, the four slot figures are unknown; without
   `SRIOVAdapters`, the three SR-IOV figures and `slots_sriov` and `slots_unassigned` are unknown.
   Each missing container adds a gap naming it. An `Sriov`-mode adapter whose
-  `UnconfiguredLogicalPorts` is absent has 0 free ports when its capacity is 0, else unknown.
+  `UnconfiguredLogicalPorts` is absent has 0 free ports when its capacity is 0, else unknown; an
+  adapter without a readable capacity or free count adds a gap naming the field.
 
 ### CSV (`src/hmcpctl/cli_commands/report.py`)
 

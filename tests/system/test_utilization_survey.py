@@ -690,18 +690,28 @@ async def test_volume_figures_the_hmc_omits_are_unknown() -> None:
     reading = await _read(FakeClient(vios=vios))
 
     assert reading.disk == DiskFigures(286102, None, None, 102400, 0, 102400)
+    assert reading.gaps == (
+        "PhysicalVolumes: VIOS vios-1 volume hdisk0 has no readable AvailableForUsage",
+    )
     vios = parse_feed(_feed(_vios(1, _volumes(INTERNAL, unbacked))))
     reading = await _read(FakeClient(vios=vios))
 
     assert reading.disk == UNKNOWN_DISK
+    assert reading.gaps == (
+        (
+            "PhysicalVolumes: VIOS vios-1 volume hdisk0 has no readable "
+            "IsFibreChannelBacked/IsISCSIBacked"
+        ),
+    )
 
 
 @pytest.mark.asyncio
 async def test_volume_without_device_id_is_counted_per_vios_with_a_gap() -> None:
+    blank = _volume("UDID-0", 1000).replace("UDID-0", "")
     vios = parse_feed(
         _feed(
             _vios(1, _volumes(_volume(None, 1000))),
-            _vios(2, _volumes(_volume(None, 1000))),
+            _vios(2, _volumes(blank)),
         )
     )
     reading = await _read(FakeClient(vios=vios))
@@ -753,6 +763,9 @@ async def test_system_without_io_configuration_leaves_adapters_unknown() -> None
     reading = await _read(FakeClient(systems=parse_feed(_feed(_system(io=io)))))
 
     assert reading.adapters == AdapterFigures(1, 1, 1, 1, 1, 48, None)
+    assert reading.gaps == (
+        "SRIOVAdapters: adapter 553713696 has no readable UnconfiguredLogicalPorts",
+    )
 
 
 @pytest.mark.asyncio

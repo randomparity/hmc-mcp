@@ -291,6 +291,15 @@ def _add(sums: dict[str, Any], key: str, value: int | None) -> None:
     sums[key] = None if sums[key] is None or value is None else sums[key] + value
 
 
+def _backing(volume: dict[str, Any]) -> str | None:
+    flags = [_flag(volume, f"Is{kind}Backed") for kind in ("FibreChannel", "ISCSI")]
+    return "san" if True in flags else None if None in flags else "internal"
+
+
+def _unreadable(fields: dict[str, object]) -> str:
+    return ", ".join(name for name, value in fields.items() if value is None)
+
+
 def _disk_figures(vios: list[dict[str, Any]] | None, gaps: list[str]) -> DiskFigures:
     """Sum VIOS physical volumes per ADR 0185 decision 4, each volume once."""
     unknown = DiskFigures(None, None, None, None, None, None)
@@ -307,22 +316,32 @@ def _disk_figures(vios: list[dict[str, Any]] | None, gaps: list[str]) -> DiskFig
         return unknown
     volumes: dict[object, list[dict[str, Any]]] = {}
     for index, resource in enumerate(resources):
+        vios_name = _leaf(resource, "PartitionName")
         for position, volume in enumerate(_items(resource[_VOLUMES], "PhysicalVolume")):
-            key: object = _leaf(volume, "UniqueDeviceID")
+            key: object = _leaf(volume, "UniqueDeviceID") or None
             if key is None:
                 key = (index, position)
                 gaps.append(
-                    f"{_VOLUMES}: VIOS {_leaf(resource, 'PartitionName')} lists a "
-                    "volume without UniqueDeviceID; it is not deduplicated"
+                    f"{_VOLUMES}: VIOS {vios_name} lists a volume without "
+                    "UniqueDeviceID; it is not deduplicated"
+                )
+            unreadable = _unreadable(
+                {
+                    "VolumeCapacity": _int(_leaf(volume, "VolumeCapacity")),
+                    "AvailableForUsage": _flag(volume, "AvailableForUsage"),
+                    "IsFibreChannelBacked/IsISCSIBacked": _backing(volume),
+                }
+            )
+            if unreadable:
+                gaps.append(
+                    f"{_VOLUMES}: VIOS {vios_name} volume "
+                    f"{_leaf(volume, 'VolumeName')} has no readable {unreadable}"
                 )
             volumes.setdefault(key, []).append(volume)
     sums: dict[str, Any] = {item.name: 0 for item in fields(DiskFigures)}
     for listings in volumes.values():
         capacity = _int(_leaf(listings[0], "VolumeCapacity"))
-        backing = [
-            _flag(listings[0], f"Is{kind}Backed") for kind in ("FibreChannel", "ISCSI")
-        ]
-        kind = "san" if True in backing else None if None in backing else "internal"
+        kind = _backing(listings[0])
         available = [_flag(listing, "AvailableForUsage") for listing in listings]
         state = (
             "assigned" if False in available else None if None in available else "free"
@@ -371,6 +390,15 @@ def _adapter_figures(resource: dict[str, Any], gaps: list[str]) -> AdapterFigure
         sriov_slots = {_leaf(adapter, "AdapterID") for adapter in adapters}
         ports = [_int(_leaf(a, "MaximumLogicalPortsSupported")) for a in adapters]
         free = [_free_ports(a, p) for a, p in zip(adapters, ports, strict=True)]
+        for adapter, limit, spare in zip(adapters, ports, free, strict=True):
+            unreadable = _unreadable(
+                {"MaximumLogicalPortsSupported": limit, _UNCONFIGURED_PORTS: spare}
+            )
+            if unreadable:
+                gaps.append(
+                    f"{_SRIOV_ADAPTERS}: adapter {_leaf(adapter, 'AdapterID')} has no "
+                    f"readable {unreadable}"
+                )
         sriov = (len(adapters), _total(ports), _total(free))
     else:
         gaps.append(f"{_SRIOV_ADAPTERS}: the system reported no SR-IOV adapter list")
