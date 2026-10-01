@@ -97,7 +97,10 @@ async def test_an_uncaptured_pair_is_refused_for_every_read(
 )
 async def test_mutations_stay_on_the_v10r3_8375_envelope(model: str) -> None:
     # No V11R2 capture holds an SR-IOV mutation, so ADR 0183 widens reads only.
-    with pytest.raises(SriovLogicalPortCapabilityError, match="8375-42A"):
+    with pytest.raises(
+        SriovLogicalPortCapabilityError,
+        match="8375-42A.*no SR-IOV mutation is captured on any other",
+    ):
         await _run(require_admitted_environment, V11R2, model)
 
 

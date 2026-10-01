@@ -655,8 +655,9 @@ async def require_admitted_environment(config: HMCConfig, system_name: str) -> N
         *await read_sriov_environment(config, system_name)
     ):
         raise SriovLogicalPortCapabilityError(
-            "SR-IOV operations are admitted only for HMC V10R3 M1060 "
-            "with managed-system model 8375-42A"
+            "SR-IOV mutations are admitted only for HMC V10R3 M1060 "
+            "with managed-system model 8375-42A: no SR-IOV mutation is captured on "
+            "any other HMC level or model, so ADR 0183 widens only inventory reads"
         )
 
 
