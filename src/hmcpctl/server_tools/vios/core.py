@@ -45,6 +45,8 @@ def hmc_create_vios(
     ok). The VIOS is created powered off with default settings — install the
     OS with hmc_install_vios before using it as a storage/network server.
     This creates a real partition — confirm its name and system before calling.
+    Returns the HMC's entry for the created VIOS, whose PartitionState reads
+    'not activated'.
 
     Args:
         system_name_or_uuid: Target managed-system name or UUID.

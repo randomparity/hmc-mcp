@@ -303,7 +303,7 @@ def _processor_config(resources: LparResources) -> str:
 @escapes_string_arguments
 def build_lpar_document(
     name: str,
-    partition_type: PartitionType | Literal["Virtual IO Server"] = "AIX/Linux",
+    partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
     resources: LparResources | None = None,
     keylock: Keylock | None = None,
@@ -318,13 +318,33 @@ def build_lpar_document(
     create-only.
 
     ``OperatingSystemType`` is never sent: the schema marks it read-only
-    (``kb="ROR"``) and the HMC sets ``AIX/Linux`` itself (#1179).
-    ``Virtual IO Server`` is admitted only for :func:`build_vios_document`.
+    (``kb="ROR"``) and the HMC sets ``AIX/Linux`` itself (#1179). A Virtual
+    I/O Server is built by :func:`build_vios_document`.
     keylock: initial keylock position — ``normal`` or ``manual``.
     max_virtual_slots: maximum number of virtual I/O slots.
     """
-    if partition_type != _VIOS_PARTITION_TYPE:
-        validate_partition_type(partition_type)
+    validate_partition_type(partition_type)
+    return lpar_envelope(
+        _partition_body(
+            name,
+            partition_type,
+            partition_id,
+            resources,
+            keylock,
+            max_virtual_slots,
+        )
+    )
+
+
+def _partition_body(
+    name: str,
+    partition_type: PartitionType | Literal["Virtual IO Server"],
+    partition_id: int | None = None,
+    resources: LparResources | None = None,
+    keylock: Keylock | None = None,
+    max_virtual_slots: int | None = None,
+) -> str:
+    """The children of a partition create document, in schema order."""
     validate_keylock(keylock)
 
     resources = resources or LparResources()
@@ -363,8 +383,7 @@ def build_lpar_document(
         f'  <PartitionType kb="COD" kxe="false">{partition_type}</PartitionType>'
     )
 
-    body = "\n".join(body_parts)
-    return lpar_envelope(body)
+    return "\n".join(body_parts)
 
 
 VIOS_DEFAULT_RESOURCES = LparResources(
@@ -386,15 +405,16 @@ def build_vios_document(
     name: str,
     resources: LparResources = VIOS_DEFAULT_RESOURCES,
 ) -> str:
-    """Build a LogicalPartition document for creating a Virtual IO Server.
+    """Build a VirtualIOServer document for creating a Virtual IO Server.
 
-    Wraps build_lpar_document with partition_type='Virtual IO Server' and
-    shared-processor defaults appropriate for VIOS provisioning.
+    Carries the same children as :func:`build_lpar_document` with
+    partition_type='Virtual IO Server' and shared-processor defaults for VIOS
+    provisioning, under a ``VirtualIOServer`` root: V10R3 refuses a VIOS sent as
+    a LogicalPartition with 500 REST0140 (#1214).
     """
-    return build_lpar_document(
-        name=name,
-        partition_type="Virtual IO Server",
-        resources=resources,
+    return document_envelope(
+        "VirtualIOServer",
+        _partition_body(name, "Virtual IO Server", resources=resources),
     )
 
 
