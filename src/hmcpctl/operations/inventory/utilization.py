@@ -295,7 +295,38 @@ def _backing(volume: dict[str, Any]) -> str | None:
     # IsISCSIBacked exists only from schema V1_8_0 (its ksv), so its absence is "false".
     iscsi = _flag(volume, "IsISCSIBacked") if "IsISCSIBacked" in volume else False
     flags = [_flag(volume, "IsFibreChannelBacked"), iscsi]
-    return "san" if True in flags else None if None in flags else "internal"
+    if True in flags:
+        return "san"
+    if None in flags:
+        return None
+    return "internal"
+
+
+def _volume_state(listings: list[dict[str, Any]]) -> str | None:
+    """Assigned when any VIOS listing the volume reports it unavailable for use."""
+    available = [_flag(listing, "AvailableForUsage") for listing in listings]
+    if False in available:
+        return "assigned"
+    if None in available:
+        return None
+    return "free"
+
+
+def _sum_volumes(volumes: Iterable[list[dict[str, Any]]]) -> DiskFigures:
+    sums: dict[str, Any] = {item.name: 0 for item in fields(DiskFigures)}
+    for listings in volumes:
+        kind = _backing(listings[0])
+        if kind is None:
+            return DiskFigures(None, None, None, None, None, None)
+        capacity = _int(_leaf(listings[0], "VolumeCapacity"))
+        state = _volume_state(listings)
+        _add(sums, f"{kind}_total", capacity)
+        for split in ("assigned", "free"):
+            if state is None:
+                _add(sums, f"{kind}_{split}", None)
+            else:
+                _add(sums, f"{kind}_{split}", capacity if state == split else 0)
+    return DiskFigures(**sums)
 
 
 def _unreadable(fields: dict[str, object]) -> str:
@@ -340,22 +371,7 @@ def _disk_figures(vios: list[dict[str, Any]] | None, gaps: list[str]) -> DiskFig
                     f"{_leaf(volume, 'VolumeName')} has no readable {unreadable}"
                 )
             volumes.setdefault(key, []).append(volume)
-    sums: dict[str, Any] = {item.name: 0 for item in fields(DiskFigures)}
-    for listings in volumes.values():
-        capacity = _int(_leaf(listings[0], "VolumeCapacity"))
-        kind = _backing(listings[0])
-        available = [_flag(listing, "AvailableForUsage") for listing in listings]
-        state = (
-            "assigned" if False in available else None if None in available else "free"
-        )
-        if kind is None:
-            sums = dict.fromkeys(sums)
-            break
-        _add(sums, f"{kind}_total", capacity)
-        for split in ("assigned", "free"):
-            share = None if state is None else capacity if state == split else 0
-            _add(sums, f"{kind}_{split}", share)
-    return DiskFigures(**sums)
+    return _sum_volumes(volumes.values())
 
 
 def _free_ports(adapter: dict[str, Any], capacity: int | None) -> int | None:
@@ -410,11 +426,9 @@ def _adapter_figures(resource: dict[str, Any], gaps: list[str]) -> AdapterFigure
     kinds = [_slot_kind(slot, sriov_slots) for slot in _items(io[_SLOTS], "IOSlot")]
 
     def count(kind: str) -> int | None:
-        return (
-            None
-            if None in kinds and kind in ("sriov", "unassigned")
-            else kinds.count(kind)
-        )
+        if None in kinds and kind in ("sriov", "unassigned"):
+            return None
+        return kinds.count(kind)
 
     return AdapterFigures(
         count("assigned"), count("unassigned"), count("sriov"), count("empty"), *sriov
