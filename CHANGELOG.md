@@ -220,6 +220,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_add_network_adapter`, `hmcpctl adapters add-network --mac` and
+  `build_client_network_adapter_document` now refuse a `mac_address` that is not 12
+  hexadecimal digits with no separators, the form chhwres documents and the HMC prints;
+  a colon-separated MAC was previously sent to the HMC unchanged (#1202).
 - A shared-processor create whose explicit processing units exceed that level's virtual
   processors (a virtual processor uses at most 1.0 unit) is now refused before any request is
   sent, naming each `<level>_procs`/`<level>_vcpus` pair and the CLI options to change. This
