@@ -15,74 +15,93 @@ Every arm's results document already records what this check needs, in structure
 
 - `config.system_name` and `config.lp3_name` — the run's configured test partition. This is
   "the run's configured test LPAR" the issue keys on; no new flag or artifact field is needed.
-- `artifacts.vios_uuid`, `artifacts.vios_partition_id`, `artifacts.vg_uuid` — the VIOS and
-  volume group the vMedia arm used.
+- `artifacts.vios_uuid`, `artifacts.vios_partition_id`, `artifacts.vg_uuid`, and the vMedia
+  ownership artifacts `vmedia_repo_created`, `vmedia_iso_name`, `vmedia_orig_boot_order`.
 - `run.subtasks` — every subtask the run dispatched, written unconditionally (ADR 0162).
 - `results` rows — `{subtask, tool, status, data}`; a row's `tool` label opens with the MCP
-  tool name, and a `SKIP` row is a call never made.
+  tool name. A `SKIP` row is either a call never made (`RunState.skip`) or a call answered
+  with a declared expected outcome (`record_with_expected`), which by declaration is an HMC
+  refusal or no-op; either way that row changed nothing.
 
-The check reads those, decides which residue classes the run could have left, and reads each
-one live through the existing read-only call path.
+A subset run restores artifacts from an earlier document (`live_test_runner.py:1717-1722`), so
+ST17–ST22 can act on ownership a previous invocation recorded. Applicability therefore reads
+the outstanding artifacts as well as this document's rows, and the absolute classes are read
+whenever vMedia ran at all.
 
-| Class | Applies when the document has | Clean when the live read shows |
+| Class | Applies when | Clean when the live read shows |
 |---|---|---|
+| optical mapping left | any of 16–22 dispatched | no optical mapping to the test partition backed by the run's ISO |
+| unmapped server adapter | any of 16–22 dispatched, or a non-`SKIP` ST14 `hmc_provision_lpar`/`hmc_delete_lpar` row | no more vSCSI server adapters toward the test partition than mapped ones |
+| media repository left | `vmedia_repo_created`, or a non-`SKIP` 16–22 row for `hmc_create_media_repository`, `hmc_delete_media_repository`, `hmc_upload_iso` or `hmc_delete_optical_media` | no repository in the run's volume group |
 | test partition running | a non-`SKIP` ST20 `hmc_power_on_lpar` row | state `Not Activated` |
-| boot string drift | a non-`SKIP` ST20 `_SET_BOOT_ORDER_STEP` row | pending boot string equals ST20's baseline row |
-| optical mapping left | a non-`SKIP` ST19/ST20 `hmc_mount_optical_media` row | no optical mapping to the test partition backed by the run's ISO |
-| unmapped server adapter | a non-`SKIP` ST19/ST20 `hmc_mount_optical_media` row | no more vSCSI server adapters toward the test partition than mapped ones |
-| media repository left | a `PASS` ST16/ST17 `hmc_create_media_repository` row | no repository in the run's volume group |
+| boot string drift | a non-`SKIP` 20/22 `hmc_set_lpar_boot_order` row, or a non-empty `vmedia_orig_boot_order` | pending boot string equals the baseline |
 
-The baseline is the `data.pending_boot_string` of the ST20 row labelled
-`hmc_read_lpar_boot_order (baseline)`; `vmedia.py` gains a constant for that label so the
-check imports it rather than respelling it, as it already imports `_SET_BOOT_ORDER_STEP`.
-The run's ISO names are `config.iso_media_name` and `artifacts.vmedia_iso_name` when set.
+Those trigger tools are every mutating tool `vmedia.py` calls except `hmc_power_off_lpar` (the
+arm's end state is off) and the mount/unmount pair (covered by the unconditional classes); a
+test pins that set against the source so a new mutating call cannot go unwitnessed. Power is
+judged only after ST20's power-on: ST14 provisions with `power_on=True`
+(`scripts/live_test/provisioning.py:186`), so "off" is not an absolute expectation.
 
-The adapter check runs the #1237 listing,
-`lshwres -r virtualio --rsubtype scsi -m <system> --level lpar --filter lpar_ids=<vios id>
--F slot_num,remote_lpar_name`, and counts rows naming the test partition against the distinct
-server adapters (`id` before `/`) in `hmc_list_storage_mappings` for it. Mappings carry an
-adapter name, not a slot, so a count is the honest comparison; the finding names every slot
-and the listing to compare by hand. Capturing the REST shape that would join them is #1250.
+The boot baseline is the `data.pending_boot_string` of the ST20 row labelled
+`hmc_read_lpar_boot_order (baseline)` (a new `vmedia.py` constant, imported like
+`_SET_BOOT_ORDER_STEP`), else `vmedia_orig_boot_order`; with neither the class is unjudgeable.
+The run's ISO names are `config.iso_media_name` and `vmedia_iso_name` when set.
 
-**Coverage is explicit.** Subtasks 16–22 are witnessed by the table above and 24–25 by the
-existing PCIe checks. Every other dispatched subtask is listed as `NOT WITNESSED`, and the
-runbook says what each of those arms changes and how to check it by hand.
+The adapter check lists the VIOS's server adapters with the #1237 command, filtered by
+partition id because the document records the VIOS's id, not its name (`lpar_ids` is a valid
+`scsi` filter, `docs/refs/hmc-commands-p10/commands/lshwres.md:103`): `lshwres -r virtualio
+--rsubtype scsi -m <system> --level lpar --filter lpar_ids=<vios id> -F
+slot_num,remote_lpar_name,remote_slot_num`. It counts rows naming the test partition against
+the distinct server adapters (`id` before `/`) in `hmc_list_storage_mappings` for it. Mappings
+carry an adapter name, not a slot, so a count is the honest comparison. A mapping with no
+`<adapter>/<device>` id makes the class unjudgeable — the shape an unmapped adapter takes in
+REST is #1250's question — and the message still prints the slot rows and the listing to
+compare by hand.
 
-**Exit codes.** 0: every dispatched subtask is witnessed and read clean. 1: something is
-stranded; each finding prints its clearing command. 2: a read failed, an applicable class
-lacks the document field it needs, or the document records no `run.subtasks`. 3: everything
-witnessed read clean, but the run dispatched subtasks this check does not witness. A finding
-outranks a not-witnessed list (1 over 3); an unreadable class outranks both (2), and still
-prints the findings already confirmed.
+**Coverage is explicit.** Subtasks 16–22 are witnessed by the table and 24–25 by the existing
+PCIe checks. Every other dispatched subtask is listed as `NOT WITNESSED`, and the runbook says
+what each of those arms changes and how to check it by hand. The report header prints the
+document's `run.group`, `run.subtasks`, `run.finished` and `run.tested_commit`, so the operator
+sees which run was witnessed.
+
+**Exit codes stay 0/1/2.** 0: every dispatched subtask is witnessed and every applicable class
+read clean. 1: something is stranded and nothing is unjudged; each finding prints its clearing
+command. 2: a read failed, a class lacks a document field it needs, the document records no
+`run.subtasks`, or a dispatched subtask is not witnessed. Every applicable class is read even
+after another fails, and exit 2 prints every finding and names every unjudged class and
+not-witnessed subtask.
 
 **Read-only guard.** `_READ_ONLY_TOOLS` gains `hmc_read_lpar_boot_order`,
 `hmc_list_optical_mappings`, `hmc_list_storage_mappings` and `hmc_get_media_repository`, each
 `effect="read"`. `hmc_run_command` is admitted only for commands opening with `lssyscfg ` or
 `lshwres `, and only when the command carries none of `; | & $ \` < > ( )` or a newline: the
-listing now interpolates a system name from a results document, which the operator does not
-author by hand, so the guard refuses a command that could chain a second one.
+listing now interpolates a system name from a results document, so the guard refuses a command
+that could chain a second one.
 
 Remedies are printed, never run (ADR 0162): `hmcpctl lpars power-off`, `hmcpctl lpars
 set-boot-order`, `hmcpctl storage unmount-optical-media`, `hmcpctl storage delete-media` then
 `delete-media-repo`, and `chhwres -r virtualio --rsubtype scsi -o r --id <vios id> -s <slot>`
 (`docs/refs/hmc-commands-p10/commands/chhwres.md:34`) after comparing slots with mappings.
 
+`AGENTS.md` needs no change: it already sends every live run through `docs/live-testing.md`,
+whose step 4 carries the coverage and the by-hand list.
+
 ## Failure model
 
 1. **Actors and deployments** — one operator at a terminal on a host with HMC reach, after a
-   live run, holding that run's results document. Never CI (AGENTS.md).
+   live run, holding a results document. Never CI (AGENTS.md).
 2. **Invariants and assets at stake** — the script never mutates the managed system; exit 0
-   is never printed for state nobody read; a results document is trusted to be the one the
-   runner wrote, but its strings never reach a command unquoted.
-3. **Accepted failure classes** — a foreign partition's or operator's optical mapping backed
-   by an ISO of the same name is reported (the test partition is configured for the run;
-   reporting is not acting). A pre-existing unmapped server adapter toward the test
-   partition is reported as residue (it is residue either way, and the operator decides).
-   Boot-string or power changes by a run that recorded no ST20 row are not judged (no row,
-   no call was made).
+   is never printed for a dispatched subtask nobody witnessed; a results document is trusted
+   to be the one the runner wrote, but its strings never reach a command unquoted.
+3. **Accepted failure classes** — a foreign optical mapping backed by an ISO of the same name,
+   or a pre-existing unmapped adapter toward the test partition, is reported (reporting is
+   not acting; the operator decides). An interrupted run writes no document
+   (`_write_results` runs after the subtask loop, `live_test_runner.py:1724-1751`), so the
+   file on disk is the previous run's; the header names that run, and the runbook sends an
+   interrupted run to the by-hand list.
 4. **Covered elsewhere** — remediation: unowned, excluded. Joining adapters to mappings by
-   REST shape: #1250. Residue of round2, SR-IOV, and ad hoc windows: reported as
-   `NOT WITNESSED`; extending coverage is unowned.
+   REST shape: #1250. Round2's partition, user, network and property changes, SR-IOV, and ad
+   hoc windows: reported as `NOT WITNESSED` (exit 2); extending coverage is unowned.
 
 ## Threat model
 
@@ -101,14 +120,15 @@ set-boot-order`, `hmcpctl storage unmount-optical-media`, `hmcpctl storage delet
 
 - **A `--lpar` flag.** judgment: the document already records the configured partition the
   run used; a second source can disagree with it.
-- **New `LiveTestArtifacts` fields recording each change.** verified: `_decode_artifacts`
-  (`scripts/live_test_runner.py:1325-1335`) rejects a document whose fields differ, so every
-  existing results document would stop restoring; the rows already record each call.
-- **Absolute expectations (test partition always off).** verified: ST14 provisions it with
+- **New `LiveTestArtifacts` fields recording each change.** judgment: each needs a
+  `setdefault` migration in `_decode_artifacts` (as `test_user_uuid` has,
+  `scripts/live_test_runner.py:1331-1333`) and an arm write, while the rows and the existing
+  ownership artifacts already record each change.
+- **Absolute expectations for power.** verified: ST14 provisions the test partition with
   `power_on=True` (`scripts/live_test/provisioning.py:186`), so a clean round2 run would read
   as stranded.
-- **Exit 2 for not-witnessed subtasks.** judgment: every round2 run would exit 2, and exit 2
-  would stop meaning "a read failed".
+- **Exit 3 for not-witnessed subtasks.** judgment: the frozen criterion puts "could not be
+  judged" under exit 2, and a fourth code escapes the runbook's "exit 2 is not clean" rule.
 - **Narrowing the runbook only.** judgment: the issue prefers the checks; the honest-interim
   text is kept for what the checks still do not witness.
 
@@ -120,9 +140,10 @@ call path:
 | Contract | Mode | Case |
 |---|---|---|
 | each class detected, and clean when not | focused-test | one stranded and one clean case per class |
-| class applies only on its trigger row | focused-test | a `SKIP` trigger row makes no read |
-| unreadable or missing input is exit 2 | focused-test | failed read, missing `vios_uuid`, missing baseline |
-| exit codes 0/1/2/3 and precedence | focused-test | `main` over documents for vmedia, round2, dedicated, no `run` |
+| applicability from rows and restored artifacts | focused-test | `SKIP` trigger makes no read; ST22-only and ST18-only documents read; ST14 rows trigger adapters |
+| trigger tools cover every mutating `vmedia.py` call | focused-test | source scan against `TOOL_SECURITY` effects |
+| unreadable or missing input is exit 2, others still read | focused-test | failed read, missing `vios_uuid`, no baseline, id-less mapping |
+| exit codes 0/1/2 and the report header | focused-test | `main` over vmedia, round2, dedicated and run-less documents |
 | guard admits the new reads only | focused-test | new tools pass; `lshwres` passes; metacharacters refused |
 | new tools are `read` and served | focused-test | registry effect check; existing served-composition test |
 | PCIe behaviour unchanged | focused-test | existing cases stay green |
