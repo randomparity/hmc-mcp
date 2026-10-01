@@ -4,7 +4,7 @@ from xml.etree import ElementTree
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, JOB_ID, make_config
+from conftest import JOB_ENTRY, JOB_ID, live_fixture, live_response, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCTransportError
@@ -66,13 +66,33 @@ async def test_template_transport_failure_uses_shared_hmc_error(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_partition_templates(mock_hmc):
-    mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
-        return_value=httpx.Response(200, text=TEMPLATE_FEED)
-    )
+    """The captured V10R3 library feed, served for `Accept: application/atom+xml`."""
+    path, response = live_response("rest-templates-feed")
+    route = mock_hmc.get(path).mock(return_value=response)
     async with HMCClient(make_config()) as hmc:
         templates = await hmc.list_partition_templates()
-    assert len(templates) == 1
-    assert templates[0]["ResourceType"] == "PartitionTemplate"
+    assert len(templates) == 7
+    assert templates[0]["ResourceType"] == "PartitionTemplateSummary"
+    assert templates[0]["Resource"]["partitionTemplateName"] == "QuickStart_lpar_rpa_1"
+    assert route.calls[0].request.headers["accept"] == "application/atom+xml"
+
+
+@pytest.mark.asyncio
+async def test_list_partition_templates_avoids_the_typed_accept_v10r3_refuses(
+    mock_hmc,
+):
+    """V10R3 answers the typed templates+xml Accept with an empty HTTP 406."""
+    refused = live_fixture("rest-templates-typed-406")
+    path, served = live_response("rest-templates-feed")
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if "templates+xml" in request.headers["accept"]:
+            return httpx.Response(refused["status"], text=refused["body"])
+        return served
+
+    mock_hmc.get(path).mock(side_effect=answer)
+    async with HMCClient(make_config()) as hmc:
+        assert len(await hmc.list_partition_templates()) == 7
 
 
 @pytest.mark.asyncio

@@ -98,8 +98,14 @@ PLATFORM_UPDATE = PlatformUpdateParameter(
 )
 
 
-def _console_feed(version: str | None) -> str:
-    version_xml = f"<VersionInfo>{version}</VersionInfo>" if version is not None else ""
+def _console_feed(version: tuple[str, str, str] | None) -> str:
+    """A console feed whose ``VersionInfo`` is nested as V10R3 serves it (#1202)."""
+    version_xml = (
+        "<VersionInfo><Version>{}</Version><Release>{}</Release>"
+        "<ServicePackName>{}</ServicePackName></VersionInfo>".format(*version)
+        if version is not None
+        else ""
+    )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -698,7 +704,7 @@ def test_vios_invalid_source_fails_before_submission(
     assert not route.called
 
 
-def _vios_job_with_stdout(status="COMPLETED", top_level=None):
+def _vios_job_with_stdout(status="COMPLETED_OK", top_level=None):
     job = {
         "Resource": {
             "Status": status,
@@ -776,11 +782,15 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
     assert result["stdOut"] == "raw value"
 
 
+# PlatformUpdate answers in JSON (docs/refs/hmc-rest-api-p11/jobs/managedsystem-jobs/
+# 065-platformupdate_managedsystem-job.md:303-343), which no capture holds, so its
+# replies are documented-shape dicts carrying captured statuses: COMPLETED_OK and
+# RUNNING, never a bare COMPLETED (#1202). A poll answers with the captured job read.
 def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
     """A supported HMC receives the documented native JSON PlatformUpdate."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(200, text=_console_feed("V11R1M1111"))
+        return_value=httpx.Response(200, text=_console_feed(("11", "1", "1111")))
     )
     route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate"
@@ -789,7 +799,7 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
             202,
             json={
                 "id": "platform-job",
-                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK"}},
                 "selfLink": None,
             },
         )
@@ -800,7 +810,7 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
     assert route.called
     assert result == {
         "UUID": "platform-job",
-        "Resource": {"Status": "COMPLETED"},
+        "Resource": {"Status": "COMPLETED_OK"},
     }
     assert json.loads(route.calls.last.request.content) == {
         "JobRequest": {
@@ -826,7 +836,13 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
 
 
 @pytest.mark.parametrize(
-    "version", ["V10R3M1060", "V11R1M1110", "secret\nvalue", f"V{'9' * 5000}R1M1"]
+    "version",
+    [
+        ("10", "3", "1060"),
+        ("11", "1", "1110"),
+        ("secret\nvalue", "1", "1"),
+        ("9" * 5000, "1", "1"),
+    ],
 )
 def test_update_firmware_rejects_unsupported_hmc_version(
     monkeypatch, mock_hmc, version
@@ -842,7 +858,8 @@ def test_update_firmware_rejects_unsupported_hmc_version(
     ) as error:
         hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE)
 
-    assert version not in str(error.value)
+    assert "secret" not in str(error.value)
+    assert "9" * 50 not in str(error.value)
     assert not route.called
 
 
@@ -864,14 +881,14 @@ def test_update_firmware_wait_returns_terminal_submission_without_poll(
 ):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(200, text=_console_feed("V11R2M1200"))
+        return_value=httpx.Response(200, text=_console_feed(("11", "2", "1200")))
     )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate").mock(
         return_value=httpx.Response(
             202,
             json={
                 "id": "platform-job",
-                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK"}},
                 "selfLink": None,
             },
         )
@@ -881,14 +898,14 @@ def test_update_firmware_wait_returns_terminal_submission_without_poll(
     result = hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE, wait=True)
 
     assert result is not None
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
     assert not poll.called
 
 
 def test_update_firmware_wait_rejects_unpollable_accepted_job(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(200, text=_console_feed("V11R1M1111"))
+        return_value=httpx.Response(200, text=_console_feed(("11", "1", "1111")))
     )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate").mock(
         return_value=httpx.Response(
@@ -908,7 +925,7 @@ def test_update_firmware_wait_rejects_unpollable_accepted_job(monkeypatch, mock_
 def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
-        return_value=httpx.Response(200, text=_console_feed("V11R1M1111"))
+        return_value=httpx.Response(200, text=_console_feed(("11", "1", "1111")))
     )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate").mock(
         return_value=httpx.Response(
@@ -938,7 +955,7 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_update_console_software(wait=True) submits the job then polls until COMPLETED."""
+    """hmc_update_console_software(wait=True) submits the job then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"

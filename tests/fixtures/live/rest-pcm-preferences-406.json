@@ -1,0 +1,8 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#34",
+  "method": "GET",
+  "path": "/rest/api/pcm/ManagedSystem/00000003-abcd-4ef0-8abc-000000000003/preferences",
+  "status": 406,
+  "content_type": null,
+  "body": ""
+}

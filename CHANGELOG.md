@@ -248,6 +248,62 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   under a parent, and a V10R3 HMC answers a root `SRIOVAdapter` read with HTTP 400
   `INVALID_URL` (#1202).
 
+- The PCM metric tools explain an HTTP 404 on a metric feed. The captured V11R2 HMC answers
+  both `ProcessedMetrics` and `AggregatedMetrics` with 404 while every collection
+  preference is disabled; the error now names the missing feed and points at
+  `hmc_get_pcm_preferences` (#1202).
+- `hmc_fleet_health` reports the rest of the estate when one system's VIOS feed is refused,
+  adding a warning that names the system, instead of failing whole on the V11R2 HTTP 500. A
+  refused partition feed still fails the result (#1202).
+- `hmc_system_summary` keeps its result when the HMC refuses one inventory read. A V11R2 HMC
+  answers a system's VIOS feed with HTTP 500 when a VIOS cannot report its storage, and the
+  summary failed as "unhandled errors in a TaskGroup"; the refused count is now `null` and a
+  new `warnings` field names the source and the HMC's message (#1202).
+- `console info` prints the console's `NetworkInterfaces`; it looked for a `NetworkInfo`
+  element V10R3 does not return (#1202).
+- The managed-system fallback that resolves a system through `ManagedSystem/quick/All`
+  matches its UUID in any case; V10R3 prints those UUIDs in lower case, so an upper-case
+  UUID was never found. `hmc_list_systems` now names the entry fields V10R3 returns,
+  `MachineTypeModelAndSerialNumber` and `PrimaryIPAddress`, instead of the quick-property
+  names `MTMS` and `IPAddress` (#1202).
+- `hmc_fleet_health` no longer reports a partition that is not activated for its inactive
+  RMC connection, which listed every powered-off partition as unhealthy (#1202).
+- `hmc_list_partition_templates` and `hmc_get_partition_template` send
+  `Accept: application/atom+xml`. V10R3 answers the typed
+  `templates+xml; type=PartitionTemplate` Accept with an empty HTTP 406, so both tools
+  always failed. `templates list` now prints each template's `partitionTemplateName`; it
+  read a `templateName` field the library feed does not carry (#1202).
+- `hmc_get_pcm_preferences` sends `Accept: */*`, which V10R3 serves; it sent the uom media
+  type, which V10R3 answers (like the documented `application/xml`) with an empty HTTP 406.
+  `hmc_set_pcm_preferences` posts the `ManagedSystemPcmPreference` root the HMC returns for a
+  managed system. A PCM or partition-template HTTP 406 is now reported as the media-type
+  refusal it is, not as "not licensed" (#1202).
+- `hmc_get_remote_access` and `hmc_configure_remote_access` read the console with the uom
+  `ManagementConsole` media type. V10R3 answers the documented `web+xml` Accept with an
+  HTML HTTP 406 page, so both tools always failed. The update now writes each field inside
+  its `LdapConfiguration` or `KerberosConfiguration` container, where the HMC keeps it,
+  instead of appending a duplicate top-level element; `RealmConfig`, `KerberosRealm`,
+  `Hostname` and `Realm`, which name the nested KDC list rather than a settable field, are
+  refused as unknown (#1202).
+- `hmc_list_users` with `authentication_type` set returns the matching users. V10R3 prints
+  the type in lower case (`local`) on a leaf carrying a `ksv` attribute, and the filter
+  compared it as a bare string against `Local`, `LDAP` or `Kerberos`, so every filtered
+  listing was empty (#1202).
+- `hmc_update_firmware` reads the HMC level from the nested `VersionInfo` element
+  (`Version`, `Release`, `ServicePackName`) that V10R3 returns. It expected a
+  `V11R1M1111` text leaf, so it refused every HMC as "version is unavailable" (#1202).
+- `hmc_snapshot_capture` reads the partition's running allocation from the nested
+  `PartitionMemoryConfiguration` and `PartitionProcessorConfiguration` containers V10R3
+  returns; it read flat leaves that do not exist and refused every partition with "requires
+  true/false HasDedicatedProcessors". The snapshot's HMC name and version now come from
+  `ManagementConsoleName` and the nested `VersionInfo` (`V10R3M1060`); both were always
+  empty (#1202).
+- `hmc_snapshot_capture` reads the profile record a V10R3 HMC prints. It refused every
+  partition with "native profile contains an invalid attribute name", because the HMC quotes
+  the list-valued `virtual_serial_adapters` pair (`"name=v1,v2"`) and splits a pair at its
+  first `=`; V11R2 also quotes a comma-bearing list element inside such a pair. A dedicated
+  profile, which has no `*_proc_units`, now projects its processor counts instead of failing
+  (#1202).
 - `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
   fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
   which every captured HMC (V10R3 and V11R2) answers with `500 Unable to parse expression`

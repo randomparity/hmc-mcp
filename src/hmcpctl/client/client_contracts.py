@@ -16,7 +16,6 @@ from ..config import HMCConfig
 from ..resource_identity import is_uuid
 
 AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
-AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
 VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
 
 AdapterType = Literal[
@@ -233,6 +232,10 @@ class PcmClient(Protocol):
         resource_type: str | None = None,
         include_schema_version: bool = True,
     ) -> str: ...
+
+    async def raw_get(
+        self, path: str, accept: str = "*/*"
+    ) -> tuple[str, dict[str, str]]: ...
 
     async def _post_pcm(self, path: str, body: str) -> str: ...
 
@@ -482,7 +485,7 @@ class SystemsClient(JobClient, Protocol):
 class TemplatesClient(JobClient, Protocol):
     """Host state and operations required by :class:`client_templates.TemplatesMixin`."""
 
-    TEMPLATES_MEDIA: str
+    TEMPLATES_ACCEPT: str
     _session_token: str | None
 
     async def _request(
@@ -529,5 +532,3 @@ class UsersClient(Protocol):
     def _entries(self, xml_text: str, path: str) -> list[dict[str, Any]]: ...
 
     def _first_entry(self, xml_text: str, path: str) -> dict[str, Any] | None: ...
-
-    async def _get_remote_access_xml(self, path: str) -> str: ...

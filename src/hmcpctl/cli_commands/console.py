@@ -27,7 +27,7 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
         "VersionInfo",
         "ManagementConsoleName",
         "MachineTypeModelAndSerialNumber",
-        "NetworkInfo",
+        "NetworkInterfaces",
     ):
         if key in res:
             console.print(f"  {key}: {json.dumps(res[key], default=str)}")

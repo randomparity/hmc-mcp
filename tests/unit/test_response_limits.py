@@ -332,7 +332,6 @@ async def test_cancellation_during_successful_close_is_preserved(make_client):
         ("raw_post", (PATH, "")),
         ("submit_job", (PATH, "")),
         ("_templates_get", (PATH,)),
-        ("_get_remote_access_xml", (PATH,)),
         ("_web_file_create", (UUID, "test.iso", 1)),
         ("_web_file_delete", (UUID,)),
         ("_post_pcm", (PATH, "")),

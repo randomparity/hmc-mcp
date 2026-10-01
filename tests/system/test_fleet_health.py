@@ -7,11 +7,13 @@ from collections import Counter
 from unittest.mock import AsyncMock
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.systems import health as operations_health
 from hmcpctl.operations.systems.health import FleetHealthResult
 from hmcpctl.operations.systems.health import fetch_fleet_health as fleet_health
+from hmcpctl.xmlutil import parse_feed
 
 
 def _entry(uuid: object, **resource: object) -> dict:
@@ -324,6 +326,37 @@ async def test_system_workers_and_active_inspections_are_bounded(monkeypatch) ->
             "list_vios": 30,
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_not_activated_partition_is_not_an_rmc_issue() -> None:
+    """A powered-off partition has no RMC connection by definition (#1202)."""
+    client = _healthy_client()
+    client.list_logical_partitions.return_value = parse_feed(
+        live_fixture("rest-lpar-entry-lp3")["body"]
+    )
+    lpar = client.list_logical_partitions.return_value[0]["Resource"]
+    assert lpar["PartitionState"] == "not activated"
+    assert lpar["ResourceMonitoringControlState"] == "inactive"
+
+    assert (await fleet_health(client)).lpars == ()
+
+
+@pytest.mark.asyncio
+async def test_refused_vios_feed_becomes_a_warning_not_a_failure() -> None:
+    """A V11R2 HMC answers a system's VIOS feed with HTTP 500 (#1202)."""
+    refused = live_fixture("rest-vios-feed-500-v11r2")
+    client = _healthy_client()
+    client.list_vios.side_effect = HMCError(
+        "GET VirtualIOServer failed", refused["status"], refused["body"]
+    )
+
+    result = await fleet_health(client)
+
+    assert result.lpars == () and result.vios == ()
+    (warning,) = result.warnings
+    assert warning.startswith("VIOS inventory for system system-a is unavailable")
+    assert "HTTP 500" in warning
 
 
 @pytest.mark.asyncio

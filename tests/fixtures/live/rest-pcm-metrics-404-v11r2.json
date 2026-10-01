@@ -1,0 +1,8 @@
+{
+  "capture": "2026-09-30-v11r2-p9/capture.jsonl#346",
+  "method": "GET",
+  "path": "/rest/api/pcm/ManagedSystem/00000001-abcd-4ef0-8abc-000000000001/ProcessedMetrics?StartTS=2026-10-01T01%3A49%3A37Z",
+  "status": 404,
+  "content_type": "application/atom+xml;charset=ISO-8859-1",
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<HttpErrorResponse xmlns=\"http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/\" xmlns:ns2=\"http://www.w3.org/XML/1998/namespace/k2\" schemaVersion=\"V1_0\">\n    <Metadata>\n        <Atom/>\n    </Metadata>\n    <HTTPStatus kb=\"ROR\" kxe=\"false\">404</HTTPStatus>\n    <RequestURI kb=\"ROR\" kxe=\"false\">/rest/api/pcm/ManagedSystem/00000001-abcd-4ef0-8abc-000000000001/ProcessedMetrics</RequestURI>\n    <ReasonCode kxe=\"false\" kb=\"ROR\">The supplied URI does not identify a known resource.</ReasonCode>\n    <Message kb=\"ROO\" kxe=\"false\">The supplied URI does not identify a known resource.</Message>\n    <RequestHeaders kb=\"ROO\" kxe=\"false\">{x-forwarded-server=hmc-1, cookie=&lt;REDACTED-COOKIE&gt;, x-forwarded-host=hmc-1, host=hmc-1, x-audit-memento=hmcpctl, connection=Keep-Alive, x-api-session=&lt;REDACTED-SESSION&gt;, x-forwarded-for=192.0.2.1, accept-encoding=identity, user-agent=python-httpx/0.28.1, accept=application/vnd.ibm.powervm.uom+xml}</RequestHeaders>\n</HttpErrorResponse>\n"
+}

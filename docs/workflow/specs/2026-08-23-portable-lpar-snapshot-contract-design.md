@@ -97,17 +97,19 @@ the validated record as the data argument of `chsyscfg -r prof -m <target-system
 normal command construction and authorization escape it as one argument. Artifact text is never a
 shell command, and the system-wide `bkprofdata`/`rstprofdata` file is not part of this contract.
 
-Version 1 deliberately accepts only the attribute-record subset already governed by ADR 0045.
-The record is a non-empty comma-separated sequence of `key=value` pairs. Keys are non-empty ASCII
-letters, digits, and underscores. Values are printable ASCII and may contain spaces and
-semicolons, but not comma, equals sign, double quote, or a control character. Empty values are
-valid. Duplicate keys are invalid. Quoted or otherwise escaped values are outside version 1 and
-make capture fail with the offending attribute named; the implementation does not attempt to
-decode an unverified HMC quoting grammar. After parsing, replay reconstructs the ordered pairs
-through the repository's `build_attribute_record` boundary, which applies the same delimiter and
-duplicate checks, then passes that result as one shell-escaped argument. Capture therefore refuses
-an HMC profile that cannot be represented by this verified subset rather than producing a
-snapshot whose safe replay is uncertain.
+Version 1 accepts the attribute-record grammar V10R3 and V11R2 HMCs print (live captures for
+#1202, 2026-09-30). The record is a non-empty comma-separated sequence of `key=value` pairs. Keys are
+non-empty ASCII letters, digits, and underscores. A pair is split at its first equals sign, so a
+value may itself contain `=` (`sriov_eth_logical_ports=config_id=0:adapter_id=1:...`). A pair
+whose value contains commas is wrapped whole in double quotes, `"name=v1,v2"`, the rendering ADR
+0061 adopted; every partition's `virtual_serial_adapters` pair is printed that way. V11R2 also
+quotes a list element that itself holds commas inside the quoted pair, doubling its quotes (a
+`virtual_fc_adapters` element carrying two WWPNs). That is CSV quoting: a record is accepted
+only when it re-renders byte for byte under minimal CSV quoting, so a quote anywhere else, or an
+unterminated quoted pair, makes capture fail. Values may contain spaces and semicolons but no
+control character. Empty values are valid. Duplicate keys are invalid. Replay is not implemented; a future replay design must
+reconstruct the ordered pairs through the repository's `build_attribute_record` boundary, marking
+list-valued attributes as quoted, and pass that result as one shell-escaped argument.
 
 `normalized` contains exactly `memory_mib` and `processors`. `memory_mib` contains exactly positive
 integer `minimum`, `desired`, and `maximum`, ordered minimum ≤ desired ≤ maximum. `processors`
@@ -126,6 +128,9 @@ required by version 1 from `native.data` and requires equality with the stored p
 mapping is exact: `min_mem`, `desired_mem`, and `max_mem` map to the three memory values;
 `proc_mode=ded` maps to `dedicated: true` while `proc_mode=shared` maps to false;
 `min_proc_units`, `desired_proc_units`, and `max_proc_units` map to the three processor values;
+a dedicated profile has no processing units (the record omits them, or prints `null` under
+`-F`), so for `proc_mode=ded` the three processor values are `min_procs`, `desired_procs`, and
+`max_procs`;
 `min_procs`, `desired_procs`, and `max_procs` map to the three virtual values; and HMC
 `sharing_mode` values `keep_idle_procs`, `share_idle_procs`, `share_idle_procs_active`,
 `share_idle_procs_always`, `cap`, and `uncap` map respectively to the normalized values of the same

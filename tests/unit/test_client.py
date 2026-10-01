@@ -1060,6 +1060,30 @@ async def test_get_managed_system_falls_back_via_quick_all(mock_hmc):
     assert entry["Resource"]["SystemName"] == "sys1"
 
 
+@pytest.mark.asyncio
+async def test_get_managed_system_fallback_matches_quick_all_uuid_in_any_case(
+    mock_hmc,
+):
+    """The captured V10R3 quick/All prints system UUIDs in lower case (#1202)."""
+    uuid = "00000003-abcd-4ef0-8abc-000000000003"
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{uuid.upper()}").mock(
+        return_value=httpx.Response(
+            500,
+            text="Nested path contains null property, "
+            "currentProperty=Uuid nestedPath=VirtualPersistentMemoryVolume/Uuid/Value/Value",
+        )
+    )
+    path, quick_all = live_response("rest-ms-quick-all")
+    mock_hmc.get(path).mock(return_value=quick_all)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys-R1)").mock(
+        return_value=httpx.Response(200, text=_managed_system_feed(uuid, "sys-R1"))
+    )
+    async with HMCClient(make_config()) as hmc:
+        entry = await hmc.get_managed_system(uuid.upper())
+    assert entry is not None
+    assert entry["Resource"]["SystemName"] == "sys-R1"
+
+
 @pytest.mark.parametrize(
     ("quick_all_response", "expect_quick_all_cause"),
     [

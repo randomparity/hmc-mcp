@@ -317,6 +317,28 @@ def mtms_parts(resource: Mapping[str, Any]) -> tuple[str, str, str] | None:
     return None
 
 
+def console_version(resource: Mapping[str, Any]) -> tuple[int, int, int] | None:
+    """Return (version, release, service pack) from a management console resource.
+
+    V10R3 nests the level as ``VersionInfo/{Version,Release,ServicePackName}``, so
+    HMC V10R3 M1060 reads ``(10, 3, 1060)``. Returns ``None`` unless all three are
+    one to four digits.
+    """
+    info = resource.get("VersionInfo")
+    if not isinstance(info, Mapping):
+        return None
+    parts = [
+        leaf_text(info.get(name)) for name in ("Version", "Release", "ServicePackName")
+    ]
+    if not all(
+        isinstance(part, str) and re.fullmatch(r"[0-9]{1,4}", part.strip())
+        for part in parts
+    ):
+        return None
+    version, release, service_pack = (int(cast("str", part)) for part in parts)
+    return version, release, service_pack
+
+
 def render_mtms(resource: Mapping[str, Any]) -> str | None:
     """Render ``type-model*serial``, or ``None`` when the MTMS is absent or partial."""
     parts = mtms_parts(resource)

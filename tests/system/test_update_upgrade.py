@@ -378,7 +378,11 @@ CONSOLE_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <title>ManagementConsole</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagementConsole xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <VersionInfo>V10R1M1010</VersionInfo>
+      <VersionInfo>
+        <Version>10</Version>
+        <Release>1</Release>
+        <ServicePackName>1010</ServicePackName>
+      </VersionInfo>
     </ManagementConsole>
   </content>
 </entry>
@@ -517,7 +521,7 @@ async def test_submit_platform_update_normalizes_documented_response(mock_hmc):
             [{"ParameterName": "result", "ParameterValue": "failed"}],
             "failed",
         ),
-        ("COMPLETED", None, None),
+        ("COMPLETED_OK", None, None),
     ],
 )
 def test_platform_update_normalizes_native_singular_result(
@@ -551,7 +555,9 @@ def test_platform_update_rejects_malformed_plural_results(results):
         _normalize_platform_update_response(
             {
                 "id": "job",
-                "content": {"JobResponse": {"Status": "COMPLETED", "Results": results}},
+                "content": {
+                    "JobResponse": {"Status": "COMPLETED_OK", "Results": results}
+                },
             }
         )
 
@@ -640,14 +646,14 @@ async def test_submit_platform_update_reports_path_for_recursion_error(
     ("payload", "field"),
     [
         ([], "root"),
-        ({"id": 7, "content": {"JobResponse": {"Status": "COMPLETED"}}}, "id"),
+        ({"id": 7, "content": {"JobResponse": {"Status": "COMPLETED_OK"}}}, "id"),
         ({"id": "j", "content": []}, "content"),
         ({"id": "j", "content": {"JobResponse": []}}, "JobResponse"),
         ({"id": "j", "content": {"JobResponse": {"Status": []}}}, "Status"),
         (
             {
                 "id": "j",
-                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK"}},
                 "selfLink": 9,
             },
             "selfLink",
@@ -655,14 +661,14 @@ async def test_submit_platform_update_reports_path_for_recursion_error(
         (
             {
                 "id": "j",
-                "content": {"JobResponse": {"Status": "COMPLETED", "Result": {}}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK", "Result": {}}},
             },
             "Result",
         ),
         (
             {
                 "id": "j",
-                "content": {"JobResponse": {"Status": "COMPLETED", "Result": [3]}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK", "Result": [3]}},
             },
             "Result",
         ),

@@ -70,6 +70,7 @@ from hmcpctl.ssh import io_inventory, sriov, vnic
 from hmcpctl.ssh import lpar as ssh_lpar
 from hmcpctl.ssh import profiles as ssh_profiles
 from hmcpctl.ssh import refcodes as ssh_refcodes
+from hmcpctl.xmlutil import parse_feed
 
 LPAR_NAME = "lpar1"
 
@@ -222,10 +223,8 @@ class FakeHMC:
                 "IOSLevel": "3.1.0",
             },
         }
-        self.console = {
-            "link": "https://hmc/rest/api/uom/ManagementConsole/console",
-            "Resource": {"VersionInfo": "V10R1M1010", "ManagementConsoleName": "hmc1"},
-        }
+        # The captured V10R3 ManagementConsole entry (#1202).
+        self.console = parse_feed(live_fixture("rest-management-console")["body"])[0]
         self.cluster = {"UUID": CLUSTER_UUID, "Resource": {"ClusterName": "cl1"}}
         self.ssp = {
             "UUID": SSP_UUID,
@@ -235,7 +234,10 @@ class FakeHMC:
                 "FreeSpace": "512",
             },
         }
-        self.template = {"UUID": TEMPLATE_UUID, "Resource": {"templateName": "tpl1"}}
+        self.template = {
+            "UUID": TEMPLATE_UUID,
+            "Resource": {"partitionTemplateName": "tpl1"},
+        }
         self.vios_storage_detail = {"Resource": {}}
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [
@@ -4368,7 +4370,8 @@ def test_console_info(fake_hmc):
     result = RUNNER.invoke(cli.app, ["console", "info"])
 
     assert result.exit_code == 0
-    assert "V10R1M1010" in result.stdout
+    assert "1060" in result.stdout
+    assert "NetworkInterfaces" in result.stdout and "eth0" in result.stdout
     assert fake_hmc.calls == [("get_console_info", (), {})]
 
 
@@ -4376,7 +4379,7 @@ def test_console_info_json(fake_hmc):
     result = RUNNER.invoke(cli.app, ["console", "info", "--json"])
 
     assert result.exit_code == 0
-    assert "V10R1M1010" in result.stdout
+    assert "1060" in result.stdout
     assert fake_hmc.calls == [("get_console_info", (), {})]
 
 
@@ -4540,14 +4543,14 @@ def test_templates_list_json(fake_hmc):
     assert fake_hmc.calls == [("list_partition_templates", (), {})]
 
 
-def test_templates_cli_translates_not_licensed_error(fake_hmc):
+def test_templates_cli_translates_not_acceptable_error(fake_hmc):
     fake_hmc.fail_on = "list_partition_templates"
     fake_hmc.fail_status = 406
 
     result = RUNNER.invoke(cli.app, ["templates", "list"])
 
     assert result.exit_code == 1
-    assert "not licensed or not supported" in result.stderr
+    assert "refused the media type" in result.stderr
 
 
 def test_templates_show(fake_hmc):
