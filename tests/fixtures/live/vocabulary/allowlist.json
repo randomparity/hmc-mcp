@@ -2,6 +2,13 @@
  {
   "kind": "cli-command",
   "file": "src/hmcpctl/ssh/lpar.py",
+  "subject": "lssyscfg -r sys -F name",
+  "value": "",
+  "reason": "not captured; the 2026-09-30 sweep ran only the -m form. live_capture_sweep.py now probes the unscoped system listing (sys-no-m) (#1202)"
+ },
+ {
+  "kind": "cli-command",
+  "file": "src/hmcpctl/ssh/lpar.py",
   "subject": "lssyscfg -r sys -F uuid,name",
   "value": "",
   "reason": "not captured; the 2026-09-30 sweep ran only the -m form. live_capture_sweep.py now probes it (sys-no-m) (#1202)"

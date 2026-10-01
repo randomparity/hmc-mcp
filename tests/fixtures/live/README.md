@@ -41,3 +41,27 @@ two captures has the same token in both:
 
 Nothing else in a body is changed. A new or changed HMC-shaped fixture cites the
 capture it came from.
+
+## The 2026-09-30 export (#1202)
+
+Fixtures whose `capture` begins `2026-09-30-ro/` come from a read-only sweep of
+that day: every read-only MCP tool and about 70 raw GETs and `ls*` commands,
+against the same V10R3 HMC and POWER9 system as the #1161 captures. The raw
+records were tokenized as one corpus by the prototype of
+`scripts/live_capture_export.py`, so tokens are consistent across fixtures from
+that export, and the system and test partition keep the names above (`sys-R1`,
+`sys-R1-lp3`).
+
+**Its UUID token map is separate from the #1161 one.** Both use the
+`NNNNNNNN-abcd-4ef0-8abc-NNNNNNNNNNNN` form, numbered from 1 in each export, so
+the same token in a #1161 fixture and in a `2026-09-30-ro/` fixture can name
+different objects, and the same object can carry different tokens. Never join
+fixtures across the two exports by UUID. Other names in that export (`lpar-N`,
+`prof-N`, `vg-N`, `dev-N`, ...) are tokens of its own map too.
+
+`vocabulary/` holds what was derived from that corpus, not captured records: the
+per-release vocabulary (`v10r3-p9.json`), the HMC's schema enum lists
+(`enums-v10r3.json`), and the allowlist of `just live-vocabulary`. Regenerate
+them with `scripts/live_capture_export.py`, as `docs/live-testing.md`
+("Capturing an HMC's vocabulary") describes; do not edit them by hand, apart
+from an allowlist entry's `reason`.
