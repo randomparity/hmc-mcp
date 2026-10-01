@@ -6,7 +6,12 @@ from hmcpctl.client.client_storage import (
 )
 
 
-def test_extract_optical_media_accepts_documented_and_legacy_shapes():
+def test_extract_optical_media_reads_only_the_documented_nesting():
+    """V10R3 nests media as MediaRepositories/VirtualMediaRepository/OpticalMedia (#1202).
+
+    No capture or reference shows a repository directly under the resource or media
+    directly under the repository, so those shapes yield nothing.
+    """
     entries = [
         {
             "Resource": {
@@ -28,10 +33,7 @@ def test_extract_optical_media_accepts_documented_and_legacy_shapes():
         },
     ]
 
-    assert _extract_optical_media(entries) == [
-        {"MediaName": "a.iso"},
-        {"MediaName": "b.iso"},
-    ]
+    assert _extract_optical_media(entries) == [{"MediaName": "a.iso"}]
 
 
 def test_filter_optical_mappings_keeps_only_requested_lpar():

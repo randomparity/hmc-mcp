@@ -17,8 +17,8 @@ from hmcpctl.operations.metrics import pcm
     ("translator", "status", "message"),
     [
         (translate_pcm_error, 403, "PCM authority"),
-        (translate_pcm_error, 406, "not licensed or not enabled"),
-        (translate_template_error, 406, "not licensed or not supported"),
+        (translate_pcm_error, 406, "refused the media type"),
+        (translate_template_error, 406, "refused the media type"),
         (translate_virtual_network_create_error, 406, "virtual network create"),
     ],
 )

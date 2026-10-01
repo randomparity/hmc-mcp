@@ -35,15 +35,6 @@ _FIRMWARE_PLACEMENT_500 = ExpectedOutcome(
     error_codes=_FIRMWARE_INVENTORY_500.error_codes,
 )
 
-# Known HMC version limitation: global Job feed is not supported on older HMC
-# releases (REST000E). Per-job polling via hmc_get_job still works.
-_GLOBAL_JOB_LISTING_UNSUPPORTED = ExpectedOutcome(
-    operation="job.list",
-    variant="global-job-feed",
-    reason="HMC version does not support global Job listing (REST000E — use hmc_get_job with a submission link instead)",
-    error_codes=frozenset({"REST000E"}),
-)
-
 # ---------------------------------------------------------------------------
 # ST1 — Connectivity & Inventory
 # ---------------------------------------------------------------------------
@@ -253,35 +244,6 @@ async def _probe_capacity_and_resources(client: Client, state: RunState) -> None
     )
 
 
-async def _sample_recent_job(client: Client, state: RunState) -> None:
-    artifacts = state.artifacts
-
-    st, data = await state.call(
-        client,
-        "hmc_list_recent_jobs",
-        limit=10,
-        expected=[_GLOBAL_JOB_LISTING_UNSUPPORTED],
-    )
-    job_uuid = None
-    if st == "PASS":
-        for e in entries(data):
-            if isinstance(e, dict) and e.get("type") != "error":
-                job_uuid = e.get("UUID") or e.get("uuid")
-                break
-    # hmc_list_recent_jobs is not supported on older HMC firmware (HTTP 400).
-    # Use record_with_expected so the version gap is recorded rather than counted
-    # as a real failure; the job_uuid_sample will still be set from ST8 jobs.
-    state.record_with_expected(
-        1,
-        "hmc_list_recent_jobs",
-        st,
-        data,
-        [_GLOBAL_JOB_LISTING_UNSUPPORTED],
-    )
-    if job_uuid:
-        artifacts.job_uuid_sample = job_uuid
-
-
 async def _record_inventory_summaries(client: Client, state: RunState) -> None:
     config = state.config
 
@@ -341,5 +303,4 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     await _discover_partitions(client, state)
     await _discover_vios(client, state)
     await _probe_capacity_and_resources(client, state)
-    await _sample_recent_job(client, state)
     await _record_inventory_summaries(client, state)

@@ -4,6 +4,10 @@
 
 Accepted on 2026-09-01. Supersedes ADR 0056 only for physical-port read level selection.
 
+> **Superseded by [0183](0183-sriov-read-envelope-from-captures.md)** (2026-09-30)
+> for level selection, now `roce`, `ethc` and `eth` merged, and for the admitted read
+> environment. Its adapter-ID validation and port-state normalization stand.
+
 ## Context
 
 ADR 0056 admits one captured POWER9/HMC V10R3 M1060 family and hard-codes

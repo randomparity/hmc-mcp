@@ -239,7 +239,7 @@ async def test_lpm_recovery_operations_wait_for_terminal_outcome(
     operation, submit_method, args
 ):
     submitted = {"UUID": "job-1", "link": "/jobs/job-1"}
-    completed = {"Resource": {"JobID": "job-1", "Status": "COMPLETED"}}
+    completed = {"Resource": {"JobID": "job-1", "Status": "COMPLETED_OK"}}
     hmc = AsyncMock()
     setattr(hmc, submit_method, AsyncMock(return_value=submitted))
     hmc.wait_for_job_entry.return_value = completed
@@ -247,7 +247,7 @@ async def test_lpm_recovery_operations_wait_for_terminal_outcome(
     result = await operation(hmc, *args, wait=True, timeout_seconds=60, poll_interval=2)
 
     assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
-    assert result.job.status == "COMPLETED"
+    assert result.job.status == "COMPLETED_OK"
     assert result.job.timed_out is False
     hmc.wait_for_job_entry.assert_awaited_once_with(
         "job-1", 60, 2, job_href="/jobs/job-1"
@@ -266,7 +266,7 @@ async def test_lpm_recovery_operations_surface_terminal_failure(
     failed = {
         "Resource": {
             "JobID": "job-1",
-            "Status": "FAILED",
+            "Status": "COMPLETED_WITH_ERROR",
             "Results": {
                 "JobParameter": {
                     "ParameterName": "ErrorData",
@@ -283,7 +283,7 @@ async def test_lpm_recovery_operations_surface_terminal_failure(
 
     assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
     assert result.job.job_id == "job-1"
-    assert result.job.status == "FAILED"
+    assert result.job.status == "COMPLETED_WITH_ERROR"
     assert result.job.timed_out is False
     assert result.job.error == "Migration recovery failed"
     assert result.job.job is failed
@@ -309,7 +309,7 @@ def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
     """A non-2xx job submission surfaces as HMCError naming the failing PUT."""
     _hmc_env(monkeypatch)
     mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate").mock(
-        return_value=httpx.Response(500, text="<error>boom</error>")
+        return_value=httpx.Response(500)
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", validate_first=False)

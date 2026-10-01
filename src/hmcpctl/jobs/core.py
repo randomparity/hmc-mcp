@@ -11,6 +11,11 @@ from ..errors import HMCError
 
 DEFAULT_JOB_TIMEOUT_SECONDS = 300
 DEFAULT_JOB_POLL_INTERVAL = 5
+# The documented job statuses (docs/refs/hmc-rest-api-p10/016-job-status.md);
+# NOT_STARTED and RUNNING are the two non-terminal ones. Bare COMPLETED is the
+# success status the ListManagementConsoleUpdates and ListStorageMediaDevices
+# job pages document instead of COMPLETED_OK. A status outside this set is not
+# terminal, so the wait keeps polling to its deadline (#1202).
 TERMINAL_JOB_STATUSES = frozenset(
     {
         "CANCELED_BEFORE_START",
@@ -19,8 +24,6 @@ TERMINAL_JOB_STATUSES = frozenset(
         "COMPLETED_OK",
         "COMPLETED_WITH_ERROR",
         "COMPLETED_WITH_WARNINGS",
-        "EXCEPTION",
-        "FAILED",
         "FAILED_BEFORE_COMPLETION",
         "FAILED_BEFORE_COMPLETION_RETRY",
         "FAILED_TO_START",
@@ -85,7 +88,8 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     ``Resource.JobID`` comes first. It is the one identifier stable from
     submission through every read: a V10R3 HMC gives the submission entry and
     the read entries different Atom UUIDs, and answers an entry UUID on
-    ``/rest/api/uom/jobs/{id}`` with HTTP 406 (issue #1160). The entry UUID,
+    ``/rest/api/uom/jobs/{id}`` with HTTP 406 to a web+xml Accept and 400 REST000E
+    to ``*/*`` (issue #1160). The entry UUID,
     then the SELF link, are fallbacks for a response that carries no JobID; a
     read-side link yields its JobID segment, not its per-read last one.
     """
@@ -175,19 +179,7 @@ def _job_error(status: str | None, resource: dict[str, Any]) -> str | None:
     """Select the actionable diagnostic for one terminal failed job status."""
     if status not in FAILED_JOB_STATUSES:
         return None
-    exception_text = _exception_text(resource)
-    if status == "EXCEPTION" and exception_text:
-        return exception_text
-    return (
-        _result_message(resource) or exception_text or f"Job ended with status {status}"
-    )
-
-
-def _exception_text(resource: dict[str, Any]) -> str | None:
-    """Return the non-blank HMC exception message, when present."""
-    exception = resource.get("ResponseException")
-    message = exception.get("Message") if isinstance(exception, dict) else None
-    return message.strip() if isinstance(message, str) and message.strip() else None
+    return _result_message(resource) or f"Job ended with status {status}"
 
 
 def vios_stdout(job: dict[str, Any] | None) -> str | None:

@@ -124,10 +124,17 @@ def test_physical_port_evidence_preserves_live_verification_contract():
     }
 
 
-def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str:
-    return (
-        f"{','.join(_PHYSICAL_FIELDS)}\n{adapter_id},0,{port_type},U-T1,1,0,60,0,1.0\n"
+def _physical_port_output(
+    adapter_id: str = "1", port_type: str = "roce", port_ids: tuple[str, ...] = ("0",)
+) -> str:
+    rows = "".join(
+        f"{adapter_id},{port},{port_type},U-T{int(port) + 1},1,0,60,0,1.0\n"
+        for port in port_ids
     )
+    return f"{','.join(_PHYSICAL_FIELDS)}\n{rows}"
+
+
+_EMPTY = "No results were found.\n"
 
 
 @pytest.mark.asyncio
@@ -137,7 +144,11 @@ def _physical_port_output(adapter_id: str = "1", port_type: str = "roce") -> str
     ids=lambda case: case["name"],
 )
 async def test_physical_port_selects_the_sole_populated_level(monkeypatch, case):
-    run = AsyncMock(side_effect=[case["roce"]["stdout"], case["ethc"]["stdout"]])
+    # The #1035 capture did not probe --level eth; the V10R3 8375-42A default
+    # listing at --level eth is empty (ADR 0183).
+    run = AsyncMock(
+        side_effect=[case["roce"]["stdout"], case["ethc"]["stdout"], _EMPTY]
+    )
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     assert (
@@ -147,7 +158,7 @@ async def test_physical_port_selects_the_sole_populated_level(monkeypatch, case)
         == case["expected_rows"]
     )
     commands = [call.args[1] for call in run.await_args_list]
-    assert len(commands) == 2
+    assert len(commands) == 3
     expected_filter = (
         f"--filter {shlex.quote(build_filter([('adapter_ids', case['adapter_id'])]))}"
     )
@@ -161,6 +172,7 @@ async def test_physical_port_selects_the_sole_populated_level(monkeypatch, case)
     assert commands == [
         case["roce"]["command"],
         case["ethc"]["command"],
+        case["ethc"]["command"].replace("--level ethc", "--level eth"),
     ]
 
 
@@ -239,33 +251,57 @@ async def test_physical_port_propagates_second_command_error_before_parsing(
 
 
 @pytest.mark.asyncio
-async def test_physical_port_rejects_ambiguous_or_mismatched_rows(monkeypatch):
+async def test_physical_port_merges_every_populated_level(monkeypatch):
+    # V11R2 on a POWER9 9009-42A lists one adapter's ports 0-1 at --level ethc
+    # and ports 2-3 at --level eth (ADR 0183).
     run = AsyncMock(
         side_effect=[
-            _physical_port_output(),
-            _physical_port_output(port_type="ethc"),
+            _EMPTY,
+            _physical_port_output("2", "ethc", ("0", "1")),
+            _physical_port_output("2", "eth", ("2", "3")),
         ]
     )
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
-    with pytest.raises(HMCCLIError, match="both roce and ethc"):
+    rows = await list_sriov_physical_port_rows(_config(), "sys", "2")
+
+    assert [(row["phys_port_id"], row["phys_port_type"]) for row in rows] == [
+        ("0", "ethc"),
+        ("1", "ethc"),
+        ("2", "eth"),
+        ("3", "eth"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_physical_port_rejects_a_port_listed_at_two_levels_or_mismatched_rows(
+    monkeypatch,
+):
+    run = AsyncMock(
+        side_effect=[
+            _physical_port_output(),
+            _physical_port_output(port_type="ethc"),
+            _EMPTY,
+        ]
+    )
+    monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
+
+    with pytest.raises(HMCCLIError, match="port 0 is listed at more than one level"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
-    run = AsyncMock(
-        side_effect=[_physical_port_output(adapter_id="2"), "No results were found."]
-    )
+    run = AsyncMock(side_effect=[_physical_port_output(adapter_id="2"), _EMPTY, _EMPTY])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
     with pytest.raises(HMCCLIError, match="adapter_id"):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
 
 @pytest.mark.asyncio
-async def test_physical_port_returns_empty_when_both_levels_are_empty(monkeypatch):
-    run = AsyncMock(side_effect=["No results were found.", "No results were found."])
+async def test_physical_port_returns_empty_when_every_level_is_empty(monkeypatch):
+    run = AsyncMock(side_effect=[_EMPTY, _EMPTY, _EMPTY])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     assert await list_sriov_physical_port_rows(_config(), "sys", "1") == []
-    assert run.await_count == 2
+    assert run.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -280,7 +316,7 @@ async def test_physical_port_returns_empty_when_both_levels_are_empty(monkeypatc
 async def test_physical_port_reads_both_levels_before_rejecting_malformed_output(
     monkeypatch, roce_output, ethc_output
 ):
-    run = AsyncMock(side_effect=[roce_output, ethc_output])
+    run = AsyncMock(side_effect=[roce_output, ethc_output, _EMPTY])
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     with pytest.raises(
@@ -289,7 +325,7 @@ async def test_physical_port_reads_both_levels_before_rejecting_malformed_output
     ):
         await list_sriov_physical_port_rows(_config(), "sys", "1")
 
-    assert run.await_count == 2
+    assert run.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -298,6 +334,7 @@ async def test_exact_sriov_read_and_mutation_commands(monkeypatch):
         side_effect=[
             "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status\n1,2,sriov,1,U,2,120,120,running\n",
             "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity\n1,0,roce,U-T1,1,0,60,0,1.0\n",
+            "No results were found.",
             "No results were found.",
             "",
             "",
@@ -317,6 +354,7 @@ async def test_exact_sriov_read_and_mutation_commands(monkeypatch):
     commands = [call.args[1] for call in run.await_args_list]
     assert "--level roce" in commands[1]
     assert "--level ethc" in commands[2]
-    assert "--rsubtype logport" in commands[3] and "-o a" in commands[3]
-    assert "sriov_eth_logical_ports=none" in commands[4]
+    assert "--level eth " in commands[3]
+    assert "--rsubtype logport" in commands[4] and "-o a" in commands[4]
+    assert "sriov_eth_logical_ports=none" in commands[5]
     assert all("--force" not in command for command in commands)

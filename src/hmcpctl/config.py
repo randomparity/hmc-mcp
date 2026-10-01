@@ -161,7 +161,7 @@ class HMCConfig(BaseSettings):
     verify_ssl: bool = Field(
         default=False, description="Verify the HMC TLS certificate"
     )
-    timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
+    timeout: float = Field(default=180.0, description="HTTP timeout in seconds")
     upload_timeout: float = Field(
         default=600.0,
         gt=0,

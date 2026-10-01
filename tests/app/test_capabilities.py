@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from conftest import live_fixture, live_response
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
@@ -739,24 +740,51 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     assert guard.await_args.kwargs == {"ownership_override": True}
 
 
+VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
+
+
+def _mock_vios_state_and_delete(router, state: str):
+    """V10R3 answers a VIOS only under VirtualIOServer (#1202).
+
+    The LogicalPartition entry and quick paths 404 for a VIOS UUID; the
+    VirtualIOServer quick read answers 200 with the state JSON-quoted.
+    """
+    for name in ("rest-lpar-path-vios", "rest-lpar-quick-vios"):
+        path, response = live_response(name)
+        router.get(path).mock(return_value=response)
+    quick = live_fixture("rest-vios-quick-state")
+    router.get(quick["path"]).mock(
+        return_value=httpx.Response(
+            quick["status"],
+            text=f'"{state}"',
+            headers={"Content-Type": quick["content_type"]},
+        )
+    )
+    return router.delete(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(204)
+    )
+
+
 def test_delete_vios_refuses_when_active(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    delete_route = _mock_state_and_delete(mock_hmc, "shutting down")
+    delete_route = _mock_vios_state_and_delete(mock_hmc, "running")
 
     with pytest.raises(HMCError) as exc_info:
-        hmc_delete_vios(LPAR_UUID)
+        hmc_delete_vios(VIOS_UUID)
 
     assert exc_info.value.status_code == 409
+    assert "'running'" in str(exc_info.value)
     assert not delete_route.called
 
 
 def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    _mock_state_and_delete(mock_hmc, "not activated")
+    delete_route = _mock_vios_state_and_delete(mock_hmc, "not activated")
 
-    result = hmc_delete_vios(LPAR_UUID)
+    result = hmc_delete_vios(VIOS_UUID)
 
-    assert result == LPAR_UUID
+    assert result == VIOS_UUID
+    assert delete_route.call_count == 1
 
 
 # ------------------------------------------------------------------ #
@@ -949,7 +977,7 @@ EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:{LPAR_UUID}</id>
-    <title>LogicalPartition:existing-lpar</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>existing-lpar</PartitionName>
@@ -981,7 +1009,7 @@ NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:new-lpar-uuid-0001</id>
-    <title>LogicalPartition:new-lpar</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>new-lpar</PartitionName>

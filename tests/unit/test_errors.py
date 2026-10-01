@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.errors import MAX_ERROR_BODY_BYTES, HMCError
 
@@ -50,3 +51,24 @@ def test_hmc_error_does_not_mask_unexpected_formatter_failure(monkeypatch) -> No
 
     with pytest.raises(RuntimeError, match="formatter defect"):
         HMCError("request failed", 500, "<Error />")
+
+
+def test_hmc_error_renders_the_captured_http_error_response_message() -> None:
+    """V10R3 error bodies are an `HttpErrorResponse` whose text is `<Message>`."""
+    capture = live_fixture("rest-lpar-not-found")
+
+    error = HMCError("request failed", capture["status"], capture["body"])
+
+    assert str(error) == (
+        "request failed (HTTP 404): REST029B The URL presented to the Management "
+        "Console REST Web Services is not valid. The supplied URI does not identify "
+        "a known resource."
+    )
+
+
+def test_hmc_error_does_not_read_unobserved_error_element_names() -> None:
+    """No capture or reference has an `<error>`/`<msg>` body; it renders raw (#1202)."""
+    for body in ("<error>guessed</error>", "<Fault><msg>guessed</msg></Fault>"):
+        assert str(HMCError("request failed", 500, body)) == (
+            f"request failed (HTTP 500): {body}"
+        )

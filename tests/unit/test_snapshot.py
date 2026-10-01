@@ -4,9 +4,12 @@ import json
 from datetime import UTC, datetime
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.snapshots.models import (
     SnapshotValidationError,
+    _normalized_from_profile,
+    _parse_profile,
     inspect_snapshot,
     parse_snapshot,
     serialize_snapshot,
@@ -503,3 +506,123 @@ def test_unrepresentable_float_has_bounded_diagnostic(number: str, operation) ->
         SnapshotValidationError, match="JSON number is not finitely representable"
     ):
         operation(text)
+
+
+# `lssyscfg -r prof` as a V10R3 HMC prints it: every partition carries two
+# virtual serial adapters, so every record holds an IBM quoted pair
+# ("name=v1,v2", ADR 0061), and a value may itself contain `=`.
+def _captured_profiles() -> list[str]:
+    return live_fixture("cli-prof-all")["stdout"].splitlines()
+
+
+def test_native_profile_parses_captured_quoted_list_record() -> None:
+    record = live_fixture("cli-prof-lp3")["stdout"].strip()
+    values = _parse_profile(record)
+    assert values["name"] == "default_profile"
+    assert values["lpar_name"] == "sys-R1-lp3"
+    assert (
+        values["virtual_serial_adapters"]
+        == "0/server/1/any//any/1,1/server/1/any//any/1"
+    )
+    processors = _normalized_from_profile(values).processors
+    assert (processors.minimum, processors.desired, processors.maximum) == (
+        0.1,
+        0.3,
+        2.0,
+    )
+    assert processors.sharing_mode == "uncapped"
+
+
+def test_native_profile_keeps_equals_signs_inside_a_value() -> None:
+    values = _parse_profile(_captured_profiles()[1])
+    assert values["sriov_eth_logical_ports"].startswith(
+        "config_id=0:adapter_id=1:phys_port_id=1:"
+    )
+
+
+def test_dedicated_profile_projects_processor_counts() -> None:
+    """A dedicated profile prints no `*_proc_units`; its processors are counts."""
+    values = _parse_profile(_captured_profiles()[1])
+    assert values["proc_mode"] == "ded"
+    assert "min_proc_units" not in values
+    processors = _normalized_from_profile(values).processors
+    assert processors.dedicated is True
+    assert (processors.minimum, processors.desired, processors.maximum) == (1, 1, 1)
+    assert processors.sharing_mode == "keep_idle_procs"
+
+
+def test_dedicated_profile_accepts_null_processor_units() -> None:
+    """`-F` renders an unset numeric attribute as `null` on dedicated profiles."""
+    record = _captured_profiles()[1].replace(
+        "min_procs=1", "min_proc_units=null,min_procs=1"
+    )
+    processors = _normalized_from_profile(_parse_profile(record)).processors
+    assert processors.minimum == 1
+
+
+def test_shared_profile_still_requires_processor_units() -> None:
+    record = live_fixture("cli-prof-lp3")["stdout"].strip()
+    record = record.replace("min_proc_units=0.1,", "")
+    with pytest.raises(ValueError, match="missing required normalized"):
+        _normalized_from_profile(_parse_profile(record))
+
+
+def test_native_profile_accepts_a_quoted_element_inside_a_quoted_pair() -> None:
+    """V11R2 quotes a list element that holds commas, doubling the inner quotes.
+
+    The shape is a captured V11R2 POWER11 `virtual_fc_adapters` pair (#1202),
+    with the two WWPNs replaced by placeholders.
+    """
+    record = (
+        live_fixture("cli-prof-lp3")["stdout"]
+        .strip()
+        .replace(
+            "virtual_fc_adapters=none",
+            '"virtual_fc_adapters=""201/client/100/sys-R1-vios1/201/'
+            'c05076000000000a,c05076000000000b/0"""',
+        )
+    )
+    values = _parse_profile(record)
+    assert values["virtual_fc_adapters"] == (
+        '"201/client/100/sys-R1-vios1/201/c05076000000000a,c05076000000000b/0"'
+    )
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        'name=default,description=a"b',
+        '"name=default",lpar_name=aix',
+        'name=default,"description=a,b',
+        "name=default,lpar_name",
+        "",
+    ],
+)
+def test_native_profile_rejects_unparseable_records(record: str) -> None:
+    with pytest.raises(ValueError, match="native profile"):
+        _parse_profile(record)
+
+
+def test_snapshot_of_a_captured_profile_round_trips() -> None:
+    document = _document()
+    document["source"]["lpar"]["name"] = "sys-R1-lp3"
+    document["configuration"]["profile_name"] = "default_profile"
+    document["configuration"]["native"]["data"] = live_fixture("cli-prof-lp3")[
+        "stdout"
+    ].strip()
+    document["configuration"]["normalized"] = {
+        "memory_mib": {"minimum": 1536, "desired": 3072, "maximum": 6144},
+        "processors": {
+            "dedicated": False,
+            "minimum": 0.1,
+            "desired": 0.3,
+            "maximum": 2.0,
+            "virtual_minimum": 1,
+            "virtual_desired": 3,
+            "virtual_maximum": 6,
+            "sharing_mode": "uncapped",
+            "uncapped": True,
+        },
+    }
+    snapshot = parse_snapshot(json.dumps(document))
+    assert parse_snapshot(serialize_snapshot(snapshot)) == snapshot

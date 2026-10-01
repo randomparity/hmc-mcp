@@ -31,7 +31,7 @@ from hmcpctl.resource_identity import (
     resolve_system_uuid,
 )
 from hmcpctl.ssh.profiles import read_lpar_profile_record
-from hmcpctl.xmlutil import mtms_parts
+from hmcpctl.xmlutil import console_version, leaf_text, mtms_parts
 
 from .models import (
     MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
@@ -270,17 +270,38 @@ def _runtime_float(value: Any, label: str) -> float | None:
     return result
 
 
+def _container(resource: dict[str, Any], name: str) -> dict[str, Any]:
+    value = resource.get(name)
+    return value if isinstance(value, dict) else {}
+
+
 def _placement(resource: dict[str, Any]) -> dict[str, object]:
-    dedicated_value = resource.get("HasDedicatedProcessors")
+    """Read the running allocation from the nested V10R3 configuration containers."""
+    processors = _container(resource, "PartitionProcessorConfiguration")
+    dedicated_value = processors.get("CurrentHasDedicatedProcessors")
     if dedicated_value in (True, "true"):
         mode = "dedicated"
     elif dedicated_value in (False, "false"):
         mode = "shared"
     else:
-        raise ValueError("Snapshot capture requires true/false HasDedicatedProcessors")
-    memory = resource.get("CurrentMemory")
-    units = resource.get("CurrentProcessingUnits") if mode == "shared" else None
-    dedicated = resource.get("DedicatedProcessors") if mode == "dedicated" else None
+        raise ValueError(
+            "Snapshot capture requires true/false CurrentHasDedicatedProcessors"
+        )
+    memory = _container(resource, "PartitionMemoryConfiguration").get("CurrentMemory")
+    units = (
+        _container(processors, "CurrentSharedProcessorConfiguration").get(
+            "CurrentProcessingUnits"
+        )
+        if mode == "shared"
+        else None
+    )
+    dedicated = (
+        _container(processors, "CurrentDedicatedProcessorConfiguration").get(
+            "CurrentProcessors"
+        )
+        if mode == "dedicated"
+        else None
+    )
     return {
         "state": _nonblank_text(resource.get("PartitionState"), "LPAR state"),
         "rmc_state": _nonblank_text(
@@ -333,15 +354,14 @@ def _identity_parts(
         raise ValueError("Snapshot capture requires a complete system MTMS")
     machine_type, model, serial = mtms
     machine_type_model = f"{machine_type}-{model}"
+    console_name = leaf_text(console_resource.get("ManagementConsoleName"))
+    hmc_name = console_name.strip() if isinstance(console_name, str) else ""
+    level = console_version(console_resource)
     return (
         HMCIdentity(
             uuid=_nonblank_text(console.get("UUID") if console else None, "HMC UUID"),
-            name=_nonblank_text(
-                console_resource.get("HostName"), "HMC name", optional=True
-            ),
-            version=_nonblank_text(
-                console_resource.get("Version"), "HMC version", optional=True
-            ),
+            name=hmc_name or None,
+            version=None if level is None else "V{}R{}M{}".format(*level),
         ),
         SystemIdentity(
             uuid=_nonblank_text(system.get("UUID") if system else None, "system UUID"),

@@ -191,10 +191,32 @@ async def fetch_metric_links(
             system_uuid=target.system_uuid,
         )
     except HMCError as exc:
+        if exc.status_code == 404:
+            raise _missing_metrics_feed(exc, kind, category) from exc
         translated = translate_pcm_error(exc)
         if translated is exc:
             raise
         raise translated from exc
+
+
+def _missing_metrics_feed(
+    exc: HMCError, kind: MetricKind, category: PcmCategory
+) -> HMCError:
+    """Explain a 404 on a metric feed path the reference documents.
+
+    The captured V11R2 HMC answered both metric feeds with 404 ("The supplied URI
+    does not identify a known resource") while every PCM collection preference
+    on the system was disabled (#1202).
+    """
+    feed = "ProcessedMetrics" if kind == "processed" else "AggregatedMetrics"
+    return HMCError(
+        f"The HMC has no {feed} feed for this {category} (HTTP 404). Check the "
+        "managed system's collection preferences with hmc_get_pcm_preferences: "
+        "a captured HMC returned this 404 while every collection preference was "
+        "disabled.",
+        exc.status_code,
+        body=exc.body,
+    )
 
 
 async def fetch_metric_data(

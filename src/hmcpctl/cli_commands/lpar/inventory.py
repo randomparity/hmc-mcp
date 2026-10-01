@@ -87,7 +87,7 @@ def lpars_list(
         None, "--system", "-s", help="Restrict to this managed system name or UUID"
     ),
     state: PartitionState | None = typer.Option(
-        None, "--state", help="Filter by PartitionState (server-side search)"
+        None, "--state", help="Filter by PartitionState"
     ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:

@@ -14,10 +14,10 @@ USER_FEED = """<feed xmlns="http://www.w3.org/2005/Atom"><entry>
 <id>urn:uuid:profile-1</id><title>UserProfile:alice</title>
 <content type="application/vnd.ibm.powervm.uom+xml"><UserProfile
 xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-<UserID>alice</UserID><AuthenticationType>Local</AuthenticationType>
+<UserID>alice</UserID><AuthenticationType ksv="V1_17_0" kb="CUD" kxe="false">local</AuthenticationType>
 </UserProfile></content></entry><entry><id>urn:uuid:profile-2</id>
 <content><UserProfile xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-<UserID>directory</UserID><AuthenticationType>LDAP</AuthenticationType>
+<UserID>directory</UserID><AuthenticationType ksv="V1_17_0" kb="CUD" kxe="false">ldap</AuthenticationType>
 </UserProfile></content></entry></feed>"""
 
 ROLE_FEED = """<feed xmlns="http://www.w3.org/2005/Atom"><entry>

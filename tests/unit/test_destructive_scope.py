@@ -127,7 +127,10 @@ def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
     server_vios.hmc_delete_vios("vios1", system_name_or_uuid="system-name")
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios1", system_uuid="system-uuid")
-    hmc.delete_logical_partition.assert_awaited_once_with("vios-uuid")
+    hmc.get_quick_property.assert_awaited_once_with(
+        "VirtualIOServer", "vios-uuid", "PartitionState"
+    )
+    hmc.delete_vios.assert_awaited_once_with("vios-uuid")
 
 
 def test_restore_vios_tool_forwards_system_scope(monkeypatch):

@@ -29,70 +29,7 @@
  },
  {
   "kind": "literal",
-  "file": "tests/app/test_server_tools.py",
-  "subject": "Status",
-  "value": "EXCEPTION",
-  "reason": "Status='EXCEPTION' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/app/test_server_tools.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/lpar/test_decommission_tool.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/lpar/test_lpar_ownership_bulk.py",
-  "subject": "PartitionState",
-  "value": "Not Activated",
-  "reason": "the HMC prints PartitionState in lower case ('not activated'); awaiting the #1202 jobs/LPAR fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/lpar/test_lpm_tools.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/unit/test_job_lifecycle.py",
-  "subject": "Status",
-  "value": "EXCEPTION",
-  "reason": "Status='EXCEPTION' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/unit/test_job_lifecycle.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/unit/test_operations_jobs.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
   "file": "tests/unit/test_operations_jobs_disappearance.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/unit/test_template_ownership.py",
   "subject": "Status",
   "value": "FAILED",
   "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"

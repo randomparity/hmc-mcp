@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-08-14)
+Accepted (2026-08-14). Amended 2026-09-30 (#1202): `failed_jobs` and the global Job-feed read
+are removed; see the amendment below.
 
 ## Context
 
@@ -76,3 +77,17 @@ optional telemetry. A stable warning preserves useful core health while making t
 **Return only four keys.** An empty failed-job list cannot distinguish a healthy supported feed
 from an unsupported one. An always-present warnings collection preserves a single schema and
 the distinction.
+
+## Amendment (2026-09-30, #1202)
+
+`failed_jobs` was never populated on a real HMC. `GET /rest/api/uom/Job` is not in the HMC
+REST reference, which documents only `GET` and `DELETE` on `rest/api/uom/jobs/{job_id}`, and
+every captured HMC (one at V10R3, three at V11R2; capture
+`tests/fixtures/live/rest-job-feed-refused.json` and the #1202 read-only sweep) refused it with
+`400 REST000B/REST000E "Unrecognized root REST type of Job"`. The response therefore always
+carried an empty `failed_jobs` and the unsupported-feed warning.
+
+The envelope is now `systems`, `vios`, `lpars` and `warnings`. `hmc_fleet_health` no longer
+reads the Job feed, and the job paragraphs above, the `failed_jobs` predicate, the tolerated
+`REST000E` error and the Job-status classification, describe behaviour that no longer exists.
+`hmc_list_recent_jobs`, the other reader of that feed, was removed in the same change.

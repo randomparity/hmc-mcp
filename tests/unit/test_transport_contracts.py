@@ -4,8 +4,8 @@ Reference rows exercised:
   rest:logon-and-logoff  — PUT/DELETE /rest/api/web/Logon,
                            X-API-Session token propagation,
                            LogonRequest/LogonResponse media types.
-  rest:job-status        — job-state vocabulary including EXCEPTION and
-                           COMPLETED_WITH_ERROR.
+  rest:job-status        — the documented job-state vocabulary
+                           (docs/refs/hmc-rest-api-p10/016-job-status.md).
 
 Each test names the row it binds, keeping the claim local to one assertion
 rather than spreading it across larger integration suites.
@@ -16,7 +16,7 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
-from conftest import LOGON_RESPONSE, make_config
+from conftest import LOGON_RESPONSE, live_response, make_config
 
 from hmcpctl.client.core import MEDIA_UOM, MEDIA_WEB, HMCClient
 from hmcpctl.errors import HMCError
@@ -206,18 +206,18 @@ async def test_uom_delete_sends_untyped_accept(mock_hmc):
     "status",
     [
         # rest:job-status row — actionable terminal statuses
-        "EXCEPTION",
+        "FAILED_BEFORE_COMPLETION",
         "COMPLETED_WITH_ERROR",
     ],
 )
 async def test_wait_for_job_treats_remaining_terminal_statuses_as_terminal(
     status, mock_hmc
 ):
-    """rest:job-status: EXCEPTION and COMPLETED_WITH_ERROR are terminal (row fields L00022–L00025).
+    """rest:job-status: FAILED_BEFORE_COMPLETION and COMPLETED_WITH_ERROR are terminal.
 
-    Both statuses are in TERMINAL_JOB_STATUSES but had no dedicated wait test.
     A wait that did not recognise them would loop until the deadline; this test
-    confirms they stop the poll immediately.
+    confirms they stop the poll immediately. The read is the captured V10R3
+    COMPLETED_OK job with only its Status replaced (#1202).
     """
     from hmcpctl.jobs import TERMINAL_JOB_STATUSES
 
@@ -225,24 +225,15 @@ async def test_wait_for_job_treats_remaining_terminal_statuses_as_terminal(
         f"{status!r} is not in TERMINAL_JOB_STATUSES — reference row contract broken"
     )
 
-    job_entry = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<entry xmlns="http://www.w3.org/2005/Atom">'
-        "  <id>urn:uuid:job-terminal</id>"
-        "  <content>"
-        f'    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
-        f"      <JobID>job-terminal</JobID>"
-        f"      <Status>{status}</Status>"
-        "    </Job>"
-        "  </content>"
-        "</entry>"
-    )
-    mock_hmc.get("/rest/api/uom/jobs/job-terminal").mock(
-        return_value=httpx.Response(200, text=job_entry)
+    path, captured = live_response("rest-job-completed-ok")
+    job_entry = captured.text.replace(">COMPLETED_OK<", f">{status}<")
+    assert job_entry != captured.text
+    mock_hmc.get(path).mock(
+        return_value=httpx.Response(200, text=job_entry, headers=captured.headers)
     )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.wait_for_job_entry(
-            "job-terminal", timeout_seconds=5, poll_interval=1
+            path.rsplit("/", 1)[-1], timeout_seconds=5, poll_interval=1
         )
     assert result is not None
     assert result["Resource"]["Status"] == status
@@ -252,7 +243,9 @@ async def test_wait_for_job_treats_remaining_terminal_statuses_as_terminal(
 async def test_terminal_status_set_matches_reference_row(mock_hmc):
     """rest:job-status: TERMINAL_JOB_STATUSES contains exactly the reference-documented values.
 
-    The reference (rows.json row 'rest:job-status') names eleven terminal states.
+    016-job-status.md names eight terminal states, and two console job pages
+    document a bare COMPLETED. EXCEPTION and FAILED appear in no reference and
+    no capture, so they stay out (#1202).
     This test pins the set so that a future edit is visible here.
     """
     from hmcpctl.jobs import TERMINAL_JOB_STATUSES
@@ -264,8 +257,6 @@ async def test_terminal_status_set_matches_reference_row(mock_hmc):
         "COMPLETED_OK",
         "COMPLETED_WITH_ERROR",
         "COMPLETED_WITH_WARNINGS",
-        "EXCEPTION",
-        "FAILED",
         "FAILED_BEFORE_COMPLETION",
         "FAILED_BEFORE_COMPLETION_RETRY",
         "FAILED_TO_START",

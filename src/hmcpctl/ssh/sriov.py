@@ -16,6 +16,7 @@ from .transport import HMCCLIError, run_hmc_command
 
 SriovMode = Literal["sriov", "dedicated"]
 _VALID_SRIOV_MODES = frozenset(get_args(SriovMode))
+_PHYSICAL_PORT_LEVELS = ("roce", "ethc", "eth")
 _SRIOV_LOGICAL_FIELDS = (
     "config_id",
     "lpar_name",
@@ -98,20 +99,28 @@ async def list_sriov_physical_port_rows(
         "curr_eth_logical_ports",
         "min_eth_capacity_granularity",
     )
+    # ADR 0183: a port lists at its own type level, and one V11R2 adapter lists
+    # ports at both eth and ethc, so read every level and merge the rows.
     commands = [
         f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level {level} --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(fields)} --header"
-        for level in ("roce", "ethc")
+        for level in _PHYSICAL_PORT_LEVELS
     ]
     validate_adapter_id(adapter_id)
-    roce_output = await run_hmc_command(config, commands[0])
-    ethc_output = await run_hmc_command(config, commands[1])
-    roce_rows = _parse_admitted_rows(roce_output, fields)
-    ethc_rows = _parse_admitted_rows(ethc_output, fields)
-    if roce_rows and ethc_rows:
-        raise HMCCLIError("physical port query returned both roce and ethc rows")
-    result = roce_rows or ethc_rows
-    if any(row["adapter_id"] != adapter_id for row in result):
-        raise HMCCLIError(f"physical port row adapter_id does not match {adapter_id!r}")
+    outputs = [await run_hmc_command(config, command) for command in commands]
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for output in outputs:
+        for row in _parse_admitted_rows(output, fields):
+            if row["adapter_id"] != adapter_id:
+                raise HMCCLIError(
+                    f"physical port row adapter_id does not match {adapter_id!r}"
+                )
+            if row["phys_port_id"] in seen:
+                raise HMCCLIError(
+                    f"physical port {row['phys_port_id']} is listed at more than one level"
+                )
+            seen.add(row["phys_port_id"])
+            result.append(row)
     return result
 
 

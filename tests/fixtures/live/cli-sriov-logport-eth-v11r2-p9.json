@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p9/capture-sriov.jsonl#12",
+  "command": "lshwres -r sriov --rsubtype logport -m sys-2 --level eth --filter adapter_ids=2 -F config_id,lpar_name,lpar_id,lpar_state,adapter_id,logical_port_id,logical_port_type,phys_port_id,functional_state,capacity,max_capacity --header",
+  "exit_status": 0,
+  "stdout": "config_id,lpar_name,lpar_id,lpar_state,adapter_id,logical_port_id,logical_port_type,phys_port_id,functional_state,capacity,max_capacity\n16384,lpar-4,100,Running,2,27008001,eth,0,1,2.0,100.0\n16385,lpar-4,100,Running,2,27008002,eth,0,1,2.0,100.0\n16386,lpar-4,100,Running,2,27008006,eth,0,1,2.0,100.0\n16387,lpar-4,100,Running,2,27008003,eth,1,1,2.0,100.0\n0,lpar-7,7,Running,2,27008004,eth,2,1,2.0,100.0\n",
+  "stderr": ""
+}

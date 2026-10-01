@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p11-9242/capture-raw.jsonl#68",
+  "command": "lshwres -r sriov --rsubtype adapter -m sys-2",
+  "exit_status": 0,
+  "stdout": "adapter_id=null,slot_id=21010010,adapter_max_logical_ports=null,config_state=dedicated,functional_state=1,logical_ports=null,phys_loc=dev-19,phys_ports=null,sriov_status=null,alternate_config=0,custom_max_capacity_capable=null,custom_min_capacity_capable=null,\"possible_adapter_config_options=0/80/12/Enterprise,1/16/4/Thin\",default_adapter_config_option=0,curr_adapter_config_option=0\n",
+  "stderr": ""
+}

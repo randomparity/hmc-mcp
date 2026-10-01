@@ -188,7 +188,14 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
             / "sriov-physport-granularity-v10r3.json"
         ).read_text()
     )["selection_cases"][0]
-    run = AsyncMock(side_effect=[current["roce"]["stdout"], current["ethc"]["stdout"]])
+    # This adapter lists nothing at --level eth on V10R3 (ADR 0183).
+    run = AsyncMock(
+        side_effect=[
+            current["roce"]["stdout"],
+            current["ethc"]["stdout"],
+            HMC_NO_RESULTS,
+        ]
+    )
     monkeypatch.setattr("hmcpctl.ssh.sriov.run_hmc_command", run)
 
     rows = await list_sriov_physical_port_rows(
@@ -206,6 +213,9 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     )
     assert run.await_args_list[1].args[1] == roce_command.replace(
         "--level roce", "--level ethc"
+    )
+    assert run.await_args_list[2].args[1] == roce_command.replace(
+        "--level roce", "--level eth"
     )
     fixture_sha256 = "fc498798590b1163a53a4f1bba4d40a0e12c4d010112b4a65ff16c03a53e9114"  # pragma: allowlist secret -- pinned fixture checksum
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()

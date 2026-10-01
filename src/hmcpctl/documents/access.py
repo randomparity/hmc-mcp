@@ -105,46 +105,50 @@ def build_hmc_user_document(
     return document_envelope("UserProfile", "\n".join(parts), UOM_NS)
 
 
-REMOTE_ACCESS_FIELDS = frozenset(
-    {
-        "LdapEnabled",
-        "PrimaryLdapUri",
-        "SecondaryLdapUri",
-        "TLSEncryptionEnabled",
-        "UseNonAnonymousBinding",
-        "BindDistinguishedName",
-        "BindPassword",
-        "LoginAttribute",
-        "BaseDistinguishedName",
-        "SearchScope",
-        "AutoManageEnabled",
-        "UserPolicyAtrribute",
-        "SearchFilter",
-        "LdapGroupLogin",
-        "LdapGroupMemberAttribute",
-        "KerberosAuthenticationEnabled",
-        "kerberosRemoteUserId",
-        "KerberosEnabled",
-        "DefaultRealm",
-        "ClockSkew",
-        "TicketLifeTime",
-        "AuthenticationTimeOut",
-        "RealmConfig",
-        "KerberosRealm",
-        "Hostname",
-        "Realm",
-    }
+_LDAP_FIELDS = (
+    "LdapEnabled",
+    "PrimaryLdapUri",
+    "SecondaryLdapUri",
+    "TLSEncryptionEnabled",
+    "UseNonAnonymousBinding",
+    "BindDistinguishedName",
+    "BindPassword",
+    "LoginAttribute",
+    "BaseDistinguishedName",
+    "SearchScope",
+    "AutoManageEnabled",
+    "UserPolicyAtrribute",
+    "SearchFilter",
+    "LdapGroupLogin",
+    "LdapGroupMemberAttribute",
+    "KerberosAuthenticationEnabled",
+    "kerberosRemoteUserId",
 )
+_KERBEROS_FIELDS = (
+    "KerberosEnabled",
+    "DefaultRealm",
+    "ClockSkew",
+    "TicketLifeTime",
+    "AuthenticationTimeOut",
+)
+# Each scalar RemoteAccess field lives in one documented container, never directly
+# under ManagementConsole (199-ldap.md:98-118 and 198-kerberos.md:103-124 in the
+# reference; the V10R3 console feed has the same shape). The KDC list
+# (`RealmConfig/KerberosRealm/{HostName,Realm}`) is not a scalar and is not settable.
+_REMOTE_ACCESS_CONTAINERS = {
+    **dict.fromkeys(_LDAP_FIELDS, "LdapConfiguration"),
+    **dict.fromkeys(_KERBEROS_FIELDS, "KerberosConfiguration"),
+}
+REMOTE_ACCESS_FIELDS = frozenset(_REMOTE_ACCESS_CONTAINERS)
 
 
-@escapes_string_arguments
-def build_remote_access_document(
-    values: dict[str, str | int | bool] | None = None,
-    clear_fields: list[str] | None = None,
-) -> str:
-    """Build a partial documented ``ManagementConsole`` RemoteAccess document."""
-    supplied = values or {}
-    cleared = clear_fields or []
+def _render_remote_access_value(value: str | int | bool) -> str:
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def _validate_remote_access_update(
+    supplied: dict[str, str | int | bool], cleared: list[str]
+) -> None:
     unknown = (set(supplied) | set(cleared)) - REMOTE_ACCESS_FIELDS
     if unknown:
         raise ValueError(f"Unknown RemoteAccess fields: {', '.join(sorted(unknown))}")
@@ -155,12 +159,49 @@ def build_remote_access_document(
         )
     if not supplied and not cleared:
         raise ValueError("RemoteAccess update must set or clear at least one field")
+
+
+@escapes_string_arguments
+def build_remote_access_document(
+    values: dict[str, str | int | bool] | None = None,
+    clear_fields: list[str] | None = None,
+) -> str:
+    """Build a partial documented ``ManagementConsole`` RemoteAccess document."""
+    supplied = values or {}
+    cleared = clear_fields or []
+    _validate_remote_access_update(supplied, cleared)
     parts = ["  <Metadata><Atom/></Metadata>"]
-    for name, value in supplied.items():
-        rendered = str(value).lower() if isinstance(value, bool) else value
-        parts.append(f'  <{name} kb="CUR" kxe="false">{rendered}</{name}>')
-    parts.extend(f'  <{name} kb="CUR" kxe="false"/>' for name in cleared)
+    for container in ("LdapConfiguration", "KerberosConfiguration"):
+        lines = [
+            f'    <{name} kb="CUR" kxe="false">'
+            f"{_render_remote_access_value(value)}</{name}>"
+            for name, value in supplied.items()
+            if _REMOTE_ACCESS_CONTAINERS[name] == container
+        ] + [
+            f'    <{name} kb="CUR" kxe="false"/>'
+            for name in cleared
+            if _REMOTE_ACCESS_CONTAINERS[name] == container
+        ]
+        if lines:
+            parts.append(f'  <{container} schemaVersion="V1_0">')
+            parts.extend(lines)
+            parts.append(f"  </{container}>")
     return document_envelope("ManagementConsole", "\n".join(parts), UOM_NS)
+
+
+def _remote_access_field(console: ET.Element, name: str) -> ET.Element:
+    """Return field *name* inside its container, adding the field if absent."""
+    container_name = _REMOTE_ACCESS_CONTAINERS[name]
+    container = console.find(f"{{*}}{container_name}")
+    if container is None:
+        raise ValueError(
+            f"RemoteAccess response has no {container_name}, so {name} cannot be "
+            "changed; this HMC level does not offer RemoteAccess configuration"
+        )
+    child = container.find(f"{{*}}{name}")
+    if child is None:
+        child = ET.SubElement(container, f"{{{UOM_NS}}}{name}")
+    return child
 
 
 def merge_remote_access_document(
@@ -178,17 +219,11 @@ def merge_remote_access_document(
     if console is None:
         raise ValueError("RemoteAccess response does not contain ManagementConsole")
 
-    children = {child.tag.rsplit("}", 1)[-1]: child for child in console}
     for name, value in (values or {}).items():
-        child = children.get(name)
-        if child is None:
-            child = ET.SubElement(console, f"{{{UOM_NS}}}{name}")
-        child.text = str(value).lower() if isinstance(value, bool) else str(value)
+        _remote_access_field(console, name).text = _render_remote_access_value(value)
     for name in clear_fields or []:
-        child = children.get(name)
-        if child is None:
-            child = ET.SubElement(console, f"{{{UOM_NS}}}{name}")
-        child.clear()
+        child = _remote_access_field(console, name)
+        child.text = None
         child.set("kb", "CUR")
         child.set("kxe", "false")
     return ET.tostring(console, encoding="unicode")

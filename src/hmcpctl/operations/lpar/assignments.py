@@ -19,6 +19,7 @@ from hmcpctl.operations.virtualization.pcie import (
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
+    require_admitted_environment,
     require_capacity_granularity,
     require_dedicated_pcie_environment,
     require_drc_index,
@@ -296,9 +297,14 @@ async def prevalidate_lpar_pcie_assignments(
 ) -> None:
     """Validate the complete collection without reserving or mutating resources."""
     requested_capacity, vios_identities = _analyze_assignment_requests(assignments)
-    if assignments.dedicated:
+    if assignments.dedicated or requested_capacity:
         system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
+    if assignments.dedicated:
         await require_dedicated_pcie_environment(hmc.config, system_name)
+    if requested_capacity:
+        # ADR 0183 widens SR-IOV reads only; refuse here, before any LPAR exists,
+        # an assignment the mutation envelope would refuse after creation.
+        await require_admitted_environment(hmc.config, system_name)
     await _validate_sriov_inventory(hmc, system_name_or_uuid, requested_capacity)
     await _validate_vios_inventory(hmc, system_name_or_uuid, vios_identities)
 

@@ -25,8 +25,7 @@ def test_fleet_health_handler_delegates_profile_and_preserves_shape() -> None:
         systems=({"name": "sys1", "state": "Error"},),
         vios=(),
         lpars=(),
-        failed_jobs=(),
-        warnings=("jobs unavailable",),
+        warnings=("inventory gap",),
     )
     operation = AsyncMock(return_value=result)
     with (
@@ -41,6 +40,5 @@ def test_fleet_health_handler_delegates_profile_and_preserves_shape() -> None:
         "systems": ({"name": "sys1", "state": "Error"},),
         "vios": (),
         "lpars": (),
-        "failed_jobs": (),
-        "warnings": ("jobs unavailable",),
+        "warnings": ("inventory gap",),
     }

@@ -27,9 +27,12 @@ EMPTY_REPO_FEED = """<?xml version="1.0" encoding="UTF-8"?>
   <entry>
     <content>
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <VirtualMediaRepository>
-          <RepositoryName>VMLibrary</RepositoryName>
-        </VirtualMediaRepository>
+        <MediaRepositories>
+          <VirtualMediaRepository>
+            <OpticalMedia><Metadata><Atom/></Metadata></OpticalMedia>
+            <RepositoryName>VMLibrary</RepositoryName>
+          </VirtualMediaRepository>
+        </MediaRepositories>
       </VolumeGroup>
     </content>
   </entry>
@@ -42,10 +45,12 @@ NONEMPTY_REPO_FEED = """<?xml version="1.0" encoding="UTF-8"?>
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <MediaRepositories>
           <VirtualMediaRepository>
-            <VirtualOpticalMedia>
-              <MediaName>test-image.iso</MediaName>
-              <MediaSize>4500</MediaSize>
-            </VirtualOpticalMedia>
+            <OpticalMedia>
+              <VirtualOpticalMedia>
+                <MediaName>test-image.iso</MediaName>
+                <Size>8.8262</Size>
+              </VirtualOpticalMedia>
+            </OpticalMedia>
           </VirtualMediaRepository>
         </MediaRepositories>
       </VolumeGroup>
@@ -60,11 +65,13 @@ MEDIA_VG_FEED = """<?xml version="1.0" encoding="UTF-8"?>
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <MediaRepositories>
           <VirtualMediaRepository>
+            <OpticalMedia>
+              <VirtualOpticalMedia>
+                <MediaName>test-image.iso</MediaName>
+                <Size>8.8262</Size>
+              </VirtualOpticalMedia>
+            </OpticalMedia>
             <RepositoryName>VMLibrary</RepositoryName>
-            <VirtualOpticalMedia>
-              <MediaName>test-image.iso</MediaName>
-              <MediaSize>4500</MediaSize>
-            </VirtualOpticalMedia>
           </VirtualMediaRepository>
         </MediaRepositories>
       </VolumeGroup>
@@ -113,10 +120,12 @@ HOSTILE_MEDIA_FEED = """<?xml version="1.0" encoding="UTF-8"?>
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <MediaRepositories>
           <VirtualMediaRepository>
-            <VirtualOpticalMedia>
-              <MediaName>evil&#10;image&#9;.iso</MediaName>
-              <MediaSize>4500</MediaSize>
-            </VirtualOpticalMedia>
+            <OpticalMedia>
+              <VirtualOpticalMedia>
+                <MediaName>evil&#10;image&#9;.iso</MediaName>
+                <Size>8.8262</Size>
+              </VirtualOpticalMedia>
+            </OpticalMedia>
           </VirtualMediaRepository>
         </MediaRepositories>
       </VolumeGroup>
@@ -162,14 +171,22 @@ async def test_delete_media_repository_refuses_nonempty(mock_hmc):
 @pytest.mark.asyncio
 async def test_delete_media_repository_succeeds_when_empty(mock_hmc):
     """delete_media_repository succeeds when repository is empty."""
-    mock_hmc.get(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
-    mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=EMPTY_REPO_FEED))
+    mock_hmc.get(VG_PATH).mock(
+        return_value=httpx.Response(
+            200, text=EMPTY_REPO_FEED, headers={"ETag": '"etag-1"'}
+        )
+    )
+    post = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(200, text=EMPTY_REPO_FEED)
+    )
 
     config = make_config()
     async with HMCClient(config) as hmc:
         result = await delete_media_repository(hmc, VIOS_UUID, VG_UUID)
 
     assert result == VIOS_UUID
+    assert post.call_count == 1
+    assert "MediaRepositories" not in post.calls.last.request.content.decode()
 
 
 @pytest.mark.asyncio

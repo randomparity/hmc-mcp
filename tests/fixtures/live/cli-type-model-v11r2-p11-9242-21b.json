@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p11-9242/capture-2.jsonl#51",
+  "command": "lssyscfg -r sys -m sys-2 -F type_model",
+  "exit_status": 0,
+  "stdout": "9242-21B\n",
+  "stderr": ""
+}

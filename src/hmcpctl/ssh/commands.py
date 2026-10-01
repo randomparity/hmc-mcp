@@ -28,6 +28,19 @@ _ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*[+-]?$")
 # An empty HMC read exits 0 and prints this sentinel, not an empty string
 # (docs/HMC_HINTS.md).
 HMC_NO_RESULTS = "No results were found."
+# A refusal opens with its HSCL code; run_hmc_command quotes it after ": ".
+_HMC_ERROR_CODE = re.compile(r"(?:^|[\r\n]|:\s)(HSCL[A-Z0-9]{4})\b")
+
+
+def hmc_error_code(error: HMCCLIError) -> str | None:
+    """Return the HSCL code that opens the HMC's refusal in *error*, if any.
+
+    The HMC prints a refusal on stdout and leaves stderr empty, and
+    :func:`run_hmc_command` quotes whichever stream carries it, so the code is
+    read from the error text. Some refusals carry no code.
+    """
+    match = _HMC_ERROR_CODE.search(str(error))
+    return match.group(1) if match else None
 
 
 def parse_hmc_delimited_rows(
