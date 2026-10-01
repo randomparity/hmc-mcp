@@ -267,9 +267,12 @@ sweep refuses one inside a git work tree), and never commit or paste it.
    parameter the sweep cannot supply is logged as a `skip` naming the parameter.
 
 2. Tokenize. Pass every lab name, host prefix and site word that could appear in
-   the output as `--private`; the export fails, writing nothing, when one survives,
-   and does the same for any collected name, URL host, IP address, location code,
-   session value or SSH key.
+   the output as `--private`. Collected names are tokenized first, so a partition
+   named after a lab system keeps its system token (`sys-R1-lp3`); a `--private`
+   match elsewhere replaces the whole word it sits in. The export fails, writing
+   nothing, when a match survives or a `<REDACTED-PRIVATE>` token is left joined to
+   the rest of a word, and does the same for any collected name, URL host, IP
+   address, location code, device id, session value or SSH key.
 
    ```sh
    uv run --no-sync python scripts/live_capture_export.py tokenize \

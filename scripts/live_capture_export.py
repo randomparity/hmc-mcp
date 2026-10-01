@@ -210,6 +210,11 @@ ALWAYS_LEAKS = (
     re.compile(_WWN_16),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
+    # A private token joined to a word left part of that word (a lab name's suffix)
+    # behind. Location and device tokens keep a generic suffix on purpose.
+    re.compile(
+        r"(?:<|&lt;)REDACTED-PRIVATE(?:>|&gt;)[\w.-]|[\w.-](?:<|&lt;)REDACTED-PRIVATE"
+    ),
     # A long upper-case hex run is a volume id or WWN; no UUID, etag or count is one.
     re.compile(r"(?<![0-9A-Za-z])[0-9A-F]{20,}"),
 )
@@ -388,6 +393,8 @@ class Tokenizer:
         self.names = names
         self.hosts = hosts
         self.private = [re.compile(p) for p in private]
+        # A match replaces the whole word it sits in, never only the matched fragment.
+        self._private_words = [re.compile(rf"[\w.-]*(?:{p})[\w.-]*") for p in private]
         self._uuids: dict[str, str] = {}
         spaced = sorted(
             (n for n in names if not WORD.fullmatch(n)), key=len, reverse=True
@@ -435,11 +442,13 @@ class Tokenizer:
             text = self._hosts.sub(f"{HMC_HOST}:443", text)
         for pattern, replacement in IDENTIFIER_RULES:
             text = pattern.sub(replacement, text)
-        for pattern in self.private:
-            text = pattern.sub("<REDACTED-PRIVATE>", text)
+        # Names first: a private pattern run earlier would cut the lab prefix out of
+        # `ltczz405-lp3`, the name would no longer match, and its suffix would leak.
         if self._spaced:
             text = self._spaced.sub(lambda m: self.names[m.group(0)], text)
         text = WORD.sub(self._word, text)
+        for pattern in self._private_words:
+            text = pattern.sub("<REDACTED-PRIVATE>", text)
         if xml:
             # The token must not open an element, or the body would stop parsing.
             text = re.sub(r"<(REDACTED-[A-Z]+)>", r"&lt;\1&gt;", text)
@@ -456,7 +465,7 @@ class Tokenizer:
         ]
         found += [host for host in self.hosts if host in text]
         for pattern in (*ALWAYS_LEAKS, *self.private):
-            found += pattern.findall(text)
+            found += [m.group(0) for m in pattern.finditer(text)]
         return found
 
 
