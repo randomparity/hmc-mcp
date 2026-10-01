@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p11-9824/capture-raw.jsonl#59",
+  "command": "lshmc -V",
+  "exit_status": 0,
+  "stdout": "\"version= Version: 11\n Release: 2\n Service Pack: 1120\nHMC Build level 2607082225\n\",\"base_version=V11R2\n\"\n",
+  "stderr": ""
+}
