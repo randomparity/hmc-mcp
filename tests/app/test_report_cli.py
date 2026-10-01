@@ -14,7 +14,9 @@ from hmcpctl import cli
 from hmcpctl.cli_commands import report
 from hmcpctl.config import ConfigError, HMCConfig
 from hmcpctl.operations.inventory.utilization import (
+    AdapterFigures,
     CpuFigures,
+    DiskFigures,
     FleetSurvey,
     MemoryFigures,
     PartitionFigures,
@@ -35,7 +37,13 @@ EXPECTED_COLUMNS = [
     "partitions_not_activated",
     "partitions_other", "profile_claims", "profile_claim_mem_mib", "profile_claim_cpu",
     "notes",
+    "disk_internal_total_mib", "disk_internal_assigned_mib", "disk_internal_free_mib",
+    "disk_san_total_mib", "disk_san_assigned_mib", "disk_san_free_mib", "disk_util_pct",
+    "slots_assigned", "slots_unassigned", "slots_sriov", "slots_empty", "slots_util_pct",
+    "sriov_adapters", "sriov_logical_ports", "sriov_logical_ports_free", "sriov_util_pct",
 ]  # fmt: skip
+DISK = DiskFigures(286102, 286102, 0, 102400, 0, 102400)
+UNKNOWN_DISK = DiskFigures(None, None, None, None, None, None)
 
 
 def _reading(profile: str, serial: str, *, vios: int | None = 1024) -> SystemReading:
@@ -50,6 +58,8 @@ def _reading(profile: str, serial: str, *, vios: int | None = 1024) -> SystemRea
         cpu=CpuFigures(48.0, 48.0, 2.0, 8.0, 4.0, 0.0, 34.0, 12.0, 2.0),
         memory=MemoryFigures(65536, 65536, 2048, vios, 8192, 4096, 0, 50176),
         partitions=PartitionFigures(2, 1, 0, 0, 0, 0),
+        disk=DISK if vios is not None else UNKNOWN_DISK,
+        adapters=AdapterFigures(1, 1, 1, 1, 1, 48, 2),
         shared_pools=(0,),
         gaps=() if vios is not None else ("VirtualIOServer feed: boom (HTTP 500)",),
     )
@@ -80,6 +90,7 @@ def configured(monkeypatch):
     calls: dict = {}
 
     async def fake_survey(profiles, open_client, *, concurrency, hmc_timeout):
+        calls["surveys"] = calls.get("surveys", 0) + 1
         calls.update(
             profiles=list(profiles),
             open_client=open_client,
@@ -130,7 +141,18 @@ def test_report_writes_system_hmc_fleet_and_failure_rows(configured, tmp_path) -
         "1024",
     )
     assert hmc_b["mem_configurable_mib"] == "131072"
-    assert hmc_b["notes"] == "mem_vios_mib: 1 of 2 systems unknown"
+    assert hmc_b["notes"] == "; ".join(
+        f"{column}: 1 of 2 systems unknown"
+        for column in (
+            "mem_vios_mib",
+            "disk_internal_total_mib",
+            "disk_internal_assigned_mib",
+            "disk_internal_free_mib",
+            "disk_san_total_mib",
+            "disk_san_assigned_mib",
+            "disk_san_free_mib",
+        )
+    )
     fleet = rows[4]
     assert fleet["systems"] == "2"
     assert fleet["notes"] == (
@@ -147,6 +169,29 @@ def test_report_writes_system_hmc_fleet_and_failure_rows(configured, tmp_path) -
     }
     assert "hmc-c" in result.stderr
     assert "Wrote 2 systems from 2 of 3 profiles" in result.stderr
+
+
+def test_report_writes_disk_and_adapter_columns(configured, tmp_path) -> None:
+    out = tmp_path / "report.csv"
+    result = RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(out)])
+
+    assert result.exit_code == 0, result.output
+    system, _, hmc_b, fleet = _rows(out)[1:5]
+    assert (system["disk_internal_total_mib"], system["disk_san_free_mib"]) == (
+        "286102",
+        "102400",
+    )
+    assert (system["disk_util_pct"], system["slots_util_pct"]) == ("73.6", "66.7")
+    assert (system["slots_sriov"], system["sriov_util_pct"]) == ("1", "95.8")
+    assert hmc_b["disk_internal_total_mib"] == "286102"
+    assert hmc_b["slots_assigned"] == "2"
+    # SER0001, read by two profiles, counts once: the fleet is SER0001 plus SER0002.
+    assert fleet["disk_internal_total_mib"] == "572204"
+    assert (fleet["sriov_logical_ports"], fleet["sriov_logical_ports_free"]) == (
+        "96",
+        "4",
+    )
+    assert fleet["disk_util_pct"] == "73.6"
 
 
 def test_unknown_vios_renders_unknown_not_zero(
@@ -168,6 +213,8 @@ def test_unknown_vios_renders_unknown_not_zero(
     assert result.exit_code == 0, result.output
     system = _rows(out)[0]
     assert system["mem_vios_mib"] == "unknown"
+    assert system["disk_san_total_mib"] == "unknown"
+    assert system["disk_util_pct"] == "unknown"
     assert system["notes"] == "VirtualIOServer feed: boom (HTTP 500)"
 
 
@@ -325,17 +372,116 @@ def test_fleet_row_discloses_systems_it_cannot_deduplicate(
     )
 
 
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        ["--csv", "absent/r.csv"],
+        ["--csv", "r.csv", "--html", "absent/r.html"],
+    ],
+)
 def test_missing_directory_is_a_usage_error_before_surveying(
-    configured, tmp_path
+    configured, tmp_path, outputs
 ) -> None:
-    result = RUNNER.invoke(
-        cli.app,
-        ["report", "utilization", "--csv", str(tmp_path / "absent" / "r.csv")],
-    )
+    args = [str(tmp_path / value) if "." in value else value for value in outputs]
+    result = RUNNER.invoke(cli.app, ["report", "utilization", *args])
 
     assert result.exit_code == 2
     assert "cannot write the report beside" in result.stderr
     assert "profiles" not in configured
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_html_alone_writes_an_owner_only_page(configured, tmp_path) -> None:
+    out = tmp_path / "report.html"
+    result = RUNNER.invoke(cli.app, ["report", "utilization", "--html", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert out.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+    assert stat.S_IMODE(out.stat().st_mode) == 0o600
+    assert list(tmp_path.iterdir()) == [out]
+
+
+def test_csv_and_html_share_one_survey(configured, tmp_path) -> None:
+    csv_out, html_out = tmp_path / "r.csv", tmp_path / "r.html"
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(csv_out), "--html", str(html_out)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert configured["surveys"] == 1
+    assert _rows(csv_out)[0]["system"] == "system-1"
+    assert "system-1" in html_out.read_text(encoding="utf-8")
+    assert sorted(tmp_path.iterdir()) == [csv_out, html_out]
+    summary = "".join(result.stderr.split())  # Rich wraps long paths anywhere
+    assert f"to{csv_out}and{html_out}" in summary
+
+
+def test_no_output_is_a_usage_error(configured) -> None:
+    result = RUNNER.invoke(cli.app, ["report", "utilization"])
+
+    assert result.exit_code == 2
+    assert "--csv" in result.stderr
+    assert "--html" in result.stderr
+    assert "profiles" not in configured
+
+
+@pytest.mark.parametrize("names", [("r.out", "r.out"), ("R.out", "r.out")])
+def test_same_path_for_both_is_a_usage_error(configured, tmp_path, names) -> None:
+    csv_name, html_name = names
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(tmp_path / csv_name),
+         "--html", str(tmp_path / html_name)],
+    )  # fmt: skip
+
+    assert result.exit_code == 2
+    assert "name the same file" in result.stderr
+    assert "profiles" not in configured
+
+
+def test_every_profile_failed_still_writes_both_files(
+    configured, tmp_path, monkeypatch
+) -> None:
+    async def fake(profiles, open_client, *, concurrency, hmc_timeout):
+        return FleetSurvey(
+            ("hmc-a", "hmc-b"),
+            (),
+            (ProfileFailure("hmc-a", "timed out"), ProfileFailure("hmc-b", "refused")),
+        )
+
+    monkeypatch.setattr(report, "survey_fleet", fake)
+    csv_out, html_out = tmp_path / "r.csv", tmp_path / "r.html"
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(csv_out), "--html", str(html_out)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [row["row_type"] for row in _rows(csv_out)] == [
+        "fleet",
+        "failure",
+        "failure",
+    ]
+    page = html_out.read_text(encoding="utf-8")
+    assert "No systems were surveyed." in page
+    assert "<td>hmc-b</td><td>refused</td>" in page
+
+
+def test_html_write_failure_leaves_no_file(configured, tmp_path, monkeypatch) -> None:
+    def broken(rows, profiles, generated):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(report, "render_html", broken)
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(tmp_path / "r.csv"),
+         "--html", str(tmp_path / "r.html")],
+    )  # fmt: skip
+
+    assert result.exit_code == 1
+    assert "No space left on device" in result.stderr
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_no_configured_profiles_fails(configured, tmp_path, monkeypatch) -> None:

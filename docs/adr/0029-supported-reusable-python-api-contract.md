@@ -341,8 +341,9 @@ keys of every owned model it has reached and of every model `__all__` exports, a
 alias clause is read off those same field annotations — through each model's MRO, because an
 inherited field carries its annotation on the base that declares it. That closure found nineteen
 further omissions (#482): twelve `snapshot` models behind `LparSnapshot`, and seven literal
-aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`,
-`ResourceKind`, `SharingMode`, and `StopReason` — that no selected signature named. One limit
+aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`
+(removed by #1179; no longer exported), `ResourceKind`, `SharingMode`, and
+`StopReason` — that no selected signature named. One limit
 remains deliberate: an underscore name is internal here as everywhere.
 
 An exported `TypedDict` needs two adjustments the other two shapes do not. Its annotations arrive
