@@ -21,20 +21,6 @@
   "reason": "not captured; no tool reached it in the 2026-09-30 sweeps. live_capture_sweep.py now probes it (vio-vnicbkdev) (#1202)"
  },
  {
-  "kind": "literal",
-  "file": "tests/app/test_cli_commands.py",
-  "subject": "Status",
-  "value": "running",
-  "reason": "Status='running' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
-  "kind": "literal",
-  "file": "tests/unit/test_operations_jobs_disappearance.py",
-  "subject": "Status",
-  "value": "FAILED",
-  "reason": "Status='FAILED' is neither captured nor in JobStatus.Enum; awaiting its #1202 domain fix"
- },
- {
   "kind": "rest-path",
   "file": "src/hmcpctl/client/client_cluster.py",
   "subject": "/rest/api/uom/Cluster/{}",

@@ -199,7 +199,7 @@ class FakeHMC:
         self.job = {
             "UUID": JOB_UUID,
             "link": f"/jobs/{JOB_UUID}",
-            "Resource": {"JobName": "PowerOn", "Status": "running"},
+            "Resource": {"JobName": "PowerOn", "Status": "RUNNING"},
         }
         self.system = {
             "UUID": SYSTEM_UUID,
@@ -3644,7 +3644,7 @@ def test_lpm_recovery_commands_forward_wait_timing(fake_hmc, args):
 
 
 def test_lpm_recovery_command_renders_timeout_outcome(fake_hmc):
-    fake_hmc.wait_job_status = "running"
+    fake_hmc.wait_job_status = "RUNNING"
     result = RUNNER.invoke(
         cli.app,
         [
@@ -3662,7 +3662,7 @@ def test_lpm_recovery_command_renders_timeout_outcome(fake_hmc):
 
     assert result.exit_code == 0, result.output
     assert f'"job_id": "{JOB_UUID}"' in result.stdout
-    assert '"status": "running"' in result.stdout
+    assert '"status": "RUNNING"' in result.stdout
     assert '"timed_out": true' in result.stdout
     assert '"error": null' in result.stdout
     assert '"job": {' in result.stdout
