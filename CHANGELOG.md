@@ -13,6 +13,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmcpctl report utilization --csv PATH` surveys every configured profile read-only and writes
   per-system, per-HMC and fleet CPU and memory allocation, idle reserved capacity, and failed
   profiles (#1252, ADR 0184).
+- `hmcpctl report utilization` adds VIOS disk capacity (internal and SAN; assigned and free),
+  I/O slot occupancy and SR-IOV logical ports per system and in each roll-up, appended after
+  `notes` (#1253, ADR 0185).
 - A tracked read-only capture pipeline and an offline gate over it (#1202).
   `scripts/live_capture_sweep.py` calls every read-only MCP tool and a declared list of
   raw GETs and `ls*` commands against one HMC profile, below a guard that refuses any

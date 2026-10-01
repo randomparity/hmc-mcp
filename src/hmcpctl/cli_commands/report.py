@@ -17,13 +17,13 @@ from rich.markup import escape
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import ConfigError, config_inventory, env_var_value, load_profile
 from hmcpctl.operations.inventory.utilization import (
-    CpuFigures,
+    FIGURE_GROUPS,
     FleetSurvey,
     FleetSystem,
-    MemoryFigures,
-    PartitionFigures,
     Rollup,
+    SystemReading,
     allocated,
+    capacity_pairs,
     fleet_systems,
     rollup,
     survey_fleet,
@@ -72,7 +72,25 @@ COLUMNS = (
     "profile_claim_mem_mib",
     "profile_claim_cpu",
     "notes",
+    "disk_internal_total_mib",
+    "disk_internal_assigned_mib",
+    "disk_internal_free_mib",
+    "disk_san_total_mib",
+    "disk_san_assigned_mib",
+    "disk_san_free_mib",
+    "disk_util_pct",
+    "slots_assigned",
+    "slots_unassigned",
+    "slots_sriov",
+    "slots_empty",
+    "slots_util_pct",
+    "sriov_adapters",
+    "sriov_logical_ports",
+    "sriov_logical_ports_free",
+    "sriov_util_pct",
 )
+# Utilizations beyond CPU and memory, each a capacity_pairs key with a *_util_pct column.
+_UTILIZATIONS = ("disk", "slots", "sriov")
 _UNKNOWN = "unknown"
 # An exported value would override every profile's own, sending one HMC's host,
 # credentials or TLS setting to all of them (load_profile's env-over-TOML precedence).
@@ -118,25 +136,20 @@ def _column(group: str, figure: str) -> str:
         return f"cpu_{figure}"
     if group == "memory":
         return f"mem_{figure}_mib"
+    if group == "disk":
+        return f"disk_{figure}_mib"
+    if group == "adapters":
+        return figure
     return _PARTITION_COLUMNS[figure]
 
 
-def _figure_cells(
-    cpu: CpuFigures, memory: MemoryFigures, partitions: PartitionFigures
-) -> dict[str, str]:
-    cells: dict[str, str] = {}
-    for group, figures in (
-        ("cpu", cpu),
-        ("memory", memory),
-        ("partitions", partitions),
-    ):
-        cells.update(
-            {
-                _column(group, item.name): _cell(getattr(figures, item.name))
-                for item in fields(figures)
-            }
-        )
-    return cells
+def _figure_cells(source: SystemReading | Rollup) -> dict[str, str]:
+    return {
+        _column(group, item.name): _cell(getattr(figures, item.name))
+        for group in FIGURE_GROUPS
+        for figures in (getattr(source, group),)
+        for item in fields(figures)
+    }
 
 
 def _system_row(system: FleetSystem) -> dict[str, str]:
@@ -167,7 +180,11 @@ def _system_row(system: FleetSystem) -> dict[str, str]:
         "mem_util_pct": _cell(
             utilization_pct(reading.memory.configurable, reading.memory.free)
         ),
-        **_figure_cells(reading.cpu, reading.memory, reading.partitions),
+        **{
+            f"{name}_util_pct": _cell(utilization_pct(*capacity_pairs(reading)[name]))
+            for name in _UTILIZATIONS
+        },
+        **_figure_cells(reading),
     }
 
 
@@ -185,7 +202,11 @@ def _rollup_row(row_type: str, profiles: str, total: Rollup) -> dict[str, str]:
         "mem_allocated_mib": _cell(total.mem_allocated),
         "mem_util_pct": _cell(total.mem_util_pct),
         "notes": notes,
-        **_figure_cells(total.cpu, total.memory, total.partitions),
+        **{
+            f"{name}_util_pct": _cell(getattr(total, f"{name}_util_pct"))
+            for name in _UTILIZATIONS
+        },
+        **_figure_cells(total),
     }
 
 
@@ -302,7 +323,7 @@ def report_utilization(
         300.0, "--hmc-timeout", min=1.0, help="Seconds allowed per profile."
     ),
 ) -> None:
-    """Survey configured HMCs and write CPU and memory allocation as CSV.
+    """Survey configured HMCs and write CPU, memory, disk and adapter allocation as CSV.
 
     The report holds internal hostnames, system names and serials: never commit it
     or post it publicly.
