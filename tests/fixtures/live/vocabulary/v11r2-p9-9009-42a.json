@@ -3232,6 +3232,15 @@
     "error_streams": []
    },
    {
+    "command": "lshwres -r sriov --rsubtype adapter -m {} -F adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lshwres -r sriov --rsubtype logport --level eth -m {}",
     "exit_status": [
      0
@@ -3242,6 +3251,15 @@
    },
    {
     "command": "lshwres -r sriov --rsubtype logport -m {}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype logport -m {} --level eth --filter adapter_ids={} -F config_id,lpar_name,lpar_id,lpar_state,adapter_id,logical_port_id,logical_port_type,phys_port_id,functional_state,capacity,max_capacity --header",
     "exit_status": [
      0
     ],
@@ -3276,6 +3294,33 @@
     "outputs": [
      "No results were found."
     ],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype physport -m {} --level eth --filter adapter_ids={} -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype physport -m {} --level ethc --filter adapter_ids={} -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype physport -m {} --level roce --filter adapter_ids={} -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
     "error_streams": []
    },
    {
@@ -4045,6 +4090,9 @@
    "lshwres -r sriov --rsubtype physport --level eth :: max_recv_packet_size": [
     "<int>"
    ],
+   "lshwres -r sriov --rsubtype physport --level eth :: min_eth_capacity_granularity": [
+    "<float>"
+   ],
    "lshwres -r sriov --rsubtype physport --level eth :: phys_port_id": [
     "<int>"
    ],
@@ -4128,6 +4176,9 @@
    ],
    "lshwres -r sriov --rsubtype physport --level ethc :: max_recv_packet_size": [
     "<int>"
+   ],
+   "lshwres -r sriov --rsubtype physport --level ethc :: min_eth_capacity_granularity": [
+    "<float>"
    ],
    "lshwres -r sriov --rsubtype physport --level ethc :: phys_port_id": [
     "<int>"
