@@ -42,6 +42,8 @@ async def test_list_io_slots_all_returns_list():
         "100",
         "0200",
     )
+    # A list value comes quoted, `"feature_codes=5260,5899"`, and stays one pair.
+    assert owned["feature_codes"] == "5260,5899"
     assert "lpar_name" not in unowned
     assert unowned["lpar_id"] == "none"
     assert {slot["pci_class"] for slot in slots} == {"FFFF", "0200", "0104", "0C03"}
