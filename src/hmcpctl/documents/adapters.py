@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import re
+
 from ..xmlutil import escapes_string_arguments
 from .common import document_envelope
+
+# chhwres documents a virtual Ethernet mac_addr as 12 hexadecimal characters
+# (hmc-commands chhwres -a), and the HMC prints MACs that way (#1202).
+_MAC_ADDRESS = re.compile(r"[0-9A-Fa-f]{12}")
 
 
 def _adapter_document(
@@ -102,6 +108,11 @@ def build_client_network_adapter_document(
     if tagged:
         parts.append('  <IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>')
     if mac_address:
+        if not _MAC_ADDRESS.fullmatch(mac_address):
+            raise ValueError(
+                f"mac_address {mac_address!r} must be 12 hexadecimal digits with "
+                "no separators, for example 020000000001"
+            )
         parts.append(f'  <MACAddress kb="CUR" kxe="false">{mac_address}</MACAddress>')
     body = "\n".join(parts)
     return document_envelope("ClientNetworkAdapter", body)

@@ -174,13 +174,11 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     roce_probe = next(
         probe for probe in capture["probes"] if probe["name"] == "physical-ports"
     )
-    # The capture predates #1035, which appended one attribute to the projection;
-    # its rows still parse under the fields it was captured with, and the #1035
-    # capture of the current projection is what the reader must accept.
-    assert {
-        row["phys_port_type"]
-        for row in parse_hmc_delimited_rows(roce_probe["stdout"], roce_probe["fields"])
-    } == {"eth"}
+    # The #214 record was transcribed: its rows print `eth` at --level roce, which
+    # no byte capture of this adapter does (#1202). Its command is still the
+    # projection before #1035 appended one attribute; the #1035 capture of the
+    # current projection is what the reader must accept.
+    assert capture["support"] == "transcribed"
     current = json.loads(
         (
             ROOT
@@ -200,6 +198,7 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     )
 
     assert rows == current["expected_rows"]
+    assert {row["phys_port_type"] for row in rows} == {"roce"}
     roce_command = run.await_args_list[0].args[1]
     assert roce_command == roce_probe["command"].replace(
         "curr_eth_logical_ports --header",
@@ -208,7 +207,7 @@ async def test_captured_roce_rows_are_accepted_with_empty_ethc_companion(
     assert run.await_args_list[1].args[1] == roce_command.replace(
         "--level roce", "--level ethc"
     )
-    fixture_sha256 = "67910d8a6d60bf4bb6bc5e64c890d3486789beaca547742706dce09fe2a42965"  # pragma: allowlist secret -- pinned fixture checksum
+    fixture_sha256 = "fc498798590b1163a53a4f1bba4d40a0e12c4d010112b4a65ff16c03a53e9114"  # pragma: allowlist secret -- pinned fixture checksum
     fixture_bytes = (FIXTURES / "power9-v10r3m1060-live-sriov.json").read_bytes()
     assert hashlib.sha256(fixture_bytes).hexdigest() == fixture_sha256
     with pytest.raises(AssertionError):
@@ -235,7 +234,10 @@ def test_evidence_records_have_closed_versioned_shapes() -> None:
             assert record["evidence_kind"] == "live-capture"
             assert record["hmc_release"] == "V10R3 M1060 build 2408210051"
             assert record["system_model"] == "8375-42A"
-            assert record["support"] == "captured"
+            if record["support"] == "transcribed":
+                assert record["transcription_note"]
+            else:
+                assert record["support"] == "captured"
             assert str(record["source_url"]).startswith("https://github.com/")
             assert record["probes"]
             for probe in record["probes"]:
@@ -326,7 +328,7 @@ def test_evidence_pins_identity_and_capacity_semantics() -> None:
     ]
     assert records["power9-sriov-physport"]["admitted_claims"] == [
         "system + adapter_id + phys_port_id selectors",
-        "physical-port selector grammar uses --level eth",
+        "physical-port reads select --level roce or ethc, never eth (ADR 0113)",
         "read fields remain unknown",
     ]
     expected_capacity_claims = [

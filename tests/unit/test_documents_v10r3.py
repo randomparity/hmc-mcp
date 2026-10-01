@@ -54,9 +54,7 @@ def test_vscsi_adapter_matches_fixture() -> None:
 LINK = "https://hmc.example.invalid/rest/api/uom/LogicalPartition/lpar-1"
 RECORDED = [
     (
-        documents.build_client_network_adapter_document(
-            42, 3, 1, True, "02:00:00:00:00:01"
-        ),
+        documents.build_client_network_adapter_document(42, 3, 1, True, "020000000001"),
         {
             "VirtualSlotNumber": "COD",
             "VirtualSwitchID": "ROR",
@@ -210,7 +208,7 @@ BUILT = {
     "vscsi-adapter": documents.build_vscsi_adapter_document(1, 2, 3),
     "vfc-adapter": documents.build_vfc_adapter_document(1, 2, 3),
     "network-adapter": documents.build_client_network_adapter_document(
-        1, 2, 0, True, "02:00:00:00:00:01"
+        1, 2, 0, True, "020000000001"
     ),
     "volume-group": documents.build_volume_group_document("vg1", ["hdisk1"]),
     "virtual-disk": documents.build_virtual_disk_element("lv1", 1024),
