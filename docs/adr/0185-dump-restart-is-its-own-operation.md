@@ -46,6 +46,9 @@ The operator decided on 2026-10-01 that the crash gets an operation id distinct 
 - **Authorization-contract change.** An existing grant that names `hmc_power_off_lpar` no
   longer permits `dumprestart`. Restoring it means adding `hmc_dump_restart_lpar` to the grant.
   An `effects = ["destructive"]` grant keeps the crash. The CHANGELOG records this.
+- **Input-schema change.** `hmc_power_off_lpar` no longer accepts `allow_dump_restart`. FastMCP
+  refuses an unexpected argument, so a call that still passes it is refused, even with `false`
+  on an ordinary shutdown. The fix is to drop the argument. The CHANGELOG records this too.
 - The served `authorization` record (ADR 0040) now names the crash by its tool. ADR 0180's
   `lpar-power-off` record is unchanged: the new tool reaches `power_lpar`, which writes it.
 - The CLI (`hmcpctl lpars power-off --operation dumprestart --allow-dump-restart`) and the
@@ -55,8 +58,9 @@ The operator decided on 2026-10-01 that the crash gets an operation id distinct 
   and no recorded use sends anything else. Adding them later is an additive parameter.
 - `lpar.power_off` loses its `dump-restart` implemented-scope variant in
   `docs/capabilities/maturity.json`. `lpar.dump_restart` enters with that variant and no live
-  evidence, so it reads `unevidenced` until the bare-CEC arm's opt-in dump step runs through
-  the new tool.
+  evidence, so it reads `unevidenced`. The bare-CEC arm's opt-in dump step records an ordinary
+  row, not a `record_verified` one, so promoting the operation needs a verified step this change
+  does not add.
 - The tool count rises by one.
 
 ## Considered & rejected
