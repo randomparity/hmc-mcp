@@ -91,6 +91,21 @@ def test_load_evidence_unions_enum_and_observed_literals(tmp_path: Path) -> None
     assert "Other" not in evidence.allowed  # unbound elements are not checked
 
 
+def test_load_evidence_unions_firmware_releases(tmp_path: Path) -> None:
+    """A value any release answered or enumerates is valid; no release overrides another."""
+    directory = tmp_path / guard.VOCABULARY_DIR
+    directory.mkdir(parents=True)
+    (directory / "va-p9.json").write_text(json.dumps(VOCABULARY))
+    newer = json.loads(json.dumps(VOCABULARY))
+    newer["rest"]["values"] = {"PartitionState": ["migrating"]}
+    (directory / "vb-p10.json").write_text(json.dumps(newer))
+    (directory / "enums-va.json").write_text(json.dumps(ENUMS))
+    later = {"types": {"LogicalPartitionState.Enum": ["suspended"]}}
+    (directory / "enums-vb.json").write_text(json.dumps(later))
+    allowed = guard.load_evidence(tmp_path).allowed["PartitionState"]
+    assert allowed == {"running", "error", "suspended", "open firmware", "migrating"}
+
+
 def test_load_evidence_refuses_an_empty_directory(tmp_path: Path) -> None:
     (tmp_path / guard.VOCABULARY_DIR).mkdir(parents=True)
     with pytest.raises(FileNotFoundError):

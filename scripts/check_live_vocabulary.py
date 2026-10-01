@@ -100,14 +100,14 @@ class Evidence:
 
 
 def load_evidence(root: Path) -> Evidence:
+    """Every vocabulary and enum list, unioned: a value any firmware answered is valid."""
     directory = root / VOCABULARY_DIR
-    types: dict[str, list[str]] = {}
+    types: dict[str, set[str]] = {}
     for path in sorted(directory.glob("enums-*.json")):
-        types.update(json.loads(path.read_text(encoding="utf-8"))["types"])
-    observed: dict[str, set[str]] = {}
-    bindings: dict[str, str] = {}
-    endpoints: list[str] = []
-    commands: list[str] = []
+        for name, values in json.loads(path.read_text(encoding="utf-8"))[
+            "types"
+        ].items():
+            types.setdefault(name, set()).update(values)
     vocabularies = [
         p
         for p in sorted(directory.glob("*.json"))
@@ -115,6 +115,10 @@ def load_evidence(root: Path) -> Evidence:
     ]
     if not vocabularies:
         raise FileNotFoundError(f"no vocabulary in {directory}")
+    observed: dict[str, set[str]] = {}
+    bindings: dict[str, set[str]] = {}
+    endpoints: list[str] = []
+    commands: list[str] = []
     for path in vocabularies:
         vocabulary = json.loads(path.read_text(encoding="utf-8"))
         rest = vocabulary["rest"]
@@ -122,14 +126,16 @@ def load_evidence(root: Path) -> Evidence:
             observed.setdefault(element, set()).update(
                 v for v in values if v[:1] != "<"
             )
-        bindings.update(rest["element_enums"])
+        for element, enum in rest["element_enums"].items():
+            bindings.setdefault(element, set()).add(enum)
         endpoints += [e["path"] for e in rest["endpoints"] if e["method"] == "GET"]
         commands += [c["command"] for c in vocabulary["cli"]["commands"]]
     allowed = {
-        element: set(types.get(enum, ())) | observed.get(element, set())
-        for element, enum in bindings.items()
+        element: observed.get(element, set()).union(*(types.get(e, ()) for e in enums))
+        for element, enums in bindings.items()
     }
-    return Evidence(allowed, bindings, endpoints, commands)
+    named = {element: " or ".join(sorted(enums)) for element, enums in bindings.items()}
+    return Evidence(allowed, named, endpoints, commands)
 
 
 # --- literal values -----------------------------------------------------------
