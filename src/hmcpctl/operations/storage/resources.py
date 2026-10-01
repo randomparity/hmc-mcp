@@ -300,7 +300,8 @@ def _names_disk_inline(backing: dict[str, Any], vg_uuid: str, disk_name: str) ->
         return False
     group = backing.get("VolumeGroup")
     group_link = group.get("href", "") if isinstance(group, dict) else ""
-    # UUIDs compare case-insensitively; the HMC sends lowercase hrefs.
+    # UUIDs compare case-insensitively: V10R3 links a VolumeGroup by a lower-case
+    # UUID under an upper-case VIOS UUID.
     suffix = f"/volumegroup/{vg_uuid.lower()}"
     return not group_link or group_link.rstrip("/").lower().endswith(suffix)
 

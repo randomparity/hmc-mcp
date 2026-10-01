@@ -6,6 +6,7 @@ UUID, is identified by server adapter and target device, and names its client
 LPAR by an absolute, system-scoped href.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -197,6 +198,30 @@ async def test_list_storage_mappings_filters_by_lpar(mock_hmc):
         mappings = await hmc.list_storage_mappings(VIOS_UUID, LPAR_B)
 
     assert [storage_mapping_id(m) for m in mappings] == ["vhost1/vtscsi1"]
+
+
+@pytest.mark.asyncio
+async def test_list_storage_mappings_filters_live_lpar_case_insensitively(mock_hmc):
+    """A lower-case LPAR selector matches the upper-case UUID V10R3 links (#1202)."""
+    capture = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "fixtures"
+            / "live"
+            / "rest-vios-scsi-mapping.json"
+        ).read_text()
+    )
+    mock_hmc.get(capture["path"]).mock(
+        return_value=httpx.Response(200, text=capture["body"])
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        mappings = await hmc.list_storage_mappings(
+            "00000005-ABCD-4EF0-8ABC-000000000005",
+            "00000004-abcd-4ef0-8abc-000000000004",
+        )
+
+    assert [storage_mapping_id(m) for m in mappings] == ["dev-369/dev-256"]
 
 
 @pytest.mark.asyncio

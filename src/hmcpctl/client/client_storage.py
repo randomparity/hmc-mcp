@@ -63,13 +63,15 @@ def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
         f"{{{_UOM_NS}}}Metadata/{{{_UOM_NS}}}Atom/{{{_UOM_NS}}}AtomID"
     )
     partition_uuids = vios_elem.findall(f"{{{_UOM_NS}}}PartitionUUID")
+    # V10R3 prints partition UUIDs upper case and answers either case in a path.
+    expected = vios_uuid.casefold()
     mismatched = (
         len(atom_ids) != 1
-        or (atom_ids[0].text or "").strip() != vios_uuid
+        or (atom_ids[0].text or "").strip().casefold() != expected
         or len(partition_uuids) > 1
         or (
             len(partition_uuids) == 1
-            and (partition_uuids[0].text or "").strip() != vios_uuid
+            and (partition_uuids[0].text or "").strip().casefold() != expected
         )
     )
     if mismatched:
@@ -211,7 +213,9 @@ def mapping_lpar_uuid(mapping: Mapping[str, Any]) -> str | None:
 
 
 def _mapping_targets_lpar(mapping: Mapping[str, Any], lpar_uuid: str) -> bool:
-    return mapping_lpar_uuid(mapping) == lpar_uuid
+    # The HMC links LPARs by upper-case UUID; a selector may use either case.
+    linked = mapping_lpar_uuid(mapping)
+    return linked is not None and linked.casefold() == lpar_uuid.casefold()
 
 
 def _children_named(parent: ET.Element, name: str) -> list[ET.Element]:
