@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
+from conftest import live_fixture
 from fastmcp import Client
 from typer.testing import CliRunner
 
@@ -120,7 +121,16 @@ def test_calculated_query_preserves_sentinel_and_marks_prediction():
     assert result.items[0]["prediction_guaranteed"] is False
 
 
-@pytest.mark.parametrize("version", ["", "Version: eleven", "V10R3M1060"])
+@pytest.mark.parametrize(
+    "version",
+    [
+        "",
+        "Version: eleven",
+        "V10R3M1060",
+        # The captured answer: labelled fields, fix lines and base_version.
+        pytest.param(live_fixture("cli-lshmc-version")["stdout"], id="v10r3-capture"),
+    ],
+)
 def test_unadmitted_hmc_returns_capability_without_score_query(version):
     runner = AsyncMock(return_value=version)
     with patch("hmcpctl.ssh.affinity.run_hmc_command", runner):

@@ -5,12 +5,13 @@ REST answers and the refcode listing from captures recorded with
 `scripts/live_test/capture.py`, and two CLI listings (`cli-io-slots.json`,
 `cli-lpar-uuid-name.json`) from raw read-only command output. The captures were
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
-records the patterns they show.
+records the patterns they show. CLI captures whose `capture` begins `2026-09-30-ro/` come
+from the read-only sweep for #1202, on the same HMC and system; a nonzero-exit one is
+raised in tests with `live_process_error(name)`.
 
-The VIOS and storage files added for issue #1202 (`rest-lpar-path-vios`,
+The VIOS and storage REST captures from that sweep are `rest-lpar-path-vios`,
 `rest-lpar-quick-vios`, `rest-vios-*`, `rest-ms-vios-feed-media` and
-`rest-volume-group`) come from the same HMC's 2026-09-30 read-only capture;
-their `capture` field is prefixed `2026-09-30-ro/`.
+`rest-volume-group`, with the same `capture` prefix.
 
 ## Format
 

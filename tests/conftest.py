@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import asyncssh
 import fastmcp  # noqa: F401 — imported for its import-time logging configuration
 import httpx
 import pytest
@@ -332,6 +333,24 @@ def live_response(name: str) -> tuple[str, httpx.Response]:
         headers={"Content-Type": capture["content_type"]},
     )
     return capture["path"], response
+
+
+def live_process_error(name: str) -> asyncssh.ProcessError:
+    """Return a captured nonzero-exit CLI answer as asyncssh raises it (#1202).
+
+    The HMC prints its refusal on stdout and leaves stderr empty.
+    """
+    capture = live_fixture(name)
+    return asyncssh.ProcessError(
+        env={},
+        command=capture["command"],
+        subsystem=None,
+        exit_status=capture["exit_status"],
+        exit_signal=None,
+        returncode=capture["exit_status"],
+        stdout=capture["stdout"],
+        stderr=capture["stderr"],
+    )
 
 
 # A PowerOn submission as a V10R3 HMC answers it: a `JobResponse` whose numeric
