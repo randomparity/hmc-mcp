@@ -3701,7 +3701,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
             ("chsyscfg -r prof", "lpar_name=lpar1", "lpar_proc_compat_mode=POWER10"),
         ),
         (
-            ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
+            ["network", "set-sriov-mode", "sys1", "1", "sriov"],
             ("lshwres", "sriov", "adapter"),
         ),
     ],
@@ -3719,7 +3719,7 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
             return "8375-42A\n"
         if "--rsubtype adapter" in command:
             fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
-            return f"{fields}\nP1-C1,1,sriov,1,U,2,120,120,running\n"
+            return f"{fields}\n1,21010020,sriov,1,U,2,120,120,running\n"
         if command.startswith("lssyscfg"):
             return "vioserver\n"
         return "updated\n"
@@ -3777,9 +3777,7 @@ def test_network_set_sriov_mode_preserves_bracketed_result(monkeypatch, fake_hmc
         "hmcpctl.cli_commands.virtualization.pcie.set_sriov_adapter_mode",
         fake_set_mode,
     )
-    result = RUNNER.invoke(
-        cli.app, ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"]
-    )
+    result = RUNNER.invoke(cli.app, ["network", "set-sriov-mode", "sys1", "1", "sriov"])
 
     assert result.exit_code == 0, result.output
     assert OWNERSHIP_STAMP in result.stdout
