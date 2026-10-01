@@ -550,3 +550,20 @@ async def test_system_workers_and_active_inspections_are_bounded(monkeypatch) ->
             "list_uom": 1,
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_refused_vios_feed_becomes_a_warning_not_a_failure() -> None:
+    """A V11R2 HMC answers a system's VIOS feed with HTTP 500 (#1202)."""
+    refused = live_fixture("rest-vios-feed-500-v11r2")
+    client = _healthy_client()
+    client.list_vios.side_effect = HMCError(
+        "GET VirtualIOServer failed", refused["status"], refused["body"]
+    )
+
+    result = await fleet_health(client)
+
+    assert result.lpars == () and result.vios == ()
+    (warning,) = result.warnings
+    assert warning.startswith("VIOS inventory for system system-a is unavailable")
+    assert "HTTP 500" in warning

@@ -229,6 +229,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_fleet_health` reports the rest of the estate when one system's VIOS feed is refused,
+  adding a warning that names the system, instead of failing whole on the V11R2 HTTP 500. A
+  refused partition feed still fails the result (#1202).
 - `hmc_system_summary` keeps its result when the HMC refuses one inventory read. A V11R2 HMC
   answers a system's VIOS feed with HTTP 500 when a VIOS cannot report its storage, and the
   summary failed as "unhandled errors in a TaskGroup"; the refused count is now `null` and a

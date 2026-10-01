@@ -175,11 +175,27 @@ async def _recent_failed_jobs(
     return _sorted_records(failures, "job_id"), ()
 
 
+async def _vios_or_warning(
+    hmc: HMCClient, system_uuid: str, system_name: str
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Return a system's VIOS entries, or none and a warning on HMC refusal.
+
+    A V11R2 HMC answers a system's VIOS feed with HTTP 500 when a VIOS cannot
+    report its storage (#1202); the rest of the estate is still reported. The
+    partition feed stays core inventory: its failure fails the whole result.
+    """
+    try:
+        return await hmc.list_vios(system_uuid), None
+    except HMCError as exc:
+        warning = f"VIOS inventory for system {system_name} is unavailable: {exc}"
+        return [], warning[:_MAX_ERROR_LENGTH]
+
+
 async def _system_inventory(
-    hmc: HMCClient, system_uuid: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    hmc: HMCClient, system_uuid: str, system_name: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
     lpar_task = asyncio.create_task(hmc.list_logical_partitions(system_uuid))
-    vios_task = asyncio.create_task(hmc.list_vios(system_uuid))
+    vios_task = asyncio.create_task(_vios_or_warning(hmc, system_uuid, system_name))
     tasks = (lpar_task, vios_task)
     try:
         await asyncio.gather(*tasks)
@@ -189,7 +205,7 @@ async def _system_inventory(
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
     lpars = lpar_task.result()
-    vioses = vios_task.result()
+    vioses, vios_warning = vios_task.result()
     if (
         len(lpars) > _MAX_RESOURCES_PER_SYSTEM
         or len(vioses) > _MAX_RESOURCES_PER_SYSTEM
@@ -198,7 +214,7 @@ async def _system_inventory(
             f"Fleet health inventory for system {system_uuid} exceeds the safe "
             f"limit of {_MAX_RESOURCES_PER_SYSTEM} resources per category"
         )
-    return lpars, vioses
+    return lpars, vioses, vios_warning
 
 
 async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
@@ -225,6 +241,7 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
 
     vios_issues: list[dict[str, Any]] = []
     lpar_issues: list[dict[str, Any]] = []
+    inventory_warnings: list[str] = []
 
     async def inspect_systems() -> None:
         while not queue.empty():
@@ -233,7 +250,11 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
             except asyncio.QueueEmpty:
                 return
             try:
-                lpars, vioses = await _system_inventory(hmc, system_uuid)
+                lpars, vioses, vios_warning = await _system_inventory(
+                    hmc, system_uuid, system_name
+                )
+                if vios_warning is not None:
+                    inventory_warnings.append(vios_warning)
                 lpar_issues.extend(
                     issue
                     for lpar in lpars
@@ -261,12 +282,12 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
-    failed_jobs, warnings = job_task.result()
+    failed_jobs, job_warnings = job_task.result()
     _check_issue_budget(system_issues, vios_issues, lpar_issues, failed_jobs)
     return FleetHealthResult(
         _sorted_records(system_issues),
         _sorted_records(vios_issues),
         _sorted_records(lpar_issues),
         failed_jobs,
-        warnings,
+        (*sorted(inventory_warnings), *job_warnings),
     )
