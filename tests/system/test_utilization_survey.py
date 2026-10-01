@@ -317,6 +317,30 @@ async def test_missing_system_figure_is_unknown_not_zero() -> None:
     assert reading.unknown_figures == 2
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["NaN", "inf", "-Infinity"])
+async def test_non_finite_system_figure_is_unknown(text: str) -> None:
+    xml = _system().replace(
+        "<ConfigurableSystemProcessorUnits>48<",
+        f"<ConfigurableSystemProcessorUnits>{text}<",
+    )
+    reading = await _read(FakeClient(systems=parse_feed(_feed(xml))))
+
+    assert reading.cpu.configurable is None
+
+
+def test_rollup_of_no_systems_counts_zero() -> None:
+    total = rollup([])
+
+    assert total.systems == 0
+    assert (total.memory.configurable, total.cpu.free, total.partitions.running) == (
+        0,
+        0,
+        0,
+    )
+    assert total.unknown == ()
+
+
 @asynccontextmanager
 async def _opened(client: Any):
     yield client
@@ -405,7 +429,12 @@ async def test_survey_fleet_bounds_concurrency() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("concurrency", "timeout", "message"),
-    [(0, 1.0, "concurrency"), (1, 0.0, "hmc_timeout")],
+    [
+        (0, 1.0, "concurrency"),
+        (1, 0.0, "hmc_timeout"),
+        (1, float("nan"), "hmc_timeout"),
+        (1, float("inf"), "hmc_timeout"),
+    ],
 )
 async def test_survey_fleet_rejects_invalid_bounds(
     concurrency, timeout, message
@@ -458,9 +487,6 @@ async def test_rollup_sums_each_figure_and_names_shortfalls() -> None:
         ("cpu", "shared", 1),
         ("memory", "vios", 1),
     )
-    empty = rollup([])
-    assert (empty.systems, empty.memory.free, empty.mem_util_pct) == (0, None, None)
-    assert empty.unknown == ()
 
 
 @pytest.mark.asyncio

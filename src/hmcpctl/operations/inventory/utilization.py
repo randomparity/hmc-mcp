@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, fields
@@ -186,9 +187,10 @@ def _int(text: str | None) -> int | None:
 
 def _float(text: str | None) -> float | None:
     try:
-        return None if text is None else float(text)
+        value = None if text is None else float(text)
     except ValueError:
         return None
+    return value if value is not None and math.isfinite(value) else None
 
 
 def _total(values: Iterable[Any]) -> Any:
@@ -448,7 +450,7 @@ async def survey_fleet(
     """
     if concurrency < 1:
         raise ValueError(f"concurrency must be at least 1, got {concurrency}")
-    if hmc_timeout <= 0:
+    if not math.isfinite(hmc_timeout) or hmc_timeout <= 0:
         raise ValueError(f"hmc_timeout must be positive, got {hmc_timeout}")
     names = tuple(dict.fromkeys(profiles))
     gate = asyncio.Semaphore(concurrency)
@@ -513,7 +515,7 @@ def _sum_figures(
     for item in fields(kind):
         values = [getattr(group, item.name) for group in groups]
         known = [value for value in values if value is not None]
-        sums[item.name] = _total(known) if known else None
+        sums[item.name] = _total(known) if known or not values else None
         if len(known) < len(values):
             unknown.append((label, item.name, len(values) - len(known)))
     return kind(**sums), unknown
@@ -521,7 +523,10 @@ def _sum_figures(
 
 def _pooled(pairs: Iterable[tuple[Any, Any]]) -> tuple[Any, float | None]:
     """Allocated capacity and its percentage over the readings reporting both figures."""
-    known = [(total, free) for total, free in pairs if None not in (total, free)]
+    every = list(pairs)
+    known = [(total, free) for total, free in every if None not in (total, free)]
+    if not every:
+        return 0, None
     if not known:
         return None, None
     total = _total(configurable for configurable, _ in known)
