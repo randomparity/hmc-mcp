@@ -8,6 +8,10 @@ Extended by [ADR 0132](0132-confirmed-live-limitation-gaps.md): maturity format 
 non-evidentiary confirmations to missing scope. This record's observation shape,
 derived live-evidence staleness and promotion rules remain unchanged.
 
+Extended by [ADR 0186](0186-observation-schema-version-stamp.md): maturity format 4 adds a
+required `schema_version` attribution key to observations; currency and promotion are
+unchanged.
+
 Supersedes [ADR 0126](0126-operation-keyed-maturity-evidence.md). Its implementation-state
 model — `absent`, `partial`, `implemented`, with explicit implemented and missing scope
 objects — is carried forward unchanged. Its evidence, currency and promotion model is
