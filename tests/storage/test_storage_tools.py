@@ -715,6 +715,8 @@ def test_delete_logical_unit_submits_job(monkeypatch, mock_hmc):
 # wait=True path: create/delete LU blocks until job reaches terminal state
 # ---------------------------------------------------------------------- #
 
+# A finished job reads COMPLETED_OK; the documented statuses have no bare COMPLETED
+# (docs/refs/hmc-rest-api-p10/016-job-status.md:16-27).
 JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:job-uuid-999</id>
@@ -722,7 +724,7 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED</Status>
+      <Status>COMPLETED_OK</Status>
     </Job>
   </content>
 </entry>
@@ -730,7 +732,7 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_create_logical_unit(wait=True) submits then polls until COMPLETED."""
+    """hmc_create_logical_unit(wait=True) submits then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/CreateLogicalUnit"
@@ -743,11 +745,11 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     )
     assert submit_route.called
     assert poll_route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_delete_logical_unit(wait=True) submits then polls until COMPLETED."""
+    """hmc_delete_logical_unit(wait=True) submits then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/DeleteLogicalUnit"
@@ -760,7 +762,7 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     )
     assert submit_route.called
     assert poll_route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 def test_mount_optical_media_keeps_the_mapping_keys_beside_its_location(
