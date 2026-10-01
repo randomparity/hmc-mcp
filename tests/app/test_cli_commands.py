@@ -245,7 +245,7 @@ class FakeHMC:
         ]
         self.metrics_json = {"data": [1, 2, 3]}
         self.fetch_json_404 = False
-        self.wait_job_status = "COMPLETED"
+        self.wait_job_status = "COMPLETED_OK"
 
     def _record(self, name: str, *args, **kwargs) -> None:
         self.calls.append((name, args, kwargs))
@@ -4698,11 +4698,11 @@ def test_jobs_list_limits_and_renders_json(fake_hmc, monkeypatch):
 
 
 def test_jobs_wait(fake_hmc):
-    fake_hmc.job["Resource"]["Status"] = "COMPLETED"
+    fake_hmc.job["Resource"]["Status"] = "COMPLETED_OK"
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
 
     assert result.exit_code == 0
-    assert "COMPLETED" in result.stdout
+    assert "COMPLETED_OK" in result.stdout
     assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": None})]
 
 
