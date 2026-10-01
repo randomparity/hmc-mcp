@@ -219,6 +219,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- The `hmc_list_resources` docstring no longer offers VirtualSwitch, VirtualNetwork,
+  SharedMemoryPool, SharedProcessorPool, HostEthernetAdapter, LogicalPartitionProfile or
+  SRIOVAdapter as listable: the tool reads `/rest/api/uom/{type}`, those types exist only
+  under a parent, and a V10R3 HMC answers a root `SRIOVAdapter` read with HTTP 400
+  `INVALID_URL` (#1202).
 
 - `hmc_add_network_adapter`, `hmcpctl adapters add-network --mac` and
   `build_client_network_adapter_document` now refuse a `mac_address` that is not 12
