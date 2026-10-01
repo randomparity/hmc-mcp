@@ -119,7 +119,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:00000000-0000-0000-0000-000000000002</id>
-    <title>LogicalPartition:{name}</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>{name}</PartitionName>
@@ -219,7 +219,7 @@ def test_get_job_reaped_returns_none(monkeypatch, mock_hmc):
     """A job the HMC no longer has reads as no job, not as an HMCError (#474)."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(404, text="not found")
+        return_value=live_response("rest-job-not-found")[1]
     )
     assert hmc_get_job("job-uuid-999") is None
 
@@ -1039,30 +1039,14 @@ def test_submit_available_hmc_ptfs_query_validates_wait_timing_before_io(
 # hmc_list_recent_jobs (job list)
 # ---------------------------------------------------------------------- #
 
-JOB_FEED_2 = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:job-uuid-001</id>
-    <title>Job</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <JobID>job-uuid-001</JobID>
-        <Status>COMPLETED</Status>
-      </Job>
-    </content>
-  </entry>
-  <entry>
-    <id>urn:uuid:job-uuid-002</id>
-    <title>Job</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <JobID>job-uuid-002</JobID>
-        <Status>RUNNING</Status>
-      </Job>
-    </content>
-  </entry>
-</feed>
-"""
+# No capture shows a 200 Job feed: V10R3 refuses GET /rest/api/uom/Job (see
+# test_recent_jobs_unsupported_endpoint_raises_actionable_error). The entries
+# are the captured COMPLETED_OK and RUNNING job reads (#1161).
+JOB_FEED_2 = (
+    '<feed xmlns="http://www.w3.org/2005/Atom">'
+    f"{COMPLETED_JOB_ENTRY.split('?>', 1)[-1]}{RUNNING_JOB_ENTRY.split('?>', 1)[-1]}"
+    "</feed>"
+)
 
 
 def test_recent_jobs_parses_feed(monkeypatch, mock_hmc):
@@ -1075,7 +1059,7 @@ def test_recent_jobs_parses_feed(monkeypatch, mock_hmc):
     assert isinstance(result, list)
     assert len(result) == 2
     job_ids = {j["Resource"]["JobID"] for j in result}
-    assert job_ids == {"job-uuid-001", "job-uuid-002"}
+    assert job_ids == {JOB_ID, RUNNING_JOB_ID}
 
 
 def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
@@ -1086,7 +1070,7 @@ def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
     )
     result = hmc_list_recent_jobs(limit=1)
     assert len(result) == 1
-    assert result[0]["Resource"]["JobID"] == "job-uuid-001"
+    assert result[0]["Resource"]["JobID"] == JOB_ID
 
 
 def test_recent_jobs_zero_limit_still_fetches_and_parses(monkeypatch, mock_hmc):
@@ -1225,7 +1209,7 @@ def test_wait_for_job_reaped_returns_found_false(monkeypatch, mock_hmc):
     """A reaped job comes back as found=False, not as an HMCError (#474)."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(404, text="not found")
+        return_value=live_response("rest-job-not-found")[1]
     )
 
     result = hmc_wait_for_job("job-uuid-999", timeout_seconds=300, poll_interval=5)
@@ -1306,7 +1290,7 @@ def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
     global_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+        return_value=live_response("rest-job-entry-uuid-refused")[1]
     )
     result = hmc_get_job(JOB_ID, job_href=_JOB_OP_HREF)
     assert href_route.called
@@ -1348,7 +1332,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+        return_value=live_response("rest-job-entry-uuid-refused")[1]
     )
     result = hmc_wait_for_job(
         "job-uuid-999", timeout_seconds=5, poll_interval=1, job_href=_JOB_OP_HREF
@@ -1367,9 +1351,7 @@ def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
 ):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/Job").mock(
-        return_value=httpx.Response(
-            400, text="REST000E Unrecognized root REST type of Job"
-        )
+        return_value=live_response("rest-job-feed-refused")[1]
     )
     with pytest.raises(HMCError, match="hmc_get_job") as exc_info:
         hmc_list_recent_jobs()
@@ -1386,40 +1368,12 @@ def test_recent_jobs_unrelated_400_propagates(monkeypatch, mock_hmc):
         hmc_list_recent_jobs()
 
 
-_JOB_SELF_LINK = f"https://hmc.test:12443{_JOB_OP_HREF}"
+def test_power_on_with_wait_polls_the_submission_jobid(monkeypatch, mock_hmc):
+    """hmc_power_on_lpar(wait=True) polls the captured submission's JobID link.
 
-# A job entry that includes a SELF link (as submit_job returns on some HMC builds).
-JOB_ENTRY_WITH_LINK = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <link rel="SELF" href="{_JOB_SELF_LINK}"/>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>RUNNING</Status>
-    </Job>
-  </content>
-</entry>
-"""
-
-JOB_ENTRY_COMPLETED_WITH_LINK = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <link rel="SELF" href="{_JOB_SELF_LINK}"/>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED</Status>
-    </Job>
-  </content>
-</entry>
-"""
-
-
-def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
-    """hmc_power_on_lpar(wait=True) polls the SELF link from the submitted job entry."""
+    The submission's entry UUID differs from its JobID, and V10R3 refuses the
+    entry UUID on jobs/{id} (#1160), so that route must stay untouched.
+    """
     _hmc_env(monkeypatch)
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
@@ -1430,18 +1384,16 @@ def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
         ]
     )
     mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY_WITH_LINK)
+        return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    # The SELF link path should be polled, not the global /uom/Job/ path.
-    poll_route = mock_hmc.get(_JOB_OP_HREF).mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED_WITH_LINK)
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
-    )
+    entry_uuid_path, refused = live_response("rest-job-entry-uuid-refused")
+    entry_uuid_route = mock_hmc.get(entry_uuid_path).mock(return_value=refused)
     result = hmc_power_on_lpar(LPAR_UUID, wait=True, poll_interval=1)
     assert poll_route.called
-    assert not global_route.called
+    assert not entry_uuid_route.called
     assert result.already_running is False
-    assert result.job["Resource"]["Status"] == "COMPLETED"
+    assert result.job["Resource"]["Status"] == "COMPLETED_OK"
     assert result.message is None

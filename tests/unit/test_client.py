@@ -213,7 +213,7 @@ LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
-    <title>LogicalPartition:lpar1</title>
+    <title>LogicalPartition</title>
     <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/11111111-1111-1111-1111-111111111111"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -224,7 +224,7 @@ LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   </entry>
   <entry>
     <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
-    <title>LogicalPartition:lpar2</title>
+    <title>LogicalPartition</title>
     <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/22222222-2222-2222-2222-222222222222"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -1164,7 +1164,7 @@ async def test_quick_all_system_names_recursion_error_raises_hmc_error(
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:new-33333333-3333-3333-3333-333333333333</id>
-  <title>LogicalPartition:newlpar</title>
+  <title>LogicalPartition</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>newlpar</PartitionName>
@@ -1765,7 +1765,7 @@ async def test_uom_delete_omits_schema_version_when_not_configured(mock_hmc):
 # get_job / wait_for_job — SELF-link-based polling (issue #95)
 # ---------------------------------------------------------------------- #
 
-_JOB_HREF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999"
+_JOB_HREF = f"/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/{JOB_ID}"
 
 
 @pytest.mark.asyncio
@@ -1774,11 +1774,11 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    global_route = mock_hmc.get("/rest/api/uom/jobs/1787837921266").mock(
+        return_value=live_response("rest-job-entry-uuid-refused")[1]
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job_entry("job-uuid-999", job_href=_JOB_HREF)
+        result = await hmc.get_job_entry("1787837921266", job_href=_JOB_HREF)
     assert href_route.called
     assert not global_route.called
     assert result is not None
@@ -1788,36 +1788,36 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
 @pytest.mark.asyncio
 async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
     """get_job(uuid) without job_href uses the documented global jobs path."""
-    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    route = mock_hmc.get("/rest/api/uom/jobs/1787837921266").mock(
         return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job_entry("job-uuid-999")
+        result = await hmc.get_job_entry("1787837921266")
     assert route.called
     assert result is not None
 
 
 @pytest.mark.asyncio
 async def test_get_job_global_path_propagates_http_error(mock_hmc):
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(404, text="Unknown job")
+    mock_hmc.get("/rest/api/uom/jobs/1787837921266").mock(
+        return_value=live_response("rest-job-not-found")[1]
     )
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(
-            HMCError, match="GET /rest/api/uom/jobs/job-uuid-999 failed"
+            HMCError, match="GET /rest/api/uom/jobs/1787837921266 failed"
         ):
-            await hmc.get_job_entry("job-uuid-999")
+            await hmc.get_job_entry("1787837921266")
 
 
 @pytest.mark.asyncio
 async def test_delete_job_uses_documented_global_path(mock_hmc):
-    route = mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+    route = mock_hmc.delete("/rest/api/uom/jobs/1787837921266").mock(
         return_value=httpx.Response(204)
     )
 
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_job("job-uuid-999")
+        await hmc.delete_job("1787837921266")
 
     assert route.called
 
@@ -1827,22 +1827,22 @@ async def test_delete_job_prefers_self_href(mock_hmc):
     route = mock_hmc.delete(_JOB_HREF).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_job("job-uuid-999", job_href=_JOB_HREF)
+        await hmc.delete_job("1787837921266", job_href=_JOB_HREF)
 
     assert route.called
 
 
 @pytest.mark.asyncio
 async def test_delete_job_propagates_http_error(mock_hmc):
-    mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+    mock_hmc.delete("/rest/api/uom/jobs/1787837921266").mock(
         return_value=httpx.Response(500, text="Delete failed")
     )
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(
-            HMCError, match="DELETE /rest/api/uom/jobs/job-uuid-999 failed"
+            HMCError, match="DELETE /rest/api/uom/jobs/1787837921266 failed"
         ):
-            await hmc.delete_job("job-uuid-999")
+            await hmc.delete_job("1787837921266")
 
 
 # ---------------------------------------------------------------------------
@@ -1891,7 +1891,7 @@ async def test_a_non_job_href_is_refused_naming_job_href(mock_hmc, method):
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match=r"^job_href refused: it does not address"):
             await getattr(hmc, method)(
-                "job-uuid-999", job_href="/rest/api/uom/HmcUser/root"
+                "1787837921266", job_href="/rest/api/uom/HmcUser/root"
             )
 
     assert not sent.called, "a refused job path must not reach the wire"
@@ -2014,12 +2014,12 @@ async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    global_route = mock_hmc.get("/rest/api/uom/jobs/1787837921266").mock(
+        return_value=live_response("rest-job-entry-uuid-refused")[1]
     )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.wait_for_job_entry(
-            "job-uuid-999", timeout_seconds=5, poll_interval=1, job_href=_JOB_HREF
+            "1787837921266", timeout_seconds=5, poll_interval=1, job_href=_JOB_HREF
         )
     assert href_route.called
     assert not global_route.called
@@ -2135,21 +2135,8 @@ async def test_wait_for_job_rejects_invalid_timing_values(
         hmc.get_job_entry.assert_not_awaited()
 
 
-# web+xml JobResponse shape uses COMPLETED_OK / COMPLETED_WITH_ERROR
+# The captured web+xml JobResponse read (#1161).
 _JOB_WEB_HREF = "/rest/api/uom/jobs/1778083847656"
-
-JOB_RESPONSE_COMPLETED_OK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>JobResponse</title>
-  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">
-    <JobResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
-      <JobID>1778083847656</JobID>
-      <Status>COMPLETED_OK</Status>
-    </JobResponse>
-  </content>
-</entry>
-"""
 
 
 @pytest.mark.asyncio
@@ -2157,10 +2144,10 @@ async def test_get_job_with_href_uses_web_xml_accept(mock_hmc):
     """get_job(uuid, job_href=...) sends Accept: web+xml, not uom+xml."""
     # The route matches any GET on that path; we verify the Accept header sent
     route = mock_hmc.get(_JOB_WEB_HREF).mock(
-        return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job_entry("job-uuid-999", job_href=_JOB_WEB_HREF)
+        result = await hmc.get_job_entry("1787837921266", job_href=_JOB_WEB_HREF)
     assert route.called
     sent_accept = route.calls.last.request.headers.get("accept", "")
     assert "powervm.web+xml" in sent_accept, (
@@ -2174,7 +2161,7 @@ async def test_get_job_with_href_uses_web_xml_accept(mock_hmc):
 async def test_wait_for_job_recognises_completed_ok(mock_hmc):
     """wait_for_job treats COMPLETED_OK as a terminal state (web+xml JobResponse)."""
     mock_hmc.get(_JOB_WEB_HREF).mock(
-        return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.wait_for_job_entry(

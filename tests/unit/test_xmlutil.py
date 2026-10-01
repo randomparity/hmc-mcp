@@ -52,7 +52,7 @@ MANAGED_SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 SINGLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:lpar-uuid-1</id>
-  <title>LogicalPartition:mylpar</title>
+  <title>LogicalPartition</title>
   <link rel="SELF" href="https://hmc.example.com:12443/rest/api/uom/LogicalPartition/lpar-uuid-1"/>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
