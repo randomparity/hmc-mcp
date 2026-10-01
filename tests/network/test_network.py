@@ -4,7 +4,7 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.documents import build_virtual_network_document
@@ -23,39 +23,10 @@ from hmcpctl.server_tools.virtualization.network import (
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VNETWORK_UUID = "00000000-0000-0000-0000-000000000002"
 
-VSWITCH_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:vswitch-uuid-1</id>
-    <title>VirtualSwitch:ETHERNET0</title>
-    <link rel="SELF" href="https://hmc.test:12443/rest/api/uom/ManagedSystem/sys-uuid/VirtualSwitch/vswitch-uuid-1"/>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <VirtualSwitch xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <SwitchName>ETHERNET0</SwitchName>
-        <SwitchID>3</SwitchID>
-        <SwitchMode>VEB</SwitchMode>
-      </VirtualSwitch>
-    </content>
-  </entry>
-</feed>
-"""
-
-VNETWORK_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:vnet-uuid-1</id>
-    <title>VirtualNetwork:VLAN100-ETHERNET0</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <VirtualNetwork xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <NetworkName>VLAN100-ETHERNET0</NetworkName>
-        <NetworkVLANID>100</NetworkVLANID>
-        <VswitchID>3</VswitchID>
-        <TaggedNetwork>false</TaggedNetwork>
-      </VirtualNetwork>
-    </content>
-  </entry>
-</feed>
-"""
+# The V10R3 feeds for one POWER9 system: two Veb-mode switches, and two
+# untagged networks on switch 0 (#1202).
+VSWITCH_FEED = live_fixture("rest-virtual-switch-feed")["body"]
+VNETWORK_FEED = live_fixture("rest-virtual-network-feed")["body"]
 
 VNETWORK_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
@@ -148,9 +119,14 @@ async def test_list_virtual_switches(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         switches = await hmc.list_virtual_switches(SYSTEM_UUID)
-    assert len(switches) == 1
-    assert switches[0]["Resource"]["SwitchName"] == "ETHERNET0"
-    assert switches[0]["Resource"]["SwitchID"] == "3"
+    assert [
+        (
+            s["Resource"]["SwitchID"],
+            s["Resource"]["SwitchName"],
+            s["Resource"]["SwitchMode"],
+        )
+        for s in switches
+    ] == [("0", "vswitch-1", "Veb"), ("1", "vswitch-2", "Veb")]
 
 
 @pytest.mark.asyncio
@@ -160,8 +136,15 @@ async def test_list_virtual_networks(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         nets = await hmc.list_virtual_networks(SYSTEM_UUID)
-    assert len(nets) == 1
-    assert nets[0]["Resource"]["NetworkVLANID"] == "100"
+    assert [
+        (
+            n["Resource"]["NetworkName"],
+            n["Resource"]["NetworkVLANID"],
+            n["Resource"]["VswitchID"],
+            n["Resource"]["TaggedNetwork"],
+        )
+        for n in nets
+    ] == [("net-1", "1", "0", "false"), ("net-2", "2", "0", "false")]
 
 
 @pytest.mark.asyncio
