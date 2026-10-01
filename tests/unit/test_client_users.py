@@ -133,7 +133,8 @@ async def test_remote_access_unicode_boundary_keeps_query_and_update(mock_hmc):
     path = f"/rest/api/uom/ManagementConsole/{quote(value, safe='')}?group=RemoteAccess"
     document = (
         '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
-        '<ManagementConsole xmlns=""><LdapEnabled>true</LdapEnabled>'
+        '<ManagementConsole xmlns=""><LdapConfiguration>'
+        "<LdapEnabled>true</LdapEnabled></LdapConfiguration>"
         "</ManagementConsole></content></entry></feed>"
     )
     get_route = mock_hmc.get(path).mock(return_value=httpx.Response(200, text=document))
@@ -141,7 +142,7 @@ async def test_remote_access_unicode_boundary_keeps_query_and_update(mock_hmc):
     async with HMCClient(make_config()) as client:
         result = await client.get_remote_access(value)
         await client.configure_remote_access(value, {"LdapEnabled": False}, [])
-    assert result["Resource"]["LdapEnabled"] == "true"
+    assert result["Resource"]["LdapConfiguration"]["LdapEnabled"] == "true"
     assert get_route.call_count == 2
     assert post_route.call_count == 1
     assert b">false</LdapEnabled>" in post_route.calls[0].request.content

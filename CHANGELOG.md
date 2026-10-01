@@ -229,6 +229,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_get_remote_access` and `hmc_configure_remote_access` read the console with the uom
+  `ManagementConsole` media type. V10R3 answers the documented `web+xml` Accept with an
+  HTML HTTP 406 page, so both tools always failed. The update now writes each field inside
+  its `LdapConfiguration` or `KerberosConfiguration` container, where the HMC keeps it,
+  instead of appending a duplicate top-level element; `RealmConfig`, `KerberosRealm`,
+  `Hostname` and `Realm`, which name the nested KDC list rather than a settable field, are
+  refused as unknown (#1202).
 - `hmc_list_users` with `authentication_type` set returns the matching users. V10R3 prints
   the type in lower case (`local`) on a leaf carrying a `ksv` attribute, and the filter
   compared it as a bare string against `Local`, `LDAP` or `Kerberos`, so every filtered

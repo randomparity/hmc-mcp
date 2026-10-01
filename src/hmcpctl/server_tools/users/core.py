@@ -305,7 +305,9 @@ def hmc_configure_remote_access(
     """Set or explicitly clear documented LDAP/Kerberos RemoteAccess fields.
 
     ``values`` maps documented property names to values. ``clear_fields``
-    emits empty elements and cannot overlap with ``values``.
+    emits empty elements and cannot overlap with ``values``. Each field is
+    written inside its ``LdapConfiguration`` or ``KerberosConfiguration``
+    container; the KDC list (``RealmConfig``) is not settable here.
     Returns None when the HMC returns an empty successful response.
 
     Args:

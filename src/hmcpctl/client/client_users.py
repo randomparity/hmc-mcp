@@ -17,8 +17,6 @@ from .client_contracts import (
 )
 from .client_parse import _parse_feed
 
-REMOTE_ACCESS_MEDIA = "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
-
 
 def _text(value: object) -> str:
     text = leaf_text(value)
@@ -124,18 +122,7 @@ class UsersMixin:
         _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
-        xml = await self._get_remote_access_xml(path)
-        return self._first_entry(xml, path)
-
-    async def _get_remote_access_xml(self: UsersClient, path: str) -> str:
-        response = await self._request(
-            "GET", path, headers={"Accept": REMOTE_ACCESS_MEDIA}
-        )
-        if response.status_code == 204:
-            return ""
-        if response.status_code != 200:
-            raise HMCError(f"GET {path} failed", response.status_code, response.text)
-        return response.text
+        return self._first_entry(await self._get(path, "ManagementConsole"), path)
 
     async def configure_remote_access(
         self: UsersClient,
@@ -146,7 +133,7 @@ class UsersMixin:
         _reject_over_long_path_value("console_uuid", console_uuid)
         console_path_id = quote(console_uuid, safe="")
         path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
-        current_xml = await self._get_remote_access_xml(path)
+        current_xml = await self._get(path, "ManagementConsole")
         if not current_xml.strip():
             raise HMCError(f"GET {path} returned no ManagementConsole document", 200)
         remote_access_xml = merge_remote_access_document(
