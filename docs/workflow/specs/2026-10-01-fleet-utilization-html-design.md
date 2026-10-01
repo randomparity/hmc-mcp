@@ -21,7 +21,9 @@ MCP exposure (maintainer); committing generated reports (never); a new HTML or c
 ### Command (`src/hmcpctl/cli_commands/report.py`)
 
 - `--csv PATH` becomes optional and `--html PATH` is added. Neither given is a usage error naming
-  both; both naming the same resolved path is a usage error. One survey feeds both outputs.
+  both; both naming the same path after `resolve()` and `casefold()` is a usage error (the
+  case fold covers case-insensitive file systems; over-refusing on a case-sensitive one is
+  harmless). One survey feeds both outputs.
 - `_scratch_file(path)` is unchanged in shape and is called once per requested output before the
   survey, so an unwritable directory still fails before any HMC is contacted. Each scratch file is
   mkstemp's owner-only file. After the survey every requested output is written, then each
@@ -37,20 +39,20 @@ string dicts, so dedup, roll-ups, shortfall notes and failure rows have one owne
 
 Page sections, in order:
 
-1. Title, `Generated <YYYY-MM-DD HH:MM> UTC`, every surveyed profile, and a warning that the page
-   holds internal hostnames and serials.
-2. Fleet tiles from the `fleet` row: CPU, memory, disk, I/O slots, SR-IOV ports (allocated, free,
-   utilization %), and idle: `partitions_not_activated` with idle-reserved CPU and memory. Disk
-   allocated/free is internal plus SAN assigned/free; slots allocated is assigned plus SR-IOV and
-   free is unassigned; SR-IOV allocated is logical ports minus free. Each tile shows the part of
-   the fleet row's `notes` naming its columns.
-3. Fleet composition chart: one inline SVG stacked bar each for CPU and memory configurable
-   capacity split into VIOS, client active, idle reserved, hypervisor (memory), other reserved and
-   free; the remainder of configurable not covered by known parts is a separately labelled
-   "not reported" segment.
+1. Title, `Generated <YYYY-MM-DD HH:MM> UTC`, the profiles surveyed (every name in `profiles`),
+   and a warning that the page holds internal hostnames and serials.
+2. Fleet tiles from the `fleet` row, each showing that row's existing columns as they stand (the
+   renderer adds no arithmetic) and, where it has one, its `*_util_pct` as text and an inline SVG
+   bar: CPU (`allocated`, `free`), memory (`allocated`, `free`), disk (internal and SAN
+   `assigned`, `free`), I/O slots (`assigned`, `sriov`, `unassigned`, `empty`), SR-IOV
+   (`logical_ports`, `logical_ports_free`), and idle (`partitions_not_activated`,
+   `cpu_idle_reserved`, `mem_idle_reserved_mib`). When the fleet row's `systems` is `0` (every
+   profile failed, or none answered with a system), the tiles are replaced by "No systems were
+   surveyed" and no figure is shown.
+3. Fleet notes: the fleet row's `notes` once, verbatim, or nothing when empty.
 4. Per-HMC table (one row per `hmc` row) with utilization bars as inline SVG.
-5. Sortable per-system table (`system` rows).
-6. Failed profiles, each with its reason, or "none".
+5. Sortable per-system table (`system` rows); only this table carries class `sortable`.
+6. Failed profiles, each with its reason, or "none". Failures appear only here.
 
 Table columns are one `(csv column, label)` tuple shared by both tables: system, profiles, machine
 type, model, serial, state, CPU configurable/allocated/util, memory configurable/allocated/util, idle
@@ -59,16 +61,16 @@ drops the identity columns and adds `systems`. `*_mib` values display as GiB to 
 
 Rendering rules:
 
-- A cell whose value is `unknown`, or a derived figure with any `unknown` input, renders the word
-  `unknown` (class `unknown`), never 0; an unknown utilization draws no bar.
+- A cell whose value is `unknown` renders the word `unknown` (class `unknown`), never 0; an
+  unknown utilization draws no bar. A bar's width is the percentage clamped to 0–100.
 - Every value from `rows` and `profiles` passes through `html.escape(value, quote=True)` at the
   single interpolation helper; no other path writes row text.
 - Sorting: inline script; clicking a header sorts by each cell's `data-sort` (numeric when every
   known cell parses as a number), unknown cells always last.
 - A `<meta http-equiv="Content-Security-Policy">` sets `default-src 'none'`, `style-src
   'unsafe-inline'`, and `script-src 'sha256-<hash of the inline script>'`.
-- No `src=`, `href=`, `url(` or `@import` appears in the template. A `@media print` block hides
-  sort affordances and keeps tiles and rows from splitting across pages.
+- No `src=`, `href=`, `url(` or `@import` appears in the template. A `@media print` block drops
+  the pointer cursor and keeps tiles and rows from splitting across pages.
 
 ### Documentation
 
@@ -80,7 +82,9 @@ names both formats; `CHANGELOG.md` records the addition.
 - `report utilization --html a.html` alone, and with `--csv b.csv`, exits 0 and writes each file
   owner-only from one survey call; neither option is a usage error.
 - The page contains each section above, every surveyed profile, each failed profile with its
-  reason, and the UTC stamp.
+  reason, the fleet notes, and the UTC stamp.
+- A survey in which every profile failed writes both files, exit 0; the page names each failure
+  and shows no fleet figure.
 - For the template and the fixtures in the tests, the page contains no `src=`, `href=`, `url(` or
   `@import`.
 - A reading whose every text field is `<script>alert(1)</script>"'&` renders only escaped.
