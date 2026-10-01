@@ -1765,7 +1765,12 @@ async def test_uom_delete_omits_schema_version_when_not_configured(mock_hmc):
 # get_job / wait_for_job — SELF-link-based polling (issue #95)
 # ---------------------------------------------------------------------- #
 
-_JOB_HREF = f"/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/{JOB_ID}"
+# A handle an earlier release stored: the job entry's UUID as job_id, paired
+# with the submission's `jobs/{JobID}` SELF link. V10R3 refuses the UUID on the
+# global path (captured), so the link decides the read.
+_JOB_HREF = f"/rest/api/uom/jobs/{JOB_ID}"
+_LEGACY_PATH, _LEGACY_REFUSED = live_response("rest-job-entry-uuid-refused")
+_LEGACY_ID = _LEGACY_PATH.rsplit("/", 1)[-1]
 
 
 @pytest.mark.asyncio
@@ -1774,11 +1779,9 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/jobs/1787837921266").mock(
-        return_value=live_response("rest-job-entry-uuid-refused")[1]
-    )
+    global_route = mock_hmc.get(_LEGACY_PATH).mock(return_value=_LEGACY_REFUSED)
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_job_entry("1787837921266", job_href=_JOB_HREF)
+        result = await hmc.get_job_entry(_LEGACY_ID, job_href=_JOB_HREF)
     assert href_route.called
     assert not global_route.called
     assert result is not None
@@ -1827,7 +1830,7 @@ async def test_delete_job_prefers_self_href(mock_hmc):
     route = mock_hmc.delete(_JOB_HREF).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_job("1787837921266", job_href=_JOB_HREF)
+        await hmc.delete_job(_LEGACY_ID, job_href=_JOB_HREF)
 
     assert route.called
 
@@ -1903,8 +1906,7 @@ async def test_a_non_job_href_is_refused_naming_job_href(mock_hmc, method):
     "path",
     [
         "/rest/api/uom/jobs/j%2D1",
-        "/rest/api/uom/Job/j%2D1",
-        "/rest/api/uom/LogicalPartition/lpar%2D1/do/PowerOn/Job/j-1",
+        "/rest/api/uom/jobs/1787837921266%2D1",
     ],
 )
 async def test_job_methods_preserve_non_structural_encoding(mock_hmc, method, path):
@@ -2014,12 +2016,10 @@ async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/jobs/1787837921266").mock(
-        return_value=live_response("rest-job-entry-uuid-refused")[1]
-    )
+    global_route = mock_hmc.get(_LEGACY_PATH).mock(return_value=_LEGACY_REFUSED)
     async with HMCClient(make_config()) as hmc:
         result = await hmc.wait_for_job_entry(
-            "1787837921266", timeout_seconds=5, poll_interval=1, job_href=_JOB_HREF
+            _LEGACY_ID, timeout_seconds=5, poll_interval=1, job_href=_JOB_HREF
         )
     assert href_route.called
     assert not global_route.called

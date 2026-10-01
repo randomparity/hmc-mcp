@@ -229,16 +229,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
+  fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
+  which every captured HMC (V10R3 and V11R2) answers with `500 Unable to parse expression`
+  for `not activated`; they now read the partition feed and filter it (#1202).
 - `hmc_provision_lpar` no longer reports an existing volume group as missing when its UUID
   is given in upper case. A V10R3 HMC reads VolumeGroup ids in lower case, and the check
   compared them case-sensitively (#1202).
-- `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
-  fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
-  which a V10R3 HMC answers with `500 Unable to parse expression` for `not activated`; they
-  now read the partition feed and filter it. The accepted states, shared with
-  `hmc_list_vios`, are now the HMC schema's `LogicalPartitionState.Enum`: `stopping`,
-  `migrating` and lower-case `unknown` are gone, and `not available`, `migrating not active`,
-  `migrating running`, `hardware discovery`, `suspending` and `Unknown` are accepted (#1202).
 - Job polling no longer treats `EXCEPTION` or `FAILED` as terminal statuses, and no longer
   reads a `ResponseException` element. Neither appears in the HMC's job-status reference
   (`CANCELED_*`, `COMPLETED_OK`, `COMPLETED_WITH_*`, `FAILED_*`, `NOT_STARTED`, `RUNNING`) or
@@ -844,6 +841,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Interface change:** the `state` values `hmc_list_lpars`, `hmc_list_vios`,
+  `hmcpctl lpars list --state` and `hmcpctl vios list --state` accept are now the HMC
+  schema's `LogicalPartitionState.Enum` (identical on V10R3 and V11R2). `stopping`,
+  `migrating` and lower-case `unknown`, which no HMC reports, are rejected; `not available`,
+  `migrating not active`, `migrating running`, `hardware discovery`, `suspending` and
+  `Unknown` are accepted (#1202).
+- **Interface change:** `job_href` on `hmc_get_job`, `hmc_wait_for_job`, `get_job`,
+  `wait_for_job` and `hmcpctl jobs show|wait --job-href` must be a
+  `/rest/api/uom/jobs/{JobID}` link (a read-side `jobs/{JobID}/{uuid}` link is still reduced
+  to it). The per-operation `.../do/{Operation}/Job/{id}` form accepted for #95, the
+  `/rest/api/uom/Job/{id}` form and relative `jobs/{id}` paths are refused: no HMC capture or
+  reference shows them, and the reference documents only `rest/api/uom/jobs/{job_id}` (#1202).
 - A `targets` table can now grant `hmc_attach_disk_to_lpar`: its LPAR, managed-system and
   `vios_uuid` selectors bound everything it touches, so a grant naming all three reaches it and
   one that omits any of them, or a call that omits `system_name_or_uuid`, is denied.

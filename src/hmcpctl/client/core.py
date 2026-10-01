@@ -236,15 +236,15 @@ def _reject_dot_segments(method: str, path: str) -> None:
                 )
 
 
-# The two shapes an HMC job SELF link takes: the legacy uom resource type
-# (`/rest/api/uom/Job/{uuid}`) and the per-operation collection the submission
-# response points at (`/rest/api/uom/jobs/{id}`, issue #95). Anchored on the
-# *last two* segments rather than tested for membership: membership let
-# an unrelated `/rest/api/web/Logon/jobs` path through, because it contains the word.
+# The one job path the HMC documents and every captured SELF link uses:
+# `/rest/api/uom/jobs/{JobID}` (docs/refs/hmc-rest-api-p10/017-jobs.md). A read-side
+# `jobs/{JobID}/{uuid}` link is reduced to it before this check. The per-operation
+# `.../do/{Op}/Job/{id}` form issue #95 accepted was never observed and is refused
+# (#1202).
 #
 # Both raw and decoded forms use this grammar. A decoded query or fragment
 # delimiter is unsafe in a prefix too, not just in the identifier (ADR 0152).
-_JOB_PATH = re.compile(r"(?:/[^/?#]+)*/(?:Job|jobs)/[^/?#]+")
+_JOB_PATH = re.compile(r"/rest/api/uom/jobs/[^/?#]+")
 
 
 def _reject_non_job_path(path: str, argument: str) -> None:
@@ -261,9 +261,8 @@ def _reject_non_job_path(path: str, argument: str) -> None:
     The check binds the *resource class*, not the identifier. Binding the last
     segment to ``job_id`` would be tighter, and was rejected: ``jobs.job_identifier``
     prefers the response's ``JobID``/``UUID`` over the link's last segment, so the
-    two can legitimately differ — and issue #95 exists precisely because some
-    firmware cannot resolve the job identifier, which is the case this argument
-    serves and the one that cannot be tested here. Binding the class is what can
+    two can legitimately differ — a handle an earlier release stored pairs an entry
+    UUID as ``job_id`` with a ``jobs/{JobID}`` link. Binding the class is what can
     be verified from this checkout.
 
     The residual is that a caller may read a *different* job. That is the reach
@@ -1480,11 +1479,13 @@ class HMCClient(
 
         The documented global endpoint is ``/rest/api/uom/jobs/{id}`` and uses
         the ``web+xml`` content type. It resolves the entry's ``JobID``; a V10R3
-        HMC answers the Atom entry UUID with HTTP 400 REST000E (issue #1160).
+        HMC answers the Atom entry UUID with HTTP 406 to this web+xml Accept, and
+        with 400 REST000E to ``Accept: */*`` (issue #1160, api-patterns P4).
 
         When *job_href* is provided (a SELF link from a job entry), its job path
-        is preferred so per-operation SELF links work as returned by the HMC
-        (see issue #95). A read-side ``/rest/api/uom/jobs/{JobID}/{uuid}`` SELF
+        is read instead; it must be a ``/rest/api/uom/jobs/{JobID}`` path, which
+        is what lets a handle that stored the entry UUID as *job_id* still read
+        its job. A read-side ``/rest/api/uom/jobs/{JobID}/{uuid}`` SELF
         link is addressed by its JobID segment; the HMC refuses the link itself
         (HTTP 400 REST000B) and its trailing UUID changes on every read.
 
@@ -1515,7 +1516,7 @@ class HMCClient(
         Returns the last-seen job entry (terminal or not, after timeout).
 
         When *job_href* is provided it is forwarded to ``get_job_entry`` so polling
-        uses the per-operation SELF link instead of the global UOM path.
+        reads that link's jobs path instead of one built from *job_id*.
         """
         import asyncio
 

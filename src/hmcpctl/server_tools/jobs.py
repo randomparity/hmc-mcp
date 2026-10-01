@@ -54,13 +54,13 @@ def hmc_get_job(
 
     Persist the JobID and the stable ``/rest/api/uom/jobs/{JobID}`` ``job_href`` that
     submitting tools return. The Atom entry UUID is not a usable ``job_id`` on V10R3:
-    the global jobs path answers it with HTTP 406. A UUID stored by an earlier
+    the global jobs path refuses it (HTTP 406 to this client's web+xml Accept). A UUID stored by an earlier
     release reads only through its ``job_href``.
 
     Args:
         job_id: JobID returned when the job was submitted.
-        job_href: Optional submission SELF link for firmware that cannot resolve the job
-            identifier.
+        job_href: Optional ``/rest/api/uom/jobs/{JobID}`` submission SELF link; needed
+            only when job_id is an entry UUID stored by an earlier release.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
@@ -149,8 +149,8 @@ def hmc_wait_for_job(
         job_id: JobID returned when the job was submitted.
         timeout_seconds: Maximum polling duration in seconds; zero performs one poll.
         poll_interval: Seconds between polls; must be greater than zero.
-        job_href: Optional submission SELF link for firmware that cannot resolve the job
-            identifier.
+        job_href: Optional ``/rest/api/uom/jobs/{JobID}`` submission SELF link; needed
+            only when job_id is an entry UUID stored by an earlier release.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 

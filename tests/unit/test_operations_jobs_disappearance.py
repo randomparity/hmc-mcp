@@ -16,7 +16,9 @@ from hmcpctl.operations.jobs import get_job, wait_for_job
 
 _JOB_ID = "job-uuid-999"
 _GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"
-_SELF_HREF = f"/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/{_JOB_ID}"
+# A handle an earlier release stored: an entry-UUID-shaped job_id with the
+# submission's `jobs/{JobID}` SELF link (#1202 refuses per-operation links).
+_SELF_HREF = "/rest/api/uom/jobs/1787837921266"
 _SUBMIT_PATH = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn"
 
 

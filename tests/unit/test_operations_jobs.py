@@ -32,12 +32,13 @@ from hmcpctl.operations.jobs import (
 
 # Every job body here is the captured V10R3 read of a finished PowerOn job
 # (#1161), with only its Status and, where a test needs one, its SELF links
-# replaced. _SELF_HREF is the per-operation link form issue #95 accepts from a
-# caller; no capture has shown an HMC emitting it.
+# replaced. _SELF_HREF is a stored `jobs/{JobID}` link whose path differs from
+# the global path built from _JOB_ID, so the tests can tell which one was read
+# (the per-operation link form issue #95 accepted is refused since #1202).
 _COMPLETED_PATH, _COMPLETED = live_response("rest-job-completed-ok")
 _JOB_ID = _COMPLETED_PATH.rsplit("/", 1)[-1]
 _GLOBAL_PATH = _COMPLETED_PATH
-_SELF_HREF = f"/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/{_JOB_ID}"
+_SELF_HREF = "/rest/api/uom/jobs/1787837921299"
 _SUBMIT_PATH, _SUBMITTED = live_response("rest-poweron-submit")
 _CAPTURED_LINKS = re.compile(r'    <link rel="SELF" href="[^"]*"/>\n')
 
@@ -311,7 +312,7 @@ async def test_get_job_echoes_the_handle_needed_to_poll_again(mock_hmc) -> None:
 @pytest.mark.asyncio
 async def test_get_job_keeps_the_link_the_caller_polled_with(mock_hmc) -> None:
     """A stored handle does not rotate to an untried link the response advertises."""
-    other_link = f"/rest/api/uom/LogicalPartition/other/do/PowerOn/Job/{_JOB_ID}"
+    other_link = "/rest/api/uom/jobs/1787837921298"
     mock_hmc.get(_SELF_HREF).mock(
         return_value=httpx.Response(
             200, text=_job_entry("RUNNING", self_href=other_link)

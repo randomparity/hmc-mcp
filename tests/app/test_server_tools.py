@@ -916,11 +916,11 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
             json={
                 "id": "platform-job",
                 "content": {"JobResponse": {"Status": "RUNNING"}},
-                "selfLink": "/rest/api/uom/Job/platform-job",
+                "selfLink": "/rest/api/uom/jobs/platform-job",
             },
         )
     )
-    poll = mock_hmc.get("/rest/api/uom/Job/platform-job").mock(
+    poll = mock_hmc.get("/rest/api/uom/jobs/platform-job").mock(
         return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
@@ -1210,19 +1210,20 @@ def test_wait_for_job_rejects_identifier_addressing_something_else(
 # hmc_get_job / hmc_wait_for_job — SELF-link-based polling (issue #95)
 # ---------------------------------------------------------------------- #
 
-_JOB_OP_HREF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999"
+# The captured submission's SELF link path. Paired with an entry-UUID job_id, it
+# is the handle an earlier release stored; per-operation links are refused (#1202).
+_JOB_OP_HREF = f"/rest/api/uom/jobs/{JOB_ID}"
 
 
 def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
-    """hmc_get_job(uuid, job_href=...) GETs the exact href, not /uom/Job/{uuid}."""
+    """hmc_get_job(entry_uuid, job_href=...) reads the link, not jobs/{entry_uuid}."""
     _hmc_env(monkeypatch)
     href_route = mock_hmc.get(_JOB_OP_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    global_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
-        return_value=live_response("rest-job-entry-uuid-refused")[1]
-    )
-    result = hmc_get_job(JOB_ID, job_href=_JOB_OP_HREF)
+    entry_uuid_path, refused = live_response("rest-job-entry-uuid-refused")
+    global_route = mock_hmc.get(entry_uuid_path).mock(return_value=refused)
+    result = hmc_get_job(entry_uuid_path.rsplit("/", 1)[-1], job_href=_JOB_OP_HREF)
     assert href_route.called
     assert not global_route.called
     assert result["Resource"]["JobID"] == JOB_ID

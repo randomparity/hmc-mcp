@@ -105,13 +105,11 @@ async def _confirm_missing(
 ) -> dict[str, Any] | None:
     """Second-source a 404 raised against a caller-supplied link.
 
-    A per-operation SELF link (the form issue #95 accepts from a caller; no V10R3
-    capture shows the HMC emitting one, its links are ``/rest/api/uom/jobs/{id}``)
-    embeds the target resource, not just the job
-    (``.../LogicalPartition/{uuid}/do/PowerOn/Job/{id}``), so it can stop
-    resolving while the job is fine — this package's own decommission operations
-    remove such parents. Confirm against the global jobs path, which is keyed on
-    the identifier the caller actually asked about, before reporting the job gone.
+    A stored link and *job_id* can name the job differently — an earlier release
+    stored the entry UUID as ``job_id`` beside the ``jobs/{JobID}`` link — so a 404
+    on the link is not yet the answer for the identifier the caller asked about.
+    Confirm against the global jobs path, keyed on that identifier, before
+    reporting the job gone.
 
     Only a 404 on this read confirms the absence. Any other failure propagates,
     exactly as it does on the primary read, because reporting a job gone on the
@@ -153,10 +151,10 @@ async def _read_job(
     """Perform one poll; also report whether *link* proved stale on this read.
 
     *dead_link* is a link an earlier read in the same wait already proved stale.
-    It has to be carried, not just stopped being used: an HMC job entry's SELF
-    link is the per-operation link, so a later read through the global path can
-    advertise the dead link right back, and the outcome a consumer re-persists
-    would then carry a link this package knows does not resolve.
+    It has to be carried, not just stopped being used: a later read through the
+    global path can advertise the dead link right back as the entry's SELF link,
+    and the outcome a consumer re-persists would then carry a link this package
+    knows does not resolve.
     """
     reported = False
     stale_link = False
@@ -258,9 +256,9 @@ async def get_job(
 
     *job_id* is the JobID this package hands out for a submitted job (a stored
     entry UUID from an earlier release is accepted, but a V10R3 HMC answers it
-    with HTTP 400 REST000E, issue #1160); *job_href* is a SELF link from the job's entry,
-    needed only on firmware that cannot resolve the identifier through the
-    documented global jobs path (issue #95). The HMC's
+    with HTTP 406 to the web+xml Accept this client sends, issue #1160); *job_href* is the job's
+    ``/rest/api/uom/jobs/{JobID}`` SELF link, needed only when *job_id* is such a
+    stored entry UUID; any other link form is refused (#1202). The HMC's
     ``/rest/api/uom/jobs/{JobID}/{uuid}`` link is read through its JobID segment.
     Neither argument requires anything held in memory since submission.
 
@@ -272,8 +270,8 @@ async def get_job(
     reported as a missing job.
 
     A 404 against a supplied ``job_href`` is confirmed against the global jobs
-    path before it becomes ``found=False``: a per-operation SELF link embeds the
-    target resource, so it can stop resolving while the job is fine. When that
+    path before it becomes ``found=False``, because the link and ``job_id`` can
+    name the job differently. When that
     second read finds the job, this returns it and warns that the stored link is
     stale.
 
