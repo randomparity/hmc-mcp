@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._app import run_limited_collection, with_client
-from ..errors import HMCError
+from .._app import with_client
 from ..jobs import JobOutcome
 from ..operations import jobs as operations_jobs
 from ..tool_registry import tool_module
@@ -55,13 +54,13 @@ def hmc_get_job(
 
     Persist the JobID and the stable ``/rest/api/uom/jobs/{JobID}`` ``job_href`` that
     submitting tools return. The Atom entry UUID is not a usable ``job_id`` on V10R3:
-    the global jobs path answers it with HTTP 406. A UUID stored by an earlier
+    the global jobs path refuses it (HTTP 406 to this client's web+xml Accept). A UUID stored by an earlier
     release reads only through its ``job_href``.
 
     Args:
         job_id: JobID returned when the job was submitted.
-        job_href: Optional submission SELF link for firmware that cannot resolve the job
-            identifier.
+        job_href: Optional ``/rest/api/uom/jobs/{JobID}`` submission SELF link; needed
+            only when job_id is an entry UUID stored by an earlier release.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
@@ -70,36 +69,6 @@ def hmc_get_job(
         return outcome.job
 
     return with_client(operation, profile=profile)
-
-
-@tool(effect="read", operation="job.list", target_kind="console")
-def hmc_list_recent_jobs(
-    limit: int = 20,
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """List recent jobs.
-
-    Raises HMCError when this HMC does not support global Job listing; use
-    hmc_get_job with a job identifier and submission link on those firmware versions.
-
-    Args:
-        limit: Maximum entries returned after the complete HMC feed is transferred
-            and parsed; zero returns none. This client-side cap does not reduce HMC
-            work or network transfer.
-        profile: Optional configured HMC profile name; uses the default when omitted.
-    """
-
-    try:
-        return run_limited_collection(operations_jobs.list_jobs, limit, profile=profile)
-    except HMCError as exc:
-        if not operations_jobs.is_unsupported_job_listing(exc):
-            raise
-        raise HMCError(
-            "This HMC version does not support global Job listing. Use "
-            "hmc_get_job(job_id, job_href=<submission link>) instead.",
-            status_code=400,
-            body=exc.body,
-        ) from exc
 
 
 # Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
@@ -124,8 +93,8 @@ def hmc_wait_for_job(
     """Poll a job and return its normalized status, timeout, and error outcome.
 
     Polling stops at CANCELED_BEFORE_START, CANCELED_WHILE_RUNNING, COMPLETED,
-    COMPLETED_OK, COMPLETED_WITH_ERROR, COMPLETED_WITH_WARNINGS, EXCEPTION,
-    FAILED, FAILED_BEFORE_COMPLETION, FAILED_BEFORE_COMPLETION_RETRY, or
+    COMPLETED_OK, COMPLETED_WITH_ERROR, COMPLETED_WITH_WARNINGS,
+    FAILED_BEFORE_COMPLETION, FAILED_BEFORE_COMPLETION_RETRY, or
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 
@@ -180,8 +149,8 @@ def hmc_wait_for_job(
         job_id: JobID returned when the job was submitted.
         timeout_seconds: Maximum polling duration in seconds; zero performs one poll.
         poll_interval: Seconds between polls; must be greater than zero.
-        job_href: Optional submission SELF link for firmware that cannot resolve the job
-            identifier.
+        job_href: Optional ``/rest/api/uom/jobs/{JobID}`` submission SELF link; needed
+            only when job_id is an entry UUID stored by an earlier release.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
 

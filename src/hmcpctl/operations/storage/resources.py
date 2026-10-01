@@ -56,7 +56,6 @@ class OpticalMedia:
 
     name: str
     size_mib: float | None
-    media_type: str | None
 
 
 @dataclass(frozen=True)
@@ -143,7 +142,7 @@ def _optional_gib_as_mib(
 def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
     operation = "list_volume_groups"
     resource = _resource(entry, operation)
-    uuid = entry.get("UUID") or resource.get("VolumeGroupUUID")
+    uuid = entry.get("UUID")
     if not isinstance(uuid, str) or not uuid:
         raise HMCError(f"{operation} returned no usable UUID")
     capacity_gib = _optional_number(resource, "GroupCapacity", operation)
@@ -168,14 +167,10 @@ def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
 def _optical_media(entry: Mapping[str, Any]) -> OpticalMedia:
     operation = "list_optical_media"
     resource = _resource(entry, operation)
-    media_type = resource.get("MediaType")
-    if media_type is not None and not isinstance(media_type, str):
-        raise HMCError(f"{operation} returned an invalid MediaType")
     return OpticalMedia(
         name=_required_text(resource, "MediaName", operation),
         # The live VirtualOpticalMedia carries Size, in GiB (#963).
         size_mib=_optional_gib_as_mib(resource, "Size", operation),
-        media_type=media_type,
     )
 
 
@@ -300,7 +295,8 @@ def _names_disk_inline(backing: dict[str, Any], vg_uuid: str, disk_name: str) ->
         return False
     group = backing.get("VolumeGroup")
     group_link = group.get("href", "") if isinstance(group, dict) else ""
-    # UUIDs compare case-insensitively; the HMC sends lowercase hrefs.
+    # UUIDs compare case-insensitively: V10R3 links a VolumeGroup by a lower-case
+    # UUID under an upper-case VIOS UUID.
     suffix = f"/volumegroup/{vg_uuid.lower()}"
     return not group_link or group_link.rstrip("/").lower().endswith(suffix)
 

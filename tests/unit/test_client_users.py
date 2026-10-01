@@ -8,12 +8,13 @@ from urllib.parse import quote
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 from test_request_path_safety import _recording_client
 
 from hmcpctl.client.client_contracts import _MAX_UOM_TYPE_LENGTH
 from hmcpctl.client.client_users import UsersMixin
 from hmcpctl.client.core import HMCClient
+from hmcpctl.xmlutil import leaf_text
 
 
 def test_user_child_path_escapes_console_identifiers():
@@ -24,22 +25,18 @@ def test_user_child_path_escapes_console_identifiers():
 
 @pytest.mark.asyncio
 async def test_list_users_filters_authentication_type_and_rejects_unknown_values():
+    # A captured V10R3 UserProfile: `local` in lower case, carrying `ksv`.
     client = SimpleNamespace(
-        _get=AsyncMock(
-            return_value=(
-                "<feed xmlns='http://www.w3.org/2005/Atom'><entry><content>"
-                "<UserProfile><AuthenticationType>LDAP</AuthenticationType>"
-                "</UserProfile></content></entry></feed>"
-            )
-        ),
+        _get=AsyncMock(return_value=live_fixture("rest-user-profile")["body"]),
         _child_path=UsersMixin._child_path,
         _entries=UsersMixin._entries,
     )
 
-    users = await UsersMixin.list_hmc_users(client, "console/a", "ldap")
+    users = await UsersMixin.list_hmc_users(client, "console/a", "local")
 
-    assert users[0]["Resource"]["AuthenticationType"] == "LDAP"
-    client._get.assert_awaited_once_with(
+    assert [leaf_text(user["Resource"]["UserID"]) for user in users] == ["user-1"]
+    assert await UsersMixin.list_hmc_users(client, "console/a", "ldap") == []
+    client._get.assert_awaited_with(
         "/rest/api/uom/ManagementConsole/console%2Fa/UserProfile", "UserProfile"
     )
     with pytest.raises(ValueError, match="Invalid authentication_type"):
@@ -136,7 +133,8 @@ async def test_remote_access_unicode_boundary_keeps_query_and_update(mock_hmc):
     path = f"/rest/api/uom/ManagementConsole/{quote(value, safe='')}?group=RemoteAccess"
     document = (
         '<feed xmlns="http://www.w3.org/2005/Atom"><entry><content>'
-        '<ManagementConsole xmlns=""><LdapEnabled>true</LdapEnabled>'
+        '<ManagementConsole xmlns=""><LdapConfiguration>'
+        "<LdapEnabled>true</LdapEnabled></LdapConfiguration>"
         "</ManagementConsole></content></entry></feed>"
     )
     get_route = mock_hmc.get(path).mock(return_value=httpx.Response(200, text=document))
@@ -144,7 +142,7 @@ async def test_remote_access_unicode_boundary_keeps_query_and_update(mock_hmc):
     async with HMCClient(make_config()) as client:
         result = await client.get_remote_access(value)
         await client.configure_remote_access(value, {"LdapEnabled": False}, [])
-    assert result["Resource"]["LdapEnabled"] == "true"
+    assert result["Resource"]["LdapConfiguration"]["LdapEnabled"] == "true"
     assert get_route.call_count == 2
     assert post_route.call_count == 1
     assert b">false</LdapEnabled>" in post_route.calls[0].request.content

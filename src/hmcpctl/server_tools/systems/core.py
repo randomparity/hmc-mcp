@@ -77,8 +77,8 @@ def hmc_list_systems(
     """List managed systems, optionally filtered by state.
 
     When state is omitted, returns all managed systems known to the HMC. Each
-    entry has UUID, SystemName, State, MTMS (machine type/model/serial),
-    IPAddress, etc.
+    entry has UUID, SystemName, State, MachineTypeModelAndSerialNumber,
+    PrimaryIPAddress, etc.
 
     When state is provided, returns only systems whose State property matches
     the given value, using the HMC server-side search endpoint. Use
@@ -238,11 +238,13 @@ def hmc_list_resources(
     profile: str | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """List any uom resource type exposed by the HMC.
+    """List any root uom resource type exposed by the HMC.
 
-    Examples: ManagedSystem, LogicalPartition, VirtualIOServer,
-    LogicalPartitionProfile, VirtualSwitch, VirtualNetwork, SharedMemoryPool,
-    SharedProcessorPool, HostEthernetAdapter, SRIOVAdapter, Cluster.
+    Reads ``/rest/api/uom/{resource_type}``, so only root types are listable:
+    for example ManagedSystem, LogicalPartition, VirtualIOServer and Cluster.
+    Child types such as VirtualSwitch, VirtualNetwork, SharedProcessorPool and
+    HostEthernetAdapter exist only under ``ManagedSystem/{uuid}``, and the HMC
+    refuses a root read of a non-root type such as SRIOVAdapter with HTTP 400.
 
     Args:
         resource_type: Exact HMC UOM resource type to list.

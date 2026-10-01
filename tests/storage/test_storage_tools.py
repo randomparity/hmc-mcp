@@ -112,14 +112,12 @@ def test_list_adapters_defaults_to_network(monkeypatch, mock_hmc):
     ).mock(
         return_value=httpx.Response(
             200,
-            text=_feed(
-                ADAPTER_UUID, "ClientNetworkAdapter", MACAddress="00:11:22:33:44:55"
-            ),
+            text=_feed(ADAPTER_UUID, "ClientNetworkAdapter", MACAddress="001122334455"),
         )
     )
     result = hmc_list_adapters(LPAR_UUID)
     assert result[0]["UUID"] == ADAPTER_UUID
-    assert result[0]["Resource"]["MACAddress"] == "00:11:22:33:44:55"
+    assert result[0]["Resource"]["MACAddress"] == "001122334455"
 
 
 def test_list_adapters_vscsi_type(monkeypatch, mock_hmc):
@@ -275,7 +273,7 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
         slot_number=3,
         virtual_switch_id=1,
         tagged=True,
-        mac_address="00:11:22:33:44:55",
+        mac_address="001122334455",
     )
     assert route.called
     body = route.calls.last.request.content.decode()
@@ -284,7 +282,7 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     assert '<VirtualSlotNumber kb="COD" kxe="false">3</VirtualSlotNumber>' in body
     assert '<VirtualSwitchID kb="ROR" kxe="false">1</VirtualSwitchID>' in body
     assert '<IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>' in body
-    assert '<MACAddress kb="CUR" kxe="false">00:11:22:33:44:55</MACAddress>' in body
+    assert '<MACAddress kb="CUR" kxe="false">001122334455</MACAddress>' in body
     assert result["UUID"] == ADAPTER_UUID
     # #981: the resource keeps its top-level keys; the location rides beside them.
     assert result["change_location"] == {

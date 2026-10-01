@@ -39,9 +39,7 @@ hmcpctl adapters add-vscsi mylpar --vios-id 1 --vios-slot 5   # skip before stor
 hmcpctl adapters add-vfc mylpar --vios-id 1 --vios-slot 6
 hmcpctl adapters delete mylpar --type ClientNetworkAdapter --uuid <adapter-uuid>
 hmcpctl vios list
-hmcpctl jobs list                    # recent jobs (default 20)
-hmcpctl jobs list -n 5               # last 5 jobs
-hmcpctl jobs show <job-uuid>
+hmcpctl jobs show <job-id>
 hmcpctl raw get /rest/api/uom/VirtualSwitch   # escape hatch, prints XML
 ```
 

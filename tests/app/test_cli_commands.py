@@ -25,6 +25,7 @@ import click
 import pytest
 import typer
 from click import unstyle
+from conftest import live_fixture
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -69,6 +70,7 @@ from hmcpctl.ssh import io_inventory, sriov, vnic
 from hmcpctl.ssh import lpar as ssh_lpar
 from hmcpctl.ssh import profiles as ssh_profiles
 from hmcpctl.ssh import refcodes as ssh_refcodes
+from hmcpctl.xmlutil import parse_feed
 
 LPAR_NAME = "lpar1"
 
@@ -221,10 +223,8 @@ class FakeHMC:
                 "IOSLevel": "3.1.0",
             },
         }
-        self.console = {
-            "link": "https://hmc/rest/api/uom/ManagementConsole/console",
-            "Resource": {"VersionInfo": "V10R1M1010", "ManagementConsoleName": "hmc1"},
-        }
+        # The captured V10R3 ManagementConsole entry (#1202).
+        self.console = parse_feed(live_fixture("rest-management-console")["body"])[0]
         self.cluster = {"UUID": CLUSTER_UUID, "Resource": {"ClusterName": "cl1"}}
         self.ssp = {
             "UUID": SSP_UUID,
@@ -234,7 +234,10 @@ class FakeHMC:
                 "FreeSpace": "512",
             },
         }
-        self.template = {"UUID": TEMPLATE_UUID, "Resource": {"templateName": "tpl1"}}
+        self.template = {
+            "UUID": TEMPLATE_UUID,
+            "Resource": {"partitionTemplateName": "tpl1"},
+        }
         self.vios_storage_detail = {"Resource": {}}
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [
@@ -245,7 +248,7 @@ class FakeHMC:
         ]
         self.metrics_json = {"data": [1, 2, 3]}
         self.fetch_json_404 = False
-        self.wait_job_status = "COMPLETED"
+        self.wait_job_status = "COMPLETED_OK"
 
     def _record(self, name: str, *args, **kwargs) -> None:
         self.calls.append((name, args, kwargs))
@@ -869,9 +872,8 @@ def test_lpars_list_state_filter(fake_hmc):
 
     assert result.exit_code == 0
     assert LPAR_NAME in result.stdout
-    assert fake_hmc.calls == [
-        ("search_uom", ("LogicalPartition", "PartitionState", "running"), {})
-    ]
+    # The partition feed, filtered locally: V10R3 cannot search a state (#1202).
+    assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
@@ -2721,7 +2723,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
 def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
     async def fake_list(_hmc, vios, vg, *, system_name_or_uuid=None):
         assert (vios, vg) == (VIOS_UUID, VG_UUID)
-        return [OpticalMedia("aix.iso", 4096, "ISO")]
+        return [OpticalMedia("aix.iso", 4096)]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
@@ -2734,6 +2736,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
     assert result.exit_code == 0
     assert "aix.iso" in result.stdout
     assert "4096" in result.stdout
+    assert "Type" not in result.stdout
 
 
 def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
@@ -2754,7 +2757,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     async def fake_list(_hmc, _vios, _vg, *, system_name_or_uuid=None):
-        return [OpticalMedia("aix.iso", None, None)]
+        return [OpticalMedia("aix.iso", None)]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.storage.resources.list_optical_media", fake_list
@@ -2765,9 +2768,7 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == [
-        {"name": "aix.iso", "size_mib": None, "media_type": None}
-    ]
+    assert json.loads(result.stdout) == [{"name": "aix.iso", "size_mib": None}]
 
 
 def test_storage_list_mappings_renders_virtual_disk(fake_hmc, monkeypatch):
@@ -3701,7 +3702,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
             ("chsyscfg -r prof", "lpar_name=lpar1", "lpar_proc_compat_mode=POWER10"),
         ),
         (
-            ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
+            ["network", "set-sriov-mode", "sys1", "1", "sriov"],
             ("lshwres", "sriov", "adapter"),
         ),
     ],
@@ -3719,7 +3720,7 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
             return "8375-42A\n"
         if "--rsubtype adapter" in command:
             fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
-            return f"{fields}\nP1-C1,1,sriov,1,U,2,120,120,running\n"
+            return f"{fields}\n1,21010020,sriov,1,U,2,120,120,running\n"
         if command.startswith("lssyscfg"):
             return "vioserver\n"
         return "updated\n"
@@ -3777,9 +3778,7 @@ def test_network_set_sriov_mode_preserves_bracketed_result(monkeypatch, fake_hmc
         "hmcpctl.cli_commands.virtualization.pcie.set_sriov_adapter_mode",
         fake_set_mode,
     )
-    result = RUNNER.invoke(
-        cli.app, ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"]
-    )
+    result = RUNNER.invoke(cli.app, ["network", "set-sriov-mode", "sys1", "1", "sriov"])
 
     assert result.exit_code == 0, result.output
     assert OWNERSHIP_STAMP in result.stdout
@@ -3912,14 +3911,14 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
 
 def test_network_list_io_slots_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
-        return "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,lpar_name=lpar1\n"
+        return live_fixture("cli-io-slots-default")["stdout"]
 
     _patch_ssh_command(monkeypatch, fake)
-    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1"])
+    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys-R1"])
 
     assert result.exit_code == 0
-    assert "U78DA.ND1.ABC1234-P1-C1" in result.stdout
-    assert "lpar1" in result.stdout
+    assert "21020013" in result.stdout
+    assert "sys-R1-vios1" in result.stdout
 
 
 def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):
@@ -4370,7 +4369,8 @@ def test_console_info(fake_hmc):
     result = RUNNER.invoke(cli.app, ["console", "info"])
 
     assert result.exit_code == 0
-    assert "V10R1M1010" in result.stdout
+    assert "1060" in result.stdout
+    assert "NetworkInterfaces" in result.stdout and "eth0" in result.stdout
     assert fake_hmc.calls == [("get_console_info", (), {})]
 
 
@@ -4378,7 +4378,7 @@ def test_console_info_json(fake_hmc):
     result = RUNNER.invoke(cli.app, ["console", "info", "--json"])
 
     assert result.exit_code == 0
-    assert "V10R1M1010" in result.stdout
+    assert "1060" in result.stdout
     assert fake_hmc.calls == [("get_console_info", (), {})]
 
 
@@ -4542,14 +4542,14 @@ def test_templates_list_json(fake_hmc):
     assert fake_hmc.calls == [("list_partition_templates", (), {})]
 
 
-def test_templates_cli_translates_not_licensed_error(fake_hmc):
+def test_templates_cli_translates_not_acceptable_error(fake_hmc):
     fake_hmc.fail_on = "list_partition_templates"
     fake_hmc.fail_status = 406
 
     result = RUNNER.invoke(cli.app, ["templates", "list"])
 
     assert result.exit_code == 1
-    assert "not licensed or not supported" in result.stderr
+    assert "refused the media type" in result.stderr
 
 
 def test_templates_show(fake_hmc):
@@ -4675,35 +4675,12 @@ def test_jobs_show_forwards_self_link(fake_hmc):
     assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": href})]
 
 
-def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "-1"])
-
-    assert result.exit_code == 2
-    assert "--limit must be greater than or equal to 0" in result.stderr
-    assert fake_hmc.calls == []
-
-
-def test_jobs_list_limits_and_renders_json(fake_hmc, monkeypatch):
-    async def fake_list(hmc):
-        assert hmc is fake_hmc
-        return [{"UUID": "job-1"}, {"UUID": "job-2"}]
-
-    monkeypatch.setattr(
-        "hmcpctl.cli_commands.jobs.operations_jobs.list_jobs", fake_list
-    )
-
-    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "1", "--json"])
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"UUID": "job-1"}]
-
-
 def test_jobs_wait(fake_hmc):
-    fake_hmc.job["Resource"]["Status"] = "COMPLETED"
+    fake_hmc.job["Resource"]["Status"] = "COMPLETED_OK"
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
 
     assert result.exit_code == 0
-    assert "COMPLETED" in result.stdout
+    assert "COMPLETED_OK" in result.stdout
     assert fake_hmc.calls == [("get_job_entry", (JOB_UUID,), {"job_href": None})]
 
 

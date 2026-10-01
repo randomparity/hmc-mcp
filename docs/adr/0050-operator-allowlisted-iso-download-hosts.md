@@ -8,6 +8,9 @@ Accepted (2026-08-20)
 > `MediaName`, `MediaSize`, and `MediaType` only. Since #963 it returns `name`, `size_mib` (the
 > HMC's GiB `Size` element converted to MiB) and `media_type`. Its listing still exposes no media
 > content, so this record's conclusion is unchanged. The original sentence is left in place.
+>
+> **Correction (2026-10-01, via #1202).** `media_type` is removed: no captured V10R3 or V11R2
+> medium carries a `MediaType` element, so the listing returns `name` and `size_mib` only.
 
 ## Context
 

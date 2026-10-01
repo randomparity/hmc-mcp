@@ -203,7 +203,7 @@ names are internal everywhere and are never inventoried.
   `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`,
   `add_vnic`, `list_fc_ports`, `list_sea_adapters`, `list_vnics`, `remove_vnic`.
 - `operations.jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
-  `is_unsupported_job_listing`.
+  none.
 - `operations.lpar` — operations: none; types: none; excluded synchronous: none.
 - `operations.lpar.assignments` — exports: `AssignmentResult`, `DedicatedPcieAssignment`,
   `LparPcieAssignments`, `LparPcieWorkflowResult`, `SriovLogicalPortAssignment`,

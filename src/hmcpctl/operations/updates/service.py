@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 from urllib.parse import quote
 
@@ -17,6 +16,7 @@ from ...jobs import (
     wait_for_submitted_job,
 )
 from ...resource_identity import resolve_system_uuid, resolve_vios_uuid
+from ...xmlutil import console_version
 from .models import (
     ConsoleUpdateSource,
     PlatformUpdateParameter,
@@ -29,7 +29,6 @@ from .models import (
     upgrade_vios_job,
 )
 
-_PLATFORM_UPDATE_VERSION = re.compile(r"V([0-9]{1,4})R([0-9]{1,4})M([0-9]{1,4})")
 _MINIMUM_PLATFORM_UPDATE_VERSION = (11, 1, 1111)
 
 
@@ -76,13 +75,7 @@ async def _wait_for_platform_update(
 def _require_platform_update_version(console: dict[str, Any] | None) -> None:
     """Require documented PlatformUpdate support before resolving a target."""
     resource = console.get("Resource") if isinstance(console, dict) else None
-    version = resource.get("VersionInfo") if isinstance(resource, dict) else None
-    match = (
-        _PLATFORM_UPDATE_VERSION.fullmatch(version)
-        if isinstance(version, str)
-        else None
-    )
-    parsed = tuple(int(part) for part in match.groups()) if match else None
+    parsed = console_version(resource) if isinstance(resource, dict) else None
     if parsed is None or parsed < _MINIMUM_PLATFORM_UPDATE_VERSION:
         classification = "below the minimum" if parsed is not None else "unavailable"
         raise ValueError(

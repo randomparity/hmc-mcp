@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.config import build_config
 from hmcpctl.server_tools.vios.core import (
@@ -18,6 +19,7 @@ SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 BACKUP_NAME = "vios1_backup_001"
+NO_RESULTS = "No results were found.\n"
 
 INVALID_BACKUP_NAMES = (
     "",
@@ -106,10 +108,17 @@ def test_list_vios_backups_preserves_embedded_newline_in_quoted_name(monkeypatch
     assert result == [{"name": "night\nly", "type": "ssp"}]
 
 
-def test_list_vios_backups_returns_empty_list(monkeypatch):
-    """An empty supported-command response represents an empty backup catalog."""
+@pytest.mark.parametrize("capture", ["cli-lsviosbk-empty", "cli-lsviosbk-empty-v11r2"])
+def test_list_vios_backups_returns_empty_list(monkeypatch, capture):
+    """The HMC's no-results sentinel is an empty backup catalog.
+
+    V10R3 and V11R2 both answer `lsviosbk ... -F name,type --header` for a VIOS
+    with no backups with exit 0 and this line, not an empty string (#1202).
+    """
     _hmc_env(monkeypatch)
-    conn_mock = _make_ssh_mock("")
+    recorded = live_fixture(capture)
+    assert recorded["exit_status"] == 0
+    conn_mock = _make_ssh_mock(recorded["stdout"])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_vios_backups(VIOS_UUID)
@@ -152,7 +161,7 @@ def test_list_vios_backups_resolves_vios_name(monkeypatch):
     hmc = AsyncMock()
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
     monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
-    conn_mock = _make_ssh_mock("")
+    conn_mock = _make_ssh_mock(NO_RESULTS)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_list_vios_backups("vios-prod")
@@ -170,7 +179,7 @@ def test_list_vios_backups_with_uuid_uses_one_config_without_rest(monkeypatch):
     config = object()
     hmc = AsyncMock()
     client_type = MagicMock(side_effect=_client_factory(hmc, config))
-    run_hmc_cli = AsyncMock(return_value="")
+    run_hmc_cli = AsyncMock(return_value=NO_RESULTS)
     monkeypatch.setattr("hmcpctl._app.client_from_env", client_type)
     monkeypatch.setattr("hmcpctl.operations.vios.core.run_hmc_cli", run_hmc_cli)
 
@@ -187,7 +196,7 @@ def test_list_vios_backups_reuses_config_for_rest_and_ssh(monkeypatch):
     hmc = AsyncMock()
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
     client_type = MagicMock(side_effect=_client_factory(hmc, config))
-    run_hmc_cli = AsyncMock(return_value="")
+    run_hmc_cli = AsyncMock(return_value=NO_RESULTS)
     monkeypatch.setattr("hmcpctl._app.client_from_env", client_type)
     monkeypatch.setattr("hmcpctl.operations.vios.core.run_hmc_cli", run_hmc_cli)
 

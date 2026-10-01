@@ -176,6 +176,13 @@ _NEW_UUID_PATH_CALLS = (
         f"ManagedSystem/{UUID_B}/do/PowerOff",
     ),
     (
+        "delete_vios",
+        (UUID_B,),
+        "vios_uuid",
+        0,
+        f"VirtualIOServer/{UUID_B}",
+    ),
+    (
         "power_on_vios",
         (UUID_B,),
         "vios_uuid",
@@ -201,7 +208,7 @@ _NEW_UUID_PATH_CALLS = (
         (UUID_B,),
         "vios_uuid",
         0,
-        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping&group=ViosFCMapping",
+        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping,ViosFCMapping",
     ),
 )
 
@@ -530,13 +537,9 @@ def test_platform_update_rejects_a_non_uuid_system_before_transport():
     "path",
     [
         "/rest/api/uom/jobs/j-1",
-        "/rest/api/uom/Job/abcd-1234",
-        "/jobs/j-1",
-        "/jobs/j%2D1",
-        "/rest/api/uom/LogicalPartition/lpar%2D1/do/PowerOn/Job/j-1",
-        # The shape the suite's own fixture uses, so the anchored pattern cannot
-        # tighten past what `submit_job` actually returns.
-        "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999",
+        "/rest/api/uom/jobs/j%2D1",
+        # The captured submission's SELF link path (#1161).
+        "/rest/api/uom/jobs/1787837921266",
     ],
 )
 def test_a_job_link_is_accepted(path):
@@ -554,6 +557,11 @@ def test_a_job_link_is_accepted(path):
         # segment membership too weak a test to rely on.
         "/rest/api/web/HmcUser/jobs",
         "/rest/api/web/HmcUser/root/Job",
+        # Job link forms no HMC capture or reference shows (#1202): the legacy
+        # uom Job type, a relative jobs path, and the per-operation link.
+        "/rest/api/uom/Job/abcd-1234",
+        "/jobs/j-1",
+        "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999",
         # Trailing content after the identifier.
         "/rest/api/uom/Job/j-1/../../web/HmcUser/root",
         "/rest/api/uom/Job/%2e%2e/web/HmcUser/root",
@@ -1111,6 +1119,7 @@ _UUID_UOM_REQUEST_SITES = {
     "client_storage.StorageMixin.list_storage_mappings": "vios_uuid",
     "client_storage.StorageMixin.list_volume_groups": "vios_uuid",
     "client_storage.StorageMixin.map_storage_to_lpar": "vios_uuid",
+    "client_systems.SystemsMixin.delete_vios": "vios_uuid",
     "client_systems.SystemsMixin.get_vios_storage_detail": "vios_uuid",
     "client_systems.SystemsMixin.list_vios": "system_uuid",
     "client_systems.SystemsMixin.modify_managed_system": "system_uuid",

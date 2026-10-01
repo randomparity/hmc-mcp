@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from urllib.parse import quote
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.operations.updates.service import (
     _require_platform_update_version,
@@ -14,19 +15,40 @@ from hmcpctl.operations.updates.service import (
     submit_available_hmc_ptfs_query,
     update_console_software,
 )
+from hmcpctl.xmlutil import parse_feed
+
+
+def _console(version: str, release: str, service_pack: str) -> dict:
+    return {
+        "Resource": {
+            "VersionInfo": {
+                "Version": version,
+                "Release": release,
+                "ServicePackName": service_pack,
+            }
+        }
+    }
 
 
 def test_platform_update_requires_documented_console_version():
-    _require_platform_update_version({"Resource": {"VersionInfo": "V11R1M1111"}})
+    _require_platform_update_version(_console("11", "1", "1111"))
 
     with pytest.raises(ValueError, match="HMC 11.1.1111"):
-        _require_platform_update_version({"Resource": {"VersionInfo": "V10R2M9999"}})
+        _require_platform_update_version(_console("10", "2", "9999"))
+
+
+def test_platform_update_reads_the_captured_nested_console_version():
+    """V10R3 nests VersionInfo; the captured HMC is M1060, below the minimum."""
+    console = parse_feed(live_fixture("rest-management-console")["body"])[0]
+
+    with pytest.raises(ValueError, match="version is below the minimum"):
+        _require_platform_update_version(console)
 
 
 def test_vios_completed_wait_result_projects_stdout_without_mutating_payload():
     job = {
         "Resource": {
-            "Status": "COMPLETED",
+            "Status": "COMPLETED_OK",
             "Results": {
                 "JobParameter": {"ParameterName": "stdOut", "ParameterValue": " ok "}
             },

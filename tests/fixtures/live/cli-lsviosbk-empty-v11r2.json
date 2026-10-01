@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p11-9824/capture-2.jsonl#11",
+  "command": "lsviosbk --filter vios_uuids=00000005-ABCD-4EF0-8ABC-000000000005 -F name,type --header",
+  "exit_status": 0,
+  "stdout": "No results were found.\n",
+  "stderr": ""
+}

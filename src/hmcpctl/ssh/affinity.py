@@ -13,6 +13,7 @@ from .commands import (
     _parse_lshwres_output,
     build_attribute_record,
     build_filter,
+    hmc_error_code,
     parse_hmc_delimited_rows,
 )
 from .profiles import get_proc_compat_modes
@@ -33,7 +34,6 @@ _RESOURCE_GROUP_CALCULATED_FIELDS = (
     "protected_lpar_names",
     "protected_lpar_ids",
 )
-_HMC_ERROR_CODE = re.compile(r"(?:^|[\r\n]|:\s)(HSCL[A-Z0-9]{4})\b")
 
 
 def _validate_selector_names(names: tuple[str, ...], label: str) -> None:
@@ -218,8 +218,7 @@ async def query_resource_group_memopt_scores(
     try:
         output = await run_hmc_command(config, command)
     except HMCCLIError as error:
-        match = _HMC_ERROR_CODE.search(str(error))
-        if match is None or match.group(1) != "HSCLCA00":
+        if hmc_error_code(error) != "HSCLCA00":
             raise
         return ResourceGroupMemoptQuery(
             [],

@@ -37,7 +37,7 @@ class _StorageClient:
         ]
 
     async def list_optical_media(self, _vios_uuid: str, _vg_uuid: str):
-        return [{"MediaName": "install.iso", "Size": "1", "MediaType": "ISO"}]
+        return [{"MediaName": "install.iso", "Size": "1"}]
 
     async def list_storage_mappings(self, _vios_uuid: str, _lpar_uuid=None):
         return _observed_mappings()
@@ -61,7 +61,6 @@ async def test_storage_inventory_translates_hmc_resources() -> None:
     assert asdict(optical_media[0]) == {
         "name": "install.iso",
         "size_mib": 1024,
-        "media_type": "ISO",
     }
     assert asdict(mappings[0]) == {
         "id": "vhost0/vtscsi0",
@@ -200,7 +199,7 @@ async def test_optical_media_reports_the_gib_size_field_in_mib(
 
     class _Client:
         async def list_optical_media(self, _vios_uuid: str, _vg_uuid: str):
-            return [{"MediaName": "install.iso", "Size": size_gib, "MediaType": "ISO"}]
+            return [{"MediaName": "install.iso", "Size": size_gib}]
 
     media = await list_optical_media(cast(HMCClient, _Client()), VIOS_UUID, "vg-1")
 
