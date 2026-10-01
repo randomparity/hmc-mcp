@@ -16,6 +16,7 @@ from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutatio
 from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...documents import LparResources, PartitionType, StorageKind
+from ...documents.lpar import validate_partition_type
 from ...documents.storage import validate_virtual_disk
 from ...errors import HMCError
 from ...jobs import JobOutcome, job_outcome
@@ -566,6 +567,7 @@ async def _preflight_provision_request(
         validate_affinity_request(request.affinity_assessment, configured_minimum)
     if request.caller_token is not None:
         validate_caller_token(request.caller_token)
+    validate_partition_type(request.partition_type)
 
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     if request.minimum_affinity_policy is not None:

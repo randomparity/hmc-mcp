@@ -8,7 +8,8 @@ import pytest
 from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources, build_lpar_document, build_vios_document
+from hmcpctl.documents import LparResources, build_vios_document
+from hmcpctl.documents.lpar import _partition_body, lpar_envelope
 from hmcpctl.errors import HMCError
 from hmcpctl.ssh.install import (
     INSTALLIOS_PID_PREFIX,
@@ -107,7 +108,11 @@ def test_create_vios_puts_to_the_virtual_io_server_collection(monkeypatch, mock_
 
 @pytest.mark.asyncio
 async def test_logical_partition_create_of_a_vios_surfaces_rest0140(mock_hmc):
-    """The LogicalPartition collection refuses a VIOS; the HMC's Message reaches the caller."""
+    """The LogicalPartition collection refuses a VIOS; the HMC's Message reaches the caller.
+
+    ``build_lpar_document`` now refuses this type before any request (#1179), so the
+    captured request body is composed from the shared partition body directly.
+    """
     mock_hmc.put(REFUSED["path"]).mock(
         return_value=httpx.Response(REFUSED["status"], text=REFUSED["body"])
     )
@@ -116,7 +121,9 @@ async def test_logical_partition_create_of_a_vios_surfaces_rest0140(mock_hmc):
         with pytest.raises(HMCError) as raised:
             await hmc.create_logical_partition(
                 CREATE_SYSTEM,
-                build_lpar_document("sys-R1-pcie-v1214", "Virtual IO Server"),
+                lpar_envelope(
+                    _partition_body("sys-R1-pcie-v1214", "Virtual IO Server")
+                ),
             )
 
     assert raised.value.status_code == 500
