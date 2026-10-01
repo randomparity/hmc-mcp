@@ -580,3 +580,19 @@ def test_fold_needs_a_source_each(tmp_path: Path, capsys) -> None:
     args += ["--source", "s", "--fold", str(derived), "--out", str(tmp_path / "v.json")]
     assert export.main(args) == 1
     assert "--fold-source" in capsys.readouterr().err
+
+
+def test_location_suffix_wwn_is_redacted_and_lun_kept() -> None:
+    """A `-L<hex>` suffix segment carries a disk WWN or RAID array id; `-L0` stays."""
+    line = "U78D2.001.ABCD123-P1-C49-L5000C50098A124EF-L0\n"  # pragma: allowlist secret
+    corpus = export.tokenize_records(_records(_ssh("lshwres -r io", line)))
+    assert corpus[-1]["stdout"] == "<REDACTED-LOC>-P1-C49-L<REDACTED-DEVID>-L0\n"
+
+
+def test_surviving_location_suffix_wwn_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rules = tuple(r for r in export.IDENTIFIER_RULES if "L[0-9A-F]" not in r[0].pattern)
+    monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_ssh("lshwres", "x-P1-L5000C50098A124EF-L0")))
