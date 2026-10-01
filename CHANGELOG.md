@@ -259,6 +259,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- A malformed `port` or `verify_ssl` in one profile now makes the profile listing (`config show`,
+  the MCP profile listing, `report utilization`) fail with a `ConfigError` naming the profile and
+  field instead of a bare `ValueError`, and a string `verify_ssl` such as `"false"` is listed as
+  `false` rather than `true` (#1257).
 - `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
   numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
