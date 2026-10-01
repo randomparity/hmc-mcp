@@ -102,6 +102,7 @@ STATIC_GATES = {
     "adr-numbering",
     "doc-freshness",
     "live-vocabulary",
+    "scenario-gap",
 }
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [

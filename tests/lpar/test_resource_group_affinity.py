@@ -275,14 +275,17 @@ def test_blank_output_fails_but_header_only_is_empty(output):
     [
         "resource_group_id,resource_group_name,curr_score\n0,Default,100\n",
         "resource_group_name,resource_group_id,curr_score\nDefault,0\n",
-        "resource_group_name,resource_group_id,curr_score\nDefault,,100\n",
     ],
 )
 def test_malformed_resource_group_output_is_actionable(output):
     runner = AsyncMock(side_effect=[V11, output])
     with (
         patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
-        pytest.raises(HMCCLIError),
+        pytest.raises(
+            HMCCLIError,
+            match="lsmemopt resource-group response did not match the expected "
+            "resource_group_name,resource_group_id,curr_score fields",
+        ),
     ):
         asyncio.run(
             query_resource_group_memopt_scores(
@@ -292,6 +295,37 @@ def test_malformed_resource_group_output_is_actionable(output):
                 calculated=False,
             )
         )
+
+
+def test_empty_required_resource_group_field_is_actionable():
+    output = "resource_group_name,resource_group_id,curr_score\nDefault,,100\n"
+    runner = AsyncMock(side_effect=[V11, output])
+    with (
+        patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
+        pytest.raises(HMCCLIError, match="row 1 has empty required fields"),
+    ):
+        asyncio.run(
+            query_resource_group_memopt_scores(
+                _config(),
+                "system",
+                MemoptResourceGroupSelector(all=True),
+                calculated=False,
+            )
+        )
+
+
+def test_empty_result_reply_is_no_resource_groups():
+    runner = AsyncMock(side_effect=[V11, "No results were found.\n"])
+    with patch("hmcpctl.ssh.affinity.run_hmc_command", runner):
+        query = asyncio.run(
+            query_resource_group_memopt_scores(
+                _config(),
+                "system",
+                MemoptResourceGroupSelector(all=True),
+                calculated=False,
+            )
+        )
+    assert query.items == []
 
 
 def test_shared_operation_resolves_system_and_defaults_to_all():
