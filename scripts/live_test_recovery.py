@@ -36,6 +36,7 @@ import asyncio
 import json
 import shlex
 import sys
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -414,7 +415,9 @@ def dispatched_subtasks(document: Any) -> list[int] | None:
     return subtasks
 
 
-def _calls(document: dict[str, Any], subtasks: set[int], tools: set[str]) -> list[dict]:
+def _calls(
+    document: dict[str, Any], subtasks: AbstractSet[int], tools: AbstractSet[str]
+) -> list[dict]:
     """Rows in *subtasks* recording a call to one of *tools*.
 
     A row's label opens with the tool it called. A `SKIP` row is a call never
@@ -474,7 +477,7 @@ def lpar_inputs_from_document(
             _calls(document, {14}, {"hmc_provision_lpar", "hmc_delete_lpar"})
         ),
         repository_owned=artifacts.get("vmedia_repo_created") is True
-        or bool(_calls(document, set(_VMEDIA_SUBTASKS), set(_REPOSITORY_TOOLS))),
+        or bool(_calls(document, _VMEDIA_SUBTASKS, _REPOSITORY_TOOLS)),
         powered_on=bool(_calls(document, {20}, {"hmc_power_on_lpar"})),
         boot_written=bool(saved_boot)
         or bool(_calls(document, {20, 22}, {"hmc_set_lpar_boot_order"})),
