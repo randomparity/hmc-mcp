@@ -35,6 +35,8 @@ RUNNER = CliRunner()
 
 CLI_COMMANDS = Path(hmcpctl.cli_commands.__file__).parent
 CONSOLES = frozenset({"console", "err_console"})
+# Console methods that parse a str argument as markup.
+MARKUP_METHODS = frozenset({"print", "log", "rule", "input", "status"})
 # Modules that may build a Rich console or table directly: the shared owner only.
 RICH_OWNERS = frozenset({"output.py"})
 # #1248 owns lpar/profiles.py's set-boot-order line, which still interpolates an
@@ -125,11 +127,11 @@ def _passes_markup_false(call: ast.Call) -> bool:
 
 
 def _is_console_print(node: ast.AST) -> bool:
-    """``console.print(...)``, also reached through a module (``output.console``)."""
+    """A markup-parsing console call, also reached through a module (``output.console``)."""
     if not (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "print"
+        and node.func.attr in MARKUP_METHODS
     ):
         return False
     receiver = node.func.value
@@ -144,7 +146,8 @@ def _imports_rich_directly(node: ast.AST, allowed: frozenset[str]) -> bool:
         modules = [alias.name for alias in node.names]
     elif isinstance(node, ast.ImportFrom) and node.module:
         if node.module.endswith("output") and any(
-            alias.name == "Table" for alias in node.names
+            alias.name == "Table" or (alias.name in CONSOLES and alias.asname)
+            for alias in node.names
         ):
             return True
         modules = [node.module]
@@ -186,8 +189,9 @@ def markup_violations(source: str, filename: str) -> list[str]:
     ``markup=False`` or print only literals, ``Text`` renderables and names its function
     binds exactly once to ``VerbatimTable``. No module calls ``from_markup`` or
     ``render``, and only ``output.py`` may import ``output.Table`` or from ``rich``
-    beyond ``rich.text``. Aliasing ``console.print`` to another
-    name, or assigning ``table.title`` after construction, is not detected.
+    beyond ``rich.text``; ``output``'s consoles keep their names. Binding
+    ``console.print`` to another name, rebinding a table name by import, ``match``,
+    ``def`` or ``global``, and assigning ``table.title`` later are not detected.
     """
     tree = ast.parse(source)
     owner = _enclosing_functions(tree)
@@ -244,6 +248,9 @@ def test_cli_commands_print_external_text_verbatim():
         ("def f(t: VerbatimTable):\n    t = x\n    console.print(t)", True),
         ('def f():\n    output.console.print(f"{x}")', True),
         ("from rich import print", True),
+        ("from .output import console as c", True),
+        ('def f():\n    console.rule(f"{name}")', True),
+        ('def f():\n    err_console.log(f"{name}")', True),
         ("from rich.markup import escape", True),
         ("from .output import Table", True),
         ("def f(t):\n    t.add_row(Text.from_markup(name))", True),

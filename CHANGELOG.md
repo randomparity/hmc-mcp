@@ -256,17 +256,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
-- `hmcpctl` output now prints HMC-sourced text and command arguments as received. Before
-  this fix, Rich read a `[word]` segment as markup and dropped it, and turned a `:word:`
-  code into an emoji. This applied to confirmation lines, warnings, error messages,
+- `hmcpctl` output no longer reads HMC-sourced text or command arguments as Rich markup or
+  emoji codes. Before this fix, Rich read a `[word]` segment as markup and dropped it, and
+  turned a `:word:` code into an emoji. This applied to confirmation lines, warnings, error messages,
   `console info` and every listing table's title, headers and cells. A crafted argument
   such as `x[bold red]y` could therefore restyle the confirmation that echoed it. Values
   are no longer passed through `rich.markup.escape`, which doubled a trailing backslash.
   `raw get` and `raw post` now print the body as received, ANSI codes and control
   characters included; before, they also wrapped it at 80 columns when piped and expanded
-  tabs. An AST test fails when a `console.print`/`err_console.print` call interpolates a
-  value without `markup=False` or `Text`, when code calls `from_markup` or `render`, and
-  when a module other than `output.py` imports from `rich` beyond `rich.text` (#1029).
+  tabs. An AST test fails when a `console`/`err_console` call that parses markup
+  interpolates a value without `markup=False` or `Text`, when code calls `from_markup` or
+  `render`, and when a module other than `output.py` imports from `rich` beyond
+  `rich.text` (#1029).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error
