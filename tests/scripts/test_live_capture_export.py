@@ -246,6 +246,7 @@ def test_identifier_rules(raw: str, gone: str, token: str) -> None:
         ("SerialNumber", "1234ABC", "&lt;REDACTED-SERIAL&gt;"),
         ("WWPN", "c0507609abcd0001", "&lt;REDACTED-DEVID&gt;"),
         ("VolumeUniqueID", "3E213600507680", "&lt;REDACTED-DEVID&gt;"),
+        ("MediaUDID", "lab7rh8", "&lt;REDACTED-DEVID&gt;"),
         ("IPAddress", "lab-console-7", "192.0.2.1"),
         ("IPv6Address", "fe80::1", "192.0.2.1"),
         ("NetworkAddress", "10.1.2.3", "192.0.2.1"),

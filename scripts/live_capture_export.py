@@ -101,7 +101,7 @@ Replacement = str | Callable[[re.Match[str]], str]
 
 #: Elements whose whole text is a device identifier.
 _DEVICE_ID_ELEMENTS = (
-    "VolumeUniqueID|UniqueDeviceID|DescriptorPage83|GroupSerialID|UDID|UniqueID"
+    "VolumeUniqueID|UniqueDeviceID|MediaUDID|DescriptorPage83|GroupSerialID|UDID|UniqueID"
     "|SerialNumberOfDisk|DeviceSerialNumber|WorldWidePortName|WWPN|PortWWPN"
 )
 _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
