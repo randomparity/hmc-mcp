@@ -56,9 +56,9 @@ V11R2, POWER9 to POWER11; private evidence, public-safe summary here) establishe
 ## Consequences
 
 - Idle reserved capacity is real hypervisor allocation, so it shows as allocated, not free.
-- A system whose VIOS feed fails still contributes every figure it reported; its VIOS figures
-  and the CPU remainder are missing from the sums, and the roll-up row says how many systems
-  lack them.
+- A system whose VIOS feed fails still contributes every figure it reported; its VIOS figures,
+  the CPU remainder and its dedicated/shared split (which include VIOS units) are missing from
+  the sums, and the roll-up row says how many systems lack them.
 - A roll-up's split columns can sum to less than its capacity columns when some systems lack a
   split figure; the shortfall note is what tells a reader so.
 - The two systems whose CPU remainder is non-zero show it as other reserved rather than hiding it.
