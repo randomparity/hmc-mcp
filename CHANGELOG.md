@@ -263,6 +263,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   pointing at `hmc_install_vios`, instead of reporting "No LPAR named …". The selector resolves
   only `LogicalPartition`-feed partitions, and a VIOS is listed only under `VirtualIOServer`
   (#1247).
+- The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
+  HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
+  `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
+  minimum-affinity policy, resource-group affinity score and profile `io_slots` reads report a
+  malformed reply in the same form, and the last two read the empty-result reply as no rows
+  (#1203).
 - A malformed `port` or `verify_ssl` in one profile now makes the profile listing (`config show`,
   the MCP profile listing, `report utilization`) fail with a `ConfigError` naming the profile and
   field instead of a bare `ValueError`, and a string `verify_ssl` such as `"false"` is listed as

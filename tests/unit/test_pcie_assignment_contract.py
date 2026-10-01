@@ -195,8 +195,20 @@ def test_profile_io_slot_read_refuses_a_headerless_answer(monkeypatch):
         "hmcpctl.ssh.profiles.run_hmc_command",
         AsyncMock(return_value="lpar,prof,none\n"),
     )
-    with pytest.raises(HMCCLIError, match="unadmitted profile io_slots readback"):
+    with pytest.raises(
+        HMCCLIError,
+        match="profile io_slots readback response did not match the expected "
+        "lpar_name,name,io_slots fields",
+    ):
         asyncio.run(read_profile_io_slot_rows(_config(), "sys"))
+
+
+def test_profile_io_slot_read_treats_hmc_empty_result_as_no_profiles(monkeypatch):
+    monkeypatch.setattr(
+        "hmcpctl.ssh.profiles.run_hmc_command",
+        AsyncMock(return_value="No results were found.\n"),
+    )
+    assert asyncio.run(read_profile_io_slot_rows(_config(), "sys")) == []
 
 
 @pytest.mark.parametrize(

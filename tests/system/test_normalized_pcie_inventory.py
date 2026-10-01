@@ -73,9 +73,22 @@ async def test_dedicated_slot_reader_rejects_schema_drift(output: str) -> None:
         patch(
             "hmcpctl.ssh.io_inventory.run_hmc_command", AsyncMock(return_value=output)
         ),
-        pytest.raises(ValueError, match="header|columns"),
+        pytest.raises(
+            HMCCLIError,
+            match="dedicated PCIe slot inventory response did not match the expected "
+            "drc_index,description,lpar_name fields: .*(header|columns)",
+        ),
     ):
         await list_dedicated_pcie_slot_rows(_config(), "sys1")
+
+
+@pytest.mark.asyncio
+async def test_dedicated_slot_reader_treats_hmc_empty_result_as_no_slots() -> None:
+    with patch(
+        "hmcpctl.ssh.io_inventory.run_hmc_command",
+        AsyncMock(return_value="No results were found.\n"),
+    ):
+        assert await list_dedicated_pcie_slot_rows(_config(), "sys1") == []
 
 
 @pytest.mark.asyncio
