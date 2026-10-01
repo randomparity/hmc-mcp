@@ -48,7 +48,7 @@ def test_platform_update_reads_the_captured_nested_console_version():
 def test_vios_completed_wait_result_projects_stdout_without_mutating_payload():
     job = {
         "Resource": {
-            "Status": "COMPLETED",
+            "Status": "COMPLETED_OK",
             "Results": {
                 "JobParameter": {"ParameterName": "stdOut", "ParameterValue": " ok "}
             },
