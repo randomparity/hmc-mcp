@@ -6,6 +6,7 @@ import csv
 import re
 import shlex
 from dataclasses import dataclass
+from typing import Literal
 
 from ..config import HMCConfig
 from .commands import build_attribute_record, build_filter, parse_hmc_delimited_rows
@@ -284,21 +285,47 @@ async def backup_lpar_profiles(
     return await run_hmc_command(config, cmd)
 
 
+# rstprofdata's mandatory ``-l`` (rstprofdata.md). Type 4 initializes the
+# profile data, deleting every partition, and is not offered.
+ProfileRestoreType = Literal[1, 2, 3]
+_PROFILE_RESTORE_TYPES = (1, 2, 3)
+
+
 async def restore_lpar_profiles(
     config: HMCConfig,
     system_name: str,
     file_path: str,
+    restore_type: ProfileRestoreType,
 ) -> str:
     """Restore LPAR profiles from *file_path* on *system_name* via SSH.
 
-    Runs ``rstprofdata -m <system_name> -f <file_path>`` and returns the raw
-    command output. *file_path* must already exist on the HMC filesystem.
-    Restoring overwrites the current LPAR profile configuration.
+    Runs ``rstprofdata -m <system_name> -l <restore_type> -f <file_path>`` and
+    returns the raw command output. *file_path* must already exist on the HMC
+    filesystem. *restore_type* is the HMC's mandatory restore type:
+
+    - ``1``: full restore from the backup file.
+    - ``2``: merge the current and backup profile data; on a conflict the
+      backup data wins.
+    - ``3``: merge the current and backup profile data; on a conflict the
+      current data wins.
+
+    Raises:
+        ValueError: If *restore_type* is not 1, 2 or 3, before any command runs.
     """
+    if isinstance(restore_type, bool) or restore_type not in _PROFILE_RESTORE_TYPES:
+        raise ValueError(
+            f"restore_type must be 1, 2 or 3, got {restore_type!r}: 1 restores the "
+            "backup in full, 2 merges with the backup winning conflicts, 3 merges "
+            "with the current data winning. Type 4 (initialize, which deletes "
+            "every partition) is not offered."
+        )
     # NOTE: no empty file_path guard here; see backup_lpar_profiles for the
     # guard pattern. A blank path produces an opaque HMC error rather than a
     # clear ValueError — tracked as a follow-on improvement.
-    cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+    cmd = (
+        f"rstprofdata -m {shlex.quote(system_name)} -l {restore_type} "
+        f"-f {shlex.quote(file_path)}"
+    )
     return await run_hmc_command(config, cmd)
 
 
