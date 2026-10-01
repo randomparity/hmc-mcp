@@ -5359,7 +5359,7 @@ def test_emission_refuses_a_path_git_does_not_ignore(tmp_path, capsys):
     assert not destination.exists()
 
 
-@pytest.mark.parametrize("schema_version", ["(not set)", "V1_0"])
+@pytest.mark.parametrize("schema_version", ["(not set)", "V1_0", "V1_17_0"])
 def test_emitted_observations_validate_against_the_catalog_shape(
     tmp_path, schema_version
 ):
@@ -5406,21 +5406,27 @@ def test_emission_refuses_an_unrecordable_schema_version(tmp_path, capsys):
         repo,
     )
     assert (
-        "HMC_SCHEMA_VERSION is not V<n>_<n> or unset — observations not written"
+        "HMC_SCHEMA_VERSION is not V<n>_<n>[_<n>...] or unset — observations not written"
         in capsys.readouterr().out
     )
     assert not destination.exists()
 
 
 @pytest.mark.asyncio
-async def test_an_unrecordable_schema_version_exits_before_the_run(
+async def test_an_unrecordable_schema_version_is_warned_before_the_run(
     monkeypatch, tmp_path, capsys
 ):
-    """A value no observation can hold costs a startup exit, not a hardware run."""
+    """A value no observation can hold is named before the hardware run, which still starts."""
     _isolate_runner(monkeypatch)
     _clear(monkeypatch, "HMC_SCHEMA_VERSION")
     monkeypatch.setenv("HMC_SCHEMA_VERSION", "v1_0")
-    monkeypatch.setattr(runner, "served_client", lambda: pytest.fail("opened a client"))
+
+    async def fake_subtask(_client, state):
+        print("subtask ran")
+        state.record(24, "fake", "PASS", {})
+
+    monkeypatch.setattr(runner, "SUBTASKS", {24: fake_subtask})
+    monkeypatch.setattr(runner, "_emit_observations", lambda *_args: False)
 
     assert (
         await runner.main(
@@ -5428,9 +5434,12 @@ async def test_an_unrecordable_schema_version_exits_before_the_run(
             config=runner.LiveTestConfig(),
             environment=("V10R3", "POWER10"),
         )
-        == 1
+        == 0
     )
-    assert "❌ HMC_SCHEMA_VERSION is not V<n>_<n> or unset" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    warning = "HMC_SCHEMA_VERSION is not V<n>_<n>[_<n>...] or unset — this run's"
+    assert warning in out
+    assert out.index(warning) < out.index("subtask ran")
 
 
 def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):

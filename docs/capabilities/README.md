@@ -82,8 +82,8 @@ from a `passed` one on that field alone. `hmc_release` and `hardware_family` are
 only free text and each has a grammar (`V<n>R<n>[M<n>]` and `POWER<n>`) rather than a
 permissive character class, so a hostname, serial, or location code cannot be written
 there. `schema_version` is the run's `HMC_SCHEMA_VERSION` as its header printed it — a
-`V<n>_<n>` token or `(not set)` — and observations stored before format 4 read `unrecorded`,
-because nothing recorded the value for them; it attributes the observation and does not
+`V<n>_<n>[_<n>...]` token or `(not set)` — and observations stored before format 4 read
+`unrecorded`, because nothing recorded the value for them; it attributes the observation and does not
 affect currency or promotion. An operation carries at most one live observation;
 re-validating replaces it, and the superseded record stays in `git log`.
 
@@ -167,8 +167,8 @@ and never into the catalog: a human copies them in, and the pull request that co
 one is where the record is reviewed. The runner writes nothing unless the tree is clean
 under `src/` and `scripts/`, both environment settings are present in `.env`
 (`LIVE_TEST_ENV_HMC_RELEASE` and `LIVE_TEST_ENV_HARDWARE_FAMILY` — both or neither),
-`HMC_SCHEMA_VERSION` is unset or a `V<n>_<n>` token (a run with both environment settings
-present exits at startup otherwise), and `git check-ignore` claims the destination.
+`HMC_SCHEMA_VERSION` is unset or a `V<n>_<n>[_<n>...]` token (a run with both environment
+settings present warns at startup otherwise), and `git check-ignore` claims the destination.
 
 The validator proves shape, not truth. It applies every bound the runner applies —
 because the catalog is hand-copied and hand-editable, so a check on the way out is not a

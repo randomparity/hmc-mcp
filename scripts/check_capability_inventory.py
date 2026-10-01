@@ -76,7 +76,7 @@ HMC_RELEASE = re.compile(r"V\d+R\d+(?:M\d+)?")
 HARDWARE_FAMILY = re.compile(r"POWER\d+")
 #: What a run may record for `HMC_SCHEMA_VERSION` (ADR 0186): the header token, or
 #: the run header's own rendering of an unset or empty variable.
-SCHEMA_VERSION = re.compile(r"V\d+_\d+|\(not set\)")
+SCHEMA_VERSION = re.compile(r"V\d+(?:_\d+)+|\(not set\)")
 #: Carried by observations stored before format 4; the runner never writes it.
 UNRECORDED_SCHEMA_VERSION = "unrecorded"
 
@@ -691,7 +691,7 @@ def _validate_observation(
         SCHEMA_VERSION, schema_version
     ):
         errors.append(
-            f"{label}: schema_version must be V<n>_<n>, (not set) or unrecorded"
+            f"{label}: schema_version must be V<n>_<n>[_<n>...], (not set) or unrecorded"
         )
     if not _one_of(observation["cleanup"], CLEANUP):
         errors.append(f"{label}: invalid cleanup")

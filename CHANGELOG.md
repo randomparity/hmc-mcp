@@ -992,10 +992,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 ### Changed
 
 - `docs/capabilities/maturity.json` moves to format 4: every live observation carries a
-  required `schema_version` — the run's `HMC_SCHEMA_VERSION` as `V<n>_<n>` or `(not set)`,
-  the string its header prints — and the 20 observations stored before it read
-  `unrecorded`. The live runner exits before the run when an observation environment is
-  configured and the variable fits neither form (#1090, ADR 0186).
+  required `schema_version` — the run's `HMC_SCHEMA_VERSION` as a `V<n>_<n>[_<n>...]` token
+  or `(not set)`, the string its header prints — and the 20 observations stored before it
+  read `unrecorded`. A run whose variable fits neither form writes no observations; the
+  runner warns at startup when an observation environment is configured (#1090, ADR 0186).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc

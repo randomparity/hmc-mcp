@@ -39,9 +39,8 @@ without it. `docs/compatibility.md` is the full account.
 
 The run header prints the resolved value, including `(not set)`, to stdout, and
 the results document records the same string as `run.schema_version`. Every
-emitted observation records it too, as `schema_version` (ADR 0186), so a run
-with an observation environment refuses at startup a value that field's grammar
-cannot hold.
+emitted observation records it too, as `schema_version` (ADR 0186); a value that
+field's grammar cannot hold is warned about at startup and writes no observations.
 """
 
 from __future__ import annotations
@@ -1575,7 +1574,9 @@ def _emit_observations(
         print("no LIVE_TEST_ENV_* settings — observations not written")
         return False
     if not check_capability_inventory.SCHEMA_VERSION.fullmatch(schema_version):
-        print("HMC_SCHEMA_VERSION is not V<n>_<n> or unset — observations not written")
+        print(
+            "HMC_SCHEMA_VERSION is not V<n>_<n>[_<n>...] or unset — observations not written"
+        )
         return False
     if not state.observations and not state.gaps:
         print("no verified observations or confirmed gaps — nothing to write")
@@ -1712,11 +1713,13 @@ async def main(
         environment is not None
         and not check_capability_inventory.SCHEMA_VERSION.fullmatch(schema_version)
     ):
+        # A warning, not an exit: a run starts whatever the variable holds (#875),
+        # and preflight predicts exactly that. Said here so the operator can stop
+        # before the hardware run rather than learn it from the emission step.
         print(
-            "❌ HMC_SCHEMA_VERSION is not V<n>_<n> or unset — observations could not "
-            "be recorded; correct or unset it"
+            "⚠️  HMC_SCHEMA_VERSION is not V<n>_<n>[_<n>...] or unset — this run's "
+            "observations will not be written"
         )
-        return 1
 
     # Determine which sub-tasks to run
     if subtask_filter is not None:

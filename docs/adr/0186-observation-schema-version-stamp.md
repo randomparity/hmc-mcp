@@ -20,16 +20,17 @@ were gathered without the value being recorded anywhere they could be recovered 
 
 Maturity format 4 adds a required `schema_version` key to every evidence observation.
 
-- **Value domain.** `V<n>_<n>` (the header's own token, e.g. `V1_0`), the literal
+- **Value domain.** `V<n>_<n>[_<n>...]` (the header's own token, e.g. `V1_0`, or the
+  three-component `V1_17_0` live HMCs report per ADR 0139), the literal
   `(not set)`, or the literal `unrecorded`. The first two are the strings the run header
   prints and `run.schema_version` records, so the two documents cannot disagree. The narrow
   grammar keeps this field, like `hmc_release` and `hardware_family`, unable to carry a
   hostname, serial or location code.
 - **Emission.** The runner writes the value it resolved for the run header. It never writes
-  `unrecorded`. When an observation environment is configured, a resolved value outside the
-  first two forms exits before the hardware run, as a malformed environment label already
-  does; emission refuses it again for a direct call. Without an observation environment the
-  run proceeds and the results document records the raw value.
+  `unrecorded`. A resolved value outside the first two forms writes no observations, and
+  the results document still records it. When an observation environment is configured
+  the runner warns at startup, before the hardware run, but still starts: a run starts
+  whatever the variable holds (#875), and preflight predicts exactly that.
 - **Existing observations.** Every observation stored before format 4 is migrated to
   `"schema_version": "unrecorded"`. That is the truthful value: nothing records which
   environment produced them. A fresh live run replaces one, as any re-validation does.
@@ -46,8 +47,8 @@ The catalog moves to format 4; a format-3 reader rejects it, and the validator r
 format 3. A hand-copied observation missing the key fails the gate instead of passing
 silently. The validator cannot tell an honest `unrecorded` from one typed onto a fresh
 observation; catalog review stays the trust boundary, as ADR 0132 already states for
-confirmations. An operator whose `HMC_SCHEMA_VERSION` is outside the grammar must correct or
-unset it, or drop the observation environment, before a live run starts.
+confirmations. An operator who ignores the startup warning for a malformed
+`HMC_SCHEMA_VERSION` completes the run without observations and must repeat it.
 
 ## Considered & rejected
 

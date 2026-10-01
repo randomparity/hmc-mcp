@@ -710,6 +710,9 @@ def test_environment_values_reject_private_identifiers(
     [
         ("V1_0", True),
         ("V10_12", True),
+        # Live HMCs report three components (ADR 0139).
+        ("V1_17_0", True),
+        ("V1_", False),
         ("(not set)", True),
         # Legacy only: the runner never writes it (ADR 0186).
         ("unrecorded", True),
@@ -735,7 +738,7 @@ def test_schema_version_domain(
 
     assert (
         "maturity evidence st1-hmc-get-console-info: schema_version must be "
-        "V<n>_<n>, (not set) or unrecorded" in errors
+        "V<n>_<n>[_<n>...], (not set) or unrecorded" in errors
     ) is not accepted
 
 
