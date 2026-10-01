@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import LPAR_RESOURCE_CONFIG
+from conftest import LPAR_RESOURCE_CONFIG, live_fixture
 from defusedxml import ElementTree as DET
 
 from hmcpctl.config import HMCConfig
@@ -154,14 +154,8 @@ def _unowned_partition():
 
 
 # The 400 a V10R3 HMC returned for the LPAR create PUT once writes sent Accept */*
-# (#935, 2026-09-24), in the HttpErrorResponse shape of tests/unit/test_client.py.
-_REST0001_BODY = (
-    '<HttpErrorResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">'
-    "<HTTPStatus>400</HTTPStatus>"
-    "<Message>REST0001 Failed to unmarshal input payload. Attribute 'schemaVersion' must "
-    "appear on element 'PartitionProcessorConfiguration'.</Message>"
-    "</HttpErrorResponse>"
-)
+# (#935, 2026-09-24), as captured in window 2 of #1161.
+_REST0001_BODY = live_fixture("rest-lpar-create-refused")["body"]
 
 
 def _mock_create_406(

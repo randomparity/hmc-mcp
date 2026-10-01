@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 import respx
-from conftest import LOGON_RESPONSE, make_config
+from conftest import LOGON_RESPONSE, live_fixture, live_response, make_config
 from defusedxml import ElementTree as DET
 
 from hmcpctl.audit import sink as audit_sink
@@ -245,7 +245,8 @@ def _managed_system_feed(uuid: str, name: str) -> str:
 """
 
 
-QUICK_STATE = "running"
+# The HMC answers a quick property with a JSON string, quotes included (#1161, P16).
+QUICK_STATE = live_fixture("rest-quick-partition-state")["body"]
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
@@ -802,7 +803,8 @@ async def test_quick_property(mock_hmc):
         state = await hmc.get_quick_property(
             "LogicalPartition", "33333333-3333-3333-3333-333333333333", "PartitionState"
         )
-    assert state == "running"
+    assert QUICK_STATE == '"open firmware"'
+    assert state == "open firmware"
 
 
 @pytest.mark.asyncio
@@ -2604,6 +2606,68 @@ async def test_create_child_400_surfaces_hmc_schema_message(mock_hmc):
     assert raised.value.status_code == 400
     assert "enumeration '[ROR]'" in str(raised.value)
     assert "<Message>" not in str(raised.value)
+
+
+# The captured V10R3 answers to a LogicalPartition create, read and miss (#1161).
+_CAPTURED_SYSTEM_UUID = "0000000e-abcd-4ef0-8abc-00000000000e"
+
+
+@pytest.mark.asyncio
+async def test_create_logical_partition_parses_the_captured_created_entry(mock_hmc):
+    path, response = live_response("rest-lpar-create-ok")
+    mock_hmc.put(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        entry = await hmc.create_logical_partition(_CAPTURED_SYSTEM_UUID, "<x/>")
+
+    assert entry is not None
+    assert entry["UUID"] == "00000010-ABCD-4EF0-8ABC-000000000010"
+    assert entry["Resource"]["PartitionName"] == "sys-R1-pcie-e1164a"
+    assert entry["Resource"]["PartitionState"] == "not activated"
+
+
+@pytest.mark.asyncio
+async def test_create_logical_partition_surfaces_the_captured_schema_refusal(mock_hmc):
+    """V10R3 puts the REST0001 unmarshal detail in the atom-wrapped <Message>."""
+    path, response = live_response("rest-lpar-create-refused")
+    mock_hmc.put(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.create_logical_partition(_CAPTURED_SYSTEM_UUID, "<x/>")
+
+    assert raised.value.status_code == 400
+    assert "REST0001" in raised.value.body
+    assert "must appear on element 'PartitionProcessorConfiguration'" in str(
+        raised.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_logical_partition_parses_the_captured_entry(mock_hmc):
+    path, response = live_response("rest-lpar-entry")
+    mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        entry = await hmc.get_logical_partition(path.rsplit("/", 1)[-1])
+
+    assert entry is not None
+    assert entry["UUID"] == path.rsplit("/", 1)[-1]
+    assert entry["Resource"]["PartitionName"] == "sys-R1-pcie-w1161b"
+    assert entry["Resource"]["PartitionID"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_get_logical_partition_raises_the_captured_not_found(mock_hmc):
+    path, response = live_response("rest-lpar-not-found")
+    mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.get_logical_partition(path.rsplit("/", 1)[-1])
+
+    assert raised.value.status_code == 404
+    assert "REST029B" in raised.value.body
 
 
 @pytest.mark.asyncio

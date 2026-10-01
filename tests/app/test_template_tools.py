@@ -10,7 +10,7 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY
+from conftest import JOB_ENTRY, JOB_ID
 
 from hmcpctl.errors import HMCError
 from hmcpctl.server_tools.templates.core import (
@@ -137,7 +137,7 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     )
     assert "K_X_API_SESSION_MEMENTO" in body
     assert set(result) == {"job", "ownership_stamped", "warnings"}
-    assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
+    assert result["job"]["Resource"]["JobID"] == JOB_ID
     assert result["ownership_stamped"] is None
     assert result["warnings"] == [
         (
@@ -187,7 +187,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     submit_route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
@@ -236,7 +236,7 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))

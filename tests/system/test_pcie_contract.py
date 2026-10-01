@@ -302,7 +302,8 @@ def test_evidence_pins_identity_and_capacity_semantics() -> None:
     slot = records["power9-io-slot"]
     rows = parse_hmc_delimited_rows(slot["parser_examples"]["stdout"], slot["fields"])
     assert [row["drc_index"] for row in rows] == ["21010003", "21010004"]
-    assert rows[1]["lpar_name"] == ""
+    # An unowned slot prints the literal `null` (tests/fixtures/live/cli-io-slots.json).
+    assert rows[1]["lpar_name"] == "null"
     assert records["power9-sriov-logport"]["admitted_claims"][0] == (
         "system + adapter_id + logical_port_id selectors"
     )

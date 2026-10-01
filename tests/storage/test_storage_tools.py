@@ -15,7 +15,7 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, mock_change_location
+from conftest import JOB_ENTRY, JOB_ID, mock_change_location
 
 from hmcpctl.client.client_contracts import ADAPTER_TYPES
 from hmcpctl.operations.lpar.profile_sync import ChangeLocation
@@ -660,7 +660,7 @@ def test_create_logical_unit_submits_job(monkeypatch, mock_hmc):
         '<ParameterValue kb="CUR" kxe="false">VirtualIO_Image</ParameterValue>' in body
     )
     assert "ClonedFrom" not in body
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
 
 
 @pytest.mark.parametrize(
@@ -708,7 +708,7 @@ def test_delete_logical_unit_submits_job(monkeypatch, mock_hmc):
     assert "DeleteLogicalUnit</OperationName>" in body
     assert '<ParameterName kb="ROR" kxe="false">LogicalUnitUDID</ParameterName>' in body
     assert '<ParameterValue kb="CUR" kxe="false">udid-1234</ParameterValue>' in body
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
 
 
 # ---------------------------------------------------------------------- #
@@ -735,7 +735,7 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/CreateLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_create_logical_unit(
@@ -752,7 +752,7 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/DeleteLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_delete_logical_unit(

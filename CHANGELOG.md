@@ -20,6 +20,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   session headers and redacts logon exchanges and secret-bearing text before writing, and
   refuses a destination git does not ignore; `.gitignore` now ignores `*.capture.jsonl` and
   `hmc-captures/` (#1161).
+- `tests/fixtures/live/` holds 15 tokenized captures from the #1161 windows, each citing its
+  capture, and the tests that mocked a guessed HMC shape now replay them: the shared job
+  entry is a captured `JobResponse` with a numeric JobID that differs from its entry UUID,
+  quick `PartitionState` answers are JSON-quoted, an unowned slot's owner is `null`, and
+  refcode timestamps read `MM/DD/YYYY HH:MM:SS`. New tests feed the captured 404 REST0005,
+  400 REST000E and job-feed refusals through the job read paths, and the captured LPAR
+  create, read and miss through the client (#1161).
 - Live observations for the v0.1.0 bare-CEC path, from the #879 window at `90c97b5f` on HMC
   V10R3 with a POWER9 (8375-42A) system: `lpar.create`, `pcie.list_dedicated_slots`,
   `pcie.assign_dedicated_slot`, `lpar.power_on`, `lpar.get_state`, `job.get`, `job.wait`,

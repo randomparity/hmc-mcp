@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.errors import HMCError
 from hmcpctl.resource_identity import ResourceNotFoundError
@@ -138,6 +138,21 @@ async def test_resolve_lpar_cli_name_unscoped_without_system():
     assert name == LPAR_NAME
     cmd = conn.run.call_args[0][0]
     assert cmd == "lssyscfg -r lpar -F uuid,name"
+
+
+@pytest.mark.asyncio
+async def test_resolve_lpar_cli_name_matches_the_captured_upper_case_uuid():
+    """V10R3 prints LPAR UUIDs in upper case; a lower-case selector still matches."""
+    capture = live_fixture("cli-lpar-uuid-name")
+    conn = _make_ssh_mock(capture["stdout"])
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
+        name = await resolve_lpar_cli_name(
+            make_config(), "00000001-abcd-4ef0-8abc-000000000001", system_name="sys-R1"
+        )
+
+    assert name == "sys-R1-lp3"
+    assert conn.run.call_args[0][0] == capture["command"]
 
 
 # REST element names the HMC CLI rejects as "An invalid attribute was entered"

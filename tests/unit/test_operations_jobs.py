@@ -12,7 +12,7 @@ import logging
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_response, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
@@ -22,7 +22,12 @@ from hmcpctl.jobs import (
     job_outcome,
     wait_for_submitted_job,
 )
-from hmcpctl.operations.jobs import get_job, wait_for_job
+from hmcpctl.operations.jobs import (
+    get_job,
+    is_unsupported_job_listing,
+    list_jobs,
+    wait_for_job,
+)
 
 _JOB_ID = "job-uuid-999"
 _GLOBAL_PATH = f"/rest/api/uom/jobs/{_JOB_ID}"
@@ -652,3 +657,85 @@ async def test_get_job_explains_a_legacy_entry_uuid_handle_paired_with_its_link(
     ]
     assert stored_uuid in warning and _REAL_JOB_ID in warning
     assert "entry's UUID" in warning
+
+
+# --------------------------------------------------------------------------- #
+# Captured V10R3 refusals through the production job paths (#1161; ADR 0093's
+# #1174 amendment: only a 404 means missing, and a 400 REST000E propagates).
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_captured_failed_activation_is_a_terminal_error(mock_hmc) -> None:
+    """A COMPLETED_WITH_ERROR read carries the HSCL refusal as the outcome's error."""
+    path, response = live_response("rest-job-completed-with-error")
+    mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, path.rsplit("/", 1)[-1])
+
+    assert (outcome.found, outcome.timed_out) == (True, False)
+    assert outcome.job_id == path.rsplit("/", 1)[-1]
+    assert outcome.status == "COMPLETED_WITH_ERROR"
+    assert outcome.error is not None and outcome.error.startswith("HSCL3681 ")
+    assert outcome.job_href == f"https://hmc.test:443{path}"
+
+
+@pytest.mark.asyncio
+async def test_captured_no_such_job_reads_as_found_false(mock_hmc) -> None:
+    path, response = live_response("rest-job-not-found")
+    route = mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await wait_for_job(
+            hmc, path.rsplit("/", 1)[-1], timeout_seconds=300, poll_interval=5
+        )
+
+    assert (outcome.found, outcome.job, outcome.status) == (False, None, None)
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_captured_entry_uuid_refusal_is_an_error_not_a_missing_job(
+    mock_hmc,
+) -> None:
+    """The HMC refuses an entry UUID's URL form for a live job; that is not absence."""
+    path, response = live_response("rest-job-entry-uuid-refused")
+    mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as excinfo:
+            await get_job(hmc, path.rsplit("/", 1)[-1])
+
+    assert excinfo.value.status_code == 400
+    assert "REST000E" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_captured_entry_uuid_refusal_on_the_confirming_read_propagates(
+    mock_hmc,
+) -> None:
+    """A stale link's 404 is not confirmed by a REST000E on the global read (#1174)."""
+    path, refused = live_response("rest-job-entry-uuid-refused")
+    _, missing = live_response("rest-job-not-found")
+    mock_hmc.get(_SELF_HREF).mock(return_value=missing)
+    global_route = mock_hmc.get(path).mock(return_value=refused)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as excinfo:
+            await get_job(hmc, path.rsplit("/", 1)[-1], job_href=_SELF_HREF)
+
+    assert global_route.called
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_captured_job_feed_refusal_is_an_unsupported_listing(mock_hmc) -> None:
+    path, response = live_response("rest-job-feed-refused")
+    mock_hmc.get(path).mock(return_value=response)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as excinfo:
+            await list_jobs(hmc)
+
+    assert is_unsupported_job_listing(excinfo.value)
