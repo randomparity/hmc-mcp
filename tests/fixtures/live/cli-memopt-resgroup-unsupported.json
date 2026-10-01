@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p9/capture.jsonl#312",
+  "command": "lsmemopt -m sys-2 -r resgroup -o currscore --gid all -F resource_group_name,resource_group_id,curr_score --header",
+  "exit_status": 1,
+  "stdout": "HSCLCA00 The managed system does not support multiple resource groups.\n",
+  "stderr": ""
+}
