@@ -55,7 +55,7 @@ async def test_foreign_partition_blocks_restore_before_ssh(caplog) -> None:
             new=write,
         ),
     ):
-        await restore_system_lpar_profiles(hmc, SYSTEM_UUID, "/tmp/profiles.bak", 1)
+        await restore_system_lpar_profiles(hmc, SYSTEM_UUID, "/tmp/profiles.bak")
 
     write.assert_not_awaited()
     records = [json.loads(record.message) for record in caplog.records]
@@ -122,13 +122,12 @@ async def test_override_skips_inventory_audits_wildcard_and_restores(caplog) -> 
             hmc,
             SYSTEM_UUID,
             "/tmp/profiles.bak",
-            1,
             ownership_override=True,
         )
 
     assert result == "restored"
     hmc.list_logical_partitions.assert_not_awaited()
-    write.assert_awaited_once_with(hmc.config, SYSTEM_NAME, "/tmp/profiles.bak", 1)
+    write.assert_awaited_once_with(hmc.config, SYSTEM_NAME, "/tmp/profiles.bak")
     records = [json.loads(record.message) for record in caplog.records]
     record = next(
         record for record in records if record["event"] == "ownership-override"
@@ -142,9 +141,7 @@ def test_tool_requires_approval_before_opening_client(monkeypatch) -> None:
     monkeypatch.setattr(server_profiles, "with_client", run)
 
     with pytest.raises(PermissionError, match="overwrites every profile"):
-        server_profiles.hmc_restore_lpar_profiles(
-            SYSTEM_UUID, "/tmp/profiles.bak", restore_type=1
-        )
+        server_profiles.hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak")
 
     run.assert_not_called()
 
@@ -169,7 +166,6 @@ def test_tool_delegates_restore_and_override_through_managed_client(
         system_wide_restore_approved=True,
         ownership_override=True,
         profile="lab",
-        restore_type=2,
     )
 
     assert result == "restored"
@@ -178,7 +174,6 @@ def test_tool_delegates_restore_and_override_through_managed_client(
         hmc,
         SYSTEM_UUID,
         "/tmp/profiles.bak",
-        2,
         ownership_override=True,
     )
 
@@ -198,7 +193,7 @@ def test_existing_positional_profile_cannot_become_ownership_override(
     monkeypatch.setattr(server_profiles, "restore_system_lpar_profiles", restore)
 
     result = server_profiles.hmc_restore_lpar_profiles(
-        SYSTEM_UUID, "/tmp/profiles.bak", True, "lab", restore_type=3
+        SYSTEM_UUID, "/tmp/profiles.bak", True, "lab"
     )
 
     assert result == "restored"
@@ -207,6 +202,5 @@ def test_existing_positional_profile_cannot_become_ownership_override(
         hmc,
         SYSTEM_UUID,
         "/tmp/profiles.bak",
-        3,
         ownership_override=False,
     )

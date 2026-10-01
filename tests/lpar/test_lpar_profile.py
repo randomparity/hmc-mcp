@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import make_config, mock_uuid_resolution
-from fastmcp import Client
+from conftest import mock_uuid_resolution
 
-from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
-from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
-from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
     hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile,
 )
-from hmcpctl.ssh.profiles import restore_lpar_profiles
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "managed_sys1"
@@ -132,11 +126,8 @@ def test_backup_lpar_profiles_whitespace_file_path_raises(monkeypatch, mock_hmc)
 # ---------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("restore_type", [1, 2, 3])
-def test_restore_lpar_profiles_runs_correct_command(
-    monkeypatch, mock_hmc, restore_type
-):
-    """rstprofdata carries the mandatory -l restore type (rstprofdata.md:17,31)."""
+def test_restore_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
+    """hmc_restore_lpar_profiles issues rstprofdata with correct system and file path."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     RESTORE_OUTPUT = "Restore operation completed successfully.\n"
@@ -148,28 +139,11 @@ def test_restore_lpar_profiles_runs_correct_command(
             "/tmp/lpar_profiles.bak",
             system_wide_restore_approved=True,
             ownership_override=True,
-            restore_type=restore_type,
         )
 
-    expected_cmd = (
-        f"rstprofdata -m {SYSTEM_NAME} -l {restore_type} -f /tmp/lpar_profiles.bak"
-    )
+    expected_cmd = f"rstprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "completed successfully" in result
-
-
-@pytest.mark.parametrize("restore_type", [0, 4, 5, True, "1", None])
-def test_restore_lpar_profiles_refuses_other_restore_types(restore_type):
-    """Only types 1-3 are sent; 4 initializes (deletes) every partition."""
-    run = AsyncMock()
-    with (
-        patch("hmcpctl.ssh.profiles.run_hmc_command", run),
-        pytest.raises(ValueError, match="restore_type must be 1, 2 or 3"),
-    ):
-        asyncio.run(
-            restore_lpar_profiles(make_config(), "sys", "/tmp/p.bak", restore_type)
-        )
-    run.assert_not_awaited()
 
 
 def test_restore_lpar_profiles_returns_cli_output(monkeypatch, mock_hmc):
@@ -185,7 +159,6 @@ def test_restore_lpar_profiles_returns_cli_output(monkeypatch, mock_hmc):
             "/tmp/profiles.bak",
             system_wide_restore_approved=True,
             ownership_override=True,
-            restore_type=1,
         )
 
     assert result == RAW_OUTPUT
@@ -195,7 +168,7 @@ def test_restore_lpar_profiles_requires_system_wide_approval(monkeypatch, mock_h
     _hmc_env(monkeypatch)
 
     with pytest.raises(PermissionError, match="overwrites every profile"):
-        hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak", restore_type=1)
+        hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/profiles.bak")
 
     assert not mock_hmc.calls
 
@@ -233,17 +206,3 @@ def test_sync_lpar_profile_returns_cli_output(monkeypatch, mock_hmc):
         result = hmc_sync_lpar_profile(SYSTEM_UUID, LPAR_UUID)
 
     assert result == RAW_OUTPUT
-
-
-def test_restore_tool_schema_requires_documented_restore_type():
-    """MCP callers must choose a restore type; the schema offers only 1-3."""
-    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
-
-    async def schema():
-        async with Client(create_mcp(policy)) as client:
-            tools = {tool.name: tool for tool in await client.list_tools()}
-            return tools["hmc_restore_lpar_profiles"].input_schema
-
-    parameters = asyncio.run(schema())
-    assert "restore_type" in parameters["required"]
-    assert parameters["properties"]["restore_type"]["enum"] == [1, 2, 3]
