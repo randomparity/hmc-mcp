@@ -31,9 +31,11 @@ reads or command families (out of scope).
   `(capacity, free)`: disk total and free (internal plus SAN), occupied slots and unassigned
   slots, SR-IOV logical ports and free ports. Each `*_util_pct` is `utilization_pct` over the
   pair, pooled in a roll-up over the readings reporting both, as CPU and memory are.
+- A container is present when its key is in the parsed parent mapping; a present container
+  with no entries (a self-closed element parses as `''`) has zero items.
 - Disk figures: per ADR 0185 decision 4, from each VIOS entry's `PhysicalVolumes`. A failed VIOS
-  feed leaves them unknown with the existing gap. A VIOS without `PhysicalVolumes` makes them
-  unknown with gap `PhysicalVolumes: VIOS <name> (<state>) reported no storage`. A volume without
+  feed leaves them unknown with the existing gap. Each VIOS without `PhysicalVolumes` adds gap
+  `PhysicalVolumes: VIOS <name> (<state>) reported no storage` and makes them unknown. A volume without
   `UniqueDeviceID` counts per VIOS, with gap `PhysicalVolumes: VIOS <name> lists a volume without
   UniqueDeviceID; it is not deduplicated`. A volume missing `VolumeCapacity`, the backing flags or
   `AvailableForUsage` makes the figures it feeds unknown. A system with no VIOS reports 0.
@@ -55,7 +57,9 @@ the others.
 
 ### Documentation
 
-`docs/cli.md` describes each new column; `CHANGELOG.md` records the addition.
+`docs/cli.md` describes each new column, including that disk figures cover only VIOS-reported
+volumes, and its summary lines and the command help name disk and adapter occupancy.
+`CHANGELOG.md` records the addition.
 
 ## Failure model
 
@@ -68,7 +72,9 @@ the others.
      in the fleet (ADR 0184 decision 5).
    - Existing CSV columns keep their names and positions.
 3. **Accepted failure classes**:
-   - A LUN zoned to VIOS of two different systems counts in both: each system can use it.
+   - A LUN zoned to VIOS of two systems counts once per system, so HMC and fleet SAN totals
+     over-state SAN shared across systems (ADR 0185 consequences).
+   - Disk figures cover only VIOS-reported volumes; NPIV and client-owned disks are absent.
    - "Assigned" disk is the VIOS's own unavailable-for-use judgment (ADR 0185 consequences).
    - Slot and SR-IOV shapes were captured on operating and initializing systems only; other
      states take the missing-container path.
@@ -80,7 +86,8 @@ the others.
 - A fixture system with two VIOS sharing one SAN LUN reports that LUN once, assigned when one VIOS
   says `AvailableForUsage` `false`.
 - A VIOS without `PhysicalVolumes`, a system without `IOSlots`, and a failed VIOS feed each leave
-  only their figures `unknown`, with a named gap; an empty container reports 0.
+  only their figures `unknown`, with a named gap; an empty or self-closed container reports 0.
+- A system two profiles read contributes its disk and adapter figures once to the fleet row.
 - Slot classes and SR-IOV figures match ADR 0185 for a fixture with each slot class.
 - The CSV header equals the old column list followed by the sixteen new columns; roll-up rows sum
   the new figures and name their shortfalls.

@@ -45,11 +45,17 @@ private evidence, public-safe counts here) established:
    `VolumeCapacity` in MiB. Disk utilization is assigned over total.
 5. A missing container is unknown with a named gap: no `PhysicalVolumes` on a VIOS makes the
    system's disk figures unknown; no `IOSlots` or no `SRIOVAdapters` makes the figures that need
-   it unknown. A present, empty container is a known 0.
+   it unknown. A present container with no entries, self-closed included, is a known 0.
 
 ## Consequences
 
-- One stopped VIOS hides its system's disk figures; the roll-up names the shortfall.
+- One stopped VIOS hides its system's disk figures, and a `ViosStorage` HTTP 500 on the
+  `VirtualIOServer` feed (ADR 0184) hides them for every system of that HMC; the roll-up names
+  the shortfall.
+- Disk figures cover only volumes a VIOS reports: NPIV-mapped LUNs and disks behind adapters a
+  client partition owns are absent, and a system without VIOS reads 0.
+- Roll-ups count a LUN once per system that sees it, so HMC and fleet SAN totals over-state SAN
+  shared across systems (for example, zoned for partition mobility).
 - An empty slot still assigned to a partition counts as empty: the issue counts empty slots
   whatever their assignment.
 - "Assigned" disk is whatever the VIOS reports unavailable for use, not only mapped disks.
@@ -60,6 +66,9 @@ private evidence, public-safe counts here) established:
   the REST counts equal `lshwres`; SSH would add a second credential path and per-system logins.
 - **Classify assigned disks by vSCSI mappings.** verified: 746 of 943 captured volumes were
   unavailable without any vSCSI mapping on their VIOS, so mappings under-report use.
+- **Deduplicate SAN volumes across systems by `UniqueDeviceID`.** judgment: complexity; roll-ups
+  would need per-volume data on every reading, and a LUN visible to two systems is usable by
+  either, so per-system visibility is the figure each system row reports.
 - **Sum the VIOS that reported storage.** judgment: fit; it under-reports a system silently,
   which ADR 0184 decision 4 forbids.
 - **Configured SR-IOV ports from `Configured*LogicalPorts`.** judgment: complexity; three
