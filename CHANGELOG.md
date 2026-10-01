@@ -252,6 +252,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `build_client_network_adapter_document` now refuse a `mac_address` that is not 12
   hexadecimal digits with no separators, the form chhwres documents and the HMC prints;
   a colon-separated MAC was previously sent to the HMC unchanged (#1202).
+- The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
+  systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
+  `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector
+  failed whenever REST was unreachable (#1202).
+- The default `name=value` CLI reads (`lshwres`, `lsmemopt`) no longer turn the HMC's empty
+  answer into a row: `hmc_list_memory_pools` on a system with no pool returned the phantom pool
+  `{"No results were found.": ""}`, and `hmc_list_lpar_memopt_scores` failed with "missing
+  required fields" on an empty answer. A list-valued pair, which the HMC prints quoted
+  (`"curr_lpar_names=a,b"`), is now one attribute instead of a key with a leading quote, so
+  `hmc_remove_memory_pool`'s assigned-partition guard sees the partitions it lists (#1202).
 - `hmc_deploy_partition_template(wait=True)` and `deploy_partition_template` now stamp the
   deployed partition's ownership when the job finishes `COMPLETED_OK`. They accepted only a
   bare `COMPLETED`, a status the HMC does not report, so a real deployment was never stamped
