@@ -561,21 +561,47 @@ def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:
 
 _ADMITTED_RELEASE_FIELDS = {"version": "10", "release": "3", "service pack": "1060"}
 
+SriovRead = Literal["adapter", "physical_port", "logical_port"]
+_ALL_SRIOV_READS: frozenset[SriovRead] = frozenset(
+    ("adapter", "physical_port", "logical_port")
+)
+# ADR 0183: each (HMC Version, Release, Service Pack, model) pair admits the SR-IOV
+# reads its read-only capture shows. Both POWER11 systems hold only dedicated-mode
+# adapters, so physical- and logical-port reads stay unadmitted there.
+_SRIOV_READ_ENVELOPE: dict[tuple[str, str, str, str], frozenset[SriovRead]] = {
+    ("10", "3", "1060", "8375-42A"): _ALL_SRIOV_READS,
+    ("11", "2", "1120", "9009-42A"): _ALL_SRIOV_READS,
+    ("11", "2", "1120", "9824-42A"): frozenset(("adapter",)),
+    ("11", "2", "1120", "9242-21B"): frozenset(("adapter",)),
+}
 
-def _is_exact_admitted_environment(version: str, model: str) -> bool:
-    """Match `lshmc -V`'s own Version/Release/Service Pack fields exactly.
 
-    The one envelope predicate both admission gates share. Never a substring test: an HMC
-    at a later service pack may still list an ``M1060`` fix line, and ``1060`` is a prefix
-    of ``10600``.
+def _release_fields(version: str) -> dict[str, str] | None:
+    """Return `lshmc -V`'s own Version/Release/Service Pack fields, or None.
+
+    Never a substring test: an HMC at a later service pack may still list an
+    ``M1060`` fix line, and ``1060`` is a prefix of ``10600``. A repeated or missing
+    field is None.
     """
     pairs = re.findall(r"\b(Version|Release|Service Pack):[ \t]*(\S+)", version)
     fields = {name.lower(): value for name, value in pairs}
+    return fields if len(pairs) == len(fields) == 3 else None
+
+
+def _is_exact_admitted_environment(version: str, model: str) -> bool:
+    """Match the ADR 0056/0165 mutation envelope: V10R3 M1060 on 8375-42A exactly."""
     return (
-        len(pairs) == len(_ADMITTED_RELEASE_FIELDS)
-        and fields == _ADMITTED_RELEASE_FIELDS
+        _release_fields(version) == _ADMITTED_RELEASE_FIELDS
         and model == _ADMITTED_SYSTEM_MODEL
     )
+
+
+def _admitted_sriov_reads(version: str, model: str) -> frozenset[SriovRead]:
+    fields = _release_fields(version)
+    if fields is None:
+        return frozenset()
+    key = (fields["version"], fields["release"], fields["service pack"], model)
+    return _SRIOV_READ_ENVELOPE.get(key, frozenset())
 
 
 async def require_dedicated_pcie_environment(
@@ -586,6 +612,33 @@ async def require_dedicated_pcie_environment(
         *await read_sriov_environment(config, system_name)
     ):
         raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
+
+
+async def require_sriov_read_environment(
+    config: HMCConfig, system_name: str, read: SriovRead
+) -> None:
+    """Refuse an SR-IOV inventory read outside the ADR 0183 read envelope."""
+    version, model = await read_sriov_environment(config, system_name)
+    if read not in _admitted_sriov_reads(version, model):
+        raise SriovLogicalPortCapabilityError(
+            f"SR-IOV {read.replace('_', '-')} inventory is admitted only for "
+            f"{_sriov_read_envelope_text(read)} (ADR 0183)"
+        )
+
+
+def _sriov_read_envelope_text(read: SriovRead) -> str:
+    pairs = [
+        f"HMC Version {version} Release {release} Service Pack {service_pack} "
+        f"with model {model}"
+        for (
+            version,
+            release,
+            service_pack,
+            model,
+        ), reads in _SRIOV_READ_ENVELOPE.items()
+        if read in reads
+    ]
+    return "; ".join(pairs)
 
 
 async def require_admitted_environment(config: HMCConfig, system_name: str) -> None:
@@ -1082,7 +1135,8 @@ async def set_sriov_adapter_mode(
     config = hmc.config
     validate_sriov_mode(mode)
     system_name = await _system_name(config, system_name_or_uuid)
-    await require_admitted_environment(config, system_name)
+    # Only reads: the check confirms the current mode and never changes it.
+    await require_sriov_read_environment(config, system_name, "adapter")
     rows = [
         row
         for row in await list_sriov_adapter_rows(config, system_name)
@@ -1104,7 +1158,7 @@ async def list_sriov_adapters(
     config = hmc.config
     system_name = await _system_name(config, system_name_or_uuid)
     try:
-        await require_admitted_environment(config, system_name)
+        await require_sriov_read_environment(config, system_name, "adapter")
     except SriovLogicalPortCapabilityError as caught:
         return _unavailable(
             "sriov_adapter", system_name, InventorySelector(adapter_id), str(caught)
@@ -1145,7 +1199,7 @@ async def list_sriov_physical_ports(
     system_name = await _system_name(config, system_name_or_uuid)
     selector = InventorySelector(adapter_id, physical_port_id)
     try:
-        await require_admitted_environment(config, system_name)
+        await require_sriov_read_environment(config, system_name, "physical_port")
     except SriovLogicalPortCapabilityError as caught:
         return _unavailable("sriov_physical_port", system_name, selector, str(caught))
     if adapter_id is None:
@@ -1190,7 +1244,7 @@ async def list_sriov_logical_ports(
     system_name = await _system_name(config, system_name_or_uuid)
     selector = InventorySelector(adapter_id, physical_port_id, logical_port_id)
     try:
-        await require_admitted_environment(config, system_name)
+        await require_sriov_read_environment(config, system_name, "logical_port")
     except SriovLogicalPortCapabilityError as caught:
         return _unavailable("sriov_logical_port", system_name, selector, str(caught))
     if adapter_id is None:

@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p9/capture-raw.jsonl#64",
+  "command": "lshwres -r sriov --rsubtype physport --level roce -m sys-2",
+  "exit_status": 0,
+  "stdout": "No results were found.\n",
+  "stderr": ""
+}

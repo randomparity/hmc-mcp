@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.operations.lpar.assignments import (
@@ -27,6 +28,7 @@ from hmcpctl.operations.virtualization.pcie import (
     SriovAdapter,
     SriovLogicalPortCapabilityError,
     list_sriov_physical_ports,
+    require_admitted_environment,
 )
 from hmcpctl.operations.virtualization.vnic import VnicBackingSelector
 from hmcpctl.ssh.transport import HMCCLIError
@@ -80,6 +82,14 @@ async def test_prevalidation_uses_normalized_physical_port_availability(
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.require_admitted_environment",
+            AsyncMock(),
+        ),
+        patch(
+            "hmcpctl.operations.virtualization.pcie.require_sriov_read_environment",
+            AsyncMock(),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.assignments.require_admitted_environment",
             AsyncMock(),
         ),
         patch(
@@ -146,6 +156,11 @@ async def test_dedicated_request_outside_the_envelope_fails_before_creation(
         patch(
             "hmcpctl.operations.lpar.assignments.resolve_ssh_names",
             AsyncMock(return_value=("sys", None)),
+        ),
+        # The inventory stub stands the gate down; this test needs the real one.
+        patch(
+            "hmcpctl.operations.lpar.assignments.require_admitted_environment",
+            require_admitted_environment,
         ),
         patch(
             "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
@@ -428,6 +443,8 @@ def _granularity_inventory(granularity: str | None) -> ExitStack:
     for target, mock in (
         (f"{pcie}._system_name", AsyncMock(return_value="sys")),
         (f"{pcie}.require_admitted_environment", AsyncMock()),
+        (f"{pcie}.require_sriov_read_environment", AsyncMock()),
+        (f"{assignments}.require_admitted_environment", AsyncMock()),
         (f"{pcie}.list_sriov_physical_port_rows", AsyncMock(return_value=[row])),
         (f"{assignments}.list_sriov_adapters", AsyncMock(return_value=adapter)),
         (f"{assignments}.list_sriov_logical_ports", AsyncMock(return_value=logical)),
@@ -524,5 +541,53 @@ async def test_create_refuses_off_granularity_capacity_before_creating_the_lpar(
             "sys",
             SimpleNamespace(name="new-lpar"),
             LparPcieAssignments(sriov=(_sriov_at("7.5"),)),
+        )
+    create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "assignments",
+    [
+        pytest.param(LparPcieAssignments(sriov=(_sriov_at("2"),)), id="logical-port"),
+        pytest.param(LparPcieAssignments(vnics=(_vnic_at("2"),)), id="vnic-backing"),
+    ],
+)
+async def test_create_refuses_sriov_items_outside_the_mutation_envelope(
+    assignments: LparPcieAssignments,
+) -> None:
+    # ADR 0183 admits V11R2 SR-IOV reads on a POWER9 9009-42A, but no capture
+    # holds a V11R2 assignment, so the request fails before an LPAR exists.
+    create = AsyncMock()
+    config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    environment = AsyncMock(
+        return_value=(
+            live_fixture("cli-lshmc-version-v11r2")["stdout"],
+            live_fixture("cli-type-model-v11r2-p9-9009-42a")["stdout"].strip(),
+        )
+    )
+    with (
+        _granularity_inventory("1.0"),
+        patch(
+            "hmcpctl.operations.virtualization.pcie.read_sriov_environment",
+            environment,
+        ),
+        patch(
+            "hmcpctl.operations.lpar.assignments.resolve_ssh_names",
+            AsyncMock(return_value=("sys", None)),
+        ),
+        # The inventory stub stands the gate down; this test needs the real one.
+        patch(
+            "hmcpctl.operations.lpar.assignments.require_admitted_environment",
+            require_admitted_environment,
+        ),
+        patch("hmcpctl.operations.lpar.workflows.create_and_stamp_lpar", create),
+        pytest.raises(SriovLogicalPortCapabilityError, match="8375-42A"),
+    ):
+        await create_lpar(
+            SimpleNamespace(config=config),
+            "sys",
+            SimpleNamespace(name="new-lpar"),
+            assignments,
         )
     create.assert_not_awaited()

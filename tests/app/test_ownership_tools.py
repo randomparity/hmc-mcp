@@ -152,6 +152,10 @@ def test_create_lpar_applies_validated_sriov_assignment(monkeypatch):
                 AsyncMock(return_value=Decimal()),
             ),
             patch(
+                "hmcpctl.operations.lpar.assignments.require_admitted_environment",
+                AsyncMock(),
+            ),
+            patch(
                 "hmcpctl.operations.lpar.assignments.assign_sriov_logical_port",
                 assigned,
             ),

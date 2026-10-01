@@ -56,6 +56,11 @@ def hmc_list_sriov_adapters(
 ) -> dict[str, Any]:
     """List normalized SR-IOV adapters, or report capability unavailable.
 
+    Answers on HMC V10R3 M1060 with model 8375-42A, and on V11R2 SP1120 with
+    9009-42A, 9824-42A or 9242-21B, the pairs whose captures admit adapter
+    inventory (ADR 0183). Elsewhere the result is ``capability-unavailable`` and
+    its reason names the admitted pairs.
+
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         adapter_id: Optional physical adapter ID used to filter the inventory.
@@ -82,6 +87,11 @@ def hmc_list_sriov_physical_ports(
     profile: str | None = None,
 ) -> dict[str, Any]:
     """List normalized SR-IOV physical ports, or report capability unavailable.
+
+    Answers on HMC V10R3 M1060 with model 8375-42A and on V11R2 SP1120 with
+    9009-42A (ADR 0183). Ports are read at the roce, ethc and eth levels and
+    merged. Elsewhere the result is ``capability-unavailable`` and its reason
+    names the admitted pairs.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -113,6 +123,10 @@ def hmc_list_sriov_logical_ports(
     profile: str | None = None,
 ) -> dict[str, Any]:
     """List normalized SR-IOV logical ports, or report capability unavailable.
+
+    Answers on HMC V10R3 M1060 with model 8375-42A and on V11R2 SP1120 with
+    9009-42A (ADR 0183). Elsewhere the result is ``capability-unavailable`` and
+    its reason names the admitted pairs.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -208,6 +222,9 @@ def hmc_assign_sriov_logical_port(
 ) -> SriovLogicalPortChangeResult:
     """Assign an evidence-backed Ethernet SR-IOV logical port.
 
+    Admitted only on HMC V10R3 M1060 with model 8375-42A (ADR 0056); ADR 0183
+    widens SR-IOV inventory reads, not this mutation.
+
     Args:
         system_name_or_uuid: Managed system name or UUID.
         lpar_name_or_uuid: Target partition name or UUID.
@@ -246,6 +263,9 @@ def hmc_unassign_sriov_logical_port(
     profile: str | None = None,
 ) -> SriovLogicalPortChangeResult:
     """Unassign a profile logical port on a Not Activated LPAR.
+
+    Admitted only on HMC V10R3 M1060 with model 8375-42A (ADR 0056); ADR 0183
+    widens SR-IOV inventory reads, not this mutation.
 
     Args:
         system_name_or_uuid: Managed system name or UUID.
