@@ -330,9 +330,9 @@ async def install_vios(
     ``installios`` argument grammar. This operation differs only in resolving
     its target through the ``VirtualIOServer`` feed rather than the
     ``LogicalPartition`` one, and reading that target's entry under
-    ``VirtualIOServer`` for the same local type and power-state preflight. Submission is not idempotent here either, and the same
-    partition-name-only log-path collision applies across every managed system
-    on the HMC.
+    ``VirtualIOServer`` for the same local type and power-state preflight.
+    Submission is not idempotent here either, and the same partition-name-only
+    log-path collision applies across every managed system on the HMC.
 
     Args:
         hmc: Connected client; its configuration also carries the SSH
