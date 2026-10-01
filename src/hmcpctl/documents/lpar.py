@@ -8,12 +8,13 @@ from typing import Literal, get_args
 from ..xmlutil import escapes_string_arguments
 from .common import UOM_NS, document_envelope
 
-PARTITION_TYPES: tuple[PartitionType, ...] = ("AIX/Linux", "OS400", "Virtual IO Server")
-OS_TYPES = ("aix", "linux", "ibmi")
+# The types a LogicalPartition create accepts. V10R3 answers a LogicalPartition PUT typed
+# Virtual IO Server with 500 REST0140 (#1179); a VIOS is created through its own collection.
+PARTITION_TYPES: tuple[PartitionType, ...] = ("AIX/Linux", "OS400")
+_VIOS_PARTITION_TYPE = "Virtual IO Server"
 # The creatable values of KeylockPosition.Enum in the V10R3 schema (#1161 P39).
 KEYLOCK_POSITIONS = ("normal", "manual")
-PartitionType = Literal["AIX/Linux", "OS400", "Virtual IO Server"]
-OsType = Literal["aix", "linux", "ibmi"]
+PartitionType = Literal["AIX/Linux", "OS400"]
 Keylock = Literal["normal", "manual"]
 SharingMode = Literal[
     "capped",
@@ -34,6 +35,22 @@ _REST_SHARING_MODES: dict[str, str] = {
     "share_idle_procs_active": "sre idle procs active",
     "share_idle_procs_always": "sre idle procs always",
 }
+
+
+def validate_partition_type(partition_type: str) -> PartitionType:
+    """Return *partition_type* if a LogicalPartition create can make it, else refuse."""
+    if partition_type == _VIOS_PARTITION_TYPE:
+        raise ValueError(
+            "partition_type 'Virtual IO Server' cannot be created as a LogicalPartition: "
+            "the HMC refuses it (HTTP 500 REST0140). Create a Virtual I/O Server with "
+            "hmc_create_vios. Nothing was created."
+        )
+    if partition_type not in PARTITION_TYPES:
+        raise ValueError(
+            f"partition_type must be one of: {', '.join(PARTITION_TYPES)}; got "
+            f"{partition_type!r}. Nothing was created."
+        )
+    return partition_type
 
 
 def validate_keylock(keylock: str | None) -> None:
@@ -285,10 +302,9 @@ def _processor_config(resources: LparResources) -> str:
 @escapes_string_arguments
 def build_lpar_document(
     name: str,
-    partition_type: PartitionType = "AIX/Linux",
+    partition_type: PartitionType | Literal["Virtual IO Server"] = "AIX/Linux",
     partition_id: int | None = None,
     resources: LparResources | None = None,
-    os_type: OsType | None = None,
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
 ) -> str:
@@ -300,18 +316,14 @@ def build_lpar_document(
     V10R3 rejects a sparse LogicalPartition POST, and ``PartitionType`` is
     create-only.
 
-    os_type: accepted (``aix``, ``linux``, or ``ibmi``) but not sent: the
-    schema marks ``OperatingSystemType`` read-only (``kb="ROR"``) and the HMC
-    sets ``AIX/Linux`` itself (#1164).
+    ``OperatingSystemType`` is never sent: the schema marks it read-only
+    (``kb="ROR"``) and the HMC sets ``AIX/Linux`` itself (#1179).
+    ``Virtual IO Server`` is admitted only for :func:`build_vios_document`.
     keylock: initial keylock position — ``normal`` or ``manual``.
     max_virtual_slots: maximum number of virtual I/O slots.
     """
-    if partition_type not in PARTITION_TYPES:
-        raise ValueError(
-            f"partition_type must be one of {PARTITION_TYPES}, got {partition_type!r}"
-        )
-    if os_type is not None and os_type not in OS_TYPES:
-        raise ValueError(f"os_type must be one of {OS_TYPES}, got {os_type!r}")
+    if partition_type != _VIOS_PARTITION_TYPE:
+        validate_partition_type(partition_type)
     validate_keylock(keylock)
 
     resources = resources or LparResources()

@@ -28,12 +28,10 @@ _EMPTY_LPAR = ET.fromstring(
         ("AuthenticationType", "access"),
         ("join_boot_device_paths", "boot"),
         ("KEYLOCK_POSITIONS", "lpar"),
-        ("OS_TYPES", "lpar"),
         ("PARTITION_TYPES", "lpar"),
         ("SHARING_MODES", "lpar"),
         ("Keylock", "lpar"),
         ("LparResources", "lpar"),
-        ("OsType", "lpar"),
         ("PartitionType", "lpar"),
         ("SharingMode", "lpar"),
         ("STORAGE_KINDS", "storage"),
@@ -61,7 +59,6 @@ def test_document_facade_exports_domain_owned_objects(name, owner):
         "KEYLOCK_POSITIONS",
         "LparResources",
         "MEM_MIRRORING_MODES",
-        "OS_TYPES",
         "PARTITION_TYPES",
         "POWER_OFF_POLICIES",
         "POWER_ON_LPAR_START_POLICIES",
@@ -270,17 +267,13 @@ def test_invalid_partition_type():
         build_lpar_document(name="bad", partition_type="Windows")
 
 
-def test_invalid_os_type():
-    with pytest.raises(ValueError, match="os_type"):
-        build_lpar_document(name="bad", os_type="windows")
-
-
 def test_invalid_keylock():
     with pytest.raises(ValueError, match="keylock"):
         build_lpar_document(name="bad", keylock="turbo")
 
 
 def test_all_partition_types_accepted():
+    assert PARTITION_TYPES == ("AIX/Linux", "OS400")
     for pt in PARTITION_TYPES:
         build_lpar_document(name="ok", partition_type=pt)
 
@@ -298,9 +291,9 @@ def test_invalid_authentication_type_is_rejected():
         build_hmc_user_document(user_id="operator", authentication_type="radius")
 
 
-def test_os_type_is_not_sent():
+def test_operating_system_type_is_never_sent():
     """OperatingSystemType is read-only and needs a ksv; the HMC sets AIX/Linux (#1161 P39)."""
-    xml = build_lpar_document(name="mypart", os_type="aix")
+    xml = build_lpar_document(name="mypart", partition_type="OS400")
     assert "OperatingSystemType" not in xml
 
 
@@ -323,7 +316,6 @@ def test_max_virtual_slots_emitted():
 def test_all_three_new_fields_together():
     xml = build_lpar_document(
         name="mypart",
-        os_type="linux",
         keylock="manual",
         max_virtual_slots=32,
     )

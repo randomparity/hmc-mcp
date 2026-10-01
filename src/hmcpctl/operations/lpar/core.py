@@ -29,12 +29,11 @@ from ...audit import records as audit
 from ...documents import (
     Keylock,
     LparResources,
-    OsType,
     PartitionType,
     build_lpar_document,
     partition_updates,
 )
-from ...documents.lpar import validate_keylock
+from ...documents.lpar import validate_keylock, validate_partition_type
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,
@@ -180,7 +179,6 @@ class LparCreation:
     partition_type: PartitionType
     resources: LparResources
     partition_id: int | None = None
-    os_type: OsType | None = None
     keylock: Keylock | None = None
     max_virtual_slots: int | None = None
     caller_token: str | None = None
@@ -463,6 +461,7 @@ async def create_and_stamp_lpar(
         # stamp's best-effort catch: no create can precede rejection, and a
         # malformed token can never discard the ownership stamp (ADR 0064).
         validate_caller_token(creation.caller_token)
+    validate_partition_type(creation.partition_type)
     validate_keylock(creation.keylock)
     existing = await hmc.find_partition_by_name(creation.name)
     if existing:
@@ -488,7 +487,6 @@ async def create_and_stamp_lpar(
             partition_type=creation.partition_type,
             partition_id=creation.partition_id,
             resources=resources,
-            os_type=creation.os_type,
             keylock=creation.keylock,
             max_virtual_slots=creation.max_virtual_slots,
         )

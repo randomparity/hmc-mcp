@@ -8,6 +8,7 @@ CLI fallback and still surface an actionable HMCError on 406.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import logging
 import xml.etree.ElementTree as ET  # nosec B405 - types only; parsing uses defusedxml
@@ -1038,3 +1039,23 @@ async def test_create_refuses_a_keylock_outside_the_schema_before_any_hmc_call()
         await create_and_stamp_lpar(hmc, SYSTEM_UUID, creation)
 
     assert hmc.mock_calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_a_vios_partition_type_before_any_hmc_call():
+    """V10R3 answers a LogicalPartition PUT typed Virtual IO Server with 500 REST0140."""
+    hmc = AsyncMock()
+    creation = LparCreation(
+        "acmesys9-lp3", "Virtual IO Server", LparResources(desired_vcpus=1)
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="hmc_create_vios"):
+        await create_and_stamp_lpar(hmc, SYSTEM_UUID, creation)
+
+    assert hmc.mock_calls == []
+
+
+def test_create_lpar_has_no_os_type():
+    """OperatingSystemType is read-only; the HMC sets AIX/Linux itself (#1179)."""
+    assert "os_type" not in inspect.signature(hmc_create_lpar).parameters
+    assert "os_type" not in {f.name for f in dataclasses.fields(LparCreation)}
