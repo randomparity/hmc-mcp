@@ -5,10 +5,9 @@ REST answers and the refcode listing from captures recorded with
 `scripts/live_test/capture.py`, and two CLI listings (`cli-io-slots.json`,
 `cli-lpar-uuid-name.json`) from raw read-only command output. The captures were
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
-records the patterns they show.
-
-Files whose `capture` starts `2026-09-30-ro/` come from the read-only capture
-sweep for issue #1202, on the same HMC level and hardware.
+records the patterns they show. Captures whose `capture` begins `2026-09-30-ro/` come
+from the read-only sweep for #1202, on the same HMC and system; a nonzero-exit one is
+raised in tests with `live_process_error(name)`.
 
 ## Format
 

@@ -421,19 +421,28 @@ async def resolve_lpar_cli_name(
 ) -> str:
     """Look up an LPAR UUID's CLI name over SSH.
 
-    Runs ``lssyscfg -r lpar [-m <system_name>] -F uuid,name``, scoped
-    to *system_name* when given and across all managed systems otherwise. Used
-    as the fallback by the REST-based LPAR-name resolver in :mod:`hmcpctl._app`
-    when the REST API is unreachable.
+    Runs ``lssyscfg -r lpar -m <system> -F uuid,name`` for *system_name*, or,
+    when it is omitted, for each system ``lssyscfg -r sys -F name`` lists:
+    ``lssyscfg -r lpar`` requires ``-m`` and exits 1 without it. Used as the
+    fallback by the REST-based LPAR-name resolver in :mod:`hmcpctl._app` when
+    the REST API is unreachable.
 
     Raises:
         HMCCLIError: If no row matches *lpar_uuid* in the command output.
     """
-    cmd = "lssyscfg -r lpar"
     if system_name:
-        cmd += f" -m {shlex.quote(system_name)}"
-    cmd += " -F uuid,name"
-    raw = await run_hmc_command(config, cmd)
+        systems = [system_name]
+    else:
+        listing = await run_hmc_command(config, "lssyscfg -r sys -F name")
+        systems = [line.strip() for line in listing.splitlines() if line.strip()]
+    raw = "\n".join(
+        [
+            await run_hmc_command(
+                config, f"lssyscfg -r lpar -m {shlex.quote(system)} -F uuid,name"
+            )
+            for system in systems
+        ]
+    )
     return _match_uuid_name(raw, lpar_uuid, "LPAR")
 
 

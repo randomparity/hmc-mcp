@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from conftest import live_fixture, make_config
+from conftest import live_fixture, live_process_error, make_config
 
 from hmcpctl.errors import HMCError
 from hmcpctl.resource_identity import ResourceNotFoundError
@@ -128,16 +128,36 @@ async def test_resolve_lpar_cli_name_scopes_to_system():
 
 
 @pytest.mark.asyncio
-async def test_resolve_lpar_cli_name_unscoped_without_system():
-    """Without a system name the lookup spans all managed systems (no -m)."""
-    conn = _make_ssh_mock(_LPAR_ROWS)
+async def test_resolve_lpar_cli_name_without_system_scopes_each_system():
+    """Without a system the lookup lists every system and scopes each with -m.
+
+    ``lssyscfg -r lpar`` without ``-m`` exits 1 (lssyscfg.md: -m is required
+    when listing partitions; captured in cli-lpar-no-m).
+    """
+
+    def run(cmd, **_kwargs):
+        if " -m " not in cmd and cmd.startswith("lssyscfg -r lpar"):
+            raise live_process_error("cli-lpar-no-m")
+        result = MagicMock()
+        result.stdout = {
+            "lssyscfg -r sys -F name": f"other\n{SYSTEM_NAME}\n",
+            "lssyscfg -r lpar -m other -F uuid,name": "No results were found.\n",
+            f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name": _LPAR_ROWS,
+        }[cmd]
+        return result
+
+    conn = _make_ssh_mock()
+    conn.run = AsyncMock(side_effect=run)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         name = await resolve_lpar_cli_name(make_config(), LPAR_UUID)
 
     assert name == LPAR_NAME
-    cmd = conn.run.call_args[0][0]
-    assert cmd == "lssyscfg -r lpar -F uuid,name"
+    assert [call.args[0] for call in conn.run.await_args_list] == [
+        "lssyscfg -r sys -F name",
+        "lssyscfg -r lpar -m other -F uuid,name",
+        f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name",
+    ]
 
 
 @pytest.mark.asyncio
@@ -167,7 +187,6 @@ _REST_ELEMENT_NAMES = {"UUID", "SystemName", "PartitionName"}
     [
         lambda: resolve_system_cli_name(make_config(), SYSTEM_UUID),
         lambda: resolve_lpar_cli_name(make_config(), LPAR_UUID, SYSTEM_NAME),
-        lambda: resolve_lpar_cli_name(make_config(), LPAR_UUID),
     ],
 )
 async def test_ssh_lookups_send_only_hmc_cli_attributes(lookup):
@@ -281,6 +300,6 @@ async def test_resolve_lpar_cli_name_matches_uuid_case_insensitively():
     conn = _make_ssh_mock(f"{lpar_uuid.upper()},{LPAR_NAME}\n")
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        name = await resolve_lpar_cli_name(make_config(), lpar_uuid)
+        name = await resolve_lpar_cli_name(make_config(), lpar_uuid, SYSTEM_NAME)
 
     assert name == LPAR_NAME

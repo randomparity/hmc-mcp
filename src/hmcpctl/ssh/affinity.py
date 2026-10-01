@@ -368,10 +368,7 @@ async def list_lpar_memopt_scores(
             raise ValueError("lpar_name must not be empty")
         lpar_filter = build_filter([("lpar_names", lpar_name)])
         command += f" --filter {shlex.quote(lpar_filter)}"
-    output = await run_hmc_command(config, command)
-    if not output.strip():
-        return []
-    rows = _parse_lshwres_output(output)
+    rows = _parse_lshwres_output(await run_hmc_command(config, command))
     required = {"lpar_name", "lpar_id", "curr_lpar_score"}
     for index, row in enumerate(rows, start=1):
         missing = sorted(required - row.keys())

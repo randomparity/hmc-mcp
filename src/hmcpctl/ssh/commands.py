@@ -247,10 +247,14 @@ def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:
     """Parse ``lshwres`` key=value output into a list of dicts.
 
     Each non-empty line is expected to be a comma-separated sequence of
-    ``key=value`` pairs (the default ``lshwres`` output format).  Values that
-    are absent (empty string) are included as empty strings so callers can
-    distinguish missing from absent fields.
+    ``key=value`` pairs (the default ``lshwres`` output format).  A list value
+    prints as one double-quoted pair (``"name=v1,v2"``), so a line is split as
+    CSV before each pair is split on ``=``.  Values that are absent (empty
+    string) are included as empty strings so callers can distinguish missing
+    from absent fields.  The empty-result sentinel is no rows.
     """
+    if text.strip() == HMC_NO_RESULTS:
+        return []
     results = []
     for line in text.splitlines():
         line = line.strip()
@@ -258,7 +262,11 @@ def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:
             continue
         row: dict[str, Any] = {}
         last_key: str | None = None
-        for pair in line.split(","):
+        try:
+            pairs = next(iter(csv.reader([line], strict=True)))
+        except csv.Error as error:
+            raise HMCCLIError(f"malformed HMC name=value record: {error}") from error
+        for pair in pairs:
             if "=" in pair:
                 key, _, value = pair.partition("=")
                 last_key = key.strip()

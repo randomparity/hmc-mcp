@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture.jsonl#278",
+  "command": "lssyscfg -r sys -m sys-R1 -F lpar_proc_compat_modes",
+  "exit_status": 0,
+  "stdout": "\"default,POWER7,POWER8,POWER9,POWER9_base\"\n",
+  "stderr": ""
+}

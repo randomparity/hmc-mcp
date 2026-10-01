@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import mock_uuid_resolution
+from conftest import live_process_error, mock_uuid_resolution
 
 from hmcpctl.server_tools.lpar.configuration import (
     hmc_get_lpar_proc_compat,
@@ -143,16 +143,19 @@ def test_get_lpar_proc_compat_reads_the_named_profile(monkeypatch, mock_hmc):
     assert result["profile_mode"] == "default"
 
 
-def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
-    """An empty partition record yields empty values and no profile read."""
+def test_get_lpar_proc_compat_reports_unknown_partition(monkeypatch, mock_hmc):
+    """An unknown partition exits 1 with HSCL8012 and no profile read follows."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock("\n")
+    conn_mock = _make_ssh_mock()
+    conn_mock.run.side_effect = live_process_error("cli-lpar-unknown")
 
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="HSCL8012"),
+    ):
+        hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
 
-    assert result == {"desired": "", "curr": "", "profile": "", "profile_mode": ""}
     conn_mock.run.assert_awaited_once()
 
 
