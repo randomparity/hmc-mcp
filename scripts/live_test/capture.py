@@ -30,6 +30,7 @@ import httpx
 
 from hmcpctl.client.core import HMCClient
 
+STREAM_NOT_RECORDED = "<stream: not recorded>"
 LOGON_REDACTED = "<redacted: logon>"
 SECRET_REDACTED = "<redacted: secret>"
 
@@ -38,6 +39,7 @@ _SECRET_KEYWORDS = (
     "passwd",
     "passphrase",
     "sftpkey",
+    "sshkey",
     "private key",
     "x-api-session",
     "x_api_session",
@@ -129,6 +131,8 @@ class Capture:
             if kwargs.get("json") is not None
             else kwargs.get("content")
         )
+        if body is not None and not isinstance(body, str | bytes):
+            body = STREAM_NOT_RECORDED
         record: dict[str, Any] = {
             "kind": "rest",
             "method": method,
@@ -147,11 +151,13 @@ class Capture:
 
     def _ssh_record(self, command: Any, outcome: Any) -> dict[str, Any]:
         record: dict[str, Any] = {"kind": "ssh", "command": _redact(command)}
-        if isinstance(outcome, BaseException) and not isinstance(
-            outcome, asyncssh.ProcessError
+        failed = isinstance(outcome, BaseException)
+        if failed and (
+            not isinstance(outcome, asyncssh.ProcessError)
+            or isinstance(outcome, asyncssh.TimeoutError)
         ):
             record["exception"] = _redact(_exception_text(outcome))
-        else:
+        if not failed or isinstance(outcome, asyncssh.ProcessError):
             record["exit_status"] = outcome.exit_status
             record["stdout"] = _redact(outcome.stdout)
             record["stderr"] = _redact(outcome.stderr)
@@ -203,6 +209,7 @@ def capture(path: Path) -> Iterator[Capture]:
             ".capture.jsonl or a path under hmc-captures/"
         )
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.fchmod(fd, 0o600)
     _ACTIVE = True
     original_request = HMCClient._request
     original_run = asyncssh.SSHClientConnection.run
@@ -214,5 +221,6 @@ def capture(path: Path) -> Iterator[Capture]:
     finally:
         HMCClient._request = original_request  # type: ignore[method-assign]
         asyncssh.SSHClientConnection.run = original_run  # type: ignore[method-assign]
+        cap._enabled = False  # a spy still in flight must not write to a reused fd
         os.close(fd)
         _ACTIVE = False

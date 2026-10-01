@@ -256,6 +256,7 @@ _KEYWORDS = [
     "PASSWD",
     "Passphrase",
     "SFTPKey",
+    "SSHKey",
     "Private Key",
     "X-API-Session",
     "X_API_SESSION",
@@ -416,3 +417,64 @@ def test_file_is_created_with_mode_0600(
     finally:
         os.umask(old)
     assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+
+
+def test_existing_file_is_tightened_to_mode_0600(dest: Path) -> None:
+    dest.write_text("")
+    dest.chmod(0o644)
+    with capture.capture(dest):
+        pass
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+
+
+async def _chunks() -> Any:
+    yield b"iso-bytes"
+
+
+def test_streamed_request_body_is_a_placeholder_and_recording_continues(
+    monkeypatch: pytest.MonkeyPatch, dest: Path
+) -> None:
+    _install_rest(monkeypatch, _response())
+    with capture.capture(dest):
+        _rest("PUT", content=_chunks())
+        _rest("GET")
+    first, second = _records(dest)
+    assert first["request_body"] == capture.STREAM_NOT_RECORDED
+    assert second["kind"] == "rest"
+
+
+def test_ssh_timeout_records_the_exception(
+    monkeypatch: pytest.MonkeyPatch, dest: Path
+) -> None:
+    err = asyncssh.TimeoutError(None, "sleep", None, None, None, None, b"part", b"")
+    _install_ssh(monkeypatch, err)
+    with capture.capture(dest), pytest.raises(asyncssh.TimeoutError):
+        _ssh("sleep 99", timeout=1)
+    (rec,) = _records(dest)
+    assert rec["exception"].startswith("TimeoutError")
+    assert rec["stdout"] == "part"
+    assert rec["exit_status"] is None
+
+
+def test_record_completing_after_exit_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch, dest: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def scenario() -> None:
+        gate = asyncio.Event()
+
+        async def slow(self: Any, method: str, path: str, **kwargs: Any) -> Any:
+            await gate.wait()
+            return _response()
+
+        monkeypatch.setattr(HMCClient, "_request", slow)
+        with capture.capture(dest):
+            task = asyncio.ensure_future(
+                HMCClient._request(None, "GET", "/x")  # type: ignore[arg-type]
+            )
+            await asyncio.sleep(0)
+        gate.set()
+        await task
+
+    asyncio.run(scenario())
+    assert dest.read_text() == ""
+    assert capsys.readouterr().err == ""  # no write attempted on the closed fd
