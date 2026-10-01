@@ -229,6 +229,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
+  systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
+  `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector
+  failed whenever REST was unreachable (#1202).
 - The default `name=value` CLI reads (`lshwres`, `lsmemopt`) no longer turn the HMC's empty
   answer into a row: `hmc_list_memory_pools` on a system with no pool returned the phantom pool
   `{"No results were found.": ""}`, and `hmc_list_lpar_memopt_scores` failed with "missing

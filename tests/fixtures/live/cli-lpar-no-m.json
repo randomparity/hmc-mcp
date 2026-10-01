@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#51",
+  "command": "lssyscfg -r lpar -F uuid,name",
+  "exit_status": 1,
+  "stdout": "The command entered is either missing a required parameter or a parameter value is invalid. The parameters that are missing or have an invalid value are -m. Please check your entry and retry the command.\n",
+  "stderr": ""
+}
