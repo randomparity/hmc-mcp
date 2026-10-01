@@ -256,3 +256,16 @@ async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
         await resolve_system_name(make_config(), SYSTEM_UUID)
 
     mock_connect.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_lpar_cli_name_matches_uuid_case_insensitively():
+    """`lssyscfg -F uuid` prints LPAR UUIDs in upper case on V10R3; a lower-case
+    selector names the same partition (live capture, #879)."""
+    lpar_uuid = "6d2b02ee-9c63-4e20-9f88-36ca5ea4e9ab"
+    conn = _make_ssh_mock(f"{lpar_uuid.upper()},{LPAR_NAME}\n")
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
+        name = await resolve_lpar_cli_name(make_config(), lpar_uuid)
+
+    assert name == LPAR_NAME

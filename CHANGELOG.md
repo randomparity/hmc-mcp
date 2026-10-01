@@ -10,6 +10,24 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `docs/api-patterns.md` records the HMC REST and CLI behaviour verified live on V10R3 with
+  POWER9 hardware: the 47 patterns from the #1161 capture windows and four observations from
+  the #879 window, grouped by envelope, identifiers, links, media types, jobs, error codes,
+  schema and CLI output. Each row names the capture commit and the hmcpctl code that conforms
+  or diverges, with the fixing issue or PR (#1161).
+- A capture harness for live probes, `scripts/live_test/capture.py`. `capture(path)` records
+  every REST request and SSH command hmcpctl makes inside the block as one JSON line, drops
+  session headers and redacts logon exchanges and secret-bearing text before writing, and
+  refuses a destination git does not ignore; `.gitignore` now ignores `*.capture.jsonl` and
+  `hmc-captures/` (#1161).
+- Live observations for the v0.1.0 bare-CEC path, from the #879 window at `90c97b5f` on HMC
+  V10R3 with a POWER9 (8375-42A) system: `lpar.create`, `pcie.list_dedicated_slots`,
+  `pcie.assign_dedicated_slot`, `lpar.power_on`, `lpar.get_state`, `job.get`, `job.wait`,
+  `lpar.list_refcodes`, `lpar.capture_console`, `lpar.power_off`,
+  `pcie.unassign_dedicated_slot` and `lpar.delete`, plus refreshed observations for the eight
+  inventory reads. `just verification-report` reports 20 operations `current` and none stale.
+  `lpar.power_on` is recorded `partial`: network boot is #868. `docs/recipes/bare-cec-lpar.md`
+  now records the outcomes of its verbatim run (#879).
 - The power-path `ownership_override` cost is now stated as the source has it: the partition
   resolution plus one partition-name GET, with no SSH command and no managed-system name read.
   Corrected in the `_power_on` docstring and `docs/environment-variables.md`, and ADR 0092 §4
@@ -209,6 +227,104 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   path and its `mksyscfg` fallback. Omitted vcpus count as the `mksyscfg` defaults (min 1,
   desired 1, max `max(desired, 2)`), so `desired_procs=1.5` with no `--vcpus` is refused;
   dedicated requests and modify are unchanged. (#1034)
+- Resolving a partition or managed-system UUID to its CLI name over SSH (used by
+  `lpars capture-console` and the other SSH-passthrough tools) matches the UUID
+  case-insensitively. V10R3's `lssyscfg -F uuid` prints LPAR UUIDs in upper case, so a
+  lower-case LPAR UUID failed with `Could not resolve LPAR UUID` (#879).
+- `pcie.list_dedicated_slots` (and so `hmc_list_dedicated_pcie_slots` and
+  `network list-dedicated-pcie-slots`) reports an unowned slot's `owner_lpar` as `null`. It
+  returned the string `"null"`, which `lshwres -F` prints for an absent partition name on
+  V10R3 (#1195).
+- `operations.jobs.get_job` and `wait_for_job` (and so `hmc_get_job`, `hmc_wait_for_job`,
+  `jobs show` and `jobs wait`) no longer report a job as missing when a supplied `job_href`
+  returns 404 and the confirming read through the global jobs path returns `HTTP 400 REST000E`.
+  They now raise `HMCError`. On V10R3 that 400 refuses the request's URL form and comes back
+  for a live job too; only `404 REST0005 No such Job` means missing. ADR 0093 carries a dated
+  amendment with the evidence review of #95 (#1174).
+- `hmc_set_lpar_description`, `lpars set-description` and `set_lpar_ownership_description` no
+  longer strip the ownership stamp. `chsyscfg` replaces the whole field, so plain text set on a
+  stamped partition left it unowned, and mutable and deletable without `ownership_override`.
+  Plain text now replaces the field but keeps the current `[hmcpctl owner:... created:...]`
+  stamp and its `[caller ...]` segment at its start, taken from the same description read the
+  ownership guard makes. Text carrying its own complete stamp is still written as given, the
+  ADR 0066 re-stamp and handover. A `[hmcpctl` or `[caller ` fragment without a complete stamp
+  is refused before any HMC call. Removing a stamp now takes `ownership_override`, which
+  writes the text as given. ADR 0066 carries a dated amendment recording the change (#1169).
+- `hmc_power_on_lpar` and `power_on_lpar` with `wait` now read the partition
+  state once after the job ends successfully and raise when it is `error` or `not activated`,
+  naming the state and pointing at `hmc_read_lpar_refcodes`. The HMC can finish the PowerOn job
+  `COMPLETED_OK` while activation fails, which was reported as success (#1165).
+- The managed-system MTMS is now read from the element V10R3 serves,
+  `MachineTypeModelAndSerialNumber`, through one shared renderer (`xmlutil.render_mtms`).
+  `systems list` showed `-` for every system, a VIOS backup addressed by system UUID always
+  failed its MTMS lookup, and snapshot capture and `console info`
+  read the unserved `MachineTypeModelSerialNumber`. The old name is no longer read (#1184).
+- `hmc_lpar_summary`, `lpars summary` and `lpar_summary` returned null memory and processor
+  figures on V10R3, which nests them in `PartitionMemoryConfiguration` and
+  `PartitionProcessorConfiguration`. They now read those containers: `current_proc_units` and
+  `desired_proc_units` are processing units for a shared partition and processors for a dedicated
+  one, `dedicated_procs` is now a boolean saying which, and `desired_vcpus` is null for a
+  dedicated partition. `current_*` no longer falls back to the desired value. `os_type` is a
+  string. An inactive partition still reads 0 for every figure on V10R3 (#1183).
+- `hmc_modify_lpar`, `hmc_dlpar_proc` and the other REST modify paths now write a dedicated
+  partition's `sharing_mode` in the HMC's own `SharingMode` spelling (`sre idle proces` for
+  `share_idle_procs`), reusing the create document's mapping. The CLI spelling was refused with
+  `REST0001` (#1185).
+- `hmc_create_lpar`, `lpars create` and provisioning now create partitions through the REST API on
+  V10R3 instead of always falling back to `mksyscfg`. The create document now carries
+  `schemaVersion` on the processor configurations, follows the element order and enumeration
+  spelling of the HMC's own XSDs (`SharingMode` `keep idle procs`, not `keep_idle_procs`),
+  states `HasDedicatedProcessors=false` for a shared partition, and nests
+  `max_virtual_slots` as `PartitionIOConfiguration/MaximumVirtualIOSlots`. A REST-created
+  partition gets `default_profile` and a current configuration and activates without an
+  apply, so the `apply_profile` step reports `skipped` with that reason and no warning
+  (#1164, ADR 0178 amendment).
+- Both create paths take omitted memory and processor values from one defaults function, so
+  the REST document carries the processing units and minimum virtual processors V10R3
+  requires. A dedicated create without `sharing_mode` gets `keep_idle_procs` on either path,
+  where `mksyscfg` previously refused it. The `mksyscfg` record now honors a capped shared
+  request instead of always sending `uncap`, and either path refuses a dedicated
+  `sharing_mode` on a shared request before any create call. The vCPU-versus-units guards
+  (#938, #949) now run before the REST create too, not only before `mksyscfg`. A create with
+  no memory or processor values still goes straight to `mksyscfg`'s `all_resources=1`
+  (#1164).
+- The `mksyscfg` fallback after a refused REST create now logs the HMC's message at
+  `WARNING`, so a defect in the create document no longer hides behind a successful CLI
+  create. `os_type` is documented as having no effect on a create: the HMC treats
+  `OperatingSystemType` as read-only and sets `AIX/Linux` (#1164).
+- `hmc_create_lpar` and `create_and_stamp_lpar` refuse a `keylock` other than `normal` or
+  `manual` before any HMC call. `auto` was accepted before, but V10R3's `KeylockPosition`
+  enumeration has no such value and `mksyscfg` takes no keylock, so an `auto` create
+  fell back to `mksyscfg` and dropped the keylock silently (#1164).
+- `hmc_power_on_lpar`, `lpars power-on` and `power_on_lpar`/`power_lpar` no longer submit a
+  PowerOn the HMC is certain to fail (HSCL3681) when the partition is not `not activated`. An
+  activated partition — `running`, `starting` or `open firmware` — reports `already_running`
+  with a message naming its state; any other state, or an empty read, is refused with an HTTP
+  409 `HMCError` naming it, and no job is submitted. The comparison ignores case, so the CLI's
+  title-case rendering is read the same way. `force=True` still submits, and the failed job is
+  returned as before (#1162).
+- `hmc_fleet_health` (and `systems health`) failed-job records carry the identifier
+  `hmc_get_job` accepts. Each record's `uuid`, filled from the entry UUID that a V10R3 HMC
+  answers with HTTP 406 on `/rest/api/uom/jobs/{id}`, is replaced by `job_id`, taken from
+  `jobs.job_identifier` (the `Resource.JobID`). Output-contract change on a pre-release
+  surface: `uuid` is renamed rather than kept alongside, since it named the unreadable
+  identifier and no documented consumer reads `failed_jobs[].uuid`; the other health buckets
+  keep `uuid` for the resources they describe (#1173).
+- `hmc_capacity_report`, `hmc_find_placement`, `hmc_system_summary` and their CLI commands
+  report real capacity on a V10R3 HMC instead of zeros. They read the system's
+  `AssociatedSystemMemoryConfiguration` and `AssociatedSystemProcessorConfiguration`
+  containers: total is the configurable figure, free the currently available one, and assigned
+  is total minus free, so it now counts hypervisor memory and the VIOS, which the partition feed
+  omits. Partition figures no longer feed capacity, since an inactive partition reads 0. A
+  system that serves no such figure fails with an error naming it rather than reading 0.
+  `hmc_system_summary` returns `mtms` as `type-model*serial` from
+  `MachineTypeModelAndSerialNumber` and `firmware_version` as the firmware text (#1175).
+- `hmc_set_lpar_proc_compat`, `lpars set-proc-compat` and `set_lpar_proc_compat` now write
+  `lpar_proc_compat_mode` with `chsyscfg -r prof`; the HMC accepts it only on a partition profile
+  and rejected every `-r lpar` call. They change the profile named by the new `profile_name`
+  argument (`--profile-name`), or the partition's default profile from `lssyscfg -r lpar -F
+  default_profile`, and report which profile changed. `hmc_get_lpar_proc_compat` and `lpars
+  get-proc-compat` add `profile` and `profile_mode` beside `desired` and `curr` (#1167).
 - A malformed or blank header-bearing response to the vNIC, vNIC backing-device and VIOS
   identity SSH reads now raises `HMCCLIError` naming the read and its expected fields, as the
   SR-IOV and reference-code reads already did, instead of a bare `ValueError`. It reaches vNIC
@@ -670,6 +786,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   size (`LIVE_TEST_PROVISION_DISK_MIB`, a multiple of 1024). Subtask 14 lists the virtual
   networks and stops before deleting the test partition when the VLAN is not there, and
   `scripts/live_test_preflight.py` reports a VLAN with no virtual network (#970).
+- `hmc_create_lpar`, `hmc_modify_lpar` and `hmc_set_lpar_memory` (and their CLI and library
+  equivalents) refuse a `desired_memory` above the managed system's own
+  `ConfigurableSystemMemory` before any write, naming both values in MiB. `mksyscfg` used to
+  store the oversize profile and the failure surfaced only at activation. A modify or DLPAR
+  memory call that names no managed system is not checked, because that path does not resolve
+  one (#1166).
 
 ### Changed
 

@@ -31,6 +31,7 @@ from hmcpctl.resource_identity import (
     resolve_system_uuid,
 )
 from hmcpctl.ssh.profiles import read_lpar_profile_record
+from hmcpctl.xmlutil import mtms_parts
 
 from .models import (
     MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
@@ -327,19 +328,11 @@ def _identity_parts(
     lpar_resource: dict[str, Any],
 ) -> tuple[HMCIdentity, SystemIdentity, LparIdentity]:
     """Parse remote identity fields and enforce the portable snapshot contract."""
-    mtms = system_resource.get("MachineTypeModelSerialNumber")
-    if isinstance(mtms, dict):
-        machine_type = _nonblank_text(mtms.get("MachineType"), "system machine type")
-        model = _nonblank_text(mtms.get("Model"), "system model")
-        serial = _nonblank_text(mtms.get("SerialNumber"), "system serial")
-        machine_type_model = f"{machine_type}-{model}"
-    else:
-        mtms_text = _nonblank_text(mtms, "system MTMS")
-        if "*" not in mtms_text:
-            raise ValueError(
-                "Snapshot capture requires system MTMS in type-model*serial form"
-            )
-        machine_type_model, serial = mtms_text.split("*", 1)
+    mtms = mtms_parts(system_resource)
+    if mtms is None:
+        raise ValueError("Snapshot capture requires a complete system MTMS")
+    machine_type, model, serial = mtms
+    machine_type_model = f"{machine_type}-{model}"
     return (
         HMCIdentity(
             uuid=_nonblank_text(console.get("UUID") if console else None, "HMC UUID"),

@@ -8,7 +8,9 @@ from hmcpctl.xmlutil import (
     find_text,
     leaf_text,
     localname,
+    mtms_parts,
     parse_feed,
+    render_mtms,
 )
 
 MANAGED_SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -24,11 +26,11 @@ MANAGED_SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Metadata><Atom/></Metadata>
         <SystemName kb="CUR" kxe="false">server1</SystemName>
         <State kb="CUR" kxe="false">operating</State>
-        <MachineTypeModelSerialNumber kb="CUR" kxe="false">
+        <MachineTypeModelAndSerialNumber kb="CUR" kxe="false">
           <MachineType kb="CUR" kxe="false">9179</MachineType>
           <Model kb="CUR" kxe="false">MHD</Model>
           <SerialNumber kb="CUR" kxe="false">06064FV</SerialNumber>
-        </MachineTypeModelSerialNumber>
+        </MachineTypeModelAndSerialNumber>
       </ManagedSystem>
     </content>
   </entry>
@@ -81,7 +83,7 @@ def test_parse_feed_multiple_entries():
     )
     assert first["Resource"]["SystemName"] == "server1"
     assert first["Resource"]["State"] == "operating"
-    mtms = first["Resource"]["MachineTypeModelSerialNumber"]
+    mtms = first["Resource"]["MachineTypeModelAndSerialNumber"]
     assert mtms["MachineType"] == "9179"
     assert mtms["Model"] == "MHD"
     assert mtms["SerialNumber"] == "06064FV"
@@ -175,3 +177,45 @@ def test_a_lone_relative_self_link_is_still_reported():
     )
 
     assert parse_feed(entry)[0]["link"] == "nulljobs/1"
+
+
+CAPTURED_MTMS_ENTRY = """<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:sys-1</id>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <MachineTypeModelAndSerialNumber kxe="false" kb="ROR" schemaVersion="V1_0">
+        <Metadata><Atom/></Metadata>
+        <MachineType kb="CUR">8375</MachineType>
+        <Model kb="CUR">42A</Model>
+        <SerialNumber kb="CUR">SN00001</SerialNumber>
+      </MachineTypeModelAndSerialNumber>
+    </ManagedSystem>
+  </content>
+</entry>"""
+
+
+def test_render_mtms_reads_the_served_element_with_attributed_children():
+    resource = parse_feed(CAPTURED_MTMS_ENTRY)[0]["Resource"]
+    assert mtms_parts(resource) == ("8375", "42A", "SN00001")
+    assert render_mtms(resource) == "8375-42A*SN00001"
+
+
+@pytest.mark.parametrize(
+    "resource",
+    [
+        {},
+        {"MachineTypeModelSerialNumber": {"MachineType": "8375"}},
+        {"MachineTypeModelAndSerialNumber": "8375-42A*SN00001"},
+        {"MachineTypeModelAndSerialNumber": {"MachineType": "8375", "Model": "42A"}},
+        {
+            "MachineTypeModelAndSerialNumber": {
+                "MachineType": "8375",
+                "Model": " ",
+                "SerialNumber": "SN00001",
+            }
+        },
+    ],
+    ids=["absent", "unserved-name", "scalar", "missing-serial", "blank-model"],
+)
+def test_render_mtms_is_none_unless_all_three_parts_are_present(resource):
+    assert render_mtms(resource) is None

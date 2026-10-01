@@ -1,8 +1,8 @@
 # Bare-CEC LPAR recipe
 
-> **Unverified.** No live run has executed this recipe yet. The v0.1.0 live window (#879) will
-> run it verbatim and correct each expected output. Until then, treat the expected output as a
-> description of intended behaviour, not a record of hardware behaviour.
+> **Verified** on HMC V10R3 M1060 with an 8375-42A (POWER9) managed system during the v0.1.0
+> live window (#879). Each expected output below is what that run returned. Another HMC level or
+> machine model may answer differently.
 
 This recipe brings up one Linux LPAR that uses no VIOS, shared storage, or virtual network. It
 creates the partition, gives it a dedicated physical PCIe slot, activates it to the SMS menu,
@@ -67,12 +67,13 @@ hmcpctl lpars state "$LPAR_NAME"
 Expected: `Created LPAR '<new-lpar-name>'` and the partition as JSON; copy its `UUID` into
 `LPAR`. `lpars state` prints `not activated`.
 
-The command writes one partition profile, `default_profile`. When the HMC creates the partition
-through `mksyscfg` (its REST create answered HTTP 406), the command then applies that profile
-without powering the partition on, and the step list shows `apply_profile` as `ok`. The partition
-then has a current configuration and an `AssociatedPartitionProfile` link, which step 4 reads.
-A partition created with `--no-apply`, or whose apply failed, shows zero memory and processors
-until the profile is applied or the partition is activated (#939).
+The command prints the partition, then its step list as a second JSON document. It writes one
+partition profile, `default_profile`. On V10R3 the REST create succeeds and the partition comes
+back with a current configuration and an `AssociatedPartitionProfile` link, which step 4 reads.
+Only when the HMC refuses the REST create does the command fall back to `mksyscfg` and then apply
+the profile without powering the partition on; the step list then shows `apply_profile` as `ok`.
+A fallback partition created with `--no-apply`, or whose apply failed, shows zero memory and
+processors until the profile is applied or the partition is activated (#939).
 
 ## 3. Assign the dedicated slot
 
@@ -101,9 +102,9 @@ Expected: `lpars show` prints the partition, whose `AssociatedPartitionProfile` 
 profile UUID. `power-on` prints `Job submitted for <lpar-uuid>` and the finished job as JSON;
 its status is `COMPLETED_OK`. Copy the job's `JobID` into `JOB_ID`.
 
-A PowerOn that names no profile is not a substitute. The arm records it expecting an `HSCL3680`
-refusal, an expectation written before `lpars create` applied the profile (#939). On an applied
-partition the outcome is unconfirmed; #879 records it.
+A PowerOn that names no profile starts the partition from its current configuration and also
+reaches `open firmware` (#879). This recipe names the profile so the activation does not depend on
+the current configuration matching `default_profile`.
 
 ## 5. Observe the partition
 

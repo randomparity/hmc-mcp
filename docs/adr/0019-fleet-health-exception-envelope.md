@@ -27,7 +27,7 @@ The exception predicates and record fields are fixed:
   state is not `running`;
 - `lpars` contains `{uuid, name, state, rmc_state, system_uuid, system_name}` when normalized
   RMC state is neither `active` nor `busy`; and
-- `failed_jobs` contains `{uuid, name, status, error}` when case-normalized status belongs to
+- `failed_jobs` contains `{job_id, name, status, error}` when case-normalized status belongs to
   `jobs.FAILED_JOB_STATUSES` among the first 20 records in HMC Job-feed order.
 
 Normalization accepts string values only, strips surrounding whitespace, and compares them

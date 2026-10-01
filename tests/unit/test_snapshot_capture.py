@@ -29,7 +29,7 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         "UUID": "sys-1",
         "Resource": {
             "SystemName": "sys",
-            "MachineTypeModelSerialNumber": {
+            "MachineTypeModelAndSerialNumber": {
                 "MachineType": "9080",
                 "Model": "HEX",
                 "SerialNumber": "ABC",
@@ -172,7 +172,11 @@ async def test_capture_propagates_observation_failure(monkeypatch) -> None:
         "UUID": "sys-1",
         "Resource": {
             "SystemName": "sys",
-            "MachineTypeModelSerialNumber": "9080-HEX*ABC",
+            "MachineTypeModelAndSerialNumber": {
+                "MachineType": "9080",
+                "Model": "HEX",
+                "SerialNumber": "ABC",
+            },
         },
     }
     hmc.get_logical_partition.return_value = {

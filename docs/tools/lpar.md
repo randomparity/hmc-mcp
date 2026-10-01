@@ -8,18 +8,18 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_capture_lpar_console` | `mutate` | `lpar.capture_console` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Capture a bounded snapshot of an LPAR's virtual console (mkvterm). |
-| `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create a new LPAR on a managed system. |
+| `hmc_capture_lpar_console` | `mutate` | `lpar.capture_console` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Capture a bounded snapshot of an LPAR's virtual console (mkvterm). |
+| `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Create a new LPAR on a managed system. |
 | `hmc_decommission_lpar` | `destructive` | `lpar.decommission` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Inventory, authorize, and optionally decommission one LPAR. |
-| `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
+| `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
 | `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
 | `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |
 | `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Get one logical partition by partition name or UUID. |
 | `hmc_get_lpar_description` | `read` | `lpar.get_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only description, resolving names or UUIDs. |
 | `hmc_get_lpar_memopt_score` | `read` | `lpar.get_memopt_score` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's current memory-optimization affinity score. |
 | `hmc_get_lpar_msp` | `read` | `lpar.get_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only Migratable Service Partition flag. |
-| `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's desired and current processor compatibility modes. |
-| `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return the current state of one LPAR by partition name or UUID. |
+| `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's processor compatibility modes and a profile's mode. |
+| `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return the current state of one LPAR by partition name or UUID. |
 | `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's minimum-affinity policy when supported. |
 | `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
 | `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List current memory-optimization affinity scores for a system's LPARs. |
@@ -33,12 +33,12 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_migrate_validate_lpar` | `mutate` | `lpar.migrate_validate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Validate whether an LPM migration of an LPAR to target_system would succeed. |
 | `hmc_modify_lpar` | `mutate` | `lpar.modify` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify an LPAR's memory or CPU resource assignment. |
 | `hmc_plan_lpar_memopt_scores` | `read` | `lpar.plan_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return predicted LPAR affinity scores without applying optimization. |
-| `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation. |
-| `hmc_power_on_lpar` | `mutate` | `lpar.power_on` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection. |
-| `hmc_read_lpar_refcodes` | `read` | `lpar.list_refcodes` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read the most recent reference codes (SRCs) for one partition. |
+| `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation. |
+| `hmc_power_on_lpar` | `mutate` | `lpar.power_on` | `lpar` | `partial` | `stale (closure-changed)` | `existing-runtime-guards` | Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection. |
+| `hmc_read_lpar_refcodes` | `read` | `lpar.list_refcodes` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Read the most recent reference codes (SRCs) for one partition. |
 | `hmc_remote_restart_lpar` | `destructive` | `lpar.remote_restart` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remote-restart a failed LPAR on another managed system. |
 | `hmc_rename_lpar` | `mutate` | `lpar.rename` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rename one LPAR after enforcing its ownership token. |
 | `hmc_set_lpar_description` | `mutate` | `lpar.set_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's CLI-only description after validating printable ASCII. |
 | `hmc_set_lpar_msp` | `mutate` | `lpar.set_msp` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set a VIOS partition's Migratable Service Partition flag. |
-| `hmc_set_lpar_proc_compat` | `mutate` | `lpar.set_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's processor compatibility mode. |
+| `hmc_set_lpar_proc_compat` | `mutate` | `lpar.set_proc_compat` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set the processor compatibility mode on an LPAR's partition profile. |
 | `hmc_set_minimum_affinity_policy` | `mutate` | `lpar.set_minimum_affinity_policy` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's POWER11 minimum-affinity policy after authorization. |

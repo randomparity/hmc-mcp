@@ -10,10 +10,11 @@ from .common import UOM_NS, document_envelope
 
 PARTITION_TYPES: tuple[PartitionType, ...] = ("AIX/Linux", "OS400", "Virtual IO Server")
 OS_TYPES = ("aix", "linux", "ibmi")
-KEYLOCK_POSITIONS = ("normal", "manual", "auto")
+# The creatable values of KeylockPosition.Enum in the V10R3 schema (#1161 P39).
+KEYLOCK_POSITIONS = ("normal", "manual")
 PartitionType = Literal["AIX/Linux", "OS400", "Virtual IO Server"]
 OsType = Literal["aix", "linux", "ibmi"]
-Keylock = Literal["normal", "manual", "auto"]
+Keylock = Literal["normal", "manual"]
 SharingMode = Literal[
     "capped",
     "uncapped",
@@ -23,6 +24,25 @@ SharingMode = Literal[
     "share_idle_procs_always",
 ]
 SHARING_MODES = frozenset(get_args(SharingMode))
+# LogicalPartitionProcessorSharingMode.Enum in the live V10R3 schema; "proces" is the HMC's own
+# spelling (#1164).
+_REST_SHARING_MODES: dict[str, str] = {
+    "capped": "capped",
+    "uncapped": "uncapped",
+    "keep_idle_procs": "keep idle procs",
+    "share_idle_procs": "sre idle proces",
+    "share_idle_procs_active": "sre idle procs active",
+    "share_idle_procs_always": "sre idle procs always",
+}
+
+
+def validate_keylock(keylock: str | None) -> None:
+    """Refuse a create keylock outside the V10R3 ``KeylockPosition`` enumeration."""
+    if keylock is not None and keylock not in KEYLOCK_POSITIONS:
+        raise ValueError(
+            f"keylock must be one of: {', '.join(KEYLOCK_POSITIONS)}; got {keylock!r}. "
+            "Nothing was created."
+        )
 
 
 def lpar_envelope(body: str) -> str:
@@ -173,7 +193,7 @@ def shared_units_over_vcpus(resources: LparResources) -> str | None:
 
 def _dedicated_processor_body(resources: LparResources) -> list[str]:
     parts = [
-        '    <DedicatedProcessorConfiguration kb="CUD" kxe="false">',
+        '    <DedicatedProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
         "      <Metadata><Atom/></Metadata>",
     ]
     for name, value in (
@@ -191,31 +211,27 @@ def _dedicated_processor_body(resources: LparResources) -> list[str]:
     )
     if resources.sharing_mode:
         parts.append(
-            f'    <SharingMode kb="CUD" kxe="false">{resources.sharing_mode}</SharingMode>'
+            '    <SharingMode kb="CUD" kxe="false">'
+            f"{_REST_SHARING_MODES[resources.sharing_mode]}</SharingMode>"
         )
     return parts
 
 
 def _shared_processor_body(resources: LparResources) -> list[str]:
-    parts = (
-        [
-            '    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>'
-        ]
-        if resources.dedicated is False
-        else []
-    )
-    parts.extend(
-        (
-            '    <SharedProcessorConfiguration kb="CUD" kxe="false">',
-            "      <Metadata><Atom/></Metadata>",
-        )
-    )
+    # The V10R3 create refuses a document that does not state the mode (REST0126 proc_mode).
+    parts = [
+        '    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>',
+        '    <SharedProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
+        "      <Metadata><Atom/></Metadata>",
+    ]
+    # The SharedProcessorConfiguration sequence of the V10R3 XSD; the create refuses an
+    # out-of-order element (#1164).
     for name, value in (
         ("DesiredProcessingUnits", resources.desired_procs),
-        ("MaximumProcessingUnits", resources.max_procs),
-        ("MinimumProcessingUnits", resources.min_procs),
         ("DesiredVirtualProcessors", resources.desired_vcpus),
+        ("MaximumProcessingUnits", resources.max_procs),
         ("MaximumVirtualProcessors", resources.max_vcpus),
+        ("MinimumProcessingUnits", resources.min_procs),
         ("MinimumVirtualProcessors", resources.min_vcpus),
     ):
         if value is not None:
@@ -227,7 +243,9 @@ def _shared_processor_body(resources: LparResources) -> list[str]:
     parts.append("    </SharedProcessorConfiguration>")
     mode = _shared_sharing_mode(resources)
     if mode:
-        parts.append(f'    <SharingMode kb="CUD" kxe="false">{mode}</SharingMode>')
+        parts.append(
+            f'    <SharingMode kb="CUD" kxe="false">{_REST_SHARING_MODES[mode]}</SharingMode>'
+        )
     return parts
 
 
@@ -256,7 +274,7 @@ def _processor_config(resources: LparResources) -> str:
     )
     return "\n".join(
         [
-            '  <PartitionProcessorConfiguration kb="CUD" kxe="false">',
+            '  <PartitionProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
             "    <Metadata><Atom/></Metadata>",
             *body(resources),
             "  </PartitionProcessorConfiguration>",
@@ -282,8 +300,10 @@ def build_lpar_document(
     V10R3 rejects a sparse LogicalPartition POST, and ``PartitionType`` is
     create-only.
 
-    os_type: target OS type — ``aix``, ``linux``, or ``ibmi``.
-    keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
+    os_type: accepted (``aix``, ``linux``, or ``ibmi``) but not sent: the
+    schema marks ``OperatingSystemType`` read-only (``kb="ROR"``) and the HMC
+    sets ``AIX/Linux`` itself (#1164).
+    keylock: initial keylock position — ``normal`` or ``manual``.
     max_virtual_slots: maximum number of virtual I/O slots.
     """
     if partition_type not in PARTITION_TYPES:
@@ -292,42 +312,40 @@ def build_lpar_document(
         )
     if os_type is not None and os_type not in OS_TYPES:
         raise ValueError(f"os_type must be one of {OS_TYPES}, got {os_type!r}")
-    if keylock is not None and keylock not in KEYLOCK_POSITIONS:
-        raise ValueError(f"keylock must be one of {KEYLOCK_POSITIONS}, got {keylock!r}")
+    validate_keylock(keylock)
 
     resources = resources or LparResources()
 
+    # Children follow the BasePartition.Group sequence of the live V10R3 schema: the
+    # HMC refuses an out-of-order element with REST0001 (#1164).
     body_parts = ["  <Metadata><Atom/></Metadata>"]
-    if partition_id is not None:
-        body_parts.append(
-            f'  <PartitionID kb="COD" kxe="false">{partition_id}</PartitionID>'
-        )
-
-    mem = _memory_config(resources)
-    if mem:
-        body_parts.append(mem)
-
     if keylock is not None:
         body_parts.append(
             f'  <KeylockPosition kb="CUD" kxe="false">{keylock}</KeylockPosition>'
         )
-
+    if partition_id is not None:
+        body_parts.append(
+            f'  <PartitionID kb="COD" kxe="false">{partition_id}</PartitionID>'
+        )
     if max_virtual_slots is not None:
-        body_parts.append(
-            f'  <MaximumVirtualIoSlots kb="CUD" kxe="false">{max_virtual_slots}</MaximumVirtualIoSlots>'
+        body_parts.extend(
+            (
+                '  <PartitionIOConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
+                "    <Metadata><Atom/></Metadata>",
+                (
+                    f'    <MaximumVirtualIOSlots kb="CUD" kxe="false">{max_virtual_slots}'
+                    "</MaximumVirtualIOSlots>"
+                ),
+                "  </PartitionIOConfiguration>",
+            )
         )
-
+    mem = _memory_config(resources)
+    if mem:
+        body_parts.append(mem)
     body_parts.append(f'  <PartitionName kb="CUR" kxe="false">{name}</PartitionName>')
-
-    if os_type is not None:
-        body_parts.append(
-            f'  <OperatingSystemType kb="ROR" kxe="false">{os_type}</OperatingSystemType>'
-        )
-
     proc = _processor_config(resources)
     if proc:
         body_parts.append(proc)
-
     body_parts.append(
         f'  <PartitionType kb="COD" kxe="false">{partition_type}</PartitionType>'
     )
@@ -446,7 +464,7 @@ def _processor_updates(lpar: ET.Element, resources: LparResources) -> dict[str, 
         updates = _shared_updates(resources)
         mode = _shared_sharing_mode(resources)
     if mode:
-        updates[f"{_PPC}/SharingMode"] = mode
+        updates[f"{_PPC}/SharingMode"] = _REST_SHARING_MODES[mode]
     if updates:
         updates[f"{_PPC}/HasDedicatedProcessors"] = str(dedicated).lower()
     return updates

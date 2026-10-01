@@ -914,6 +914,9 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     """A successful create with no response body is not reported as no creation."""
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201)
     )
@@ -1182,7 +1185,8 @@ def test_provision_rest_create_reports_skipped_apply_step(monkeypatch, mock_hmc)
     apply.assert_not_awaited()
     assert result.steps[1].step == "apply_profile"
     assert result.steps[1].status == "skipped"
-    assert any("was not performed" in w for w in result.warnings)
+    assert "set the current configuration" in result.steps[1].result
+    assert not any("not applied" in w or "not performed" in w for w in result.warnings)
     assert result.workflow_completed is True
 
 
