@@ -124,8 +124,8 @@ def hmc_wait_for_job(
     """Poll a job and return its normalized status, timeout, and error outcome.
 
     Polling stops at CANCELED_BEFORE_START, CANCELED_WHILE_RUNNING, COMPLETED,
-    COMPLETED_OK, COMPLETED_WITH_ERROR, COMPLETED_WITH_WARNINGS, EXCEPTION,
-    FAILED, FAILED_BEFORE_COMPLETION, FAILED_BEFORE_COMPLETION_RETRY, or
+    COMPLETED_OK, COMPLETED_WITH_ERROR, COMPLETED_WITH_WARNINGS,
+    FAILED_BEFORE_COMPLETION, FAILED_BEFORE_COMPLETION_RETRY, or
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 

@@ -229,6 +229,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- Job polling no longer treats `EXCEPTION` or `FAILED` as terminal statuses, and no longer
+  reads a `ResponseException` element. Neither appears in the HMC's job-status reference
+  (`CANCELED_*`, `COMPLETED_OK`, `COMPLETED_WITH_*`, `FAILED_*`, `NOT_STARTED`, `RUNNING`) or
+  in any capture; a failed job's text comes from its `Results`. Bare `COMPLETED` stays a
+  success status because two console job pages document it. `hmc_wait_for_job`,
+  `hmcpctl job wait` and `hmc_migrate_lpar` now name the documented statuses (#1202).
+- A job read the HMC refuses with `400 REST000B`/`REST000E` now reports the HMC's own message
+  ("Unrecognized root REST type of jobs") with the response body attached. It used to replace
+  it with a guess that the endpoint needed a licence or PTF level (#1202).
 - `hmc_deploy_partition_template(wait=True)` and `deploy_partition_template` now stamp the
   deployed partition's ownership when the job finishes `COMPLETED_OK`. They accepted only a
   bare `COMPLETED`, a status the HMC does not report, so a real deployment was never stamped

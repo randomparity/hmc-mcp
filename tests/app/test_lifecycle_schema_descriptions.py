@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
@@ -106,13 +107,13 @@ def test_high_risk_lifecycle_guidance_is_rendered():
         "COMPLETED_OK",
         "COMPLETED_WITH_ERROR",
         "COMPLETED_WITH_WARNINGS",
-        "EXCEPTION",
-        "FAILED",
         "FAILED_BEFORE_COMPLETION",
         "FAILED_BEFORE_COMPLETION_RETRY",
         "FAILED_TO_START",
     ):
         assert status in wait_description
+    for undocumented in ("EXCEPTION", "FAILED"):
+        assert re.search(rf"\b{undocumented}\b", wait_description) is None
 
     rename = tools["hmc_rename_lpar"]
     assert "ADR 0011" in rename.description

@@ -18,8 +18,6 @@ _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_WHILE_RUNNING",
     "COMPLETED_WITH_ERROR",
     "COMPLETED_WITH_WARNINGS",
-    "EXCEPTION",
-    "FAILED",
     "FAILED_BEFORE_COMPLETION",
     "FAILED_BEFORE_COMPLETION_RETRY",
     "FAILED_TO_START",
@@ -97,7 +95,12 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
             "1712345678",
             JobName="failed-job",
             Status="failed_to_start",
-            ResponseException={"Message": "could not start"},
+            Results={
+                "JobParameter": {
+                    "ParameterName": "result",
+                    "ParameterValue": "could not start",
+                }
+            },
         )
     ]
 
@@ -139,7 +142,9 @@ async def test_degraded_estate_returns_curated_sorted_issues() -> None:
 @pytest.mark.asyncio
 async def test_failed_job_handle_is_the_job_id_not_the_entry_uuid() -> None:
     client = _healthy_client()
-    client.list_uom.return_value = [_job_entry("1712345678", Status="FAILED")]
+    client.list_uom.return_value = [
+        _job_entry("1712345678", Status="FAILED_BEFORE_COMPLETION")
+    ]
 
     (failed,) = (await fleet_health(client)).failed_jobs
 
@@ -150,7 +155,7 @@ async def test_failed_job_handle_is_the_job_id_not_the_entry_uuid() -> None:
 @pytest.mark.asyncio
 async def test_failed_job_without_job_id_falls_back_to_entry_uuid() -> None:
     client = _healthy_client()
-    client.list_uom.return_value = [_job_entry(None, Status="FAILED")]
+    client.list_uom.return_value = [_job_entry(None, Status="FAILED_BEFORE_COMPLETION")]
 
     (failed,) = (await fleet_health(client)).failed_jobs
 
@@ -186,15 +191,17 @@ async def test_job_filter_uses_first_twenty_feed_records_and_bounds_error() -> N
     client.list_uom.return_value = [
         _entry(f"ok-{index}", JobName=f"ok-{index}", Status="COMPLETED_OK")
         for index in range(20)
-    ] + [_entry("late-failure", JobName="late", Status="FAILED")]
+    ] + [_entry("late-failure", JobName="late", Status="FAILED_BEFORE_COMPLETION")]
     assert (await fleet_health(client)).failed_jobs == ()
 
     client.list_uom.return_value = [
         _entry(
             "failed",
             JobName=None,
-            Status="EXCEPTION",
-            ResponseException={"Message": "x" * 600},
+            Status="FAILED_BEFORE_COMPLETION",
+            Results={
+                "JobParameter": {"ParameterName": "result", "ParameterValue": "x" * 600}
+            },
         )
     ]
     failed = (await fleet_health(client)).failed_jobs[0]
@@ -214,7 +221,9 @@ async def test_malformed_child_identities_remain_visible_as_unknown() -> None:
         )
     ]
     client.list_vios.return_value = [_entry(None, PartitionName=7, PartitionState=None)]
-    client.list_uom.return_value = [_entry(None, JobName=7, Status="FAILED")]
+    client.list_uom.return_value = [
+        _entry(None, JobName=7, Status="FAILED_BEFORE_COMPLETION")
+    ]
 
     result = await fleet_health(client)
 
@@ -401,7 +410,9 @@ async def test_aggregate_issue_budget_includes_failed_jobs(monkeypatch) -> None:
             ResourceMonitoringControlState="inactive",
         )
     ]
-    client.list_uom.return_value = [_entry("job-1", JobName="failed", Status="FAILED")]
+    client.list_uom.return_value = [
+        _entry("job-1", JobName="failed", Status="FAILED_BEFORE_COMPLETION")
+    ]
 
     with pytest.raises(ValueError, match="safe limit of 1 issues"):
         await fleet_health(client)
@@ -442,7 +453,7 @@ async def test_oversized_job_parameter_collection_fails_closed(monkeypatch) -> N
         _entry(
             "job-1",
             JobName="failed",
-            Status="FAILED",
+            Status="FAILED_BEFORE_COMPLETION",
             Results={
                 "JobParameter": [
                     {"ParameterName": "ignored", "ParameterValue": "one"},

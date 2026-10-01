@@ -54,7 +54,7 @@ def jobs_wait(
         None, "--job-href", help="SELF link returned by job submission"
     ),
 ) -> None:
-    """Wait for an HMC job to reach a terminal state (COMPLETED / FAILED / EXCEPTION).
+    """Wait for an HMC job to reach a terminal state (COMPLETED_OK, COMPLETED_WITH_ERROR, ...).
 
     Prints the final job entry once a terminal state is reached or the
     timeout elapses.

@@ -23,8 +23,6 @@ _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_WHILE_RUNNING",
     "COMPLETED_WITH_ERROR",
     "COMPLETED_WITH_WARNINGS",
-    "EXCEPTION",
-    "FAILED",
     "FAILED_BEFORE_COMPLETION",
     "FAILED_BEFORE_COMPLETION_RETRY",
     "FAILED_TO_START",
@@ -203,37 +201,29 @@ def test_job_outcome_normalizes_response_identity_and_result_error() -> None:
     assert outcome.job is job
 
 
-def test_job_outcome_falls_back_to_requested_identity_and_exception() -> None:
-    job = {
-        "Resource": {
-            "Status": "EXCEPTION",
-            "ResponseException": {"Message": " exception text "},
-        }
-    }
+def test_job_outcome_falls_back_to_requested_identity_and_status() -> None:
+    job = {"Resource": {"Status": "FAILED_BEFORE_COMPLETION"}}
 
     outcome = job_outcome(" requested-id ", job)
 
     assert outcome.job_id == "requested-id"
-    assert outcome.status == "EXCEPTION"
+    assert outcome.status == "FAILED_BEFORE_COMPLETION"
     assert outcome.timed_out is False
-    assert outcome.error == "exception text"
+    assert outcome.error == "Job ended with status FAILED_BEFORE_COMPLETION"
 
 
-def test_job_outcome_prefers_exception_message_for_exception_status() -> None:
+def test_job_outcome_ignores_an_undocumented_exception_element() -> None:
+    """No capture or reference shows a `ResponseException`; job text is in Results."""
     job = {
         "Resource": {
-            "Status": "EXCEPTION",
-            "Results": {
-                "JobParameter": {
-                    "ParameterName": "ErrorData",
-                    "ParameterValue": "less specific error",
-                }
-            },
+            "Status": "COMPLETED_WITH_ERROR",
             "ResponseException": {"Message": "exception text"},
         }
     }
 
-    assert job_outcome("job-id", job).error == "exception text"
+    assert job_outcome("job-id", job).error == (
+        "Job ended with status COMPLETED_WITH_ERROR"
+    )
 
 
 @pytest.mark.parametrize("names", [("result", "ErrorData"), ("ErrorData", "result")])
@@ -257,7 +247,7 @@ def test_job_outcome_prefers_error_data_regardless_of_parameter_order(names) -> 
 def test_job_outcome_surfaces_detailed_status_when_error_data_is_absent() -> None:
     job = {
         "Resource": {
-            "Status": "FAILED",
+            "Status": "COMPLETED_WITH_ERROR",
             "Results": {
                 "JobParameter": {
                     "ParameterName": "detailedStatus",

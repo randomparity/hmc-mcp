@@ -24,6 +24,8 @@ from conftest import (
     LPAR_RESOURCE_CONFIG,
     RUNNING_JOB_ENTRY,
     RUNNING_JOB_ID,
+    live_fixture,
+    live_response,
 )
 
 from hmcpctl.documents import LparResources
@@ -1121,59 +1123,14 @@ def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
 # hmc_wait_for_job
 # ---------------------------------------------------------------------- #
 
-JOB_ENTRY_FAILED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>FAILED</Status>
-      <Results>
-        <JobParameter>
-          <ParameterName>result</ParameterName>
-          <ParameterValue>Power-on was rejected</ParameterValue>
-        </JobParameter>
-      </Results>
-    </Job>
-  </content>
-</entry>
-"""
-
-JOB_ENTRY_EXCEPTION = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>EXCEPTION</Status>
-      <ResponseException>
-        <Message>HMC job raised an exception</Message>
-      </ResponseException>
-    </Job>
-  </content>
-</entry>
-"""
-
-JOB_RESPONSE_ERROR_DATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>JobResponse</title>
-  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">
-    <JobResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED_WITH_ERROR</Status>
-      <Results>
-        <JobParameter>
-          <ParameterName>ErrorData</ParameterName>
-          <ParameterValue>Activation reported error data</ParameterValue>
-        </JobParameter>
-      </Results>
-    </JobResponse>
-  </content>
-</entry>
-"""
+# The captured V10R3 COMPLETED_WITH_ERROR PowerOn read (#1161). The ErrorData
+# variant renames its `result` parameter to the documented ErrorData name.
+JOB_FAILED_PATH, _ = live_response("rest-job-completed-with-error")
+JOB_FAILED_ENTRY = live_fixture("rest-job-completed-with-error")["body"]
+JOB_RESPONSE_ERROR_DATA = JOB_FAILED_ENTRY.replace(
+    ">result</ParameterName>", ">ErrorData</ParameterName>"
+)
+assert JOB_RESPONSE_ERROR_DATA != JOB_FAILED_ENTRY
 
 JOB_ENTRY_EMPTY_RESOURCE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
@@ -1212,35 +1169,24 @@ def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
     assert result.job["Resource"]["Status"] == "COMPLETED_OK"
 
 
-@pytest.mark.parametrize(
-    ("response", "status", "error"),
-    [
-        (JOB_ENTRY_FAILED, "FAILED", "Power-on was rejected"),
-        (JOB_ENTRY_EXCEPTION, "EXCEPTION", "HMC job raised an exception"),
-        (
-            JOB_RESPONSE_ERROR_DATA,
-            "COMPLETED_WITH_ERROR",
-            "Activation reported error data",
-        ),
-    ],
-)
-def test_wait_for_job_surfaces_terminal_failure(
-    monkeypatch, mock_hmc, response, status, error
-):
+@pytest.mark.parametrize("response", [JOB_FAILED_ENTRY, JOB_RESPONSE_ERROR_DATA])
+def test_wait_for_job_surfaces_terminal_failure(monkeypatch, mock_hmc, response):
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=response)
-    )
+    mock_hmc.get(JOB_FAILED_PATH).mock(return_value=httpx.Response(200, text=response))
+    job_id = JOB_FAILED_PATH.rsplit("/", 1)[-1]
 
-    result = hmc_wait_for_job("job-uuid-999")
+    result = hmc_wait_for_job(job_id)
 
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == "job-uuid-999"
-    assert result.status == status
+    assert result.job_id == job_id
+    assert result.status == "COMPLETED_WITH_ERROR"
     assert result.timed_out is False
-    assert result.error == error
-    assert result.job["Resource"]["Status"] == status
+    assert result.error == (
+        "HSCL3681 Partition 1 cannot be activated since it is not in the "
+        "Not Activated state."
+    )
+    assert result.job["Resource"]["Status"] == "COMPLETED_WITH_ERROR"
 
 
 def test_wait_for_job_timeout_is_explicit(monkeypatch, mock_hmc):
