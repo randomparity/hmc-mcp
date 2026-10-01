@@ -526,3 +526,57 @@ def test_surviving_location_code_fails_closed(monkeypatch: pytest.MonkeyPatch) -
         export.tokenize_records(
             _records(_ssh("lshwres", "drc 1eU8375.42A.ABCD123-V100-C3"))
         )
+
+
+def test_cli_error_streams_are_recorded() -> None:
+    """An rc=1 HMC error carries its HSCL text on stdout, with stderr empty."""
+    corpus = _corpus()
+    vocab = export.build_vocabulary(corpus, {"types": {}}, "vX", ["t"])
+    (failed,) = [c for c in vocab["cli"]["commands"] if c["exit_status"] == [1]]
+    assert failed["error_streams"] == []
+    corpus.append(
+        {
+            "kind": "ssh",
+            "command": "lssyscfg -r lpar -F uuid,name",
+            "exit_status": 1,
+            "stdout": "HSCL1234 An invalid parameter was entered.",
+            "stderr": "",
+        }
+    )
+    vocab = export.build_vocabulary(corpus, {"types": {}}, "vX", ["t"])
+    entry = {c["command"]: c for c in vocab["cli"]["commands"]}[
+        "lssyscfg -r lpar -F uuid,name"
+    ]
+    assert entry["error_streams"] == ["stdout"]
+    assert entry["codes"] == ["HSCL1234"]
+
+
+def test_derived_vocabulary_is_folded_in() -> None:
+    derived = {
+        "rest_values": {
+            "Status": {"COMPLETED_OK": 3, "<text>": 1},
+            "JobName": {"x1": 2},
+        },
+        "rest_endpoints": [["GET", "/rest/api/uom/jobs/{n}", 200, 4]],
+    }
+    vocab = export.build_vocabulary(
+        _corpus(), {"types": {}}, "vX", ["a", "b"], [derived]
+    )
+    assert vocab["sources"] == ["a", "b"]
+    assert vocab["rest"]["values"]["Status"] == ["<text>", "COMPLETED_OK"]
+    assert vocab["rest"]["values"]["JobName"] == ["<text>"]
+    paths = {e["path"] for e in vocab["rest"]["endpoints"]}
+    assert "/rest/api/uom/jobs/{value}" in paths
+
+
+def test_fold_needs_a_source_each(tmp_path: Path, capsys) -> None:
+    derived = tmp_path / "d.json"
+    derived.write_text("{}")
+    corpus = tmp_path / "c.json"
+    corpus.write_text("[]")
+    enums = tmp_path / "e.json"
+    enums.write_text('{"types": {}}')
+    args = ["vocabulary", str(corpus), "--enums", str(enums), "--firmware", "vX"]
+    args += ["--source", "s", "--fold", str(derived), "--out", str(tmp_path / "v.json")]
+    assert export.main(args) == 1
+    assert "--fold-source" in capsys.readouterr().err

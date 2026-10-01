@@ -680,14 +680,47 @@ def _is_schema(record: dict[str, Any]) -> bool:
     return path.endswith(".xsd") or "/schema" in path
 
 
+def _fold_derived(
+    derived: dict[str, Any],
+    values: dict[str, set[str]],
+    endpoints: set[tuple[Any, ...]],
+) -> None:
+    """Fold a vocabulary the prototype derived (`rest_values`, `rest_endpoints`) in.
+
+    Its CLI keys are cut differently from `command_key`, so only REST is folded.
+    """
+    for element, seen in derived.get("rest_values", {}).items():
+        if not element.startswith("<"):
+            values[element].update(
+                v if v[:1] == "<" else observed(element, v) for v in seen
+            )
+    for method, path, status, _count in derived.get("rest_endpoints", []):
+        template = re.sub(r"\{(?:n|name)\}", "{value}", path)
+        endpoints.add((method, template, None, status, None))
+
+
 def build_vocabulary(
-    corpus: Sequence[dict[str, Any]], enums: dict[str, Any], firmware: str, source: str
+    corpus: Sequence[dict[str, Any]],
+    enums: dict[str, Any],
+    firmware: str,
+    sources: Sequence[str],
+    folded: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
+    """The committed vocabulary of one firmware and hardware pair.
+
+    *folded* are earlier derived vocabularies from the same pair; *sources* names the
+    corpus first and then each of them.
+    """
     endpoints: set[tuple[Any, ...]] = set()
     errors: list[dict[str, Any]] = []
     values: dict[str, set[str]] = collections.defaultdict(set)
     commands: dict[str, dict[str, set[Any]]] = collections.defaultdict(
-        lambda: {"exit_status": set(), "codes": set(), "outputs": set()}
+        lambda: {
+            "exit_status": set(),
+            "codes": set(),
+            "outputs": set(),
+            "streams": set(),
+        }
     )
     cli_values: dict[str, set[str]] = collections.defaultdict(set)
     for record in corpus:
@@ -715,6 +748,13 @@ def build_vocabulary(
             entry["exit_status"].add(record.get("exit_status"))
             output = (record.get("stdout") or "") + (record.get("stderr") or "")
             entry["codes"].update(re.findall(r"\bHSCL\w{4}\b", output))
+            if record.get("exit_status") not in (0, None):
+                # V10R3 prints an HSCL error on stdout and leaves stderr empty.
+                entry["streams"].update(
+                    name
+                    for name in ("stdout", "stderr")
+                    if (record.get(name) or "").strip()
+                )
             sentinel = _sentinel(command, record.get("stdout") or "")
             if sentinel:
                 entry["outputs"].add(sentinel)
@@ -723,6 +763,8 @@ def build_vocabulary(
                 for row in cli_rows(command, record.get("stdout") or ""):
                     for field, value in row.items():
                         cli_values[f"{key} :: {field}"].add(observed(field, value))
+    for derived in folded:
+        _fold_derived(derived, values, endpoints)
     types = enums.get("types", {})
     bindings = dict(enums.get("elements", {}))
     for element, seen in values.items():
@@ -735,7 +777,7 @@ def build_vocabulary(
                 bindings[element] = bound
     return {
         "firmware": firmware,
-        "source": source,
+        "sources": list(sources),
         "rest": {
             "endpoints": [
                 dict(
@@ -758,6 +800,7 @@ def build_vocabulary(
                     "exit_status": sorted(e["exit_status"], key=str),
                     "codes": sorted(e["codes"]),
                     "outputs": sorted(e["outputs"]),
+                    "error_streams": sorted(e["streams"]),
                 }
                 for template, e in sorted(commands.items())
             ],
@@ -833,7 +876,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     vocab.add_argument("corpus", type=Path)
     vocab.add_argument("--enums", type=Path, required=True)
     vocab.add_argument("--firmware", required=True)
-    vocab.add_argument("--source", required=True)
+    vocab.add_argument("--source", required=True, help="where the corpus came from")
+    vocab.add_argument(
+        "--fold",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="DERIVED.json",
+        help="an earlier derived vocabulary of the same pair to fold in (repeatable)",
+    )
+    vocab.add_argument(
+        "--fold-source",
+        action="append",
+        default=[],
+        metavar="TEXT",
+        help="where each --fold came from, in order",
+    )
     enum = sub.add_parser("enums", help="derive the committed schema enum lists")
     enum.add_argument("corpus", type=Path)
     enum.add_argument("--firmware", required=True)
@@ -862,7 +920,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             data = derive_enums(corpus, args.firmware)
         else:
             enums = json.loads(args.enums.read_text(encoding="utf-8"))
-            data = build_vocabulary(corpus, enums, args.firmware, args.source)
+            if len(args.fold) != len(args.fold_source):
+                raise ValueError("give one --fold-source for each --fold")
+            folded = [json.loads(p.read_text(encoding="utf-8")) for p in args.fold]
+            sources = [args.source, *args.fold_source]
+            data = build_vocabulary(corpus, enums, args.firmware, sources, folded)
         _write_scanned(data, args.out, args.private)
         print(f"wrote {args.out}")
         return 0
