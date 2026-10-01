@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 from rich.markup import escape
 
@@ -13,6 +15,17 @@ from ...operations.lpar.boot_order import (
 )
 from ..output import console, print_json
 from ..runtime import with_client
+
+
+def _pending_boot_string(document: dict[str, Any] | None) -> str | None:
+    """The pending boot string in an updated LPAR document; an empty field parses as a dict."""
+    boot_list = ((document or {}).get("Resource") or {}).get(
+        "BootListInformation"
+    ) or {}
+    value = boot_list.get("PendingBootString")
+    if isinstance(value, dict):
+        value = value.get("text")
+    return value if isinstance(value, str) and value else None
 
 
 def lpars_read_boot_order(
@@ -51,8 +64,14 @@ def lpars_set_boot_order(
     ownership_override: bool = typer.Option(
         False, "--ownership-override", help="Skip ownership token validation"
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print the full updated LPAR document"
+    ),
 ) -> None:
     """Set the pending boot order used on the LPAR's next activation.
+
+    Prints the boot string set and the pending boot string read back from the HMC
+    (`-` when the HMC returned none).
 
     Example:
         lpars set-boot-order system1 lpar-uuid-123 /vdevice/v-scsi@30000002/disk@8100000000000000
@@ -73,7 +92,10 @@ def lpars_set_boot_order(
     )
 
     console.print(f"[green]Boot order set to: {escape(boot_string)}[/green]")
-    print_json(result)
+    if as_json:
+        print_json(result)
+        return
+    console.print(f"Pending boot string: {escape(_pending_boot_string(result) or '-')}")
 
 
 def lpars_clear_boot_order(
