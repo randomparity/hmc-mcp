@@ -423,27 +423,44 @@ async def resolve_lpar_cli_name(
 
     Runs ``lssyscfg -r lpar -m <system> -F uuid,name`` for *system_name*, or,
     when it is omitted, for each system ``lssyscfg -r sys -F name`` lists:
-    ``lssyscfg -r lpar`` requires ``-m`` and exits 1 without it. Used as the
-    fallback by the REST-based LPAR-name resolver in :mod:`hmcpctl._app` when
-    the REST API is unreachable.
+    ``lssyscfg -r lpar`` requires ``-m`` and exits 1 without it. A listed
+    system whose partition listing fails is skipped, so one unreachable
+    system does not end the search. Used as the fallback by the REST-based
+    LPAR-name resolver in :mod:`hmcpctl._app` when the REST API is unreachable.
 
     Raises:
-        HMCCLIError: If no row matches *lpar_uuid* in the command output.
+        HMCCLIError: If no row matches *lpar_uuid*; the message names each
+            skipped system and its failure. A failure listing *system_name*,
+            when given, is raised as it is.
     """
     if system_name:
-        systems = [system_name]
-    else:
-        listing = await run_hmc_command(config, "lssyscfg -r sys -F name")
-        systems = [line.strip() for line in listing.splitlines() if line.strip()]
-    raw = "\n".join(
-        [
-            await run_hmc_command(
-                config, f"lssyscfg -r lpar -m {shlex.quote(system)} -F uuid,name"
-            )
-            for system in systems
-        ]
+        return _match_uuid_name(
+            await _lpar_uuid_names(config, system_name), lpar_uuid, "LPAR"
+        )
+    listing = await run_hmc_command(config, "lssyscfg -r sys -F name")
+    outputs: list[str] = []
+    skipped: list[str] = []
+    for system in (line.strip() for line in listing.splitlines()):
+        if not system:
+            continue
+        try:
+            outputs.append(await _lpar_uuid_names(config, system))
+        except HMCCLIError as error:
+            skipped.append(f"{system!r} ({error})")
+    try:
+        return _match_uuid_name("\n".join(outputs), lpar_uuid, "LPAR")
+    except HMCCLIError as error:
+        if not skipped:
+            raise
+        raise HMCCLIError(
+            f"{error} These systems could not be searched: {'; '.join(skipped)}"
+        ) from error
+
+
+async def _lpar_uuid_names(config: HMCConfig, system_name: str) -> str:
+    return await run_hmc_command(
+        config, f"lssyscfg -r lpar -m {shlex.quote(system_name)} -F uuid,name"
     )
-    return _match_uuid_name(raw, lpar_uuid, "LPAR")
 
 
 def _match_uuid_name(raw: str, uuid: str, what: str) -> str:
