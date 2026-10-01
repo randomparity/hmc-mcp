@@ -321,6 +321,20 @@ class SystemsMixin:
             return _parse_feed(xml, path) if xml else []
         return await self.list_uom("VirtualIOServer")
 
+    async def get_vios(self: SystemsClient, vios_uuid: str) -> dict[str, Any] | None:
+        """GET one VIOS entry.
+
+        A VIOS answers only under ``VirtualIOServer``: V10R3 returns 404 for
+        ``LogicalPartition/{vios_uuid}`` and its quick properties (#1202).
+        """
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        return await self.get_uom("VirtualIOServer", vios_uuid)
+
+    async def delete_vios(self: SystemsClient, vios_uuid: str) -> None:
+        """Delete a VIOS partition. It must be powered off first."""
+        _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
+        await self._delete(f"/rest/api/uom/VirtualIOServer/{vios_uuid}")
+
     async def get_vios_storage_detail(
         self: SystemsClient, vios_uuid: str
     ) -> dict[str, Any] | None:

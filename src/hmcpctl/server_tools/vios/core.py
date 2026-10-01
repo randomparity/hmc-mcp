@@ -68,7 +68,7 @@ def hmc_delete_vios(
     """Delete (destroy) a VIOS partition by name or UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
-    with hmc_get_lpar_state). This tool refuses to
+    with hmc_list_vios). This tool refuses to
     delete a VIOS whose current state is anything other than 'not activated',
     matching the precondition check pattern used by hmc_remove_memory_pool.
     This permanently removes the VIOS and its profiles from the HMC — it is

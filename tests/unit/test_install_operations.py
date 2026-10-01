@@ -53,15 +53,22 @@ def _hmc(**resolutions) -> AsyncMock:
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
     hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": LPAR_UUID}
-    hmc.get_logical_partition.return_value = {
+    target = {
         "Resource": {
             "PartitionType": "Virtual IO Server",
             "PartitionState": "not activated",
         }
     }
+    hmc.get_logical_partition.return_value = target
+    hmc.get_vios.return_value = target
     for name, value in resolutions.items():
         getattr(hmc, name).return_value = value
     return hmc
+
+
+def _target_read(hmc: AsyncMock, operation) -> AsyncMock:
+    """The entry read each selector form preflights through (#1202)."""
+    return hmc.get_vios if operation is install_vios else hmc.get_logical_partition
 
 
 @pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
@@ -84,7 +91,7 @@ async def test_operation_rejects_install_target_before_submission(
         await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
 
     assert ssh.commands == []
-    hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
+    _target_read(hmc, operation).assert_awaited_once_with(LPAR_UUID)
 
 
 @pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
@@ -100,7 +107,7 @@ async def test_uuid_target_rejects_before_ssh_submission(operation):
         )
 
     assert ssh.commands == []
-    hmc.get_logical_partition.assert_awaited_once_with(LPAR_UUID)
+    _target_read(hmc, operation).assert_awaited_once_with(LPAR_UUID)
 
 
 class _Ssh:

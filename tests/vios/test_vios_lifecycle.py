@@ -1,5 +1,7 @@
 """Tests for VIOS lifecycle tools: create, delete, install (CLI bridge)."""
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -14,20 +16,19 @@ from hmcpctl.ssh.install import (
 
 BASE = "https://hmc.test"
 
-VIOS_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:00000000-0000-0000-0000-000000000003</id>
-  <title>LogicalPartition:vios1</title>
-  <link rel="SELF" href="{BASE}/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"/>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <PartitionName>vios1</PartitionName>
-      <PartitionType>Virtual IO Server</PartitionType>
-      <PartitionState>not activated</PartitionState>
-    </LogicalPartition>
-  </content>
-</entry>
-"""
+LIVE_FIXTURES = Path(__file__).parents[1] / "fixtures" / "live"
+
+
+def _live(name: str) -> dict:
+    return json.loads((LIVE_FIXTURES / f"{name}.json").read_text())
+
+
+# The captured V10R3 VirtualIOServer entry, read while the VIOS ran; the install
+# preflight needs it powered off, so only the PartitionState text is changed.
+VIOS_ENTRY = _live("rest-vios-entry")["body"].replace(
+    '<PartitionState kxe="false" kb="ROO">running<',
+    '<PartitionState kxe="false" kb="ROO">not activated<',
+)
 
 
 # ---------------------------------------------------------------------- #
@@ -96,7 +97,7 @@ def test_build_installios_command_exact_line_for_vios():
 # Tool-layer tests for hmc_install_vios
 # ---------------------------------------------------------------------- #
 
-VIOS_UUID = "00000000-0000-0000-0000-000000000003"
+VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 
 _INSTALL_KWARGS = {
@@ -133,7 +134,11 @@ def _mock_resolution(mock_hmc) -> None:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{VIOS_UUID}").mock(
+    lpar_path = _live("rest-lpar-path-vios")
+    mock_hmc.get(lpar_path["path"]).mock(
+        return_value=httpx.Response(lpar_path["status"], text=lpar_path["body"])
+    )
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
 
@@ -153,11 +158,11 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
     with patch("hmcpctl.ssh.install.run_hmc_command", new=fake_run_hmc_command):
-        result = hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
+        result = hmc_install_vios("sys-R1-vios1", "sys1", **_INSTALL_KWARGS)
 
-    assert result["partition"] == "vios1"
+    assert result["partition"] == "sys-R1-vios1"
     assert result["pid"] == 4242
-    assert result["log_path"] == "/tmp/hmcpctl-installios-vios1.log"
+    assert result["log_path"] == "/tmp/hmcpctl-installios-sys-R1-vios1.log"
     assert "no HMC job exists on this path" in result["message"]
     expected, _ = build_installios_command(
         install_source="/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
@@ -165,7 +170,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
         subnet_mask="255.255.255.0",
         gateway="192.168.1.1",
         system_name="sys1",
-        partition_name="vios1",
+        partition_name="sys-R1-vios1",
         profile_name="default",
         vlan_id="100",
     )
@@ -181,7 +186,7 @@ def test_install_vios_tool_rejects_invalid_arguments_before_any_io(monkeypatch):
     monkeypatch.setenv("HMC_PASSWORD", "test-password")
     with pytest.raises(ValueError, match="VLAN"):
         hmc_install_vios(
-            "vios1",
+            "sys-R1-vios1",
             "sys1",
             install_source="/extra/vios.iso",
             vios_ip="192.168.1.20",
@@ -230,4 +235,4 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
         patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCError, match="timed out"),
     ):
-        hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
+        hmc_install_vios("sys-R1-vios1", "sys1", **_INSTALL_KWARGS)

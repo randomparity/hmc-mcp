@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 # Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
 # this package's supported range, and `InstallHandle` may be used in a
@@ -125,9 +125,16 @@ def validate_install_request(request: InstallRequest) -> None:
         validate_mac_address(request.mac_address)
 
 
-async def _validate_install_target(hmc: HMCClient, target_uuid: str) -> None:
-    """Reject an install target whose type or state is unsafe for ``installios``."""
-    target = await hmc.get_logical_partition(target_uuid)
+async def _validate_install_target(
+    read_target: Callable[[str], Awaitable[dict[str, Any] | None]], target_uuid: str
+) -> None:
+    """Reject an install target whose type or state is unsafe for ``installios``.
+
+    *read_target* is the entry read matching the resolver's feed: a VIOS answers
+    only under ``VirtualIOServer``, and ``LogicalPartition/{vios_uuid}`` is a
+    404 on V10R3 (#1202).
+    """
+    target = await read_target(target_uuid)
     resource = (target or {}).get("Resource") or {}
     partition_type = resource.get("PartitionType")
     if partition_type != "Virtual IO Server":
@@ -141,7 +148,7 @@ async def _validate_install_target(hmc: HMCClient, target_uuid: str) -> None:
         raise HMCError(
             f"Cannot install on target {target_uuid!r}: current state is {state!r}; "
             "it must be 'not activated' to install. Power it off "
-            "(hmc_power_off_vios) and confirm with hmc_get_lpar_state before retrying.",
+            "(hmc_power_off_vios) and confirm with hmc_list_vios before retrying.",
             status_code=409,
         )
 
@@ -151,6 +158,7 @@ async def _submit_install(
     target_name_or_uuid: str,
     system_name_or_uuid: str,
     resolve_target_uuid: _TargetResolver,
+    read_target: Callable[[str], Awaitable[dict[str, Any] | None]],
     request: InstallRequest,
 ) -> InstallHandle:
     """Resolve one install target's CLI names and detach ``installios`` on it."""
@@ -160,7 +168,7 @@ async def _submit_install(
     target_uuid = await resolve_target_uuid(
         hmc, target_name_or_uuid, system_name_or_uuid=system_uuid
     )
-    await _validate_install_target(hmc, target_uuid)
+    await _validate_install_target(read_target, target_uuid)
     system_name = (
         system_name_or_uuid
         if not is_uuid(system_name_or_uuid)
@@ -303,6 +311,7 @@ async def install_vios_by_lpar_selector(
         lpar_name_or_uuid,
         system_name_or_uuid,
         resolve_lpar_uuid,
+        hmc.get_logical_partition,
         request,
     )
 
@@ -320,9 +329,8 @@ async def install_vios(
     detach handle's fields, the ADR 0092 §3.4a ownership classification, and the
     ``installios`` argument grammar. This operation differs only in resolving
     its target through the ``VirtualIOServer`` feed rather than the
-    ``LogicalPartition`` one. Both selector forms then use the resolved
-    ``LogicalPartition`` resource for the same local type and power-state
-    preflight. Submission is not idempotent here either, and the same
+    ``LogicalPartition`` one, and reading that target's entry under
+    ``VirtualIOServer`` for the same local type and power-state preflight. Submission is not idempotent here either, and the same
     partition-name-only log-path collision applies across every managed system
     on the HMC.
 
@@ -351,5 +359,6 @@ async def install_vios(
         vios_name_or_uuid,
         system_name_or_uuid,
         resolve_vios_uuid,
+        hmc.get_vios,
         request,
     )

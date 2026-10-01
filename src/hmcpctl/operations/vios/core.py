@@ -100,17 +100,15 @@ async def delete_vios(
     vios_uuid = await resolve_vios_uuid(
         hmc, vios_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    state = await hmc.get_quick_property(
-        "LogicalPartition", vios_uuid, "PartitionState"
-    )
+    state = await hmc.get_quick_property("VirtualIOServer", vios_uuid, "PartitionState")
     if state != "not activated":
         raise HMCError(
             f"Cannot delete VIOS {vios_uuid} — current state is {state!r}; it "
             "must be 'not activated' to delete. Power it off "
-            "(hmc_power_off_vios) and confirm with hmc_get_lpar_state before retrying.",
+            "(hmc_power_off_vios) and confirm with hmc_list_vios before retrying.",
             status_code=409,
         )
-    await hmc.delete_logical_partition(vios_uuid)
+    await hmc.delete_vios(vios_uuid)
     return vios_uuid
 
 

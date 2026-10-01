@@ -1,0 +1,8 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#43",
+  "method": "GET",
+  "path": "/rest/api/uom/VirtualIOServer/00000005-ABCD-4EF0-8ABC-000000000005/quick/PartitionState",
+  "status": 200,
+  "content_type": "application/json",
+  "body": "\"running\""
+}

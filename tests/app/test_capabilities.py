@@ -11,8 +11,10 @@ hmc_remove_memory_pool.
 """
 
 import asyncio
+import json
 from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -739,24 +741,61 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     assert guard.await_args.kwargs == {"ownership_override": True}
 
 
+LIVE_FIXTURES = Path(__file__).parents[1] / "fixtures" / "live"
+
+
+def _live(name: str) -> dict:
+    return json.loads((LIVE_FIXTURES / f"{name}.json").read_text())
+
+
+def _live_response(name: str, text: str | None = None) -> tuple[str, httpx.Response]:
+    capture = _live(name)
+    return capture["path"], httpx.Response(
+        capture["status"],
+        text=capture["body"] if text is None else text,
+        headers={"Content-Type": capture["content_type"]},
+    )
+
+
+VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
+
+
+def _mock_vios_state_and_delete(router, state: str):
+    """V10R3 answers a VIOS only under VirtualIOServer (#1202).
+
+    The LogicalPartition entry and quick paths 404 for a VIOS UUID; the
+    VirtualIOServer quick read answers 200 with the state JSON-quoted.
+    """
+    for name in ("rest-lpar-path-vios", "rest-lpar-quick-vios"):
+        path, response = _live_response(name)
+        router.get(path).mock(return_value=response)
+    path, response = _live_response("rest-vios-quick-state", f'"{state}"')
+    router.get(path).mock(return_value=response)
+    return router.delete(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(204)
+    )
+
+
 def test_delete_vios_refuses_when_active(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    delete_route = _mock_state_and_delete(mock_hmc, "shutting down")
+    delete_route = _mock_vios_state_and_delete(mock_hmc, "running")
 
     with pytest.raises(HMCError) as exc_info:
-        hmc_delete_vios(LPAR_UUID)
+        hmc_delete_vios(VIOS_UUID)
 
     assert exc_info.value.status_code == 409
+    assert "'running'" in str(exc_info.value)
     assert not delete_route.called
 
 
 def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    _mock_state_and_delete(mock_hmc, "not activated")
+    delete_route = _mock_vios_state_and_delete(mock_hmc, "not activated")
 
-    result = hmc_delete_vios(LPAR_UUID)
+    result = hmc_delete_vios(VIOS_UUID)
 
-    assert result == LPAR_UUID
+    assert result == VIOS_UUID
+    assert delete_route.call_count == 1
 
 
 # ------------------------------------------------------------------ #

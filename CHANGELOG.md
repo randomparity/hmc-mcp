@@ -223,6 +223,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmc_list_vios_backups` and `list_vios_backups` return `[]` for a VIOS with no backups.
   V10R3 answers that `lsviosbk` read with exit 0 and `No results were found.`, which the
   header check refused as "Malformed lsviosbk CSV" (#1202).
+- `hmc_delete_vios` and `delete_vios` read the VIOS state from
+  `VirtualIOServer/{uuid}/quick/PartitionState` and delete through `VirtualIOServer/{uuid}`,
+  and the `hmc_install_vios` preflight reads the VIOS entry there. V10R3 answers 404 for a
+  VIOS UUID under `LogicalPartition`, so every VIOS delete and install failed before reaching
+  its precondition check. Their refusal messages now point at `hmc_list_vios`, since
+  `hmc_get_lpar_state` cannot read a VIOS (#1202).
 - A shared-processor create whose explicit processing units exceed that level's virtual
   processors (a virtual processor uses at most 1.0 unit) is now refused before any request is
   sent, naming each `<level>_procs`/`<level>_vcpus` pair and the CLI options to change. This
