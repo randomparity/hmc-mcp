@@ -14,7 +14,8 @@ release logic unchanged.
 
 > **Amended by #1149** (2026-10-01): the four behaviours this record left to a live window were
 > observed on HMC V10R3 M1060 managing a POWER9 test system, partition firmware FW950.00, with a
-> Debian 13 installer (Linux 6.12, ppc64le) on `hvc0`.
+> Debian 13 installer (Linux 6.12, ppc64le) on `hvc0`. The run used commit `07d79b4c`, where
+> `send_sysrq` still required `prefix` and was called with `b"\x0f"` explicitly.
 >
 > 1. The vterm passes `^O` (`0x0f`) plus a key through to the guest's hvc console.
 > 2. `send_sysrq("h", prefix=b"\x0f")`, one write, drew the guest's `sysrq: HELP` line within
