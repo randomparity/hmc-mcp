@@ -4783,15 +4783,30 @@ def test_set_boot_order_prints_confirmation_and_read_back_only(fake_hmc, monkeyp
     assert "lpar-sentinel" not in result.stdout
 
 
-def test_set_boot_order_read_back_marks_missing_pending_string(fake_hmc, monkeypatch):
-    _stub_set_boot_order(monkeypatch, None)
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        (None, "-"),
+        (
+            {"Resource": {"BootListInformation": {"PendingBootString": BOOT_PATH}}},
+            BOOT_PATH,
+        ),
+        ({"Resource": {"BootListInformation": {"PendingBootString": ""}}}, "-"),
+        (
+            {"Resource": {"BootListInformation": {"PendingBootString": {"@ksv": "1"}}}},
+            "-",
+        ),
+    ],
+)
+def test_set_boot_order_read_back_shapes(fake_hmc, monkeypatch, document, expected):
+    _stub_set_boot_order(monkeypatch, document)
 
     result = RUNNER.invoke(
         cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, BOOT_PATH]
     )
 
     assert result.exit_code == 0
-    assert "Pending boot string: -" in result.stdout
+    assert f"Pending boot string: {expected}" in result.stdout
 
 
 def test_set_boot_order_json_prints_full_document(fake_hmc, monkeypatch):

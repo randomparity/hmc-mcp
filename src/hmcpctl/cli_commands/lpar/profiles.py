@@ -70,7 +70,8 @@ def lpars_set_boot_order(
 ) -> None:
     """Set the pending boot order used on the LPAR's next activation.
 
-    Prints the boot string set and the pending boot string read back from the HMC.
+    Prints the boot string set and the pending boot string read back from the HMC
+    (`-` when the HMC returned none).
 
     Example:
         lpars set-boot-order system1 lpar-uuid-123 /vdevice/v-scsi@30000002/disk@8100000000000000
