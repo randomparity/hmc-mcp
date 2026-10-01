@@ -1,4 +1,4 @@
-"""Presentation-neutral fleet utilization survey and roll-ups (ADR 0184).
+"""Presentation-neutral fleet utilization survey and roll-ups (ADRs 0184 and 0185).
 
 Allocation is read from partitions' current configurations: the hypervisor reserves
 a not-activated partition's current configuration, so runtime figures under-report.
@@ -14,7 +14,7 @@ import math
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, fields
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol
 
 from hmcpctl.errors import HMCError
 from hmcpctl.xmlutil import leaf_text, mtms_parts
@@ -27,7 +27,10 @@ _SYSTEM_MEMORY = "AssociatedSystemMemoryConfiguration"
 _SYSTEM_PROCESSORS = "AssociatedSystemProcessorConfiguration"
 _MEMORY = "PartitionMemoryConfiguration"
 _PROCESSORS = "PartitionProcessorConfiguration"
-_Figures = TypeVar("_Figures", "CpuFigures", "MemoryFigures", "PartitionFigures")
+_VOLUMES = "PhysicalVolumes"
+_SLOTS = "IOSlots"
+_SRIOV_ADAPTERS = "SRIOVAdapters"
+_UNCONFIGURED_PORTS = "UnconfiguredLogicalPorts"
 
 
 class SurveyClient(Protocol):
@@ -90,6 +93,41 @@ class PartitionFigures:
 
 
 @dataclass(frozen=True)
+class DiskFigures:
+    """VIOS physical-volume capacity in MiB, each volume counted once per system."""
+
+    internal_total: int | None
+    internal_assigned: int | None
+    internal_free: int | None
+    san_total: int | None
+    san_assigned: int | None
+    san_free: int | None
+
+
+@dataclass(frozen=True)
+class AdapterFigures:
+    """I/O slot occupancy and SR-IOV logical-port capacity of one system."""
+
+    slots_assigned: int | None
+    slots_unassigned: int | None
+    slots_sriov: int | None
+    slots_empty: int | None
+    sriov_adapters: int | None
+    sriov_logical_ports: int | None
+    sriov_logical_ports_free: int | None
+
+
+#: Every figure group a reading and a roll-up carry, by attribute name.
+FIGURE_GROUPS: dict[str, type] = {
+    "cpu": CpuFigures,
+    "memory": MemoryFigures,
+    "partitions": PartitionFigures,
+    "disk": DiskFigures,
+    "adapters": AdapterFigures,
+}
+
+
+@dataclass(frozen=True)
 class SystemReading:
     """One managed system as one profile's HMC reported it."""
 
@@ -103,15 +141,17 @@ class SystemReading:
     cpu: CpuFigures
     memory: MemoryFigures
     partitions: PartitionFigures
+    disk: DiskFigures
+    adapters: AdapterFigures
     shared_pools: tuple[int, ...]
     gaps: tuple[str, ...]
 
     @property
     def unknown_figures(self) -> int:
-        """How many CPU, memory and partition figures are unknown."""
+        """How many figures of every group are unknown."""
         return sum(
             getattr(group, item.name) is None
-            for group in (self.cpu, self.memory, self.partitions)
+            for group in (getattr(self, name) for name in FIGURE_GROUPS)
             for item in fields(group)
         )
 
@@ -146,17 +186,22 @@ class Rollup:
     """Per-figure sums over ``systems`` readings, and each figure's shortfall.
 
     ``unknown`` holds ``(group, figure, count)`` for every figure ``count`` of the
-    readings lack; ``group`` is ``cpu``, ``memory`` or ``partitions``.
+    readings lack; ``group`` is a ``FIGURE_GROUPS`` name.
     """
 
     systems: int
     cpu: CpuFigures
     memory: MemoryFigures
     partitions: PartitionFigures
+    disk: DiskFigures
+    adapters: AdapterFigures
     cpu_allocated: float | None
     cpu_util_pct: float | None
     mem_allocated: int | None
     mem_util_pct: float | None
+    disk_util_pct: float | None
+    slots_util_pct: float | None
+    sriov_util_pct: float | None
     unknown: tuple[tuple[str, str, int], ...]
 
 
@@ -176,6 +221,21 @@ def _leaf(container: object, *path: str) -> str | None:
         value = value.get(name)
     text = leaf_text(value)
     return text.strip() if isinstance(text, str) else None
+
+
+def _present(container: object, name: str) -> bool:
+    """Whether *container* has element *name*; a self-closed one parses as ``''``."""
+    return isinstance(container, dict) and container.get(name) is not None
+
+
+def _items(container: object, name: str) -> list[dict[str, Any]]:
+    value = container.get(name) if isinstance(container, dict) else None
+    values = value if isinstance(value, list) else [value]
+    return [item for item in values if isinstance(item, dict)]
+
+
+def _flag(container: object, name: str) -> bool | None:
+    return {"true": True, "false": False}.get(_leaf(container, name) or "")
 
 
 def _int(text: str | None) -> int | None:
@@ -225,6 +285,110 @@ def _current_size(resource: dict[str, Any]) -> _Size:
         pool = _int(_leaf(resource, *shared, "CurrentSharedProcessorPoolID"))
         return _Size(memory, units, False, pool)
     return _Size(memory, None, None, None)
+
+
+def _add(sums: dict[str, Any], key: str, value: int | None) -> None:
+    sums[key] = None if sums[key] is None or value is None else sums[key] + value
+
+
+def _disk_figures(vios: list[dict[str, Any]] | None, gaps: list[str]) -> DiskFigures:
+    """Sum VIOS physical volumes per ADR 0185 decision 4, each volume once."""
+    unknown = DiskFigures(None, None, None, None, None, None)
+    if vios is None:
+        return unknown
+    resources = [entry.get("Resource") or {} for entry in vios]
+    silent = [resource for resource in resources if not _present(resource, _VOLUMES)]
+    for resource in silent:
+        gaps.append(
+            f"{_VOLUMES}: VIOS {_leaf(resource, 'PartitionName')} "
+            f"({_leaf(resource, 'PartitionState')}) reported no storage"
+        )
+    if silent:
+        return unknown
+    volumes: dict[object, list[dict[str, Any]]] = {}
+    for index, resource in enumerate(resources):
+        for position, volume in enumerate(_items(resource[_VOLUMES], "PhysicalVolume")):
+            key: object = _leaf(volume, "UniqueDeviceID")
+            if key is None:
+                key = (index, position)
+                gaps.append(
+                    f"{_VOLUMES}: VIOS {_leaf(resource, 'PartitionName')} lists a "
+                    "volume without UniqueDeviceID; it is not deduplicated"
+                )
+            volumes.setdefault(key, []).append(volume)
+    sums: dict[str, Any] = {item.name: 0 for item in fields(DiskFigures)}
+    for listings in volumes.values():
+        capacity = _int(_leaf(listings[0], "VolumeCapacity"))
+        backing = [
+            _flag(listings[0], f"Is{kind}Backed") for kind in ("FibreChannel", "ISCSI")
+        ]
+        kind = "san" if True in backing else None if None in backing else "internal"
+        available = [_flag(listing, "AvailableForUsage") for listing in listings]
+        state = (
+            "assigned" if False in available else None if None in available else "free"
+        )
+        if kind is None:
+            sums = dict.fromkeys(sums)
+            break
+        _add(sums, f"{kind}_total", capacity)
+        for split in ("assigned", "free"):
+            share = None if state is None else capacity if state == split else 0
+            _add(sums, f"{kind}_{split}", share)
+    return DiskFigures(**sums)
+
+
+def _free_ports(adapter: dict[str, Any], capacity: int | None) -> int | None:
+    if _present(adapter, _UNCONFIGURED_PORTS):
+        ports = _items(adapter[_UNCONFIGURED_PORTS], "SRIOVUnconfiguredLogicalPort")
+        return len(ports)
+    return 0 if capacity == 0 else None
+
+
+def _slot_kind(slot: dict[str, Any], sriov_slots: set[str | None] | None) -> str | None:
+    if _leaf(slot, "Description") == "Empty slot":
+        return "empty"
+    if _leaf(slot, "PartitionID") is not None:
+        return "assigned"
+    if sriov_slots is None:
+        return None
+    drc = _leaf(slot, "SlotDynamicReconfigurationConnectorIndex")
+    return "sriov" if drc in sriov_slots else "unassigned"
+
+
+def _adapter_figures(resource: dict[str, Any], gaps: list[str]) -> AdapterFigures:
+    """Classify I/O slots and count SR-IOV ports per ADR 0185 decisions 2 and 3."""
+    io = resource.get("AssociatedSystemIOConfiguration")
+    io = io if isinstance(io, dict) else {}
+    sriov_slots: set[str | None] | None = None
+    sriov: tuple[int | None, int | None, int | None] = (None, None, None)
+    if _present(io, _SRIOV_ADAPTERS):
+        adapters = [
+            adapter
+            for choice in _items(io[_SRIOV_ADAPTERS], "IOAdapterChoice")
+            for adapter in _items(choice, "SRIOVAdapter")
+            if _leaf(adapter, "AdapterMode") == "Sriov"
+        ]
+        sriov_slots = {_leaf(adapter, "AdapterID") for adapter in adapters}
+        ports = [_int(_leaf(a, "MaximumLogicalPortsSupported")) for a in adapters]
+        free = [_free_ports(a, p) for a, p in zip(adapters, ports, strict=True)]
+        sriov = (len(adapters), _total(ports), _total(free))
+    else:
+        gaps.append(f"{_SRIOV_ADAPTERS}: the system reported no SR-IOV adapter list")
+    if not _present(io, _SLOTS):
+        gaps.append(f"{_SLOTS}: the system reported no I/O slot list")
+        return AdapterFigures(None, None, None, None, *sriov)
+    kinds = [_slot_kind(slot, sriov_slots) for slot in _items(io[_SLOTS], "IOSlot")]
+
+    def count(kind: str) -> int | None:
+        return (
+            None
+            if None in kinds and kind in ("sriov", "unassigned")
+            else kinds.count(kind)
+        )
+
+    return AdapterFigures(
+        count("assigned"), count("unassigned"), count("sriov"), count("empty"), *sriov
+    )
 
 
 def _never_applied(state: str | None, size: _Size) -> bool:
@@ -412,6 +576,8 @@ async def read_system(
             if size.dedicated is False and size.pool is not None and size.units
         }
     )
+    disk = _disk_figures(vios, gaps)
+    adapters = _adapter_figures(resource, gaps)
     mtms = mtms_parts(resource)
     return SystemReading(
         profile=profile,
@@ -424,6 +590,8 @@ async def read_system(
         cpu=cpu,
         memory=memory,
         partitions=partitions,
+        disk=disk,
+        adapters=adapters,
         shared_pools=tuple(pools),
         gaps=tuple(gaps),
     )
@@ -510,8 +678,8 @@ def fleet_systems(readings: Iterable[SystemReading]) -> tuple[FleetSystem, ...]:
 
 
 def _sum_figures(
-    label: str, kind: type[_Figures], groups: list[_Figures]
-) -> tuple[_Figures, list[tuple[str, str, int]]]:
+    label: str, kind: type[Any], groups: list[Any]
+) -> tuple[Any, list[tuple[str, str, int]]]:
     sums: dict[str, Any] = {}
     unknown: list[tuple[str, str, int]] = []
     for item in fields(kind):
@@ -536,30 +704,52 @@ def _pooled(pairs: Iterable[tuple[Any, Any]]) -> tuple[Any, float | None]:
     return allocated(total, free), utilization_pct(total, free)
 
 
+def capacity_pairs(reading: SystemReading) -> dict[str, tuple[Any, Any]]:
+    """Each utilization's (capacity, free) pair: cpu, mem, disk, slots and sriov."""
+    disk, adapters = reading.disk, reading.adapters
+    occupied = [
+        adapters.slots_assigned,
+        adapters.slots_unassigned,
+        adapters.slots_sriov,
+    ]
+    return {
+        "cpu": (reading.cpu.configurable, reading.cpu.free),
+        "mem": (reading.memory.configurable, reading.memory.free),
+        "disk": (
+            _total([disk.internal_total, disk.san_total]),
+            _total([disk.internal_free, disk.san_free]),
+        ),
+        "slots": (_total(occupied), adapters.slots_unassigned),
+        "sriov": (adapters.sriov_logical_ports, adapters.sriov_logical_ports_free),
+    }
+
+
 def rollup(readings: Iterable[SystemReading]) -> Rollup:
     """Sum each figure over the readings that reported it (ADR 0184 decision 4)."""
     every = tuple(readings)
-    cpu, cpu_unknown = _sum_figures("cpu", CpuFigures, [r.cpu for r in every])
-    memory, memory_unknown = _sum_figures(
-        "memory", MemoryFigures, [r.memory for r in every]
-    )
-    partitions, partitions_unknown = _sum_figures(
-        "partitions", PartitionFigures, [r.partitions for r in every]
-    )
-    cpu_allocated, cpu_pct = _pooled((r.cpu.configurable, r.cpu.free) for r in every)
-    mem_allocated, mem_pct = _pooled(
-        (r.memory.configurable, r.memory.free) for r in every
-    )
+    sums: dict[str, Any] = {}
+    unknown: list[tuple[str, str, int]] = []
+    for group, kind in FIGURE_GROUPS.items():
+        sums[group], missing = _sum_figures(
+            group, kind, [getattr(reading, group) for reading in every]
+        )
+        unknown.extend(missing)
+    pairs = [capacity_pairs(reading) for reading in every]
+    pooled = {
+        name: _pooled(pair[name] for pair in pairs)
+        for name in ("cpu", "mem", "disk", "slots", "sriov")
+    }
     return Rollup(
         systems=len(every),
-        cpu=cpu,
-        memory=memory,
-        partitions=partitions,
-        cpu_allocated=cpu_allocated,
-        cpu_util_pct=cpu_pct,
-        mem_allocated=mem_allocated,
-        mem_util_pct=mem_pct,
-        unknown=tuple(cpu_unknown + memory_unknown + partitions_unknown),
+        **sums,
+        cpu_allocated=pooled["cpu"][0],
+        cpu_util_pct=pooled["cpu"][1],
+        mem_allocated=pooled["mem"][0],
+        mem_util_pct=pooled["mem"][1],
+        disk_util_pct=pooled["disk"][1],
+        slots_util_pct=pooled["slots"][1],
+        sriov_util_pct=pooled["sriov"][1],
+        unknown=tuple(unknown),
     )
 
 

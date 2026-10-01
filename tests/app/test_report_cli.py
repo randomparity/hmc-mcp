@@ -14,7 +14,9 @@ from hmcpctl import cli
 from hmcpctl.cli_commands import report
 from hmcpctl.config import ConfigError, HMCConfig
 from hmcpctl.operations.inventory.utilization import (
+    AdapterFigures,
     CpuFigures,
+    DiskFigures,
     FleetSurvey,
     MemoryFigures,
     PartitionFigures,
@@ -35,7 +37,13 @@ EXPECTED_COLUMNS = [
     "partitions_not_activated",
     "partitions_other", "profile_claims", "profile_claim_mem_mib", "profile_claim_cpu",
     "notes",
+    "disk_internal_total_mib", "disk_internal_assigned_mib", "disk_internal_free_mib",
+    "disk_san_total_mib", "disk_san_assigned_mib", "disk_san_free_mib", "disk_util_pct",
+    "slots_assigned", "slots_unassigned", "slots_sriov", "slots_empty", "slots_util_pct",
+    "sriov_adapters", "sriov_logical_ports", "sriov_logical_ports_free", "sriov_util_pct",
 ]  # fmt: skip
+DISK = DiskFigures(286102, 286102, 0, 102400, 0, 102400)
+UNKNOWN_DISK = DiskFigures(None, None, None, None, None, None)
 
 
 def _reading(profile: str, serial: str, *, vios: int | None = 1024) -> SystemReading:
@@ -50,6 +58,8 @@ def _reading(profile: str, serial: str, *, vios: int | None = 1024) -> SystemRea
         cpu=CpuFigures(48.0, 48.0, 2.0, 8.0, 4.0, 0.0, 34.0, 12.0, 2.0),
         memory=MemoryFigures(65536, 65536, 2048, vios, 8192, 4096, 0, 50176),
         partitions=PartitionFigures(2, 1, 0, 0, 0, 0),
+        disk=DISK if vios is not None else UNKNOWN_DISK,
+        adapters=AdapterFigures(1, 1, 1, 1, 1, 48, 2),
         shared_pools=(0,),
         gaps=() if vios is not None else ("VirtualIOServer feed: boom (HTTP 500)",),
     )
@@ -130,7 +140,18 @@ def test_report_writes_system_hmc_fleet_and_failure_rows(configured, tmp_path) -
         "1024",
     )
     assert hmc_b["mem_configurable_mib"] == "131072"
-    assert hmc_b["notes"] == "mem_vios_mib: 1 of 2 systems unknown"
+    assert hmc_b["notes"] == "; ".join(
+        f"{column}: 1 of 2 systems unknown"
+        for column in (
+            "mem_vios_mib",
+            "disk_internal_total_mib",
+            "disk_internal_assigned_mib",
+            "disk_internal_free_mib",
+            "disk_san_total_mib",
+            "disk_san_assigned_mib",
+            "disk_san_free_mib",
+        )
+    )
     fleet = rows[4]
     assert fleet["systems"] == "2"
     assert fleet["notes"] == (
@@ -147,6 +168,29 @@ def test_report_writes_system_hmc_fleet_and_failure_rows(configured, tmp_path) -
     }
     assert "hmc-c" in result.stderr
     assert "Wrote 2 systems from 2 of 3 profiles" in result.stderr
+
+
+def test_report_writes_disk_and_adapter_columns(configured, tmp_path) -> None:
+    out = tmp_path / "report.csv"
+    result = RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(out)])
+
+    assert result.exit_code == 0, result.output
+    system, _, hmc_b, fleet = _rows(out)[1:5]
+    assert (system["disk_internal_total_mib"], system["disk_san_free_mib"]) == (
+        "286102",
+        "102400",
+    )
+    assert (system["disk_util_pct"], system["slots_util_pct"]) == ("73.6", "66.7")
+    assert (system["slots_sriov"], system["sriov_util_pct"]) == ("1", "95.8")
+    assert hmc_b["disk_internal_total_mib"] == "286102"
+    assert hmc_b["slots_assigned"] == "2"
+    # SER0001, read by two profiles, counts once: the fleet is SER0001 plus SER0002.
+    assert fleet["disk_internal_total_mib"] == "572204"
+    assert (fleet["sriov_logical_ports"], fleet["sriov_logical_ports_free"]) == (
+        "96",
+        "4",
+    )
+    assert fleet["disk_util_pct"] == "73.6"
 
 
 def test_unknown_vios_renders_unknown_not_zero(
@@ -168,6 +212,8 @@ def test_unknown_vios_renders_unknown_not_zero(
     assert result.exit_code == 0, result.output
     system = _rows(out)[0]
     assert system["mem_vios_mib"] == "unknown"
+    assert system["disk_san_total_mib"] == "unknown"
+    assert system["disk_util_pct"] == "unknown"
     assert system["notes"] == "VirtualIOServer feed: boom (HTTP 500)"
 
 
