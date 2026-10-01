@@ -8,11 +8,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Fixed
+
+- `validate_hmc_name` refuses a name starting with `-`, which would reach the HMC CLI in option
+  position; this covers the install, VIOS install and reference-code tools (#887).
+
 ### Added
 
 - `hmcpctl report utilization --csv PATH` surveys every configured profile read-only and writes
   per-system, per-HMC and fleet CPU and memory allocation, idle reserved capacity, and failed
   profiles (#1252, ADR 0184).
+- `hmcpctl report utilization` adds VIOS disk capacity (internal and SAN; assigned and free),
+  I/O slot occupancy and SR-IOV logical ports per system and in each roll-up, appended after
+  `notes` (#1253, ADR 0185).
 - A tracked read-only capture pipeline and an offline gate over it (#1202).
   `scripts/live_capture_sweep.py` calls every read-only MCP tool and a declared list of
   raw GETs and `ls*` commands against one HMC profile, below a guard that refuses any
@@ -256,6 +264,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
+  HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
+  `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
+  minimum-affinity policy, resource-group affinity score and profile `io_slots` reads report a
+  malformed reply in the same form, and the last two read the empty-result reply as no rows
+  (#1203).
+- A malformed `port` or `verify_ssl` in one profile now makes the profile listing (`config show`,
+  the MCP profile listing, `report utilization`) fail with a `ConfigError` naming the profile and
+  field instead of a bare `ValueError`, and a string `verify_ssl` such as `"false"` is listed as
+  `false` rather than `true` (#1257).
 - `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
   numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
 - `hmcpctl` output no longer reads HMC-sourced text or command arguments as Rich markup or
@@ -1005,6 +1023,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmcpctl lpars set-boot-order` prints the boot string it set and the pending boot string
+  read back from the HMC, not the whole updated LPAR document; `--json` prints the document
+  as before. The operation and the `hmc_set_lpar_boot_order` tool return value are unchanged
+  (#1248).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc

@@ -1073,6 +1073,39 @@ def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
         list_profiles_and_nicknames(config_path=cfg)
 
 
+def _inventory_toml(tmp_path, body):
+    return _write_toml(
+        tmp_path / "config.toml",
+        f'[profiles.good]\nhost = "h"\n\n[profiles.bad]\nhost = "h"\n{body}\n',
+    )
+
+
+@pytest.mark.parametrize("value", ['"x443"', "[1]"])
+def test_config_inventory_names_profile_and_field_for_bad_port(tmp_path, value):
+    cfg = _inventory_toml(tmp_path, f"port = {value}")
+    with pytest.raises(
+        ConfigError, match=r"profile 'bad': port must be an integer, got"
+    ):
+        config_inventory(config_path=cfg)
+
+
+def test_config_inventory_names_profile_and_field_for_bad_verify_ssl(tmp_path):
+    cfg = _inventory_toml(tmp_path, 'verify_ssl = "maybe"')
+    with pytest.raises(
+        ConfigError, match=r"profile 'bad': verify_ssl must be a boolean"
+    ):
+        config_inventory(config_path=cfg)
+
+
+def test_config_inventory_coerces_like_hmcconfig(tmp_path):
+    cfg = _inventory_toml(tmp_path, 'port = "8443"\nverify_ssl = "false"')
+    bad = next(
+        p for p in config_inventory(config_path=cfg)["profiles"] if p["name"] == "bad"
+    )
+    assert bad["port"] == 8443
+    assert bad["verify_ssl"] is False
+
+
 # ---------------------------------------------------------------------------
 # The read-and-parse failure contract shared by every reader (issue #257)
 #
