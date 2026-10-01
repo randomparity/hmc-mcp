@@ -105,8 +105,10 @@ semantics:
 - `validate_mac_address` — six colon-separated hex octets (`-m`).
 - `validate_install_source` — non-empty, printable, no leading `-` (flag-like),
   NFS form's server part must be hostname-shaped (`-d`).
-- `validate_hmc_name` — non-empty printable text for system/partition/profile
-  names (HMC names are free-form; anything legitimate survives quoting).
+- `validate_hmc_name` — non-empty printable text with no leading `-` for
+  system/partition/profile names (quoting does not stop a value landing in
+  option position, and the HMC CLI has no `--` terminator; a dash-leading name
+  is refused).
 - `build_installios_command` re-validates everything at composition time: it,
   not the tool layer, is the trust boundary.
 - Partition UUIDs are resolved to CLI names over SSH (`_ssh_lpar_name`) because

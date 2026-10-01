@@ -141,6 +141,16 @@ def test_invalid_hmc_names_rejected():
         validate_hmc_name("bad\x02name", "partition_name")
 
 
+@pytest.mark.parametrize("value", ["-foo", "--all", "-"])
+def test_hmc_name_with_leading_dash_rejected(value):
+    with pytest.raises(ValueError, match="partition_name .* starts with '-'"):
+        validate_hmc_name(value, "partition_name")
+
+
+def test_hmc_name_with_inner_dash_accepted():
+    assert validate_hmc_name("aix-lpar-1", "partition_name") == "aix-lpar-1"
+
+
 # ---------------------------------------------------------------------- #
 # Unit: command composition — exact built command lines
 # ---------------------------------------------------------------------- #
