@@ -841,6 +841,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Output-schema change:** `hmc_fleet_health`, `fetch_fleet_health` and `hmcpctl systems
+  health` no longer return `failed_jobs`, and no longer read `GET /rest/api/uom/Job`. That
+  feed is not in the HMC REST reference, and every captured HMC (V10R3 and V11R2) refused it
+  with `400 REST000E`, so the field was always empty alongside an "unavailable" warning. The
+  envelope is now `systems`, `vios`, `lpars` and `warnings`; ADR 0019 carries the amendment
+  (#1202).
 - **Interface change:** the `state` values `hmc_list_lpars`, `hmc_list_vios`,
   `hmcpctl lpars list --state` and `hmcpctl vios list --state` accept are now the HMC
   schema's `LogicalPartitionState.Enum` (identical on V10R3 and V11R2). `stopping`,

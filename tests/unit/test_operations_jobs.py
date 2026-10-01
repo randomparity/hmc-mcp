@@ -25,8 +25,6 @@ from hmcpctl.jobs import (
 )
 from hmcpctl.operations.jobs import (
     get_job,
-    is_unsupported_job_listing,
-    list_jobs,
     wait_for_job,
 )
 
@@ -685,15 +683,3 @@ async def test_captured_entry_uuid_refusal_on_the_confirming_read_propagates(
 
     assert global_route.called
     assert excinfo.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_captured_job_feed_refusal_is_an_unsupported_listing(mock_hmc) -> None:
-    path, response = live_response("rest-job-feed-refused")
-    mock_hmc.get(path).mock(return_value=response)
-
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError) as excinfo:
-            await list_jobs(hmc)
-
-    assert is_unsupported_job_listing(excinfo.value)

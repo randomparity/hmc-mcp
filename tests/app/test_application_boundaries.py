@@ -247,7 +247,7 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
     from hmcpctl.operations.systems.health import FleetHealthResult
 
     client = object()
-    health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
+    health = AsyncMock(return_value=FleetHealthResult((), (), (), ()))
     with (
         patch("hmcpctl.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
@@ -257,15 +257,16 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
         result = CliRunner().invoke(app, ["systems", "health", "--json"])
     assert result.exit_code == 0
     health.assert_awaited_once_with(client)
-    assert '"failed_jobs": []' in result.stdout
+    assert '"lpars": []' in result.stdout
+    assert "failed_jobs" not in result.stdout
 
 
 def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable():
     from hmcpctl.operations.systems.health import FleetHealthResult
 
     client = object()
-    warning = "Recent job health is unavailable"
-    health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
+    warning = "Partition inventory is unavailable"
+    health = AsyncMock(return_value=FleetHealthResult((), (), (), (warning,)))
     with (
         patch("hmcpctl.cli_commands.systems.core.fetch_fleet_health", health),
         patch(
