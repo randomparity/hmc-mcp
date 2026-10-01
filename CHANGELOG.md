@@ -229,6 +229,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- The managed-system fallback that resolves a system through `ManagedSystem/quick/All`
+  matches its UUID in any case; V10R3 prints those UUIDs in lower case, so an upper-case
+  UUID was never found. `hmc_list_systems` now names the entry fields V10R3 returns,
+  `MachineTypeModelAndSerialNumber` and `PrimaryIPAddress`, instead of the quick-property
+  names `MTMS` and `IPAddress` (#1202).
 - `hmc_fleet_health` names a failed job by its `RequestedOperation/OperationName`
   (`PowerOn`); a JobResponse has no `JobName`, so every failed job read `unknown`. A
   partition that is not activated is no longer reported for its inactive RMC connection,

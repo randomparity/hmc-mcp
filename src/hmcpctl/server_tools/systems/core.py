@@ -77,8 +77,8 @@ def hmc_list_systems(
     """List managed systems, optionally filtered by state.
 
     When state is omitted, returns all managed systems known to the HMC. Each
-    entry has UUID, SystemName, State, MTMS (machine type/model/serial),
-    IPAddress, etc.
+    entry has UUID, SystemName, State, MachineTypeModelAndSerialNumber,
+    PrimaryIPAddress, etc.
 
     When state is provided, returns only systems whose State property matches
     the given value, using the HMC server-side search endpoint. Use
