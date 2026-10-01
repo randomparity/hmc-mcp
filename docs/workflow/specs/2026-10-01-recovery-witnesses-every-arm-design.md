@@ -62,7 +62,7 @@ compare by hand.
 **Coverage is explicit.** Subtasks 16–22 are witnessed by the table and 24–25 by the existing
 PCIe checks. Every other dispatched subtask is listed as `NOT WITNESSED`, and the runbook says
 what each of those arms changes and how to check it by hand. The report header prints the
-document's `run.group`, `run.subtasks`, `run.finished` and `run.tested_commit`, so the operator
+document's `run.group`, `run.tested_commit` and `run.finished`, so the operator
 sees which run was witnessed.
 
 **Exit codes stay 0/1/2.** 0: every dispatched subtask is witnessed and every applicable class
