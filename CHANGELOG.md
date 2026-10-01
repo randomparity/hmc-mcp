@@ -265,6 +265,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   decommission storage inventory now sees them. Both asked for the two mapping groups as
   repeated `group` parameters, which V10R3 answers with the first group only; the request now
   sends `?group=ViosSCSIMapping,ViosFCMapping` (#1202).
+- The SSH LPAR UUID lookup with no system given skips a system whose partition listing fails,
+  such as one in No Connection state, and keeps searching. It used to abort on the first
+  failing system; when nothing matches, the error now names each system it could not search
+  (#1202).
+- `hmc_list_memory_pools` returns an empty list for a system without Active Memory Sharing.
+  On HMC V11R2 with POWER11 systems, `lshwres -r mempool` exits 1 with `HSCLA4A0`, so the
+  tool failed instead of reporting that the system has no pools; `hmc_remove_memory_pool`
+  now refuses there with "no pool with that name exists" (#1202).
 - `hmc_add_network_adapter`, `hmcpctl adapters add-network --mac` and
   `build_client_network_adapter_document` now refuse a `mac_address` that is not 12
   hexadecimal digits with no separators, the form chhwres documents and the HMC prints;

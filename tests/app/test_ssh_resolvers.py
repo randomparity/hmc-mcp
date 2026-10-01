@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncssh
 import httpx
 import pytest
 from conftest import live_fixture, live_process_error, make_config
@@ -158,6 +159,87 @@ async def test_resolve_lpar_cli_name_without_system_scopes_each_system():
         "lssyscfg -r lpar -m other -F uuid,name",
         f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name",
     ]
+
+
+def _per_system_ssh_mock(answers: dict[str, str | BaseException]) -> MagicMock:
+    """Answer each command from *answers*; an exception answer is raised."""
+
+    def run(cmd, **_kwargs):
+        answer = answers[cmd]
+        if isinstance(answer, BaseException):
+            raise answer
+        return MagicMock(stdout=answer)
+
+    conn = _make_ssh_mock()
+    conn.run = AsyncMock(side_effect=run)
+    return conn
+
+
+def _unreachable_system_error() -> asyncssh.ProcessError:
+    # Synthetic: no capture holds a lssyscfg answer for an unreachable system;
+    # the lookup's contract covers any nonzero exit.
+    return asyncssh.ProcessError(
+        env={},
+        command="lssyscfg",
+        subsystem=None,
+        exit_status=1,
+        exit_signal=None,
+        returncode=1,
+        stdout="system unreachable\n",
+        stderr="",
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_lpar_cli_name_skips_a_failing_system():
+    """One listed system failing its partition listing does not end the search."""
+    conn = _per_system_ssh_mock(
+        {
+            "lssyscfg -r sys -F name": f"down\n{SYSTEM_NAME}\n",
+            "lssyscfg -r lpar -m down -F uuid,name": _unreachable_system_error(),
+            f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name": _LPAR_ROWS,
+        }
+    )
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
+        name = await resolve_lpar_cli_name(make_config(), LPAR_UUID)
+
+    assert name == LPAR_NAME
+
+
+@pytest.mark.asyncio
+async def test_resolve_lpar_cli_name_reports_skipped_systems_when_unmatched():
+    """With no match, the error names each system whose listing failed."""
+    conn = _per_system_ssh_mock(
+        {
+            "lssyscfg -r sys -F name": f"down\n{SYSTEM_NAME}\n",
+            "lssyscfg -r lpar -m down -F uuid,name": _unreachable_system_error(),
+            f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name": "No results were found.\n",
+        }
+    )
+
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="Could not resolve LPAR UUID") as raised,
+    ):
+        await resolve_lpar_cli_name(make_config(), LPAR_UUID)
+
+    assert "'down'" in str(raised.value)
+    assert "system unreachable" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_resolve_lpar_cli_name_named_system_failure_propagates():
+    """A named system is the only place to look, so its failure is the answer."""
+    conn = _per_system_ssh_mock(
+        {f"lssyscfg -r lpar -m {SYSTEM_NAME} -F uuid,name": _unreachable_system_error()}
+    )
+
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="system unreachable"),
+    ):
+        await resolve_lpar_cli_name(make_config(), LPAR_UUID, SYSTEM_NAME)
 
 
 @pytest.mark.asyncio

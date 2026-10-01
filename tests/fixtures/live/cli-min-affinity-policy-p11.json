@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p11-9824/capture.jsonl#178",
+  "command": "lssyscfg -r lpar -m sys-2 --filter lpar_names=lpar-5 -F min_affinity_score,min_affinity_score_action --header",
+  "exit_status": 0,
+  "stdout": "min_affinity_score,min_affinity_score_action\n0,none\n",
+  "stderr": ""
+}

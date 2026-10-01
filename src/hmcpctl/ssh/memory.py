@@ -6,8 +6,11 @@ import shlex
 from typing import Any
 
 from ..config import HMCConfig
-from .commands import _parse_lshwres_output, _validated_value
+from .commands import _parse_lshwres_output, _validated_value, hmc_error_code
 from .transport import HMCCLIError, run_hmc_command
+
+# The managed system does not support Active Memory Sharing (V11R2, POWER11).
+_AMS_UNSUPPORTED = "HSCLA4A0"
 
 
 async def list_memory_pools(
@@ -19,10 +22,17 @@ async def list_memory_pools(
     Runs ``lshwres -r mempool -m <system_name>`` and returns one dict per
     pool parsed from the key=value rows, with fields such as ``pool_name``,
     ``size``, ``lpar_names``, and ``curr_lpar_names`` (comma-separated).
+    A system without Active Memory Sharing has no pools: the HMC refuses the
+    read with ``HSCLA4A0``, which returns an empty list.
     """
-    output = await run_hmc_command(
-        config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
-    )
+    try:
+        output = await run_hmc_command(
+            config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
+        )
+    except HMCCLIError as error:
+        if hmc_error_code(error) == _AMS_UNSUPPORTED:
+            return []
+        raise
     return _parse_lshwres_output(output)
 
 
