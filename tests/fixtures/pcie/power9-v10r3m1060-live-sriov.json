@@ -7,7 +7,8 @@
   "source_url": "https://github.com/randomparity/hmc-mcp/issues/214#issuecomment-5359635063",
   "source_locator": "WORK:CROSS-SYSTEM-EVIDENCE:RESULT and WORK:CROSS-SYSTEM-EVIDENCE:PHASE2",
   "claim_summary": "Same-family SR-IOV reads, dynamic assignment, errors, and profile unassignment.",
-  "support": "captured",
+  "support": "transcribed",
+  "transcription_note": "Transcribed from the cited comment, not byte-captured. Its physical-ports rows print phys_port_type eth at --level roce; every later byte capture of this 8375-42A adapter at --level roce prints roce (tests/fixtures/sriov/sriov-physport-granularity-v10r3.json, and the 2026-09-30 read-only capture for #1202).",
   "probes": [
     {
       "name": "hmc-version",

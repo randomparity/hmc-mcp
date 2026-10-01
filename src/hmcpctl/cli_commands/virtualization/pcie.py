@@ -210,7 +210,8 @@ def network_list_io_slots(
 def network_set_sriov_mode(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     adapter_id: str = typer.Argument(
-        ..., help="Physical adapter ID (from `hmcpctl network list-io-slots`)"
+        ...,
+        help="SR-IOV adapter ID (from `hmcpctl network list-sriov-adapters`)",
     ),
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
 ) -> None:
