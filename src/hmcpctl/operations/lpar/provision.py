@@ -16,6 +16,7 @@ from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutatio
 from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...documents import LparResources, PartitionType, StorageKind
+from ...documents.storage import validate_virtual_disk
 from ...errors import HMCError
 from ...jobs import JobOutcome, job_outcome
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
@@ -362,10 +363,9 @@ async def attach_disk_to_lpar(
     ownership_override: bool = False,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR."""
-    if capacity_mib <= 0:
-        raise ValueError("capacity_mib must be greater than zero")
     if storage.kind != "VirtualDisk" or storage.vg_uuid is None:
         raise ValueError("disk attachment requires a VirtualDisk with vg_uuid")
+    validate_virtual_disk(storage.storage_name, capacity_mib)
 
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid

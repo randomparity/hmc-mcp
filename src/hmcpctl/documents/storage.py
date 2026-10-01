@@ -30,20 +30,25 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     return document_envelope("VolumeGroup", body)
 
 
+def validate_virtual_disk(disk_name: str, capacity_mib: int) -> None:
+    """Refuse a disk name or capacity the VIOS will not create; *disk_name* is unescaped."""
+    if len(disk_name) > VIRTUAL_DISK_NAME_MAX:
+        raise ValueError(
+            f"disk_name is {len(disk_name)} characters; the VIOS limits "
+            f"backing-device names to {VIRTUAL_DISK_NAME_MAX} characters"
+        )
+    if capacity_mib <= 0 or capacity_mib % 1024:
+        raise ValueError("capacity_mib must be a positive multiple of 1024")
+
+
 @escapes_string_arguments
 def build_virtual_disk_element(disk_name: str, capacity_mib: int) -> str:
     """One VirtualDisk for insertion into a fetched VolumeGroup (read-modify-write, #936).
 
     V10R3 rejects ``kb`` on VirtualDisk and requires DiskCapacity (GiB) before DiskName.
     """
-    name_length = len(html.unescape(disk_name))  # the decorator escaped disk_name
-    if name_length > VIRTUAL_DISK_NAME_MAX:
-        raise ValueError(
-            f"disk_name is {name_length} characters; the VIOS limits "
-            f"backing-device names to {VIRTUAL_DISK_NAME_MAX} characters"
-        )
-    if capacity_mib <= 0 or capacity_mib % 1024:
-        raise ValueError("capacity_mib must be a positive multiple of 1024")
+    # the decorator escaped disk_name; the VIOS limit counts the raw characters
+    validate_virtual_disk(html.unescape(disk_name), capacity_mib)
     capacity_gib = capacity_mib // 1024
     return f"""<VirtualDisk xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
