@@ -21,10 +21,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   refuses a destination git does not ignore; `.gitignore` now ignores `*.capture.jsonl` and
   `hmc-captures/` (#1161).
 - `tests/fixtures/live/` holds 15 tokenized captures from the #1161 windows, each citing its
-  capture, and the tests that mocked a guessed HMC shape now replay them: the shared job
-  entry is a captured `JobResponse` with a numeric JobID that differs from its entry UUID,
-  quick `PartitionState` answers are JSON-quoted, an unowned slot's owner is `null`, and
-  refcode timestamps read `MM/DD/YYYY HH:MM:SS`. New tests feed the captured 404 REST0005,
+  capture, and these guessed mocks now replay them: the shared job entry is a captured
+  `JobResponse` with a numeric JobID that differs from its entry UUID, quick
+  `PartitionState` answers are JSON-quoted, an unowned slot's owner is `null`, and refcode
+  timestamps read `MM/DD/YYYY HH:MM:SS`. New tests feed the captured 404 REST0005,
   400 REST000E and job-feed refusals through the job read paths, and the captured LPAR
   create, read and miss through the client (#1161).
 - Live observations for the v0.1.0 bare-CEC path, from the #879 window at `90c97b5f` on HMC

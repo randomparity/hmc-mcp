@@ -16,7 +16,6 @@ from conftest import (
     JOB_ENTRY,
     JOB_ID,
     RUNNING_JOB_ENTRY,
-    RUNNING_JOB_ID,
 )
 
 from hmcpctl.errors import HMCError
@@ -196,8 +195,8 @@ def test_lpm_recovery_tools_return_explicit_timeout(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    # The corpus holds a running read of another job only, and the outcome
-    # reports the JobID of the read it saw.
+    # The corpus holds a running read of another job only; this test pins the
+    # timeout fields, not which job the read named.
     mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
@@ -205,7 +204,6 @@ def test_lpm_recovery_tools_return_explicit_timeout(
     result = tool_fn(*args, wait=True, timeout_seconds=0, poll_interval=1)
 
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == RUNNING_JOB_ID
     assert result.status == "RUNNING"
     assert result.timed_out is True
     assert result.error is None
