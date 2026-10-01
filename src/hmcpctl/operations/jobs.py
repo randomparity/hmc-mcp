@@ -105,7 +105,9 @@ async def _confirm_missing(
 ) -> dict[str, Any] | None:
     """Second-source a 404 raised against a caller-supplied link.
 
-    A per-operation SELF link embeds the target resource, not just the job
+    A per-operation SELF link (the form issue #95 accepts from a caller; no V10R3
+    capture shows the HMC emitting one, its links are ``/rest/api/uom/jobs/{id}``)
+    embeds the target resource, not just the job
     (``.../LogicalPartition/{uuid}/do/PowerOn/Job/{id}``), so it can stop
     resolving while the job is fine — this package's own decommission operations
     remove such parents. Confirm against the global jobs path, which is keyed on
