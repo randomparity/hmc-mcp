@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
+from conftest import live_fixture
 from fastmcp import Client
 from typer.testing import CliRunner
 
@@ -85,7 +86,10 @@ async def test_policy_query_accepts_quoted_compatibility_modes():
 
 @pytest.mark.asyncio
 async def test_policy_query_returns_capability_absence_without_policy_command():
-    runner = AsyncMock(return_value="default,POWER9,POWER10\n")
+    # The captured POWER9 answer. Asking that system for min_affinity_score
+    # exits 1 with "An invalid attribute was entered" (#1202), so the gate
+    # must stop before the policy read.
+    runner = AsyncMock(return_value=live_fixture("cli-proc-compat-modes")["stdout"])
     with (
         patch("hmcpctl.ssh.affinity.run_hmc_command", runner),
         patch("hmcpctl.ssh.profiles.run_hmc_command", runner),

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
-from conftest import mock_uuid_resolution
+from conftest import live_fixture, mock_uuid_resolution
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.server_tools.lpar.configuration import (
@@ -249,10 +249,25 @@ def test_list_lpar_memopt_scores_filter_rejects_mismatched_row():
         asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, LPAR_NAME))
 
 
+def test_list_lpar_memopt_scores_reads_captured_rows():
+    """The captured V10R3 answer: an inactive partition scores the literal none."""
+    capture = live_fixture("cli-memopt-lpar-curr")
+    conn = _make_ssh_mock(capture["stdout"])
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
+        result = asyncio.run(list_lpar_memopt_scores(_config(), "sys-R1", None))
+
+    assert conn.run.call_args[0][0] == capture["command"]
+    assert result == [
+        {"lpar_name": "sys-R1-lp3", "lpar_id": "1", "curr_lpar_score": "none"},
+        {"lpar_name": "sys-R1-vios1", "lpar_id": "100", "curr_lpar_score": "100"},
+    ]
+
+
 def test_list_lpar_memopt_scores_empty_output_returns_empty_list():
-    """A system reporting no scores yields an empty list."""
+    """A system reporting no scores prints the empty-result sentinel: no rows."""
     cfg = _config()
-    conn = _make_ssh_mock("")
+    conn = _make_ssh_mock(live_fixture("cli-mempool-empty")["stdout"])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
         result = asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, None))

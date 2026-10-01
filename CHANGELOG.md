@@ -273,8 +273,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmc_snapshot_capture` reads the profile record a V10R3 HMC prints. It refused every
   partition with "native profile contains an invalid attribute name", because the HMC quotes
   the list-valued `virtual_serial_adapters` pair (`"name=v1,v2"`) and splits a pair at its
-  first `=`; V11R2 also quotes a comma-bearing list element inside such a pair. A dedicated profile, which has no `*_proc_units`, now projects its processor
-  counts instead of failing (#1202).
+  first `=`; V11R2 also quotes a comma-bearing list element inside such a pair. A dedicated
+  profile, which has no `*_proc_units`, now projects its processor counts instead of failing
+  (#1202).
+- The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
+  systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
+  `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector
+  failed whenever REST was unreachable (#1202).
+- The default `name=value` CLI reads (`lshwres`, `lsmemopt`) no longer turn the HMC's empty
+  answer into a row: `hmc_list_memory_pools` on a system with no pool returned the phantom pool
+  `{"No results were found.": ""}`, and `hmc_list_lpar_memopt_scores` failed with "missing
+  required fields" on an empty answer. A list-valued pair, which the HMC prints quoted
+  (`"curr_lpar_names=a,b"`), is now one attribute instead of a key with a leading quote, so
+  `hmc_remove_memory_pool`'s assigned-partition guard sees the partitions it lists (#1202).
 - `hmc_deploy_partition_template(wait=True)` and `deploy_partition_template` now stamp the
   deployed partition's ownership when the job finishes `COMPLETED_OK`. They accepted only a
   bare `COMPLETED`, a status the HMC does not report, so a real deployment was never stamped

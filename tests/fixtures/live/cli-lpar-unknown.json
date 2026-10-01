@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture-raw.jsonl#48",
+  "command": "lssyscfg -r lpar -m sys-R1 --filter lpar_names=zz-no-such-lpar -F name",
+  "exit_status": 1,
+  "stdout": "HSCL8012 The partition named zz-no-such-lpar was not found.  Please check your entry and retry the command.\n",
+  "stderr": ""
+}
