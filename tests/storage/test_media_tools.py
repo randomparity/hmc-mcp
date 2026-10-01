@@ -74,8 +74,8 @@ def test_list_optical_media(monkeypatch, mock_hmc):
     # The HMC's Size is GiB; the tool reports it in MiB (#963).
     assert media_list[0]["size_mib"] == 928.0512
     assert media_list[1]["size_mib"] == 987.9552
-    # The captured media carry no MediaType.
-    assert media_list[0]["media_type"] is None
+    # No captured or documented medium carries MediaType, so none is reported (#1202).
+    assert set(media_list[0]) == {"name", "size_mib"}
 
 
 def test_get_media_repository_not_found(monkeypatch, mock_hmc):

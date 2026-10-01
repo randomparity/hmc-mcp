@@ -873,6 +873,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_list_optical_media`, `storage list-optical-media` and `list_optical_media` no longer
+  return `media_type`, and the CLI table drops its Type column. No captured V10R3 or V11R2
+  medium and no IBM reference page carries a `MediaType` element, so the field was always
+  null. Each medium is now `name` and `size_mib` (#1202).
 - The `HMC_TIMEOUT` default (TOML `timeout`) is now 180 seconds, raised from 60. A read-only
   sweep found that a `GET /rest/api/uom/ManagedSystem` feed read on a large V11R2 HMC took longer
   than 60 seconds, and neither IBM's documentation nor hmcpctl sets an upper bound on how long

@@ -420,12 +420,10 @@ def storage_list_optical_media(
         table = Table()
         table.add_column("Media Name", style="cyan")
         table.add_column("Size (MiB)", style="magenta")
-        table.add_column("Type", style="green")
         for media in media_list:
             table.add_row(
                 media.name,
                 "N/A" if media.size_mib is None else str(media.size_mib),
-                media.media_type or "N/A",
             )
         console.print(table)
     else:

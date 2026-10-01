@@ -56,7 +56,6 @@ class OpticalMedia:
 
     name: str
     size_mib: float | None
-    media_type: str | None
 
 
 @dataclass(frozen=True)
@@ -168,14 +167,10 @@ def _volume_group(entry: Mapping[str, Any]) -> VolumeGroup:
 def _optical_media(entry: Mapping[str, Any]) -> OpticalMedia:
     operation = "list_optical_media"
     resource = _resource(entry, operation)
-    media_type = resource.get("MediaType")
-    if media_type is not None and not isinstance(media_type, str):
-        raise HMCError(f"{operation} returned an invalid MediaType")
     return OpticalMedia(
         name=_required_text(resource, "MediaName", operation),
         # The live VirtualOpticalMedia carries Size, in GiB (#963).
         size_mib=_optional_gib_as_mib(resource, "Size", operation),
-        media_type=media_type,
     )
 
 
