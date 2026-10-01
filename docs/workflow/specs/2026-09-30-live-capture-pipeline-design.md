@@ -66,7 +66,9 @@ Three subcommands, all offline:
     (`No results were found.`, `null`, `none`, `N/A`, `unavailable`, `Unknown`,
     `HSCL…` text), a built-in account (`root`, `hscroot`, `hscpe`, `admin`), or text
     found inside fixed HMC vocabulary such as a `ManagedTaskName` (`View HMC Logs`);
-  - replacement is whole-word, longest first;
+  - replacement is whole-word, longest first, and runs before any `--private`
+    pattern; a `--private` match replaces the whole word containing it, and a
+    private token left joined to a word fails the leak guard;
   - SSH public keys (with their comment, up to the next `<`), the
     `PublicSSHKeyValue`/`AuthorizedKeysValue` elements whole, session tokens, cookies,
     MAC addresses, device identifiers (`VolumeUniqueID`, `UniqueDeviceID`,
@@ -130,7 +132,9 @@ exporter's own test modules, which hold uncaptured values on purpose):
 1. **Literals.** XML leaf values in string literals (`.py`) and in `.xml`/`.json` files,
    and AST comparisons and dict entries keyed by an element name
    (`x.get("PartitionState") == "running"`, `in (...)`, `{"PartitionState": "..."}`,
-   with `.lower()`/`.upper()` honoured). Checked only for elements whose set is closed:
+   with `.lower()`/`.upper()` honoured), and assignments or keyword arguments whose
+   name is the element (`PartitionState="running"`) or ends in `job_status` (checked
+   as `Status`). Checked only for elements whose set is closed:
    bound to a schema enum in some vocabulary. Allowed values are the union, over every
    vocabulary and enum list, of that element's enum values and observed literals: a
    value any release answered or enumerates passes.
