@@ -9,6 +9,7 @@ from hmcpctl.operations.lpar.ownership import (
 )
 
 from ...ssh.profiles import (
+    ProfileRestoreType,
     restore_lpar_profiles,
     set_lpar_msp,
     set_lpar_proc_compat,
@@ -21,6 +22,7 @@ async def restore_system_lpar_profiles(
     hmc: HMCClient,
     system_name_or_uuid: str,
     file_path: str,
+    restore_type: ProfileRestoreType,
     *,
     ownership_override: bool = False,
 ) -> str:
@@ -30,7 +32,7 @@ async def restore_system_lpar_profiles(
         system_name_or_uuid,
         ownership_override=ownership_override,
     )
-    return await restore_lpar_profiles(hmc.config, system_name, file_path)
+    return await restore_lpar_profiles(hmc.config, system_name, file_path, restore_type)
 
 
 async def synchronize_lpar_profile(
