@@ -229,6 +229,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_provision_lpar` no longer reports an existing volume group as missing when its UUID
+  is given in upper case. A V10R3 HMC reads VolumeGroup ids in lower case, and the check
+  compared them case-sensitively (#1202).
 - `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
   fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
   which a V10R3 HMC answers with `500 Unable to parse expression` for `not activated`; they

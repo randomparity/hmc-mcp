@@ -31,6 +31,7 @@ from hmcpctl.operations.lpar.provision import (
     ProvisionAffinityAssessment,
     ProvisionRequest,
     ProvisionStorage,
+    _check_vg_exists,
     _power_on,
 )
 from hmcpctl.server_tools.lpar.provision import hmc_provision_lpar
@@ -1210,3 +1211,18 @@ def test_provision_reports_apply_step_when_create_returns_no_uuid(
         ("power_on", "skipped"),
     ]
     assert result.workflow_completed is False
+
+
+@pytest.mark.asyncio
+async def test_volume_group_check_ignores_uuid_case() -> None:
+    """VolumeGroup atom ids read lower-case on V10R3 (#1202); a caller may not."""
+    hmc = AsyncMock()
+    hmc.list_volume_groups.return_value = [
+        {"UUID": "00000051-abcd-4ef0-8abc-000000000051"}
+    ]
+
+    await _check_vg_exists(
+        hmc,
+        "00000005-ABCD-4EF0-8ABC-000000000005",
+        "00000051-ABCD-4EF0-8ABC-000000000051",
+    )
