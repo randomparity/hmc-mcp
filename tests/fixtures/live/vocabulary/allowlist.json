@@ -4,21 +4,21 @@
   "file": "src/hmcpctl/ssh/lpar.py",
   "subject": "lssyscfg -r sys -F name",
   "value": "",
-  "reason": "not captured; the 2026-09-30 sweep ran only the -m form. live_capture_sweep.py now probes the unscoped system listing (sys-no-m) (#1202)"
+  "reason": "not captured; the 2026-09-30 sweeps ran only the -m form. live_capture_sweep.py now probes the unscoped system listing (sys-no-m) (#1202)"
  },
  {
   "kind": "cli-command",
   "file": "src/hmcpctl/ssh/lpar.py",
   "subject": "lssyscfg -r sys -F uuid,name",
   "value": "",
-  "reason": "not captured; the 2026-09-30 sweep ran only the -m form. live_capture_sweep.py now probes it (sys-no-m) (#1202)"
+  "reason": "not captured; the 2026-09-30 sweeps ran only the -m form. live_capture_sweep.py now probes it (sys-no-m) (#1202)"
  },
  {
   "kind": "cli-command",
   "file": "src/hmcpctl/ssh/vnic.py",
   "subject": "lshwres -r virtualio --rsubtype vnicbkdev -m {} -F {} --header",
   "value": "",
-  "reason": "not captured; no tool reached it on 2026-09-30. live_capture_sweep.py now probes it (vio-vnicbkdev) (#1202)"
+  "reason": "not captured; no tool reached it in the 2026-09-30 sweeps. live_capture_sweep.py now probes it (vio-vnicbkdev) (#1202)"
  },
  {
   "kind": "literal",
@@ -46,21 +46,21 @@
   "file": "src/hmcpctl/client/client_cluster.py",
   "subject": "/rest/api/uom/Cluster/{}",
   "value": "",
-  "reason": "the 2026-09-30 HMC has no cluster (the feed answered 204); capture on an HMC that has one (#1202)"
+  "reason": "none of the four HMCs swept on 2026-09-30 has a cluster (the feed answered 204); capture on an HMC that has one (#1202)"
  },
  {
   "kind": "rest-path",
   "file": "src/hmcpctl/client/client_cluster.py",
   "subject": "/rest/api/uom/SharedStoragePool/{}",
   "value": "",
-  "reason": "the 2026-09-30 HMC has no shared storage pool (the feed answered 204); capture on an HMC that has one (#1202)"
+  "reason": "none of the four HMCs swept on 2026-09-30 has a shared storage pool (the feed answered 204); capture on an HMC that has one (#1202)"
  },
  {
   "kind": "rest-path",
   "file": "src/hmcpctl/client/client_systems.py",
   "subject": "/rest/api/uom/VirtualIOServer/search/(PartitionName=={})",
   "value": "",
-  "reason": "not captured; the VIOS was given by UUID on 2026-09-30. live_capture_sweep.py now probes it (vios-search-name) (#1202)"
+  "reason": "not captured; the 2026-09-30 sweeps gave the VIOS by UUID. live_capture_sweep.py now probes it (vios-search-name) (#1202)"
  },
  {
   "kind": "rest-path",
@@ -68,12 +68,5 @@
   "subject": "/rest/api/templates/PartitionTemplate/{}",
   "value": "",
   "reason": "the template feed refused the typed Accept (406), so the sweep had no template UUID to read (#1202)"
- },
- {
-  "kind": "rest-path",
-  "file": "src/hmcpctl/client/core.py",
-  "subject": "/rest/api/uom/jobs/{}",
-  "value": "",
-  "reason": "a job read needs a job, and the read-only sweep starts none; capture it from a live run that submits one (#1202)"
  }
 ]
