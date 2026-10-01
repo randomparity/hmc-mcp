@@ -63,7 +63,7 @@ _SESSION_VALUES = (
     re.compile(r"(?i)\b((?:jsessionid|ccfwsession)=)[^;,}\s]+"),
     re.compile(r"(?i)(<x-api-session>)[^<]+"),
 )
-_UNDELIMITED_SESSION = re.compile(rf"{SESSION_REDACTED}(?![,;}}<]|$)")
+_UNDELIMITED_SESSION = re.compile(rf"{SESSION_REDACTED}(?![,;}}]|</|$)")
 _REDACTED_SESSION_FORMS = re.compile(
     rf"(?i)\b(?:x-api-session|jsessionid|ccfwsession)={SESSION_REDACTED}"
     rf"|<x-api-session>{SESSION_REDACTED}</x-api-session>"

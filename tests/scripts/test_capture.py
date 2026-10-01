@@ -381,6 +381,7 @@ def test_session_values_are_redacted_and_the_rest_kept(
         "JSESSIONID= hunter2",
         "Cookie: LtpaToken2=hunter2",
         "cookie=JSESSIONID=abc\nhunter2",
+        "cookie=JSESSIONID=abc<hunter2",
     ],
 )
 def test_a_session_keyword_outside_a_known_form_is_still_wholesale(

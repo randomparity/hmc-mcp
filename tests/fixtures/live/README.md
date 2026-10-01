@@ -1,7 +1,7 @@
 # Captured HMC fixtures
 
 Each file here is one request and the HMC's answer, taken for issue #1161:
-REST answers and most CLI output from captures recorded with
+REST answers and the refcode listing from captures recorded with
 `scripts/live_test/capture.py`, and two CLI listings (`cli-io-slots.json`,
 `cli-lpar-uuid-name.json`) from raw read-only command output. The captures were
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`

@@ -70,7 +70,7 @@ def capture(path: Path) -> Iterator[Capture]
     `cookie=…`, `JSESSIONID=…`, `CCFWSESSION=…`) and the text of an `<X-API-Session>` element
     are replaced by `redacted-session`, and the rest of the text is kept (#1161 follow-up: the
     wholesale rule alone discarded every error body);
-  - any of those fields where a replaced value is not followed by `,`, `;`, `}`, `<` or the end
+  - any of those fields where a replaced value is not followed by `,`, `;`, `}`, `</` or the end
     of the text, or that still contains
     one of `password`, `passwd`, `passphrase`, `sftpkey`, `sshkey`, `private key`, `x-api-session`,
     `x_api_session`, `jsessionid`, `ccfwsession`, `cookie:` (case-insensitive) after that step, is
