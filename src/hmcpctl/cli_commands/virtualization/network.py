@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import typer
-from rich.table import Table
+from rich.markup import escape
 
 from ...operations.virtualization.network import (
     create_virtual_network,
@@ -12,7 +12,7 @@ from ...operations.virtualization.network import (
     list_virtual_networks,
     list_virtual_switches,
 )
-from ..output import console, first_field, output, print_json
+from ..output import VerbatimTable, console, first_field, output, print_json
 from ..runtime import with_client
 
 
@@ -26,7 +26,7 @@ def network_list_switches(
 
     table = None
     if not as_json:
-        table = Table(title=f"Virtual Switches on {system}")
+        table = VerbatimTable(title=f"Virtual Switches on {system}")
         for col in ("Name", "SwitchID", "Mode", "UUID"):
             table.add_column(col)
         for s in switches:
@@ -49,7 +49,7 @@ def network_list_networks(
 
     table = None
     if not as_json:
-        table = Table(title=f"Virtual Networks on {system}")
+        table = VerbatimTable(title=f"Virtual Networks on {system}")
         for col in ("Name", "VLAN", "VswitchID", "Tagged", "UUID"):
             table.add_column(col)
         for n in nets:
@@ -85,7 +85,7 @@ def network_create(
         )
     )
 
-    console.print(f"[green]Created virtual network '{name}'[/green]")
+    console.print(f"[green]Created virtual network '{escape(name)}'[/green]")
     print_json(result.resource)
 
 
@@ -100,7 +100,7 @@ def network_delete(
 
     with_client(lambda hmc: delete_virtual_network(hmc, system, uuid))
 
-    console.print(f"[green]Deleted virtual network {uuid}[/green]")
+    console.print(f"[green]Deleted virtual network {escape(uuid)}[/green]")
 
 
 def network_list_bridges(

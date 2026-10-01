@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 
 from ..operations.metrics.pcm import (
     PcmCategory,
@@ -73,7 +74,10 @@ def metrics_set_prefs(
         lambda hmc: set_pcm_preferences(hmc, category, resource_name_or_uuid, flags)
     )
 
-    console.print(f"[green]Updated {category} {resource_name_or_uuid}: {flags}[/green]")
+    console.print(
+        f"[green]Updated {escape(category)} {escape(resource_name_or_uuid)}: "
+        f"{escape(str(flags))}[/green]"
+    )
 
 
 def metrics_show(

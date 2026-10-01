@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import cast
 
 import typer
+from rich.markup import escape
 
 from ...jobs import (
     REMOTE_RESTART_OPERATIONS,
@@ -43,10 +44,12 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
     result = with_client(fn)
     if isinstance(result, LpmAffinityMigrationResult):
         status = "Submitted" if result.job is not None else "Stopped"
-        console.print(f"[green]{status} {action}[/green]")
+        console.print(f"[green]{escape(status)} {escape(action)}[/green]")
         print_json(asdict(result))
         return
-    console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
+    console.print(
+        f"[green]Submitted {escape(action)} for {escape(result.lpar_uuid)}[/green]"
+    )
     job = asdict(result.job) if isinstance(result.job, JobOutcome) else result.job
     print_json(job)
 

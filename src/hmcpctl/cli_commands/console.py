@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import typer
+from rich.markup import escape
 
 from .output import _resource, console, err_console, print_json
 from .runtime import with_client
@@ -22,7 +23,7 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
         print_json(info)
         return
     res = _resource(info)
-    console.print(f"[bold]HMC[/bold] {info.get('link') or ''}")
+    console.print(f"[bold]HMC[/bold] {escape(info.get('link') or '')}")
     for key in (
         "VersionInfo",
         "ManagementConsoleName",
@@ -30,7 +31,7 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
         "NetworkInterfaces",
     ):
         if key in res:
-            console.print(f"  {key}: {json.dumps(res[key], default=str)}")
+            console.print(f"  {key}: {json.dumps(res[key], default=str)}", markup=False)
 
 
 def register_commands(group: typer.Typer) -> None:

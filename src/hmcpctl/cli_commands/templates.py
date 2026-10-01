@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import typer
-from rich.table import Table
+from rich.markup import escape
 
 from ..jobs import validate_wait_timing
 from ..operations.templates.core import (
@@ -11,7 +11,7 @@ from ..operations.templates.core import (
     get_partition_template,
     list_partition_templates,
 )
-from .output import console, first_field, output, print_json, usage_error
+from .output import VerbatimTable, console, first_field, output, print_json, usage_error
 from .runtime import with_client
 
 
@@ -22,7 +22,7 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
 
     table = None
     if not as_json:
-        table = Table(title="Partition Templates")
+        table = VerbatimTable(title="Partition Templates")
         for col in ("Name", "UUID"):
             table.add_column(col)
         for t in templates:
@@ -69,7 +69,7 @@ def templates_deploy(
         )
     )
 
-    console.print(f"[green]Deploy job for template {draft_uuid}[/green]")
+    console.print(f"[green]Deploy job for template {escape(draft_uuid)}[/green]")
     print_json(result)
 
 

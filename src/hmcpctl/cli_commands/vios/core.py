@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import typer
-from rich.table import Table
+from rich.markup import escape
 
 from ...jobs import validate_wait_timing
 from ...operations.partition_state import PartitionState
 from ...operations.vios.core import list_vios, power_vios
-from ..output import console, first_field, output, print_json
+from ..output import VerbatimTable, console, first_field, output, print_json
 from ..runtime import with_client
 
 
@@ -27,7 +27,7 @@ def vios_list(
 
     table = None
     if not as_json:
-        table = Table(title="Virtual I/O Servers")
+        table = VerbatimTable(title="Virtual I/O Servers")
         for col in ("Name", "ID", "UUID", "State", "Version"):
             table.add_column(col)
         for v in vios:
@@ -72,7 +72,7 @@ def vios_power_on(
         )
     )
 
-    console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
+    console.print(f"[green]Submitted PowerOn for {escape(name_or_uuid)}[/green]")
     print_json(job)
 
 
@@ -110,7 +110,7 @@ def vios_power_off(
         )
     )
 
-    console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
+    console.print(f"[green]Submitted {escape(op)} for {escape(name_or_uuid)}[/green]")
     print_json(job)
 
 

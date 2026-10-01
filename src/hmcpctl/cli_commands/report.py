@@ -363,7 +363,8 @@ def report_utilization(
     surveyed = len(survey.profiles) - len(survey.failures)
     err_console.print(
         f"Wrote {len(fleet_systems(survey.readings))} systems from {surveyed} of "
-        f"{len(survey.profiles)} profiles to {escape(str(csv_path))}"
+        f"{len(survey.profiles)} profiles to {csv_path}",
+        markup=False,
     )
 
 

@@ -102,7 +102,7 @@ def config_list() -> None:
     if config_path is None:
         # Compute what the path *would* be for the helpful message.
         would_be = config_dir() / "config.toml"
-        console.print(f"No config file found at {would_be}")
+        console.print(f"No config file found at {would_be}", markup=False)
         return
 
     # Parse once so profile names, the default marker, and nicknames all derive
@@ -119,13 +119,13 @@ def config_list() -> None:
 
     for entry in profiles:
         marker = "  (default)" if entry["is_default"] else ""
-        console.print(f"{entry['name']}{marker}")
+        console.print(f"{entry['name']}{marker}", markup=False)
 
     # Surface nicknames (secret-free): each maps to a profile key, flagged if
     # its target does not exist.
     for entry in inventory["nicknames"]:
         status = "" if entry["target_exists"] else "  (no such profile)"
-        console.print(f"{entry['name']} -> {entry['target']}{status}")
+        console.print(f"{entry['name']} -> {entry['target']}{status}", markup=False)
 
 
 def config_show(
@@ -165,7 +165,7 @@ def config_show(
     else:
         width = max(len(k) for k in data)
         for key, value in data.items():
-            console.print(f"{key:<{width}}  {value}")
+            console.print(f"{key:<{width}}  {value}", markup=False)
 
 
 def _write_exclusive(target: Path, text: str) -> None:
@@ -302,7 +302,8 @@ def config_init_access_policy(
     if output is None:
         err_console.print(
             "Review it, then start the server with: hmcpctl serve --access-policy "
-            f"{LEGACY_POLICY_NAME}"
+            f"{LEGACY_POLICY_NAME}",
+            markup=False,
         )
     else:
         # `--access-policy` selects a NAME inside the platform-native file, and no

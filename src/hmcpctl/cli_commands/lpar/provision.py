@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import cast
 
 import typer
-from rich.table import Table
+from rich.markup import escape
+from rich.text import Text
 
 from ...documents import (
     PARTITION_TYPES,
@@ -23,7 +24,7 @@ from ...operations.lpar.provision import (
     ProvisionStorage,
     provision_lpar,
 )
-from ..output import console, print_json, usage_error
+from ..output import VerbatimTable, console, print_json, usage_error
 from ..runtime import with_client
 from .assignment_input import load_pcie_assignments
 
@@ -135,18 +136,19 @@ def _render_provision_result(
             "[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]"
         )
     elif result.workflow_completed:
-        console.print(f"[green]LPAR '{name}' provisioned successfully[/green]")
+        console.print(f"[green]LPAR '{escape(name)}' provisioned successfully[/green]")
     elif result.resource_created:
         identity = result.lpar_uuid or "UUID unavailable"
         console.print(
-            f"[yellow]LPAR '{name}' was created ({identity}), but provisioning is incomplete — check step results[/yellow]"
+            f"[yellow]LPAR '{escape(name)}' was created ({escape(identity)}), "
+            "but provisioning is incomplete — check step results[/yellow]"
         )
     else:
         console.print(
-            f"[yellow]LPAR '{name}' was not created — check step results[/yellow]"
+            f"[yellow]LPAR '{escape(name)}' was not created — check step results[/yellow]"
         )
 
-    table = Table(title=f"Provision steps: {name}")
+    table = VerbatimTable(title=f"Provision steps: {name}")
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
     for step in result.steps:
@@ -155,12 +157,12 @@ def _render_provision_result(
             if step.status == "ok"
             else ("yellow" if step.status in ("dry_run", "skipped") else "red")
         )
-        table.add_row(step.step, f"[{style}]{step.status}[/{style}]")
+        table.add_row(step.step, Text(step.status, style=style))
     console.print(table)
     for warning in result.warnings:
-        console.print(f"[yellow]Warning: {warning}[/yellow]")
+        console.print(f"[yellow]Warning: {escape(warning)}[/yellow]")
     if result.change_location is not None:
-        console.print(result.change_location.summary())
+        console.print(result.change_location.summary(), markup=False)
 
 
 # LPAR Boot Order Commands

@@ -7,7 +7,6 @@ from decimal import Decimal
 
 import typer
 from rich.markup import escape
-from rich.table import Table
 
 from ...operations.virtualization.pcie import (
     InventorySelector,
@@ -23,7 +22,7 @@ from ...operations.virtualization.pcie import (
 )
 from ...ssh.io_inventory import PciClass, list_io_slots
 from ...ssh.sriov import SriovMode
-from ..output import console, output, print_json
+from ..output import VerbatimTable, console, output, print_json
 from ..runtime import run_cli_coroutine, ssh_config, with_client
 
 
@@ -32,14 +31,16 @@ def _print_pcie_inventory(result, as_json: bool) -> None:
         print_json(asdict(result))
         return
     if result.capability == "capability-unavailable":
-        console.print(f"Capability unavailable: {result.unavailable_reason}")
+        console.print(
+            f"Capability unavailable: {result.unavailable_reason}", markup=False
+        )
         return
     if not result.items:
-        console.print(f"{result.resource_kind} available; no items found")
+        console.print(f"{result.resource_kind} available; no items found", markup=False)
         return
 
     rows = [asdict(item) for item in result.items]
-    table = Table(title=f"{result.resource_kind} inventory on {result.system}")
+    table = VerbatimTable(title=f"{result.resource_kind} inventory on {result.system}")
     for field_name in rows[0]:
         table.add_column(field_name)
     for row in rows:
@@ -221,7 +222,7 @@ def network_set_sriov_mode(
     )
 
     console.print(
-        f"[green]Adapter {adapter_id} verified in '{mode}' mode on '{system_name}'[/green]"
+        f"[green]Adapter {escape(adapter_id)} verified in '{escape(mode)}' mode on '{escape(system_name)}'[/green]"
     )
     if result.strip():
         console.print(escape(result.strip()))

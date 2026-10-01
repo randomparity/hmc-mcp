@@ -18,7 +18,7 @@ def raw_get(
     """Raw GET against the HMC; prints the XML response body."""
 
     body, _headers = with_client(lambda hmc: hmc.raw_get(path))
-    console.print(body)
+    console.print(body, markup=False, highlight=False)
 
 
 def raw_post(
@@ -44,7 +44,9 @@ def raw_post(
         raise typer.Abort()
 
     console.print(
-        with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type))
+        with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type)),
+        markup=False,
+        highlight=False,
     )
 
 

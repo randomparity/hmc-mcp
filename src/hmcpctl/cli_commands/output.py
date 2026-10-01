@@ -3,15 +3,56 @@
 from __future__ import annotations
 
 import json
-from typing import Any, NoReturn
+from typing import Any, NoReturn, TypeVar
 
 import typer
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.markup import escape
+from rich.style import StyleType
 from rich.table import Table
+from rich.text import Text, TextType
 
-console = Console()
-err_console = Console(stderr=True)
+# Emoji codes are off: no CLI string uses one, and an HMC value such as ``a:smile:b``
+# must print as received (#1029).
+console = Console(emoji=False)
+err_console = Console(stderr=True, emoji=False)
+
+_T = TypeVar("_T")
+
+
+class VerbatimTable(Table):
+    """A table whose string title, caption, headers and cells print exactly as given.
+
+    Rich parses a plain ``str`` as console markup, so an HMC name holding ``[word]``
+    would lose that segment; a ``Text`` is never parsed (#1029).
+    """
+
+    def __init__(
+        self,
+        *,
+        title: TextType | None = None,
+        caption: TextType | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(title=_verbatim(title), caption=_verbatim(caption), **kwargs)
+
+    def add_column(
+        self, header: RenderableType = "", footer: RenderableType = "", **kwargs: Any
+    ) -> None:
+        super().add_column(_verbatim(header), _verbatim(footer), **kwargs)
+
+    def add_row(
+        self,
+        *renderables: RenderableType | None,
+        style: StyleType | None = None,
+        end_section: bool = False,
+    ) -> None:
+        cells = (_verbatim(cell) for cell in renderables)
+        super().add_row(*cells, style=style, end_section=end_section)
+
+
+def _verbatim(value: _T) -> _T | Text:
+    return Text(value) if isinstance(value, str) else value
 
 
 def print_json(data: Any) -> None:
@@ -39,18 +80,18 @@ def first_field(entry: dict[str, Any], *names: str, default: str = "-") -> str:
 def output(
     entries: Any,
     as_json: bool,
-    table: Table | None = None,
+    table: VerbatimTable | None = None,
     empty_msg: str = "No results",
 ) -> None:
     if as_json:
         print_json(entries)
     elif table is not None:
         if table.row_count == 0:
-            err_console.print(f"[yellow]{empty_msg}[/yellow]")
+            err_console.print(empty_msg, style="yellow", markup=False)
         else:
             console.print(table)
     elif not entries:
-        err_console.print(f"[yellow]{empty_msg}[/yellow]")
+        err_console.print(empty_msg, style="yellow", markup=False)
     else:
         print_json(entries)
 
