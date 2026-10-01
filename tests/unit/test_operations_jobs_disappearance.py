@@ -438,6 +438,8 @@ async def test_wait_for_job_warns_about_a_substituted_job_on_the_first_poll(
                 )
             )
             while not any("returned job" in r.getMessage() for r in caplog.records):
+                # A waiter that raised would otherwise leave this loop spinning.
+                assert not waiter.done(), waiter.exception()
                 await asyncio.sleep(0)
             waiter.cancel()
             with pytest.raises(asyncio.CancelledError):
