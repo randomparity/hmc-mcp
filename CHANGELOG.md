@@ -23,7 +23,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   refuses a destination inside any git work tree; the default stays wholesale. `just live-vocabulary`
   (a `static` member with its prek hook) fails when a schema-enum element value in `src/` or
   `tests/` is neither captured nor an enum value, or when a REST read or `ls*` command in
-  `src/` has no capture; unfixed cases are listed in `allowlist.json` with their reasons.
+  `src/` has no capture; job `Status` values are checked against the documented job statuses. Unfixed cases
+  are listed in `allowlist.json` with their reasons, and a deliberately non-HMC test
+  value carries `# live-vocabulary: allow <reason>` on its line.
 - `docs/api-patterns.md` records the HMC REST and CLI behaviour verified live on V10R3 with
   POWER9 hardware: the 47 patterns from the #1161 capture windows and four observations from
   the #879 window, grouped by envelope, identifiers, links, media types, jobs, error codes,

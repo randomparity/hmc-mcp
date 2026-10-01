@@ -105,6 +105,10 @@ Three subcommands, all offline:
   shape classes. The builder runs the same fail-closed scan on its output.
 - `enums-<pair>.json`, one per vocabulary: `{firmware, types: {Type.Enum: [values]},
   elements: {...}}`.
+- `enums-documented-jobs.json`: the job statuses `docs/refs/hmc-rest-api-p10/016-job-status.md:16-27`
+  documents, plus the bare `COMPLETED` that the ListManagementConsoleUpdates and
+  ListStorageMediaDevices job pages document (`…/091-…md:39`, `…/092-…md:41`), each
+  marked captured or documented-only, binding `Status`. Names only, no prose.
 - `allowlist.json`: gate violations not yet fixed.
 
 The first four come from the 2026-09-30 tokenized corpora. `v10r3-p9` also folds in
@@ -133,7 +137,10 @@ exporter's own test modules, which hold uncaptured values on purpose):
    command on command name, `-r`, `--rsubtype`, `--level`, `-o` values and the presence
    of `-m`.
 
-Violations not yet fixed live in `allowlist.json`; each entry names file, kind, subject
+A Python line holding a value that is deliberately not an HMC answer ends with
+`# live-vocabulary: allow <reason>`; an exemption without a reason, or one that
+suppresses nothing, fails the gate. Violations not yet fixed live in `allowlist.json`,
+which can reach empty; each entry names file, kind, subject
 and value and carries a reason containing `#1202`. The gate fails on a violation that is
 not allowlisted, on an entry with no `#1202` reason, and on a stale entry that matches
 nothing. `--write-allowlist` regenerates the file from the tree, keeping existing reasons.
@@ -151,7 +158,7 @@ nothing. `--write-allowlist` regenerates the file from the tree, keeping existin
      does not reach a committed file through them.
    - A raw sweep holds secret-bearing answers on the operator host until the exporter
      runs; the directory is `0700`, outside every repository, and never committed.
-   - Elements with no schema enum (job `Status` included) are not value-checked until a
+   - Elements with no schema enum and no documented list are not value-checked until a
      capture or binding closes their set.
    - Paths built outside the recognised helpers, and values compared through an
      intermediate variable, are not seen by the gate.

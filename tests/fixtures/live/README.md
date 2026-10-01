@@ -63,7 +63,9 @@ fixtures across the two exports by UUID. Other names in that export (`lpar-N`,
 records: one vocabulary and one schema enum list per HMC release and system
 (`v10r3-p9.json` with `enums-v10r3-p9.json`, and the three V11R2 pairs
 `v11r2-p9-9009-42a`, `v11r2-p11-9824-42a` and `v11r2-p11-9242-21b`), plus the
-allowlist of `just live-vocabulary`. Each vocabulary names its sources;
+documented job statuses (`enums-documented-jobs.json`, names cited to
+`docs/refs/`, each marked captured or documented-only) and the allowlist of
+`just live-vocabulary`. Each vocabulary names its sources;
 `v10r3-p9.json` also folds in the REST values and endpoints derived from the
 #1161 and #879 mutation windows on the same HMC, which is where its job statuses
 come from. Regenerate them with `scripts/live_capture_export.py`, as

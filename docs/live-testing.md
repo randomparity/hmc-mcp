@@ -306,4 +306,5 @@ sweep refuses one inside a git work tree), and never commit or paste it.
    the gate then reports as stale; delete them, or regenerate the list with
    `uv run --no-sync python scripts/check_live_vocabulary.py --write-allowlist`,
    which keeps the reasons of entries that still apply. Give every new entry a
-   reason that cites #1202.
+   reason that cites #1202. A test value that is deliberately not an HMC answer
+   is not allowlisted: end its line with `# live-vocabulary: allow <reason>`.
