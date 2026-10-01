@@ -988,6 +988,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `docs/recipes/lpar-iso-install.md` now records the #1085 boot-order retest (V10R3 M1060,
+  FW950.00). Firmware names a virtual optical device `disk@<LUN>`, not `cdrom@`, and boots the
+  ISO from `/vdevice/v-scsi@<0x30000000 + client slot>/disk@<LogicalUnitAddress>`. It does not
+  honour `cd/dvd-all`, and it does not fall back to the CD when the boot list names only a blank
+  disk. Step 5 now sets that path with `set-boot-order` before the power-on. Step 4 notes the
+  `REST0269` refusal of `mount-optical-media` on a partition never activated with its profile,
+  and step 5 notes the second Enter that Debian's GRUB needs after its client-architecture-support
+  reboot. `lpars set-boot-order` help and the `hmc_set_lpar_boot_order` docstring say how to
+  build the optical path.
 - **Breaking (pre-release):** `hmc_create_lpar`, `create_and_stamp_lpar` (`LparCreation`) and
   `build_lpar_document` no longer take `os_type`, and `OsType` / `OS_TYPES` are removed from
   `hmcpctl.documents`. V10R3 treats `OperatingSystemType` as read-only, refuses a create that

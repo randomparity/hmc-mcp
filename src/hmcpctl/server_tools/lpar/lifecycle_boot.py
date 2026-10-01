@@ -98,9 +98,13 @@ def hmc_set_lpar_boot_order(
     The write replaces ``BootListInformation/PendingBootString`` by
     read-modify-write of the whole partition, conditioned on its ETag.
     ``hmc_read_lpar_boot_order`` reports the paths the HMC knows in
-    ``boot_device_list``. A never-booted partition reports none and no virtual
-    CD path is ever reported: take the path from SMS or Open Firmware
-    (``devalias``), or leave the boot order unset.
+    ``boot_device_list`` and ``last_booted_device_string``; a never-booted
+    partition reports none. Firmware names a virtual optical (ISO) device
+    ``disk@<LUN>``, not ``cdrom@``: build
+    ``/vdevice/v-scsi@<0x30000000 + client slot, hex>/disk@<LogicalUnitAddress>``
+    from the optical mapping, or boot it once from SMS and take
+    ``last_booted_device_string`` up to its ``:``. Firmware keywords such as
+    ``cd/dvd-all`` are refused.
 
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.

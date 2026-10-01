@@ -237,6 +237,12 @@ hmcpctl storage mount-optical-media "$VIOS" "$LPAR" "$MEDIA_NAME" --system "$SYS
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
+`mount-optical-media` needs a partition that has been activated with a profile since that
+profile last changed. On a partition created in step 2 and never activated, the HMC refused the
+mount with HTTP 500 `REST0269 … Perform Apply profile or Partition activation with any Profile
+before retrying` (V10R3 M1060, #1085). One `power-on --partition-profile` followed by
+`power-off`, as in steps 5 and 6, cleared it; then retry the mount.
+
 Expected: `upload-iso` reports `uploaded` with the size and SHA-256 it computed. It refuses a
 `MEDIA_NAME` that already exists in the repository. `list-optical-media` lists `MEDIA_NAME`; its
 `size_mib` may be `null`. `mount-optical-media` prints the new optical mapping and creates
@@ -267,6 +273,39 @@ gives the field order for both attributes:
 chsyscfg -r prof -m <managed-system-name> -i 'name=default_profile,lpar_name=<lpar-name>,"virtual_scsi_adapters=<disk-adapter>,<optical-adapter>","virtual_eth_adapters=<ethernet-adapter>"'
 ```
 
+Set the boot order to the ISO before the power-on. Do not rely on the firmware falling back
+to the CD. In the 2026-09-23 run no boot order was set and the firmware booted the CD. In the
+2026-10-01 retest (#1085), nothing was pending and `BootDeviceList` named only the blank disk.
+The firmware printed "No OS image was detected by firmware … retrying the entries in the
+bootlist", showed `AA060011`, and kept retrying without trying the CD. That retest ran on HMC
+V10R3 M1060 with partition firmware FW950.00 (VL950_039) and a Debian 13.7.0 ppc64el netinst
+ISO.
+
+The firmware names the virtual optical device `disk@<LUN>`, not `cdrom@<LUN>`. Build the path
+from the optical mapping that `mount-optical-media` created. In `storage list-mappings --json`,
+take the mapping's `ClientAdapter` `VirtualSlotNumber` and its `TargetDevice`
+`LogicalUnitAddress`:
+
+```text
+/vdevice/v-scsi@<0x30000000 + client slot, in hex>/disk@<LogicalUnitAddress without 0x>
+```
+
+In the retest the optical mapping used client slot 3 and `LogicalUnitAddress`
+`0x8100000000000000`, so the path was `/vdevice/v-scsi@30000003/disk@8100000000000000`. SMS
+"List all Devices" showed the same device as `SCSI CD-ROM` at a location code ending
+`-V1-C3-T1-L8100000000000000`. You can also boot once from SMS and read the path from
+`lpars read-boot-order`: `last_booted_device_string` then held
+`/vdevice/v-scsi@30000003/disk@8100000000000000:\boot\grub\powerpc.elf`. Use the part
+before the `:`.
+
+```bash
+OPTICAL_PATH=/vdevice/v-scsi@<hex>/disk@<lun>
+hmcpctl lpars set-boot-order "$SYSTEM" "$LPAR" "$OPTICAL_PATH"
+hmcpctl lpars read-boot-order "$SYSTEM" "$LPAR"
+```
+
+Expected: `read-boot-order` shows `OPTICAL_PATH` as `pending_boot_string`.
+
 Then read the profile UUID from the partition and power on against it:
 
 ```bash
@@ -286,26 +325,34 @@ Expected: `power-on` prints `Job submitted for <lpar-uuid>` and the finished job
 is `COMPLETED_OK`, and no `Warning:` line. A warning names an adapter the profile lacked, which
 the activation removed: power the partition off, re-run the step 3 or 4 command that created
 it, write it into the profile as above from the new listing, and power on again. `jobs show` prints the same job. `lpars state` prints `running` or
-`open firmware`. No boot order is set: the firmware booted the virtual CD because the new disk
-is blank. This path does not need the boot-order commands. `lpars set-boot-order` takes Open
-Firmware device paths, and a never-booted partition reports none. No value tried on a V10R3 HMC
-clears a pending boot order, so `clear-boot-order` refuses and writes nothing (#1048). A pending
-boot order, once set, is replaced with `set-boot-order`. A profile activation (`chsysstate -o on`)
-consumed it when observed on V10R3, and so did this recipe's `power-on --partition-profile` job,
-twice (#1068). Other activation paths are unverified.
+`open firmware`.
 
-`set-boot-order` does not take firmware boot keywords such as `cd/dvd-all`, which another REST
-deployer writes into `PendingBootString` (#1068). On V10R3 M1060 with partition firmware
-FW950.00, the HMC accepted and stored every value tried, including a made-up
-`no-such-keyword`, so a successful write does not show that firmware accepts a value. After
-each activation `PendingBootString` read back empty and `BootDeviceList` read back as the value
-that had been pending. With `cd/dvd-all` pending and a Debian 13.7 ppc64el netinst ISO mounted
-on the partition's vSCSI adapter, the partition stopped at the SMS main menu with reference
-codes `AA06000E` and `AA06000B`; IBM documents `AA06000B` as no operating system found on any
-device in the boot list. The explicit CD path
-(`/vdevice/v-scsi@30000002/cdrom@8200000000000000`) stopped the same way. Neither run booted
-the ISO and the cause was not found, so whether the firmware honours `cd/dvd-all` remains
-open. The boot order stays path-only.
+In the retest, each row below was the boot state for one `power-on --partition-profile`:
+
+| Pending boot string | Result |
+| --- | --- |
+| none, `BootDeviceList` the blank disk only | retried the boot list forever, `AA060011`; no CD fallback |
+| `/vdevice/v-scsi@30000003/cdrom@8100000000000000` | consumed, then the SMS menu (`AA00E1A9`); no boot |
+| `cd/dvd-all` | consumed into `BootDeviceList`, then the SMS menu (`AA00E1A9`); no boot |
+| `/vdevice/v-scsi@30000003/disk@8100000000000000` | consumed; the ISO booted into GRUB and the installer |
+
+FW950 does not honour `cd/dvd-all`, and `set-boot-order` refuses firmware keywords anyway: it
+takes device paths only. An earlier run (#1068) failed for a different reason. Its explicit
+path, `/vdevice/v-scsi@30000002/cdrom@8200000000000000`, named the disk's adapter (slot 2), the
+wrong LUN, and `cdrom@`, so the firmware was not at fault. The HMC accepts and stores any value,
+including a made-up `no-such-keyword`. A successful `set-boot-order` therefore does not show
+that the firmware can boot the value.
+
+No value tried on a V10R3 HMC clears a pending boot order, so `clear-boot-order` refuses and
+writes nothing (#1048). `set-boot-order` replaces a pending boot order. A profile activation
+(`chsysstate -o on`) consumed it when observed on V10R3, and so did this recipe's
+`power-on --partition-profile` job, every time it was tried (#1068, #1085). Other activation
+paths are unverified.
+
+The Debian GRUB menu has no timeout, so watch the console and press Enter. The first Enter
+triggers a client-architecture-support reboot that lands back in GRUB. Press Enter again to
+start the installer kernel. `capture-console` never sends input, so open an interactive console
+(`mkvterm` on the HMC) for these two key presses.
 
 `capture-console` records at most `--duration` seconds and `--max-bytes` bytes, and stops
 after `--idle-timeout` seconds without output. It never sends input to the partition. It writes
