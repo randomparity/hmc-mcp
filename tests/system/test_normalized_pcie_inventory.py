@@ -480,7 +480,7 @@ async def test_sriov_adapter_inventory_reads_a_dedicated_adapter_id_as_absent() 
             AsyncMock(return_value=("sys-R1", None)),
         ),
         patch(
-            "hmcpctl.operations.virtualization.pcie.require_admitted_environment",
+            "hmcpctl.operations.virtualization.pcie.require_sriov_read_environment",
             AsyncMock(),
         ),
         patch("hmcpctl.ssh.sriov.run_hmc_command", AsyncMock(return_value=output)),

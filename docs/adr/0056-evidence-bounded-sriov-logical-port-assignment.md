@@ -8,6 +8,9 @@ read projections and mutation cells recorded here.
 > **Superseded by [0113](0113-sriov-physical-port-level-selection.md)** (2026-09-01)
 > only for physical-port read level selection.
 
+> **Superseded by [0183](0183-sriov-read-envelope-from-captures.md)** (2026-09-30)
+> only for the environment admitted for SR-IOV inventory reads. Mutations keep this envelope.
+
 ## Context
 
 ADR 0053 left SR-IOV unavailable without same-family live evidence. Issue #214 now carries
