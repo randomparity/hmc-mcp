@@ -748,3 +748,73 @@ def test_available_wwpn_count_is_not_an_identifier() -> None:
     }
     corpus = export.tokenize_records(_records(tool))
     assert corpus[-1]["record"]["data"] == {"AvailableWWPNs": "65536"}
+
+
+def _lab_records() -> list[dict[str, Any]]:
+    """The first tracked run's shape: lab-prefixed system, LPAR and VIOS names."""
+    body = (
+        "<ManagedSystem><SystemName>acmesys9</SystemName>"
+        "<PartitionName>acmesys9-lp3</PartitionName>"
+        "<PartitionName>acmesys9-vios1</PartitionName></ManagedSystem>"
+    )
+    tool = {
+        "kind": "tool",
+        "step": "hmc_list_lpars",
+        "tool": "hmc_list_lpars",
+        "ok": True,
+        "data": [
+            {"lpar_name": "acmesys9-lp3", "system": "acmesys9"},
+            {"name": {"@attrs": {"ksv": "V1_0"}, "text": "acmesys9-vios1"}},
+        ],
+    }
+    cli = _ssh(
+        "lssyscfg -r lpar -m acmesys9 -F name,lpar_env --header",
+        "name,lpar_env\nacmesys9-lp3,aixlinux\nacmesys9-vios1,vioserver\n",
+    )
+    records = [_rest("/rest/api/uom/ManagedSystem", body), tool, cli]
+    for number, record in enumerate(records, 1):
+        record["_src"] = f"lab.jsonl#{number}"
+    return records
+
+
+def test_lab_prefixed_names_leave_no_suffix() -> None:
+    """Regression: `--private acme` cut the prefix first and `sys9-lp3` leaked."""
+    corpus = export.tokenize_records(_lab_records(), private=["acme"])
+    text = _text(corpus)
+    assert "sys9" not in text
+    assert "REDACTED-PRIVATE" not in text
+    assert "sys-R1-lp3" in text
+    assert "sys-R1-vios1" in text
+    assert (
+        corpus[2]["command"] == "lssyscfg -r lpar -m sys-R1 -F name,lpar_env --header"
+    )
+
+
+def test_private_match_replaces_its_whole_word() -> None:
+    corpus = export.tokenize_records(
+        _records(_ssh("lshmc -n", "via acmebox9.example ok")), private=["acme"]
+    )
+    assert corpus[-1]["stdout"] == "via <REDACTED-PRIVATE> ok"
+
+
+def test_private_fragment_left_joined_to_a_word_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A private match that leaves the rest of its word behind is a leak."""
+    monkeypatch.setattr(
+        export.Tokenizer,
+        "__init__",
+        _fragment_only(export.Tokenizer.__init__),
+    )
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(
+            _records(_ssh("lshmc -n", "via acmebox9 ok")), private=["acme"]
+        )
+
+
+def _fragment_only(init: Any) -> Any:
+    def patched(self: Any, names: Any, hosts: Any, private: Any = ()) -> None:
+        init(self, names, hosts, private)
+        self._private_words = [re.compile(p) for p in private]
+
+    return patched
