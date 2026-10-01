@@ -154,6 +154,43 @@ def _shared_sharing_mode(resources: LparResources) -> str | None:
     )
 
 
+def shared_vcpu_defaults(resources: LparResources) -> tuple[int, int, int]:
+    """Return a shared create's (min, desired, max) vcpus after the mksyscfg defaults."""
+    desired = resources.desired_vcpus or 1
+    return resources.min_vcpus or 1, desired, resources.max_vcpus or max(desired, 2)
+
+
+_SHARED_LEVELS = (
+    ("min", "--min-procs", "--min-vcpus"),
+    ("desired", "--procs", "--vcpus"),
+    ("max", "--max-procs", "--max-vcpus"),
+)
+
+
+def shared_units_over_vcpus(resources: LparResources) -> str | None:
+    """Describe explicit shared processing units that exceed their level's vcpus.
+
+    A virtual processor uses at most 1.0 processing unit (#1034). Omitted vcpus
+    count as :func:`shared_vcpu_defaults`; omitted units are not checked.
+    """
+    units = (resources.min_procs, resources.desired_procs, resources.max_procs)
+    over = [
+        f"{level}_procs={value} exceeds {level}_vcpus={vcpus} "
+        f"(lower {procs_opt} or raise {vcpus_opt} on the CLI)"
+        for (level, procs_opt, vcpus_opt), value, vcpus in zip(
+            _SHARED_LEVELS, units, shared_vcpu_defaults(resources), strict=True
+        )
+        if value is not None and value > vcpus
+    ]
+    if not over:
+        return None
+    return (
+        "a virtual processor uses at most 1.0 processing unit: "
+        + "; ".join(over)
+        + ". Omitted vcpus default to min 1, desired 1, max max(desired, 2)."
+    )
+
+
 def _dedicated_processor_body(resources: LparResources) -> list[str]:
     parts = [
         '    <DedicatedProcessorConfiguration kb="CUD" kxe="false" schemaVersion="V1_0">',
@@ -226,6 +263,10 @@ def _processor_config(resources: LparResources) -> str:
         )
     ):
         return ""
+    if resources.dedicated is not True and (
+        refusal := shared_units_over_vcpus(resources)
+    ):
+        raise ValueError(refusal)
     body = (
         _dedicated_processor_body
         if resources.dedicated is True

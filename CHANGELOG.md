@@ -220,6 +220,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- A shared-processor create whose explicit processing units exceed that level's virtual
+  processors (a virtual processor uses at most 1.0 unit) is now refused before any request is
+  sent, naming each `<level>_procs`/`<level>_vcpus` pair and the CLI options to change. This
+  covers `hmc_create_lpar`, `hmc_provision_lpar` and `lpars create` (REST and the `mksyscfg`
+  fallback) and `hmc_create_vios` (REST). Omitted vcpus count as the `mksyscfg` defaults (min 1,
+  desired 1, max `max(desired, 2)`), so `desired_procs=1.5` with no `--vcpus` is refused;
+  dedicated requests and modify are unchanged. (#1034)
 - `hmcpctl storage attach-disk` and `hmc_attach_disk_to_lpar` refuse a disk name over the
   15-character VIOS limit or a capacity that is not a positive multiple of 1024 MiB before
   any HMC request, on a dry run as on a real run, with the builder's message (#1032).

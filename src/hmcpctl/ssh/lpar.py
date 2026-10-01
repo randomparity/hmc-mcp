@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from ..config import HMCConfig
 from ..documents import SHARING_MODES, LparResources
+from ..documents.lpar import shared_units_over_vcpus, shared_vcpu_defaults
 from .commands import build_attribute_record
 from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
@@ -143,7 +144,8 @@ async def create_lpar_via_cli(
     Raises :class:`HMCCLIError` on non-zero exit, and before any command when
     more than one virtual processor is requested without processing units,
     when the guessed ``max_proc_units`` default would exceed the requested
-    max vCPUs, or a request carries a fractional dedicated count or the other
+    max vCPUs, when explicit shared processing units exceed their level's
+    vCPUs, or a request carries a fractional dedicated count or the other
     processor mode's ``sharing_mode``. Omitted values take the defaults of
     :func:`complete_create_resources`, which the REST create uses too.
     """
@@ -203,8 +205,9 @@ def complete_create_resources(resources: LparResources) -> LparResources | None:
     and processor field the V10R3 create requires is filled -- its REST create
     refuses a document without them (``REST0126``), and ``mksyscfg`` has no
     default for a dedicated ``sharing_mode``. Raises :class:`HMCCLIError` for a
-    fractional dedicated count, a sharing mode of the other processor mode, or a
-    processing-unit default the requested virtual processors cannot use.
+    fractional dedicated count, a sharing mode of the other processor mode, or
+    processing units -- defaulted or explicit -- the requested virtual processors
+    cannot use.
     """
     mode = resources.sharing_mode
     if mode is not None and (not isinstance(mode, str) or mode not in SHARING_MODES):
@@ -326,14 +329,14 @@ def _shared_processors(resources: LparResources) -> LparResources:
     _min_pu = resources.min_procs or 0.1
     _des_pu = resources.desired_procs or 0.1
     _max_pu = resources.max_procs or max(_des_pu, 2.0)
-    _min_vp = resources.min_vcpus or 1
-    _des_vp = resources.desired_vcpus or 1
-    _max_vp = resources.max_vcpus or max(_des_vp, 2)
+    _min_vp, _des_vp, _max_vp = shared_vcpu_defaults(resources)
     _require_units_for_vcpus(resources.min_procs, _min_vp, "min_procs", "--min-procs")
     _require_units_for_vcpus(
         resources.desired_procs, _des_vp, "desired_procs", "--procs"
     )
     _require_max_units_fit_vcpus(resources.max_procs, _max_pu, _max_vp)
+    if refusal := shared_units_over_vcpus(resources):
+        raise HMCCLIError(refusal)
     if resources.sharing_mode in _DEDICATED_SHARING_MODES:
         raise HMCCLIError(
             f"sharing_mode={resources.sharing_mode!r} applies to dedicated processors "
