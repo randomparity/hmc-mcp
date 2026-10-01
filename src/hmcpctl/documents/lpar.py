@@ -42,8 +42,9 @@ def validate_partition_type(partition_type: str) -> PartitionType:
     if partition_type == _VIOS_PARTITION_TYPE:
         raise ValueError(
             "partition_type 'Virtual IO Server' cannot be created as a LogicalPartition: "
-            "the HMC refuses it (HTTP 500 REST0140). Create a Virtual I/O Server with "
-            "hmc_create_vios. Nothing was created."
+            "the HMC refuses it (HTTP 500 REST0140). Create a Virtual I/O Server through "
+            "the VIOS path instead (MCP tool hmc_create_vios, operations.vios.create_vios). "
+            "Nothing was created."
         )
     if partition_type not in PARTITION_TYPES:
         raise ValueError(

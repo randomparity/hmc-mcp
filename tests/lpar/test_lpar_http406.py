@@ -1059,3 +1059,70 @@ def test_create_lpar_has_no_os_type():
     """OperatingSystemType is read-only; the HMC sets AIX/Linux itself (#1179)."""
     assert "os_type" not in inspect.signature(hmc_create_lpar).parameters
     assert "os_type" not in {f.name for f in dataclasses.fields(LparCreation)}
+
+
+def test_create_tool_refuses_a_vios_type_before_logon(monkeypatch, mock_hmc):
+    """A direct Python call bypasses the MCP schema; the tool still refuses first."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="hmc_create_vios"):
+        hmc_create_lpar(
+            system_name_or_uuid=SYSTEM_UUID,
+            name="acmesys9-lp3",
+            partition_type="Virtual IO Server",  # type: ignore[arg-type]
+        )
+    assert not mock_hmc.calls
+
+
+def test_create_tool_passes_its_options_to_the_creation():
+    captured: list[LparCreation] = []
+
+    async def _create(hmc, system, creation, assignments):
+        captured.append(creation)
+
+    with (
+        patch(
+            "hmcpctl.server_tools.lpar.lifecycle_create.with_client",
+            new=lambda fn, profile=None: asyncio.run(fn(None)),
+        ),
+        patch("hmcpctl.server_tools.lpar.lifecycle_create.create_lpar", new=_create),
+    ):
+        hmc_create_lpar(
+            system_name_or_uuid="acmesys9",
+            name="acmesys9-lp3",
+            partition_type="OS400",
+            partition_id=7,
+            keylock="manual",
+            max_virtual_slots=64,
+            caller_token="t1",
+            apply_partition_profile=False,
+        )
+
+    (creation,) = captured
+    assert (
+        creation.partition_type,
+        creation.partition_id,
+        creation.keylock,
+        creation.max_virtual_slots,
+        creation.caller_token,
+        creation.apply_profile,
+    ) == ("OS400", 7, "manual", 64, "t1", False)
+
+
+@pytest.mark.asyncio
+async def test_create_workflow_refuses_a_vios_type_before_prevalidation():
+    from hmcpctl.operations.lpar.assignments import LparPcieAssignments
+    from hmcpctl.operations.lpar.workflows import create_lpar
+
+    hmc = AsyncMock()
+    creation = LparCreation(
+        "acmesys9-lp3", "Virtual IO Server", LparResources(desired_vcpus=1)
+    )  # type: ignore[arg-type]
+    with (
+        patch(
+            "hmcpctl.operations.lpar.workflows.prevalidate_lpar_pcie_assignments"
+        ) as prevalidate,
+        pytest.raises(ValueError, match="hmc_create_vios"),
+    ):
+        await create_lpar(hmc, "acmesys9", creation, LparPcieAssignments())
+    prevalidate.assert_not_called()
+    assert hmc.mock_calls == []

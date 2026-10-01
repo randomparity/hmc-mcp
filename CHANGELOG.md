@@ -982,8 +982,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - **Breaking (pre-release):** `hmc_create_lpar`, `hmc_provision_lpar`, `lpars create`,
   `lpars provision`, `create_and_stamp_lpar` and `provision_lpar` no longer offer
   `partition_type="Virtual IO Server"`. V10R3 answers a LogicalPartition create typed Virtual IO
-  Server with HTTP 500 `REST0140 Invalid Partition Type associated with LogicalPartition`, so
-  the value is refused before any HMC request with a message naming `hmc_create_vios`.
+  Server with HTTP 500 `REST0140 Invalid Partition Type associated with LogicalPartition`. The
+  MCP schemas list only `AIX/Linux` and `OS400` and point to `hmc_create_vios`; every other
+  caller is refused before any HMC request with a message naming the VIOS create path.
   `PARTITION_TYPES` and `PartitionType` are now `AIX/Linux` and `OS400`, and the CLI `--type`
   error reads `--type: partition_type must be one of …` (#1179).
 - SR-IOV physical-port inventory reads the `roce`, `ethc` and `eth` levels and merges the

@@ -1249,3 +1249,13 @@ def test_provision_operation_refuses_a_vios_type_before_any_round_trip(monkeypat
                 ),
             )  # type: ignore[arg-type]
         )
+
+
+def test_provision_tool_refuses_a_vios_type_before_logon(monkeypatch, mock_hmc):
+    """A direct Python call bypasses the MCP schema; the tool still refuses first."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="hmc_create_vios"):
+        hmc_provision_lpar(
+            **_provision_args(partition_type="Virtual IO Server"),
+        )
+    assert not mock_hmc.calls
