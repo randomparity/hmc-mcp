@@ -8,12 +8,9 @@ taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
 records the patterns they show. CLI captures whose `capture` begins `2026-09-30-ro/` come
 from the read-only sweep for #1202, on the same HMC and system; a nonzero-exit one is
 raised in tests with `live_process_error(name)`. Captures whose `capture` begins
-`2026-09-30-v11r2-p9/` come from the same sweep on an HMC at V11R2 SP1120 managing a
-POWER9 9009-42A.
-
-Captures whose `capture` begins `2026-09-30-v11r2-p9/`, `2026-09-30-v11r2-p11-9824/` or
-`2026-09-30-v11r2-p11-9242/` come from the same sweep on HMCs at V11R2 SP1120 managing a
-POWER9 9009-42A, a POWER11 9824-42A and a POWER11 9242-21B (ADR 0183).
+`2026-09-30-v11r2-p9/`, `2026-09-30-v11r2-p11-9824/` or `2026-09-30-v11r2-p11-9242/` come
+from the same sweep on HMCs at V11R2 SP1120 managing a POWER9 9009-42A, a POWER11 9824-42A
+and a POWER11 9242-21B.
 
 ## Format
 
