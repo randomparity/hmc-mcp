@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_response, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
@@ -61,15 +61,18 @@ _FAILED_ENTRY = (
 )
 
 
+def _no_such_job() -> httpx.Response:
+    """The captured V10R3 answer for a job the HMC does not have (404 REST0005)."""
+    return live_response("rest-job-not-found")[1]
+
+
 @pytest.mark.asyncio
 async def test_get_job_reports_not_found_when_neither_path_has_the_job(
     mock_hmc,
 ) -> None:
     """Neither the persisted link nor the global path has it: the job is gone."""
-    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
-    mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(404, text="Unknown job")
-    )
+    mock_hmc.get(_SELF_HREF).mock(return_value=_no_such_job())
+    mock_hmc.get(_GLOBAL_PATH).mock(return_value=_no_such_job())
 
     async with HMCClient(make_config()) as hmc:
         outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
@@ -170,8 +173,8 @@ async def test_wait_for_job_logs_the_last_status_when_a_job_vanishes_mid_wait(
     mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING")),
-            httpx.Response(404, text="Unknown job"),
-            httpx.Response(404, text="Unknown job"),
+            _no_such_job(),
+            _no_such_job(),
         ]
     )
 
@@ -329,7 +332,7 @@ async def test_wait_for_job_confirms_a_disappearance_that_lands_on_the_deadline(
     route = mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING")),
-            httpx.Response(404, text="Unknown job"),
+            _no_such_job(),
             httpx.Response(200, text=_job_entry("COMPLETED_OK")),
         ]
     )
@@ -349,8 +352,8 @@ async def test_wait_for_job_does_not_compress_the_confirmation_interval(
     read_times: list[float] = []
     responses = [
         httpx.Response(200, text=_job_entry("RUNNING")),
-        httpx.Response(404, text="Unknown job"),
-        httpx.Response(404, text="Unknown job"),
+        _no_such_job(),
+        _no_such_job(),
     ]
 
     def respond(_: httpx.Request) -> httpx.Response:
@@ -383,8 +386,8 @@ async def test_wait_for_job_caps_an_oversized_confirmation_interval(
     read_times: list[float] = []
     responses = [
         httpx.Response(200, text=_job_entry("RUNNING")),
-        httpx.Response(404, text="Unknown job"),
-        httpx.Response(404, text="Unknown job"),
+        _no_such_job(),
+        _no_such_job(),
     ]
 
     def respond(_: httpx.Request) -> httpx.Response:
@@ -451,7 +454,7 @@ async def test_get_job_does_not_report_a_degraded_hmc_as_a_vanished_job(
     would turn a socket reset into the one answer a consumer acts on
     destructively.
     """
-    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_SELF_HREF).mock(return_value=_no_such_job())
     mock_hmc.get(_GLOBAL_PATH).mock(
         return_value=httpx.Response(503, text="Service unavailable")
     )
