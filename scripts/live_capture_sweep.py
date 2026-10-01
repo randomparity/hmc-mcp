@@ -148,18 +148,19 @@ _RESOURCE_TYPES = (
     "Cluster",
     "SharedStoragePool",
 )
-#: Tools swept more than once: each entry overrides or adds arguments.
+#: Tools swept more than once: each entry overrides or adds arguments. A listing's
+#: system-scoped form comes first, so discovery picks a partition on that system.
 VARIANTS: dict[str, Callable[[Context], list[dict[str, Any]]]] = {
     "hmc_list_systems": lambda c: [{}, {"state": "operating"}],
     "hmc_list_lpars": lambda c: [
+        {"system_name_or_uuid": c.system},
         {},
         {"state": "not activated"},
-        {"system_name_or_uuid": c.system},
     ],
     "hmc_list_vios": lambda c: [
+        {"system_name_or_uuid": c.system},
         {},
         {"state": "running"},
-        {"system_name_or_uuid": c.system},
     ],
     "hmc_get_lpar_state": lambda c: [
         {"lpar_name_or_uuid": c.lpar},
@@ -167,10 +168,16 @@ VARIANTS: dict[str, Callable[[Context], list[dict[str, Any]]]] = {
     ],
     "hmc_list_resources": lambda c: [{"resource_type": t} for t in _RESOURCE_TYPES],
 }
-_PCM_CATEGORIES = lambda c: [  # noqa: E731 - one table entry shared by five tools
-    {"category": "ManagedSystem", "resource_name_or_uuid": c.system},
-    {"category": "LogicalPartition", "resource_name_or_uuid": c.lpar},
-]
+
+
+def _pcm_categories(c: Context) -> list[dict[str, Any]]:
+    """The variants of every tool that takes a PCM `category`."""
+    return [
+        {"category": "ManagedSystem", "resource_name_or_uuid": c.system},
+        {"category": "LogicalPartition", "resource_name_or_uuid": c.lpar},
+    ]
+
+
 #: Discovery runs first, in this order, and fills the context for every later call.
 DISCOVERY = (
     "hmc_list_systems",
@@ -204,7 +211,7 @@ def plan_calls(
     if spec.name in VARIANTS:
         variants = VARIANTS[spec.name](context)
     elif "category" in spec.properties:
-        variants = _PCM_CATEGORIES(context)
+        variants = _pcm_categories(context)
     else:
         variants = [{}]
     wanted = [p for p in spec.properties if p in spec.required or p == "adapter_id"]

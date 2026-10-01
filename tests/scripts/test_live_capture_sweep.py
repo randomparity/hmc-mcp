@@ -185,7 +185,7 @@ def test_variants_run_each_form() -> None:
         _spec("hmc_list_lpars", optional=("system_name_or_uuid", "state")),
         _context(system="S"),
     )
-    assert calls == [{}, {"state": "not activated"}, {"system_name_or_uuid": "S"}]
+    assert calls == [{"system_name_or_uuid": "S"}, {}, {"state": "not activated"}]
     assert missing == []
 
 
