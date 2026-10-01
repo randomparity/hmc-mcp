@@ -7,8 +7,8 @@ from urllib.parse import quote
 
 from ..documents import merge_remote_access_document
 from ..errors import HMCError
+from ..xmlutil import leaf_text
 from .client_contracts import (
-    AUTHENTICATION_TYPES,
     VALID_AUTHENTICATION_FILTERS,
     AuthenticationFilter,
     UsersClient,
@@ -18,6 +18,11 @@ from .client_contracts import (
 from .client_parse import _parse_feed
 
 REMOTE_ACCESS_MEDIA = "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
+
+
+def _text(value: object) -> str:
+    text = leaf_text(value)
+    return text if isinstance(text, str) else ""
 
 
 class UsersMixin:
@@ -62,11 +67,13 @@ class UsersMixin:
         entries = self._entries(await self._get(path, "UserProfile"), path)
         if authentication_type == "all":
             return entries
-        expected = AUTHENTICATION_TYPES[authentication_type]
+        # V10R3 prints the type in lower case and with a `ksv` attribute
+        # (`<AuthenticationType ksv="V1_17_0">local</AuthenticationType>`).
         return [
             entry
             for entry in entries
-            if (entry.get("Resource") or {}).get("AuthenticationType") == expected
+            if _text((entry.get("Resource") or {}).get("AuthenticationType")).lower()
+            == authentication_type
         ]
 
     async def get_hmc_user(

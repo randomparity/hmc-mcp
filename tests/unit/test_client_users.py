@@ -8,12 +8,13 @@ from urllib.parse import quote
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 from test_request_path_safety import _recording_client
 
 from hmcpctl.client.client_contracts import _MAX_UOM_TYPE_LENGTH
 from hmcpctl.client.client_users import UsersMixin
 from hmcpctl.client.core import HMCClient
+from hmcpctl.xmlutil import leaf_text
 
 
 def test_user_child_path_escapes_console_identifiers():
@@ -24,22 +25,18 @@ def test_user_child_path_escapes_console_identifiers():
 
 @pytest.mark.asyncio
 async def test_list_users_filters_authentication_type_and_rejects_unknown_values():
+    # A captured V10R3 UserProfile: `local` in lower case, carrying `ksv`.
     client = SimpleNamespace(
-        _get=AsyncMock(
-            return_value=(
-                "<feed xmlns='http://www.w3.org/2005/Atom'><entry><content>"
-                "<UserProfile><AuthenticationType>LDAP</AuthenticationType>"
-                "</UserProfile></content></entry></feed>"
-            )
-        ),
+        _get=AsyncMock(return_value=live_fixture("rest-user-profile")["body"]),
         _child_path=UsersMixin._child_path,
         _entries=UsersMixin._entries,
     )
 
-    users = await UsersMixin.list_hmc_users(client, "console/a", "ldap")
+    users = await UsersMixin.list_hmc_users(client, "console/a", "local")
 
-    assert users[0]["Resource"]["AuthenticationType"] == "LDAP"
-    client._get.assert_awaited_once_with(
+    assert [leaf_text(user["Resource"]["UserID"]) for user in users] == ["user-U1"]
+    assert await UsersMixin.list_hmc_users(client, "console/a", "ldap") == []
+    client._get.assert_awaited_with(
         "/rest/api/uom/ManagementConsole/console%2Fa/UserProfile", "UserProfile"
     )
     with pytest.raises(ValueError, match="Invalid authentication_type"):

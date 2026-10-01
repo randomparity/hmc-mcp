@@ -16,7 +16,6 @@ from ..config import HMCConfig
 from ..resource_identity import is_uuid
 
 AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
-AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
 VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
 
 AdapterType = Literal[

@@ -229,6 +229,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_users` with `authentication_type` set returns the matching users. V10R3 prints
+  the type in lower case (`local`) on a leaf carrying a `ksv` attribute, and the filter
+  compared it as a bare string against `Local`, `LDAP` or `Kerberos`, so every filtered
+  listing was empty (#1202).
 - `hmc_update_firmware` reads the HMC level from the nested `VersionInfo` element
   (`Version`, `Release`, `ServicePackName`) that V10R3 returns. It expected a
   `V11R1M1111` text leaf, so it refused every HMC as "version is unavailable" (#1202).
