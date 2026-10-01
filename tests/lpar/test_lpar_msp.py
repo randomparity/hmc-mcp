@@ -6,7 +6,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import mock_uuid_resolution
+from conftest import live_process_error, mock_uuid_resolution
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.server_tools.lpar.configuration import (
@@ -215,14 +215,18 @@ def test_set_lpar_msp_rejects_linux_lpar(monkeypatch, mock_hmc):
 
 
 def test_set_lpar_msp_rejects_partition_not_found(monkeypatch, mock_hmc):
-    """hmc_set_lpar_msp raises HMCCLIError when lssyscfg returns empty (LPAR not found)."""
+    """An unknown partition exits 1 with HSCL8012, and no chsyscfg follows."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("", "\n")
+    conn_mock = _make_ssh_mock()
+    conn_mock.run.side_effect = [
+        conn_mock.run.return_value,
+        live_process_error("cli-lpar-unknown"),
+    ]
 
     with (
         patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
-        pytest.raises(HMCCLIError, match="not found"),
+        pytest.raises(HMCCLIError, match="HSCL8012 The partition named .* not found"),
     ):
         hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
