@@ -637,6 +637,54 @@ def test_cli_create_keeps_max_default_for_large_max_vcpus():
 
 
 # ---------------------------------------------------------------------- #
+# create_lpar_via_cli — explicit processing units vs. virtual processors (#1034)
+# ---------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("resources", "match"),
+    [
+        (
+            LparResources(max_procs=4.0, max_vcpus=2),
+            r"max_procs=4\.0 exceeds max_vcpus=2.*--max-procs",
+        ),
+        (
+            LparResources(desired_procs=1.5),
+            r"desired_procs=1\.5 exceeds desired_vcpus=1.*--vcpus",
+        ),
+    ],
+)
+def test_cli_create_refuses_units_above_vcpus(resources, match):
+    with (
+        patch(
+            "hmcpctl.ssh.lpar.run_hmc_command", new=AsyncMock(return_value="")
+        ) as run,
+        pytest.raises(HMCCLIError, match=match),
+    ):
+        asyncio.run(
+            create_lpar_via_cli(
+                HMCConfig(host="hmc.test"), "sys1", "lp1", resources=resources
+            )
+        )
+    run.assert_not_awaited()
+
+
+def test_cli_create_sends_units_equal_to_vcpus():
+    command = _cli_create(
+        LparResources(
+            min_procs=1.0,
+            desired_procs=2.0,
+            max_procs=4.0,
+            min_vcpus=1,
+            desired_vcpus=2,
+            max_vcpus=4,
+        )
+    ).await_args.args[1]
+    assert "desired_proc_units=2.0" in command
+    assert "desired_procs=2" in command
+
+
+# ---------------------------------------------------------------------- #
 # create_lpar_via_cli — processor mode of the mksyscfg record (#948)
 # ---------------------------------------------------------------------- #
 

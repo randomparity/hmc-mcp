@@ -147,6 +147,49 @@ def test_dedicated_processor_config():
 
 
 @pytest.mark.parametrize(
+    ("resources", "match"),
+    [
+        (
+            LparResources(max_procs=4.0, max_vcpus=2),
+            r"max_procs=4\.0 exceeds max_vcpus=2.*--max-procs",
+        ),
+        (
+            LparResources(desired_procs=1.5),
+            r"desired_procs=1\.5 exceeds desired_vcpus=1.*--vcpus",
+        ),
+    ],
+)
+def test_build_refuses_units_above_vcpus(resources, match):
+    """A virtual processor uses at most 1.0 processing unit (#1034)."""
+    with pytest.raises(ValueError, match=match):
+        build_lpar_document(name="s", resources=resources)
+
+
+@pytest.mark.parametrize(
+    ("resources", "rendered"),
+    [
+        (
+            LparResources(
+                min_procs=1.0,
+                desired_procs=2.0,
+                max_procs=4.0,
+                min_vcpus=1,
+                desired_vcpus=2,
+                max_vcpus=4,
+            ),
+            ">2</DesiredProcessingUnits>",
+        ),
+        (
+            LparResources(dedicated=True, desired_procs=4.0, desired_vcpus=1),
+            ">4</DesiredProcessors>",
+        ),
+    ],
+)
+def test_build_accepts_units_within_vcpus_and_dedicated(resources, rendered):
+    assert rendered in build_lpar_document(name="s", resources=resources)
+
+
+@pytest.mark.parametrize(
     ("dedicated", "desired_procs"), [(True, 1), (False, 1), (None, None)]
 )
 def test_invalid_sharing_mode_is_rejected_before_xml(dedicated, desired_procs):

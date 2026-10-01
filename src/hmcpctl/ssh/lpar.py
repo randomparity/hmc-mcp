@@ -6,6 +6,7 @@ import shlex
 
 from ..config import HMCConfig
 from ..documents import LparResources
+from ..documents.lpar import shared_units_over_vcpus, shared_vcpu_defaults
 from .commands import build_attribute_record
 from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
@@ -291,14 +292,14 @@ def _shared_processor_pairs(resources: LparResources) -> list[tuple[str, object]
     _min_pu = resources.min_procs or 0.1
     _des_pu = resources.desired_procs or 0.1
     _max_pu = resources.max_procs or max(_des_pu, 2.0)
-    _min_vp = resources.min_vcpus or 1
-    _des_vp = resources.desired_vcpus or 1
-    _max_vp = resources.max_vcpus or max(_des_vp, 2)
+    _min_vp, _des_vp, _max_vp = shared_vcpu_defaults(resources)
     _require_units_for_vcpus(resources.min_procs, _min_vp, "min_procs", "--min-procs")
     _require_units_for_vcpus(
         resources.desired_procs, _des_vp, "desired_procs", "--procs"
     )
     _require_max_units_fit_vcpus(resources.max_procs, _max_pu, _max_vp)
+    if refusal := shared_units_over_vcpus(resources):
+        raise HMCCLIError(refusal)
 
     return [
         ("proc_mode", "shared"),
