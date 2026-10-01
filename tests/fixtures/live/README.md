@@ -37,5 +37,9 @@ two captures has the same token in both:
   (`&lt;REDACTED-SESSION&gt;`), so the body stays well-formed XML and parses
   as the HMC's original did.
 
+The `2026-09-30-ro` capture's tokenizer also replaced the HMC's empty-result line,
+`No results were found.`, with a partition-name token. The `cli-*` fixtures cut from that
+capture carry the HMC's line back in its place (#1202).
+
 Nothing else in a body is changed. A new or changed HMC-shaped fixture cites the
 capture it came from.

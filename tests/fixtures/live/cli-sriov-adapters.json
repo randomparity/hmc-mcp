@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-ro/capture.jsonl#231",
+  "command": "lshwres -r sriov --rsubtype adapter -m sys-R1 -F adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status --header",
+  "exit_status": 0,
+  "stdout": "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status\n1,21010020,sriov,1,dev-2,2,120,120,running\nnull,21010021,dedicated,1,dev-1,null,null,null,null\n",
+  "stderr": ""
+}

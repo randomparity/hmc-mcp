@@ -228,6 +228,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_list_sriov_adapters` and `pcie.list_sriov_adapters` report a dedicated-mode adapter's
+  `adapter_id` as `null` rather than the string `"null"` the HMC prints for it, and
+  `hmc_set_sriov_adapter_mode` refuses an `adapter_id` that is not a positive decimal before
+  any HMC command; given `"null"` it used to answer that the dedicated adapter was "already in
+  dedicated mode". Its docstring now names `hmc_list_sriov_adapters` as the source of
+  `adapter_id`; it named `hmc_list_io_slots`, whose DRC indexes never match (#1202).
 - The `hmc_list_resources` docstring no longer offers VirtualSwitch, VirtualNetwork,
   SharedMemoryPool, SharedProcessorPool, HostEthernetAdapter, LogicalPartitionProfile or
   SRIOVAdapter as listable: the tool reads `/rest/api/uom/{type}`, those types exist only
