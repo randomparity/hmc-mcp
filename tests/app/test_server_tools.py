@@ -781,6 +781,10 @@ def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hm
     assert result["stdOut"] == "raw value"
 
 
+# PlatformUpdate answers in JSON (docs/refs/hmc-rest-api-p11/jobs/managedsystem-jobs/
+# 065-platformupdate_managedsystem-job.md:303-343), which no capture holds, so its
+# replies are documented-shape dicts carrying captured statuses: COMPLETED_OK and
+# RUNNING, never a bare COMPLETED (#1202). A poll answers with the captured job read.
 def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
     """A supported HMC receives the documented native JSON PlatformUpdate."""
     _hmc_env(monkeypatch)
@@ -794,7 +798,7 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
             202,
             json={
                 "id": "platform-job",
-                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK"}},
                 "selfLink": None,
             },
         )
@@ -805,7 +809,7 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
     assert route.called
     assert result == {
         "UUID": "platform-job",
-        "Resource": {"Status": "COMPLETED"},
+        "Resource": {"Status": "COMPLETED_OK"},
     }
     assert json.loads(route.calls.last.request.content) == {
         "JobRequest": {
@@ -883,7 +887,7 @@ def test_update_firmware_wait_returns_terminal_submission_without_poll(
             202,
             json={
                 "id": "platform-job",
-                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "content": {"JobResponse": {"Status": "COMPLETED_OK"}},
                 "selfLink": None,
             },
         )
@@ -893,7 +897,7 @@ def test_update_firmware_wait_returns_terminal_submission_without_poll(
     result = hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE, wait=True)
 
     assert result is not None
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
     assert not poll.called
 
 
@@ -950,7 +954,7 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_update_console_software(wait=True) submits the job then polls until COMPLETED."""
+    """hmc_update_console_software(wait=True) submits the job then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
