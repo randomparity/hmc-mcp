@@ -26,9 +26,10 @@ Maturity format 4 adds a required `schema_version` key to every evidence observa
   grammar keeps this field, like `hmc_release` and `hardware_family`, unable to carry a
   hostname, serial or location code.
 - **Emission.** The runner writes the value it resolved for the run header. It never writes
-  `unrecorded`. A resolved value outside the first two forms writes no observations, with a
-  message, exactly as an absent environment label or a dirty tree does; the results document
-  still records it.
+  `unrecorded`. When an observation environment is configured, a resolved value outside the
+  first two forms exits before the hardware run, as a malformed environment label already
+  does; emission refuses it again for a direct call. Without an observation environment the
+  run proceeds and the results document records the raw value.
 - **Existing observations.** Every observation stored before format 4 is migrated to
   `"schema_version": "unrecorded"`. That is the truthful value: nothing records which
   environment produced them. A fresh live run replaces one, as any re-validation does.
@@ -45,8 +46,8 @@ The catalog moves to format 4; a format-3 reader rejects it, and the validator r
 format 3. A hand-copied observation missing the key fails the gate instead of passing
 silently. The validator cannot tell an honest `unrecorded` from one typed onto a fresh
 observation; catalog review stays the trust boundary, as ADR 0132 already states for
-confirmations. A run whose `HMC_SCHEMA_VERSION` is outside the grammar loses its observations
-and must be repeated with a conforming value or with it unset.
+confirmations. An operator whose `HMC_SCHEMA_VERSION` is outside the grammar must correct or
+unset it, or drop the observation environment, before a live run starts.
 
 ## Considered & rejected
 

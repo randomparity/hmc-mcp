@@ -24,7 +24,10 @@ unrecorded"` when the value is neither a `SCHEMA_VERSION` full match nor the leg
 untouched.
 
 **Emission.** `main` already resolves `schema_version = env_var_value("HMC_SCHEMA_VERSION") or
-"(not set)"`. It passes that string to `_emit_observations(state, path, environment,
+"(not set)"` and prints it. Immediately after the header, when `environment is not None` and
+`SCHEMA_VERSION` does not fully match, it prints `❌ HMC_SCHEMA_VERSION is not V<n>_<n> or
+unset — observations could not be recorded; correct or unset it` and returns 1 before opening
+a client. It passes the same string to `_emit_observations(state, path, environment,
 schema_version, repo_root)`, which, after the environment check and before any other guard,
 prints `HMC_SCHEMA_VERSION is not V<n>_<n> or unset — observations not written` and returns
 `False` when `SCHEMA_VERSION` does not fully match. Otherwise every emitted observation gets
@@ -38,8 +41,8 @@ like `tested_commit`.
 **Docs.** `docs/compatibility.md` replaces the sentence saying observations do not record the
 value with one saying they do, as `schema_version`, and that pre-format-4 observations read
 `unrecorded`. The runner's module docstring and `docs/capabilities/README.md`'s observation
-example and prose say the same. ADR 0127's Status gains an "Extended by ADR 0186" line, and the
-staleness design's observation-record section gains a one-line pointer here.
+example, prose and list of conditions under which nothing is written say the same. ADR 0127's
+Status gains an "Extended by ADR 0186" line, and the staleness design's observation-record section gains a one-line pointer here.
 
 ## Failure model
 
@@ -55,8 +58,8 @@ staleness design's observation-record section gains a one-line pointer here.
 3. **Accepted failure classes**
    - a hand-typed `unrecorded` on a fresh observation passes the gate — catalog review is the
      trust boundary (ADR 0132), and the value under-claims rather than misattributes;
-   - a run with a non-conforming `HMC_SCHEMA_VERSION` writes no observations — bounded: the
-     emission message names the cause and the results document keeps the raw value.
+   - a run with a non-conforming `HMC_SCHEMA_VERSION` and an observation environment exits
+     at startup — bounded: no hardware time is spent, and the message names the fix.
 4. **Covered elsewhere**
    - re-running live tests to replace `unrecorded` observations — unowned, excluded by scope;
    - the results document's shape — #890's run-provenance child (done);
@@ -70,5 +73,8 @@ staleness design's observation-record section gains a one-line pointer here.
 | Format 4 required | focused-test | existing `format_version must be integer` assertions move to 4 |
 | Emission stamps the run's value | focused-test | `tests/test_live_runner.py`: emitted observation carries `(not set)` and `V1_0` when passed, and validates against the catalog shape |
 | Emission refuses a non-conforming value | focused-test | `tests/test_live_runner.py`: `V1_0;x` returns `False`, prints the message, writes nothing |
+| Startup refuses it before the run | focused-test | `tests/test_live_runner.py`: `main` with an environment and `v1_0` returns 1 without opening a client |
+| `main` threads the header string into emission | focused-test | `tests/test_live_runner.py`: `main` with an environment, unset and `V1_0`, calls `_emit_observations` with `block["schema_version"]` |
+| Secrets baseline tracks moved catalog lines | focused-test | `just secrets` exits 0 after `.secrets.baseline` line numbers are regenerated |
 | Stored catalog migrated | focused-test | `just capability-inventory` exits 0 on the migrated catalog |
 | Docs sentences | task-test-not-applicable | prose with no executable consumer |
