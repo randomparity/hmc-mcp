@@ -33,6 +33,8 @@ read-only: it issues only the GETs below.
 - A profile whose client cannot be built, whose logon or `ManagedSystem` read fails, or which
   exceeds its deadline becomes a `ProfileFailure(profile, reason)`, and its partial readings
   are discarded. Any exception from that profile's work counts. Cancellation is not caught.
+  The one exception: when every read finished and only closing the session fails (an error or
+  the deadline), the profile keeps its readings and the failure is logged as a warning.
 - A per-system read that raises `HMCError` is recorded as a gap. The gap names the feed and
   the error text, and the system keeps its other figures. The figures that depend on the failed
   feed are `None`, per ADR 0184 decision 2.
@@ -95,7 +97,8 @@ Roll-ups (pure functions):
   place, failures included.
 
 CSV (stdlib `csv`, UTF-8, header row): the first column is `row_type`, one of `system`, `hmc`,
-`fleet` or `failure`, and the columns that follow are fixed (the plan lists them in order). Rows
+`fleet` or `failure`, and the columns that follow are fixed: `COLUMNS` in `src/hmcpctl/cli_commands/report.py` lists
+them in order, and `tests/app/test_report_cli.py` pins that list. Rows
 come in this order:
 
 1. one `system` row per fleet system, sorted by name then serial;
@@ -158,8 +161,9 @@ publicly. `CHANGELOG.md` records the addition.
   both `hmc` roll-ups.
 - A failed profile (logon error, deadline, client build) appears as a `failure` row, and its
   readings are absent.
-- An HTTP 500 VIOS feed leaves `cpu_vios`, `mem_vios` and `cpu_other_reserved` `unknown` on that
-  system only. The roll-ups still sum its other figures, and their notes name the VIOS columns'
+- An HTTP 500 VIOS feed leaves `cpu_vios`, `mem_vios`, `cpu_other_reserved`, `cpu_dedicated`,
+  `cpu_shared` and `shared_pools` `unknown` on that system only (the last three include VIOS
+  units). The roll-ups still sum its other figures, and their notes name the VIOS columns'
   shortfall.
 - The header row equals the plan's column list exactly.
 
