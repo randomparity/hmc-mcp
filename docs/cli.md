@@ -187,8 +187,10 @@ The command surveys 4 profiles at a time (`--concurrency`) and gives each one 30
 (`--hmc-timeout`) for logon and every read. A profile that runs out of time becomes a `failure`
 row and keeps none of its readings. Ending its HMC session afterwards is bounded by the client's
 own per-request `HMC_TIMEOUT` settings, not by `--hmc-timeout`. A profile whose reads all
-finished keeps them even if ending its session fails; stderr carries a warning instead. A system the HMC cannot list is absent from the report, with only
-a warning on stderr. The CSV replaces `PATH` only once it is complete.
+finished keeps them even if ending its session fails; stderr carries a warning instead. A
+system the HMC cannot list is absent from the report, with only a warning on stderr. The CSV
+replaces `PATH` only once it is complete. A run killed by a signal other than Ctrl-C can leave
+an empty, owner-only `.<name>.*.tmp` file beside `PATH`; delete it.
 
 The command refuses to run when `HMC_HOST`, `HMC_USER`, `HMC_PASSWORD`, `HMC_PORT` or
 `HMC_VERIFY_SSL` is exported, even as an empty value, or when a global connection option
