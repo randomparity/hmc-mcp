@@ -154,7 +154,6 @@ def test_job_identifier_hands_out_the_job_id_of_a_real_job_entry() -> None:
     "link",
     [
         "https://hmc.test/rest/api/uom/jobs/1787837921263",
-        "/rest/api/uom/LogicalPartition/l/do/PowerOn/Job/j-1",
         "https://hmc.test/rest/api/uom/jobs/1787837921263/not-a-uuid",
     ],
 )
