@@ -12,6 +12,25 @@ release logic unchanged.
 > **Amended by #1058** (2026-09-24): rule 2's `_ConsoleStdin` sends EOF once, at release, to end
 > the session's own `mkvterm`. See ADR 0072's `#1058` amendment.
 
+> **Amended by #1149** (2026-10-01): the four behaviours this record left to a live window were
+> observed on HMC V10R3 M1060 managing a POWER9 test system, partition firmware FW950.00, with a
+> Debian 13 installer (Linux 6.12, ppc64le) on `hvc0`. The run used commit `07d79b4c`, where
+> `send_sysrq` still required `prefix` and was called with `b"\x0f"` explicitly.
+>
+> 1. The vterm passes `^O` (`0x0f`) plus a key through to the guest's hvc console.
+> 2. `send_sysrq("h", prefix=b"\x0f")`, one write, drew the guest's `sysrq: HELP` line within
+>    about a second. Rule 3 therefore changes: `prefix` defaults to `b"\x0f"`, stays keyword-only,
+>    and a caller can still override it.
+> 3. Written `~.` did not end the vterm. It was tried mid-line (`abc~.`) and after a CR (`\r~.`),
+>    at the firmware SMS menu, at GRUB and in the installer, and the session stayed held each
+>    time. The first Consequences bullet's "may end the vterm session" did not happen in this
+>    mode.
+> 4. A writable session needed no stdin EOF to stay held: every one stayed held for its whole
+>    run, 85 to 230 seconds, as rule 2 expects.
+>
+> Written keystrokes also reach the partition firmware: SMS answered a written `9` with "Invalid
+> entry". These outcomes are evidence for V10R3 and FW950 only.
+
 ## Context
 
 kdive (#958) needs to write to a partition console in two ways. It injects SysRq while

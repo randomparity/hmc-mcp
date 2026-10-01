@@ -101,8 +101,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   activate (#981).
 - `WritableConsoleSession`, a `ConsoleSession` subclass, writes to a partition console
   (ADR 0176). `write(data)` sends raw bytes while collection keeps running. `send_sysrq(key,
-  prefix=...)` sends a caller-supplied prefix plus the key as one write; hmcpctl ships no SysRq
-  sequence until #879 verifies one. `async with session.raw_mode() as channel:` gives a
+  prefix=...)` sends the prefix plus the key as one write; the prefix defaults to Ctrl-O since
+  #1149. `async with session.raw_mode() as channel:` gives a
   preempting holder, such as KGDB, exclusive reads and writes while the vterm stays held, and
   returns the channel to the collector afterwards. Every write first emits a `console-write`
   audit record that carries the length and never the bytes. `ConsoleSession`, the bounded
@@ -988,6 +988,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
+  (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
+  partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc
+  console, which printed its SysRq help within about a second. The same run found that written
+  `~.` does not end the vterm (mid-line or after a CR, at SMS, GRUB and a Linux installer), that
+  a writable session stays held with no stdin EOF, and that written keystrokes reach the
+  partition firmware too; the docstrings and ADR 0176 record these outcomes (#1149).
 - `docs/recipes/lpar-iso-install.md` now records the #1085 boot-order retest (V10R3 M1060,
   FW950.00). Firmware names a virtual optical device `disk@<LUN>`, not `cdrom@`, and boots the
   ISO from `/vdevice/v-scsi@<0x30000000 + client slot>/disk@<LogicalUnitAddress>`. It does not
