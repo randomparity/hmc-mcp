@@ -63,6 +63,12 @@ app.add_typer(snapshot_app, name="snapshot")
 memory_pools_app = typer.Typer(help="Shared memory pools.", no_args_is_help=True)
 app.add_typer(memory_pools_app, name="memory-pools")
 
+report_app = typer.Typer(
+    help="Reports surveyed across every configured connection profile.",
+    no_args_is_help=True,
+)
+app.add_typer(report_app, name="report")
+
 config_app = typer.Typer(
     # Not "profile configuration": this group writes two different files. Naming
     # only profiles here would assert the conflation the docs work to refuse, in

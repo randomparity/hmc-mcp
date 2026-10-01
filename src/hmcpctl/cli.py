@@ -20,6 +20,7 @@ from .cli_commands import (
     jobs,
     metrics,
     raw,
+    report,
     snapshot,
     templates,
 )
@@ -37,6 +38,7 @@ from .cli_commands.app import (
     metrics_app,
     network_app,
     raw_app,
+    report_app,
     snapshot_app,
     storage_app,
     systems_app,
@@ -117,6 +119,7 @@ def _register_commands() -> None:
         (network, network_app),
         (pcie, network_app),
         (raw, raw_app),
+        (report, report_app),
         (snapshot, snapshot_app),
         (storage, storage_app),
         (systems, systems_app),
