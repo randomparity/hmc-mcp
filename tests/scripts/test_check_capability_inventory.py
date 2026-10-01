@@ -231,7 +231,7 @@ def _observation(
     fingerprint: str | None = None,
     observed_at: str = "2026-09-06T12:00:00Z",
 ) -> dict[str, object]:
-    """One format 2 observation: the single closed shape the validator admits."""
+    """One format 4 observation: the single closed shape the validator admits."""
     return {
         "id": identity,
         "channel": "live",
@@ -241,6 +241,7 @@ def _observation(
         "observed_at": observed_at,
         "hmc_release": "V10R3",
         "hardware_family": "POWER10",
+        "schema_version": "(not set)",
         "cleanup": "not-required",
         "closure_fingerprint": fingerprint or "b" * 64,
         "assertions": ["console-uuid-present"],
@@ -458,7 +459,7 @@ def test_maturity_rejects_boolean_format_version(tmp_path: Path) -> None:
 
     report = inventory.validate_inventory(tmp_path, (), repo_root=tmp_path)
 
-    assert "maturity.json: format_version must be integer 3" in report.errors
+    assert "maturity.json: format_version must be integer 4" in report.errors
 
 
 def test_maturity_rejects_unknown_and_duplicate_operation_ids(tmp_path: Path) -> None:
@@ -620,7 +621,7 @@ def test_maturity_format_one_is_rejected(
         tmp_path, registered_inventory, repo_root=tmp_path
     )
 
-    assert "maturity.json: format_version must be integer 3" in report.errors
+    assert "maturity.json: format_version must be integer 4" in report.errors
 
 
 @pytest.mark.parametrize(
@@ -701,6 +702,40 @@ def test_environment_values_reject_private_identifiers(
     assert (
         "maturity evidence st1-hmc-get-console-info: environment values do not "
         "match their grammar" in errors
+    ) is not accepted
+
+
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        ("V1_0", True),
+        ("V10_12", True),
+        ("(not set)", True),
+        # Legacy only: the runner never writes it (ADR 0186).
+        ("unrecorded", True),
+        ("v1_0", False),
+        ("V1_0 ", False),
+        ("V1", False),
+        ("", False),
+        ("(NOT SET)", False),
+        ("hmc01.lab.example.com", False),
+        (None, False),
+    ],
+)
+def test_schema_version_domain(
+    tmp_path: Path,
+    registered_inventory: tuple[inventory.RegistryTool, ...],
+    value: object,
+    accepted: bool,
+) -> None:
+    record = _operation()
+    record["evidence"] = [{**_observation(), "schema_version": value}]
+
+    errors = _maturity_report(tmp_path, registered_inventory, [record]).errors
+
+    assert (
+        "maturity evidence st1-hmc-get-console-info: schema_version must be "
+        "V<n>_<n>, (not set) or unrecorded" in errors
     ) is not accepted
 
 

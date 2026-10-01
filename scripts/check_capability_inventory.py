@@ -34,13 +34,13 @@ SHA_1 = re.compile(r"[0-9a-f]{40}")
 SHA_256 = re.compile(r"[0-9a-f]{64}")
 TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
-#: `maturity.json` alone moves to format 3 (ADR 0132); the other three catalogs
-#: are unchanged and stay at 1.
-MATURITY_FORMAT_VERSION = 3
+#: `maturity.json` alone moves to format 4 (ADR 0186, after ADR 0132's format 3);
+#: the other three catalogs are unchanged and stay at 1.
+MATURITY_FORMAT_VERSION = 4
 STALE_AFTER_DAYS = 90
 PACKAGE = "hmcpctl"
 
-#: The exact key set of a format 2 observation. There is one observation shape:
+#: The exact key set of a format 4 observation. There is one observation shape:
 #: ADR 0126's `not-run` placeholder is dropped rather than carried forward.
 ATTEMPTED_KEYS = {
     "id",
@@ -51,6 +51,7 @@ ATTEMPTED_KEYS = {
     "observed_at",
     "hmc_release",
     "hardware_family",
+    "schema_version",
     "cleanup",
     "closure_fingerprint",
     "assertions",
@@ -73,6 +74,11 @@ CONFIRMATION_KEYS = {
 #: verbatim while rejecting only a dotted quad.
 HMC_RELEASE = re.compile(r"V\d+R\d+(?:M\d+)?")
 HARDWARE_FAMILY = re.compile(r"POWER\d+")
+#: What a run may record for `HMC_SCHEMA_VERSION` (ADR 0186): the header token, or
+#: the run header's own rendering of an unset or empty variable.
+SCHEMA_VERSION = re.compile(r"V\d+_\d+|\(not set\)")
+#: Carried by observations stored before format 4; the runner never writes it.
+UNRECORDED_SCHEMA_VERSION = "unrecorded"
 
 
 class InventoryError(ValueError):
@@ -639,7 +645,7 @@ def _validate_observation(
     evidence_ids: set[str],
     errors: list[str],
 ) -> None:
-    """Validate one format 2 observation against its single closed shape.
+    """Validate one format 4 observation against its single closed shape.
 
     `maturity.json` is hand-copied from the runner's output and hand-editable, so
     every bound the runner applies on the way out is applied again here: the
@@ -680,6 +686,13 @@ def _validate_observation(
         HARDWARE_FAMILY, observation["hardware_family"]
     ):
         errors.append(f"{label}: environment values do not match their grammar")
+    schema_version = observation["schema_version"]
+    if schema_version != UNRECORDED_SCHEMA_VERSION and not _matches(
+        SCHEMA_VERSION, schema_version
+    ):
+        errors.append(
+            f"{label}: schema_version must be V<n>_<n>, (not set) or unrecorded"
+        )
     if not _one_of(observation["cleanup"], CLEANUP):
         errors.append(f"{label}: invalid cleanup")
     _validate_assertions(observation, label, errors)

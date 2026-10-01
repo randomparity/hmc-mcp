@@ -2101,7 +2101,9 @@ def test_gap_output_can_be_copied_and_loaded_for_next_run(tmp_path):
         [expected],
     )
     destination = repo / "test-results-gaps-observations.json"
-    assert runner._emit_observations(state, destination, ("V10R3", "POWER10"), repo)
+    assert runner._emit_observations(
+        state, destination, ("V10R3", "POWER10"), "(not set)", repo
+    )
     emitted = json.loads(destination.read_text())
     assert len(emitted) == 1 and set(emitted[0]) == {"operation", "missing_scope"}
     catalog = repo / "maturity.json"
@@ -2147,7 +2149,9 @@ def test_invalid_gap_catalog_fails_even_without_environment(tmp_path, records):
     catalog.write_text(
         json.dumps(
             {
-                "format_version": 3,
+                "format_version": (
+                    runner.check_capability_inventory.MATURITY_FORMAT_VERSION
+                ),
                 "admission_policy": "existing-runtime-guards",
                 "operations": records,
             }
@@ -4058,11 +4062,21 @@ async def test_main_stamps_run_provenance_into_the_results_document(
         state.record(24, "fake", "PASS", {})
 
     monkeypatch.setattr(runner, "SUBTASKS", {24: fake_subtask})
+    emitted: list[str] = []
+    monkeypatch.setattr(
+        runner,
+        "_emit_observations",
+        lambda _state, _path, _environment, schema_version, _root: emitted.append(
+            schema_version
+        ),
+    )
     results_path = tmp_path / "results.json"
 
     assert (
         await runner.main(
-            results_path=str(results_path), config=runner.LiveTestConfig()
+            results_path=str(results_path),
+            config=runner.LiveTestConfig(),
+            environment=("V10R3", "POWER10"),
         )
         == 0
     )
@@ -4070,6 +4084,8 @@ async def test_main_stamps_run_provenance_into_the_results_document(
     block = json.loads(results_path.read_text())["run"]
     assert block["subtasks"] == [24]
     assert block["schema_version"] == recorded
+    # The observations carry the string the header printed (ADR 0186).
+    assert emitted == [recorded]
     assert set(block) == {
         "tested_commit",
         "tree_clean",
@@ -5305,7 +5321,7 @@ def test_observations_are_not_emitted_without_environment(tmp_path, capsys):
     destination = repo / "test-results-round2-observations.json"
 
     assert not runner._emit_observations(
-        _state_with_one_observation(), destination, None, repo
+        _state_with_one_observation(), destination, None, "(not set)", repo
     )
     assert "no LIVE_TEST_ENV_* settings" in capsys.readouterr().out
     assert not destination.exists()
@@ -5317,7 +5333,11 @@ def test_observations_are_not_emitted_from_a_dirty_tree(tmp_path, capsys, monkey
     destination = repo / "test-results-round2-observations.json"
 
     assert not runner._emit_observations(
-        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+        _state_with_one_observation(),
+        destination,
+        ("V10R3", "POWER10"),
+        "(not set)",
+        repo,
     )
     assert "is modified" in capsys.readouterr().out
     assert not destination.exists()
@@ -5329,18 +5349,29 @@ def test_emission_refuses_a_path_git_does_not_ignore(tmp_path, capsys):
     destination = repo / "evidence-observations.json"
 
     assert not runner._emit_observations(
-        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+        _state_with_one_observation(),
+        destination,
+        ("V10R3", "POWER10"),
+        "(not set)",
+        repo,
     )
     assert "is not ignored by git" in capsys.readouterr().out
     assert not destination.exists()
 
 
-def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
+@pytest.mark.parametrize("schema_version", ["(not set)", "V1_0"])
+def test_emitted_observations_validate_against_the_catalog_shape(
+    tmp_path, schema_version
+):
     repo = _live_repo(tmp_path)
     destination = repo / "test-results-round2-observations.json"
 
     assert runner._emit_observations(
-        _state_with_one_observation(), destination, ("V10R3", "POWER10"), repo
+        _state_with_one_observation(),
+        destination,
+        ("V10R3", "POWER10"),
+        schema_version,
+        repo,
     )
 
     document = json.loads(destination.read_text())
@@ -5355,10 +5386,51 @@ def test_emitted_observations_validate_against_the_catalog_shape(tmp_path):
     assert errors == []
     assert document[0]["operation"] == "console.info"
     assert document[0]["observation"]["result"] == "passed"
+    assert document[0]["observation"]["schema_version"] == schema_version
     assert (
         document[0]["observation"]["closure_fingerprint"]
         != hashlib.sha256(b"").hexdigest()
     )
+
+
+def test_emission_refuses_an_unrecordable_schema_version(tmp_path, capsys):
+    """The observation's narrow grammar is applied on the way out, too (ADR 0186)."""
+    repo = _live_repo(tmp_path)
+    destination = repo / "test-results-round2-observations.json"
+
+    assert not runner._emit_observations(
+        _state_with_one_observation(),
+        destination,
+        ("V10R3", "POWER10"),
+        "V1_0;x",
+        repo,
+    )
+    assert (
+        "HMC_SCHEMA_VERSION is not V<n>_<n> or unset — observations not written"
+        in capsys.readouterr().out
+    )
+    assert not destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_an_unrecordable_schema_version_exits_before_the_run(
+    monkeypatch, tmp_path, capsys
+):
+    """A value no observation can hold costs a startup exit, not a hardware run."""
+    _isolate_runner(monkeypatch)
+    _clear(monkeypatch, "HMC_SCHEMA_VERSION")
+    monkeypatch.setenv("HMC_SCHEMA_VERSION", "v1_0")
+    monkeypatch.setattr(runner, "served_client", lambda: pytest.fail("opened a client"))
+
+    assert (
+        await runner.main(
+            results_path=str(tmp_path / "results.json"),
+            config=runner.LiveTestConfig(),
+            environment=("V10R3", "POWER10"),
+        )
+        == 1
+    )
+    assert "❌ HMC_SCHEMA_VERSION is not V<n>_<n> or unset" in capsys.readouterr().out
 
 
 def test_a_lone_environment_key_exits_before_the_run(monkeypatch, tmp_path, capsys):
@@ -5424,7 +5496,9 @@ def test_emission_skips_an_unknown_operation_and_keeps_the_rest(tmp_path, capsys
     )
     destination = repo / "test-results-round2-observations.json"
 
-    assert runner._emit_observations(state, destination, ("V10R3", "POWER10"), repo)
+    assert runner._emit_observations(
+        state, destination, ("V10R3", "POWER10"), "(not set)", repo
+    )
 
     document = json.loads(destination.read_text())
     assert [entry["operation"] for entry in document] == ["console.info"]

@@ -49,7 +49,9 @@ approved exclusion, and either it or an unknown blocks a complete-coverage claim
 
 `maturity.json` is a sparse, format-versioned catalog keyed by the stable operation
 IDs in `operations.json`. Format 3 ([ADR 0132](../adr/0132-confirmed-live-limitation-gaps.md))
-adds optional confirmations to missing scope. The evidence, currency, and promotion
+added optional confirmations to missing scope; format 4
+([ADR 0186](../adr/0186-observation-schema-version-stamp.md)) adds a required `schema_version`
+to every observation. The evidence, currency, and promotion
 model from [ADR 0127](../adr/0127-derived-live-verification-staleness.md) is unchanged.
 Implementation — `absent`, `partial`, or `implemented`, with explicit implemented
 and missing scope — is recorded independently from evidence.
@@ -66,6 +68,7 @@ Evidence retains one observation shape, with an exact key set:
   "observed_at": "2026-09-06T00:03:02Z",
   "hmc_release": "V10R3",
   "hardware_family": "POWER10",
+  "schema_version": "V1_0",
   "cleanup": "not-required",
   "closure_fingerprint": "<64 hex>",
   "assertions": ["job-found", "job-identity-matches", "job-status-successful"]
@@ -78,8 +81,11 @@ ids that **held**, in declaration order — so a `failed` observation is disting
 from a `passed` one on that field alone. `hmc_release` and `hardware_family` are the
 only free text and each has a grammar (`V<n>R<n>[M<n>]` and `POWER<n>`) rather than a
 permissive character class, so a hostname, serial, or location code cannot be written
-there. An operation carries at most one live observation; re-validating replaces it, and
-the superseded record stays in `git log`.
+there. `schema_version` is the run's `HMC_SCHEMA_VERSION` as its header printed it — a
+`V<n>_<n>` token or `(not set)` — and observations stored before format 4 read `unrecorded`,
+because nothing recorded the value for them; it attributes the observation and does not
+affect currency or promotion. An operation carries at most one live observation;
+re-validating replaces it, and the superseded record stays in `git log`.
 
 ### Confirmed limitation gaps
 
@@ -160,8 +166,9 @@ The live runner writes observations and confirmed gaps to a gitignored file besi
 and never into the catalog: a human copies them in, and the pull request that commits
 one is where the record is reviewed. The runner writes nothing unless the tree is clean
 under `src/` and `scripts/`, both environment settings are present in `.env`
-(`LIVE_TEST_ENV_HMC_RELEASE` and `LIVE_TEST_ENV_HARDWARE_FAMILY` — both or neither), and
-`git check-ignore` claims the destination.
+(`LIVE_TEST_ENV_HMC_RELEASE` and `LIVE_TEST_ENV_HARDWARE_FAMILY` — both or neither),
+`HMC_SCHEMA_VERSION` is unset or a `V<n>_<n>` token (a run with both environment settings
+present exits at startup otherwise), and `git check-ignore` claims the destination.
 
 The validator proves shape, not truth. It applies every bound the runner applies —
 because the catalog is hand-copied and hand-editable, so a check on the way out is not a
