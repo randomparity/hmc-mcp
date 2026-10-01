@@ -262,9 +262,13 @@ def test_partition_id_and_type():
     assert "OS400" in xml
 
 
-def test_invalid_partition_type():
-    with pytest.raises(ValueError, match="partition_type"):
-        build_lpar_document(name="bad", partition_type="Windows")
+@pytest.mark.parametrize(
+    ("partition_type", "message"),
+    [("Windows", "partition_type must be one of"), ("Virtual IO Server", "REST0140")],
+)
+def test_invalid_partition_type(partition_type, message):
+    with pytest.raises(ValueError, match=message):
+        build_lpar_document(name="bad", partition_type=partition_type)
 
 
 def test_invalid_keylock():
