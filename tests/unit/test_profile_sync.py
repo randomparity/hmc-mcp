@@ -73,7 +73,10 @@ def _partition(resource: dict) -> AsyncMock:
             {"CurrentProfileSync": "Suspended"},
             ChangeLocation("Suspended", "current-configuration"),
         ),
-        ({"CurrentProfileSync": "Sideways"}, ChangeLocation("Sideways", "unknown")),
+        (
+            {"CurrentProfileSync": "Sideways"},  # live-vocabulary: allow unknown mode
+            ChangeLocation("Sideways", "unknown"),
+        ),
         ({}, ChangeLocation(None, "unknown")),
     ],
 )

@@ -106,6 +106,36 @@ def test_load_evidence_unions_firmware_releases(tmp_path: Path) -> None:
     assert allowed == {"running", "error", "suspended", "open firmware", "migrating"}
 
 
+def test_an_enum_list_can_bind_an_element(tmp_path: Path) -> None:
+    directory = tmp_path / guard.VOCABULARY_DIR
+    directory.mkdir(parents=True)
+    (directory / "vx-p9.json").write_text(json.dumps(VOCABULARY))
+    jobs = {
+        "types": {"JobStatus.Enum": ["COMPLETED_OK"]},
+        "elements": {"Status": "JobStatus.Enum"},
+    }
+    (directory / "enums-documented-jobs.json").write_text(json.dumps(jobs))
+    evidence = guard.load_evidence(tmp_path)
+    assert evidence.allowed["Status"] == {"COMPLETED_OK"}
+    assert evidence.bindings["Status"] == "JobStatus.Enum"
+
+
+def test_documented_job_statuses_mark_what_was_captured() -> None:
+    """Each documented status says whether a committed vocabulary captured it."""
+    directory = Path(__file__).parents[2] / guard.VOCABULARY_DIR
+    jobs = json.loads((directory / "enums-documented-jobs.json").read_text())
+    names = jobs["types"]["JobStatus.Enum"]
+    assert sorted(jobs["evidence"]) == sorted(names)
+    observed: set[str] = set()
+    for path in directory.glob("v*.json"):
+        observed |= set(
+            json.loads(path.read_text())["rest"]["values"].get("Status", [])
+        )
+    for name, mark in jobs["evidence"].items():
+        assert mark == ("captured" if name in observed else "documented-only"), name
+    assert all(source.startswith("docs/refs/") for source in jobs["sources"])
+
+
 def test_load_evidence_refuses_an_empty_directory(tmp_path: Path) -> None:
     (tmp_path / guard.VOCABULARY_DIR).mkdir(parents=True)
     with pytest.raises(FileNotFoundError):
@@ -346,10 +376,61 @@ def test_live_fixtures_are_not_scanned(repo: Path) -> None:
     live.write_text(json.dumps({"body": "<PartitionState>Weird</PartitionState>"}))
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     files = guard.tracked_files(repo)
-    found = guard.collect_violations(repo, files, guard.load_evidence(repo))
+    found, _ = guard.collect_violations(repo, files, guard.load_evidence(repo))
     assert all(not v.file.startswith("tests/fixtures/live/") for v in found)
 
 
 def test_passes_on_the_committed_tree(capsys) -> None:
     """The committed vocabularies and allowlist agree with the tree; exit 0."""
     assert guard.main([]) == 0
+
+
+# --- inline exemptions ------------------------------------------------------------
+
+
+def _exempt(text: str) -> tuple[list[tuple[str, str]], list[str]]:
+    violations = guard.literal_violations("t.py", text, _evidence())
+    kept, errors = guard.apply_exemptions("t.py", text, violations)
+    return [(v.subject, v.value) for v in kept], errors
+
+
+def test_exemption_with_a_reason_suppresses_its_line() -> None:
+    text = (
+        'd = {"PartitionState": "Sideways"}  # live-vocabulary: allow unknown branch\n'
+    )
+    assert _exempt(text) == ([], [])
+
+
+def test_exemption_covers_only_its_own_line() -> None:
+    text = (
+        'a = {"PartitionState": "Sideways"}  # live-vocabulary: allow unknown branch\n'
+        'b = {"PartitionState": "Running"}\n'
+    )
+    assert _exempt(text) == ([("PartitionState", "Running")], [])
+
+
+def test_exemption_without_a_reason_fails() -> None:
+    kept, errors = _exempt(
+        'd = {"PartitionState": "Sideways"}  # live-vocabulary: allow\n'
+    )
+    assert kept == []
+    assert errors == ["t.py:1: live-vocabulary exemption has no reason"]
+
+
+def test_stale_exemption_fails() -> None:
+    kept, errors = _exempt(
+        'd = {"PartitionState": "running"}  # live-vocabulary: allow x\n'
+    )
+    assert kept == []
+    assert errors == [
+        "t.py:1: stale live-vocabulary exemption suppresses nothing; delete it"
+    ]
+
+
+def test_exemption_errors_fail_the_guard(repo: Path, capsys) -> None:
+    (repo / "tests" / "t.py").write_text(
+        'd = {"PartitionState": "running"}  # live-vocabulary: allow x\n'
+    )
+    guard.main(["--root", str(repo), "--write-allowlist"])
+    assert guard.main(["--root", str(repo)]) == 1
+    assert "stale live-vocabulary exemption" in capsys.readouterr().err

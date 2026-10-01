@@ -12,6 +12,10 @@ This guard fails when:
 3. an ``ls*`` command in ``src/hmcpctl`` has no captured command with the same
    selecting flags (``-r``, ``--rsubtype``, ``--level``, ``-o``) and ``-m`` presence.
 
+A Python line holding a value that is deliberately not an HMC answer (a test of
+the unknown branch) ends with ``# live-vocabulary: allow <reason>``; an exemption
+without a reason, or one that suppresses nothing, fails the guard.
+
 Violations not yet fixed are listed in ``allowlist.json`` beside the vocabularies,
 each with a reason citing #1202. An entry that matches no violation fails the guard
 too, so the list only shrinks. ``--write-allowlist`` regenerates it from the tree,
@@ -42,6 +46,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 VOCABULARY_DIR = Path("tests/fixtures/live/vocabulary")
 ALLOWLIST = VOCABULARY_DIR / "allowlist.json"
 ISSUE = "#1202"
+#: An inline exemption: a deliberately non-HMC value on this line, with its reason.
+EXEMPTION = re.compile(r"#\s*live-vocabulary:\s*allow\b(.*)$")
 #: Captured fixtures are evidence already; the pipeline's own tests hold deliberately
 #: uncaptured values to prove the guard and the exporter reject them.
 NOT_SCANNED = (
@@ -103,11 +109,14 @@ def load_evidence(root: Path) -> Evidence:
     """Every vocabulary and enum list, unioned: a value any firmware answered is valid."""
     directory = root / VOCABULARY_DIR
     types: dict[str, set[str]] = {}
+    bindings: dict[str, set[str]] = {}
     for path in sorted(directory.glob("enums-*.json")):
-        for name, values in json.loads(path.read_text(encoding="utf-8"))[
-            "types"
-        ].items():
+        enum_list = json.loads(path.read_text(encoding="utf-8"))
+        for name, values in enum_list["types"].items():
             types.setdefault(name, set()).update(values)
+        # An enum list may bind elements itself, as the documented job statuses do.
+        for element, enum in enum_list.get("elements", {}).items():
+            bindings.setdefault(element, set()).add(enum)
     vocabularies = [
         p
         for p in sorted(directory.glob("*.json"))
@@ -116,7 +125,6 @@ def load_evidence(root: Path) -> Evidence:
     if not vocabularies:
         raise FileNotFoundError(f"no vocabulary in {directory}")
     observed: dict[str, set[str]] = {}
-    bindings: dict[str, set[str]] = {}
     endpoints: list[str] = []
     commands: list[str] = []
     for path in vocabularies:
@@ -439,23 +447,62 @@ def tracked_files(root: Path) -> list[str]:
     return proc.stdout.split()
 
 
+def _file_violations(file: str, text: str, evidence: Evidence) -> list[Violation]:
+    found = literal_violations(file, text, evidence)
+    if file.startswith("src/hmcpctl/") and file.endswith(".py"):
+        for template, line in rest_templates(file, text):
+            if not path_is_captured(template, evidence.endpoints):
+                found.append(Violation("rest-path", file, template, "", line))
+        for template, line in cli_templates(file, text):
+            if not command_is_captured(template, evidence.commands):
+                found.append(Violation("cli-command", file, template, "", line))
+    return found
+
+
+def apply_exemptions(
+    file: str, text: str, violations: list[Violation]
+) -> tuple[list[Violation], list[str]]:
+    """Drop violations on a line carrying ``# live-vocabulary: allow <reason>``.
+
+    An exemption with no reason, or one on a line with no violation, is an error, so
+    an exemption cannot outlive the value it was written for.
+    """
+    exempt: dict[int, str] = {}
+    for number, line in enumerate(text.splitlines(), 1):
+        match = EXEMPTION.search(line)
+        if match:
+            exempt[number] = match.group(1).strip()
+    kept = [v for v in violations if v.line not in exempt]
+    used = {v.line for v in violations}
+    errors = [
+        f"{file}:{n}: live-vocabulary exemption has no reason"
+        for n, reason in exempt.items()
+        if not reason
+    ]
+    errors += [
+        f"{file}:{n}: stale live-vocabulary exemption suppresses nothing; delete it"
+        for n in exempt
+        if n not in used
+    ]
+    return kept, errors
+
+
 def collect_violations(
     root: Path, files: Sequence[str], evidence: Evidence
-) -> list[Violation]:
+) -> tuple[list[Violation], list[str]]:
+    """Violations not exempted inline, and errors in the inline exemptions."""
     found: list[Violation] = []
+    errors: list[str] = []
     for file in files:
         if file.startswith(NOT_SCANNED) or not file.endswith((".py", ".xml", ".json")):
             continue
         text = (root / file).read_text(encoding="utf-8")
-        found += literal_violations(file, text, evidence)
-        if file.startswith("src/hmcpctl/") and file.endswith(".py"):
-            for template, line in rest_templates(file, text):
-                if not path_is_captured(template, evidence.endpoints):
-                    found.append(Violation("rest-path", file, template, "", line))
-            for template, line in cli_templates(file, text):
-                if not command_is_captured(template, evidence.commands):
-                    found.append(Violation("cli-command", file, template, "", line))
-    return found
+        kept, problems = apply_exemptions(
+            file, text, _file_violations(file, text, evidence)
+        )
+        found += kept
+        errors += problems
+    return found, errors
 
 
 def _default_reason(violation: Violation, evidence: Evidence) -> str:
@@ -538,17 +585,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = args.root.resolve()
     evidence = load_evidence(root)
-    violations = collect_violations(root, tracked_files(root), evidence)
+    violations, exemption_errors = collect_violations(
+        root, tracked_files(root), evidence
+    )
     if args.write_allowlist:
         return write_allowlist(root / ALLOWLIST, violations, evidence)
-    errors = check(root, violations)
+    errors = exemption_errors + check(root, violations)
     if errors:
         print("\n".join(errors), file=sys.stderr)
         print(
             f"\n{len(errors)} live-vocabulary problem(s). Use the captured value; or capture "
             "the call (docs/live-testing.md, 'Capturing an HMC's vocabulary'); or, for a "
             f"value a {ISSUE} fix will change, run `python scripts/check_live_vocabulary.py "
-            "--write-allowlist` and give the entry its reason.",
+            "--write-allowlist` and give the entry its reason; for a value that is "
+            "deliberately not an HMC answer, end its line with "
+            "`# live-vocabulary: allow <reason>`.",
             file=sys.stderr,
         )
         return 1

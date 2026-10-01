@@ -80,7 +80,7 @@ RECORDED = [
     (
         documents.build_vfc_adapter_document(1, 2, 3),
         {
-            "AdapterType": "ROR",
+            "AdapterType": "ROR",  # live-vocabulary: allow a kb code, not an element value
             "VirtualSlotNumber": "COD",
             "ConnectingPartitionID": "CUD",
             "ConnectingVirtualSlotNumber": "CUD",
