@@ -5131,3 +5131,12 @@ def test_lpm_decline_does_not_enter_client_lifecycle(monkeypatch):
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
     assert called is False
+
+
+def test_storage_mount_optical_media_help_names_the_rest0269_precondition():
+    """#1237: the refusal's precondition is stated before the write."""
+    result = RUNNER.invoke(cli.app, ["storage", "mount-optical-media", "--help"])
+
+    assert result.exit_code == 0
+    assert "REST0269" in result.stdout
+    assert "activate or apply a profile" in " ".join(result.stdout.split())

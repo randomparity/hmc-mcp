@@ -818,6 +818,11 @@ def hmc_mount_optical_media(
     CurrentProfileSync and whether the HMC-created client adapter lives only in
     the current configuration (a profile activation then drops it).
 
+    A partition not activated since its profile changed refuses the mount with
+    500 REST0269; activate or apply a profile once first. That refusal can still
+    leave a VIOS server adapter with no mapping, so the error names the
+    ``lshwres -r virtualio --rsubtype scsi`` listing that shows it.
+
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         media_name: Name of the VirtualOpticalMedia (ISO) in the repository.
