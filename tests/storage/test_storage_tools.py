@@ -717,7 +717,7 @@ def test_delete_logical_unit_submits_job(monkeypatch, mock_hmc):
 
 
 def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_create_logical_unit(wait=True) submits then polls until COMPLETED."""
+    """hmc_create_logical_unit(wait=True) submits then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/CreateLogicalUnit"
@@ -734,7 +734,7 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
 
 
 def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_delete_logical_unit(wait=True) submits then polls until COMPLETED."""
+    """hmc_delete_logical_unit(wait=True) submits then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/DeleteLogicalUnit"

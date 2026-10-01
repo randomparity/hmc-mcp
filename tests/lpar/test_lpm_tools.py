@@ -323,7 +323,7 @@ def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
 
 
 def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED."""
+    """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED_OK."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
     poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
