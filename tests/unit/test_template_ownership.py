@@ -14,7 +14,7 @@ from hmcpctl.operations.templates.core import (
 
 SYSTEM_UUID = "system-uuid"
 RUNNING_JOB = {"Resource": {"Status": "RUNNING"}}
-COMPLETED_JOB = {"Resource": {"Status": "COMPLETED"}}
+COMPLETED_JOB = {"Resource": {"Status": "COMPLETED_OK"}}
 
 
 def _lpar(uuid: object, name: str) -> dict:

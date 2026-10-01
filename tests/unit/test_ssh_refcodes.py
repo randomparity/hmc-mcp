@@ -8,6 +8,7 @@ import shlex
 from unittest.mock import AsyncMock
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.ssh.refcodes import (
@@ -60,23 +61,20 @@ def test_non_integer_count_is_refused(monkeypatch, count):
 
 
 def test_command_shape_is_exact(monkeypatch):
-    """The composed command is the one the design fixed, value for value."""
-    header = ",".join(REFCODE_FIELDS)
-    transport = _transport(
-        monkeypatch, f"{header}\nweb01,2026-09-21 10:00:00,C2001150\n"
-    )
+    """The composed command is the captured one, and its rows parse as captured."""
+    capture = live_fixture("cli-refcodes")
+    transport = _transport(monkeypatch, capture["stdout"])
 
-    rows = _run(list_lpar_refcodes(_config(), "sys1", "web01", 5))
+    rows = _run(list_lpar_refcodes(_config(), "sys-R1", "sys-R1-pcie-p1165bad", 3))
 
-    assert _sent(transport) == (
-        f"lsrefcode -r lpar -m sys1 --filter lpar_names=web01 -n 5 -F {header} --header"
-    )
+    assert _sent(transport) == capture["command"]
     assert rows == [
         {
-            "lpar_name": "web01",
-            "time_stamp": "2026-09-21 10:00:00",
-            "refcode": "C2001150",
+            "lpar_name": "sys-R1-pcie-p1165bad",
+            "time_stamp": "09/30/2026 20:41:31",
+            "refcode": refcode,
         }
+        for refcode in ("B2001230 LP=00002", "D200C301", "D200C300")
     ]
 
 
@@ -160,8 +158,8 @@ def test_rows_for_another_partition_are_refused(monkeypatch):
     header = ",".join(REFCODE_FIELDS)
     _transport(
         monkeypatch,
-        f"{header}\nweb01,2026-09-21 10:00:00,C2001150\n"
-        "db02,2026-09-21 10:00:01,C2001151\n",
+        f"{header}\nweb01,09/21/2026 10:00:00,C2001150\n"
+        "db02,09/21/2026 10:00:01,C2001151\n",
     )
 
     with pytest.raises(HMCCLIError, match="reported partition 'db02'"):

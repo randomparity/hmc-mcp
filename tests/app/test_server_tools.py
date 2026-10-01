@@ -17,7 +17,14 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, LPAR_RESOURCE_CONFIG
+from conftest import (
+    COMPLETED_JOB_ENTRY,
+    JOB_ENTRY,
+    JOB_ID,
+    LPAR_RESOURCE_CONFIG,
+    RUNNING_JOB_ENTRY,
+    RUNNING_JOB_ID,
+)
 
 from hmcpctl.documents import LparResources
 from hmcpctl.errors import HMCError
@@ -189,11 +196,11 @@ def test_run_command_passes_cmd_through(monkeypatch):
 def test_get_job_parses_entry(monkeypatch, mock_hmc):
     """hmc_get_job returns the parsed job resource dict."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY)
+    mock_hmc.get(f"/rest/api/uom/jobs/{RUNNING_JOB_ID}").mock(
+        return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
-    result = hmc_get_job("job-uuid-999")
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    result = hmc_get_job(RUNNING_JOB_ID)
+    assert result["Resource"]["JobID"] == RUNNING_JOB_ID
     assert result["Resource"]["Status"] == "RUNNING"
 
 
@@ -247,10 +254,10 @@ def test_get_job_requires_identifier_even_with_href(monkeypatch, mock_hmc):
 def test_get_job_trims_surrounding_whitespace(monkeypatch, mock_hmc):
     """Padding from a stored handle is trimmed, not rejected — as documented."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    assert hmc_get_job("  job-uuid-999  ")["Resource"]["JobID"] == "job-uuid-999"
+    assert hmc_get_job(f"  {JOB_ID}  ")["Resource"]["JobID"] == JOB_ID
 
 
 def test_lpars_by_name(monkeypatch, mock_hmc):
@@ -284,7 +291,7 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
     # Mock the precondition state check (not activated → proceed with PowerOn).
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text="not activated"))
+    ).mock(return_value=httpx.Response(200, text='"not activated"'))
     route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
@@ -293,7 +300,7 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "PowerOn</OperationName>" in body
     assert result.already_running is False
-    assert result.job["Resource"]["JobID"] == "job-uuid-999"
+    assert result.job["Resource"]["JobID"] == JOB_ID
     assert result.message is None
 
 
@@ -304,7 +311,7 @@ def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc
     _hmc_env(monkeypatch)
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text="not activated"))
+    ).mock(return_value=httpx.Response(200, text='"not activated"'))
     # ADR 0039 containment: the tool reads the partition's own profile feed
     # before it will carry a caller-supplied LogicalPartitionProfile.
     mock_hmc.get(
@@ -913,7 +920,7 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
         )
     )
     poll = mock_hmc.get("/rest/api/uom/Job/platform-job").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
     result = hmc_update_firmware(
@@ -926,7 +933,7 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
 
     assert poll.called
     assert result is not None
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
@@ -935,15 +942,15 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     submit_route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     result = hmc_update_console_software(
         MC_UUID, CONSOLE_SOURCE, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 def test_submit_available_hmc_ptfs_query_returns_submitted_job(monkeypatch, mock_hmc):
@@ -954,7 +961,7 @@ def test_submit_available_hmc_ptfs_query_returns_submitted_job(monkeypatch, mock
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     result = hmc_submit_available_hmc_ptfs_query(MC_UUID)
     assert route.called
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
     body = route.calls.last.request.content.decode()
     assert "ListManagementConsoleUpdates" in body
     assert "ManagementConsole" in body
@@ -972,7 +979,7 @@ def test_submit_available_hmc_ptfs_query_preserves_positional_profile(
     result = hmc_submit_available_hmc_ptfs_query(MC_UUID, "default")
 
     assert route.called
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
     assert all(call.request.method != "GET" for call in mock_hmc.calls)
 
 
@@ -991,8 +998,8 @@ def test_submit_available_hmc_ptfs_query_waits_for_result(monkeypatch, mock_hmc)
     mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    poll = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
     result = hmc_submit_available_hmc_ptfs_query(
@@ -1000,7 +1007,7 @@ def test_submit_available_hmc_ptfs_query_waits_for_result(monkeypatch, mock_hmc)
     )
 
     assert poll.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 @pytest.mark.parametrize(
@@ -1114,19 +1121,6 @@ def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
 # hmc_wait_for_job
 # ---------------------------------------------------------------------- #
 
-JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED</Status>
-    </Job>
-  </content>
-</entry>
-"""
-
 JOB_ENTRY_FAILED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:job-uuid-999</id>
@@ -1203,19 +1197,19 @@ JOB_OUTCOME_KEYS = {
 
 
 def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
-    """hmc_wait_for_job returns immediately when the first poll is COMPLETED."""
+    """hmc_wait_for_job returns immediately when the first poll is COMPLETED_OK."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
-    result = hmc_wait_for_job("job-uuid-999")
+    result = hmc_wait_for_job(JOB_ID)
     assert route.called
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == "job-uuid-999"
-    assert result.status == "COMPLETED"
+    assert result.job_id == JOB_ID
+    assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
     assert result.error is None
-    assert result.job["Resource"]["Status"] == "COMPLETED"
+    assert result.job["Resource"]["Status"] == "COMPLETED_OK"
 
 
 @pytest.mark.parametrize(
@@ -1251,13 +1245,13 @@ def test_wait_for_job_surfaces_terminal_failure(
 
 def test_wait_for_job_timeout_is_explicit(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
+    mock_hmc.get(f"/rest/api/uom/jobs/{RUNNING_JOB_ID}").mock(
+        return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
     # timeout=0 means the deadline is already past after the first poll
-    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+    result = hmc_wait_for_job(RUNNING_JOB_ID, timeout_seconds=0, poll_interval=1)
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == "job-uuid-999"
+    assert result.job_id == RUNNING_JOB_ID
     assert result.status == "RUNNING"
     assert result.timed_out is True
     assert result.error is None
@@ -1321,11 +1315,11 @@ def test_wait_for_job_empty_feed_is_also_reported_gone(monkeypatch, mock_hmc):
 def test_wait_for_job_running_is_found_true(monkeypatch, mock_hmc):
     """The other side of the distinction: still running is found=True (#474)."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
+    mock_hmc.get(f"/rest/api/uom/jobs/{RUNNING_JOB_ID}").mock(
+        return_value=httpx.Response(200, text=RUNNING_JOB_ENTRY)
     )
 
-    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+    result = hmc_wait_for_job(RUNNING_JOB_ID, timeout_seconds=0, poll_interval=1)
 
     assert result.found is True
     assert result.timed_out is True
@@ -1365,13 +1359,13 @@ def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     href_route = mock_hmc.get(_JOB_OP_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+    global_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
-    result = hmc_get_job("job-uuid-999", job_href=_JOB_OP_HREF)
+    result = hmc_get_job(JOB_ID, job_href=_JOB_OP_HREF)
     assert href_route.called
     assert not global_route.called
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert result["Resource"]["JobID"] == JOB_ID
 
 
 @pytest.mark.parametrize("tool", [hmc_get_job, hmc_wait_for_job])
@@ -1405,7 +1399,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     """hmc_wait_for_job(uuid, ..., job_href=...) polls the exact href path."""
     _hmc_env(monkeypatch)
     href_route = mock_hmc.get(_JOB_OP_HREF).mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
@@ -1415,7 +1409,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     )
     assert href_route.called
     assert not global_route.called
-    assert result.status == "COMPLETED"
+    assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
     # A supplied link that resolved is echoed back, which is what makes a null
     # job_href on a found outcome mean "your link was retired" (#474).
@@ -1485,8 +1479,8 @@ def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
     ).mock(
         side_effect=[
-            httpx.Response(200, text="not activated"),
-            httpx.Response(200, text="running"),
+            httpx.Response(200, text='"not activated"'),
+            httpx.Response(200, text='"running"'),
         ]
     )
     mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(

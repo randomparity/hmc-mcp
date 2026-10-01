@@ -117,8 +117,8 @@ a new pattern can be captured instead of guessed. A probe script wraps its calls
 (`HMCClient._request`) and SSH command (`asyncssh.SSHClientConnection.run`) becomes one JSON
 line. The harness refuses a destination git does not ignore (use a name ending in
 `.capture.jsonl` or a path under `hmc-captures/`), writes the file with mode 0600 (tightening an existing file), drops
-session and cookie headers, and replaces logon exchanges and text naming a secret before
-writing. Hostnames, UUIDs and serials are recorded as-is, so a capture is private and is never
+session and cookie headers, redacts the session values an HMC error body echoes, and replaces
+logon exchanges and text naming a secret before writing. Hostnames, UUIDs and serials are recorded as-is, so a capture is private and is never
 pasted into a public issue or committed.
 
 A live run follows [live testing](live-testing.md): preflight first, one arm through its named
