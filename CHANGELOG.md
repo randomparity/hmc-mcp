@@ -256,6 +256,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
+  HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
+  `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
+  minimum-affinity policy, resource-group affinity score and profile `io_slots` reads report a
+  malformed reply in the same form, and the last two read the empty-result reply as no rows
+  (#1203).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error

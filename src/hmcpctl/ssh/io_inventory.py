@@ -10,7 +10,7 @@ from .commands import (
     HMC_NO_RESULTS,
     _parse_lshwres_output,
     build_filter,
-    parse_hmc_delimited_rows,
+    parse_hmc_result_rows,
 )
 from .transport import run_hmc_command
 
@@ -42,7 +42,9 @@ async def list_dedicated_pcie_slot_rows(
     """Read the exact dedicated-slot projection admitted by ADR 0053."""
     fields = ("drc_index", "description", "lpar_name")
     command = f"lshwres -r io --rsubtype slot -m {shlex.quote(system_name)} -F {','.join(fields)} --header"
-    return parse_hmc_delimited_rows(await run_hmc_command(config, command), fields)
+    return parse_hmc_result_rows(
+        await run_hmc_command(config, command), fields, "dedicated PCIe slot inventory"
+    )
 
 
 async def list_fc_ports(

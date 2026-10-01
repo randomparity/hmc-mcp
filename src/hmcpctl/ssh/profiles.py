@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from ..config import HMCConfig
-from .commands import build_attribute_record, build_filter, parse_hmc_delimited_rows
+from .commands import build_attribute_record, build_filter, parse_hmc_result_rows
 from .description_validation import validate_lpar_description
 from .transport import HMCCLIError, run_hmc_command
 
@@ -432,15 +432,14 @@ def profile_io_slot_rows_command(system_name: str) -> str:
 
 
 def parse_profile_io_slot_rows(output: str) -> list[dict[str, str]]:
-    """Parse the admitted readback into one row per profile.
+    """Parse the admitted readback into one row per profile; the empty-result reply is none.
 
     Raises:
         HMCCLIError: If *output* is not the header-bearing three-field table.
     """
-    try:
-        return parse_hmc_delimited_rows(output, PROFILE_IO_SLOT_FIELDS)
-    except ValueError as error:
-        raise HMCCLIError(f"unadmitted profile io_slots readback: {error}") from error
+    return parse_hmc_result_rows(
+        output, PROFILE_IO_SLOT_FIELDS, "profile io_slots readback"
+    )
 
 
 async def read_profile_io_slot_rows(
