@@ -32,12 +32,12 @@ def _lpar_entry(
         desc_xml = f"<Description{attrs}>{description}</Description>"
     return f"""  <entry>
     <id>urn:uuid:{uuid}</id>
-    <title>LogicalPartition:{name}</title>
+    <title>LogicalPartition</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <PartitionName>{name}</PartitionName>
         <PartitionID>1</PartitionID>
-        <PartitionState>Not Activated</PartitionState>{desc_xml}
+        <PartitionState>not activated</PartitionState>{desc_xml}
       </LogicalPartition>
     </content>
   </entry>"""

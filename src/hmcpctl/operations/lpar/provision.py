@@ -204,7 +204,9 @@ async def _check_vlan_exists(hmc, system_uuid: str, port_vlan_id: int) -> None:
 async def _check_vg_exists(hmc, vios_uuid: str, vg_uuid: str) -> None:
     """Raise ValueError if no VolumeGroup with *vg_uuid* exists on *vios_uuid*."""
     vgs = await hmc.list_volume_groups(vios_uuid)
-    found = any(vg.get("UUID") == vg_uuid for vg in vgs)
+    # VolumeGroup ids read lower-case on V10R3; the caller's UUID may not (#1202).
+    wanted = vg_uuid.casefold()
+    found = any(str(vg.get("UUID") or "").casefold() == wanted for vg in vgs)
     if not found:
         raise ValueError(
             f"VolumeGroup {vg_uuid!r} not found on VIOS {vios_uuid!r}. "

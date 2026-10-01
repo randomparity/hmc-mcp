@@ -50,7 +50,7 @@ LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:{LPAR_UUID}</id>
-  <title>LogicalPartition:lpar1</title>
+  <title>LogicalPartition</title>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>lpar1</PartitionName>
@@ -173,7 +173,7 @@ def test_dlpar_proc_error_propagates(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_dlpar_authorization(mock_hmc)
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(500, text="<error>boom</error>")
+        return_value=httpx.Response(500)
     )
     with _unowned_partition(), pytest.raises(HMCError) as exc_info:
         hmc_dlpar_proc(

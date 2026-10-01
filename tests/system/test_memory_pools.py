@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import live_fixture, mock_uuid_resolution
+from conftest import live_fixture, live_process_error, mock_uuid_resolution
 
 from hmcpctl.server_tools.systems.resources import (
     hmc_list_memory_pools,
@@ -94,6 +94,57 @@ def test_list_memory_pools_empty_output(monkeypatch, mock_hmc):
         result = hmc_list_memory_pools(SYSTEM_UUID)
 
     assert result == []
+
+
+def _refusing_ssh_mock(capture: str) -> MagicMock:
+    conn = _make_ssh_mock()
+    conn.run.side_effect = live_process_error(capture)
+    return conn
+
+
+def test_list_memory_pools_reads_ams_unsupported_as_no_pools(monkeypatch, mock_hmc):
+    """A system without Active Memory Sharing refuses with HSCLA4A0: it has no pools.
+
+    Captured on both V11R2 POWER11 systems; a POWER9 answers the sentinel instead.
+    """
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+    conn_mock = _refusing_ssh_mock("cli-mempool-ams-unsupported")
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
+        result = hmc_list_memory_pools(SYSTEM_UUID)
+
+    assert result == []
+
+
+def test_list_memory_pools_raises_other_refusals(monkeypatch, mock_hmc):
+    """Only HSCLA4A0 means no pools; any other refusal still fails the read."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+    conn_mock = _refusing_ssh_mock("cli-lpar-no-m")
+
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="missing a required parameter"),
+    ):
+        hmc_list_memory_pools(SYSTEM_UUID)
+
+
+def test_remove_memory_pool_on_ams_unsupported_system_finds_no_pool(
+    monkeypatch, mock_hmc
+):
+    """With no pool to find, the remove is refused before any chhwres."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+    conn_mock = _refusing_ssh_mock("cli-mempool-ams-unsupported")
+
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="no pool with that name exists"),
+    ):
+        hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
+
+    assert conn_mock.run.call_count == 1
 
 
 # ---------------------------------------------------------------------- #

@@ -21,8 +21,6 @@ _ACTIONABLE_TERMINAL_STATUSES = {
     "CANCELED_WHILE_RUNNING",
     "COMPLETED_WITH_ERROR",
     "COMPLETED_WITH_WARNINGS",
-    "EXCEPTION",
-    "FAILED",
     "FAILED_BEFORE_COMPLETION",
     "FAILED_BEFORE_COMPLETION_RETRY",
     "FAILED_TO_START",
@@ -98,3 +96,12 @@ def test_job_outcome_marks_every_actionable_terminal_status_as_error(status) -> 
 
     assert outcome.timed_out is False
     assert outcome.error == f"Job ended with status {status}"
+
+
+@pytest.mark.parametrize("status", ["EXCEPTION", "FAILED"])
+def test_job_outcome_does_not_treat_undocumented_statuses_as_terminal(status) -> None:
+    """The HMC documents none of these (016-job-status.md:16-27; #1202)."""
+    outcome = job_outcome("job-id", {"Resource": {"Status": status}})
+
+    assert outcome.timed_out is True
+    assert outcome.error is None

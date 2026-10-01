@@ -68,7 +68,6 @@ hmcpctl systems health --json
 hmcpctl lpars list --system <system-uuid>
 hmcpctl lpars show <lpar-uuid>
 hmcpctl vios list
-hmcpctl jobs list -n 5
 ```
 
 Use UUIDs from the inventory output to identify resources. To change an LPAR,

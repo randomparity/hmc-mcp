@@ -574,12 +574,10 @@ def test_systems_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
     assert result == []
 
 
-def test_lpars_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
-    """hmc_list_lpars(state='running') GETs the PartitionState search endpoint."""
+def test_lpars_state_filter_reads_the_partition_feed(monkeypatch, mock_hmc):
+    """hmc_list_lpars(state='running') filters the feed; V10R3 cannot search it (#1202)."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionState==running)"
-    ).mock(
+    route = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
         return_value=httpx.Response(
             200,
             text=_feed(
@@ -597,11 +595,19 @@ def test_lpars_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
 
 
 def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
-    """hmc_list_lpars(state='not activated') returns [] when the search matches nothing."""
+    """hmc_list_lpars(state='not activated') returns [] when no partition matches."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionState==not activated)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200,
+            text=_feed(
+                LPAR_UUID,
+                "LogicalPartition",
+                PartitionName="aix1",
+                PartitionState="running",
+            ),
+        )
+    )
     result = hmc_list_lpars(state="not activated")
     assert result == []
 

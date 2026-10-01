@@ -6,15 +6,15 @@ This reference covers every tool the server registers, including the ones a defa
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
-- **157** tools are registered.
-- **156** are exposed by a default deployment.
+- **156** tools are registered.
+- **155** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
 | `destructive` | 31 |
 | `mutate` | 51 |
-| `read` | 74 |
+| `read` | 73 |
 
 ## Maturity vocabulary
 
@@ -37,7 +37,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `console` | 2 | [console.md](console.md) |
 | `health` | 1 | [health.md](health.md) |
 | `io_slot` | 1 | [io_slot.md](io_slot.md) |
-| `job` | 3 | [job.md](job.md) |
+| `job` | 2 | [job.md](job.md) |
 | `lpar` | 34 | [lpar.md](lpar.md) |
 | `lpar_profile` | 3 | [lpar_profile.md](lpar_profile.md) |
 | `media` | 10 | [media.md](media.md) |
@@ -150,7 +150,6 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_list_optical_mappings` | `read` | [media.md](media.md) |
 | `hmc_list_optical_media` | `read` | [media.md](media.md) |
 | `hmc_list_partition_templates` | `read` | [template.md](template.md) |
-| `hmc_list_recent_jobs` | `read` | [job.md](job.md) |
 | `hmc_list_resource_group_memopt_scores` | `read` | [resource_group.md](resource_group.md) |
 | `hmc_list_resource_roles` | `read` | [resource_role.md](resource_role.md) |
 | `hmc_list_resources` | `read` | [console.md](console.md) |

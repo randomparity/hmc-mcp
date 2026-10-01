@@ -68,7 +68,7 @@ async def test_list_and_delete_adapter_delegate_to_child_resources():
                 "slot_number": 4,
                 "virtual_switch_id": 0,
                 "tagged": True,
-                "mac_address": "02:00:00:00:00:01",
+                "mac_address": "020000000001",
             },
             "ClientNetworkAdapter",
             "ClientNetworkAdapter",

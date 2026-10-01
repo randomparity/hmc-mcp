@@ -9,7 +9,7 @@
   "support": "unknown",
   "admitted_claims": [
     "system + adapter_id + phys_port_id selectors",
-    "physical-port selector grammar uses --level eth",
+    "physical-port reads select --level roce or ethc, never eth (ADR 0113)",
     "read fields remain unknown"
   ]
 }

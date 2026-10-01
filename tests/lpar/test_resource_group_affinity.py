@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import live_fixture
+from conftest import live_fixture, live_process_error
 from fastmcp import Client
 from typer.testing import CliRunner
 
@@ -145,6 +145,64 @@ def test_unadmitted_hmc_returns_capability_without_score_query(version):
     assert result.items == []
     assert "HMC V11R1M1110 or later" in result.unavailable_reason
     runner.assert_awaited_once_with(_config(), "lshmc -V")
+
+
+def _captured_connection(*answers: str | BaseException) -> AsyncMock:
+    connection = AsyncMock()
+    connection.run = AsyncMock(
+        side_effect=[
+            answer if isinstance(answer, BaseException) else MagicMock(stdout=answer)
+            for answer in answers
+        ]
+    )
+    connection.__aenter__ = AsyncMock(return_value=connection)
+    connection.__aexit__ = AsyncMock(return_value=False)
+    return connection
+
+
+def test_captured_v11r2_power11_current_scores():
+    """V11R2 on POWER11: lshmc -V passes the gate and the group scores parse."""
+    capture = live_fixture("cli-memopt-resgroup-current")
+    connection = _captured_connection(
+        live_fixture("cli-lshmc-version-v11r2")["stdout"], capture["stdout"]
+    )
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=connection):
+        result = asyncio.run(
+            query_resource_group_memopt_scores(
+                _config(),
+                "sys-2",
+                MemoptResourceGroupSelector(all=True),
+                calculated=False,
+            )
+        )
+    assert connection.run.await_args_list[1].args[0] == capture["command"]
+    assert result.unavailable_reason is None
+    assert result.items == [
+        {
+            "resource_group_name": "label-1",
+            "resource_group_id": "0",
+            "curr_score": "100",
+        }
+    ]
+
+
+def test_captured_hsclca00_returns_managed_system_capability_result():
+    """V11R2 on POWER9 refuses with HSCLCA00 on stdout, stderr empty."""
+    connection = _captured_connection(
+        live_fixture("cli-lshmc-version-v11r2")["stdout"],
+        live_process_error("cli-memopt-resgroup-unsupported"),
+    )
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=connection):
+        result = asyncio.run(
+            query_resource_group_memopt_scores(
+                _config(),
+                "sys-2",
+                MemoptResourceGroupSelector(all=True),
+                calculated=False,
+            )
+        )
+    assert result.items == []
+    assert "multiple resource groups" in result.unavailable_reason
 
 
 def test_hsclca00_returns_managed_system_capability_result():

@@ -228,6 +228,25 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_list_io_slots` with a `pci_class` other than `all` filters the slot listing in
+  hmcpctl instead of piping it through `grep` on the HMC, so a class with no slots returns
+  `[]`; `grep` exits 1 when nothing matches, which failed the whole call (#1202).
+- `hmc_list_sea_adapters` returns `[]` when the HMC prints its empty-result line,
+  `No results were found.`, instead of one row whose `lpar_name` is that sentence.
+  `hmc_list_fc_ports` returns `[]` for that line too, and reads the default `lshwres`
+  output as the `name=value` rows the HMC prints rather than as a CSV with a header row,
+  which it never has (#1202).
+- `hmc_list_sriov_adapters` and `pcie.list_sriov_adapters` report a dedicated-mode adapter's
+  `adapter_id` as `null` rather than the string `"null"` the HMC prints for it, and
+  `hmc_set_sriov_adapter_mode` refuses an `adapter_id` that is not a positive decimal before
+  any HMC command; given `"null"` it used to answer that the dedicated adapter was "already in
+  dedicated mode". Its docstring now names `hmc_list_sriov_adapters` as the source of
+  `adapter_id`; it named `hmc_list_io_slots`, whose DRC indexes never match (#1202).
+- The `hmc_list_resources` docstring no longer offers VirtualSwitch, VirtualNetwork,
+  SharedMemoryPool, SharedProcessorPool, HostEthernetAdapter, LogicalPartitionProfile or
+  SRIOVAdapter as listable: the tool reads `/rest/api/uom/{type}`, those types exist only
+  under a parent, and a V10R3 HMC answers a root `SRIOVAdapter` read with HTTP 400
+  `INVALID_URL` (#1202).
 
 - The PCM metric tools explain an HTTP 404 on a metric feed. The captured V11R2 HMC answers
   both `ProcessedMetrics` and `AggregatedMetrics` with 404 while every collection
@@ -285,6 +304,34 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   first `=`; V11R2 also quotes a comma-bearing list element inside such a pair. A dedicated
   profile, which has no `*_proc_units`, now projects its processor counts instead of failing
   (#1202).
+- `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
+  fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
+  which every captured HMC (V10R3 and V11R2) answers with `500 Unable to parse expression`
+  for `not activated`; they now read the partition feed and filter it (#1202).
+- `hmc_provision_lpar` no longer reports an existing volume group as missing when its UUID
+  is given in upper case. A V10R3 HMC reads VolumeGroup ids in lower case, and the check
+  compared them case-sensitively (#1202).
+- Job polling no longer treats `EXCEPTION` or `FAILED` as terminal statuses, and no longer
+  reads a `ResponseException` element. Neither appears in the HMC's job-status reference
+  (`CANCELED_*`, `COMPLETED_OK`, `COMPLETED_WITH_*`, `FAILED_*`, `NOT_STARTED`, `RUNNING`) or
+  in any capture; a failed job's text comes from its `Results`. Bare `COMPLETED` stays a
+  success status because two console job pages document it. `hmc_wait_for_job`,
+  `hmcpctl jobs wait` and `hmc_migrate_lpar` now name the documented statuses (#1202).
+- A job read the HMC refuses with `400 REST000B`/`REST000E` now reports the HMC's own message
+  ("Unrecognized root REST type of jobs") with the response body attached. It used to replace
+  it with a guess that the endpoint needed a licence or PTF level (#1202).
+- The SSH LPAR UUID lookup with no system given skips a system whose partition listing fails,
+  such as one in No Connection state, and keeps searching. It used to abort on the first
+  failing system; when nothing matches, the error now names each system it could not search
+  (#1202).
+- `hmc_list_memory_pools` returns an empty list for a system without Active Memory Sharing.
+  On HMC V11R2 with POWER11 systems, `lshwres -r mempool` exits 1 with `HSCLA4A0`, so the
+  tool failed instead of reporting that the system has no pools; `hmc_remove_memory_pool`
+  now refuses there with "no pool with that name exists" (#1202).
+- `hmc_add_network_adapter`, `hmcpctl adapters add-network --mac` and
+  `build_client_network_adapter_document` now refuse a `mac_address` that is not 12
+  hexadecimal digits with no separators, the form chhwres documents and the HMC prints;
+  a colon-separated MAC was previously sent to the HMC unchanged (#1202).
 - The SSH fallback that resolves an LPAR UUID with no system given now lists the managed
   systems and runs `lssyscfg -r lpar -m <system> -F uuid,name` for each one. It used to run
   `lssyscfg -r lpar` without `-m`, which the HMC refuses with exit 1, so a UUID-only selector
@@ -881,6 +928,28 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Output-schema change:** `hmc_fleet_health`, `fetch_fleet_health` and `hmcpctl systems
+  health` no longer return `failed_jobs`, and no longer read `GET /rest/api/uom/Job`. That
+  feed is not in the HMC REST reference, and every captured HMC (V10R3 and V11R2) refused it
+  with `400 REST000E`, so the field was always empty alongside an "unavailable" warning. The
+  envelope is now `systems`, `vios`, `lpars` and `warnings`; ADR 0019 carries the amendment
+  (#1202).
+- **Interface change:** the `state` values `hmc_list_lpars`, `hmc_list_vios`,
+  `hmcpctl lpars list --state` and `hmcpctl vios list --state` accept are now the HMC
+  schema's `LogicalPartitionState.Enum` (identical on V10R3 and V11R2). `stopping`,
+  `migrating` and lower-case `unknown`, which no HMC reports, are rejected; `not available`,
+  `migrating not active`, `migrating running`, `hardware discovery`, `suspending` and
+  `Unknown` are accepted (#1202).
+- **Interface change:** `job_href` on `hmc_get_job`, `hmc_wait_for_job`, `get_job`,
+  `wait_for_job` and `hmcpctl jobs show|wait --job-href` must be a
+  `/rest/api/uom/jobs/{JobID}` link (a read-side `jobs/{JobID}/{uuid}` link is still reduced
+  to it). The per-operation `.../do/{Operation}/Job/{id}` form accepted for #95, the
+  `/rest/api/uom/Job/{id}` form and relative `jobs/{id}` paths are refused: no HMC capture or
+  reference shows them, and the reference documents only `rest/api/uom/jobs/{job_id}` (#1202).
+- The `HMC_TIMEOUT` default (TOML `timeout`) is now 180 seconds, raised from 60. A read-only
+  sweep found that a `GET /rest/api/uom/ManagedSystem` feed read on a large V11R2 HMC took longer
+  than 60 seconds, and neither IBM's documentation nor hmcpctl sets an upper bound on how long
+  such a read may take. `HMC_UPLOAD_TIMEOUT` (600 seconds) still exceeds it (#1202).
 - A `targets` table can now grant `hmc_attach_disk_to_lpar`: its LPAR, managed-system and
   `vios_uuid` selectors bound everything it touches, so a grant naming all three reaches it and
   one that omits any of them, or a call that omits `system_name_or_uuid`, is denied.
@@ -1386,6 +1455,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Removed
 
+- `hmc_list_recent_jobs` and `hmcpctl jobs list`. Both read `GET /rest/api/uom/Job`, which
+  the HMC REST reference does not document (it documents only `GET`/`DELETE
+  /rest/api/uom/jobs/{job_id}`), and which every captured HMC refused with
+  `400 REST000B/REST000E "Unrecognized root REST type of Job"` (one V10R3 and three V11R2
+  HMCs). Poll a submitted job with `hmc_get_job` or `hmc_wait_for_job` and the JobID the
+  submitting tool returned (#1202).
 - The inputs that only fed the removed `vscsi` step (#1030): `vios_partition_id` and
   `vios_slot` on `hmc_attach_disk_to_lpar` and `attach_disk_to_lpar`, `--vios-id` and
   `--vios-slot` on `storage attach-disk`, `ProvisionAdapters.vios_partition_id` and

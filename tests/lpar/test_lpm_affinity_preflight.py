@@ -267,7 +267,7 @@ async def test_warning_proceeds_to_canonical_validation() -> None:
     ]
     hmc.lpar_migrate_validate.return_value = {"UUID": "validate-1"}
     hmc.wait_for_job_entry.return_value = {
-        "Resource": {"JobID": "validate-1", "Status": "COMPLETED"}
+        "Resource": {"JobID": "validate-1", "Status": "COMPLETED_OK"}
     }
     hmc.lpar_migrate.return_value = {"UUID": "migrate-1"}
 

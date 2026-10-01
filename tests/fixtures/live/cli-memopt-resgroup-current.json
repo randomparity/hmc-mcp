@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p11-9824/capture.jsonl#329",
+  "command": "lsmemopt -m sys-2 -r resgroup -o currscore --gid all -F resource_group_name,resource_group_id,curr_score --header",
+  "exit_status": 0,
+  "stdout": "resource_group_name,resource_group_id,curr_score\nlabel-1,0,100\n",
+  "stderr": ""
+}

@@ -14,9 +14,6 @@ from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.operations.lpar import core as lpar_core
 from hmcpctl.server import TOOL_SECURITY, create_mcp
-from hmcpctl.server_tools import (
-    jobs as server_jobs,
-)
 from hmcpctl.server_tools.storage import resources as server_storage
 from hmcpctl.server_tools.systems import core as server_systems
 from hmcpctl.server_tools.virtualization import adapters as server_adapters
@@ -95,7 +92,6 @@ COLLECTION_TOOLS = {
         (),
         ["profile", "limit"],
     ),
-    "hmc_list_recent_jobs": (server_jobs, (), ["limit", "profile"]),
 }
 
 
@@ -137,7 +133,7 @@ def test_collection_tool_signatures_and_limit_schema(tool_name, entry):
     parameters = inspect.signature(function).parameters
     assert list(parameters) == expected_parameters
 
-    expected_default = 20 if tool_name == "hmc_list_recent_jobs" else None
+    expected_default = None
     assert parameters["limit"].default == expected_default
 
     tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
@@ -189,12 +185,6 @@ def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, moc
                 return_value=httpx.Response(200, text=EMPTY_FEED)
             ),
             lambda: server_systems.hmc_list_systems(state="operating", limit=1),
-        ),
-        (
-            mock_hmc.get("/rest/api/uom/Job").mock(
-                return_value=httpx.Response(200, text=EMPTY_FEED)
-            ),
-            lambda: server_jobs.hmc_list_recent_jobs(limit=1),
         ),
     ]
 

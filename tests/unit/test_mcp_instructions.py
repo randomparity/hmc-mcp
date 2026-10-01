@@ -21,7 +21,6 @@ _RECOMMENDED = (
     "hmc_capacity_report",
     "hmc_fleet_health",
     "hmc_find_placement",
-    "hmc_list_recent_jobs",
     "hmc_provision_lpar",
     "hmc_create_lpar",
 )

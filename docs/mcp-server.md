@@ -342,12 +342,10 @@ exclude it.
 
 `hmc_fleet_health` and `systems health` return only exceptions across the whole
 estate: non-operating systems, non-running VIOS partitions, LPARs with inactive
-RMC, and recent failed jobs. This is not equivalent to composing N
+RMC. This is not equivalent to composing N
 `hmc_system_summary` calls or using `hmc_capacity_report`, which report per-system
-inventory and capacity rather than individual unhealthy resources. On HMCs that
-do not support global Job listing, the stable response keeps `failed_jobs` empty
-and includes a warning that recent-job health is unavailable; that warning must
-not be interpreted as a healthy job feed.
+inventory and capacity rather than individual unhealthy resources. Job health is not
+part of it: no captured HMC serves the global Job feed it would need (#1202).
 
 ### Authorization audit records
 
