@@ -288,6 +288,13 @@ Four rules explain why:
   still matched on whichever system has one — list partition **UUIDs** there,
   which are unique across the fleet.
 
+**Granting power-off without the crash.** `hmc_power_off_lpar` cannot crash a partition;
+the PowerOff `dumprestart` crash and platform dump is its own tool, `hmc_dump_restart_lpar`
+([ADR 0185](adr/0185-dump-restart-is-its-own-operation.md)). A grant that names only
+`hmc_power_off_lpar`, like the example above, withholds the crash. Name
+`hmc_dump_restart_lpar` beside it to allow the crash. `effects = ["destructive"]` admits
+both, which is one more reason to name tools.
+
 ### Startup warnings
 
 `serve` writes these to stderr, never stdout, which carries JSON-RPC on stdio — with

@@ -24,8 +24,9 @@ Only the six names in `hmcpctl.api` are stable, and ADR 0118 keeps these operati
 that facade; see [Python library](python-api.md#domain-operations). Pin a commit, and expect
 signatures to move before a release promises them.
 
-The same operations are MCP tools: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmc_get_lpar`,
-`hmc_get_lpar_state`, `hmc_capture_lpar_console`, and `hmc_list_lpar_ownership`.
+The same operations are MCP tools: `hmc_power_on_lpar`, `hmc_power_off_lpar`,
+`hmc_dump_restart_lpar`, `hmc_get_lpar`, `hmc_get_lpar_state`, `hmc_capture_lpar_console`, and
+`hmc_list_lpar_ownership`.
 
 ## PowerAction in job terms
 
@@ -47,6 +48,8 @@ mapping comes from epic #871 and issue #872):
   active RMC connection to it.
 - `operation=dumprestart` crashes the partition and takes a platform dump. It is refused with
   a `ValueError` unless `allow_dump_restart=True`; nothing else asks for confirmation.
+- Over MCP the force crash is `hmc_dump_restart_lpar`, not `hmc_power_off_lpar`, so an access
+  policy grants it separately ([ADR 0185](adr/0185-dump-restart-is-its-own-operation.md)).
 - The vendor's fourth value, `dumpretry`, is not accepted.
 - `on` submits a job only from the 'not activated' state, unless `force=True`. An activated
   partition ('running', 'starting', 'open firmware') submits no job and reports

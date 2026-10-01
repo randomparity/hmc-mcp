@@ -10,6 +10,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_dump_restart_lpar` (operation `lpar.dump_restart`) crashes a partition and takes a
+  platform dump: the PowerOff job with `operation=dumprestart`. It still refuses unless
+  `allow_dump_restart=true`. It is a separate tool so an access policy can grant the ordinary
+  stop without the crash (#896, ADR 0185).
 - `hmcpctl report utilization --csv PATH` surveys every configured profile read-only and writes
   per-system, per-HMC and fleet CPU and memory allocation, idle reserved capacity, and failed
   profiles (#1252, ADR 0184).
@@ -993,6 +997,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Access-policy contract:** a grant naming `hmc_power_off_lpar` no longer reaches the
+  `dumprestart` crash; add `hmc_dump_restart_lpar` to the grant to keep it. An
+  `effects = ["destructive"]` grant admits both. `hmc_power_off_lpar` now admits `operation`
+  `shutdown` or `osshutdown` only and no longer accepts `allow_dump_restart`; an MCP call that
+  still passes it, even as `false`, is refused, so drop the argument. The CLI and `power_lpar`
+  are unchanged (#896, ADR 0185).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc
