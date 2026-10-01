@@ -79,9 +79,14 @@ async def create_vios(
     name: str,
     resources: LparResources,
 ) -> dict[str, Any] | None:
-    """Create a VIOS partition on a managed system."""
+    """Create a VIOS partition on a managed system and return its entry.
+
+    The VIOS goes to the system's ``VirtualIOServer`` collection as a
+    VirtualIOServer document; V10R3 refuses one sent as a LogicalPartition
+    (#1214).
+    """
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    return await hmc.create_logical_partition(
+    return await hmc.create_vios(
         system_uuid, build_vios_document(name=name, resources=resources)
     )
 

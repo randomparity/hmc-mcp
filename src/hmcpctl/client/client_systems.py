@@ -334,6 +334,27 @@ class SystemsMixin:
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         return await self.get_uom("VirtualIOServer", vios_uuid)
 
+    async def create_vios(
+        self: SystemsClient, system_uuid: str, vios_xml: str
+    ) -> dict[str, Any] | None:
+        """Create a VIOS on a managed system and return its entry.
+
+        PUTs a VirtualIOServer document (see documents.build_vios_document) to
+        the system's ``VirtualIOServer`` collection: V10R3 answers a VIOS PUT to
+        ``LogicalPartition`` with 500 REST0140 (#1214). Omits the
+        X-HMC-Schema-Version header; the write headers follow ADR 0178.
+        """
+        _reject_non_uuid_path_argument("system_uuid", system_uuid)
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
+        xml = await self._put(
+            path,
+            vios_xml,
+            resource_type="VirtualIOServer",
+            include_schema_version=False,
+        )
+        entries = _parse_feed(xml, path) if xml else []
+        return entries[0] if entries else None
+
     async def delete_vios(self: SystemsClient, vios_uuid: str) -> None:
         """Delete a VIOS partition. It must be powered off first."""
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
