@@ -333,9 +333,9 @@ def test_tool_log_is_private(tmp_path: Path) -> None:
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
-def test_tool_log_refuses_a_committable_destination() -> None:
+def test_tool_log_refuses_a_destination_in_a_work_tree() -> None:
     inside = Path(__file__).parents[2] / "tools-not-ignored.json"
-    with pytest.raises(ValueError, match="not git-ignored"):
+    with pytest.raises(ValueError, match="inside a git work tree"):
         sweep.ToolLog(inside)
     assert not inside.exists()
 

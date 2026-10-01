@@ -5,12 +5,14 @@
 
 Calls every MCP tool whose ``readOnlyHint`` is true, then a declared list of raw
 REST GETs and ``ls*`` commands no tool issues, recording everything through
-``scripts/live_test/capture.py``. A guard below the harness refuses, before
+``scripts/live_test/capture.py`` in raw mode (answers unredacted; logons, requests
+and session values still redacted). A guard below the harness refuses, before
 transport, any REST call that is not a GET (logon and logoff excepted) and any CLI
 command that is not ``ls*``; the harness records the refusal.
 
 Writes ``sweep.capture.jsonl`` (REST and SSH records) and ``tools.capture.jsonl``
-(one record per tool call or skip) into ``--out``, created ``0700``. The output is
+(one record per tool call or skip) into ``--out``, created ``0700``, which must lie
+outside every git work tree. The output is
 raw and private: tokenize it with ``scripts/live_capture_export.py`` and never
 commit or paste it. Procedure: docs/live-testing.md, "Capturing an HMC's vocabulary".
 """
@@ -35,7 +37,7 @@ from urllib.parse import quote, urlsplit
 import asyncssh
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from live_test.capture import capture, destination_is_ignored
+from live_test.capture import capture, inside_work_tree
 
 from hmcpctl.client.core import HMCClient
 
@@ -297,12 +299,13 @@ def discover(context: Context, tool: str, data: Any) -> None:
 
 
 class ToolLog:
-    """Appends tool records to a private, git-ignored JSONL file."""
+    """Appends unredacted tool records to a private file outside every repository."""
 
     def __init__(self, path: Path) -> None:
-        if not destination_is_ignored(path):
+        if inside_work_tree(path):
             raise ValueError(
-                f"tool log {path} is not git-ignored; write outside the repository"
+                f"tool log {path} is inside a git work tree; write the sweep to a "
+                "private directory outside every repository"
             )
         self._fd = os.open(
             path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600
@@ -455,6 +458,11 @@ RAW_GETS: tuple[tuple[str, str, str], ...] = (
         "/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping&group=ViosFCMapping",
         f"{UOM}; type=VirtualIOServer",
     ),
+    (
+        "vios-groups-comma",
+        "/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping,ViosFCMapping",
+        f"{UOM}; type=VirtualIOServer",
+    ),
     ("sriov-root", "/rest/api/uom/SRIOVAdapter", f"{UOM}; type=SRIOVAdapter"),
     ("cluster", "/rest/api/uom/Cluster", f"{UOM}; type=Cluster"),
     ("ssp", "/rest/api/uom/SharedStoragePool", f"{UOM}; type=SharedStoragePool"),
@@ -584,7 +592,10 @@ async def sweep(out: Path, context: Context) -> str:
     directory = prepare_output(out)
     log = ToolLog(directory / "tools.capture.jsonl")
     try:
-        with read_only_guard(), capture(directory / "sweep.capture.jsonl") as cap:
+        with (
+            read_only_guard(),
+            capture(directory / "sweep.capture.jsonl", raw=True) as cap,
+        ):
             async with served_client() as client:
                 calls, skips = await sweep_tools(client, context, log, cap.step)
             async with client_from_env() as hmc:
