@@ -99,7 +99,9 @@ Three subcommands, all offline:
 ### Committed data — `tests/fixtures/live/vocabulary/`
 
 - one `<release>-<family>[-<model>].json` per HMC release and system (`v10r3-p9`,
-  `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a`, `v11r2-p11-9242-21b`), naming its
+  `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a`, `v11r2-p11-9242-21b`, and,
+  from the first tracked run, `v10r3-p8-8247-22l`, `v11r2-p10-9080-hex`,
+  `v11r2-p10-9043-mrx`), naming its
   `sources`: `rest.endpoints` (method, path
   template, `Accept`, status, response content type); `rest.values` (per XML element
   local name, sorted observed literals or shape classes `<int>`, `<float>`, `<empty>`,
