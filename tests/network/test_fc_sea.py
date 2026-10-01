@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from conftest import mock_uuid_resolution
+from conftest import live_fixture, mock_uuid_resolution
 
 from hmcpctl.server_tools.virtualization.vnic import (
     hmc_list_fc_ports,
@@ -16,13 +16,17 @@ SYSTEM_NAME = "Server-9009-42A-SN12345"
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "my-lpar"
 
-FC_CSV_OUTPUT = (
-    "lpar_name,slot_num,wwpns,remote_lpar_id,remote_slot_num\n"
-    "my-lpar,2,C050760E2B4C0001,0,0\n"
-    "other-lpar,3,C050760E2B4C0002,0,0\n"
-)
-
-SEA_LINE_OUTPUT = "my-lpar,1000,ETHERNET0,Open,1\nother-lpar,2000,ETHERNET0,Open,1\n"
+# Without -F, lshwres prints each row as name=value pairs and quotes a list
+# value (`"wwpns=..."`); V11R2 on a POWER9 with client and server vfc adapters.
+# hmcpctl once read this as a header CSV and returned a `wwpns=...` key (#1202).
+FC_CAPTURE = live_fixture("cli-vio-fc-default-v11r2")
+FC_DEFAULT_OUTPUT = FC_CAPTURE["stdout"]
+# A system with no virtual Fibre Channel adapters, and an LPAR with no virtual
+# Ethernet adapters: the read exits 0 and prints the empty-result line.
+FC_EMPTY = live_fixture("cli-vio-fc-default")
+SEA_EMPTY = live_fixture("cli-vio-eth-empty")
+SEA_CAPTURE = live_fixture("cli-vio-eth-sea")
+SEA_LINE_OUTPUT = SEA_CAPTURE["stdout"]
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -47,28 +51,37 @@ def _hmc_env(monkeypatch):
 
 
 def test_list_fc_ports_returns_list(monkeypatch, mock_hmc):
-    """hmc_list_fc_ports returns a list of dicts parsed from lshwres CSV output."""
+    """hmc_list_fc_ports returns one dict per default-format lshwres row."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock(FC_CSV_OUTPUT)
+    conn_mock = _make_ssh_mock(FC_DEFAULT_OUTPUT)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID)
 
-    assert isinstance(result, list)
-    assert len(result) == 2
-    assert result[0]["lpar_name"] == "my-lpar"
-    assert result[0]["wwpns"] == "C050760E2B4C0001"
+    assert len(result) == len(FC_DEFAULT_OUTPUT.splitlines())
+    client, server = result[0], result[2]
+    assert client == {
+        "lpar_name": "lpar-3",
+        "lpar_id": "1",
+        "slot_num": "301",
+        "adapter_type": "client",
+        "state": "1",
+        "is_required": "0",
+        "remote_lpar_id": "100",
+        "remote_lpar_name": "lpar-4",
+        "remote_slot_num": "301",
+        "wwpns": "c050760000000000",
+    }
+    assert server["adapter_type"] == "server" and "wwpns" not in server
+    assert all(isinstance(value, str) for row in result for value in row.values())
 
 
 def test_list_fc_ports_filter_by_lpar(monkeypatch, mock_hmc):
     """hmc_list_fc_ports appends --filter lpar_names= when lpar_uuid is given."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock(
-        "lpar_name,slot_num,wwpns,remote_lpar_id,remote_slot_num\n"
-        "my-lpar,2,C050760E2B4C0001,0,0\n"
-    )
+    conn_mock = _make_ssh_mock(FC_DEFAULT_OUTPUT.splitlines(keepends=True)[0])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
@@ -79,10 +92,10 @@ def test_list_fc_ports_filter_by_lpar(monkeypatch, mock_hmc):
 
 
 def test_list_fc_ports_empty_output(monkeypatch, mock_hmc):
-    """hmc_list_fc_ports returns [] when the HMC returns no output."""
+    """hmc_list_fc_ports returns [] for the HMC's empty-result line."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock("")
+    conn_mock = _make_ssh_mock(FC_EMPTY["stdout"])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_fc_ports(SYSTEM_UUID)
@@ -94,7 +107,7 @@ def test_list_fc_ports_correct_command(monkeypatch, mock_hmc):
     """hmc_list_fc_ports issues the right lshwres subcommand."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock(FC_CSV_OUTPUT)
+    conn_mock = _make_ssh_mock(FC_DEFAULT_OUTPUT)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         hmc_list_fc_ports(SYSTEM_UUID)
@@ -121,18 +134,21 @@ def test_list_sea_adapters_returns_list(monkeypatch, mock_hmc):
 
     assert isinstance(result, list)
     assert len(result) == 2
-    assert result[0]["lpar_name"] == "my-lpar"
-    assert result[0]["port_vlan_id"] == "1000"
-    assert result[0]["vswitch"] == "ETHERNET0"
-    assert result[0]["state"] == "Open"
-    assert result[0]["trunk_priority"] == "1"
+    assert result[0] == {
+        "lpar_name": "sys-R1-vios1",
+        "port_vlan_id": "1",
+        "vswitch": "ETHERNET0",
+        "state": "1",
+        "trunk_priority": "1",
+    }
+    assert result[1]["port_vlan_id"] == "2"
 
 
 def test_list_sea_adapters_filter_by_lpar(monkeypatch, mock_hmc):
     """hmc_list_sea_adapters appends --filter lpar_names= when lpar_uuid is given."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock("my-lpar,1000,ETHERNET0,Open,1\n")
+    conn_mock = _make_ssh_mock(SEA_LINE_OUTPUT.splitlines(keepends=True)[0])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_sea_adapters(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
@@ -143,13 +159,13 @@ def test_list_sea_adapters_filter_by_lpar(monkeypatch, mock_hmc):
 
 
 def test_list_sea_adapters_empty_output(monkeypatch, mock_hmc):
-    """hmc_list_sea_adapters returns [] when the HMC returns no output."""
+    """hmc_list_sea_adapters returns [] for the HMC's empty-result line."""
     _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock("")
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock(SEA_EMPTY["stdout"])
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_sea_adapters(SYSTEM_UUID)
+        result = hmc_list_sea_adapters(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
 
     assert result == []
 

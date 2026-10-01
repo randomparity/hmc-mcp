@@ -40,6 +40,8 @@ def hmc_list_memory_pools(
 ) -> list[dict[str, Any]]:
     """List shared memory pools and their assigned LPARs.
 
+    A system without Active Memory Sharing, or with no pool, returns an empty list.
+
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
