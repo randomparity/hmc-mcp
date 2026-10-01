@@ -4752,6 +4752,61 @@ def test_boot_order_commands_delegate_to_operations(
     assert seen == expected
 
 
+BOOT_PATH = "/vdevice/v-scsi@30000003/disk@8100000000000000"
+
+
+def _stub_set_boot_order(monkeypatch, document):
+    async def fake_operation(hmc, **_kwargs):
+        return document
+
+    monkeypatch.setattr(
+        "hmcpctl.cli_commands.lpar.profiles.set_lpar_boot_order", fake_operation
+    )
+
+
+def test_set_boot_order_prints_confirmation_and_read_back_only(fake_hmc, monkeypatch):
+    document = {
+        "Resource": {
+            "PartitionName": "lpar-sentinel",
+            "BootListInformation": {"PendingBootString": {"text": BOOT_PATH}},
+        }
+    }
+    _stub_set_boot_order(monkeypatch, document)
+
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, BOOT_PATH]
+    )
+
+    assert result.exit_code == 0
+    assert f"Boot order set to: {BOOT_PATH}" in result.stdout
+    assert f"Pending boot string: {BOOT_PATH}" in result.stdout
+    assert "lpar-sentinel" not in result.stdout
+
+
+def test_set_boot_order_read_back_marks_missing_pending_string(fake_hmc, monkeypatch):
+    _stub_set_boot_order(monkeypatch, None)
+
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, BOOT_PATH]
+    )
+
+    assert result.exit_code == 0
+    assert "Pending boot string: -" in result.stdout
+
+
+def test_set_boot_order_json_prints_full_document(fake_hmc, monkeypatch):
+    document = {"Resource": {"PartitionName": "lpar-sentinel"}}
+    _stub_set_boot_order(monkeypatch, document)
+
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "set-boot-order", "sys1", LPAR_UUID, BOOT_PATH, "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert "lpar-sentinel" in result.stdout
+    assert "Pending boot string" not in result.stdout
+
+
 @pytest.mark.parametrize("devices", [["tape"], ["network,cd"], ["/ok", "disk"]])
 def test_set_boot_order_rejects_invalid_device_before_operation(monkeypatch, devices):
     called = False
