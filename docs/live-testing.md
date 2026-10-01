@@ -250,8 +250,9 @@ nothing: a guard refuses any REST method but `GET` (logon and logoff excepted)
 and any command not starting with `ls` before it is sent.
 
 The output is raw HMC data: hostnames, serial numbers, location codes, account
-names. Write it to a private directory **outside the repository**, and never
-commit or paste it.
+names, and answers that name a secret keyword, which the default capture would
+have blanked. Write it to a private directory **outside every repository** (the
+sweep refuses one inside a git work tree), and never commit or paste it.
 
 1. Sweep one HMC profile. `--system`, `--lpar` and `--vios` are optional; without
    them the sweep picks the first operating system, a running partition on it and
@@ -278,20 +279,24 @@ commit or paste it.
 
    The corpus is still private: it keeps every response body.
 
-3. Derive the committed files, named for the HMC release and the system family
-   (`v10r3-p9`, `v11r2-p10`). `enums` needs the corpus to hold the
-   `Enumerations.xsd` read the sweep makes.
+3. Derive the committed files, one vocabulary and one enum list per HMC release
+   and system, named for both (`v11r2-p11-9824-42a`). `enums` needs the corpus to
+   hold the `Enumerations.xsd` read the sweep makes.
 
    ```sh
    C=~/hmc-live-evidence/<date>-<profile>/corpus.json
    V=tests/fixtures/live/vocabulary
+   P=v11r2-p11-9824-42a
    uv run --no-sync python scripts/live_capture_export.py enums "$C" \
-     --firmware V11R2 --out "$V/enums-v11r2.json"
+     --firmware V11R2 --out "$V/enums-$P.json"
    uv run --no-sync python scripts/live_capture_export.py vocabulary "$C" \
-     --enums "$V/enums-v11r2.json" --firmware v11r2-p10 \
+     --enums "$V/enums-$P.json" --firmware "$P" \
      --source '<date> read-only sweep: HMC <release> managing a <family> <model>' \
-     --out "$V/v11r2-p10.json" --private '<lab-pattern>'
+     --out "$V/$P.json" --private '<lab-pattern>'
    ```
+
+   `--fold <derived.json> --fold-source '<where it came from>'` adds the REST values
+   and endpoints of a vocabulary derived earlier from the same pair.
 
    Read the vocabulary diff before committing it: name-bearing elements and fields
    keep only their shape (`<text>`, `<int>`, `<uuid-upper>`), so a literal that

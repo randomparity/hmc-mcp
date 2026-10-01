@@ -16,8 +16,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   REST method (logon and logoff excepted) or CLI command before it is sent.
   `scripts/live_capture_export.py` tokenizes the private output, failing closed when a name,
   host, address, serial, location code, session or SSH key survives, and derives the
-  committed vocabularies under `tests/fixtures/live/vocabulary/`; the first is V10R3 with
-  POWER9 from the 2026-09-30 sweep, with the HMC's schema enum lists. `just live-vocabulary`
+  committed vocabularies under `tests/fixtures/live/vocabulary/`: one vocabulary and one
+  schema enum list per HMC release and system, from the 2026-09-30 sweeps of V10R3 with
+  POWER9 and V11R2 with POWER9 and two POWER11 systems. `scripts/live_test/capture.py`
+  gains a raw mode for the sweep, which keeps secret-bearing answers for the exporter and
+  refuses a destination inside any git work tree; the default stays wholesale. `just live-vocabulary`
   (a `static` member with its prek hook) fails when a schema-enum element value in `src/` or
   `tests/` is neither captured nor an enum value, or when a REST read or `ls*` command in
   `src/` has no capture; unfixed cases are listed in `allowlist.json` with their reasons.
