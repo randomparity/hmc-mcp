@@ -247,3 +247,14 @@ def test_restore_tool_schema_requires_documented_restore_type():
     parameters = asyncio.run(schema())
     assert "restore_type" in parameters["required"]
     assert parameters["properties"]["restore_type"]["enum"] == [1, 2, 3]
+
+
+def test_restore_type_4_refusal_names_what_it_would_do():
+    """A library caller passing 4 is told it initializes and deletes every partition."""
+    run = AsyncMock()
+    with (
+        patch("hmcpctl.ssh.profiles.run_hmc_command", run),
+        pytest.raises(ValueError, match=r"Type 4 \(initialize, which deletes every"),
+    ):
+        asyncio.run(restore_lpar_profiles(make_config(), "sys", "/tmp/p.bak", 4))
+    run.assert_not_awaited()
