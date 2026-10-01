@@ -8,6 +8,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Fixed
+
+- `validate_hmc_name` refuses a name starting with `-`, which would reach the HMC CLI in option
+  position; this covers the install, VIOS install and reference-code tools (#887).
+
 ### Added
 
 - `hmcpctl report utilization --csv PATH` surveys every configured profile read-only and writes
