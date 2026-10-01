@@ -90,8 +90,8 @@ def hmc_list_sriov_physical_ports(
 
     Answers on HMC V10R3 M1060 with model 8375-42A and on V11R2 SP1120 with
     9009-42A (ADR 0183). Ports are read at the roce, ethc and eth levels and
-    merged. Elsewhere the result is ``capability-unavailable`` and its reason
-    names the admitted pairs.
+    merged. Elsewhere the result is ``capability-unavailable``; on a POWER11
+    model the reason is that no SR-IOV-mode adapter is captured there.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -125,8 +125,8 @@ def hmc_list_sriov_logical_ports(
     """List normalized SR-IOV logical ports, or report capability unavailable.
 
     Answers on HMC V10R3 M1060 with model 8375-42A and on V11R2 SP1120 with
-    9009-42A (ADR 0183). Elsewhere the result is ``capability-unavailable`` and
-    its reason names the admitted pairs.
+    9009-42A (ADR 0183). Elsewhere the result is ``capability-unavailable``; on
+    a POWER11 model the reason is that no SR-IOV-mode adapter is captured there.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.

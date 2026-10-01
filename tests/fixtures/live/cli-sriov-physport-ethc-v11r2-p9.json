@@ -1,0 +1,7 @@
+{
+  "capture": "2026-09-30-v11r2-p9/capture-sriov.jsonl#10",
+  "command": "lshwres -r sriov --rsubtype physport -m sys-2 --level ethc --filter adapter_ids=2 -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+  "exit_status": 0,
+  "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity\n2,0,ethc,<REDACTED-LOC>-P1-C2-T1,1,3,20,3,2.0\n2,1,ethc,<REDACTED-LOC>-P1-C2-T2,1,1,20,1,2.0\n",
+  "stderr": ""
+}

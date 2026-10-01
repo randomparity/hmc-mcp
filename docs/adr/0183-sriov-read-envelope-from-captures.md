@@ -30,12 +30,13 @@ so its survey could not see it. Second, no V11R2 capture holds any SR-IOV mutati
 POWER11 system holds an SR-IOV-mode adapter. A physical- or logical-port read there has nothing
 captured behind it.
 
-The V11R2 captures are default-format listings. Each attribute the `-F` projections select
-appears in them, except `min_eth_capacity_granularity`. V10R3's default listing omits that
-attribute too, yet `-F` returns it. An `-F` projection naming an attribute the HMC does not have
-exits 1 with "An invalid attribute was entered"
-(`tests/fixtures/sriov/sriov-physport-granularity-v10r3.json`, `attribute_validation`). So an
-unsupported projection fails closed; it is not read as empty.
+A second read-only capture on the 9009-42A ran hmcpctl's own `-F … --header` projections
+through `ssh/sriov.py`. It covers adapters, physical ports for adapter 2 at `roce`, `ethc` and
+`eth`, and configured logical ports at `eth` (fixtures `cli-sriov-adapters-v11r2-p9`,
+`cli-sriov-physport-{roce,ethc,eth}-v11r2-p9`, `cli-sriov-logport-eth-v11r2-p9`). `roce` prints
+the empty-result line. `ethc` lists ports 0 and 1, and `eth` lists ports 2 and 3 at state 0.
+Every port reports `min_eth_capacity_granularity` 2.0, and five logical ports are configured.
+So the projections the V10R3 path reads are byte-captured on V11R2 too.
 
 ## Decision
 
@@ -49,8 +50,9 @@ unsupported projection fails closed; it is not read as empty.
    | 11.2.1120 | 9824-42A | adapter |
    | 11.2.1120 | 9242-21B | adapter |
 
-   Any other pair, and any read a pair does not list, reports `capability-unavailable` with a
-   reason that names the admitted pairs for that read. `set-sriov-mode` only reads, so it uses
+   Any other pair reports `capability-unavailable` with a reason that names the admitted pairs
+   for that read. A read an admitted pair does not list refuses with "no SR-IOV-mode adapter
+   captured on this model". `set-sriov-mode` only reads, so it uses
    the adapter read gate.
 2. **Mutations keep the ADR 0056 envelope**, V10R3 M1060 on 8375-42A: logical-port assign and
    unassign, vNIC operations, and the ADR 0165 dedicated-slot gate. Declarative LPAR creation
@@ -64,12 +66,13 @@ unsupported projection fails closed; it is not read as empty.
 
 ## Consequences
 
-SR-IOV inventory answers on the three V11R2 systems the sweep captured, on the attribute names
-those captures show. Physical-port reads cost three read-only commands instead of two. An
-SR-IOV-mode adapter on a POWER11 system, a V11R2 8375-42A, or another service pack still reports
-unavailable until a capture admits it. Mutations on V11R2 refuse before any command. The
-`-F` projections on V11R2 rest on attribute names, not a byte capture; a missing attribute
-fails the read with the HMC's invalid-attribute error.
+SR-IOV inventory answers on the three V11R2 systems the sweep captured, using the projections
+captured there. Physical-port reads cost three read-only commands instead of two. On a POWER11
+pair, physical- and logical-port reads refuse with "no SR-IOV-mode adapter captured on this
+model". A V11R2 8375-42A, or any other service pack, reports unavailable until a capture
+admits it. V11R2 HMCs sit outside the mutation boundary, so no mutation evidence can be taken
+there. Mutations on V11R2 therefore refuse before any command, and reads stay wider than
+mutations.
 
 ## Considered & rejected
 
@@ -81,6 +84,6 @@ fails the read with the HMC's invalid-attribute error.
   a captured V10R3 command.
 - **Keep "exactly one non-empty level" and add `eth` as a third candidate.** verified: the
   9009-42A adapter returns rows at both `ethc` and `eth`, so that rule refuses a healthy adapter.
-- **Read the default format instead of `-F` projections.** judgment: it would rewrite the
-  admitted V10R3 path and lose `min_eth_capacity_granularity`, which assignment prevalidation
-  uses and which no default listing prints.
+- **Read the default format instead of `-F` projections.** verified: the `-F` projections are
+  captured on both releases, and no default listing prints `min_eth_capacity_granularity`,
+  which assignment prevalidation uses.

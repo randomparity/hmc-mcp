@@ -619,11 +619,18 @@ async def require_sriov_read_environment(
 ) -> None:
     """Refuse an SR-IOV inventory read outside the ADR 0183 read envelope."""
     version, model = await read_sriov_environment(config, system_name)
-    if read not in _admitted_sriov_reads(version, model):
+    admitted = _admitted_sriov_reads(version, model)
+    if read in admitted:
+        return
+    subject = f"SR-IOV {read.replace('_', '-')} inventory"
+    if admitted:
         raise SriovLogicalPortCapabilityError(
-            f"SR-IOV {read.replace('_', '-')} inventory is admitted only for "
-            f"{_sriov_read_envelope_text(read)} (ADR 0183)"
+            f"{subject} is not admitted on model {model}: no SR-IOV-mode adapter "
+            "captured on this model (ADR 0183)"
         )
+    raise SriovLogicalPortCapabilityError(
+        f"{subject} is admitted only for {_sriov_read_envelope_text(read)} (ADR 0183)"
+    )
 
 
 def _sriov_read_envelope_text(read: SriovRead) -> str:

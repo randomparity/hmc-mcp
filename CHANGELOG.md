@@ -14,8 +14,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_list_sriov_adapters`, `hmc_set_sriov_adapter_mode`'s current-mode check and their CLI
   commands answer on HMC V11R2 SP1120 with POWER9 9009-42A, POWER11 9824-42A or 9242-21B, as
   well as V10R3 M1060 with 8375-42A. Physical- and logical-port inventory answer on V11R2 with
-  9009-42A as well; on the POWER11 pairs they report `capability-unavailable`, naming the
-  admitted pairs. SR-IOV and vNIC mutations stay on V10R3 M1060 with 8375-42A, and LPAR
+  9009-42A as well; on the POWER11 pairs they report `capability-unavailable` because no
+  SR-IOV-mode adapter is captured there. SR-IOV and vNIC mutations stay on V10R3 M1060 with 8375-42A, and LPAR
   creation with SR-IOV or vNIC assignments refuses before creating the partition anywhere else.
 - `docs/api-patterns.md` records the HMC REST and CLI behaviour verified live on V10R3 with
   POWER9 hardware: the 47 patterns from the #1161 capture windows and four observations from

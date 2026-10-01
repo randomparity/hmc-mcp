@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -124,8 +125,9 @@ async def test_inventory_answers_per_admitted_read_on_a_power11_pair() -> None:
     assert adapters.capability == "available"
     for result in (ports, logical):
         assert result.capability == "capability-unavailable"
-        assert "9009-42A" in result.unavailable_reason
-        assert "9242-21B" not in result.unavailable_reason
+        assert "no SR-IOV-mode adapter captured on this model" in (
+            result.unavailable_reason or ""
+        )
 
 
 def test_the_captures_show_the_evidence_adr_0183_rests_on() -> None:
@@ -158,3 +160,75 @@ def test_the_captures_show_the_evidence_adr_0183_rests_on() -> None:
         assert {(row["adapter_id"], row["config_state"]) for row in adapters} == {
             ("null", "dedicated")
         }
+
+
+def _replay(*names: str) -> AsyncMock:
+    """Answer each captured command with the stdout the HMC printed for it."""
+    answers = {
+        live_fixture(name)["command"]: live_fixture(name)["stdout"] for name in names
+    }
+
+    async def run(_config: HMCConfig, command: str) -> str:
+        return answers[command]
+
+    return AsyncMock(side_effect=run)
+
+
+@pytest.mark.asyncio
+async def test_v11r2_9009_42a_inventory_replays_the_captured_projections() -> None:
+    hmc = SimpleNamespace(
+        config=HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
+    )
+    environment = AsyncMock(
+        return_value=(
+            V11R2,
+            live_fixture("cli-type-model-v11r2-p9-9009-42a")["stdout"].strip(),
+        )
+    )
+    run = _replay(
+        "cli-sriov-adapters-v11r2-p9",
+        "cli-sriov-physport-roce-v11r2-p9",
+        "cli-sriov-physport-ethc-v11r2-p9",
+        "cli-sriov-physport-eth-v11r2-p9",
+        "cli-sriov-logport-eth-v11r2-p9",
+        "cli-sriov-logport-default-v11r2-p9",
+    )
+    pcie = "hmcpctl.operations.virtualization.pcie"
+    with (
+        patch(f"{pcie}._system_name", AsyncMock(return_value="sys-2")),
+        patch(f"{pcie}.read_sriov_environment", environment),
+        patch("hmcpctl.ssh.sriov.run_hmc_command", run),
+    ):
+        adapters = await list_sriov_adapters(hmc, "sys-2")
+        ports = await list_sriov_physical_ports(hmc, "sys-2", "2")
+        logical = await list_sriov_logical_ports(hmc, "sys-2", "2")
+
+    assert adapters.items[0].adapter_id == "2"
+    assert [item.mode for item in adapters.items] == ["sriov", "dedicated"]
+    assert [
+        (
+            port.physical_port_id,
+            port.availability,
+            port.minimum_capacity_granularity_percent,
+        )
+        for port in ports.items
+    ] == [
+        ("0", "up", Decimal("2.0")),
+        ("1", "up", Decimal("2.0")),
+        ("2", "down", Decimal("2.0")),
+        ("3", "down", Decimal("2.0")),
+    ]
+    configured = [item for item in logical.items if item.availability != "unconfigured"]
+    assert [(item.logical_port_id, item.physical_port_id) for item in configured] == [
+        ("27008001", "0"),
+        ("27008002", "0"),
+        ("27008006", "0"),
+        ("27008003", "1"),
+        ("27008004", "2"),
+    ]
+    # Every unconfigured port's location joins to the T1 port, physical port 0.
+    unconfigured = [
+        item for item in logical.items if item.availability == "unconfigured"
+    ]
+    assert len(unconfigured) == 43
+    assert {item.physical_port_id for item in unconfigured} == {"0"}
