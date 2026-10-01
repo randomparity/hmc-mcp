@@ -2,13 +2,13 @@
 
 import httpx
 import pytest
-from conftest import captured, make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
 
 VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
-COMMA = captured("rest-vios-groups-comma")
-REPEAT = captured("rest-vios-groups-repeat")
+COMMA = live_fixture("rest-vios-groups-comma")
+REPEAT = live_fixture("rest-vios-groups-repeat")
 
 
 def test_repeated_group_parameter_drops_the_second_group():

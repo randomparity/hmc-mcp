@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import captured
+from conftest import live_fixture, live_response
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
@@ -740,15 +740,6 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     assert guard.await_args.kwargs == {"ownership_override": True}
 
 
-def _live_response(name: str, text: str | None = None) -> tuple[str, httpx.Response]:
-    capture = captured(name)
-    return capture["path"], httpx.Response(
-        capture["status"],
-        text=capture["body"] if text is None else text,
-        headers={"Content-Type": capture["content_type"]},
-    )
-
-
 VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
 
 
@@ -759,10 +750,16 @@ def _mock_vios_state_and_delete(router, state: str):
     VirtualIOServer quick read answers 200 with the state JSON-quoted.
     """
     for name in ("rest-lpar-path-vios", "rest-lpar-quick-vios"):
-        path, response = _live_response(name)
+        path, response = live_response(name)
         router.get(path).mock(return_value=response)
-    path, response = _live_response("rest-vios-quick-state", f'"{state}"')
-    router.get(path).mock(return_value=response)
+    quick = live_fixture("rest-vios-quick-state")
+    router.get(quick["path"]).mock(
+        return_value=httpx.Response(
+            quick["status"],
+            text=f'"{state}"',
+            headers={"Content-Type": quick["content_type"]},
+        )
+    )
     return router.delete(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
         return_value=httpx.Response(204)
     )

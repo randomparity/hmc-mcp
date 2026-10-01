@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import captured, make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
@@ -263,7 +263,7 @@ async def test_create_reports_a_concurrent_change_on_412(mock_hmc):
     assert post.call_count == 1
 
 
-LIVE_MAPPING = captured("rest-vios-scsi-mapping")
+LIVE_MAPPING = live_fixture("rest-vios-scsi-mapping")
 LIVE_VIOS = "00000005-ABCD-4EF0-8ABC-000000000005"
 LIVE_LPAR = "00000004-ABCD-4EF0-8ABC-000000000004"
 

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from conftest import captured
+from conftest import live_fixture
 
 from hmcpctl.documents import LparResources, build_vios_document
 from hmcpctl.errors import HMCError
@@ -17,7 +17,7 @@ BASE = "https://hmc.test"
 
 # The captured V10R3 VirtualIOServer entry, read while the VIOS ran; the install
 # preflight needs it powered off, so only the PartitionState text is changed.
-VIOS_ENTRY = captured("rest-vios-entry")["body"].replace(
+VIOS_ENTRY = live_fixture("rest-vios-entry")["body"].replace(
     '<PartitionState kxe="false" kb="ROO">running<',
     '<PartitionState kxe="false" kb="ROO">not activated<',
 )
@@ -126,7 +126,7 @@ def _mock_resolution(mock_hmc) -> None:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=VIOS_ENTRY)
     )
-    lpar_path = captured("rest-lpar-path-vios")
+    lpar_path = live_fixture("rest-lpar-path-vios")
     mock_hmc.get(lpar_path["path"]).mock(
         return_value=httpx.Response(lpar_path["status"], text=lpar_path["body"])
     )

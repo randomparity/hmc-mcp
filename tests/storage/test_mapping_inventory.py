@@ -15,7 +15,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import captured, make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.client.client_parse import _parse_feed
 from hmcpctl.client.client_storage import lpar_uuid_from_href, storage_mapping_id
@@ -202,7 +202,7 @@ async def test_list_storage_mappings_filters_by_lpar(mock_hmc):
 @pytest.mark.asyncio
 async def test_list_storage_mappings_filters_live_lpar_case_insensitively(mock_hmc):
     """A lower-case LPAR selector matches the upper-case UUID V10R3 links (#1202)."""
-    capture = captured("rest-vios-scsi-mapping")
+    capture = live_fixture("rest-vios-scsi-mapping")
     mock_hmc.get(capture["path"]).mock(
         return_value=httpx.Response(200, text=capture["body"])
     )

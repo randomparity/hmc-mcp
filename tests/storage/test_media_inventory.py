@@ -2,7 +2,7 @@
 
 import httpx
 import pytest
-from conftest import captured, make_config, volume_group_with_repository
+from conftest import live_fixture, make_config, volume_group_with_repository
 
 from hmcpctl.client import client_storage
 from hmcpctl.client.core import HMCClient
@@ -10,7 +10,7 @@ from hmcpctl.client.core import HMCClient
 VG_ENTRY_WITH_REPO = volume_group_with_repository()
 VG_ENTRY_EMPTY_REPO = volume_group_with_repository(media=False)
 # The captured clientvg1 entry: a volume group with no media repository.
-VG_ENTRY_WITHOUT_REPO = captured("rest-volume-group")["body"]
+VG_ENTRY_WITHOUT_REPO = live_fixture("rest-volume-group")["body"]
 
 
 @pytest.mark.asyncio

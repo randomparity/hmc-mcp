@@ -621,19 +621,6 @@ def captured_lpar_entry(uuid: str, name: str, state: str = "not activated") -> s
   </entry>"""
 
 
-def captured(name: str) -> dict:
-    """Return the tokenized V10R3 capture ``tests/fixtures/live/<name>.json`` (#1202).
-
-    Imports stay local so this helper adds no module-level import beside #1161's
-    ``live_fixture``, which reads the same directory.
-    """
-    import json
-    from pathlib import Path
-
-    path = Path(__file__).parent / "fixtures" / "live" / f"{name}.json"
-    return json.loads(path.read_text())
-
-
 def volume_group_with_repository(*, media: bool = True) -> str:
     """The captured VolumeGroup entry carrying the captured media repository (#1202).
 
@@ -647,7 +634,7 @@ def volume_group_with_repository(*, media: bool = True) -> str:
     """
     import re
 
-    feed = captured("rest-ms-vios-feed-media")["body"]
+    feed = live_fixture("rest-ms-vios-feed-media")["body"]
     found = re.search(r"<MediaRepositories\b.*?</MediaRepositories>", feed, re.DOTALL)
     assert found is not None
     repository = found.group(0)
@@ -658,5 +645,5 @@ def volume_group_with_repository(*, media: bool = True) -> str:
             repository,
             flags=re.DOTALL,
         )
-    entry = captured("rest-volume-group")["body"]
+    entry = live_fixture("rest-volume-group")["body"]
     return entry.replace("<PhysicalVolumes ", f"{repository}\n    <PhysicalVolumes ", 1)

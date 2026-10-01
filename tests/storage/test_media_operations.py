@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from conftest import (
-    captured,
+    live_fixture,
     make_config,
     mock_change_location,
     volume_group_with_repository,
@@ -40,7 +40,7 @@ VG_UUID = "22222222-2222-2222-2222-222222220001"
 VG_ENTRY_WITH_REPO = volume_group_with_repository(media=False)
 
 # The captured clientvg1 entry: a volume group with no media repository.
-VG_ENTRY_EMPTY = captured("rest-volume-group")["body"]
+VG_ENTRY_EMPTY = live_fixture("rest-volume-group")["body"]
 
 
 @pytest.mark.asyncio
