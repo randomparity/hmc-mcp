@@ -25,14 +25,14 @@
   "file": "src/hmcpctl/client/client_cluster.py",
   "subject": "/rest/api/uom/Cluster/{}",
   "value": "",
-  "reason": "none of the four HMCs swept on 2026-09-30 has a cluster (the feed answered 204); capture on an HMC that has one (#1202)"
+  "reason": "none of the five HMCs swept on 2026-09-30 has a cluster (the feed answered 204); capture on an HMC that has one (#1202)"
  },
  {
   "kind": "rest-path",
   "file": "src/hmcpctl/client/client_cluster.py",
   "subject": "/rest/api/uom/SharedStoragePool/{}",
   "value": "",
-  "reason": "none of the four HMCs swept on 2026-09-30 has a shared storage pool (the feed answered 204); capture on an HMC that has one (#1202)"
+  "reason": "none of the five HMCs swept on 2026-09-30 has a shared storage pool (the feed answered 204); capture on an HMC that has one (#1202)"
  },
  {
   "kind": "rest-path",
