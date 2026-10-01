@@ -54,10 +54,7 @@ async def list_fc_ports(
     )
     if lpar_name:
         command += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
-    raw = await run_hmc_command(config, command)
-    if raw.strip() in {"", HMC_NO_RESULTS}:
-        return []
-    return _parse_lshwres_output(raw)
+    return _parse_lshwres_output(await run_hmc_command(config, command))
 
 
 async def list_sea_adapters(
