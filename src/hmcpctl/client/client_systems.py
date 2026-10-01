@@ -341,12 +341,14 @@ class SystemsMixin:
         """GET VirtualIOServer device mappings.
 
         Requests the documented ViosSCSIMapping and ViosFCMapping groups and
-        returns the parsed entry with both mapping collections populated.
+        returns the parsed entry with both mapping collections populated. The
+        groups go in one comma-separated value: V10R3 answers a repeated
+        ``group`` parameter with the first group only (#1202).
         """
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = (
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-            "?group=ViosSCSIMapping&group=ViosFCMapping"
+            "?group=ViosSCSIMapping,ViosFCMapping"
         )
         xml = await self._get(path, "VirtualIOServer")
         if not xml:

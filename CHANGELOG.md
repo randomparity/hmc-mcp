@@ -233,6 +233,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   prints both upper case, so a lower-case `lpar` selector made `hmc_list_storage_mappings`
   return `[]` and `hmc_detach_storage_mapping` refuse the mapping as not belonging to it, and a
   lower-case VIOS UUID failed every map and detach with "identity does not match" (#1202).
+- `hmc_get_vios_storage_detail` now returns the VIOS's virtual Fibre Channel mappings, and the
+  decommission storage inventory now sees them. Both asked for the two mapping groups as
+  repeated `group` parameters, which V10R3 answers with the first group only; the request now
+  sends `?group=ViosSCSIMapping,ViosFCMapping` (#1202).
 - A shared-processor create whose explicit processing units exceed that level's virtual
   processors (a virtual processor uses at most 1.0 unit) is now refused before any request is
   sent, naming each `<level>_procs`/`<level>_vcpus` pair and the CLI options to change. This

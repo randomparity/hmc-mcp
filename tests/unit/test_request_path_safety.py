@@ -208,7 +208,7 @@ _NEW_UUID_PATH_CALLS = (
         (UUID_B,),
         "vios_uuid",
         0,
-        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping&group=ViosFCMapping",
+        f"VirtualIOServer/{UUID_B}?group=ViosSCSIMapping,ViosFCMapping",
     ),
 )
 

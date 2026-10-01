@@ -2,82 +2,53 @@
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import captured, make_config
 
 from hmcpctl.client.core import HMCClient
 
-BASE = "https://hmc.test"
-VIOS_UUID = "00000000-0000-0000-0000-000000000003"
+VIOS_UUID = "00000005-ABCD-4EF0-8ABC-000000000005"
+COMMA = captured("rest-vios-groups-comma")
+REPEAT = captured("rest-vios-groups-repeat")
 
-# Minimal VIOS mapping entry with a vSCSI server mapping and an NPIV port mapping.
-VIOS_STORAGE_DETAIL_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{VIOS_UUID}</id>
-  <title>VirtualIOServer:vios1</title>
-  <link rel="SELF" href="{BASE}/rest/api/uom/VirtualIOServer/{VIOS_UUID}"/>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <PartitionName>vios1</PartitionName>
-      <VirtualSCSIMappings>
-        <VirtualSCSIMapping>
-          <AssociatedLogicalPartition href="{BASE}/rest/api/uom/LogicalPartition/lpar-uuid-1"/>
-          <ServerAdapter>
-            <VirtualSlotNumber>2</VirtualSlotNumber>
-          </ServerAdapter>
-          <Storage>
-            <PhysicalVolume>
-              <VolumeName>hdisk5</VolumeName>
-            </PhysicalVolume>
-          </Storage>
-        </VirtualSCSIMapping>
-      </VirtualSCSIMappings>
-      <VirtualFibreChannelMappings>
-        <VirtualFibreChannelMapping>
-          <AssociatedLogicalPartition href="{BASE}/rest/api/uom/LogicalPartition/lpar-uuid-2"/>
-          <Port>
-            <WWPNPair>C05076099999AAA0 C05076099999AAA1</WWPNPair>
-          </Port>
-        </VirtualFibreChannelMapping>
-      </VirtualFibreChannelMappings>
-    </VirtualIOServer>
-  </content>
-</entry>
-"""
+
+def test_repeated_group_parameter_drops_the_second_group():
+    """V10R3 honours only the first of two repeated ``group`` parameters (#1202).
+
+    The same VIOS read with ``group=A&group=B`` carries no ViosFCMapping group;
+    the comma form carries both. Pinned so the client's choice of form stays
+    grounded in the capture.
+    """
+    assert "VirtualFibreChannelMappings" not in REPEAT["body"]
+    assert 'group="ViosFCMapping"' in COMMA["body"]
+    assert COMMA["path"].endswith("?group=ViosSCSIMapping,ViosFCMapping")
 
 
 @pytest.mark.asyncio
 async def test_get_vios_storage_detail(mock_hmc):
-    """get_vios_storage_detail requests both documented mapping groups."""
-    route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}",
-        params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
-    ).mock(return_value=httpx.Response(200, text=VIOS_STORAGE_DETAIL_ENTRY))
+    """get_vios_storage_detail asks for both mapping groups in one comma list."""
+    route = mock_hmc.get(COMMA["path"]).mock(
+        return_value=httpx.Response(200, text=COMMA["body"])
+    )
 
     async with HMCClient(make_config()) as hmc:
         result = await hmc.get_vios_storage_detail(VIOS_UUID)
 
     assert route.called
+    assert route.calls.last.request.url.query == b"group=ViosSCSIMapping,ViosFCMapping"
     assert result is not None
     assert result["UUID"] == VIOS_UUID
     resource = result["Resource"]
-    assert resource["PartitionName"] == "vios1"
-    # vSCSI mapping present
-    mappings = resource["VirtualSCSIMappings"]["VirtualSCSIMapping"]
-    assert isinstance(mappings, dict)  # single mapping → dict, not list
-    assert mappings["Storage"]["PhysicalVolume"]["VolumeName"] == "hdisk5"
-    # NPIV mapping present
-    fc_mappings = resource["VirtualFibreChannelMappings"]["VirtualFibreChannelMapping"]
-    assert isinstance(fc_mappings, dict)
-    assert "AAA0" in fc_mappings["Port"]["WWPNPair"]
+    assert resource["PartitionName"] == "sys-R1-vios1"
+    mapping = resource["VirtualSCSIMappings"]["VirtualSCSIMapping"]
+    assert mapping["Storage"]["VirtualDisk"]["DiskName"] == "dev-297"
+    # The captured VIOS has no NPIV mappings; the group is present and empty.
+    assert "VirtualFibreChannelMapping" not in resource["VirtualFibreChannelMappings"]
 
 
 @pytest.mark.asyncio
 async def test_get_vios_storage_detail_not_found(mock_hmc):
     """get_vios_storage_detail returns None on 204 (empty)."""
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}",
-        params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
-    ).mock(return_value=httpx.Response(204))
+    mock_hmc.get(COMMA["path"]).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
         result = await hmc.get_vios_storage_detail(VIOS_UUID)
