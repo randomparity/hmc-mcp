@@ -18,6 +18,11 @@ The VIOS and storage REST captures from that sweep are `rest-lpar-path-vios`,
 `-v11r2` begin `2026-09-30-v11r2-p11-9824/`: the same sweep on an HMC at V11R2
 SP1120 managing a POWER11 9824-42A.
 
+`rest-vios-create` and `rest-vios-create-lpar-path-refused` (`capture` prefix
+`2026-10-01-1214/`) come from an operator-authorized mutation window for #1214 on
+the V10R3 HMC and POWER9 system above: a VIOS create PUT to each collection, read
+back and then deleted.
+
 ## Format
 
 Every file is a JSON object with these keys:

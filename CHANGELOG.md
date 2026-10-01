@@ -253,6 +253,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_create_vios` and `create_vios` now create the VIOS. They sent a `LogicalPartition`
+  document to the system's `LogicalPartition` collection, which V10R3 refuses with 500
+  `REST0140 Invalid Partition Type associated with LogicalPartition`, so no VIOS was ever
+  created. The create now PUTs a `VirtualIOServer` document to
+  `ManagedSystem/{uuid}/VirtualIOServer` and returns the created entry (#1214).
 - `scripts/live_capture_export.py tokenize` no longer leaks the rest of a lab-prefixed name:
   collected names are tokenized before any `--private` pattern, a `--private` match takes
   its whole word, and a private token left joined to a word fails the export (#1202).
