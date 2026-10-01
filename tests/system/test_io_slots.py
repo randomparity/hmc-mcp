@@ -5,16 +5,15 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.ssh.io_inventory import list_io_slots
 
-IO_SLOT_OUTPUT = (
-    "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,feature_codes=EN0S,lpar_name=lpar1\n"
-    "drc_name=U78DA.ND1.ABC1234-P1-C2,pci_class=0104,feature_codes=EJ0J,lpar_name=\n"
-    "drc_name=U78DA.ND1.ABC1234-P1-C3,pci_class=0C04,feature_codes=EJ14,lpar_name=lpar2\n"
-    "drc_name=U78DA.ND1.ABC1234-P1-C4,pci_class=0108,feature_codes=EN0T,lpar_name=\n"
-)
+# The default (no -F) slot listing as V10R3 prints it: an unowned slot carries
+# `lpar_id=none` and no `lpar_name` pair at all, and pci_class is four upper-case
+# hex digits (#1202).
+IO_SLOT_CAPTURE = live_fixture("cli-io-slots-default")
+IO_SLOT_OUTPUT = IO_SLOT_CAPTURE["stdout"]
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -29,16 +28,23 @@ def _make_ssh_mock(stdout: str = "") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_list_io_slots_all_returns_list():
-    """list_io_slots(pci_class='all') returns a list of dicts from parsed output."""
+    """list_io_slots(pci_class='all') returns one dict per captured slot line."""
     conn = _make_ssh_mock(IO_SLOT_OUTPUT)
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        slots = await list_io_slots(make_config(), "sys1")
+        slots = await list_io_slots(make_config(), "sys-R1")
 
-    assert isinstance(slots, list)
-    assert len(slots) == 4
-    assert slots[0]["drc_name"] == "U78DA.ND1.ABC1234-P1-C1"
-    assert slots[0]["pci_class"] == "0200"
-    assert slots[0]["lpar_name"] == "lpar1"
+    assert conn.run.call_args[0][0] == IO_SLOT_CAPTURE["command"]
+    assert len(slots) == 15
+    by_drc = {slot["drc_index"]: slot for slot in slots}
+    owned, unowned = by_drc["21020013"], by_drc["21010010"]
+    assert (owned["lpar_name"], owned["lpar_id"], owned["pci_class"]) == (
+        "sys-R1-vios1",
+        "100",
+        "0200",
+    )
+    assert "lpar_name" not in unowned
+    assert unowned["lpar_id"] == "none"
+    assert {slot["pci_class"] for slot in slots} == {"FFFF", "0200", "0104", "0C03"}
 
 
 @pytest.mark.asyncio
@@ -56,50 +62,25 @@ async def test_list_io_slots_command_all():
 
 
 @pytest.mark.asyncio
-async def test_list_io_slots_eth_filter():
-    """pci_class='eth' appends a pci_class=0200 grep."""
-    eth_output = "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,feature_codes=EN0S,lpar_name=lpar1\n"
-    conn = _make_ssh_mock(eth_output)
+@pytest.mark.parametrize(
+    ("pci_class", "drc_indexes"),
+    [
+        ("eth", ["21020013", "21010020", "21010021", "21010022"]),
+        ("sas", ["21040015"]),
+        # Neither class is in the capture: the filter yields no rows rather than
+        # a failed command (`grep` exits 1 when nothing matches).
+        ("san", []),
+        ("nvme", []),
+    ],
+)
+async def test_list_io_slots_filters_by_pci_class(pci_class, drc_indexes):
+    """A pci_class filter selects the captured slots of that class, client-side."""
+    conn = _make_ssh_mock(IO_SLOT_OUTPUT)
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        slots = await list_io_slots(make_config(), "sys1", pci_class="eth")
+        slots = await list_io_slots(make_config(), "sys-R1", pci_class=pci_class)
 
-    cmd_called = conn.run.call_args[0][0]
-    assert "pci_class=0200" in cmd_called
-    assert len(slots) == 1
-    assert slots[0]["pci_class"] == "0200"
-
-
-@pytest.mark.asyncio
-async def test_list_io_slots_sas_filter():
-    """pci_class='sas' appends a pci_class=0104 grep."""
-    conn = _make_ssh_mock("")
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", pci_class="sas")
-
-    cmd_called = conn.run.call_args[0][0]
-    assert "pci_class=0104" in cmd_called
-
-
-@pytest.mark.asyncio
-async def test_list_io_slots_san_filter():
-    """pci_class='san' appends a pci_class=0C04 grep."""
-    conn = _make_ssh_mock("")
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", pci_class="san")
-
-    cmd_called = conn.run.call_args[0][0]
-    assert "pci_class=0C04" in cmd_called
-
-
-@pytest.mark.asyncio
-async def test_list_io_slots_nvme_filter():
-    """pci_class='nvme' appends a pci_class=0108 grep."""
-    conn = _make_ssh_mock("")
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", pci_class="nvme")
-
-    cmd_called = conn.run.call_args[0][0]
-    assert "pci_class=0108" in cmd_called
+    assert conn.run.call_args[0][0] == IO_SLOT_CAPTURE["command"]
+    assert [slot["drc_index"] for slot in slots] == drc_indexes
 
 
 @pytest.mark.asyncio

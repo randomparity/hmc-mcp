@@ -25,6 +25,7 @@ import click
 import pytest
 import typer
 from click import unstyle
+from conftest import live_fixture
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -3910,14 +3911,14 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
 
 def test_network_list_io_slots_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
-        return "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,lpar_name=lpar1\n"
+        return live_fixture("cli-io-slots-default")["stdout"]
 
     _patch_ssh_command(monkeypatch, fake)
-    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1"])
+    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys-R1"])
 
     assert result.exit_code == 0
-    assert "U78DA.ND1.ABC1234-P1-C1" in result.stdout
-    assert "lpar1" in result.stdout
+    assert "21020013" in result.stdout
+    assert "sys-R1-vios1" in result.stdout
 
 
 def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):

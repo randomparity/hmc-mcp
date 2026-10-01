@@ -228,6 +228,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_list_io_slots` with a `pci_class` other than `all` filters the slot listing in
+  hmcpctl instead of piping it through `grep` on the HMC, so a class with no slots returns
+  `[]`; `grep` exits 1 when nothing matches, which failed the whole call (#1202).
 - `hmc_list_sea_adapters` returns `[]` when the HMC prints its empty-result line,
   `No results were found.`, instead of one row whose `lpar_name` is that sentence.
   `hmc_list_fc_ports` returns `[]` for that line too, and reads the default `lshwres`
