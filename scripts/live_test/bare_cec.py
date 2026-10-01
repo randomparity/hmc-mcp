@@ -274,7 +274,6 @@ async def _power_off(
         immediate=immediate,
         restart=restart,
         operation=operation,
-        allow_dump_restart=operation == "dumprestart",
         wait=True,
         timeout_seconds=_JOB_TIMEOUT_S,
         poll_interval=_JOB_POLL_INTERVAL_S,
@@ -670,10 +669,19 @@ async def _osshutdown_refusal(
 async def _dump_restart(
     client: Client, state: RunState, fixture: pcie._DedicatedFixture
 ) -> bool:
-    st, data, failure = await _power_off(
-        client, state, fixture, immediate=False, operation="dumprestart"
+    # The crash is its own tool and grant (ADR 0185), not a hmc_power_off_lpar operation.
+    st, data = await state.call(
+        client,
+        "hmc_dump_restart_lpar",
+        lpar_name_or_uuid=fixture.lpar_uuid,
+        system_name_or_uuid=fixture.config.system_name,
+        allow_dump_restart=True,
+        wait=True,
+        timeout_seconds=_JOB_TIMEOUT_S,
+        poll_interval=_JOB_POLL_INTERVAL_S,
     )
-    if not _record_power(state, "hmc_power_off_lpar (dumprestart)", st, data, failure):
+    failure = _job_failure(st, data)
+    if not _record_power(state, "hmc_dump_restart_lpar", st, data, failure):
         return False
     observed = await _read_state(client, state, fixture, _FIRMWARE_STATES)
     return _record_state(state, "state after dumprestart", observed, _FIRMWARE_STATES)
@@ -706,7 +714,7 @@ async def _run_steps(client: Client, state: RunState, run: _Run) -> None:
     if not run.accept_dump:
         state.skip(
             _ROW,
-            "hmc_power_off_lpar (dumprestart)",
+            "hmc_dump_restart_lpar",
             "LIVE_TEST_ACCEPT_PLATFORM_DUMP is not true — dumprestart crashes the "
             "partition and takes a platform dump, so it runs only on opt-in",
         )

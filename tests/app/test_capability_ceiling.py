@@ -1254,3 +1254,47 @@ def test_a_read_only_ceiling_corrects_the_write_recommendations_it_withholds():
     for granted in ("hmc_lpar_summary", "hmc_capacity_report", "hmc_fleet_health"):
         assert granted in names
         assert granted not in named
+
+
+POWER_OFF_ONLY = [
+    {
+        "tools": ["hmc_power_off_lpar"],
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+def test_a_power_off_grant_does_not_serve_dump_restart():
+    """ADR 0185: granting the stop no longer grants the crash; naming both does."""
+    stop_only = _names(create_mcp(_policy(POWER_OFF_ONLY)))
+    both = _names(
+        create_mcp(
+            _policy(
+                [
+                    {
+                        **POWER_OFF_ONLY[0],
+                        "tools": ["hmc_power_off_lpar", "hmc_dump_restart_lpar"],
+                    }
+                ]
+            )
+        )
+    )
+
+    assert "hmc_power_off_lpar" in stop_only
+    assert "hmc_dump_restart_lpar" not in stop_only
+    assert {"hmc_power_off_lpar", "hmc_dump_restart_lpar"} <= both
+
+
+def test_served_power_off_admits_no_dump_restart():
+    """ADR 0185: the served schema cannot express the crash on the stop tool."""
+    application = create_mcp(_policy(POWER_OFF_ONLY))
+    (tool,) = [
+        tool
+        for tool in asyncio.run(application.list_tools())
+        if tool.name == "hmc_power_off_lpar"
+    ]
+    properties = tool.parameters["properties"]
+
+    assert properties["operation"]["enum"] == ["shutdown", "osshutdown"]
+    assert "allow_dump_restart" not in properties

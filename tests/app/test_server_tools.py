@@ -10,6 +10,7 @@ boundary (``asyncssh.connect``) like the vNIC tests do.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from dataclasses import asdict
@@ -41,6 +42,7 @@ from hmcpctl.server_tools.jobs import (
 )
 from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_delete_lpar,
+    hmc_dump_restart_lpar,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
@@ -313,8 +315,6 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
 
 def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc):
     """The three activation parameters reach the PowerOn job document."""
-    import inspect
-
     _hmc_env(monkeypatch)
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
@@ -398,17 +398,44 @@ def test_power_off_lpar_tool_forwards_shutdown_parameters(monkeypatch, mock_hmc)
     assert '<ParameterValue kb="CUR" kxe="false">osshutdown</ParameterValue>' in body
 
 
-def test_power_off_lpar_tool_refuses_dumprestart_without_opt_in(monkeypatch, mock_hmc):
-    """ADR 0164: the force-crash variant needs an explicit opt-in on the tool."""
+def test_power_off_lpar_tool_cannot_send_dumprestart(monkeypatch, mock_hmc):
+    """ADR 0185: the crash is not this tool's, so a direct call cannot reach it."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
-    with pytest.raises(ValueError) as refused:
+    assert "allow_dump_restart" not in inspect.signature(hmc_power_off_lpar).parameters
+    with pytest.raises(ValueError, match="allow_dump_restart"):
         hmc_power_off_lpar(LPAR_UUID, operation="dumprestart")
+    assert route.called is False
 
-    assert "allow_dump_restart" in str(refused.value)
+
+def test_dump_restart_lpar_tool_submits_dumprestart(monkeypatch, mock_hmc):
+    """ADR 0185: the crash is its own tool and sends operation=dumprestart."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    hmc_dump_restart_lpar(LPAR_UUID, allow_dump_restart=True)
+
+    body = route.calls.last.request.content.decode()
+    assert '<ParameterName kb="ROR" kxe="false">operation</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">dumprestart</ParameterValue>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">true</ParameterValue>' not in body
+
+
+def test_dump_restart_lpar_tool_refuses_without_opt_in(monkeypatch, mock_hmc):
+    """ADR 0164's confirmation stays on the crash path: no flag, no job."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    with pytest.raises(ValueError, match="allow_dump_restart"):
+        hmc_dump_restart_lpar(LPAR_UUID)
+
     assert route.called is False
 
 
