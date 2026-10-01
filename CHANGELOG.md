@@ -229,6 +229,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_lpars(state=...)` and `hmcpctl lpars list --state` without a system no longer
+  fail for a state with a space. They used `LogicalPartition/search/(PartitionState==...)`,
+  which a V10R3 HMC answers with `500 Unable to parse expression` for `not activated`; they
+  now read the partition feed and filter it. The accepted states, shared with
+  `hmc_list_vios`, are now the HMC schema's `LogicalPartitionState.Enum`: `stopping`,
+  `migrating` and lower-case `unknown` are gone, and `not available`, `migrating not active`,
+  `migrating running`, `hardware discovery`, `suspending` and `Unknown` are accepted (#1202).
 - Job polling no longer treats `EXCEPTION` or `FAILED` as terminal statuses, and no longer
   reads a `ResponseException` element. Neither appears in the HMC's job-status reference
   (`CANCELED_*`, `COMPLETED_OK`, `COMPLETED_WITH_*`, `FAILED_*`, `NOT_STARTED`, `RUNNING`) or

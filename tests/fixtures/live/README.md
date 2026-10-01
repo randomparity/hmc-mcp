@@ -7,6 +7,9 @@ REST answers and the refcode listing from captures recorded with
 taken on an HMC at V10R3 managing POWER9 hardware; `docs/api-patterns.md`
 records the patterns they show.
 
+Files whose `capture` starts `2026-09-30-ro/` come from the read-only capture
+sweep for issue #1202, on the same HMC level and hardware.
+
 ## Format
 
 Every file is a JSON object with these keys:
