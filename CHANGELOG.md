@@ -229,6 +229,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `console info` prints the console's `NetworkInterfaces`; it looked for a `NetworkInfo`
+  element V10R3 does not return (#1202).
 - The managed-system fallback that resolves a system through `ManagedSystem/quick/All`
   matches its UUID in any case; V10R3 prints those UUIDs in lower case, so an upper-case
   UUID was never found. `hmc_list_systems` now names the entry fields V10R3 returns,

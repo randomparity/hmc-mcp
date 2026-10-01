@@ -25,6 +25,7 @@ import click
 import pytest
 import typer
 from click import unstyle
+from conftest import live_fixture
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -69,6 +70,7 @@ from hmcpctl.ssh import io_inventory, sriov, vnic
 from hmcpctl.ssh import lpar as ssh_lpar
 from hmcpctl.ssh import profiles as ssh_profiles
 from hmcpctl.ssh import refcodes as ssh_refcodes
+from hmcpctl.xmlutil import parse_feed
 
 LPAR_NAME = "lpar1"
 
@@ -221,10 +223,8 @@ class FakeHMC:
                 "IOSLevel": "3.1.0",
             },
         }
-        self.console = {
-            "link": "https://hmc/rest/api/uom/ManagementConsole/console",
-            "Resource": {"VersionInfo": "V10R1M1010", "ManagementConsoleName": "hmc1"},
-        }
+        # The captured V10R3 ManagementConsole entry (#1202).
+        self.console = parse_feed(live_fixture("rest-management-console")["body"])[0]
         self.cluster = {"UUID": CLUSTER_UUID, "Resource": {"ClusterName": "cl1"}}
         self.ssp = {
             "UUID": SSP_UUID,
@@ -4373,7 +4373,8 @@ def test_console_info(fake_hmc):
     result = RUNNER.invoke(cli.app, ["console", "info"])
 
     assert result.exit_code == 0
-    assert "V10R1M1010" in result.stdout
+    assert "1060" in result.stdout
+    assert "NetworkInterfaces" in result.stdout and "eth0" in result.stdout
     assert fake_hmc.calls == [("get_console_info", (), {})]
 
 
@@ -4381,7 +4382,7 @@ def test_console_info_json(fake_hmc):
     result = RUNNER.invoke(cli.app, ["console", "info", "--json"])
 
     assert result.exit_code == 0
-    assert "V10R1M1010" in result.stdout
+    assert "1060" in result.stdout
     assert fake_hmc.calls == [("get_console_info", (), {})]
 
 
