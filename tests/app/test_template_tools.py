@@ -10,7 +10,7 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import COMPLETED_JOB_ENTRY, JOB_ENTRY, JOB_ID
+from conftest import COMPLETED_JOB_ENTRY, JOB_ENTRY, JOB_ID, live_fixture, live_response
 
 from hmcpctl.errors import HMCError
 from hmcpctl.server_tools.templates.core import (
@@ -36,6 +36,12 @@ TEMPLATE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 """
 
 
+def _not_acceptable() -> httpx.Response:
+    """V10R3's answer to an Accept it cannot serve: an empty HTTP 406 (#1202)."""
+    capture = live_fixture("rest-templates-typed-406")
+    return httpx.Response(capture["status"], text=capture["body"])
+
+
 def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
@@ -43,14 +49,13 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def test_partition_templates_lists_all(monkeypatch, mock_hmc):
-    """hmc_list_partition_templates() GETs the template library feed."""
+    """hmc_list_partition_templates() GETs the captured template library feed."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
-        return_value=httpx.Response(200, text=TEMPLATE_FEED)
-    )
+    path, response = live_response("rest-templates-feed")
+    mock_hmc.get(path).mock(return_value=response)
     result = hmc_list_partition_templates()
-    assert result[0]["UUID"] == TEMPLATE_UUID
-    assert result[0]["Resource"]["templateName"] == "aix-gold"
+    assert result[0]["UUID"] == "000005da-abcd-4ef0-8abc-0000000005da"
+    assert result[0]["Resource"]["partitionTemplateName"] == "QuickStart_lpar_rpa_1"
 
 
 def test_partition_templates_with_uuid_gets_one(monkeypatch, mock_hmc):
@@ -78,7 +83,7 @@ def test_partition_templates_list_http_406_names_media_type(monkeypatch, mock_hm
     """hmc_list_partition_templates() explains an HTTP 406 as media-type refusal."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
-        return_value=httpx.Response(406, text="<error>Not supported</error>")
+        return_value=_not_acceptable()
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_list_partition_templates()
@@ -94,7 +99,7 @@ def test_partition_templates_get_http_406_names_media_type(monkeypatch, mock_hmc
     """A single template lookup explains an HTTP 406 as media-type refusal."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
-        return_value=httpx.Response(406, text="<error>Not supported</error>")
+        return_value=_not_acceptable()
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_get_partition_template(TEMPLATE_UUID)
@@ -109,7 +114,7 @@ def test_deploy_partition_template_http_406_names_media_type(monkeypatch, mock_h
     """hmc_deploy_partition_template explains an HTTP 406 as media-type refusal."""
     _hmc_env(monkeypatch)
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
-        return_value=httpx.Response(406, text="<error>Not supported</error>")
+        return_value=_not_acceptable()
     )
     with pytest.raises(HMCError) as exc_info:
         hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)

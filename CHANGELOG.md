@@ -229,6 +229,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_partition_templates` and `hmc_get_partition_template` send
+  `Accept: application/atom+xml`. V10R3 answers the typed
+  `templates+xml; type=PartitionTemplate` Accept with an empty HTTP 406, so both tools
+  always failed. `templates list` now prints each template's `partitionTemplateName`; it
+  read a `templateName` field the library feed does not carry (#1202).
 - `hmc_get_pcm_preferences` sends `Accept: */*`, which V10R3 serves; it sent the uom media
   type, which V10R3 answers (like the documented `application/xml`) with an empty HTTP 406.
   `hmc_set_pcm_preferences` posts the `ManagedSystemPcmPreference` root the HMC returns for a

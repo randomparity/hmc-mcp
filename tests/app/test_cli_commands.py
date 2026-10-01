@@ -234,7 +234,10 @@ class FakeHMC:
                 "FreeSpace": "512",
             },
         }
-        self.template = {"UUID": TEMPLATE_UUID, "Resource": {"templateName": "tpl1"}}
+        self.template = {
+            "UUID": TEMPLATE_UUID,
+            "Resource": {"partitionTemplateName": "tpl1"},
+        }
         self.vios_storage_detail = {"Resource": {}}
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [

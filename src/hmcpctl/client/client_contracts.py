@@ -485,7 +485,7 @@ class SystemsClient(JobClient, Protocol):
 class TemplatesClient(JobClient, Protocol):
     """Host state and operations required by :class:`client_templates.TemplatesMixin`."""
 
-    TEMPLATES_MEDIA: str
+    TEMPLATES_ACCEPT: str
     _session_token: str | None
 
     async def _request(
