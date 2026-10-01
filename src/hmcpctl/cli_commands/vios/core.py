@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
 
 from ...jobs import validate_wait_timing
 from ...operations.partition_state import PartitionState
@@ -72,7 +71,7 @@ def vios_power_on(
         )
     )
 
-    console.print(f"[green]Submitted PowerOn for {escape(name_or_uuid)}[/green]")
+    console.print(f"Submitted PowerOn for {name_or_uuid}", style="green", markup=False)
     print_json(job)
 
 
@@ -110,7 +109,7 @@ def vios_power_off(
         )
     )
 
-    console.print(f"[green]Submitted {escape(op)} for {escape(name_or_uuid)}[/green]")
+    console.print(f"Submitted {op} for {name_or_uuid}", style="green", markup=False)
     print_json(job)
 
 

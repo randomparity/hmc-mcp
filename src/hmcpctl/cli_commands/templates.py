@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
 
 from ..jobs import validate_wait_timing
 from ..operations.templates.core import (
@@ -69,7 +68,7 @@ def templates_deploy(
         )
     )
 
-    console.print(f"[green]Deploy job for template {escape(draft_uuid)}[/green]")
+    console.print(f"Deploy job for template {draft_uuid}", style="green", markup=False)
     print_json(result)
 
 

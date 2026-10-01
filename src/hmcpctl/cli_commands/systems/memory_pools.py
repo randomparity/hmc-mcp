@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
 
 from ...ssh.memory import list_memory_pools, remove_memory_pool
 from ..output import VerbatimTable, console, err_console, print_json
@@ -50,10 +49,12 @@ def memory_pools_remove(
     )
 
     console.print(
-        f"[green]Memory pool '{escape(pool_name)}' removed from '{escape(system_name)}'[/green]"
+        f"Memory pool '{pool_name}' removed from '{system_name}'",
+        style="green",
+        markup=False,
     )
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def register_commands(group: typer.Typer) -> None:

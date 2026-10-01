@@ -6,7 +6,6 @@ from dataclasses import asdict
 from pathlib import Path
 
 import typer
-from rich.markup import escape
 
 from ...documents import LparResources
 from ...operations.lpar.assignments import LparPcieAssignments
@@ -110,8 +109,8 @@ def lpars_modify(
         raise typer.Exit(code=1)
     if result.lpar is None:
         partition_not_found(name_or_uuid)
-    uuid = result.lpar.get("UUID", name_or_uuid)
-    console.print(f"[green]Modified LPAR {escape(uuid)}[/green]")
+    uuid = result.lpar.get("UUID") or name_or_uuid
+    console.print(f"Modified LPAR {uuid}", style="green", markup=False)
     print_json(asdict(result))
 
 

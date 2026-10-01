@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.markup import escape
+from rich.text import Text
 
 from hmcpctl.operations.lpar.ownership import set_lpar_ownership_description
 
@@ -195,7 +195,9 @@ def _run_resource_group_memopt(
         return
     if result.capability == "capability-unavailable":
         console.print(
-            f"[yellow]Capability unavailable:[/yellow] {escape(result.unavailable_reason)}"
+            Text.assemble(
+                ("Capability unavailable:", "yellow"), f" {result.unavailable_reason}"
+            )
         )
         return
     if not result.items:
@@ -314,7 +316,7 @@ def lpars_get_description(
         lambda: get_lpar_description(ssh_config(), system_name, lpar_name)
     )
 
-    console.print(escape(result.strip()) or "(no description set)")
+    console.print(result.strip() or "(no description set)", markup=False)
 
 
 def lpars_set_description(
@@ -350,9 +352,9 @@ def lpars_set_description(
         )
     )
 
-    console.print(f"[green]Description updated for '{escape(lpar_name)}'[/green]")
+    console.print(f"Description updated for '{lpar_name}'", style="green", markup=False)
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def lpars_get_msp(
@@ -382,9 +384,9 @@ def lpars_set_msp(
         lambda: set_lpar_msp(ssh_config(), system_name, lpar_name, enabled)
     )
 
-    console.print(f"[green]MSP updated for '{escape(lpar_name)}'[/green]")
+    console.print(f"MSP updated for '{lpar_name}'", style="green", markup=False)
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def lpars_get_proc_compat_modes(
@@ -451,8 +453,9 @@ def lpars_set_proc_compat(
     )
 
     console.print(
-        f"[green]Processor compatibility mode updated on profile "
-        f"'{escape(profile)}' of '{escape(lpar_name)}'[/green]"
+        f"Processor compatibility mode updated on profile '{profile}' of '{lpar_name}'",
+        style="green",
+        markup=False,
     )
 
 

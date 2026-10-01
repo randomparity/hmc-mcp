@@ -7,7 +7,6 @@ from typing import Any, NoReturn, TypeVar
 
 import typer
 from rich.console import Console, RenderableType
-from rich.markup import escape
 from rich.style import StyleType
 from rich.table import Table
 from rich.text import Text, TextType
@@ -98,17 +97,17 @@ def output(
 
 def fail(exc: Exception, *, code: int = 1) -> NoReturn:
     """Report an exception and exit with the requested runtime-error code."""
-    err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
+    err_console.print(Text.assemble(("Error:", "red"), f" {exc}"))
     raise typer.Exit(code=code)
 
 
 def usage_error(message: str) -> NoReturn:
     """Report invalid command arguments using Typer's usage-error exit code."""
-    err_console.print(f"[red]Error:[/red] {escape(message)}")
+    err_console.print(Text.assemble(("Error:", "red"), f" {message}"))
     raise typer.Exit(code=2)
 
 
 def partition_not_found(value: str) -> NoReturn:
     """Report a failed partition lookup consistently across CLI domains."""
-    err_console.print(f"[yellow]Partition '{escape(value)}' not found[/yellow]")
+    err_console.print(f"Partition '{value}' not found", style="yellow", markup=False)
     raise typer.Exit(code=1)

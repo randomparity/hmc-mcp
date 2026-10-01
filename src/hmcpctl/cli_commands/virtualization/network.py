@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
 
 from ...operations.virtualization.network import (
     create_virtual_network,
@@ -85,7 +84,7 @@ def network_create(
         )
     )
 
-    console.print(f"[green]Created virtual network '{escape(name)}'[/green]")
+    console.print(f"Created virtual network '{name}'", style="green", markup=False)
     print_json(result.resource)
 
 
@@ -100,7 +99,7 @@ def network_delete(
 
     with_client(lambda hmc: delete_virtual_network(hmc, system, uuid))
 
-    console.print(f"[green]Deleted virtual network {escape(uuid)}[/green]")
+    console.print(f"Deleted virtual network {uuid}", style="green", markup=False)
 
 
 def network_list_bridges(

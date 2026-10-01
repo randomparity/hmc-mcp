@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
 
 from ...jobs import DeviceType, LuType
 from ...operations.storage.cluster import (
@@ -102,7 +101,7 @@ def cluster_create_lu(
     )
 
     console.print(
-        f"[green]Submitted CreateLogicalUnit job for '{escape(name)}'[/green]"
+        f"Submitted CreateLogicalUnit job for '{name}'", style="green", markup=False
     )
     print_json(job)
 
@@ -137,7 +136,9 @@ def cluster_delete_lu(
         )
     )
 
-    console.print(f"[green]Submitted DeleteLogicalUnit job for {escape(udid)}[/green]")
+    console.print(
+        f"Submitted DeleteLogicalUnit job for {udid}", style="green", markup=False
+    )
     print_json(job)
 
 

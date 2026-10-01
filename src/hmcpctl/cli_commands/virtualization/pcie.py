@@ -6,7 +6,6 @@ from dataclasses import asdict
 from decimal import Decimal
 
 import typer
-from rich.markup import escape
 
 from ...operations.virtualization.pcie import (
     InventorySelector,
@@ -222,10 +221,12 @@ def network_set_sriov_mode(
     )
 
     console.print(
-        f"[green]Adapter {escape(adapter_id)} verified in '{escape(mode)}' mode on '{escape(system_name)}'[/green]"
+        f"Adapter {adapter_id} verified in '{mode}' mode on '{system_name}'",
+        style="green",
+        markup=False,
     )
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def register_commands(group: typer.Typer) -> None:

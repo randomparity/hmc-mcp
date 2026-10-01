@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.markup import escape
 
 from ..operations import jobs as operations_jobs
 from .output import console, err_console, print_json
@@ -25,7 +24,7 @@ def jobs_show(
     )
 
     if not outcome.found:
-        err_console.print(f"[yellow]Job {escape(job_id)} not found[/yellow]")
+        err_console.print(f"Job {job_id} not found", style="yellow", markup=False)
         raise typer.Exit(code=1)
     print_json(asdict(outcome))
 
@@ -57,10 +56,10 @@ def jobs_wait(
     )
 
     if not outcome.found:
-        err_console.print(f"[yellow]Job {escape(job_id)} not found[/yellow]")
+        err_console.print(f"Job {job_id} not found", style="yellow", markup=False)
         raise typer.Exit(code=1)
     status = outcome.status or "unknown"
-    console.print(f"[green]Job {escape(job_id)} status: {escape(status)}[/green]")
+    console.print(f"Job {job_id} status: {status}", style="green", markup=False)
     print_json(asdict(outcome))
 
 

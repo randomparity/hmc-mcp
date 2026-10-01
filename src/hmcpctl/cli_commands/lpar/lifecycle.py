@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
+from rich.text import Text
 
 from ...jobs import (
     BootMode,
@@ -190,13 +190,13 @@ def _power_lpar(
     )
     uuid, job = result.lpar_uuid, result.job
     if job and job.get("already_running"):
-        console.print(f"[yellow]{escape(job['message'])}[/yellow]")
+        console.print(job["message"], style="yellow", markup=False)
         print_json(job)
         return
-    console.print(f"[green]Job submitted[/green] for {escape(uuid)}")
+    console.print(Text.assemble(("Job submitted", "green"), f" for {uuid}"))
     print_json(job)
     for warning in result.warnings:
-        console.print(f"[yellow]Warning: {escape(warning)}[/yellow]")
+        console.print(f"Warning: {warning}", style="yellow", markup=False)
 
 
 def lpars_delete(
@@ -225,7 +225,7 @@ def lpars_delete(
             ownership_override=ownership_override,
         )
     )
-    console.print(f"[green]Deleted LPAR {escape(uuid)}[/green]")
+    console.print(f"Deleted LPAR {uuid}", style="green", markup=False)
 
 
 def register_commands(group: typer.Typer) -> None:

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.markup import escape
 
 from ...jobs import validate_wait_timing
 from ...operations.inventory.capacity import fetch_capacity_report, find_placement
@@ -52,7 +51,7 @@ def systems_health(
             table.add_row(*(str(entry.get(column, "-")) for column in columns))
         console.print(table)
     for warning in result["warnings"]:
-        err_console.print(f"[yellow]{escape(warning)}[/yellow]")
+        err_console.print(warning, style="yellow", markup=False)
 
 
 def systems_list(
@@ -89,7 +88,9 @@ def systems_show(
     system = with_client(lambda hmc: get_system(hmc, name_or_uuid))
 
     if system is None:
-        err_console.print(f"[yellow]System '{escape(name_or_uuid)}' not found[/yellow]")
+        err_console.print(
+            f"System '{name_or_uuid}' not found", style="yellow", markup=False
+        )
         raise typer.Exit(code=1)
     print_json(system)
 
@@ -121,7 +122,7 @@ def systems_power_on(
         )
     )
 
-    console.print(f"[green]Submitted PowerOn for {escape(name_or_uuid)}[/green]")
+    console.print(f"Submitted PowerOn for {name_or_uuid}", style="green", markup=False)
     print_json(job)
 
 
@@ -155,7 +156,7 @@ def systems_power_off(
         )
     )
 
-    console.print(f"[green]Submitted {escape(op)} for {escape(name_or_uuid)}[/green]")
+    console.print(f"Submitted {op} for {name_or_uuid}", style="green", markup=False)
     print_json(job)
 
 
@@ -189,7 +190,7 @@ def systems_summary(
     table.add_row("VIOS Count", "-" if vios_count is None else str(vios_count))
     console.print(table)
     for warning in result.get("warnings") or ():
-        err_console.print(f"[yellow]{escape(warning)}[/yellow]")
+        err_console.print(warning, style="yellow", markup=False)
 
 
 def systems_capacity(

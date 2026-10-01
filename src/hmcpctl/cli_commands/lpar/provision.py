@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import cast
 
 import typer
-from rich.markup import escape
 from rich.text import Text
 
 from ...documents import (
@@ -136,16 +135,22 @@ def _render_provision_result(
             "[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]"
         )
     elif result.workflow_completed:
-        console.print(f"[green]LPAR '{escape(name)}' provisioned successfully[/green]")
+        console.print(
+            f"LPAR '{name}' provisioned successfully", style="green", markup=False
+        )
     elif result.resource_created:
         identity = result.lpar_uuid or "UUID unavailable"
         console.print(
-            f"[yellow]LPAR '{escape(name)}' was created ({escape(identity)}), "
-            "but provisioning is incomplete — check step results[/yellow]"
+            f"LPAR '{name}' was created ({identity}), "
+            "but provisioning is incomplete — check step results",
+            style="yellow",
+            markup=False,
         )
     else:
         console.print(
-            f"[yellow]LPAR '{escape(name)}' was not created — check step results[/yellow]"
+            f"LPAR '{name}' was not created — check step results",
+            style="yellow",
+            markup=False,
         )
 
     table = VerbatimTable(title=f"Provision steps: {name}")
@@ -160,7 +165,7 @@ def _render_provision_result(
         table.add_row(step.step, Text(step.status, style=style))
     console.print(table)
     for warning in result.warnings:
-        console.print(f"[yellow]Warning: {escape(warning)}[/yellow]")
+        console.print(f"Warning: {warning}", style="yellow", markup=False)
     if result.change_location is not None:
         console.print(result.change_location.summary(), markup=False)
 

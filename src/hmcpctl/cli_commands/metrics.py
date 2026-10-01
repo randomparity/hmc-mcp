@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
 
 from ..operations.metrics.pcm import (
     PcmCategory,
@@ -75,8 +74,9 @@ def metrics_set_prefs(
     )
 
     console.print(
-        f"[green]Updated {escape(category)} {escape(resource_name_or_uuid)}: "
-        f"{escape(str(flags))}[/green]"
+        f"Updated {category} {resource_name_or_uuid}: {flags}",
+        style="green",
+        markup=False,
     )
 
 

@@ -258,11 +258,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 ### Fixed
 - `hmcpctl` output now prints HMC-sourced text and command arguments as received. Before
   this fix, Rich read a `[word]` segment as markup and dropped it, and turned a `:word:`
-  code into an emoji. This applied to confirmation lines, warnings, `raw get`/`raw post`
-  bodies, `console info` and every listing table's title, headers and cells. A crafted
-  argument such as `x[bold red]y` could therefore restyle the confirmation that echoed it.
-  An AST test now fails on a new `console.print` site that interpolates an unescaped value
-  and on a table built outside the shared verbatim table (#1029).
+  code into an emoji. This applied to confirmation lines, warnings, error messages,
+  `console info` and every listing table's title, headers and cells. A crafted argument
+  such as `x[bold red]y` could therefore restyle the confirmation that echoed it. Values
+  are no longer passed through `rich.markup.escape`, which doubled a trailing backslash.
+  `raw get` and `raw post` now write the body byte for byte; before, they also wrapped it
+  at 80 columns when piped and expanded tabs. An AST test fails when a
+  `console.print`/`err_console.print` call interpolates a value without `markup=False` or
+  `Text`, and when a module other than `output.py` imports `rich`, `rich.table` or
+  `rich.console` (#1029).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error

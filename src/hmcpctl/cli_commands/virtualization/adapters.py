@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
+from rich.text import Text
 
 from ...client.client_contracts import ADAPTER_TYPES, AdapterType
 from ...operations.virtualization.adapters import (
@@ -178,14 +178,16 @@ def adapters_delete(
     )
 
     console.print(
-        f"[green]Deleted {escape(adapter_type)} {escape(adapter_uuid)}[/green] from {escape(lpar)}"
+        Text.assemble(
+            (f"Deleted {adapter_type} {adapter_uuid}", "green"), f" from {lpar}"
+        )
     )
     console.print(location.summary(), markup=False)
 
 
 def _adapter_mutation(result: AdapterResult, lpar: str, kind: str) -> None:
     console.print(
-        f"[green]Added {escape(kind)} adapter[/green] to {escape(result.lpar_uuid)}"
+        Text.assemble((f"Added {kind} adapter", "green"), f" to {result.lpar_uuid}")
     )
     print_json(result.resource)
     console.print(result.change_location.summary(), markup=False)

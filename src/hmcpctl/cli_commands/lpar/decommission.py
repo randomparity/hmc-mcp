@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.markup import escape
 from rich.text import Text
 
 from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
@@ -79,12 +78,15 @@ def _render_decommission_result(
         )
     elif result.workflow_completed:
         console.print(
-            f"[green]LPAR '{escape(name_or_uuid)}' decommissioned successfully[/green]"
+            f"LPAR '{name_or_uuid}' decommissioned successfully",
+            style="green",
+            markup=False,
         )
     else:
         console.print(
-            f"[yellow]LPAR '{escape(name_or_uuid)}' was not fully decommissioned — "
-            "check step results[/yellow]"
+            f"LPAR '{name_or_uuid}' was not fully decommissioned — check step results",
+            style="yellow",
+            markup=False,
         )
 
     table = VerbatimTable(title=f"Decommission steps: {name_or_uuid}")
@@ -101,7 +103,7 @@ def _render_decommission_result(
         )
     console.print(table)
     for warning in result.warnings:
-        console.print(f"[yellow]Warning: {escape(warning)}[/yellow]")
+        console.print(f"Warning: {warning}", style="yellow", markup=False)
 
 
 def _step_style(status: str) -> str:

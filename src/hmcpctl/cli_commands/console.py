@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import typer
-from rich.markup import escape
+from rich.text import Text
 
 from .output import _resource, console, err_console, print_json
 from .runtime import with_client
@@ -23,7 +23,7 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
         print_json(info)
         return
     res = _resource(info)
-    console.print(f"[bold]HMC[/bold] {escape(info.get('link') or '')}")
+    console.print(Text.assemble(("HMC", "bold"), f" {info.get('link') or ''}"))
     for key in (
         "VersionInfo",
         "ManagementConsoleName",

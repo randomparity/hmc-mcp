@@ -6,7 +6,7 @@ from dataclasses import asdict
 from typing import Any
 
 import typer
-from rich.markup import escape
+from rich.text import Text
 
 from hmcpctl.client.core import HMCClient
 
@@ -95,7 +95,7 @@ def storage_create_vg(
         )
     )
 
-    console.print(f"[green]Created Volume Group '{escape(name)}'[/green]")
+    console.print(f"Created Volume Group '{name}'", style="green", markup=False)
     print_json(vg)
 
 
@@ -126,7 +126,9 @@ def storage_create_disk(
     )
 
     console.print(
-        f"[green]Created virtual disk '{escape(name)}' ({escape(str(capacity_mib))} MiB)[/green]"
+        f"Created virtual disk '{name}' ({capacity_mib} MiB)",
+        style="green",
+        markup=False,
     )
     print_json(disk)
 
@@ -151,7 +153,7 @@ def storage_delete_disk(
         lambda hmc: delete_virtual_disk(hmc, vios, vg, name, system_name_or_uuid=system)
     )
 
-    console.print(f"[green]Deleted virtual disk '{escape(name)}'[/green]")
+    console.print(f"Deleted virtual disk '{name}'", style="green", markup=False)
     print_json(disk)
 
 
@@ -204,7 +206,7 @@ def storage_attach_disk(
         return
     if result.workflow_completed:
         console.print(
-            f"[green]Attached virtual disk '{escape(name)}' to {escape(lpar)}[/green]"
+            f"Attached virtual disk '{name}' to {lpar}", style="green", markup=False
         )
         _print_attach_location(result)
         return
@@ -227,7 +229,7 @@ def storage_attach_disk(
 
 def _print_attach_location(result: AttachDiskResult) -> None:
     for warning in result.warnings:
-        console.print(f"[yellow]Warning: {escape(warning)}[/yellow]")
+        console.print(f"Warning: {warning}", style="yellow", markup=False)
     if result.change_location is not None:
         console.print(result.change_location.summary(), markup=False)
 
@@ -268,7 +270,7 @@ def storage_map(
     )
 
     console.print(
-        f"[green]Mapped '{escape(disk)}'[/green] to {escape(result.lpar_uuid)}"
+        Text.assemble((f"Mapped '{disk}'", "green"), f" to {result.lpar_uuid}")
     )
     print_json(asdict(result))
     console.print(result.change_location.summary(), markup=False)
@@ -299,7 +301,7 @@ def storage_create_media_repo(
         )
     )
 
-    console.print(f"[green]Created media repository on {escape(vg)}[/green]")
+    console.print(f"Created media repository on {vg}", style="green", markup=False)
     print_json(result)
 
 
@@ -331,7 +333,7 @@ def storage_create_media(
         )
     )
 
-    console.print(f"[green]Created media '{escape(name)}' on {escape(vg)}[/green]")
+    console.print(f"Created media '{name}' on {vg}", style="green", markup=False)
     print_json(result)
 
 
@@ -352,7 +354,7 @@ def storage_delete_media_repo(
     with_client(
         lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system)
     )
-    console.print(f"[green]Deleted media repository on {escape(vg)}[/green]")
+    console.print(f"Deleted media repository on {vg}", style="green", markup=False)
 
 
 def storage_delete_media(
@@ -375,9 +377,7 @@ def storage_delete_media(
             hmc, vios, vg, media_name, system_name_or_uuid=system
         )
     )
-    console.print(
-        f"[green]Deleted media '{escape(media_name)}' on {escape(vg)}[/green]"
-    )
+    console.print(f"Deleted media '{media_name}' on {vg}", style="green", markup=False)
 
 
 def storage_get_media_repo(
@@ -397,7 +397,7 @@ def storage_get_media_repo(
         print_json(result)
     elif result:
         console.print(
-            f"[green]Media Repository on VG {escape(vg)} (VIOS {escape(vios)}):[/green]"
+            f"Media Repository on VG {vg} (VIOS {vios}):", style="green", markup=False
         )
         resource = result.get("Resource", {})
         repo_name = resource.get("RepositoryName", "N/A")
@@ -425,7 +425,9 @@ def storage_list_optical_media(
         print_json([asdict(media) for media in media_list])
     elif media_list:
         console.print(
-            f"[green]Optical Media in repository on VG {escape(vg)} (VIOS {escape(vios)}):[/green]"
+            f"Optical Media in repository on VG {vg} (VIOS {vios}):",
+            style="green",
+            markup=False,
         )
         table = VerbatimTable()
         table.add_column("Media Name", style="cyan")
@@ -484,7 +486,9 @@ def storage_mount_optical_media(
         )
     )
     console.print(
-        f"[green]Mounted optical media '{escape(media_name)}' on LPAR {escape(lpar)}[/green]"
+        f"Mounted optical media '{media_name}' on LPAR {lpar}",
+        style="green",
+        markup=False,
     )
     print_json(result.resource)
     console.print(result.change_location.summary(), markup=False)
@@ -525,8 +529,9 @@ def storage_unmount_optical_media(
 
     location = with_client(_go)
     console.print(
-        f"[green]Unmounted optical media '{escape(media_name)}' from LPAR {escape(lpar)}; "
-        "backing ISO remains[/green]"
+        f"Unmounted optical media '{media_name}' from LPAR {lpar}; backing ISO remains",
+        style="green",
+        markup=False,
     )
     console.print(location.summary(), markup=False)
 
@@ -601,7 +606,7 @@ def storage_detach_mapping(
         )
 
     location = with_client(_go)
-    console.print(f"[green]Deleted storage mapping {escape(mapping_id)}[/green]")
+    console.print(f"Deleted storage mapping {mapping_id}", style="green", markup=False)
     console.print(location.summary(), markup=False)
 
 
@@ -648,7 +653,9 @@ def storage_upload_iso(
         print_json(result)
     else:
         console.print(
-            f"[green]Upload status: {escape(str(result.get('status', 'unknown')))}[/green]"
+            f"Upload status: {result.get('status', 'unknown')}",
+            style="green",
+            markup=False,
         )
         console.print(f"  Media name: {result.get('media_name', 'N/A')}", markup=False)
         console.print(
