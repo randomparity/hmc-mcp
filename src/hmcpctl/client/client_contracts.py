@@ -469,6 +469,14 @@ class SystemsClient(JobClient, Protocol):
         include_schema_version: bool = True,
     ) -> str: ...
 
+    async def _put(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
     async def _delete(self, path: str) -> None: ...
 
     async def list_managed_systems(self) -> list[dict[str, Any]]: ...
