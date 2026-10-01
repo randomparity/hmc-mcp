@@ -200,6 +200,8 @@ ALWAYS_LEAKS = (
     re.compile(r"-L[0-9A-F]{8,}"),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
+    # A long upper-case hex run is a volume id or WWN; no UUID, etag or count is one.
+    re.compile(r"(?<![0-9A-Za-z])[0-9A-F]{20,}"),
 )
 #: HMC sentinels and messages: data the tests need verbatim, never a name.
 SENTINELS = {
@@ -436,6 +438,53 @@ class Tokenizer:
         return found
 
 
+def _key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+#: Tool output keys that hold a device id or serial, in any case or separator style,
+#: so `VolumeUniqueID`, `volume_unique_id` and `UniqueDeviceID` all match. The text
+#: rules see only XML elements and `key=value` fields, never this JSON form.
+_DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
+    "wwpns",
+    "availablewwpns",
+    "wwpnprefix",
+    "logicalunitudid",
+    "luudid",
+    "tierudid",
+}
+_SERIAL_KEYS = {"serialnumber", "logicalserialnumber", "serial", "serialnum"}
+
+
+def _replace_value(value: Any, token: str) -> Any:
+    """*value* with its text replaced by *token*; an element's `@attrs` are kept."""
+    if isinstance(value, dict):
+        return {
+            k: v if k == "@attrs" else _replace_value(v, token)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_replace_value(v, token) for v in value]
+    return None if value is None else token
+
+
+def redact_identifier_keys(value: Any) -> Any:
+    """Redact device ids and serials held under their key names anywhere in *value*."""
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if _key(key) in _DEVICE_ID_KEYS:
+                out[key] = _replace_value(item, "<REDACTED-DEVID>")
+            elif _key(key) in _SERIAL_KEYS:
+                out[key] = _replace_value(item, "<REDACTED-SERIAL>")
+            else:
+                out[key] = redact_identifier_keys(item)
+        return out
+    if isinstance(value, list):
+        return [redact_identifier_keys(v) for v in value]
+    return value
+
+
 def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
     kind = record.get("kind")
     out: dict[str, Any] = {
@@ -468,6 +517,7 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         rest = {
             k: v for k, v in record.items() if k not in ("_src", "step", "kind", "t")
         }
+        rest = redact_identifier_keys(rest)
         out["record"] = json.loads(tok.tokenize(json.dumps(rest, default=str)) or "{}")
     return out
 

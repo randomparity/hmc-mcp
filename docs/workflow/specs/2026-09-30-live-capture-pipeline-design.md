@@ -74,13 +74,17 @@ Three subcommands, all offline:
     …) whole, IPv4 and IPv6 addresses (but not colon-separated SR-IOV records of short
     decimal fields), e-mail addresses and every host found in an `https://` URL
     become fixed tokens;
+  - in tool records, values held under a device-id or serial key (any case or
+    separator style: `VolumeUniqueID`, `volume_unique_id`, `SerialNumber`, …) are
+    redacted structurally, since the text rules see only XML and `key=value` forms;
   - a location code is replaced wherever it appears, even inside a DRC name, and only
     its `U….….…` prefix: the generic slot suffix stays;
   - replacement strings write `\g<1>`: `\1` before a digit is an octal escape;
   - the `www.ibm.com` and `www.w3.org` XML namespace hosts are preserved;
   - UUIDs map to `NNNNNNNN-abcd-4ef0-8abc-NNNNNNNNNNNN` in the case printed;
   - **fail closed:** after tokenizing, the run exits 1 without writing when any collected
-    name, URL host, `--private` pattern match, IP address or location code survives,
+    name, URL host, `--private` pattern match, IP address, location code, `-L` disk
+    WWN segment or run of twenty or more upper-case hex digits survives,
     or when a body that parsed as XML no longer parses.
 - `vocabulary CORPUS --enums ENUMS --firmware F --source TEXT [--fold D --fold-source
   TEXT]... --out V.json` derives a vocabulary; `--fold` adds the REST values and

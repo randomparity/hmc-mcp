@@ -214,7 +214,7 @@ def test_ssh_key_element_is_redacted_and_escaped() -> None:
         ),
         ("8375-42A*1234ABC", "1234ABC", "<REDACTED-SERIAL>"),
         ("serial_num=1234ABC", "1234ABC", "serial_num=<REDACTED-DEVID>"),
-        ("at U78D2.001.WZS01AB-P1-C2", "WZS01AB", "at <REDACTED-LOC>-P1-C2"),
+        ("at U78D2.001.SYNTH01-P1-C2", "SYNTH01", "at <REDACTED-LOC>-P1-C2"),
         ("1eU8375.42A.ABCD123-V100-C3", "ABCD123", "1e<REDACTED-LOC>-V100-C3"),
         (
             "unique_id=3E21360050768,udid=AB12",
@@ -585,7 +585,7 @@ def test_fold_needs_a_source_each(tmp_path: Path, capsys) -> None:
 
 def test_location_suffix_wwn_is_redacted_and_lun_kept() -> None:
     """A `-L<hex>` suffix segment carries a disk WWN or RAID array id; `-L0` stays."""
-    line = "U78D2.001.ABCD123-P1-C49-L5000C50098A124EF-L0\n"  # pragma: allowlist secret
+    line = "U78D2.001.ABCD123-P1-C49-L5000C5000000ABCD-L0\n"
     corpus = export.tokenize_records(_records(_ssh("lshwres -r io", line)))
     assert corpus[-1]["stdout"] == "<REDACTED-LOC>-P1-C49-L<REDACTED-DEVID>-L0\n"
 
@@ -596,7 +596,7 @@ def test_surviving_location_suffix_wwn_fails_closed(
     rules = tuple(r for r in export.IDENTIFIER_RULES if "L[0-9A-F]" not in r[0].pattern)
     monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
     with pytest.raises(export.LeakError):
-        export.tokenize_records(_records(_ssh("lshwres", "x-P1-L5000C50098A124EF-L0")))
+        export.tokenize_records(_records(_ssh("lshwres", "x-P1-L5000C5000000ABCD-L0")))
 
 
 @pytest.mark.parametrize(
@@ -626,3 +626,54 @@ def test_built_in_accounts_are_not_names() -> None:
         body = f"<UserProfile><UserID>{account}</UserID></UserProfile>"
         corpus = export.tokenize_records(_records(_rest("/u", body)))
         assert corpus[-1]["body"] == body
+
+
+@pytest.mark.parametrize(
+    ("key", "token"),
+    [
+        ("VolumeUniqueID", "<REDACTED-DEVID>"),
+        ("UniqueDeviceID", "<REDACTED-DEVID>"),
+        ("volume_unique_id", "<REDACTED-DEVID>"),
+        ("udid", "<REDACTED-DEVID>"),
+        ("AvailableWWPNs", "<REDACTED-DEVID>"),
+        ("LogicalUnitUDID", "<REDACTED-DEVID>"),
+        ("SerialNumber", "<REDACTED-SERIAL>"),
+        ("LogicalSerialNumber", "<REDACTED-SERIAL>"),
+        ("serial_number", "<REDACTED-SERIAL>"),
+    ],
+)
+def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
+    """Regression: tool output carried full device ids as JSON, which no text rule saw."""
+    data = {
+        "disks": [
+            {
+                key: "01MUlCvxMDE7Zq",
+                "nested": {key: {"@attrs": {"ksv": "V1"}, "#text": "x9q"}},
+            }
+        ]
+    }
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "hmc_list_storage",
+        "ok": True,
+        "data": data,
+    }
+    corpus = export.tokenize_records(_records(tool))
+    disk = corpus[-1]["record"]["data"]["disks"][0]
+    assert disk[key] == token
+    assert disk["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": token}
+
+
+def test_long_uppercase_hex_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A volume id that slips past every rule is caught by the scan."""
+    monkeypatch.setattr(export, "redact_identifier_keys", lambda value: value)
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "x",
+        "ok": True,
+        "data": {"VolumeUniqueID": "3E2136005076800000000000000000AB03IBMfcp"},
+    }
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(tool))
