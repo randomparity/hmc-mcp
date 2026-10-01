@@ -24,7 +24,7 @@ from ...resource_identity import (
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from ...ssh.commands import build_filter
+from ...ssh.commands import HMC_NO_RESULTS, build_filter
 from ...ssh.transport import run_hmc_cli
 from ...xmlutil import render_mtms
 
@@ -212,7 +212,7 @@ async def list_vios_backups(
         "-F name,type --header"
     )
     output = await run_hmc_cli(command, hmc.config)
-    if not output.strip():
+    if output.strip() in ("", HMC_NO_RESULTS):
         return []
     try:
         reader = csv.DictReader(io.StringIO(output, newline=""), strict=True)

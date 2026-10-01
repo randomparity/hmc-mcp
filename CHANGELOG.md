@@ -220,6 +220,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_vios_backups` and `list_vios_backups` return `[]` for a VIOS with no backups.
+  V10R3 answers that `lsviosbk` read with exit 0 and `No results were found.`, which the
+  header check refused as "Malformed lsviosbk CSV" (#1202).
 - A shared-processor create whose explicit processing units exceed that level's virtual
   processors (a virtual processor uses at most 1.0 unit) is now refused before any request is
   sent, naming each `<level>_procs`/`<level>_vcpus` pair and the CLI options to change. This
