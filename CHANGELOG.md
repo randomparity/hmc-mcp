@@ -259,6 +259,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_install_vios_by_lpar_selector` now refuses a VIOS-type partition name with an error
+  pointing at `hmc_install_vios`, instead of reporting "No LPAR named …". The selector resolves
+  only `LogicalPartition`-feed partitions, and a VIOS is listed only under `VirtualIOServer`
+  (#1247).
 - A malformed `port` or `verify_ssl` in one profile now makes the profile listing (`config show`,
   the MCP profile listing, `report utilization`) fail with a `ConfigError` naming the profile and
   field instead of a bare `ValueError`, and a string `verify_ssl` such as `"false"` is listed as
