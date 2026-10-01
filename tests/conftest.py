@@ -342,7 +342,9 @@ JOB_ID = "1787837921266"
 # first SELF link is the HMC's malformed `nulljobs/{JobID}` (#1161, P2).
 RUNNING_JOB_ENTRY = live_fixture("rest-job-running")["body"]
 RUNNING_JOB_ID = "1787837921267"
-# A read of the JOB_ENTRY job after it finished (#1161, P2).
+# A read of the JOB_ENTRY job after it finished (#1161, P2). A finished job reads
+# COMPLETED_OK; the documented job statuses have no bare COMPLETED
+# (docs/refs/hmc-rest-api-p10/016-job-status.md:16-27).
 COMPLETED_JOB_ENTRY = live_fixture("rest-job-completed-ok")["body"]
 
 # The memory and processor elements a whole-partition read-modify-write edits

@@ -22,8 +22,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc-captures/` (#1161).
 - `tests/fixtures/live/` holds 15 tokenized captures from the #1161 windows, each citing its
   capture, and these guessed mocks now replay them: the shared job entry is a captured
-  `JobResponse` with a numeric JobID that differs from its entry UUID, quick
-  `PartitionState` answers are JSON-quoted, an unowned slot's owner is `null`, and refcode
+  `JobResponse` with a numeric JobID that differs from its entry UUID; the guessed
+  `COMPLETED` job reads in the template, server-tool, storage, LPM and client tests are the
+  captured `COMPLETED_OK` read, and the client's running reads the captured `RUNNING` one;
+  quick `PartitionState` answers are JSON-quoted, an unowned slot's owner is `null`, and refcode
   timestamps read `MM/DD/YYYY HH:MM:SS`. New tests feed the captured 404 REST0005,
   400 REST000E and job-feed refusals through the job read paths, and the captured LPAR
   create, read and miss through the client (#1161).

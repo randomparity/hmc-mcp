@@ -18,6 +18,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from conftest import (
+    COMPLETED_JOB_ENTRY,
     JOB_ENTRY,
     JOB_ID,
     LPAR_RESOURCE_CONFIG,
@@ -919,7 +920,7 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
         )
     )
     poll = mock_hmc.get("/rest/api/uom/Job/platform-job").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
     result = hmc_update_firmware(
@@ -932,7 +933,7 @@ def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
 
     assert poll.called
     assert result is not None
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
@@ -942,14 +943,14 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     poll_route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     result = hmc_update_console_software(
         MC_UUID, CONSOLE_SOURCE, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 def test_submit_available_hmc_ptfs_query_returns_submitted_job(monkeypatch, mock_hmc):
@@ -998,7 +999,7 @@ def test_submit_available_hmc_ptfs_query_waits_for_result(monkeypatch, mock_hmc)
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     poll = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
 
     result = hmc_submit_available_hmc_ptfs_query(
@@ -1006,7 +1007,7 @@ def test_submit_available_hmc_ptfs_query_waits_for_result(monkeypatch, mock_hmc)
     )
 
     assert poll.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
 
 
 @pytest.mark.parametrize(
@@ -1120,19 +1121,6 @@ def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
 # hmc_wait_for_job
 # ---------------------------------------------------------------------- #
 
-JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:job-uuid-999</id>
-  <title>Job</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <JobID>job-uuid-999</JobID>
-      <Status>COMPLETED</Status>
-    </Job>
-  </content>
-</entry>
-"""
-
 JOB_ENTRY_FAILED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:job-uuid-999</id>
@@ -1209,19 +1197,19 @@ JOB_OUTCOME_KEYS = {
 
 
 def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
-    """hmc_wait_for_job returns immediately when the first poll is COMPLETED."""
+    """hmc_wait_for_job returns immediately when the first poll is COMPLETED_OK."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    route = mock_hmc.get(f"/rest/api/uom/jobs/{JOB_ID}").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
-    result = hmc_wait_for_job("job-uuid-999")
+    result = hmc_wait_for_job(JOB_ID)
     assert route.called
     assert set(asdict(result)) == JOB_OUTCOME_KEYS
-    assert result.job_id == "job-uuid-999"
-    assert result.status == "COMPLETED"
+    assert result.job_id == JOB_ID
+    assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
     assert result.error is None
-    assert result.job["Resource"]["Status"] == "COMPLETED"
+    assert result.job["Resource"]["Status"] == "COMPLETED_OK"
 
 
 @pytest.mark.parametrize(
@@ -1411,7 +1399,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     """hmc_wait_for_job(uuid, ..., job_href=...) polls the exact href path."""
     _hmc_env(monkeypatch)
     href_route = mock_hmc.get(_JOB_OP_HREF).mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
     )
     global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
@@ -1421,7 +1409,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     )
     assert href_route.called
     assert not global_route.called
-    assert result.status == "COMPLETED"
+    assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
     # A supplied link that resolved is echoed back, which is what makes a null
     # job_href on a found outcome mean "your link was retired" (#474).
