@@ -287,12 +287,26 @@ def _append_mapping(
     return _mutate
 
 
+# A mapping create names no adapter, so the HMC pairs or creates one itself. In the
+# #1085 window a create refused with 500 REST0269 still left a VIOS server adapter
+# with no mapping, which list-mappings does not show; this read-only listing does
+# (#1237).
+_ADAPTER_SIDE_EFFECT = (
+    "A failed mapping create can leave a VIOS virtual SCSI server adapter with no "
+    "mapping, which list-mappings does not show. List the VIOS server adapters with "
+    "`lshwres -r virtualio --rsubtype scsi -m <managed-system> --level lpar "
+    "--filter lpar_names=<vios-name> -F slot_num,remote_lpar_name,remote_slot_num` "
+    "and compare them with the mappings."
+)
+
+
 async def _rmw_vios_mapping(
     client: StorageClient,
     operation: str,
     path: str,
     uuid_path_arguments: Mapping[str, str],
     mutate: Callable[[ET.Element, str | None], None],
+    note: str = "",
 ) -> str:
     """Read-modify-write the VIOS ``ViosSCSIMapping`` group under If-Match (ADR 0169).
 
@@ -363,7 +377,7 @@ async def _rmw_vios_mapping(
         return response.text
 
     return await client._reconcile_storage_mutation(
-        operation, lambda: client.list_storage_mappings(vios_uuid), dispatch
+        operation, lambda: client.list_storage_mappings(vios_uuid), dispatch, note
     )
 
 
@@ -481,8 +495,13 @@ class StorageMixin:
         operation: str,
         snapshot: Callable[[], Awaitable[Any]],
         dispatch: Callable[[], Awaitable[Any]],
+        note: str = "",
     ) -> Any:
-        """Read state around a failed storage mutation without retrying it."""
+        """Read state around a failed storage mutation without retrying it.
+
+        *note* adds what the caller knows the failed write may have left that the
+        snapshot cannot show.
+        """
         try:
             return await dispatch()
         except HMCError as exc:
@@ -496,7 +515,7 @@ class StorageMixin:
                 observation = "readback completed"
             raise HMCError(
                 f"{operation} may have a possible side effect. Do not retry until state "
-                f"is verified; {observation}",
+                f"is verified; {observation}" + (f". {note}" if note else ""),
                 exc.status_code,
                 exc.body,
             ) from exc
@@ -657,6 +676,7 @@ class StorageMixin:
             path,
             {"vios_uuid": vios_uuid},
             _append_mapping("map_storage_to_lpar", _document),
+            _ADAPTER_SIDE_EFFECT,
         )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
@@ -1266,6 +1286,7 @@ class StorageMixin:
             path,
             {"vios_uuid": vios_uuid},
             _append_mapping("create_optical_mapping", _document),
+            _ADAPTER_SIDE_EFFECT,
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None
