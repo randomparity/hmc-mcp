@@ -258,7 +258,7 @@ async def get_job(
 
     *job_id* is the JobID this package hands out for a submitted job (a stored
     entry UUID from an earlier release is accepted, but a V10R3 HMC answers it
-    with HTTP 406, issue #1160); *job_href* is a SELF link from the job's entry,
+    with HTTP 400 REST000E, issue #1160); *job_href* is a SELF link from the job's entry,
     needed only on firmware that cannot resolve the identifier through the
     documented global jobs path (issue #95). The HMC's
     ``/rest/api/uom/jobs/{JobID}/{uuid}`` link is read through its JobID segment.

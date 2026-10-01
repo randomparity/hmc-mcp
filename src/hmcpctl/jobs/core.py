@@ -88,7 +88,7 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     ``Resource.JobID`` comes first. It is the one identifier stable from
     submission through every read: a V10R3 HMC gives the submission entry and
     the read entries different Atom UUIDs, and answers an entry UUID on
-    ``/rest/api/uom/jobs/{id}`` with HTTP 406 (issue #1160). The entry UUID,
+    ``/rest/api/uom/jobs/{id}`` with HTTP 400 REST000E (issue #1160). The entry UUID,
     then the SELF link, are fallbacks for a response that carries no JobID; a
     read-side link yields its JobID segment, not its per-read last one.
     """

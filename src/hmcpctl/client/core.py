@@ -1480,7 +1480,7 @@ class HMCClient(
 
         The documented global endpoint is ``/rest/api/uom/jobs/{id}`` and uses
         the ``web+xml`` content type. It resolves the entry's ``JobID``; a V10R3
-        HMC answers the Atom entry UUID with HTTP 406 (issue #1160).
+        HMC answers the Atom entry UUID with HTTP 400 REST000E (issue #1160).
 
         When *job_href* is provided (a SELF link from a job entry), its job path
         is preferred so per-operation SELF links work as returned by the HMC
