@@ -403,7 +403,15 @@ If a step fails, stop and keep the transcript and any job ID. Then:
 1. Read the current state: `lpars state`, `jobs show`, `adapters list`, `storage list-vgs`,
    `storage list-mappings`, and `storage list-optical-media`.
 2. On a storage or VIOS error that reports a possible side effect, do not retry. Compare the
-   listings above with the state you expected and reconcile by hand.
+   listings above with the state you expected and reconcile by hand. A failed
+   `mount-optical-media` or `storage map` can leave a VIOS server adapter with no mapping, which
+   none of those listings shows. List the VIOS's server adapters on the HMC (read-only) and look
+   for a slot paired to the partition that carries no mapping (#1237):
+
+   ```sh
+   lshwres -r virtualio --rsubtype scsi -m <managed-system-name> --level lpar \
+     --filter lpar_names=<vios-name> -F slot_num,remote_lpar_name,remote_slot_num
+   ```
 3. Resume at the first step whose expected result you cannot see. Do not repeat a step whose
    resource already exists. Its create command either refuses the duplicate or makes a second
    one.

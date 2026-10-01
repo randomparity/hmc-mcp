@@ -253,6 +253,15 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
+  `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
+  mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error
+  that it may have left a VIOS virtual SCSI server adapter
+  with no mapping, and names the read-only `lshwres -r virtualio --rsubtype scsi` listing that
+  shows it. `storage list-mappings` does not show such an adapter: in the #1085 window a mount
+  refused with 500 REST0269 left one behind. `mount-optical-media` help and the
+  `hmc_mount_optical_media` description now state REST0269's precondition (activate or apply
+  a profile once first), and the ISO-install recipe's Recovery step lists the adapters (#1237).
 - `hmc_create_vios` and `create_vios` now create the VIOS. They sent a `LogicalPartition`
   document to the system's `LogicalPartition` collection, which V10R3 refuses with 500
   `REST0140 Invalid Partition Type associated with LogicalPartition`, so no VIOS was ever

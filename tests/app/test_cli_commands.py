@@ -5133,6 +5133,15 @@ def test_lpm_decline_does_not_enter_client_lifecycle(monkeypatch):
     assert called is False
 
 
+def test_storage_mount_optical_media_help_names_the_rest0269_precondition():
+    """#1237: the refusal's precondition is stated before the write."""
+    result = RUNNER.invoke(cli.app, ["storage", "mount-optical-media", "--help"])
+
+    assert result.exit_code == 0
+    assert "REST0269" in result.stdout
+    assert "activate or apply a profile" in " ".join(result.stdout.split())
+
+
 @pytest.mark.parametrize("command", ["create", "provision"])
 def test_lpars_create_and_provision_refuse_a_vios_type_before_client_call(
     fake_hmc, command

@@ -291,3 +291,40 @@ async def test_detach_matches_upper_case_live_identities_case_insensitively(mock
 
     assert post.call_count == 1
     assert _mappings(post.calls.last.request.content.decode()) == []
+
+
+ADAPTER_LISTING = (
+    "lshwres -r virtualio --rsubtype scsi -m <managed-system> --level lpar "
+    "--filter lpar_names=<vios-name> -F slot_num,remote_lpar_name,remote_slot_num"
+)
+
+
+@pytest.mark.asyncio
+@_parametrize_create
+async def test_create_5xx_names_the_server_adapter_listing(mock_hmc, create):
+    """A failed mapping create can leave an unmapped server adapter (#1237).
+
+    In the #1085 window a REST0269 refusal left VIOS slot 5 paired to the
+    client's slot 3 with no mapping; list-mappings did not show it, and only the
+    lshwres listing did. The side-effect error names that read-only listing.
+    """
+    _routes(mock_hmc, _ok(), post_status=500)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="possible side effect") as raised:
+            await create(hmc)
+
+    message = str(raised.value)
+    assert "server adapter" in message
+    assert ADAPTER_LISTING in message
+
+
+@pytest.mark.asyncio
+async def test_detach_5xx_does_not_claim_an_adapter_was_created(mock_hmc):
+    _routes(mock_hmc, _ok(), post_status=500)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="possible side effect") as raised:
+            await _detach(hmc)
+
+    assert "lshwres" not in str(raised.value)
