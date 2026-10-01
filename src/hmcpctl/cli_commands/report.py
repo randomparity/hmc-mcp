@@ -333,8 +333,8 @@ def report_utilization(
         try:
             config = load_profile(profile)
         except ValidationError as exc:
-            # The failure reason lands in a circulated CSV; pydantic's own text echoes
-            # each rejected input, which can be the profile's password.
+            # The failure reason lands in a circulated CSV on one line; pydantic's own
+            # text spans several lines and ends with a docs URL.
             problems = "; ".join(
                 f"{'.'.join(map(str, error['loc']))}: {error['msg']}"
                 for error in exc.errors()
