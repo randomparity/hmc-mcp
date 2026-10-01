@@ -229,6 +229,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_snapshot_capture` reads the partition's running allocation from the nested
+  `PartitionMemoryConfiguration` and `PartitionProcessorConfiguration` containers V10R3
+  returns; it read flat leaves that do not exist and refused every partition with "requires
+  true/false HasDedicatedProcessors". The snapshot's HMC name and version now come from
+  `ManagementConsoleName` and the nested `VersionInfo` (`V10R3M1060`); both were always
+  empty (#1202).
 - `hmc_snapshot_capture` reads the profile record a V10R3 HMC prints. It refused every
   partition with "native profile contains an invalid attribute name", because the HMC quotes
   the list-valued `virtual_serial_adapters` pair (`"name=v1,v2"`) and splits a pair at its
