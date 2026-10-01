@@ -1011,6 +1011,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmcpctl lpars set-boot-order` prints the boot string it set and the pending boot string
+  read back from the HMC, not the whole updated LPAR document; `--json` prints the document
+  as before. The operation and the `hmc_set_lpar_boot_order` tool return value are unchanged
+  (#1248).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc
