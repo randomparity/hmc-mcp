@@ -229,6 +229,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_system_summary` keeps its result when the HMC refuses one inventory read. A V11R2 HMC
+  answers a system's VIOS feed with HTTP 500 when a VIOS cannot report its storage, and the
+  summary failed as "unhandled errors in a TaskGroup"; the refused count is now `null` and a
+  new `warnings` field names the source and the HMC's message (#1202).
 - `console info` prints the console's `NetworkInterfaces`; it looked for a `NetworkInfo`
   element V10R3 does not return (#1202).
 - The managed-system fallback that resolves a system through `ManagedSystem/quick/All`

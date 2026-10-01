@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any
 
 from hmcpctl.client.core import HMCClient
 
+from ...errors import HMCError
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
 from ...xmlutil import leaf_text, render_mtms
 from .capacity import system_capacity
@@ -39,7 +41,8 @@ class SystemSummary:
     """One managed system's state, capacity, and partition counts.
 
     Total is the system's configurable memory (MiB) or processor units and free
-    is what it currently reports available.
+    is what it currently reports available. A partition or VIOS count is ``None``
+    when the HMC refused that inventory read; ``warnings`` names each one.
     """
 
     uuid: object | None
@@ -51,9 +54,10 @@ class SystemSummary:
     free_memory_mib: int
     total_proc_units: float
     free_proc_units: float
-    lpar_count: int
+    lpar_count: int | None
     lpar_states: dict[str, int]
-    vios_count: int
+    vios_count: int | None
+    warnings: tuple[str, ...] = ()
 
 
 def _container(resource: dict[str, Any], name: str) -> dict[str, Any]:
@@ -150,11 +154,31 @@ async def _fetch_lpar_data(
     return lpar, adapters
 
 
+_MAX_WARNING_LENGTH = 500
+
+
+async def _inventory_or_warning(
+    read: Awaitable[list[dict]], source: str
+) -> list[dict] | str:
+    """Return one inventory collection, or the warning for an HMC refusal.
+
+    A V11R2 HMC answers the system's VIOS feed with HTTP 500 when a VIOS cannot
+    report its storage (#1202); the rest of the summary stays useful.
+    """
+    try:
+        return await read
+    except HMCError as exc:
+        return f"{source} inventory is unavailable: {exc}"[:_MAX_WARNING_LENGTH]
+
+
 async def _fetch_system_summary_data(
     hmc,
     system_uuid: str,
-) -> tuple[dict, list[dict], list[dict]]:
-    """Fetch a managed system, then its LPAR and VIOS collections concurrently."""
+) -> tuple[dict, list[dict] | str, list[dict] | str]:
+    """Fetch a managed system, then its LPAR and VIOS collections concurrently.
+
+    Each collection is the entries read, or a warning when the HMC refused it.
+    """
     system = await hmc.get_managed_system(system_uuid)
     if system is None:
         raise ValueError(
@@ -162,11 +186,13 @@ async def _fetch_system_summary_data(
             "List managed systems to inspect the available systems."
         )
     async with asyncio.TaskGroup() as tasks:
-        lpars_task = tasks.create_task(hmc.list_logical_partitions(system_uuid))
-        vios_task = tasks.create_task(hmc.list_vios(system_uuid))
-    lpars = lpars_task.result()
-    vios_list = vios_task.result()
-    return system, lpars, vios_list
+        lpars_task = tasks.create_task(
+            _inventory_or_warning(hmc.list_logical_partitions(system_uuid), "LPAR")
+        )
+        vios_task = tasks.create_task(
+            _inventory_or_warning(hmc.list_vios(system_uuid), "VIOS")
+        )
+    return system, lpars_task.result(), vios_task.result()
 
 
 def _text_or_none(value: object) -> str | None:
@@ -176,13 +202,14 @@ def _text_or_none(value: object) -> str | None:
 
 def _system_summary(
     system: dict[str, Any],
-    lpars: list[dict[str, Any]],
-    vios_list: list[dict[str, Any]],
+    lpars: list[dict[str, Any]] | str,
+    vios_list: list[dict[str, Any]] | str,
 ) -> SystemSummary:
     res = system.get("Resource") or {}
+    warnings = tuple(value for value in (lpars, vios_list) if isinstance(value, str))
 
     lpar_states: dict[str, int] = {}
-    for lpar in lpars:
+    for lpar in lpars if isinstance(lpars, list) else []:
         lr = lpar.get("Resource") or {}
         state = lr.get("PartitionState") or "unknown"
         lpar_states[state] = lpar_states.get(state, 0) + 1
@@ -199,9 +226,10 @@ def _system_summary(
         free_memory_mib=capacity.free_memory_mib,
         total_proc_units=capacity.total_proc_units,
         free_proc_units=capacity.free_proc_units,
-        lpar_count=len(lpars),
+        lpar_count=len(lpars) if isinstance(lpars, list) else None,
         lpar_states=lpar_states,
-        vios_count=len(vios_list),
+        vios_count=len(vios_list) if isinstance(vios_list, list) else None,
+        warnings=warnings,
     )
 
 
