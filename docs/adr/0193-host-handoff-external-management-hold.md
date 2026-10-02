@@ -37,21 +37,20 @@ checks policy; the partition UUID is resolved later, inside the handler's domain
      never carries it.
    - `release` needs the exact `hold_id`, or a call from the placing agent id. It writes
      nothing to the HMC.
-2. **Where the check runs.** In every partition-resolution path a mutation uses before its
-   first HMC write, through one hold hook. On main `f1b302db` those are `resolve_lpar_uuid`,
-   `resolve_and_authorize_lpar_mutation`, `resolve_and_authorize_lpar_names`, decommission's
-   target resolver and the SSH partition selectors; the hook ignores `read` tools. The MCP server and the CLI install the hook
-   at startup; the library leaves it unset. The `authorized()` wrapper records the tool name and
-   any presented `hold_id` in the call context the hook reads, so direct calls and
-   `hmc_invoke_tool` (ADR 0189) reach it identically. Each CLI command sets the same context
-   fields, naming the registry tool it mirrors, and partition commands take `--hold-id`. A
-   resolution with no call context is treated as a mutation.
-   It covers every operation that changes a partition's configuration, power state or
-   existence, or which disks and media it sees, whatever `authorize_power_operations` is set
-   to. A registry-driven test enumerates every non-`read` tool whose target is a partition or
-   that takes a partition selector or nested partition target, including the VIOS mapping and
-   optical tools, and proves each reaches the hook. `hold_id` is outside the ADR 0190 request
-   digest, so it may accompany any continuation.
+2. **Where the check runs.** In every partition-resolution path a mutation uses before its first HMC
+   write, through one hold hook. On main `f1b302db` those are `resolve_lpar_uuid`,
+   `resolve_and_authorize_lpar_mutation`, `resolve_and_authorize_lpar_names`, decommission's target
+   resolver and the SSH partition selectors; the hook ignores `read` tools. The MCP server and the
+   CLI install the hook at startup; the library leaves it unset. The `authorized()` wrapper records
+   the tool name and any presented `hold_id` in the call context the hook reads, so direct calls and
+   `hmc_invoke_tool` (ADR 0189) reach it identically. Each CLI command sets the same context fields,
+   naming the registry tool it mirrors, and partition commands take `--hold-id`. A resolution with
+   no call context is treated as a mutation. It covers every operation that changes a partition's
+   configuration, power state or existence, or which disks and media it sees, whatever
+   `authorize_power_operations` is set to. A registry-driven test enumerates every non-`read` tool
+   whose target is a partition or that takes a partition selector or nested partition target,
+   including the VIOS mapping and optical tools, and proves each reaches the hook. `hold_id` is
+   outside the ADR 0190 request digest, so it may accompany any continuation.
 3. **Exemptions.**
    - `hmc_prepare_host_handoff` itself.
    - `hmc_capture_lpar_console`, because console leasing is kdive's.

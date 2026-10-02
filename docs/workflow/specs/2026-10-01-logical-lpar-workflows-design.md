@@ -155,8 +155,8 @@ the dispatch authorizer admits the call, as that tool, for each resolved target.
 | handoff `release` | none beyond the tool itself |
 | operation status | none beyond the tool itself; it lists only records with the caller's agent id |
 
-The names of #637's profile-write and profile-read tools are **undecided**, and #637 sets it. #1225 and #1226
-stay blocked on it.
+The names of #637's profile-write and profile-read tools are **undecided**, and #637 sets them.
+#1225 and #1226 stay blocked on it.
 
 `hmc_power_lpar` never reaches `dumprestart`; that stays `hmc_dump_restart_lpar` (ADR 0188).
 `mode=immediate` must be stated explicitly. A timeout never escalates to it.
@@ -222,16 +222,15 @@ under any agent id, and list and release holds (ADR 0190, ADR 0193).
 
 - Provision stamps ownership (ADR 0011) as a required step. Failing to stamp is `failed`, not
   a warning. Created disks and media are recorded in the store.
-- VIOS and volume-group writes keep ADR 0169 and ADR 0171's read-modify-write with `If-Match`.
-  No live observation shows the HMC enforcing `If-Match`; #879 closed without recording one, so
-  #1230's native arms record it. Until a recorded observation exists, the VIOS and
-  volume-group writes the logical tools add require `exclusive_writer_window=true`: provision
-  with `install` (disk creation, upload, mount), decommission with `delete_owned`, and #1228's
-  attach actions. That flag is the caller's assertion that an operator has paused other writers
-  on those VIOS. Without it, planning reports a blocker, and the mutating tool refuses before
-  recording any intent, naming the flag; `delete_owned` never degrades to `retain`. Provision without `install` and the
-  specialist tools keep today's behavior and do not take the flag. A 412 response is `failed`
-  and is not retried.
+- VIOS and volume-group writes keep ADR 0169 and ADR 0171's read-modify-write with `If-Match`. No
+  live observation shows the HMC enforcing `If-Match`; #879 closed without recording one, so #1230's
+  native arms record it. Until a recorded observation exists, the VIOS and volume-group writes the
+  logical tools add require `exclusive_writer_window=true`: provision with `install` (disk creation,
+  upload, mount), decommission with `delete_owned`, and #1228's attach actions. That flag is the
+  caller's assertion that an operator has paused other writers on those VIOS. Without it, planning
+  reports a blocker, and the mutating tool refuses before recording any intent, naming the flag;
+  `delete_owned` never degrades to `retain`. Provision without `install` and the specialist tools
+  keep today's behavior and do not take the flag. A 412 response is `failed` and is not retried.
 - Decommission storage cleanup follows ADR 0192.
 
 ## Installation media and boot
@@ -300,14 +299,16 @@ Results list each of these under `unverified`.
 ADR 0193 governs the hold:
 
 - one per partition, keyed by system and partition UUID;
-- checked in every partition-resolution path a mutation uses, through a hook the MCP server and
-  CLI install and the library does not, so direct calls, `hmc_invoke_tool` and CLI commands all reach it;
+- checked in every partition-resolution path a mutation uses, through a hook the MCP server and CLI
+  install and the library does not, so direct calls, `hmc_invoke_tool` and CLI commands all reach
+  it;
 - exempt: the handoff tool, console capture, and calls presenting the matching `hold_id`
   (`--hold-id` on the CLI);
 - the `hold` result field carries label, agent id and creation time, and `hold_id` only for the
   agent that placed the hold, which passes it to the consumer; the `document` never carries it.
 
-`prepare` without `hold` also reports an existing hold's label, agent id and creation time. The `prepare` document has three groups of facts:
+`prepare` without `hold` also reports an existing hold's label, agent id and creation time. The
+`prepare` document has three groups of facts:
 
 - `observed`: system and partition identity, state, resources, adapters, MACs, disks and
   mounted media, each from a read made during this call;

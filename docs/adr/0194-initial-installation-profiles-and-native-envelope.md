@@ -50,7 +50,8 @@ Evidence observed on 2026-10-01:
 
 - **Ubuntu 24.04.5.** judgment: fit. Supported, but 26.04 is Canonical's recommended Power
   release and is supported two years longer.
-- **Rocky 10.2.** verified: `https://docs.rockylinux.org/10/releases/release_notes/10_1/` and
-  the RHEL 10.2 release notes overview list POWER10 as the ppc64le floor (observed 2026-10-01). The POWER9 lab could not prove it.
+- **Rocky 10.2.** verified: `https://docs.rockylinux.org/10/releases/release_notes/10_1/` and the
+  RHEL 10.2 release notes overview list POWER10 as the ppc64le floor (observed 2026-10-01). The
+  POWER9 lab could not prove it.
 - **Accept any distribution the producer offers.** judgment: fit. Each profile needs its own
   native proof before it is supported.

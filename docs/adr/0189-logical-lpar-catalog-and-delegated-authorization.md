@@ -37,13 +37,13 @@ one effect cannot by itself express "may start, may not stop".
    logical tool's own grant is necessary, never sufficient. The logical tool registers with
    the most severe effect any of its actions can have, so client approval prompts stay
    conservative; that is the ADR 0012 relaxation.
-3. **Search and invoke.** `hmc_search_tools` (effect `read`) returns at most 20 entries, and at
-   most one full input schema when an exact name is given, drawn only from tools the policy
-   permits. `hmc_invoke_tool` (effect `destructive`) dispatches one permitted, registered tool
-   through that tool's own `authorized()` wrapper, so validation, target scope, ownership, the
-   ADR 0193 hold check, maturity metadata and the ADR 0040 authorization record all apply as
-   for a direct call. Its result is `{name, result}`. It refuses the two gateway names and any tool whose effect is `arbitrary-command`. An unknown
-   name and a withheld name return the same denial.
+3. **Search and invoke.** `hmc_search_tools` (effect `read`) returns at most 20 entries, and at most
+   one full input schema when an exact name is given, drawn only from tools the policy permits.
+   `hmc_invoke_tool` (effect `destructive`) dispatches one permitted, registered tool through that
+   tool's own `authorized()` wrapper, so validation, target scope, ownership, the ADR 0193 hold
+   check, maturity metadata and the ADR 0040 authorization record all apply as for a direct call.
+   Its result is `{name, result}`. It refuses the two gateway names and any tool whose effect is
+   `arbitrary-command`. An unknown name and a withheld name return the same denial.
 4. **Advertisement is a listing choice, not an authorization one.** When #1232 switches the
    default listing to the primary set, a direct `tools/call` of a permitted specialist name
    keeps working. Until #1232, the primary tools carry metadata marking them primary and the
@@ -68,9 +68,10 @@ one effect cannot by itself express "may start, may not stop".
 - **Register one logical tool per action (`hmc_start_lpar`, `hmc_stop_lpar`, …).** judgment:
   fit. It rebuilds the flat catalog the epic exists to shrink, and the epic names
   `hmc_power_lpar`.
-- **Add an `actions` key to grants.** verified: `rg -n operation src/hmcpctl/authorization/access_policy.py`
-  returns nothing; grants resolve by `tools` and `effects` only (main `f1b302db`). judgment: a policy-model change wider than
-  delegation, which already expresses the split.
+- **Add an `actions` key to grants.** verified: `rg -n operation
+  src/hmcpctl/authorization/access_policy.py` returns nothing; grants resolve by `tools` and
+  `effects` only (main `f1b302db`). judgment: a policy-model change wider than delegation, which
+  already expresses the split.
 - **Authorize logical tools only by their own grant.** judgment: fit. A grant for
   `hmc_power_lpar` would silently confer stop and restart authority the operator withheld
   from the specialists.
