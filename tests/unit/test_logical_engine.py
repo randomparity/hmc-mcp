@@ -328,6 +328,25 @@ def test_failed_end_write_is_recovered_in_the_same_process(monkeypatch):
     assert (record.state, record.outcome, writer.calls) == ("terminal", "abandoned", 1)
 
 
+def test_intent_left_by_a_failed_settle_is_reconciled_on_resume(monkeypatch):
+    real, failures = store.record_outcome, []
+
+    def flaky(conn, operation_id, key, status, identity):
+        if status == "uncertain" and not failures:
+            failures.append(1)
+            raise sqlite3.OperationalError("database or disk is full")
+        return real(conn, operation_id, key, status, identity)
+
+    monkeypatch.setattr(store, "record_outcome", flaky)
+    writer = Writer(raises=RuntimeError("timeout"))
+    stuck = _submit(body=_body(writer))
+    assert (stuck.outcome, stuck.effects[0].status) == ("needs_attention", "intended")
+    monkeypatch.setitem(engine.CLASSIFIERS, "test.k0", _classify("not_applied"))
+    writer.raises = None
+    record = _submit(body=_body(writer), continuation="resume")
+    assert (record.state, record.outcome, writer.calls) == ("terminal", "completed", 2)
+
+
 def test_recorded_exposes_the_journal():
     seen = []
 

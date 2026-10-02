@@ -27,6 +27,9 @@ _EFFECT_KEY = re.compile(r"^[a-z0-9_.:-]{1,128}$")
 _EFFECT_KIND = re.compile(r"^[a-z0-9_.]{1,64}$")
 _MAX_TARGET = 256
 _PAUSING = frozenset({"ready_to_boot", "needs_attention"})
+# A run starts with no earlier worker live on its operation, so an ``intended`` effect it
+# loads is as unknown as an ``uncertain`` one (a failed outcome write leaves it there).
+_OPEN = frozenset({"intended", "uncertain"})
 _ABSENT = object()
 _LOG = logging.getLogger(__name__)
 
@@ -73,7 +76,7 @@ _ADMISSION = threading.Lock()
 
 
 def register_classifier(kind: str, classifier: Classifier) -> None:
-    """Register the live check that classifies an ``uncertain`` effect of *kind*."""
+    """Register the live check for an ``intended`` or ``uncertain`` effect of *kind*."""
     if kind in CLASSIFIERS:
         raise ValueError(f"a classifier for effect kind {kind!r} is already registered")
     CLASSIFIERS[kind] = classifier
@@ -388,10 +391,10 @@ class OperationContext:
             return cls(row, store.load_effects(conn, operation_id), continuation)
 
     def has_uncertain(self) -> bool:
-        return any(effect.status == "uncertain" for effect in self._effects.values())
+        return any(effect.status in _OPEN for effect in self._effects.values())
 
     def uncertain_warning(self) -> str:
-        keys = sorted(k for k, e in self._effects.items() if e.status == "uncertain")
+        keys = sorted(k for k, e in self._effects.items() if e.status in _OPEN)
         return f"the body returned with effects of unknown outcome: {', '.join(keys)}"
 
     def recorded(self, key: str) -> EffectRecord | None:
@@ -485,9 +488,9 @@ class OperationContext:
         return identity
 
     async def reconcile(self) -> tuple[str, ...]:
-        """Classify every ``uncertain`` effect by its live check; return what stays open."""
+        """Classify every open effect by its live check; return what stays open."""
         warnings = []
-        for effect in [e for e in self._effects.values() if e.status == "uncertain"]:
+        for effect in [e for e in self._effects.values() if e.status in _OPEN]:
             warning = await self._classify(effect)
             if warning is not None:
                 warnings.append(warning)
