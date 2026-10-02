@@ -187,41 +187,75 @@ results JSON itself into a pull request, issue, or any public location.**
 
 ## 4. Confirm the system is clean
 
-Always, including after a run that looked fine:
+Always, after every arm, including after a run that looked fine. Pass the arm's
+own results document:
 
 ```sh
 uv run --no-sync python scripts/live_test_recovery.py --results test-results-dedicated.json
 ```
 
-After a bare-cec run, pass `--results test-results-bare-cec.json`. The check reads
-the same artifacts for both arms.
+After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
+`bare-cec`, `round2` or `sriov`.
+
+The check reads the subtasks the run dispatched from the document, and witnesses
+two sets of them:
+
+| Subtasks | What it reads |
+|---|---|
+| 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
+| 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
+
+It also counts the server adapters after round2's subtask 14 provisions the test
+partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 
 | Exit | Meaning |
 |---|---|
-| 0 | nothing carrying this run's marker survives |
+| 0 | every dispatched subtask is witnessed and nothing is left behind |
 | 1 | something is stranded; the output names it and the command that clears it |
-| 2 | the state could not be read — **this is not clean** |
+| 2 | some state could not be read, or the run dispatched subtasks the check does not witness — **this is not clean** |
+
+Exit 2 is expected after round2, SR-IOV and `all` runs: they dispatch subtasks
+the check does not witness. For those, check by hand:
+
+- **round2**: the scratch and network-test partitions are gone, the test user is
+  gone, no test VLAN or virtual network is left, the test partition's
+  description and properties match the baseline, and the provisioned test
+  partition and its disk exist.
+- **SR-IOV**: the test logical port is no longer assigned to the test
+  partition, and its profile no longer lists it.
 
 The check issues no mutating call. When it reports something stranded, run the
 command it prints yourself, then run the check again.
 
-Exit 2 still prints anything it had already confirmed before the read failed,
-so treat its findings as real and the silence after them as unknown. A run that
-ends on exit 2 has not been shown clean by anything — check the system yourself.
+Exit 2 still prints anything it had already confirmed, and every class it could
+read, so treat its findings as real and each `NOT READ` line as unknown. A run
+that ends on exit 2 has not been shown clean by anything — check the rest of the
+system yourself.
 
-It identifies this run's leftovers by the run marker recorded in the results
+The header names the run the document came from: its group, commit and finish
+time. An interrupted run writes no results document, so the file on disk is the
+previous run's; check an interrupted run by hand.
+
+It identifies the PCIe arms' leftovers by the run marker recorded in the results
 document. A partition sharing the fixture's name but carrying a different
 marker is never attributed to your run, and never reported for you to delete.
 Run the check from the run's tested commit. A partition that carries your marker
 in an ownership stamp this checkout cannot parse, such as one written before the
 `hmcpctl` rename, exits 2 rather than being reported clean.
 
+The vmedia classes key on the configured test partition (`LIVE_TEST_LPAR_NAME`
+as the run recorded it), not on a marker. An optical mapping of an ISO with the
+run's name, or an unmapped server adapter toward that partition, is reported
+whoever left it.
+
 ## If something goes wrong mid-run
 
-Stop and run step 4. The arm's cleanup refuses to mutate anything whose
-ownership it cannot confirm, so an interrupted run leaves its traces in place
-rather than deleting something it did not create. That is the safe outcome, and
-step 4 is what tells you what is there.
+Stop. The arm's cleanup refuses to mutate anything whose ownership it cannot
+confirm, so an interrupted run leaves its traces in place rather than deleting
+something it did not create. That is the safe outcome. A run that finishes,
+even with failed rows, writes its results document, and step 4 is what tells you
+what is there. A run you interrupt, or one an uncaught error ends, writes none:
+check what its arm changes by hand.
 
 Never hand-delete a partition because its name looks like a fixture. Check the
 marker first.
