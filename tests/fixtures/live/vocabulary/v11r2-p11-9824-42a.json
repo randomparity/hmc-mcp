@@ -2305,7 +2305,8 @@
     "<text>"
    ],
    "NetworkInterface": [
-    "<text>"
+    "eth0",
+    "eth1"
    ],
    "NetworkMask": [
     "<text>"
@@ -3422,6 +3423,7 @@
    "MemoryMirroringState": "MemoryMirroringState.Enum",
    "MigrationState": "PartitionMigrationState.Enum",
    "MigrationStorageViosDataStatus": "MigrationStorageViosDataStatus.Enum",
+   "NetworkInterface": "NetworkInterface.Enum",
    "OperatingSystemType": "OperatingSystemType.Enum",
    "PartitionState": "LogicalPartitionState.Enum",
    "PartitionType": "LogicalPartitionEnvironment.Enum",

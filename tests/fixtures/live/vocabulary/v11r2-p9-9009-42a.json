@@ -884,6 +884,7 @@
    ],
    "CurrentConnectionSpeed": [
     "<text>",
+    "E10Gbps",
     "Unknown"
    ],
    "CurrentDramPersistentMemoryVolumes": [
