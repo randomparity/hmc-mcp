@@ -20,14 +20,17 @@ read:
 - `FleetListing(entries: list[dict[str, Any]], unreadable_systems: list[UnreadableSystem])`, a
   frozen dataclass.
 - `async read_fleet(hmc, read_system, resources) -> FleetListing` works in four steps:
-  1. Call `hmc.list_managed_systems()`.
-  2. If it returns more than `MAX_PARENT_DISCOVERY_SYSTEMS` systems, raise `ValueError("Cannot
+  1. Call `hmc.inventory_managed_systems()`, which returns `(systems, unresolved)` (see Client).
+     Each unresolved `(uuid, name)` pair becomes `UnreadableSystem(name, uuid, None, None)`.
+  2. If there are more than `MAX_PARENT_DISCOVERY_SYSTEMS` systems, raise `ValueError("Cannot
      list {resources} across managed systems: discovery exceeds 100 managed systems; supply
      managed-system scope")`.
   3. In feed order, record a system as unreadable when its UUID is not a non-empty string or its
      `State`, stripped and case-folded, is not `operating`.
-  4. Otherwise `await read_system(uuid)` and extend `entries` with the result. An exception from
-     that read propagates unchanged.
+  4. Otherwise `await read_system(uuid)` and extend `entries` with the result. When that read
+     raises `HMCError`, call `hmc.get_managed_system(uuid)`. If that read succeeds and the system
+     is no longer operating, record it from the fresh entry. Otherwise re-raise the original
+     error.
 
 **Operations.** Each operation resolves the selector exactly as it does today.
 
@@ -37,22 +40,35 @@ read:
   `search_uom` branch.
 - `list_lpar_ownership` maps `lpar_ownership_entry` over `entries`.
 
-**Client.** `list_logical_partitions` and `list_vios` take a required `system_uuid: str`. The
+**Client.** A new `inventory_managed_systems()` holds today's `list_managed_systems` body and
+also returns the `(uuid, name)` pairs its null-property fallback skips. `list_managed_systems`
+returns `(await self.inventory_managed_systems())[0]`, so its callers are unchanged.
+`list_logical_partitions` and `list_vios` take a required `system_uuid: str`. The
 unscoped `list_uom` branch goes, and the two protocol declarations in `client_contracts.py` and
 `SurveyClient` (`operations/inventory/utilization.py`) change with it. Every caller already
 passes a UUID; `ty` proves it.
 
 **Tools.** `hmc_list_lpars`, `hmc_list_vios` and `hmc_list_lpar_ownership` return `FleetListing`,
 which FastMCP serializes and describes in its output schema, as it does for `hmc_capacity_report`.
-`limit` is checked as `run_limited_collection` checks it (a negative value raises `ValueError`)
-and then applied with `dataclasses.replace(listing, entries=listing.entries[:limit])` in a
-private helper in `server_tools/systems/core.py`. Docstrings name the `unreadable_systems`
-field. The `hmc_list_vios` docstring and the CLI `--state` help stop saying "server-side".
+The negative-`limit` check moves out of `run_limited_collection` into
+`_app.require_valid_limit(limit)`, which both callers use. A private helper in
+`server_tools/systems/core.py` then applies
+`dataclasses.replace(listing, entries=listing.entries[:limit])`. Rewrite the three tools'
+docstrings to describe the per-system read and `unreadable_systems`. The `hmc_list_vios` docstring
+and the CLI `--state` help stop saying "server-side".
 
 **CLI.** `lpar list` and `vios list` build their tables from `entries`. `--json` prints
 `dataclasses.asdict(listing)`. A new `output.report_unreadable(listing)` prints one yellow
 stderr line per unreadable system, in both modes:
 `Skipped managed system <name> (<uuid>): State <state>`.
+
+**Other readers.** Readers of these results move to `.entries`:
+- `_authorize_system_lpar_profile_restore` (`operations/lpar/ownership.py`)
+- `scripts/live_test/results.py` `entries()`, and `_rows` in `scripts/live_capture_sweep.py`.
+  These read an object's `entries` attribute, because FastMCP hands a dataclass result to a client
+  as a generated model, not a mapping.
+- the two `jq '.[].UUID'` lines in `docs/recipes/system-inventory.md`
+- the fixtures in their tests
 
 **Docs.** Regenerate `docs/tools/` (`just tool-docs`). Add a CHANGELOG `### Changed` entry. Point
 the kdive Tier A page's ownership row at `FleetListing.entries`.
@@ -63,16 +79,18 @@ the kdive Tier A page's ownership row at `FleetListing.entries`.
    - an MCP agent or CLI operator listing partitions on one HMC, unattended or interactive
    - kdive importing `list_lpar_ownership` (pre-release, pinned commit)
 2. **Invariants and assets at stake**
-   - a listing never presents a skipped system's absence as "no partitions": every skipped
-     system appears in `unreadable_systems`
+   - a listing never presents a skipped system's absence as "no partitions". Every system the
+     managed-system inventory returns or names as unresolved is either read or listed in
+     `unreadable_systems`.
    - the published tool and operations return shape (ADR 0197)
 3. **Accepted failure classes**
    - Slow `ManagedSystem` feed (about 160 s live): the cost is bounded by `HMC_TIMEOUT`, and
      speed is excluded (untracked, operator 2026-10-02).
-   - A system that stops operating between the feed read and its scoped read: the call fails,
-     naming the state (#1301), and a retry lists the system as unreadable.
    - An operating system whose scoped read raises (transport timeout, 500): the call fails, as
      it did before. Degrading those errors is outside the criteria (ADR 0197 rejected list).
+   - The fallback's per-name searches run before the 100-system bound is checked. This is the
+     existing cost of every `list_managed_systems` caller, and `hmc_list_systems` has no bound
+     either.
 4. **Covered elsewhere**
    - whether the HMC-wide feed is ever a safe fast path: #1290
    - the unscoped `search_uom` in `find_partition_by_name` / `find_vios_by_name`: adjacent note,
@@ -88,12 +106,16 @@ the kdive Tier A page's ownership row at `FleetListing.entries`.
    `unreadable_systems` names sys-R1 with its UUID, State and DetailedState.
 3. A fleet of 101 systems raises the bound error before any scoped read.
 4. `limit` truncates `entries` only. A scoped call returns `unreadable_systems == []`.
+5. A system that the fallback cannot resolve, or that stops operating between the two reads, is
+   listed in `unreadable_systems`.
 
 ## Validation
 
 | Contract | Mode | Evidence |
 |---|---|---|
-| `read_fleet` skip, bound, propagate | focused-test | new `tests/unit/test_fleet_listing.py` |
+| `read_fleet` skip, bound, propagate, state flip, unresolved (S3, S5) | focused-test | new `tests/unit/test_fleet_listing.py` |
+| `inventory_managed_systems` returns unresolved pairs | focused-test | `tests/unit/test_client.py` fallback tests |
+| script readers handle the envelope | focused-test | `tests/scripts/test_inventory.py`, `tests/test_live_runner.py`, `tests/scripts/test_live_capture_sweep.py` with envelope-shaped fixtures |
 | unscoped tool requests and envelope (S1, S2) | focused-test | respx routes for the HMC-wide paths assert zero calls; `tests/system/test_system_tools.py`, `tests/lpar/test_lpar_ownership_bulk.py` |
 | `limit` and scoped shape (S4) | focused-test | `tests/app/test_collection_limits.py` |
 | CLI JSON envelope and stderr line | focused-test | `tests/app/test_cli_commands.py` |
