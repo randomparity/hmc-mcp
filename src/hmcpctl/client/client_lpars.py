@@ -47,7 +47,12 @@ class LparsMixin:
             _reject_non_uuid_path_argument("system_uuid", system_uuid)
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
             xml = await self._get(path, "LogicalPartition")
-            return _parse_feed(xml, path) if xml else []
+            entries = _parse_feed(xml, path) if xml else []
+            if not entries:
+                await require_operating_system(
+                    self.get_managed_system, system_uuid, "LPARs"
+                )
+            return entries
         return await self.list_uom("LogicalPartition")
 
     async def get_logical_partition(
@@ -60,10 +65,6 @@ class LparsMixin:
     ) -> dict[str, Any] | None:
         if system_uuid:
             entries = await self.list_logical_partitions(system_uuid)
-            if not entries:
-                await require_operating_system(
-                    self.get_managed_system, system_uuid, "LPARs"
-                )
             results = [
                 entry
                 for entry in entries

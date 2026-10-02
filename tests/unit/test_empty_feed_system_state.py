@@ -44,6 +44,11 @@ NOT_OPERATING = [("recovery", "Recovery"), ("no connection", "Unknown")]
 
 Read = Callable[[HMCClient], Awaitable[Any]]
 READS: dict[str, tuple[str, Read]] = {
+    "client_list_lpars": (
+        LPAR_FEED,
+        lambda hmc: hmc.list_logical_partitions(SYSTEM_UUID),
+    ),
+    "client_list_vios": (VIOS_FEED, lambda hmc: hmc.list_vios(SYSTEM_UUID)),
     "list_lpars": (LPAR_FEED, lambda hmc: list_lpars(hmc, SYSTEM_UUID)),
     "get_lpar": (
         LPAR_FEED,
@@ -112,7 +117,9 @@ async def test_empty_feed_from_a_system_not_operating_raises(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("read", ["list_lpars", "list_vios"])
+@pytest.mark.parametrize(
+    "read", ["list_lpars", "list_vios", "client_list_lpars", "client_list_vios"]
+)
 @pytest.mark.parametrize("state", ["operating", "Operating"])
 async def test_empty_feed_from_an_operating_system_is_empty(
     mock_hmc, read, state
@@ -126,30 +133,34 @@ async def test_empty_feed_from_an_operating_system_is_empty(
     async with HMCClient(make_config()) as hmc:
         assert await call(hmc) == []
 
-    assert system.called
+    assert system.call_count == 1
 
 
 @pytest.mark.asyncio
 async def test_scoped_lpar_lookup_on_an_operating_system_is_not_found(mock_hmc):
     mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
-    mock_hmc.get(SYSTEM_PATH).mock(
+    system = mock_hmc.get(SYSTEM_PATH).mock(
         return_value=httpx.Response(200, text=_state("operating", "None"))
     )
 
     async with HMCClient(make_config()) as hmc:
         assert await get_lpar(hmc, "lpar-a", system_name_or_uuid=SYSTEM_UUID) is None
 
+    assert system.call_count == 1
+
 
 @pytest.mark.asyncio
 async def test_scoped_vios_lookup_on_an_operating_system_is_not_found(mock_hmc):
     mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(204))
-    mock_hmc.get(SYSTEM_PATH).mock(
+    system = mock_hmc.get(SYSTEM_PATH).mock(
         return_value=httpx.Response(200, text=_state("operating", "None"))
     )
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ResourceNotFoundError):
             await resolve_vios_uuid(hmc, "vios-a", system_name_or_uuid=SYSTEM_UUID)
+
+    assert system.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -189,4 +200,23 @@ async def test_non_empty_feed_does_not_read_the_system(mock_hmc) -> None:
         assert await list_lpars(hmc, SYSTEM_UUID, state="running") == []
         assert await get_lpar(hmc, "lpar-b", system_name_or_uuid=SYSTEM_UUID) is None
 
+    assert not system.called
+
+
+@pytest.mark.asyncio
+async def test_non_empty_vios_feed_does_not_read_the_system(mock_hmc) -> None:
+    vios_uuid = "22222222-2222-2222-2222-222222222222"
+    entry = captured_lpar_entry(vios_uuid, "vios-a", "running").replace(
+        "LogicalPartition", "VirtualIOServer"
+    )
+    feed = f'<feed xmlns="http://www.w3.org/2005/Atom">{entry}</feed>'
+    mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(200, text=feed))
+    system = mock_hmc.get(SYSTEM_PATH).mock(
+        return_value=httpx.Response(200, text=_state("recovery", "Recovery"))
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        (vios,) = await hmc.list_vios(SYSTEM_UUID)
+
+    assert vios["UUID"] == vios_uuid
     assert not system.called
