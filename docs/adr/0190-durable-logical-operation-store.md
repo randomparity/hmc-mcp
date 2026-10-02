@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-10-01), issue #1216.
+Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0005: `hmc_provision_lpar` and its
+CLI mirror now require `request_id` (Decision 3). ADR 0005's steps and no-rollback rule stand.
 
 ## Context
 
@@ -85,7 +86,8 @@ on 2026-10-01.
   every hold and ledger entry, which is an operator action like `release`.
 - A `request_id` reused after its operation was pruned starts a new operation. Duplicate
   creation is still refused by provision's name-uniqueness precondition (ADR 0005).
-- Two stdio sessions on one host can both serve logical mutations, though only one at a time.
+- A long-lived server keeps the execution lock, so on its host the CLI and other stdio sessions
+  serve status and holds but refuse logical mutations until that server exits.
 - A process exit mid-write leaves the effect `uncertain` for `resume`.
 - Isolation rests on `HMC_AGENT_ID`, because MCP carries no principal. The CLI's operator
   commands list and abandon operations under any agent id. The CLI answers to the credential

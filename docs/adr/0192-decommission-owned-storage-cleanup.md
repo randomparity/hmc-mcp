@@ -40,7 +40,8 @@ description field, so ADR 0011's stamp cannot mark them.
 - Teardown reports deleted, retained (with reasons) and pending items separately.
 - A store loss converts pending cleanup into retained storage, never into deletion.
 - Volume-group writes keep the read-modify-write and `If-Match` contract of ADR 0171; whether
-  the HMC enforces `If-Match` is unconfirmed (#879). Until it is, cleanup needs the exclusive
+  the HMC enforces `If-Match` has no live observation (#879 closed without one; #1230's native
+  arms record it). Until one exists, cleanup needs the exclusive
   writer window in the spec.
 
 ## Considered & rejected

@@ -208,7 +208,8 @@ under any agent id, and list and release holds (ADR 0190, ADR 0193).
 - Provision stamps ownership (ADR 0011) as a required step. Failing to stamp is `failed`, not
   a warning. Created disks and media are recorded in the store.
 - VIOS and volume-group writes keep ADR 0169 and ADR 0171's read-modify-write with `If-Match`.
-  Whether the HMC enforces `If-Match` is unconfirmed (#879). Until #879 confirms it, any
+  No live observation shows the HMC enforcing `If-Match`; #879 closed without recording one, so
+  #1230's native arms record it. Until a recorded observation exists, any
   operation that writes a VIOS or volume-group document requires `exclusive_writer_window=true`.
   That flag is the caller's assertion that an operator has paused other writers on those VIOS.
   Without it, planning reports a blocker. A 412 response is `failed` and is not retried.
@@ -343,7 +344,8 @@ no live run.
 **Covered elsewhere**
 
 - Profile primitives: #637.
-- `If-Match` enforcement: #879.
+- `If-Match` enforcement and whether refcodes continue after Running: #1230's native arms
+  (#879 closed without observing either).
 - Media correctness and installer behavior: iso-chain-loader#23–#25, #6, #8.
 - kdive adoption checks: kdive.
 - Console leasing: ADR 0172 and kdive.
@@ -408,7 +410,7 @@ Each of #1216's eleven completion criteria maps to one place:
 - hold and release: *Host handoff*, ADR 0193;
 - releases, native envelope and proof arms: *Native envelope and proof*, ADR 0194;
 - reconciliation with accepted ADRs: the Status sections of ADR 0189 (ADR 0012) and ADR 0192
-  (ADR 0027). ADR 0005 is extended, not changed;
+  (ADR 0027), and ADR 0190 (ADR 0005: `request_id` becomes required);
 - facade, workflow language and reuse: *Purpose and boundary*. The logical tools compose the
   existing functions under `src/hmcpctl/operations/`, and `hmcpctl.api` is unchanged.
 
@@ -416,12 +418,13 @@ Each value this spec marks **undecided** names the issue that decides it.
 
 ## Follow-ups this decision creates
 
-Listed for the operator; this PR does not edit them.
+This PR edits none of them. After it merges, the quest amends each body below, closes #1222 as
+not planned, and adds a provenance comment, as the operator decided on 2026-10-01.
 
 | Item | Conflict |
 | --- | --- |
 | #1222 | Guest SSH readiness is obsolete under ADR 0191; it should be closed or rescoped. |
-| #1230 | Acceptance becomes `boot_started` per distro, plus filling the boot-started code set. |
+| #1230 | Acceptance becomes `boot_started` per distro: fill the boot-started code set, settle the refcode timestamp's zone, and record `If-Match` enforcement and refcodes after Running. It also drops the `guest_ready` requirement and its block on #1222. |
 | Epic #1215 | Requirement 7 and the SSH success criteria conflict with ADR 0191. |
 | iso-chain-loader#24, #25 | The "host-identity handoff" wording conflicts. They should inject caller keys only, refuse unless exactly one blank disk is present, and default the launcher to an installed disk. |
 | iso-chain-loader#23 | Must emit the producer result fields above. |

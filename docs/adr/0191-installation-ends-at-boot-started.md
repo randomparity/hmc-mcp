@@ -20,7 +20,7 @@ ISO, with no digest or machine-readable result, and hard-codes the install disk 
 the VIOS copy back (`operations/storage/resources.py`, ADR 0177). `hmc_read_lpar_refcodes`
 reads reference codes without a console. Its `time_stamp` field carries no zone
 (`tests/unit/test_ssh_refcodes.py`), and whether codes are still reported once the partition is
-Running is unconfirmed (#879).
+Running is unobserved: #879 closed without recording it, and #1230's native arms record it.
 
 POWER offers no one-time boot device. `chsysstate -b` selects a boot *mode* (`norm`, `dd`, `ds`,
 `of`, `sms`) for one activation (`docs/refs/hmc-commands-p10/commands/chsysstate.md`). The device
@@ -92,7 +92,7 @@ across activations is unverified.
 - **Verify the guest over SSH with a pinned host key.** judgment: fit. The operator ruled guest
   readiness a user concern.
 - **Treat partition state `Running` as boot started.** judgment: fit. The state reports
-  activation, not which image firmware loaded. Whether codes progress after Running is #879's
+  activation, not which image firmware loaded. Whether codes progress after Running is #1230's
   observation.
 - **Capture the console from first byte inside hmcpctl.** judgment: fit. The operator chose
   deferral with a caller-held console. A built-in capture would take the single vterm hold
