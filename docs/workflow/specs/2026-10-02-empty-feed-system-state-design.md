@@ -17,7 +17,7 @@ V11R2 SP1120 with a POWER10 9080-HEX in `State` `recovery` (`DetailedState` `Rec
    lower-cased is `operating` it returns. Otherwise it raises `HMCError` (no status code) that
    names the resource kind, the system name (its UUID when the document has none), the UUID,
    `State` and `DetailedState` (`unknown` when either is missing or the document is `None`), and
-   says the HMC cannot report them until the system is operating. Each HMC-supplied value is
+   says an empty feed cannot be trusted unless the system is operating. Each HMC-supplied value is
    stripped and cut to 100 characters, since a captured `State` already runs to 51.
    `status_code` stays `None`: the HMC answered 204, so there is no failing HTTP status to
    report, and the message carries the state a caller acts on.
@@ -67,6 +67,10 @@ uses to the read paths, with no alternative design that changes a contract diffe
    - the system GET itself fails (`HMCError` from `get_managed_system`). It propagates; the
      caller gets an error, never a false empty.
    - a 204 from an `operating` system still reads as empty; no capture shows otherwise.
+   - a system in another non-operating state (for example `standby` or `power off`) that
+     genuinely has no partitions now reads as an error instead of empty. Fail-closed by the
+     issue's rule; the message does not claim a cause, and the pending live run should capture
+     such a system's empty feed.
 4. **Covered elsewhere** — unscoped HMC-wide feeds (#1293); `ManagedSystem/search` 204 in the
    name resolver (#1290); the full Recovery/No Connection sweep (#1290); I/O and SR-IOV
    per-system feeds (unverified, listed in the PR).

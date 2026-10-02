@@ -124,6 +124,6 @@ async def require_operating_system(
     system_label = system_uuid if name == "unknown" else f"{name!r} ({system_uuid})"
     raise HMCError(
         f"Cannot list {resources} on managed system {system_label}: it is in "
-        f"State {state!r} (DetailedState {detailed!r}), and the HMC reports no "
-        f"{resources} for a system that is not operating"
+        f"State {state!r} (DetailedState {detailed!r}), and an empty {resources} "
+        "feed cannot be trusted unless the system is operating"
     )

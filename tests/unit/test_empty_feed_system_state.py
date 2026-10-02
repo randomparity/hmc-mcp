@@ -22,7 +22,11 @@ from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars
 from hmcpctl.operations.vios.core import list_vios
-from hmcpctl.resource_identity import resolve_lpar_uuid, resolve_vios_uuid
+from hmcpctl.resource_identity import (
+    ResourceNotFoundError,
+    resolve_lpar_uuid,
+    resolve_vios_uuid,
+)
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_NAME = "sys-R1"
@@ -134,6 +138,18 @@ async def test_scoped_lpar_lookup_on_an_operating_system_is_not_found(mock_hmc):
 
     async with HMCClient(make_config()) as hmc:
         assert await get_lpar(hmc, "lpar-a", system_name_or_uuid=SYSTEM_UUID) is None
+
+
+@pytest.mark.asyncio
+async def test_scoped_vios_lookup_on_an_operating_system_is_not_found(mock_hmc):
+    mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(204))
+    mock_hmc.get(SYSTEM_PATH).mock(
+        return_value=httpx.Response(200, text=_state("operating", "None"))
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ResourceNotFoundError):
+            await resolve_vios_uuid(hmc, "vios-a", system_name_or_uuid=SYSTEM_UUID)
 
 
 @pytest.mark.asyncio
