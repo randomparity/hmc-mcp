@@ -44,21 +44,21 @@ carries `limit` and `truncated`. Effects are as registered under ADR 0189.
 - `continuation`: `none` (default), `resume` or `abandon`, plus `boot` for provision only;
 - `wait_seconds`.
 
-All of these follow ADR 0190. A tool whose operation writes a VIOS or volume-group document also
-takes `exclusive_writer_window` (see *Ownership and shared VIOS state*). Specialist and logical
-partition mutations take an optional `hold_id` (ADR 0193).
+All of these follow ADR 0190. Provision (for `install`) and decommission (for `delete_owned`)
+also take `exclusive_writer_window` (see *Ownership and shared VIOS state*). Specialist and
+logical partition mutations take an optional `hold_id` (ADR 0193).
 
 | Tool | Effect | Inputs (beyond `profile` and the common fields) | Result |
 | --- | --- | --- | --- |
 | `hmc_inventory` | read | `systems?` (≤ 16 selectors), `lpar_state?`, `owner?`, `limit` 1–200 (default 50), `cursor?` | systems and partitions with scoped ids, state, capacity and owner; `sources` with per-source `ok` / `unavailable` / `denied` |
 | `hmc_plan_lpar` | read | provision's inputs, with `system_name_or_uuid` optional and a `placement` constraint as the alternative | `plan_digest`, resolved targets, `blockers[]`, `intended_changes[]`, `unverified[]` |
-| `hmc_provision_lpar` | mutate | today's inputs, unchanged, plus `expected_plan_digest?`, `install?` and `boot` (`immediate` default / `deferred`) | `ProvisionResult` (today's fields) plus the operation fields |
+| `hmc_provision_lpar` | mutate | today's inputs plus `adapters.mac?`, `expected_plan_digest?`, `install?`, `exclusive_writer_window?` and `boot` (`immediate` default / `deferred`) | `ProvisionResult` (today's fields) plus the operation fields |
 | `hmc_reconfigure_lpar` | destructive | `lpar`, `patch`, `allow_disruption` (default false) | operation fields plus `changes[]`, each `live` / `profile` / `pending_activation` |
 | `hmc_decommission_lpar` | destructive | ADR 0027 inputs plus `storage_cleanup` (`retain` default / `delete_owned`) | `DecommissionResult` plus `storage` (`deleted[]`, `retained[]` with reasons, `pending[]`) and the operation fields |
 | `hmc_power_lpar` | destructive | `lpar`, `action` (`start` / `stop` / `restart`), `mode` (`graceful` default / `immediate`) | operation fields plus `already_in_state` and `observed_state` |
 | `hmc_inspect_lpar` | read | `lpar`, `include` ⊆ {`resources`, `rmc`, `profile_drift`, `refcodes`} | state, RMC, profile drift, ≤ 20 refcodes, `next_actions[]` (tool names only) |
 | `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer`, `hold_id` | `{action, hold, document}`; `document` is null on `release` |
-| `hmc_operation_status` | read | `operation_id`, `request_id`, `state?`, `outcome?`, `limit` 1–50, `cursor?` | always a page of operation records (a lookup is a page of at most one), ≤ 200 events each |
+| `hmc_operation_status` | read | `operation_id`, `request_id`, `state?`, `outcome?`, `limit` 1–50, `cursor?` | always a page of at most 50 operation records (a lookup is a page of at most one), each with its newest ≤ 200 events and `truncated` |
 | `hmc_search_tools` | read | `query` (≤ 200 characters) *or* `name`, `limit` 1–20 | names, one-line summaries, effect, maturity; the full input schema only for an exact `name` |
 | `hmc_invoke_tool` | destructive | `name`, `arguments` (≤ 64 KiB) | `{name, result}`, where `result` is the invoked tool's own result (the ADR 0189 exception to ADR 0012) |
 
@@ -77,11 +77,14 @@ existing resolution rules.
 The new inputs are additive except `request_id`. `request_id` is required on
 `hmc_provision_lpar` and `hmc_decommission_lpar`, and on their CLI mirrors as `--request-id`.
 This is a pre-release change with no compatibility path. #1225 writes the provision CHANGELOG
-entry and #1229 the decommission one. For prepared media, `adapters` carries the pinned MAC
-(ADR 0191).
+entry and #1229 the decommission one. The other new provision inputs are optional:
 
-When `storage` omits `vios_uuid` or `vg_uuid` and more than one VIOS or volume group qualifies,
-planning returns a blocker. It never chooses the first match.
+- `adapters.mac`, the pinned MAC for prepared media (ADR 0191), in lower-case colon form;
+- `exclusive_writer_window`, read only when `install` is present.
+
+`storage.vios_uuid` stays required on provision. On `hmc_plan_lpar`'s `placement` path, when no
+VIOS or volume group is named and more than one qualifies, planning returns a blocker. It never
+chooses the first match.
 
 ### Patch and install inputs
 
@@ -107,7 +110,9 @@ through DLPAR. #1228 extends `patch` under the same rules with:
 
 ### Operation fields
 
-- `operation_id`, `request_id`, `state` (`running` / `interrupted` / `terminal`).
+- `operation_id`, `request_id`, `state` (`running` / `interrupted` / `paused` / `terminal`,
+  paired with `outcome` as in ADR 0190 Decision 6: `paused` carries `needs_attention` or
+  `ready_to_boot`).
 - `phase`, per tool:
   - provision: `validating`, `creating`, `configured`, `media_bound`, `ready_to_boot`,
     `installer_booting`;
@@ -179,9 +184,12 @@ resource found under a different owner stamp is `needs_attention` and is not ado
 
 **Restart.** A `restart` resumed after its power-off was applied does not power off again.
 
-**Installer power-on** happens at most once per operation.
+**Installer power-on** happens at most once per operation. A `resume` after a boot wait that
+ended `needs_attention` re-polls refcodes against the recorded baseline and never powers on
+again.
 
-**Continuation calls** need only `request_id` and `continuation`. A call from another agent id
+**Continuation calls** need only `request_id` and `continuation`, plus `hold_id` when a hold
+was placed since; `hold_id` is outside the request digest (ADR 0190). A call from another agent id
 gets "not found", the same answer as a nonexistent operation. A call from another connection is
 refused.
 
@@ -209,10 +217,13 @@ under any agent id, and list and release holds (ADR 0190, ADR 0193).
   a warning. Created disks and media are recorded in the store.
 - VIOS and volume-group writes keep ADR 0169 and ADR 0171's read-modify-write with `If-Match`.
   No live observation shows the HMC enforcing `If-Match`; #879 closed without recording one, so
-  #1230's native arms record it. Until a recorded observation exists, any
-  operation that writes a VIOS or volume-group document requires `exclusive_writer_window=true`.
-  That flag is the caller's assertion that an operator has paused other writers on those VIOS.
-  Without it, planning reports a blocker. A 412 response is `failed` and is not retried.
+  #1230's native arms record it. Until a recorded observation exists, the VIOS and
+  volume-group writes the logical tools add require `exclusive_writer_window=true`: provision
+  with `install` (disk creation, upload, mount), decommission with `delete_owned`, and #1228's
+  attach actions. That flag is the caller's assertion that an operator has paused other writers
+  on those VIOS. Without it, planning reports a blocker. Provision without `install` and the
+  specialist tools keep today's behavior and do not take the flag. A 412 response is `failed`
+  and is not retried.
 - Decommission storage cleanup follows ADR 0192.
 
 ## Installation media and boot
@@ -240,19 +251,23 @@ console CLI), then sends `continuation: boot`. Firmware that stops at SMS, Open 
 waiting for input reports `needs_attention` with its reference code; answering it is the caller's,
 on their console.
 
-The media name is `hmcpctl_<first 12 hex of operation_id>.iso`, which fits upload's
+The media name is `hmcpctl_<first 12 hex digits of operation_id>.iso`, which fits upload's
 `[A-Za-z0-9_.]{1,79}` rule.
 
-**Producer result fields iso-chain-loader#23 must emit:**
+**Producer result fields iso-chain-loader#23 must emit** (a JSON object; `format`
+`iso-chain-media-v1` refuses unknown keys, so an added field needs a new format value):
 
-- `format` (`iso-chain-media-v1`);
-- `iso_sha256` and `iso_size`;
-- `manifest_sha256`;
-- `distribution`, `release` and `architecture`;
-- `mac`;
-- `network`;
-- `operation_binding` (the `operation_id`);
-- `url` (built mode only).
+| Field | Built | Prepared | Value |
+| --- | --- | --- | --- |
+| `format` | yes | yes | `iso-chain-media-v1` |
+| `iso_sha256`, `manifest_sha256` | yes | yes | 64 lower-case hex digits |
+| `iso_size` | yes | yes | integer bytes |
+| `distribution`, `release` | yes | yes | together equal `install.profile`: `ubuntu` + `26.04.1`, or `rocky` + `9.8` |
+| `architecture` | yes | yes | `ppc64le` |
+| `mac` | yes | yes | lower-case colon form |
+| `network` | yes | yes | the same shape and values as `install.network` |
+| `operation_binding` | yes | absent | the `operation_id` |
+| `url` | yes | absent (the request carries it) | an origin in `HMC_ISO_URL_ALLOWLIST` |
 
 Producer behavior hmcpctl relies on (ADR 0191 Decision 6): the launcher's default entry boots the
 installed disk when it carries a boot record, after a bounded menu timeout, and the installer
@@ -276,9 +291,12 @@ Results list each of these under `unverified`.
 ADR 0193 governs the hold:
 
 - one per partition, keyed by system and partition UUID;
-- checked inside each tool's `authorized()` wrapper and in the CLI;
-- exempt: the handoff tool, console capture, and calls presenting the matching `hold_id`;
-- `hold_id` is returned only to the agent that placed the hold.
+- checked in the shared partition resolver, through a hook the MCP server and CLI install and
+  the library does not, so direct calls, `hmc_invoke_tool` and CLI commands all reach it;
+- exempt: the handoff tool, console capture, and calls presenting the matching `hold_id`
+  (`--hold-id` on the CLI);
+- the `hold` result field carries label, agent id and creation time, and `hold_id` only for the
+  agent that placed the hold, which passes it to the consumer; the `document` never carries it.
 
 `prepare` without `hold` also reports an existing hold's label, agent id and creation time. The `prepare` document has three groups of facts:
 
@@ -325,7 +343,8 @@ no live run.
 **Accepted failure classes**
 
 - *Writes by other HMC writers during an operation.* Accepted because this is not a fence;
-  ADR 0011 and ADR 0190 state it, and the `exclusive_writer_window` bounds VIOS writes.
+  ADR 0011 and ADR 0190 state it, and the `exclusive_writer_window` bounds the VIOS writes the
+  logical tools add.
 - *Store or state-directory loss.* The ledger, the holds and the `request_id` dedupe are lost.
   Accepted:
   - a lost store with its `store-id` sentinel present is refused (ADR 0190);

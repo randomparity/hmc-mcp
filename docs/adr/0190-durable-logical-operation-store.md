@@ -41,12 +41,13 @@ on 2026-10-01.
    - When a process acquires the lock, it marks every `running` record `interrupted`.
 3. **Identity.** The key is (`HMC_AGENT_ID`, `request_id`), where `request_id` is 1–64
    characters from `[A-Za-z0-9._-]`.
-   - The server mints an `operation_id` and records the connection and the SHA-256 of the
-     canonical request.
+   - The server mints an `operation_id` (32 lower-case hex digits) and records the connection
+     and the SHA-256 of the canonical request, which excludes `continuation`, `wait_seconds`
+     and `hold_id`.
    - A repeat with the same digest returns the operation.
    - A repeat with a different digest is a conflict.
-   - A continuation call needs only `request_id` and `continuation`; any other inputs it gives
-     must match the digest.
+   - A continuation call needs only `request_id` and `continuation`, plus `hold_id` when a
+     hold now covers the partition; any other inputs it gives must match the digest.
    - A continuation from a connection other than the recorded one is refused.
 4. **Effects.** Each HMC write is recorded twice: an *intent* before it, and the *outcome* and
    created identities after it. A write with no recorded outcome is `uncertain`.
@@ -63,7 +64,8 @@ on 2026-10-01.
 
    `resume` re-authorizes as a fresh call (ADR 0189) and reconciles each `uncertain` effect
    against live state. It continues only if every effect is classified. `abandon` writes nothing
-   to the HMC. Installer power-on is never repeated once `boot_started` is recorded.
+   to the HMC. Installer power-on happens at most once per operation: `resume` after a boot
+   wait that ended `needs_attention` re-polls refcodes against the recorded baseline.
 7. **Partition guard and ledger.**
    - The guard allows one non-terminal operation per partition, keyed by system UUID and
      partition UUID.
@@ -73,7 +75,7 @@ on 2026-10-01.
      retains each resource.
 8. **Bounds.**
    - A canonical request is at most 64 KiB, and an operation has at most 256 effects.
-   - A status page holds at most 50 operations or 200 events.
+   - A status page holds at most 50 operations, each with at most its newest 200 events.
    - Terminal operations are pruned after 30 days.
    - Once non-terminal operations, holds and ledger entries together reach 10,000, new
      operations and holds are refused with `store_full`.
