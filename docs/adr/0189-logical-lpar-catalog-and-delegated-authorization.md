@@ -9,6 +9,8 @@ primary logical tool may carry an action discriminator whose variants differ in 
 exempt from ADR 0012's `hmc_list_<resource>` / `hmc_get_<resource>` grammar (Decision 1). ADR
 0012 otherwise stands, including the one-shape rule and the naming grammar for every other tool.
 
+> **Partially superseded by [0196](0196-logical-inventory-authorizes-each-source.md)** (2026-10-02)
+
 ## Context
 
 The registry serves 157 tools; a permitting policy advertises 156 (`tool_registry.py`,
