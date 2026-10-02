@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0012 in two places. First, a
+Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0012 in three places. First, a
 primary logical tool may carry an action discriminator whose variants differ in effect class
 (Decision 2). Second, `hmc_invoke_tool`'s result is the invoked tool's own result, wrapped as
 `{name, result}` (Decision 3). Third, the primary tools' names, which epic #1215 fixes, are

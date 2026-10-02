@@ -74,7 +74,8 @@ across activations is unverified.
    - the installer refuses unless exactly one non-optical disk is present and that disk is blank.
 7. **After `boot_started`.** The media stays mounted. Detaching it and reordering the boot are
    explicit reconfigure actions (#1228). Caller SSH public keys and the login user are opaque
-   producer inputs that hmcpctl never uses.
+   producer inputs that hmcpctl never uses. They are accepted for built media only; prepared
+   media carries its own, which hmcpctl cannot see, so it declares none to the consumer.
 
 ## Consequences
 

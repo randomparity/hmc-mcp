@@ -27,6 +27,8 @@ checks policy; the partition UUID is resolved later, inside the handler's domain
    - `prepare` with `hold=true` records the partition's one hold in the ADR 0190 store, keyed
      by system UUID and partition UUID. The hold holds a `hold_id`, a consumer label of at most
      64 characters, and the placing agent id and connection.
+   - A `prepare` with `hold=true` is refused while an ADR 0190 partition guard is held by a
+     non-terminal operation, naming that `operation_id`.
    - A repeat from the same agent id with the same label returns the hold.
    - Any other repeat is refused, naming the label, agent id and creation time but never the
      `hold_id`.
@@ -41,7 +43,9 @@ checks policy; the partition UUID is resolved later, inside the handler's domain
    target resolver and the SSH partition selectors; the hook ignores `read` tools. The MCP server and the CLI install the hook
    at startup; the library leaves it unset. The `authorized()` wrapper records the tool name and
    any presented `hold_id` in the call context the hook reads, so direct calls and
-   `hmc_invoke_tool` (ADR 0189) reach it identically. CLI partition commands take `--hold-id`.
+   `hmc_invoke_tool` (ADR 0189) reach it identically. Each CLI command sets the same context
+   fields, naming the registry tool it mirrors, and partition commands take `--hold-id`. A
+   resolution with no call context is treated as a mutation.
    It covers every operation that changes a partition's configuration, power state or
    existence, or which disks and media it sees, whatever `authorize_power_operations` is set
    to. A registry-driven test enumerates every non-`read` tool whose target is a partition or

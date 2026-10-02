@@ -51,14 +51,14 @@ logical partition mutations take an optional `hold_id` (ADR 0193).
 | Tool | Effect | Inputs (beyond `profile` and the common fields) | Result |
 | --- | --- | --- | --- |
 | `hmc_inventory` | read | `systems?` (≤ 16 selectors), `lpar_state?`, `owner?`, `limit` 1–200 (default 50), `cursor?` | systems and partitions with scoped ids, state, capacity and owner; `sources` with per-source `ok` / `unavailable` / `denied` |
-| `hmc_plan_lpar` | read | provision's inputs, with `system_name_or_uuid` optional and a `placement` constraint as the alternative | `plan_digest`, resolved targets, `blockers[]`, `intended_changes[]`, `unverified[]` |
+| `hmc_plan_lpar` | read | provision's inputs, with `system_name_or_uuid` optional and a `placement` constraint as the alternative | `plan_digest` (SHA-256 of the canonical inputs and resolved targets), resolved targets, `blockers[]`, `intended_changes[]`, `unverified[]` |
 | `hmc_provision_lpar` | mutate | today's inputs plus `adapters.mac?`, `expected_plan_digest?`, `install?`, `exclusive_writer_window?` and `boot` (`immediate` default / `deferred`) | `ProvisionResult` (today's fields) plus the operation fields |
 | `hmc_reconfigure_lpar` | destructive | `lpar`, `patch`, `allow_disruption` (default false) | operation fields plus `changes[]`, each `live` / `profile` / `pending_activation` |
 | `hmc_decommission_lpar` | destructive | ADR 0027 inputs plus `storage_cleanup` (`retain` default / `delete_owned`) | `DecommissionResult` plus `storage` (`deleted[]`, `retained[]` with reasons, `pending[]`) and the operation fields |
 | `hmc_power_lpar` | destructive | `lpar`, `action` (`start` / `stop` / `restart`), `mode` (`graceful` default / `immediate`) | operation fields plus `already_in_state` and `observed_state` |
 | `hmc_inspect_lpar` | read | `lpar`, `include` ⊆ {`resources`, `rmc`, `profile_drift`, `refcodes`} | state, RMC, profile drift, ≤ 20 refcodes, `next_actions[]` (tool names only) |
-| `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer`, `hold_id` | `{action, hold, document}`; `document` is null on `release` |
-| `hmc_operation_status` | read | `operation_id`, `request_id`, `state?`, `outcome?`, `limit` 1–50, `cursor?` | always a page of at most 50 operation records (a lookup is a page of at most one), each with its newest ≤ 200 events and `truncated` |
+| `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer_label` (≤ 64 characters), `hold_id` | `{action, hold, document}`; `document` is null on `release` |
+| `hmc_operation_status` | read | `operation_id?`, `request_id?`, `state?`, `outcome?`, `limit` 1–50, `cursor?`; with neither id it lists the caller's operations | always a page of at most 50 operation records (a lookup is a page of at most one), each with its newest ≤ 200 events (phase changes and effect intents and outcomes) and `truncated` |
 | `hmc_search_tools` | read | `query` (≤ 200 characters) *or* `name`, `limit` 1–20 | names, one-line summaries, effect, maturity; the full input schema only for an exact `name` |
 | `hmc_invoke_tool` | destructive | `name`, `arguments` (≤ 64 KiB) | `{name, result}`, where `result` is the invoked tool's own result (the ADR 0189 exception to ADR 0012) |
 
@@ -77,7 +77,14 @@ existing resolution rules.
 The new inputs are additive except `request_id`. `request_id` is required on
 `hmc_provision_lpar` and `hmc_decommission_lpar`, and on their CLI mirrors as `--request-id`.
 This is a pre-release change with no compatibility path. #1225 writes the provision CHANGELOG
-entry and #1229 the decommission one. The other new provision inputs are optional:
+entry and #1229 the decommission one.
+
+With `install`, `boot` alone governs power-on: the composite's early power-on step does not run,
+and an explicit `power_on=true` is refused. `dry_run=true` records no operation and takes no
+lock or guard; `request_id` is still validated. An `expected_plan_digest` that differs from the
+freshly computed `plan_digest` is refused before any intent is recorded.
+
+The other new provision inputs are optional:
 
 - `adapters.mac`, the pinned MAC for prepared media (ADR 0191), in lower-case colon form;
 - `exclusive_writer_window`, read only when `install` is present.
@@ -102,8 +109,8 @@ through DLPAR. #1228 extends `patch` under the same rules with:
 
 - `profile`: `ubuntu-26.04.1` or `rocky-9.8`;
 - `network`: `address` as CIDR, `routes` (1–16, including a default), `dns` (≤ 3);
-- `ssh_authorized_keys` (1–16 public keys);
-- `login_user`;
+- `ssh_authorized_keys` (1–16 public keys) and `login_user`, built mode only: prepared media
+  already carries its own, so a prepared request that supplies them is refused;
 - `media`: either `{mode: built}` or `{mode: prepared, url, producer_result}`.
 
 `network.address` is IPv4 CIDR.
@@ -119,7 +126,7 @@ through DLPAR. #1228 extends `patch` under the same rules with:
   - reconfigure: `validating`, `applying`;
   - power: `validating`, `transitioning`;
   - decommission: `validating`, `tearing_down`, `cleaning_storage`.
-- `outcome`, or `null` while running:
+- `outcome`, or `null` while `running` or `interrupted`:
   - `completed` for reconfigure, power and decommission;
   - `configured`, `ready_to_boot` or `boot_started` for provision;
   - `needs_attention`, `failed` or `abandoned` for any tool.
@@ -137,7 +144,7 @@ the dispatch authorizer admits the call, as that tool, for each resolved target.
 | plan; inventory | `hmc_list_systems`, `hmc_list_lpars`, `hmc_capacity_report`, `hmc_list_vios`, `hmc_get_vios_storage_detail`, `hmc_list_lpar_ownership` |
 | provision (no install) | `hmc_create_lpar`, `hmc_add_network_adapter`, `hmc_add_vscsi_adapter`, `hmc_create_virtual_disk`, `hmc_map_storage_to_lpar`, #637's profile write |
 | provision `install` | the row above, plus `hmc_upload_iso`, `hmc_mount_optical_media`, `hmc_set_lpar_boot_order`, `hmc_power_on_lpar`, `hmc_read_lpar_refcodes` |
-| `power_on=true` | adds `hmc_power_on_lpar` |
+| `power_on=true` (no `install`) | adds `hmc_power_on_lpar` |
 | reconfigure | `hmc_modify_lpar`, `hmc_dlpar_proc`, `hmc_dlpar_mem`, #637's profile write; #1228 adds `hmc_unmount_optical_media`, `hmc_set_lpar_boot_order` and its attach tools |
 | power `start` | `hmc_power_on_lpar` |
 | power `stop` / `restart` | `hmc_power_off_lpar` |
@@ -304,8 +311,8 @@ ADR 0193 governs the hold:
 
 - `observed`: system and partition identity, state, resources, adapters, MACs, disks and
   mounted media, each from a read made during this call;
-- `declared`: install profile, address, routes, login user and key fingerprints, taken from
-  the resource ledger;
+- `declared`: install profile, address and routes, plus the login user and key fingerprints
+  for built media only, taken from the resource ledger;
 - `unverified`: OS, kernel, bootloader, kdump/fadump readiness, SSH reachability and host
   identity, each with the statement that kdive's doctor/adopt checks it.
 
