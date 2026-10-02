@@ -46,13 +46,22 @@ Excluded, with their owners (operator-approved 2026-10-02):
 | `name` | the new partition name, as `hmc_create_lpar` takes it |
 | `system_name_or_uuid` | one selector; exactly one of this and `placement` |
 | `placement` | `{systems?: list[str]}`: 1–16 non-empty selectors, or omitted to enumerate the connection's systems |
-| `resources` | `LparResources`; the shared-processor vCPU rule (`shared_units_over_vcpus`) applies |
+| `resources` | `LparResources`; the served parameter has `hmc_provision_lpar`'s default; the shared-processor vCPU rule (`shared_units_over_vcpus`) applies |
 | `partition_type` | `AIX/Linux` (default) or `OS400`, as `validate_partition_type` allows |
 | `adapters` | `PlanAdapters`: `port_vlan_id` (1–4094) and `mac?` |
 | `storage` | `PlanStorage`: `storage_name`, `kind` (`VirtualDisk` default, or `PhysicalVolume`), `vios_uuid?`, `vg_uuid?`, `capacity_mib?` |
+| `assignments` | `LparPcieAssignments`, default empty, as provision takes it |
+| `caller_token` | optional; `validate_caller_token`'s grammar, where `''` is an error |
+| `minimum_affinity_policy` | optional; `validate_minimum_affinity_policy` |
+| `affinity_assessment` | optional; `validate_affinity_request`, and its system and LPAR identities must equal `system_name_or_uuid` and `name`, so it requires `system_name_or_uuid` |
+| `power_on` | bool, default true; `true` with `install` is an input error (H1 spec, *Primary tools*) |
+| `boot` | `immediate` (default) or `deferred`; meaningful only with `install` |
 | `install` | optional `LparInstall` (below) |
 | `exclusive_writer_window` | bool, default false |
-| `profile` | the connection |
+
+These are provision's inputs (H1 spec, `hmc_provision_lpar` row) minus `dry_run`,
+`expected_plan_digest` and the continuation fields, which only an execution has. The connection
+(`profile`) is the tool's argument, not a request field.
 
 `storage.capacity_mib` means "create this new disk". With it, `kind` must be `VirtualDisk` and the
 disk name must be absent on the chosen VIOS. Without it, the named storage must already exist.
@@ -80,24 +89,33 @@ disk name must be absent on the chosen VIOS. Without it, the named storage must 
 colon form, with no group or broadcast bit (`int(first octet) & 1 == 0`).
 
 Every rule above is checked before the HMC session opens. A violation is a tool error that names
-the first bad input and echoes no key, URL or producer-result content. A blank optional string
-reads as absent (ADR 0094).
+the first bad input and echoes no key, URL or producer-result content. A blank `system_name_or_uuid`,
+`adapters.mac`, `storage.vios_uuid` or `storage.vg_uuid` reads as absent (ADR 0094); the
+normalization lives in `check_request`, which `plan_digest` also applies, so a caller of either
+gets the same request. `caller_token` is not normalized.
 
 ### Authorization (ADR 0198)
 
-The handler first checks that the policy permits every delegated tool. On the enumeration path
-those tools are `hmc_list_systems`, `hmc_list_lpars`, `hmc_capacity_report`,
-`hmc_list_virtual_networks`, `hmc_list_vios`, `hmc_list_volume_groups` and
-`hmc_get_vios_storage_detail`. Without enumeration, `hmc_list_systems` is dropped. The first
+The handler first checks that the policy permits every delegated tool the request needs:
+`hmc_list_lpars`, `hmc_capacity_report`, `hmc_list_virtual_networks`, `hmc_list_vios` and
+`hmc_list_volume_groups`, plus `hmc_list_systems` when `placement` enumerates and
+`hmc_get_vios_storage_detail` when storage already exists (no `capacity_mib`). The first
 withheld tool refuses the call before the session opens, and the refusal names that tool.
 
 Each read is then admitted through `dispatch_authorizer`, as its tool, for its target:
 
-- the system, for the four system tools, as `system_name_or_uuid`;
-- each VIOS, for the two VIOS tools, as `vios_name_or_uuid` and `system_name_or_uuid`.
+- the system, for the three system-kind tools (`hmc_list_lpars`, `hmc_list_virtual_networks`,
+  `hmc_list_vios`), as `system_name_or_uuid`. The value is the caller's selector text when the
+  caller named the system, and the system UUID when `placement` enumerated it (ADR 0196's rule);
+- each VIOS, for the two VIOS tools, as `vios_name_or_uuid` set to the VIOS UUID and
+  `system_name_or_uuid` spelled as above;
+- no target, for the console tools `hmc_list_systems` and `hmc_capacity_report`.
 
-A denied target becomes a `denied` blocker naming the tool, and that target is not read.
-`hmc_capacity_report` is a console tool, so only an `all-targets` grant admits it.
+Target scope matches spellings literally, so a targets table admits a VIOS read only when it
+lists the VIOS UUID. A denied target becomes a `denied` blocker naming the tool, and that target
+is not read. `hmc_capacity_report` is a console tool, so only an `all-targets` grant admits it:
+under a targets table, a plan can select a candidate only with a second grant of
+`hmc_capacity_report` at `all-targets`.
 
 `hmc_plan_lpar` registers as `read`, `operation="lpar.plan"`, `target_kind="console"`, with
 `system_name_or_uuid` declared as a selector and `exhaustive_targets=False`. The VIOS and volume
@@ -118,7 +136,8 @@ checks still run when their inputs exist.
    - A missing or unparseable system figure (`system_capacity` raises `ValueError`) is an
      `unavailable` blocker for `hmc_capacity_report`, never zero.
 3. **Name.** No partition on this system is named `name`, read from the system's partition
-   feed (`hmc_list_lpars`). The HMC requires partition names to be unique per managed system.
+   feed (`hmc_list_lpars`). Provision's preflight refuses the name on any system of the
+   connection; planning reads only candidate systems, so `unverified` says so.
 4. **VLAN.** A `VirtualNetwork` on the system carries `port_vlan_id` (`_check_vlan_exists`'s
    rule).
 5. **VIOS and volume group.** The candidate VIOSes are the system's VIOSes with
@@ -135,13 +154,16 @@ checks still run when their inputs exist.
      never takes the first.
    - A `VolumeGroup` with an unreadable `FreeSpace` (`free_space_diagnostic` set, or null) cannot
      qualify for a new disk, and the blocker says why.
-6. **Existing mapping.** For existing storage, the resolved VIOS's SCSI mappings must not map
+6. **Existing mapping.** For existing storage, the resolved VIOS's SCSI mappings
+   (`hmc_get_vios_storage_detail`, read with `_storage_mapping`'s rule) must not map
    `storage_name` to any partition.
 7. **Writer window.** With `install`, `exclusive_writer_window` must be true. Otherwise the
    check adds the blocker `exclusive_writer_window_required` (H1 spec, *Ownership and shared
    VIOS state*).
 8. **Prepared URL.** The prepared `url`'s host must be in `HMC_ISO_URL_ALLOWLIST`
-   (`_require_allowlisted_iso_url`). This is a request-level blocker, checked once.
+   (`_require_allowlisted_iso_url` over `iso_url_allowlist_entries`; its `ValueError` and
+   `HMCError` both mean not allowed). This is a request-level blocker, checked once. Its `detail`
+   is fixed text naming `HMC_ISO_URL_ALLOWLIST`, never the URL or the allowlist.
 
 An HMC read failure for a check becomes an `unavailable` blocker naming the tool. Planning never
 retries. A transport failure stops reading further candidates, and each unread candidate is
@@ -160,6 +182,10 @@ Every evaluated candidate runs every check. Candidates are ranked by `find_place
 ascending free memory, then free processor units, then name, then UUID, with unknown capacity
 last. The first candidate with no blockers is selected. With `system_name_or_uuid`, the one
 system is the only candidate.
+
+An `ambiguous` candidate is blocked, so a lower-ranked unblocked candidate can be selected over
+a better fit whose storage pair was ambiguous. That candidate stays in `candidates[]` with the
+pairs listed; a caller who prefers it re-plans naming the system and the pair.
 
 ### Result
 
@@ -198,23 +224,34 @@ A `PlanBlocker` is `{code, check, target, tool, detail}`:
 
 1. `create_partition`;
 2. `stamp_ownership`;
-3. `add_network_adapter`;
-4. `create_virtual_disk`, with `capacity_mib` only;
-5. `map_storage`.
+3. `set_minimum_affinity_policy`, with `minimum_affinity_policy` only;
+4. `add_network_adapter`;
+5. `create_virtual_disk`, with `capacity_mib` only;
+6. `map_storage`;
+7. `assign_pcie`, one per entry of `assignments`, in its order.
 
-With `install`, these follow:
+Without `install`, these follow:
 
-6. `bind_media`;
-7. `upload_media`;
-8. `mount_media`;
-9. `set_boot_order`;
-10. `power_on`. Its `detail` says that `boot: deferred` on provision stops before it.
+8. `power_on`, with `power_on` only;
+9. `assess_affinity`, with `affinity_assessment` only.
+
+With `install`, these follow instead:
+
+8. `bind_media`;
+9. `upload_media`;
+10. `mount_media`;
+11. `set_boot_order`;
+12. `power_on`, whose `detail` says that `boot: deferred` stops before it;
+13. `assess_affinity`, with `affinity_assessment` only.
 
 `unverified[]` is a list of fixed statements. Each one is included when its condition holds:
 
 - always: the capacity is observed, not reserved, and may change before provisioning;
 - desired memory or processors omitted: the HMC's default for that figure is not checked;
+- always: that no partition on a non-candidate system of the connection has the name;
 - `PhysicalVolume` storage: the physical volume's existence;
+- `assignments` not empty: PCIe, SR-IOV and vNIC prevalidation, which provision runs over SSH;
+- `minimum_affinity_policy`: the system's support for it, which provision checks over SSH;
 - with `install`, all of these:
   - the native envelope (POWER9/POWER10, HMC V10R3 M1060 or V11R2, VIOS level;
     ADR 0194);
@@ -225,13 +262,14 @@ With `install`, these follow:
 
 ### Digest
 
-`plan_digest(request, targets) -> str` is the lower-case hex SHA-256 of
+`plan_digest(request, targets, connection) -> str` is the lower-case hex SHA-256 of
 `json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True)`. `document`
 holds these keys:
 
 - `"format": "hmc-lpar-plan-v1"`;
 - `"connection"`;
-- `"request"`: every `PlanRequest` field except `placement` and `profile`, with
+- `"request"`: every `PlanRequest` field except `placement`, after `check_request`'s
+  normalization, with
   `system_name_or_uuid`, `storage.vios_uuid` and `storage.vg_uuid` replaced by the selected
   UUIDs in lower case;
 - `"targets"`: those three UUIDs.
@@ -258,8 +296,11 @@ observations. Revalidation is a fresh plan at execution time (#1225).
 
 - *State changing between plan and provision*: accepted, because the plan is not a guarantee.
   `unverified` says so, and #1225 re-plans.
-- *The same name on another system*: accepted, because the HMC requires uniqueness only per
-  managed system, and other systems are outside the plan's targets.
+- *The same name on a non-candidate system*: accepted, because planning reads only candidate
+  systems. `unverified` says so, and provision's preflight refuses the name before any write.
+- *PCIe assignments and the minimum-affinity capability not checked*: accepted, because they
+  need SSH reads outside the plan row. `unverified` lists them, and provision's preflight checks
+  them before any write.
 - *Systems beyond 16 not evaluated*: accepted, because the bound is stated and
   `candidates_truncated` reports it.
 - *Native envelope and physical-volume existence not checked*: accepted, because no delegated
@@ -308,8 +349,8 @@ observations. Revalidation is a fresh plan at execution time (#1225).
 - A withheld delegated tool refuses the call, naming the tool. A denied target becomes a `denied`
   blocker and is not read.
 - Each input rule rejects its violation before any HMC request.
-- The digest is stable under argument order and selector spelling, and changes with any request
-  field or resolved UUID.
+- The digest is stable under argument order, selector spelling and a blank versus absent
+  optional string, and changes with any request field or resolved UUID.
 - Planning issues no HMC write. The test fake defines only the read methods planning may call,
   and each scenario asserts that its call log contains only those.
 

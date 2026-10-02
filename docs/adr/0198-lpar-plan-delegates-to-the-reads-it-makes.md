@@ -26,20 +26,24 @@ partition and reads no ownership stamp.
    - `hmc_list_virtual_networks`;
    - `hmc_list_vios`;
    - `hmc_list_volume_groups`;
-   - `hmc_get_vios_storage_detail`.
+   - `hmc_get_vios_storage_detail`, only when the storage already exists.
 
    `hmc_list_lpar_ownership` leaves the row.
 2. **Permission is all or nothing.** A row tool the policy withholds refuses the call before
    any read, naming the tool. The `hmc_plan_lpar` grant is necessary and never sufficient.
 3. **Target scope is per read.** Each read is admitted through `dispatch_authorizer` as its
-   tool, for the system or VIOS it reads. A denied target becomes a `denied` blocker naming the
-   tool, and nothing is read from it. One denied candidate therefore does not hide the others.
+   tool, for the system or VIOS it reads. A system is spelled as the caller's selector when the
+   caller named it and as its UUID when placement enumerated it (ADR 0196's rule); a VIOS is
+   spelled as its UUID. A denied target becomes a `denied` blocker naming the tool, and nothing
+   is read from it. One denied candidate therefore does not hide the others.
 
 ## Consequences
 
 - A policy that withholds volume-group listing cannot plan. The denial says which tool to grant.
 - `hmc_capacity_report` is a console tool, so a targets-table policy gets a `denied` capacity
-  blocker on every candidate. Planning needs an `all-targets` grant for it.
+  blocker on every candidate. A selectable plan under a targets table needs a second grant of
+  `hmc_capacity_report` at `all-targets`, and the table must list VIOSes by UUID, because target
+  scope matches spellings literally.
 - Renaming any of the seven tools changes planning's authority, so a test pins the row (ADR 0189
   Consequences).
 - Each admission writes its own ADR 0040 record. With 16 candidates and several VIOSes each, one
