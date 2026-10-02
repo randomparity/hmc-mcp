@@ -9,10 +9,13 @@ change. It writes nothing and reserves nothing. The contract is
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import ipaddress
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -426,3 +429,66 @@ def check_request(request: PlanRequest) -> PlanRequest:
     _check_install(request)
     _check_mac(request)
     return request
+
+
+DIGEST_FORMAT = "hmc-lpar-plan-v1"
+
+
+@dataclass(frozen=True)
+class PlanSystem:
+    """The managed system a plan targets. ``id`` is ``<connection>/<uuid>``."""
+
+    id: str
+    uuid: str
+    name: str | None
+
+
+@dataclass(frozen=True)
+class PlanResource:
+    """A VIOS or volume group a plan targets."""
+
+    uuid: str
+    name: str | None
+
+
+@dataclass(frozen=True)
+class PlanTargets:
+    """The resolved targets: the system, and the VIOS and volume group when known."""
+
+    system: PlanSystem
+    vios: PlanResource | None
+    volume_group: PlanResource | None
+
+
+def _canonical(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    raise TypeError(f"plan_digest cannot encode {type(value).__name__}")
+
+
+def plan_digest(request: PlanRequest, targets: PlanTargets, connection: str) -> str:
+    """SHA-256 over the canonical request and resolved targets (#1225 recomputes it)."""
+    system = targets.system.uuid.lower()
+    vios = targets.vios.uuid.lower() if targets.vios else None
+    group = targets.volume_group.uuid.lower() if targets.volume_group else None
+    body = asdict(_normalized(request))
+    del body["placement"]
+    body["system_name_or_uuid"] = system
+    body["storage"]["vios_uuid"] = vios
+    body["storage"]["vg_uuid"] = group
+    document = {
+        "format": DIGEST_FORMAT,
+        "connection": connection,
+        "request": body,
+        "targets": {"system": system, "vios": vios, "volume_group": group},
+    }
+    text = json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=_canonical,
+    )
+    return hashlib.sha256(text.encode()).hexdigest()

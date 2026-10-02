@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
 
 from hmcpctl.documents import LparResources
 from hmcpctl.operations.affinity.rest import ProvisionAffinityAssessment
+from hmcpctl.operations.lpar.assignments import (
+    DedicatedPcieAssignment,
+    LparPcieAssignments,
+    SriovLogicalPortAssignment,
+)
 from hmcpctl.operations.lpar.plan import (
     InstallMedia,
     InstallNetwork,
@@ -18,8 +24,12 @@ from hmcpctl.operations.lpar.plan import (
     Placement,
     PlanAdapters,
     PlanRequest,
+    PlanResource,
     PlanStorage,
+    PlanSystem,
+    PlanTargets,
     check_request,
+    plan_digest,
 )
 from hmcpctl.ssh.affinity import MinimumAffinityPolicy
 
@@ -469,3 +479,133 @@ def test_check_request_normalizes_blank_selectors() -> None:
     assert check_request(install).adapters.mac is None
     with pytest.raises(ValueError, match="caller"):
         check_request(_request(caller_token=""))
+
+
+def _targets(
+    system: int = 1, vios: int | None = 5, group: int | None = 6
+) -> PlanTargets:
+    return PlanTargets(
+        system=PlanSystem(id=f"lab/{_uuid(system)}", uuid=_uuid(system), name="sys1"),
+        vios=PlanResource(uuid=_uuid(vios), name="vios1") if vios else None,
+        volume_group=PlanResource(uuid=_uuid(group), name="rootvg") if group else None,
+    )
+
+
+def test_plan_digest_ignores_selector_spelling_and_placement() -> None:
+    targets = _targets()
+    by_name = plan_digest(_request(), targets, "lab")
+    by_uuid = plan_digest(
+        _request(system_name_or_uuid=_uuid(1).upper()), targets, "lab"
+    )
+    by_placement = plan_digest(
+        _request(system_name_or_uuid=None, placement=Placement(systems=("sys1",))),
+        targets,
+        "lab",
+    )
+    named_storage = plan_digest(
+        _request(storage=_storage(vios_uuid=_uuid(5).upper(), vg_uuid=_uuid(6))),
+        targets,
+        "lab",
+    )
+    assert by_name == by_uuid == by_placement == named_storage
+    blank = _install_request(_built(), adapters=PlanAdapters(port_vlan_id=100, mac=""))
+    absent = _install_request(_built())
+    assert plan_digest(blank, targets, "lab") == plan_digest(absent, targets, "lab")
+
+
+_CHANGES: list[tuple[str, Any]] = [
+    ("name", lambda: _request(name="web2")),
+    ("vlan", lambda: _request(adapters=PlanAdapters(port_vlan_id=101))),
+    ("storage name", lambda: _request(storage=_storage(storage_name="other"))),
+    ("kind", lambda: _request(storage=_storage(kind="PhysicalVolume"))),
+    ("capacity", lambda: _request(storage=_storage(capacity_mib=1024))),
+    (
+        "resources",
+        lambda: _request(
+            resources=LparResources(desired_memory=8192, desired_procs=0.5)
+        ),
+    ),
+    ("partition type", lambda: _request(partition_type="OS400")),
+    (
+        "dedicated assignment",
+        lambda: _request(
+            assignments=LparPcieAssignments(
+                dedicated=(DedicatedPcieAssignment("default", "21010001"),)
+            )
+        ),
+    ),
+    (
+        "sriov assignment",
+        lambda: _request(
+            assignments=LparPcieAssignments(
+                sriov=(
+                    SriovLogicalPortAssignment(
+                        "default", "1", "0", "2", Decimal("2.5")
+                    ),
+                )
+            )
+        ),
+    ),
+    ("caller token", lambda: _request(caller_token="ticket-42")),
+    (
+        "minimum affinity",
+        lambda: _request(
+            minimum_affinity_policy=MinimumAffinityPolicy(
+                min_affinity_score=50, min_affinity_score_action="warn"
+            )
+        ),
+    ),
+    ("affinity assessment", lambda: _request(affinity_assessment=_assessment())),
+    ("power_on", lambda: _request(power_on=False)),
+    ("writer window", lambda: _request(exclusive_writer_window=True)),
+]
+_INSTALL_CHANGES: list[tuple[str, Any]] = [
+    ("install profile", lambda: _install_request(_built(profile="rocky-9.8"))),
+    (
+        "address",
+        lambda: _install_request(_built(network=_network(address="10.0.0.6/24"))),
+    ),
+    ("key", lambda: _install_request(_built(ssh_authorized_keys=(_KEY + "2",)))),
+    ("media mode", lambda: _install_request(_prepared())),
+    ("boot", lambda: _install_request(_built(), boot="deferred")),
+]
+
+
+@pytest.mark.parametrize(
+    "build", [pytest.param(build, id=case) for case, build in _CHANGES]
+)
+def test_plan_digest_changes_with_each_field(build: Any) -> None:
+    assert plan_digest(build(), _targets(), "lab") != plan_digest(
+        _request(), _targets(), "lab"
+    )
+
+
+@pytest.mark.parametrize(
+    "build", [pytest.param(build, id=case) for case, build in _INSTALL_CHANGES]
+)
+def test_plan_digest_changes_with_each_install_field(build: Any) -> None:
+    base = plan_digest(_install_request(_built()), _targets(), "lab")
+    assert plan_digest(build(), _targets(), "lab") != base
+
+
+@pytest.mark.parametrize(
+    ("targets", "connection"),
+    [
+        pytest.param(_targets(), "other", id="connection"),
+        pytest.param(_targets(system=2), "lab", id="system"),
+        pytest.param(_targets(vios=7), "lab", id="vios"),
+        pytest.param(_targets(group=8), "lab", id="volume group"),
+    ],
+)
+def test_plan_digest_changes_with_targets(
+    targets: PlanTargets, connection: str
+) -> None:
+    assert plan_digest(_request(), targets, connection) != plan_digest(
+        _request(), _targets(), "lab"
+    )
+
+
+def test_plan_digest_is_pinned() -> None:
+    # A SHA-256 digest, not a credential.
+    expected = "32f5ecbbdc8c604c44e916cfc6d56bcd3fdf004121aba91b74730e8d988cab9d"  # pragma: allowlist secret
+    assert plan_digest(_request(), _targets(), "lab") == expected

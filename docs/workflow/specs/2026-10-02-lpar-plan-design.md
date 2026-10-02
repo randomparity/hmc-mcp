@@ -278,7 +278,7 @@ holds these keys:
   UUIDs in lower case;
 - `"targets"`: those three UUIDs.
 
-`None` fields are kept as `null`. Provision (#1225) will build the same `PlanRequest` from its
+`None` fields are kept as `null`; a `datetime` is encoded as its ISO 8601 text and a `Decimal` as its string. Provision (#1225) will build the same `PlanRequest` from its
 own inputs and call this function; until it lands, nothing consumes the digest. The digest binds the request and the targets, not the
 observations. Revalidation is a fresh plan at execution time (#1225).
 
