@@ -27,10 +27,13 @@ holds every mapping's `VirtualOpticalTargetDevice` `TargetName`
    behaviour, so every other storage write is unaffected. The `client_contracts.py` protocol
    declaration mirrors the widened type.
 3. **Conflict message** (one helper, both paths): names the device (or "the target device" when
-   the HMC chose it), says it is already mapped on the VIOS, and gives the remedies available
-   today: unmount the media mapped to it first (`unmount-optical-media`), or name a different
-   `target_device`; loading media into an existing device is not supported yet. No command that
-   does not exist is named (#1285 is unbuilt).
+   the HMC chose it), says it is already mapped on the VIOS, and, on the pre-POST path, names the
+   matched mapping's `MediaName` when it has one. Remedies available today: name a different
+   `target_device`, or, when media is mapped to the device, unmount that media first
+   (`unmount-optical-media`); loading media into an existing device is not supported yet. No
+   command that does not exist is named (#1285 is unbuilt). A device with no media loaded is not
+   reachable by `unmount-optical-media`, which selects by media name; the message says so by
+   making the unmount remedy conditional.
 
 No ADR: this extends ADR 0169's RMW and #1237's side-effect note without a new decision.
 
