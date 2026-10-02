@@ -16,6 +16,8 @@ from hmcpctl.authorization.access_policy import compile_access_policy
 from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.server_tools.command import configure_arbitrary_command_tool
+from hmcpctl.server_tools.gateway import register_gateway_tools
+from hmcpctl.tool_registry import ToolSecurity
 
 SEARCH = "hmc_search_tools"
 INVOKE = "hmc_invoke_tool"
@@ -192,6 +194,65 @@ def test_invoke_returns_the_invoked_tools_own_result(records):
     ]
 
 
+def _toy_app() -> FastMCP:
+    """Tools whose results take each shape FastMCP can give a direct call."""
+    app = FastMCP(name="toy")
+
+    def toy_list() -> list[int]:
+        return [1, 2]
+
+    def toy_none() -> None:
+        return None
+
+    def toy_object() -> dict[str, int]:
+        return {"a": 1}
+
+    def toy_text() -> str:
+        return "hi"
+
+    def toy_empty() -> list[object]:
+        return []
+
+    for handler in (toy_list, toy_none, toy_object):
+        app.tool(handler)
+    # No output schema: the result reaches a client as content blocks only.
+    for handler in (toy_text, toy_empty):
+        app.tool(handler, output_schema=None)
+    security = {
+        name: ToolSecurity("read", f"toy.{name}", "none", connection_argument=None)
+        for name in ("toy_list", "toy_none", "toy_object", "toy_text", "toy_empty")
+    }
+    register_gateway_tools(
+        app, security, permits=lambda _name: True, authorize=lambda *_args: None
+    )
+    return app
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("toy_list", [1, 2]),
+        ("toy_none", None),
+        ("toy_object", {"a": 1}),
+        ("toy_text", "hi"),
+        ("toy_empty", None),
+    ],
+)
+def test_invoke_result_is_what_a_direct_call_returns(name, expected):
+    app = _toy_app()
+
+    async def go():
+        async with Client(app) as client:
+            direct = await client.call_tool(name, {})
+            invoked = await client.call_tool(INVOKE, {"name": name, "arguments": {}})
+            return direct, invoked.structured_content
+
+    direct, invoked = asyncio.run(go())
+    assert invoked == {"name": name, "result": expected}
+    texts = [getattr(block, "text", None) for block in direct.content]
+    assert direct.data == expected or texts == ([expected] if expected else [])
+
+
 def test_invoke_reenters_the_invoked_tools_authorization(records):
     app = create_mcp(_policy(_grant(*_GATEWAY), _grant(_STATUS, connections=("lab",))))
     with pytest.raises(ToolError, match="access policy"):
@@ -207,7 +268,8 @@ def test_invoke_runs_the_invoked_tools_argument_validation():
 
 
 def test_unknown_withheld_and_disabled_names_get_one_denial():
-    policy = _policy(_grant(*_GATEWAY))
+    # hmc_run_command is granted but, without --enable-arbitrary-command, disabled.
+    policy = _policy(_grant(*_GATEWAY, "hmc_run_command"))
     app = create_mcp(policy)
     messages = set()
     for name in ("hmc_no_such_tool", "hmc_power_off_lpar", "hmc_run_command"):

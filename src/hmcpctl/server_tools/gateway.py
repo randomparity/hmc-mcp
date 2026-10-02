@@ -157,6 +157,8 @@ def _unwrapped(result: ToolResult) -> Any:
             else result.structured_content
         )
     texts = [block.text for block in result.content if isinstance(block, TextContent)]
+    if not texts:
+        return None
     return texts[0] if len(texts) == 1 else texts
 
 
