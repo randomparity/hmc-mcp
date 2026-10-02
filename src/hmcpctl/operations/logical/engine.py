@@ -264,7 +264,14 @@ def _start_worker(operation_id: str, body: Body, continuation: str) -> None:
     )
     with _WORKERS_GUARD:
         _WORKERS[operation_id] = thread
-    thread.start()
+    try:
+        thread.start()
+    except BaseException:
+        # Unregistered, the running record is an orphan the next continuation recovers.
+        with _WORKERS_GUARD:
+            if _WORKERS.get(operation_id) is thread:
+                del _WORKERS[operation_id]
+        raise
 
 
 def _has_worker(operation_id: str) -> bool:

@@ -623,3 +623,15 @@ def test_a_continuation_from_another_tool_is_refused(continuation):
     assert writer.calls == 0
     record = store.operation_status(agent_id="agent-a").operations[0]
     assert (record.state, record.outcome) == ("paused", "needs_attention")
+
+
+def test_a_worker_that_fails_to_start_is_recoverable(monkeypatch):
+    def refuse(self):
+        raise RuntimeError("can't start new thread")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(engine.threading.Thread, "start", refuse)
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            _submit()
+    record = _submit(continuation="abandon")
+    assert (record.state, record.outcome) == ("terminal", "abandoned")
