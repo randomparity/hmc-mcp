@@ -10,83 +10,95 @@ Provision, reconfigure, power and decommission span several HMC writes and can o
 call. The server persists nothing today: the HMC session is process-local (ADR 0028), and the
 only operation identity is the HMC JobID (ADRs 0081, 0093). Epic #1215 requires:
 
-- durable identity that binds requests, effects and created resources;
+- durable identity binding requests, effects and created resources;
 - explicit resume;
-- reconciliation after a timeout or restart, never blind replay.
+- reconciliation after timeout or restart, never blind replay.
 
 The documented MCP transport is stdio (`docs/mcp-server.md`), so each client spawns its own
-server process. The operator chose a local SQLite store on 2026-10-01.
+server process, and the CLI acts on the same partitions. The operator chose a local SQLite store
+on 2026-10-01.
 
 ## Decision
 
-1. **Location and lock.** The store is one stdlib `sqlite3` file in a private state
-   directory: the directory is `0700` and the file `0600`. It is created on first use. The
-   directory is set by `hmcpctl serve --state-dir`, and defaults to the platform state
-   directory: `$XDG_STATE_HOME/hmcpctl`, or `~/.local/state/hmcpctl` on Linux, and
-   `~/Library/Application Support/hmcpctl` on macOS. CLI commands that mutate partitions open
-   the same default. At most one process holds an OS writer lock for its whole lifetime.
-   - **The holder** serves the logical mutating tools.
-   - **Any other process** opens the store read-only. It enforces ADR 0193 holds and serves
-     status, but refuses logical mutations with a reason that names the lock holder's process
-     id.
-2. **Identity.** Every mutating logical call carries a caller `request_id` of 1–64 characters
-   from `[A-Za-z0-9._-]`. The server mints an `operation_id` and stores the SHA-256 of the
-   canonical request beside it. The key is (`HMC_AGENT_ID`, `request_id`); the connection is
-   recorded as provenance.
-   - A repeat with the same digest returns the existing operation.
-   - A repeat with a different digest is refused as a conflict.
-   - `continuation` and `wait_seconds` are excluded from the digest.
-3. **Effects before and after.** Before each HMC write, the store records an *intent*. After
-   the write, it records the *outcome* and the created identities: partition UUID, adapter
-   UUIDs and MACs, VIOS, volume-group and disk names, media name, and HMC JobID. A write whose
-   outcome was never recorded is `uncertain`.
-4. **Execution.** A call runs in the lock holder's process and returns within `wait_seconds`
-   (default 60, maximum 600) with the current phase. Work continues while that process lives.
-   A caller timeout does not mean execution stopped. When a process acquires the lock, it marks
-   every non-terminal record `interrupted`; nothing restarts on its own.
-5. **Continuation.** The original tool, called again with the same `request_id`, takes
-   `continuation`:
-   - `resume` re-authorizes as a fresh call (ADR 0189), reconciles each `uncertain` effect
-     against live HMC state, and continues only if every effect is classified. Anything still
-     ambiguous stops in `needs_attention`.
-   - `abandon` ends an interrupted or `needs_attention` operation as `abandoned`. It makes no
-     HMC write and leaves its effects recorded.
-   - `boot` is ADR 0191's deferred boot.
+1. **Location.** The store is one stdlib `sqlite3` file under a private state directory
+   (directory `0700`, file `0600`).
+   - The directory is `HMCPCTL_STATE_DIR` if set. Otherwise it is the platform state directory:
+     `$XDG_STATE_HOME/hmcpctl` or `~/.local/state/hmcpctl` on Linux, and
+     `~/Library/Application Support/hmcpctl` on macOS.
+   - The server and the CLI read the same setting.
+   - The first logical mutation creates the directory, the store and a `store-id` sentinel. A
+     directory whose sentinel exists while the store is missing counts as a lost store: it is
+     refused and never recreated.
+2. **Locks.** Any process may run short SQLite transactions, such as placing or releasing
+   holds and reading status.
+   - A separate OS *execution lock* gives one process the right to run logical operations.
+     A process acquires it at its first logical mutation.
+   - A server keeps it until the server exits.
+   - A CLI command keeps it only while the command runs.
+   - A process that cannot acquire it refuses the logical mutation, naming the holder's process
+     id, and tries again on its next call.
+   - When a process acquires the lock, it marks every `running` record `interrupted`.
+3. **Identity.** The key is (`HMC_AGENT_ID`, `request_id`), where `request_id` is 1–64
+   characters from `[A-Za-z0-9._-]`.
+   - The server mints an `operation_id` and records the connection and the SHA-256 of the
+     canonical request.
+   - A repeat with the same digest returns the operation.
+   - A repeat with a different digest is a conflict.
+   - A continuation call needs only `request_id` and `continuation`; any other inputs it gives
+     must match the digest.
+   - A continuation from a connection other than the recorded one is refused.
+4. **Effects.** Each HMC write is recorded twice: an *intent* before it, and the *outcome* and
+   created identities after it. A write with no recorded outcome is `uncertain`.
+5. **Execution.** A call returns within `wait_seconds` (default 60, maximum 600). Work continues
+   while the lock holder lives. A caller timeout does not mean execution stopped.
+6. **States and continuation.**
 
-   Installer power-on is never repeated after `boot_started` is recorded.
-6. **One active operation per partition.** The guard is keyed by system UUID and partition UUID,
-   never by connection. A second mutating logical operation on that partition is refused and
-   names the holder's `operation_id`. An operation paused at `ready_to_boot` releases the guard.
-7. **Bounds.**
-   - The canonical request is at most 64 KiB, and an operation holds at most 256 effects.
+   | State | Partition guard | Continuations accepted |
+   | --- | --- | --- |
+   | `running` | held | none (refused as running) |
+   | `interrupted`, or `paused` with outcome `needs_attention` | held | `resume`, `abandon` |
+   | `paused` with outcome `ready_to_boot` | released | `boot`, `abandon` |
+   | `terminal` (`completed`, `configured`, `boot_started`, `failed`, `abandoned`) | released | none (the record is returned) |
+
+   `resume` re-authorizes as a fresh call (ADR 0189) and reconciles each `uncertain` effect
+   against live state. It continues only if every effect is classified. `abandon` writes nothing
+   to the HMC. Installer power-on is never repeated once `boot_started` is recorded.
+7. **Partition guard and ledger.**
+   - The guard allows one non-terminal operation per partition, keyed by system UUID and
+     partition UUID.
+   - A separate *resource ledger*, keyed the same way, holds each created partition, disk and
+     media identity, plus the declared install facts.
+   - Pruning never touches the ledger. Decommission removes ledger entries as it deletes or
+     retains each resource.
+8. **Bounds.**
+   - A canonical request is at most 64 KiB, and an operation has at most 256 effects.
    - A status page holds at most 50 operations or 200 events.
-   - Terminal operations are pruned after 30 days, oldest first.
-   - When non-terminal operations plus holds reach 10,000, new operations and holds are refused
-     with `store_full` until some are abandoned, completed or released.
-8. **Failure.** If the store is unreadable, corrupt or not private, every logical mutating
-   call and every continuation is refused with the reason. The store is never rebuilt silently.
+   - Terminal operations are pruned after 30 days.
+   - Once non-terminal operations, holds and ledger entries together reach 10,000, new
+     operations and holds are refused with `store_full`.
+9. **Failure.** A store that is unreadable, corrupt, not private, or lost per Decision 1 refuses
+   logical mutations, continuations and ADR 0193's guarded operations, and reports the reason.
 
 ## Consequences
 
-- hmcpctl gains durable state, so backup and loss now matter. Losing the store loses
-  provenance, and cleanup falls back to ADR 0192's retain path.
-- Under stdio, a second concurrent client session gets status and holds but no logical
-  mutations. Supporting both together means running one long-lived server.
-- A process that exits mid-operation, such as a stdio client closing, stops execution between
-  intent and outcome. The next lock holder marks the operation `interrupted`, and `resume`
-  reconciles it.
-- Isolation rests on `HMC_AGENT_ID`. MCP carries no authenticated principal.
-- Ownership stamps (ADR 0011) remain advisory. The store fences nothing outside this host.
+- hmcpctl gains durable state that needs backing up. Deleting the whole state directory removes
+  every hold and ledger entry, which is an operator action like `release`.
+- A `request_id` reused after its operation was pruned starts a new operation. Duplicate
+  creation is still refused by provision's name-uniqueness precondition (ADR 0005).
+- Two stdio sessions on one host can both serve logical mutations, though only one at a time.
+- A process exit mid-write leaves the effect `uncertain` for `resume`.
+- Isolation rests on `HMC_AGENT_ID`, because MCP carries no principal. The CLI's operator
+  commands list and abandon operations under any agent id. The CLI answers to the credential
+  holder, as ADR 0188 notes.
 
 ## Considered & rejected
 
-- **Progress in the LPAR description stamp only.** judgment: fit. The stamp cannot hold effects
-  from before the partition exists or after it is deleted.
-- **Per-operation JSON files.** judgment: complexity. Duplicate-key, active-partition and hold
-  queries would need hand-written locking and indexing.
+- **Progress in the LPAR description stamp only.** judgment: fit. It cannot hold effects from
+  before the partition exists or after it is deleted.
+- **Per-operation JSON files.** judgment: complexity. The duplicate-key, guard, ledger and hold
+  queries would need hand-written locking.
 - **Synchronous calls with no continuation.** judgment: fit. The epic requires that a caller
-  timeout not imply execution stopped, and synchronous calls make the two coincide.
-- **Several processes writing the store concurrently.** judgment: complexity. Background
-  execution would need cross-process ownership of in-flight work.
-- **Automatic resume at startup.** judgment: fit. It replays effects without a caller decision,
-  which the epic forbids.
+  timeout not imply execution stopped.
+- **Prune the ledger with its operation.** judgment: fit. ADR 0192 would retain owned storage
+  forever after 30 days.
+- **Automatic resume at startup.** judgment: fit. It replays effects without a caller decision.

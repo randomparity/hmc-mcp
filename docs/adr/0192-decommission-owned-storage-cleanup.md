@@ -18,9 +18,9 @@ description field, so ADR 0011's stamp cannot mark them.
 
 1. **Intent.** `hmc_decommission_lpar` gains `storage_cleanup`: `retain` (the default, and
    today's behavior) or `delete_owned`.
-2. **Owned** means recorded as created by an operation in this deployment's store (ADR 0190)
-   for this partition: a virtual disk (VIOS UUID, volume group UUID, disk name) or an
-   installer media name. A matching name alone is never ownership.
+2. **Owned** means the resource has an entry for this partition in the ADR 0190 resource
+   ledger, which is never pruned. The resource is either a virtual disk (VIOS UUID, volume group
+   UUID, disk name) or an installer media name. A matching name alone is never ownership.
 3. **Deletable** means owned, and at execution time referenced by no mapping except one to
    this partition, read in the same pass. Physical volumes, media repositories, shared
    or foreign media and foreign disks are always retained.

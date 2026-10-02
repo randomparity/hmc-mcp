@@ -2,9 +2,11 @@
 
 ## Status
 
-Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0012: a primary logical tool may
-carry an action discriminator whose variants differ in effect class (Decision 2). ADR 0012
-otherwise stands, including for every specialist tool.
+Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0012 in two places. First, a
+primary logical tool may carry an action discriminator whose variants differ in effect class
+(Decision 2). Second, `hmc_invoke_tool`'s result is the invoked tool's own result, wrapped as
+`{name, result}` (Decision 3). ADR 0012 otherwise stands, including the one-shape rule for every
+other tool.
 
 ## Context
 
@@ -35,9 +37,9 @@ one effect cannot by itself express "may start, may not stop".
 3. **Search and invoke.** `hmc_search_tools` (effect `read`) returns at most 20 entries, and at
    most one full input schema when an exact name is given, drawn only from tools the policy
    permits. `hmc_invoke_tool` (effect `destructive`) dispatches one permitted, registered tool
-   through that tool's own `authorized()` wrapper, so validation, target scope, ownership,
-   maturity metadata and the ADR 0040 authorization record all apply as for a direct call. It
-   refuses the two gateway names and any tool whose effect is `arbitrary-command`. An unknown
+   through that tool's own `authorized()` wrapper, so validation, target scope, ownership, the
+   ADR 0193 hold check, maturity metadata and the ADR 0040 authorization record all apply as
+   for a direct call. Its result is `{name, result}`. It refuses the two gateway names and any tool whose effect is `arbitrary-command`. An unknown
    name and a withheld name return the same denial.
 4. **Advertisement is a listing choice, not an authorization one.** When #1232 switches the
    default listing to the primary set, a direct `tools/call` of a permitted specialist name

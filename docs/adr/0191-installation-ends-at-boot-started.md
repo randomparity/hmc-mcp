@@ -46,12 +46,18 @@ across activations is unverified.
    Native proof (#1230) fills the boot-started set, and also settles the timestamp's zone
    handling. While the set is empty, no operation reports `boot_started`. A wait that ends with
    no qualifying code reports `needs_attention` with the codes it observed.
-3. **Media binding.** Media enters either *prepared* (an allowlisted URL plus the expected
-   SHA-256 and size) or *built* (one operator-configured build entry). Before upload, hmcpctl
-   requires a versioned producer result, iso-chain-loader#23's contract. Its ISO digest and
-   size, distribution, release, architecture, MAC, network and operation binding must equal the
-   request and the recorded effects. The MAC is the client adapter's actual MAC, read after
-   creation. A mismatch is `failed`; hmcpctl never rebuilds or overwrites media.
+3. **Media binding.** Before upload, hmcpctl requires a versioned producer result, the
+   iso-chain-loader#23 contract. Every field in it must equal the request and the recorded
+   effects. Media enters in one of two modes:
+   - **Built.** One operator-configured build entry runs after creation. Its result binds the
+     client adapter's actual MAC, read after creation, and the `operation_id`.
+   - **Prepared.** The caller pins the adapter MAC in `adapters` and supplies the producer result
+     inline, at most 64 KiB, with an allowlisted URL. The result binds that MAC and carries no
+     operation binding. A created adapter whose MAC differs is `failed`.
+
+   MACs compare in lower-case colon form, normalized from the HMC's 12-hex form. Addresses are
+   IPv4 CIDR, which is the producer's v3 manifest rule. A mismatch is `failed`; hmcpctl never
+   rebuilds or overwrites media.
 4. **Builder invocation.** The build entry is an executable path plus a fixed argument
    template, both from deployment configuration. Only the manifest file varies per call, and no
    shell runs. The entry publishes the ISO to an origin in `HMC_ISO_URL_ALLOWLIST` and returns

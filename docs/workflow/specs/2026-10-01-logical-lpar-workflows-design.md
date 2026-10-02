@@ -29,7 +29,8 @@ Not in this design (the approved exclusions):
 - guest SSH and readiness;
 - any live run;
 - kdive-side code;
-- any change to the six-name `hmcpctl.api` facade;
+- any change to the six-name `hmcpctl.api` facade (the logical tools compose existing
+  `src/hmcpctl/operations/` functions instead);
 - a generic workflow language.
 
 ## Primary tools
@@ -56,13 +57,13 @@ partition mutations take an optional `hold_id` (ADR 0193).
 | `hmc_decommission_lpar` | destructive | ADR 0027 inputs plus `storage_cleanup` (`retain` default / `delete_owned`) | `DecommissionResult` plus `storage` (`deleted[]`, `retained[]` with reasons, `pending[]`) and the operation fields |
 | `hmc_power_lpar` | destructive | `lpar`, `action` (`start` / `stop` / `restart`), `mode` (`graceful` default / `immediate`) | operation fields plus `already_in_state` and `observed_state` |
 | `hmc_inspect_lpar` | read | `lpar`, `include` ⊆ {`resources`, `rmc`, `profile_drift`, `refcodes`} | state, RMC, profile drift, ≤ 20 refcodes, `next_actions[]` (tool names only) |
-| `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer`, `hold_id` | handoff document or release confirmation |
-| `hmc_operation_status` | read | `operation_id` *or* `request_id`; or a listing by `state?` / `outcome?` with `limit` 1–50 | operation records with ≤ 200 events per page |
+| `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer`, `hold_id` | `{action, hold, document}`; `document` is null on `release` |
+| `hmc_operation_status` | read | `operation_id`, `request_id`, `state?`, `outcome?`, `limit` 1–50, `cursor?` | always a page of operation records (a lookup is a page of at most one), ≤ 200 events each |
 | `hmc_search_tools` | read | `query` (≤ 200 characters) *or* `name`, `limit` 1–20 | names, one-line summaries, effect, maturity; the full input schema only for an exact `name` |
-| `hmc_invoke_tool` | destructive | `name`, `arguments` (≤ 64 KiB) | the invoked tool's own result, unchanged |
+| `hmc_invoke_tool` | destructive | `name`, `arguments` (≤ 64 KiB) | `{name, result}`, where `result` is the invoked tool's own result (the ADR 0189 exception to ADR 0012) |
 
-Selectors are the existing `system_name_or_uuid` / `lpar_name_or_uuid` pairs. Names are
-resolved within one system, and ADR 0015's UUID pass-through does not apply.
+Selectors are the existing `system_name_or_uuid` / `lpar_name_or_uuid` pairs, with their
+existing resolution rules.
 
 ### Provision's existing inputs
 
@@ -73,9 +74,11 @@ resolved within one system, and ADR 0015's UUID pass-through does not apply.
 - the affinity options;
 - the nested `storage.vios_uuid` selector.
 
-The new inputs are additive except `request_id`, which is required. That is a pre-release
-change with no compatibility path. The CLI mirror gains `--request-id` and uses the same store.
-#1225 and #1229 write the CHANGELOG entry.
+The new inputs are additive except `request_id`. `request_id` is required on
+`hmc_provision_lpar` and `hmc_decommission_lpar`, and on their CLI mirrors as `--request-id`.
+This is a pre-release change with no compatibility path. #1225 writes the provision CHANGELOG
+entry and #1229 the decommission one. For prepared media, `adapters` carries the pinned MAC
+(ADR 0191).
 
 When `storage` omits `vios_uuid` or `vg_uuid` and more than one VIOS or volume group qualifies,
 planning returns a blocker. It never chooses the first match.
@@ -98,7 +101,9 @@ through DLPAR. #1228 extends `patch` under the same rules with:
 - `network`: `address` as CIDR, `routes` (1–16, including a default), `dns` (≤ 3);
 - `ssh_authorized_keys` (1–16 public keys);
 - `login_user`;
-- `media`: either `{mode: prepared, url, sha256, size}` or `{mode: built}`.
+- `media`: either `{mode: built}` or `{mode: prepared, url, producer_result}`.
+
+`network.address` is IPv4 CIDR.
 
 ### Operation fields
 
@@ -136,7 +141,7 @@ the dispatch authorizer admits the call, as that tool, for each resolved target.
 | inspect | `hmc_get_lpar`, `hmc_get_lpar_state`, `hmc_read_lpar_refcodes` |
 | handoff `prepare` | `hmc_get_lpar`, `hmc_list_lpar_ownership` |
 | handoff `release` | none beyond the tool itself |
-| operation status | none beyond the tool itself; it lists only records with the caller's connection and agent id |
+| operation status | none beyond the tool itself; it lists only records with the caller's agent id |
 
 The name of #637's profile-write tool is **undecided**, and #637 sets it. #1225 and #1226
 stay blocked on it.
@@ -146,30 +151,44 @@ stay blocked on it.
 
 ## Operations, resume and restart
 
-ADR 0190 governs. The contract each implementer must hold is:
+ADR 0190 governs, including its state and continuation table. Each implementer must hold to the
+following.
 
-- **Before any HMC write**, the store records the intent. A crash between intent and outcome
-  leaves the effect `uncertain`.
-- **Resume** classifies each `uncertain` effect by a live read keyed on recorded identity, and
-  continues only when every effect classifies:
-  - created partition: UUID, then name within the system;
-  - adapter: UUID;
-  - disk: VIOS, volume group and name;
-  - media: repository name.
+**Intent before writing.** Before any HMC write, the store records the intent. A crash between
+intent and outcome leaves the effect `uncertain`. The pre-power-on refcode baseline is recorded
+as an effect.
 
-  A resource found under a different owner stamp is `needs_attention`, not adopted.
-- **Restart power-cycle.** A `restart` resumed after its power-off was applied does not
-  power off again. It reads state and continues from the next effect.
-- **Installer power-on** is applied at most once per operation. A resume after `boot_started`
-  returns the recorded outcome.
-- **Abandon** (`continuation: abandon`) ends an `interrupted` or `needs_attention` operation as
-  `abandoned` with no HMC write; its recorded effects stay visible to status and to ADR 0192
-  cleanup.
-- `hmc_operation_status` and continuation under another agent id return "not found", the same
-  answer as for an operation that does not exist.
-- **Deployment.** Logical mutations run only in the process holding the store's writer lock. A
-  second stdio client session gets status and hold enforcement but no logical mutations (ADR
-  0190); the server instructions say so.
+**Resume.** `resume` classifies each `uncertain` effect by a live read keyed on its recorded
+identity. It continues only when every effect classifies:
+
+| Effect | Live read that classifies it |
+| --- | --- |
+| partition create | UUID, then name within the system |
+| adapter create | UUID; the MAC for prepared media |
+| disk create | VIOS, volume group and name |
+| media upload | repository name |
+| mount | optical mapping listing |
+| boot order | `PendingBootString` |
+| ownership stamp | the description |
+| profile write | #637's profile readback |
+| power-on / power-off | partition state, plus the HMC JobID if one was recorded |
+| DLPAR change | none — always `needs_attention` |
+
+A DLPAR delta cannot be told apart from a concurrent change, so it is never classified. A
+resource found under a different owner stamp is `needs_attention` and is not adopted.
+
+**Restart.** A `restart` resumed after its power-off was applied does not power off again.
+
+**Installer power-on** happens at most once per operation.
+
+**Continuation calls** need only `request_id` and `continuation`. A call from another agent id
+gets "not found", the same answer as a nonexistent operation. A call from another connection is
+refused.
+
+**Deployment.** Only the process holding the execution lock runs logical mutations. Another
+process refuses a logical mutation, naming the holder, and tries again on its next call. Any
+process can write holds and read status. The CLI's operator commands list and abandon operations
+under any agent id, and list and release holds (ADR 0190, ADR 0193).
 
 ## Persistent and live changes
 
@@ -253,14 +272,19 @@ Results list each of these under `unverified`.
 
 ## Host handoff
 
-ADR 0193 governs the hold: one per partition, keyed by system and partition UUID, enforced by
-hmcpctl's MCP dispatch and CLI, exempting the handoff tool, console capture and calls presenting the
-matching `hold_id`. The `prepare` document has three groups of facts:
+ADR 0193 governs the hold:
+
+- one per partition, keyed by system and partition UUID;
+- checked inside each tool's `authorized()` wrapper and in the CLI;
+- exempt: the handoff tool, console capture, and calls presenting the matching `hold_id`;
+- `hold_id` is returned only to the agent that placed the hold.
+
+`prepare` without `hold` also reports an existing hold's label, agent id and creation time. The `prepare` document has three groups of facts:
 
 - `observed`: system and partition identity, state, resources, adapters, MACs, disks and
   mounted media, each from a read made during this call;
 - `declared`: install profile, address, routes, login user and key fingerprints, taken from
-  the operation record;
+  the resource ledger;
 - `unverified`: OS, kernel, bootloader, kdump/fadump readiness, SSH reachability and host
   identity, each with the statement that kdive's doctor/adopt checks it.
 
@@ -281,8 +305,8 @@ no live run.
 **Actors and deployments**
 
 - An MCP client agent on a deployment with a served access policy and one store. Deployments named:
-  one long-lived server, or stdio with one client session at a time; extra stdio sessions are
-  read-and-hold-only (ADR 0190).
+  one long-lived server, or stdio sessions and CLI commands on one host sharing one state
+  directory. Logical mutations run one process at a time (the ADR 0190 execution lock).
 - An operator with a CLI on the same host.
 - Other HMC writers (GUI, other deployments, scripts), whose writes hmcpctl cannot see in advance.
 - External consumers: kdive.
@@ -301,8 +325,11 @@ no live run.
 
 - *Writes by other HMC writers during an operation.* Accepted because this is not a fence;
   ADR 0011 and ADR 0190 state it, and the `exclusive_writer_window` bounds VIOS writes.
-- *Store loss.* Provenance is lost. Accepted because ADR 0192 turns this into retained, never
-  deleted, storage.
+- *Store or state-directory loss.* The ledger, the holds and the `request_id` dedupe are lost.
+  Accepted:
+  - a lost store with its `store-id` sentinel present is refused (ADR 0190);
+  - deleting the whole directory is an operator action, like `release`;
+  - ADR 0192 retains storage it has no record of.
 - *Two clients sharing one agent id share operations.* Accepted because MCP carries no
   principal (ADR 0190).
 - *A server process exiting mid-operation* (for example a stdio client closing). Accepted: the
@@ -369,19 +396,21 @@ Errors name the failed check without echoing payloads.
 
 ## Success
 
-Each #1216 completion criterion maps to one place:
+Each of #1216's eleven completion criteria maps to one place:
 
 - tool schemas and bounds: *Primary tools*;
 - identity, resume, retention and restart: *Operations, resume and restart*, ADR 0190;
 - authorization, including search and invoke: *Delegated authorization*, ADR 0189;
 - ownership, cleanup, persistent versus live: *Persistent and live changes*, *Ownership and
   shared VIOS state*, ADR 0192;
-- media binding, builder invocation and the installation boundary: *Installation media and
-  boot*, ADR 0191;
+- media binding, builder invocation and the installation boundary, with caller SSH keys as
+  opaque producer inputs: *Installation media and boot*, ADR 0191;
 - hold and release: *Host handoff*, ADR 0193;
 - releases, native envelope and proof arms: *Native envelope and proof*, ADR 0194;
 - reconciliation with accepted ADRs: the Status sections of ADR 0189 (ADR 0012) and ADR 0192
-  (ADR 0027). ADR 0005 is extended, not changed.
+  (ADR 0027). ADR 0005 is extended, not changed;
+- facade, workflow language and reuse: *Purpose and boundary*. The logical tools compose the
+  existing functions under `src/hmcpctl/operations/`, and `hmcpctl.api` is unchanged.
 
 Each value this spec marks **undecided** names the issue that decides it.
 
@@ -397,3 +426,4 @@ Listed for the operator; this PR does not edit them.
 | iso-chain-loader#24, #25 | The "host-identity handoff" wording conflicts. They should inject caller keys only, refuse unless exactly one blank disk is present, and default the launcher to an installed disk. |
 | iso-chain-loader#23 | Must emit the producer result fields above. |
 | #1228 | Gains the `installer_media: detach` and `boot: root_disk` patch fields. |
+| #1231 / `docs/kdive-tier-a-contract.md` | MCP power calls on a held partition need `hold_id`; the contract doc and its test say so. |
