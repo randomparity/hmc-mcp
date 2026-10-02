@@ -99,9 +99,14 @@ def test_pages_through_next_cursor(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "arguments",
-    [{"limit": 0}, {"operation_id": "nope"}, {"cursor": "!!!"}, {"state": "odd"}],
+    ("arguments", "reason"),
+    [
+        ({"limit": 0}, "invalid_limit: "),
+        ({"operation_id": "nope"}, "invalid_operation_id: "),
+        ({"cursor": "!!!"}, "invalid_cursor: "),
+        ({"state": "odd"}, r"(?s)\bstate\b.*Input should be 'running', 'interrupted'"),
+    ],
 )
-def test_invalid_arguments_are_tool_errors(arguments):
-    with pytest.raises(ToolError):
+def test_invalid_arguments_are_tool_errors(arguments, reason):
+    with pytest.raises(ToolError, match=reason):
         _call(arguments)
