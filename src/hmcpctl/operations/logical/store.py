@@ -124,8 +124,8 @@ def _corrupt(detail: str) -> OperationRefused:
     return OperationRefused(
         "store_corrupt",
         f"{state_dir() / DB_NAME} is not a usable operation store ({detail}); restore it "
-        "from backup, or stop every hmcpctl process and delete the whole state directory "
-        "to discard every record",
+        "from a backup taken after the last logical operation ran, or stop every hmcpctl "
+        "process and delete the whole state directory to discard every record",
     )
 
 
@@ -242,9 +242,9 @@ def _open(*, create: bool) -> sqlite3.Connection | None:
     if os.path.lexists(sentinel):
         raise OperationRefused(
             "store_lost",
-            f"{sentinel} exists but {db} is missing; restore the store from backup, or stop "
-            f"every hmcpctl process and delete the whole state directory {root} to discard "
-            "every record",
+            f"{sentinel} exists but {db} is missing; restore the store from a backup taken "
+            "after the last logical operation ran, or stop every hmcpctl process and delete "
+            f"the whole state directory {root} to discard every record",
         )
     return _create_store(root) if create else None
 
