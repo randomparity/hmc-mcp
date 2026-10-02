@@ -73,7 +73,11 @@ def metrics_set_prefs(
         lambda hmc: set_pcm_preferences(hmc, category, resource_name_or_uuid, flags)
     )
 
-    console.print(f"[green]Updated {category} {resource_name_or_uuid}: {flags}[/green]")
+    console.print(
+        f"Updated {category} {resource_name_or_uuid}: {flags}",
+        style="green",
+        markup=False,
+    )
 
 
 def metrics_show(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from rich.text import Text
 
 from ...client.client_contracts import ADAPTER_TYPES, AdapterType
 from ...operations.virtualization.adapters import (
@@ -176,14 +177,20 @@ def adapters_delete(
         )
     )
 
-    console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {lpar}")
-    console.print(location.summary())
+    console.print(
+        Text.assemble(
+            (f"Deleted {adapter_type} {adapter_uuid}", "green"), f" from {lpar}"
+        )
+    )
+    console.print(location.summary(), markup=False)
 
 
 def _adapter_mutation(result: AdapterResult, lpar: str, kind: str) -> None:
-    console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
+    console.print(
+        Text.assemble((f"Added {kind} adapter", "green"), f" to {result.lpar_uuid}")
+    )
     print_json(result.resource)
-    console.print(result.change_location.summary())
+    console.print(result.change_location.summary(), markup=False)
 
 
 def register_commands(group: typer.Typer) -> None:
