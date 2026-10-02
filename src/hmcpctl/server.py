@@ -76,10 +76,11 @@ from .authorization.connection_scope import ConnectionScopeError
 from .authorization.dispatch_scope import dispatch_authorizer
 from .authorization.target_scope import TargetScopeError
 from .operation_maturity_middleware import OperationMaturityMiddleware
-from .server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
+from .server_tools.catalog import PRIMARY_TOOLS, TOOL_MODULES, TOOL_SECURITY
 from .server_tools.command import (
     configure_arbitrary_command_tool,
 )
+from .server_tools.gateway import register_gateway_tools
 from .server_tools.permissions import (
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
 )
@@ -140,7 +141,12 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
     register_permissions_tool(
         application, policy, TOOL_SECURITY, permits=permits, authorize=authorize
     )
-    application.add_middleware(OperationMaturityMiddleware(TOOL_SECURITY))
+    register_gateway_tools(
+        application, TOOL_SECURITY, permits=permits, authorize=authorize
+    )
+    application.add_middleware(
+        OperationMaturityMiddleware(TOOL_SECURITY, primary_tools=PRIMARY_TOOLS)
+    )
     return application
 
 

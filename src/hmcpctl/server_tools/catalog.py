@@ -12,6 +12,12 @@ from hmcpctl.server_tools import (
     updates,
 )
 from hmcpctl.server_tools.command import HMC_RUN_COMMAND_SECURITY
+from hmcpctl.server_tools.gateway import (
+    INVOKE_SECURITY,
+    INVOKE_TOOL_NAME,
+    SEARCH_SECURITY,
+    SEARCH_TOOL_NAME,
+)
 from hmcpctl.server_tools.inventory import capacity, composite
 from hmcpctl.server_tools.lpar import (
     configuration,
@@ -70,5 +76,26 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
     {
         "hmc_run_command": HMC_RUN_COMMAND_SECURITY,
         "hmc_effective_permissions": EFFECTIVE_PERMISSIONS_SECURITY,
+        SEARCH_TOOL_NAME: SEARCH_SECURITY,
+        INVOKE_TOOL_NAME: INVOKE_SECURITY,
     },
+)
+
+# ADR 0189 Decision 1: the logical catalog's primary set. Until #1232 switches the
+# default listing to it, membership is only listing metadata; a name not yet
+# registered marks nothing.
+PRIMARY_TOOLS: frozenset[str] = frozenset(
+    {
+        "hmc_inventory",
+        "hmc_plan_lpar",
+        "hmc_provision_lpar",
+        "hmc_reconfigure_lpar",
+        "hmc_decommission_lpar",
+        "hmc_power_lpar",
+        "hmc_inspect_lpar",
+        "hmc_prepare_host_handoff",
+        "hmc_operation_status",
+        SEARCH_TOOL_NAME,
+        INVOKE_TOOL_NAME,
+    }
 )
