@@ -17,6 +17,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `scripts/live_capture_export.py vocabulary` keeps a value it would record as `<text>` when a
+  schema enum for the element lists it exactly: the enum bound to the element, else any enum
+  named for it. A value longer than 41 characters, such as `ManagedSystem` `State`
+  `pending authentication - password updates required`, was lost. Name-bearing elements still
+  record their shape class. The 9080-HEX vocabulary is re-derived with it and now binds
+  `NetworkInterface` to `NetworkInterface.Enum`, which `just live-vocabulary` enforces (#1292).
 - `hmc_list_lpars` and `hmc_list_vios` with a system, and system-scoped LPAR and VIOS name
   lookups, raise an error naming the system, its `State` and its `DetailedState` when the HMC
   answers the system's partition or VIOS feed with no entries and the system is not
