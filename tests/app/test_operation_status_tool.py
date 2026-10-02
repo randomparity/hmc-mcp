@@ -118,3 +118,25 @@ def test_pages_through_next_cursor(monkeypatch):
 def test_invalid_arguments_are_tool_errors(arguments, reason):
     with pytest.raises(ToolError, match=reason):
         _call(arguments)
+
+
+def test_every_parameter_carries_a_schema_description():
+    async def go():
+        async with Client(APP) as client:
+            return next(
+                t for t in await client.list_tools() if t.name == "hmc_operation_status"
+            )
+
+    listed = asyncio.run(go())
+    properties = listed.input_schema["properties"]
+    assert set(properties) == {
+        "operation_id",
+        "request_id",
+        "state",
+        "outcome",
+        "limit",
+        "cursor",
+        "profile",
+    }
+    assert all(properties[name].get("description") for name in properties)
+    assert "Args:" not in (listed.description or "")
