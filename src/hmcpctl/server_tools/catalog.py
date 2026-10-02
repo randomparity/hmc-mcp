@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from hmcpctl.server_tools import (
     console,
     jobs,
+    operations,
     snapshot,
     updates,
 )
@@ -61,6 +62,7 @@ TOOL_MODULES = (
     composite,
     provision,
     console,
+    operations,
 )
 
 TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(

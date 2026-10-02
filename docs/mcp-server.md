@@ -380,6 +380,30 @@ the CLI and Python API paths too.
 See [docs/authorization-audit.md](authorization-audit.md) for the field set, the
 reason codes, and how to route or silence them.
 
+### Logical operation state
+
+Logical operations record their progress in a local SQLite store, `operations.sqlite3`, beside
+`store-id` and `execution.lock` in one state directory. The MCP server and the CLI share that
+directory: `HMCPCTL_STATE_DIR` when set, otherwise the platform state directory. It is created
+with mode `0700` and its files with `0600`; hmcpctl refuses a directory or file that other users
+can access.
+
+One process at a time runs logical operations. Another session can read status but refuses
+a mutation, naming the pid of the process that holds the lock. When a process exits mid-operation,
+status keeps showing `running` until a process that can take the lock recovers it (any
+continuation does). Nothing resumes without `continuation: resume`.
+
+The store prunes records after 30 days and keeps the newest 1,024 events per operation, the
+ledger of what was kept, and at most 10,000 operations. To back up or delete the store, stop
+every hmcpctl process first and handle the whole directory; deleting `operations.sqlite3` alone is
+refused as a lost store.
+
+The store keeps the request arguments, and `hmc_operation_status` never returns them. The tool
+reads only the local store and makes no HMC call. It lists the calling agent's operations newest
+first, with their effects, newest 200 events, warnings and the continuations their state accepts,
+and pages with `next_cursor`. `profile` selects whose records it lists, by that profile's
+`agent_id` (`hmcpctl` when unset).
+
 ## Client setup
 
 The [README quick start](../README.md#mcp-quick-start) shows a stdio client configuration.

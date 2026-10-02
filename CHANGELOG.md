@@ -17,6 +17,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_operation_status` (operation `operation.status`) pages through this agent's logical
+  operations in a new local SQLite store under `HMCPCTL_STATE_DIR` (ADR 0190), which the
+  logical LPAR tools will record their HMC writes in and resume from (#1218, ADR 0195).
 - `hmc_dump_restart_lpar` (operation `lpar.dump_restart`) crashes a partition and takes a
   platform dump: the PowerOff job with `operation=dumprestart`. It still refuses unless
   `allow_dump_restart=true`. It is a separate tool so an access policy can grant the ordinary

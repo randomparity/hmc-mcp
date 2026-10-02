@@ -1213,6 +1213,7 @@ def hmc_probe(system_name_or_uuid: str):
 _NOT_EXHAUSTIVE = frozenset(
     {
         # No selector at all, so a `targets` table has nothing to bind on.
+        "hmc_operation_status",
         "hmc_capacity_report",
         "hmc_get_console_info",
         "hmc_effective_permissions",
