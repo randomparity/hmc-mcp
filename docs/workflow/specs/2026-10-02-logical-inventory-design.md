@@ -126,7 +126,9 @@ Read paths:
   Results collapse by UUID. An `HMCError`, or the `ValueError` an ambiguous name raises, makes that selector
   `unavailable` with the error text.
 - **Partitions:** one `list_logical_partitions(uuid)` read per admitted system that the page
-  reads. An `HMCError` from it makes that source `unavailable`.
+  reads. When that feed is empty, the client also reads the system's state (#1301): one
+  `get_managed_system` read, or three on the firmware fallback. A system that is not operating
+  raises `HMCError` instead of reading as empty. An `HMCError` makes that source `unavailable`.
 
 Systems are visited in UUID order, and partitions within a system in UUID order. The cursor is
 the unpadded urlsafe base64 of the JSON `[system_uuid, partition_uuid | null]`, at most 256
@@ -159,8 +161,9 @@ empty. Filters apply before counting.
      filter outcome or in the read itself;
    - every decision the dispatch authorizer makes recorded under the delegated tool's name;
    - published identifiers stable per connection label for #1221;
-   - one HMC's read load bounded per page: at most 32 reads, and at most one read timeout plus
-     the session logoff.
+   - one HMC's read load bounded per page: at most 32 feed reads, plus the client's state check
+     for each system whose partition feed is empty (one read, or three on the firmware
+     fallback), so at most 80; and at most one read timeout plus the session logoff.
 3. **Accepted failure classes:**
    - A targets table that lists a system by name denies enumeration-path partitions, which are
      checked by UUID. Bounded: the caller passes the name as a selector.
