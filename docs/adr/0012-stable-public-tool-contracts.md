@@ -4,6 +4,8 @@
 
 Accepted (2026-08-14)
 
+> **Partially superseded by [0189](0189-logical-lpar-catalog-and-delegated-authorization.md)** (2026-10-01)
+
 ## Context
 
 Earlier consolidation reduced the MCP tool count by combining collection,

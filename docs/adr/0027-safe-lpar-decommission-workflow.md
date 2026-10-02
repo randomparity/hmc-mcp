@@ -4,6 +4,8 @@
 
 Accepted
 
+> **Partially superseded by [0192](0192-decommission-owned-storage-cleanup.md)** (2026-10-01)
+
 ## Context
 
 Removing an LPAR currently requires callers to coordinate resolution, ownership
