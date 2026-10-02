@@ -21,6 +21,8 @@ def hmc_capacity_report(profile: str | None = None) -> list[CapacitySummary]:
     processor units, free is what it currently reports available, and assigned
     is total minus free, so it includes hypervisor memory and every partition,
     VIOS included. A system that reports no capacity figure fails the report.
+    A system that is not operating and whose partition feed the HMC refuses is
+    left out; when every system is left out, the report fails.
 
     Args:
         profile: Optional TOML profile name; uses environment defaults when omitted.
@@ -42,7 +44,8 @@ def hmc_find_placement(
 
     A system qualifies when the memory and processor units it currently reports
     available cover the request. A system that reports no capacity figure fails
-    the search.
+    the search. A system that is not operating and whose partition feed the HMC
+    refuses is not a candidate; when every system is left out, the search fails.
 
     Args:
         desired_memory_mib: Required LPAR memory in MiB.

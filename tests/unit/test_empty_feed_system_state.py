@@ -10,6 +10,7 @@ V11R2 SP1120 answered ``ManagedSystem/{uuid}/LogicalPartition`` and
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from conftest import captured_lpar_entry, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.inventory.capacity import fetch_capacity_report
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars
 from hmcpctl.operations.systems.health import fetch_fleet_health
 from hmcpctl.operations.vios.core import list_vios
@@ -33,6 +35,8 @@ from hmcpctl.resource_identity import (
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_NAME = "sys-R1"
 SYSTEM_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
+OPERATING_UUID = "33333333-3333-3333-3333-333333333333"
+OPERATING_PATH = f"/rest/api/uom/ManagedSystem/{OPERATING_UUID}"
 LPAR_FEED = f"{SYSTEM_PATH}/LogicalPartition"
 VIOS_FEED = f"{SYSTEM_PATH}/VirtualIOServer"
 
@@ -253,3 +257,76 @@ async def test_fleet_health_warns_for_a_non_operating_system(
     assert lpar_warning.startswith(f"LPAR inventory for system {SYSTEM_NAME}")
     assert vios_warning.startswith(f"VIOS inventory for system {SYSTEM_NAME}")
     assert all("State 'no connection'" in warning for warning in result.warnings)
+
+
+def _capacity_entry(state: str, uuid: str, name: str) -> dict[str, Any]:
+    entry = _fleet_entry(state, uuid, name)
+    entry["Resource"]["AssociatedSystemMemoryConfiguration"] = {
+        "ConfigurableSystemMemory": "131072",
+        "CurrentAvailableSystemMemory": "112448",
+    }
+    entry["Resource"]["AssociatedSystemProcessorConfiguration"] = {
+        "ConfigurableSystemProcessorUnits": "20",
+        "CurrentAvailableSystemProcessorUnits": "18",
+    }
+    return entry
+
+
+def _capacity_fleet(*states: str) -> list[dict[str, Any]]:
+    systems = [_capacity_entry(state, SYSTEM_UUID, SYSTEM_NAME) for state in states]
+    return [*systems, _capacity_entry("operating", OPERATING_UUID, "sys-R2")]
+
+
+@pytest.mark.asyncio
+async def test_capacity_report_omits_a_non_operating_system(
+    mock_hmc, monkeypatch, caplog
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+    mock_hmc.get(f"{OPERATING_PATH}/LogicalPartition").mock(
+        return_value=httpx.Response(204)
+    )
+    mock_hmc.get(OPERATING_PATH).mock(
+        return_value=httpx.Response(200, text=_state("operating", "None"))
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        fleet = AsyncMock(return_value=_capacity_fleet("no connection"))
+        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        with caplog.at_level(logging.WARNING):
+            report = await fetch_capacity_report(hmc)
+
+    assert [(item.system_name, item.total_lpars) for item in report] == [("sys-R2", 0)]
+    assert any(SYSTEM_UUID in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_capacity_report_fails_on_an_operating_system_refusal(
+    mock_hmc, monkeypatch
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+    mock_hmc.get(f"{OPERATING_PATH}/LogicalPartition").mock(
+        return_value=httpx.Response(500, text="failure")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        fleet = AsyncMock(return_value=_capacity_fleet("no connection"))
+        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        with pytest.raises(HMCError) as caught:
+            await fetch_capacity_report(hmc)
+
+    assert caught.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_capacity_report_raises_when_every_system_is_omitted(
+    mock_hmc, monkeypatch
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        fleet = AsyncMock(
+            return_value=[_capacity_entry("no connection", SYSTEM_UUID, SYSTEM_NAME)]
+        )
+        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        with pytest.raises(HMCError, match="State 'no connection'"):
+            await fetch_capacity_report(hmc)
