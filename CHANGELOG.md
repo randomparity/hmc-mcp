@@ -271,6 +271,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_install_vios_by_lpar_selector` now refuses a VIOS-type partition name with an error
+  pointing at `hmc_install_vios`, instead of reporting "No LPAR named …". The selector resolves
+  only `LogicalPartition`-feed partitions, and a VIOS is listed only under `VirtualIOServer`
+  (#1247).
 - The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
   HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
   `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
