@@ -116,6 +116,10 @@ string — the expression the runner already uses to capture `console_uuid` at
 
 ## Observation record
 
+Format 4 ([ADR 0186](../../adr/0186-observation-schema-version-stamp.md)) adds a required
+`schema_version` to this exact key set; see
+[the schema-version design](2026-10-01-observation-schema-version-design.md).
+
 An attempted live observation in `maturity.json` format 2:
 
 ```json

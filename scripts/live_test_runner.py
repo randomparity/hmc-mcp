@@ -38,9 +38,9 @@ power operation takes is unaffected either way. A run therefore starts with or
 without it. `docs/compatibility.md` is the full account.
 
 The run header prints the resolved value, including `(not set)`, to stdout, and
-the results document records the same string as `run.schema_version`. The
-observations document does not record it, so observations cited as evidence do
-not by themselves name the request environment they were gathered in.
+the results document records the same string as `run.schema_version`. Every
+emitted observation records it too, as `schema_version` (ADR 0186); a value that
+field's grammar cannot hold is warned about at startup and writes no observations.
 """
 
 from __future__ import annotations
@@ -943,9 +943,9 @@ class RunState:
         self.observations.append(
             {
                 "operation": operation,
-                # ``tested_commit``, ``closure_fingerprint``, ``hmc_release`` and
-                # ``hardware_family`` are filled at emission; ``channel`` is not
-                # derivable there, so it is written here.
+                # ``tested_commit``, ``closure_fingerprint``, ``hmc_release``,
+                # ``hardware_family`` and ``schema_version`` are filled at emission;
+                # ``channel`` is not derivable there, so it is written here.
                 "observation": {
                     "id": _observation_id(subtask, tool),
                     "channel": "live",
@@ -1566,11 +1566,17 @@ def _emit_observations(
     state: RunState,
     path: Path,
     environment: tuple[str, str] | None,
+    schema_version: str,
     repo_root: Path,
 ) -> bool:
     """Write the run's catalog-shaped observations, or say why it wrote none."""
     if environment is None:
         print("no LIVE_TEST_ENV_* settings — observations not written")
+        return False
+    if not check_capability_inventory.SCHEMA_VERSION.fullmatch(schema_version):
+        print(
+            "HMC_SCHEMA_VERSION is not V<n>_<n>[_<n>...] or unset — observations not written"
+        )
         return False
     if not state.observations and not state.gaps:
         print("no verified observations or confirmed gaps — nothing to write")
@@ -1615,6 +1621,7 @@ def _emit_observations(
         seen.add(observation["id"])
         observation["tested_commit"] = head.stdout.strip()
         observation["hmc_release"], observation["hardware_family"] = environment
+        observation["schema_version"] = schema_version
         observation["closure_fingerprint"] = (
             check_capability_inventory.closure_fingerprint(
                 repo_root, handler.rsplit(".", 1)[0]
@@ -1702,6 +1709,17 @@ async def main(
     print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
     print(f"HMC_SCHEMA_VERSION={schema_version}")
+    if (
+        environment is not None
+        and not check_capability_inventory.SCHEMA_VERSION.fullmatch(schema_version)
+    ):
+        # A warning, not an exit: a run starts whatever the variable holds (#875),
+        # and preflight predicts exactly that. Said here so the operator can stop
+        # before the hardware run rather than learn it from the emission step.
+        print(
+            "⚠️  HMC_SCHEMA_VERSION is not V<n>_<n>[_<n>...] or unset — this run's "
+            "observations will not be written"
+        )
 
     # Determine which sub-tasks to run
     if subtask_filter is not None:
@@ -1753,7 +1771,11 @@ async def main(
         print("not inside the hmcpctl repository — observations not written")
     else:
         _emit_observations(
-            state, _observations_path(results_path), environment, repo_root
+            state,
+            _observations_path(results_path),
+            environment,
+            schema_version,
+            repo_root,
         )
 
     total = len(state.results)
