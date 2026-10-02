@@ -7,7 +7,6 @@ import io
 import shlex
 from typing import Any, Literal
 
-from hmcpctl.client.client_resolution import require_operating_system
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
 
@@ -48,8 +47,6 @@ async def list_vios(
         if system_uuid is None and state is not None
         else await hmc.list_vios(system_uuid)
     )
-    if not vios and system_uuid is not None:
-        await require_operating_system(hmc.get_managed_system, system_uuid, "VIOSes")
     if state is None or system_uuid is None:
         return vios
     return [

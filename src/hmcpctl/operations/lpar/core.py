@@ -6,7 +6,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from hmcpctl.client.client_resolution import require_operating_system
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.affinity.rest import (
     LparAffinityAssessmentOutcome,
@@ -130,8 +129,6 @@ async def list_lpars(
     # No PartitionState search: a V10R3 HMC answers a value with a space
     # ("not activated") with 500 "Unable to parse expression" (#1202).
     lpars = await hmc.list_logical_partitions(system_uuid)
-    if not lpars and system_uuid is not None:
-        await require_operating_system(hmc.get_managed_system, system_uuid, "LPARs")
     if state is None:
         return lpars
     return [

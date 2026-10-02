@@ -261,10 +261,6 @@ class SystemsMixin:
         """Find a Virtual I/O Server by its PartitionName (exact match)."""
         if system_uuid:
             entries = await self.list_vios(system_uuid)
-            if not entries:
-                await require_operating_system(
-                    self.get_managed_system, system_uuid, "VIOSes"
-                )
             results = [
                 entry
                 for entry in entries
@@ -327,7 +323,12 @@ class SystemsMixin:
             _reject_non_uuid_path_argument("system_uuid", system_uuid)
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
             xml = await self._get(path, "VirtualIOServer")
-            return _parse_feed(xml, path) if xml else []
+            entries = _parse_feed(xml, path) if xml else []
+            if not entries:
+                await require_operating_system(
+                    self.get_managed_system, system_uuid, "VIOSes"
+                )
+            return entries
         return await self.list_uom("VirtualIOServer")
 
     async def get_vios(self: SystemsClient, vios_uuid: str) -> dict[str, Any] | None:

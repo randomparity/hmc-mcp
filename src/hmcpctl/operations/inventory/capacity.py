@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
 from hmcpctl.xmlutil import leaf_text
+
+_logger = logging.getLogger(__name__)
 
 _MEMORY = "AssociatedSystemMemoryConfiguration"
 _PROCESSORS = "AssociatedSystemProcessorConfiguration"
@@ -125,14 +129,35 @@ def calculate_system_capacity(
     )
 
 
+def _is_operating(system: dict[str, Any]) -> bool:
+    state = (system.get("Resource") or {}).get("State")
+    return isinstance(state, str) and state.strip().lower() == "operating"
+
+
 async def fetch_capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
-    """Return capacity statistics for every managed system."""
+    """Return capacity statistics for every readable managed system.
+
+    A system that is not operating refuses its partition feed (#1301); it is
+    left out with a logged warning rather than read as one with no partitions.
+    When every system is left out, the first refusal is raised instead of an
+    empty report that would read as an estate with no systems.
+    """
     systems = await hmc.list_managed_systems()
     result = []
+    omitted: list[HMCError] = []
     for system in systems:
         uuid = system.get("UUID")
-        lpars = await hmc.list_logical_partitions(uuid) if uuid else []
+        try:
+            lpars = await hmc.list_logical_partitions(uuid) if uuid else []
+        except HMCError as exc:
+            if _is_operating(system):
+                raise
+            _logger.warning("Capacity report omits managed system %s: %s", uuid, exc)
+            omitted.append(exc)
+            continue
         result.append(calculate_system_capacity(system, lpars))
+    if omitted and not result:
+        raise omitted[0]
     return result
 
 

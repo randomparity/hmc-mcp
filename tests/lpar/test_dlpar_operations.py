@@ -41,6 +41,7 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <SystemName>{name}</SystemName>
+      <State>operating</State>
     </ManagedSystem>
   </content>
 </entry>
@@ -121,12 +122,22 @@ def _mock_fleet(router) -> None:
             ),
         )
     )
-    router.get(
-        f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(200, text=_feed()))
+    _mock_empty_other_system(router)
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(
             200, text=_feed(LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME))
+        )
+    )
+
+
+def _mock_empty_other_system(router) -> None:
+    """An operating system with no partitions: its empty feed reads its state."""
+    router.get(
+        f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(200, text=_feed()))
+    router.get(f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0")
         )
     )
 
@@ -839,9 +850,7 @@ async def test_undiscoverable_system_names_the_operator_remedy(mock_hmc):
             200, text=_feed(SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0"))
         )
     )
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(200, text=_feed()))
+    _mock_empty_other_system(mock_hmc)
     route = _mock_modify(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:

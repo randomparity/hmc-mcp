@@ -103,6 +103,7 @@ def _entry(uuid: str, name: str, resource_type: str) -> dict:
 @pytest.mark.asyncio
 async def test_lpar_mixin_routes_scoped_and_global_reads():
     client = LparsHarness()
+    client.get_managed_system.return_value = {"Resource": {"State": "operating"}}
 
     assert await client.list_logical_partitions(UUID_A) == []
     assert await client.list_logical_partitions() == []
@@ -113,6 +114,7 @@ async def test_lpar_mixin_routes_scoped_and_global_reads():
         f"/rest/api/uom/ManagedSystem/{UUID_A}/LogicalPartition",
         "LogicalPartition",
     )
+    client.get_managed_system.assert_awaited_once_with(UUID_A)
     client.list_uom.assert_awaited_once_with("LogicalPartition")
     client.get_uom.assert_awaited_once_with("LogicalPartition", "lpar-1")
     client.search_uom.assert_awaited_once_with(

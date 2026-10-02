@@ -364,6 +364,39 @@ async def test_refused_vios_feed_becomes_a_warning_not_a_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_non_operating_system_lpar_feed_becomes_a_warning() -> None:
+    """A system not operating answers its feeds with 204 (#1289, #1301)."""
+    client = _healthy_client()
+    client.list_managed_systems.return_value = [
+        _entry("sys-1", SystemName="sys-R1", State="no connection"),
+        _entry("sys-2", SystemName="sys-R2", State="operating"),
+    ]
+    refused = HMCError("Cannot list LPARs on managed system 'sys-R1'")
+
+    async def lpars(system_uuid: str) -> list[dict]:
+        if system_uuid == "sys-1":
+            raise refused
+        return [
+            _entry(
+                "lpar-2",
+                PartitionName="aix-b",
+                PartitionState="running",
+                ResourceMonitoringControlState="inactive",
+            )
+        ]
+
+    client.list_logical_partitions.side_effect = lpars
+
+    result = await fleet_health(client)
+
+    assert [system["name"] for system in result.systems] == ["sys-R1"]
+    assert [lpar["system_name"] for lpar in result.lpars] == ["sys-R2"]
+    assert result.warnings == (
+        f"LPAR inventory for system sys-R1 is unavailable: {refused}",
+    )
+
+
+@pytest.mark.asyncio
 async def test_fleet_health_does_not_read_the_job_feed() -> None:
     """No captured HMC serves GET /rest/api/uom/Job (#1202); nothing asks for it."""
     client = _healthy_client()
