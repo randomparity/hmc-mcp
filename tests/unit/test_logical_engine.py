@@ -146,6 +146,16 @@ def test_same_profile_on_another_hmc_is_refused():
     )
 
 
+@pytest.mark.parametrize("other", [{"connection": "lab"}, {"host": "other.hmc"}])
+def test_connection_mismatch_does_not_disclose_the_recorded_connection(other):
+    _submit()
+    with pytest.raises(OperationRefused) as info:
+        _submit(_request(**other), continuation="resume")
+    assert info.value.reason == "connection_mismatch"
+    assert "<default>" not in str(info.value)
+    assert "hmc.test" not in str(info.value)
+
+
 def test_other_agent_sees_not_found():
     _submit()
     assert (
@@ -192,7 +202,7 @@ def test_wait_zero_returns_running_and_work_continues():
     release.set()
     engine.join(record.operation_id, 10)
     later = store.operation_status(
-        agent_id="agent-a", connection="<default>"
+        agent_id="agent-a", connection="<default>", host="hmc.test"
     ).operations[0]
     assert (later.state, later.outcome) == ("terminal", "completed")
 
@@ -247,7 +257,7 @@ def test_finishing_worker_keeps_its_successor_registered(monkeypatch):
     assert joined_after_release == [True]
     engine.join(first.operation_id, 10)
     later = store.operation_status(
-        agent_id="agent-a", connection="<default>"
+        agent_id="agent-a", connection="<default>", host="hmc.test"
     ).operations[0]
     assert (later.state, later.outcome, len(calls)) == ("terminal", "completed", 2)
 
@@ -273,7 +283,7 @@ def test_lock_recovery_skips_a_live_worker():
         release.set()
     engine.join(first.operation_id, 10)
     later = store.operation_status(
-        agent_id="agent-a", connection="<default>", request_id="r1"
+        agent_id="agent-a", connection="<default>", host="hmc.test", request_id="r1"
     ).operations[0]
     assert (later.state, later.outcome) == ("terminal", "completed")
 
@@ -628,7 +638,7 @@ def test_a_continuation_from_another_tool_is_refused(continuation):
     assert reason == "request_conflict"
     assert writer.calls == 0
     record = store.operation_status(
-        agent_id="agent-a", connection="<default>"
+        agent_id="agent-a", connection="<default>", host="hmc.test"
     ).operations[0]
     assert (record.state, record.outcome) == ("paused", "needs_attention")
 

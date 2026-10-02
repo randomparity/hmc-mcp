@@ -33,7 +33,9 @@ def _call(arguments: dict):
     return asyncio.run(go())
 
 
-def _seed(agent: str, n: int, connection: str = "<default>") -> str:
+def _seed(
+    agent: str, n: int, connection: str = "<default>", host: str = "hmc.test"
+) -> str:
     operation_id = f"{n:032x}"
     with store.session() as conn, store.write_transaction(conn):
         store.insert_operation(
@@ -43,7 +45,7 @@ def _seed(agent: str, n: int, connection: str = "<default>") -> str:
             request_id=f"r{n}",
             tool="hmc_test_tool",
             connection=connection,
-            host="hmc.test",
+            host=host,
             digest="d" * 64,
             request_json='{"arguments":{"hidden_marker":"zz"}}',
         )
@@ -85,6 +87,12 @@ def test_profile_is_filtered_as_the_connection_the_policy_authorized(monkeypatch
     monkeypatch.setenv("HMC_AGENT_ID", "agent-a")
     _seed("agent-a", 1, connection="prod")
     assert _call({"profile": "prod"})["operations"] == []
+
+
+def test_records_from_another_hmc_on_the_default_connection_are_not_listed(monkeypatch):
+    monkeypatch.setenv("HMC_AGENT_ID", "agent-a")
+    _seed("agent-a", 1, host="other.hmc")
+    assert _call({})["operations"] == []
 
 
 def test_default_agent_id_is_hmcpctl():

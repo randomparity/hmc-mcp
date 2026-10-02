@@ -37,8 +37,8 @@ def hmc_operation_status(
     Reads only the store in ``HMCPCTL_STATE_DIR`` (or the platform state directory); it
     makes no HMC call and never creates the store, so an empty page means no operation has
     been recorded. Only records whose agent id matches the selected profile's ``agent_id``
-    (``hmcpctl`` when unset) and whose connection is this call's profile (or the
-    environment connection when ``profile`` is omitted) are returned. A lookup by
+    (``hmcpctl`` when unset) and whose connection and HMC host are this call's
+    profile (or the environment connection when ``profile`` is omitted) are returned. A lookup by
     ``operation_id`` or ``request_id`` returns at most one record. Each record carries its
     effects, its newest 200 events with ``events_truncated``, its warnings, and
     ``next_actions``: the continuations its state accepts. Pass ``next_cursor`` back as
@@ -54,10 +54,11 @@ def hmc_operation_status(
         profile: Optional configured HMC profile name; selects the agent id and the
             connection this call is authorized against.
     """
-    agent_id = build_config(profile=profile).agent_id or "hmcpctl"
+    config = build_config(profile=profile)
     return operation_status(
-        agent_id=agent_id,
+        agent_id=config.agent_id or "hmcpctl",
         connection=connection_label(profile, tool="hmc_operation_status"),
+        host=config.host,
         operation_id=operation_id,
         request_id=request_id,
         state=state,

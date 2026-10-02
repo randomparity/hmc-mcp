@@ -281,7 +281,12 @@ def test_busy_store_is_unreadable(monkeypatch):
     blocker.execute("BEGIN EXCLUSIVE")
     try:
         assert (
-            _reason(store.operation_status, agent_id="agent-a", connection="<default>")
+            _reason(
+                store.operation_status,
+                agent_id="agent-a",
+                connection="<default>",
+                host="hmc.test",
+            )
             == "store_unreadable"
         )
     finally:
@@ -336,16 +341,25 @@ def test_status_filters_agent_and_paginates(monkeypatch):
         for n in (1, 2, 3):
             _seed(conn, _oid(n))
         _seed(conn, _oid(9), agent="agent-b")
-    first = store.operation_status(agent_id="agent-a", connection="<default>", limit=2)
+    first = store.operation_status(
+        agent_id="agent-a", connection="<default>", host="hmc.test", limit=2
+    )
     assert [r.operation_id for r in first.operations] == [_oid(3), _oid(2)]
     assert first.truncated and first.next_cursor
     second = store.operation_status(
-        agent_id="agent-a", connection="<default>", limit=2, cursor=first.next_cursor
+        agent_id="agent-a",
+        connection="<default>",
+        host="hmc.test",
+        limit=2,
+        cursor=first.next_cursor,
     )
     assert [r.operation_id for r in second.operations] == [_oid(1)]
     assert not second.truncated and second.next_cursor is None
     other = store.operation_status(
-        agent_id="agent-a", connection="<default>", operation_id=_oid(9)
+        agent_id="agent-a",
+        connection="<default>",
+        host="hmc.test",
+        operation_id=_oid(9),
     )
     assert other.operations == ()
 
@@ -357,19 +371,27 @@ def test_status_filters_by_state_and_request_id():
     assert [
         r.request_id
         for r in store.operation_status(
-            agent_id="agent-a", connection="<default>", state="terminal"
+            agent_id="agent-a",
+            connection="<default>",
+            host="hmc.test",
+            state="terminal",
         ).operations
     ] == ["beta"]
     assert [
         r.operation_id
         for r in store.operation_status(
-            agent_id="agent-a", connection="<default>", request_id="alpha"
+            agent_id="agent-a",
+            connection="<default>",
+            host="hmc.test",
+            request_id="alpha",
         ).operations
     ] == [_oid(1)]
 
 
 def test_status_without_store_is_empty():
-    page = store.operation_status(agent_id="agent-a", connection="<default>")
+    page = store.operation_status(
+        agent_id="agent-a", connection="<default>", host="hmc.test"
+    )
     assert page == workflow_contract.OperationPage((), 50, False, None)
     assert not store.state_dir().exists()
 
@@ -389,14 +411,21 @@ def test_status_without_store_is_empty():
 )
 def test_status_rejects_invalid_inputs(kwargs):
     with pytest.raises(ValueError):
-        store.operation_status(agent_id="agent-a", connection="<default>", **kwargs)
+        store.operation_status(
+            agent_id="agent-a", connection="<default>", host="hmc.test", **kwargs
+        )
 
 
 def test_status_reports_a_lost_store():
     _open_write()
     (store.state_dir() / store.DB_NAME).unlink()
     assert (
-        _reason(store.operation_status, agent_id="agent-a", connection="<default>")
+        _reason(
+            store.operation_status,
+            agent_id="agent-a",
+            connection="<default>",
+            host="hmc.test",
+        )
         == "store_lost"
     )
 
@@ -405,7 +434,7 @@ def test_status_never_returns_the_request():
     with store.session() as conn:
         _seed(conn, _oid(1))
     record = store.operation_status(
-        agent_id="agent-a", connection="<default>"
+        agent_id="agent-a", connection="<default>", host="hmc.test"
     ).operations[0]
     assert "request_json" not in json.dumps(dataclasses.asdict(record))
 
@@ -425,10 +454,36 @@ def test_status_lists_only_the_callers_connection():
                 digest="d" * 64,
                 request_json='{"arguments":{}}',
             )
-    lab = store.operation_status(agent_id="agent-a", connection="<default>")
-    prod = store.operation_status(agent_id="agent-a", connection="prod")
+    lab = store.operation_status(
+        agent_id="agent-a", connection="<default>", host="hmc.test"
+    )
+    prod = store.operation_status(
+        agent_id="agent-a", connection="prod", host="hmc.prod"
+    )
     assert [r.operation_id for r in lab.operations] == [_oid(1)]
     assert [r.operation_id for r in prod.operations] == [_oid(2)]
+
+
+def test_status_lists_only_the_callers_hmc_host():
+    """<default> binds late (ADR 0038): the same label on another HMC is not this caller's."""
+    with store.session() as conn:
+        _seed(conn, _oid(1))
+        with store.write_transaction(conn):
+            store.insert_operation(
+                conn,
+                operation_id=_oid(2),
+                agent_id="agent-a",
+                request_id="elsewhere",
+                tool="hmc_test_tool",
+                connection="<default>",
+                host="other.hmc",
+                digest="d" * 64,
+                request_json='{"arguments":{}}',
+            )
+    page = store.operation_status(
+        agent_id="agent-a", connection="<default>", host="hmc.test"
+    )
+    assert [r.operation_id for r in page.operations] == [_oid(1)]
 
 
 _NICKNAME_CONFIG = """\

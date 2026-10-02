@@ -734,6 +734,7 @@ def operation_status(
     *,
     agent_id: str,
     connection: str,
+    host: str,
     operation_id: str | None = None,
     request_id: str | None = None,
     state: str | None = None,
@@ -741,10 +742,12 @@ def operation_status(
     limit: int = MAX_PAGE,
     cursor: str | None = None,
 ) -> OperationPage:
-    """Return one page of *agent_id*'s operations on *connection*, newest first.
+    """Return one page of *agent_id*'s operations on *connection* at *host*, newest first.
 
     Filtering on the connection keeps a caller whose policy grants one connection from
-    reading records another process made on a connection it is not granted.
+    reading records another process made on a connection it is not granted; filtering on
+    the host matches the (connection, host) pair ``submit`` binds, since ``<default>``
+    binds late (ADR 0038).
     """
     if operation_id is not None and not _OPERATION_ID.fullmatch(operation_id):
         raise ValueError(
@@ -755,8 +758,8 @@ def operation_status(
     if not 1 <= limit <= MAX_PAGE:
         raise ValueError(f"invalid_limit: limit must be from 1 to {MAX_PAGE}")
     after = None if cursor is None else _decode_cursor(cursor)
-    clauses = ["agent_id = ?", "connection = ?"]
-    params: list[Any] = [agent_id, connection]
+    clauses = ["agent_id = ?", "connection = ?", "host = ?"]
+    params: list[Any] = [agent_id, connection, host]
     filters = (
         ("operation_id", operation_id),
         ("request_id", request_id),

@@ -215,8 +215,8 @@ def _admit_existing(
     if (row["connection"], row["host"]) != (request.connection, request.host):
         raise OperationRefused(
             "connection_mismatch",
-            f"request_id {request.request_id} belongs to connection {row['connection']} on "
-            f"HMC {row['host']}, not {request.connection} on {request.host}; continue it there",
+            f"request_id {request.request_id} belongs to another connection or HMC; continue "
+            "it with the profile that started it, or use a new request_id",
         )
     if row["tool"] != request.tool:
         raise OperationRefused(

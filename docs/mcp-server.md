@@ -410,8 +410,8 @@ The store keeps the request arguments, and `hmc_operation_status` never returns 
 reads only the local store and makes no HMC call. It lists the calling agent's operations newest
 first, with their effects, newest 200 events, warnings and the continuations their state accepts,
 and pages with `next_cursor`. `profile` selects whose records it lists: those with that profile's
-`agent_id` (`hmcpctl` when unset) that were started on that profile's connection, or on the
-environment connection when `profile` is omitted.
+`agent_id` (`hmcpctl` when unset) that were started on that profile's connection and HMC host,
+or on the environment connection and its `HMC_HOST` when `profile` is omitted.
 
 ## Client setup
 
