@@ -104,6 +104,9 @@ Both tools are connectionless and declare no target, so like the tools above the
 `targets = "all-targets"`. Granting `hmc_invoke_tool` confers nothing by itself: each call
 still needs a grant for the invoked tool. Because its effect is `destructive`, a grant of
 `effects = ["read"]` does not reach it; name it in a grant's `tools` to allow it there.
+A client that remembers approvals by tool name applies an approval of `hmc_invoke_tool` to
+every tool invoke can reach, so a deployment that relies on per-tool client approval as its
+human check should leave `hmc_invoke_tool` out of the policy.
 
 `tools/list` marks each tool's catalog tier under the
 `io.github.randomparity.hmcpctl/catalog-tier` metadata key: `primary` for the ADR 0189
