@@ -391,10 +391,13 @@ can access.
 One process at a time runs logical operations. Another session can read status but refuses
 a mutation, naming the pid of the process that holds the lock. When a process exits mid-operation,
 status keeps showing `running` until a process that can take the lock recovers it (any
-continuation does). Nothing resumes without `continuation: resume`.
+continuation does). Nothing resumes on its own: an operation continues only on a call with
+`continuation: resume`, or `continuation: boot` for one paused ready to boot.
 
-The store prunes records after 30 days and keeps the newest 1,024 events per operation, the
-ledger of what was kept, and at most 10,000 operations. To back up or delete the store, stop
+Terminal operations are pruned 30 days after they end, and each operation keeps its newest 1,024
+events. The resource ledger is never pruned; its entries leave only through decommission. A new
+operation is refused with `store_full` once non-terminal operations plus ledger entries reach
+10,000. To back up or delete the store, stop
 every hmcpctl process first and handle the whole directory; deleting `operations.sqlite3` alone is
 refused as a lost store.
 
