@@ -17,6 +17,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_list_lpars` and `hmc_list_vios` with a system, and system-scoped LPAR and VIOS name
+  lookups, raise an error naming the system, its `State` and its `DetailedState` when the HMC
+  answers the system's partition or VIOS feed with no entries and the system is not
+  `operating` (for example `recovery` or `no connection`). They used to return `[]` or "not
+  found". An empty feed from an operating system still means none (#1289).
 - `mount-optical-media` / `hmc_mount_optical_media` refuses, with a 409 and before any write, a
   `target_device` that an optical mapping on the VIOS already uses, naming its media and the
   remedies. When the HMC itself answers 500 `name is already used in another mapping`, the error
