@@ -631,7 +631,7 @@ async def test_unreadable_profiles_skip_auto_selection(
     if isinstance(readback, CallFailure):
         assert failure is readback
     else:
-        assert "unadmitted profile io_slots readback" in failure.message
+        assert "profile io_slots readback response did not match" in failure.message
         assert readback.strip() not in failure.message
 
 

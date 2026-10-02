@@ -8,6 +8,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Fixed
+
+- `validate_hmc_name` refuses a name starting with `-`, which would reach the HMC CLI in option
+  position; this covers the install, VIOS install and reference-code tools (#887).
+
 ### Added
 
 - `hmc_dump_restart_lpar` (operation `lpar.dump_restart`) crashes a partition and takes a
@@ -20,6 +25,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `hmcpctl report utilization` adds VIOS disk capacity (internal and SAN; assigned and free),
   I/O slot occupancy and SR-IOV logical ports per system and in each roll-up, appended after
   `notes` (#1253, ADR 0185).
+- `hmcpctl report utilization --html PATH` writes the same survey as one self-contained,
+  printable HTML page: fleet tiles, a per-HMC table, a sortable per-system table and failed
+  profiles, with no network references. `--csv` is now optional; give either or both (#1254).
 - A tracked read-only capture pipeline and an offline gate over it (#1202).
   `scripts/live_capture_sweep.py` calls every read-only MCP tool and a declared list of
   raw GETs and `ls*` commands against one HMC profile, below a guard that refuses any
@@ -263,6 +271,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
+  HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
+  `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
+  minimum-affinity policy, resource-group affinity score and profile `io_slots` reads report a
+  malformed reply in the same form, and the last two read the empty-result reply as no rows
+  (#1203).
 - A malformed `port` or `verify_ssl` in one profile now makes the profile listing (`config show`,
   the MCP profile listing, `report utilization`) fail with a `ConfigError` naming the profile and
   field instead of a bare `ValueError`, and a string `verify_ssl` such as `"false"` is listed as
@@ -1010,6 +1024,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `shutdown` or `osshutdown` only and no longer accepts `allow_dump_restart`; an MCP call that
   still passes it, even as `false`, is refused, so drop the argument. The CLI and `power_lpar`
   are unchanged (#896, ADR 0188).
+- `hmcpctl lpars set-boot-order` prints the boot string it set and the pending boot string
+  read back from the HMC, not the whole updated LPAR document; `--json` prints the document
+  as before. The operation and the `hmc_set_lpar_boot_order` tool return value are unchanged
+  (#1248).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc
