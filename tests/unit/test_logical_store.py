@@ -128,6 +128,21 @@ def test_session_creates_private_store():
     ]
 
 
+def test_directory_created_concurrently_is_used(monkeypatch):
+    root = store.state_dir()
+    real = os.path.lexists
+
+    def raced(path):
+        if os.fspath(path) == os.fspath(root) and not real(path):
+            root.mkdir(mode=0o700, parents=True)
+            return False
+        return real(path)
+
+    monkeypatch.setattr(store.os.path, "lexists", raced)
+    _open_write()
+    assert (root / store.DB_NAME).exists()
+
+
 @pytest.mark.parametrize("name", ["", store.DB_NAME, store.SENTINEL_NAME])
 def test_group_or_other_bits_are_not_private(name):
     _open_write()

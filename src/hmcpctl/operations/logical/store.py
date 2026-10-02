@@ -220,7 +220,7 @@ def _open(*, create: bool) -> sqlite3.Connection | None:
     if not os.path.lexists(root):
         if not create:
             return None
-        root.mkdir(mode=0o700, parents=True)
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
     _check_private(root, directory=True)
     db, sentinel = root / DB_NAME, root / SENTINEL_NAME
     if os.path.lexists(db):
