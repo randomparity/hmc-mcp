@@ -86,14 +86,16 @@ class FakeHMC:
         self.systems_error = systems_error
         self.calls: list[tuple[str, str | None]] = []
 
-    async def list_managed_systems(self) -> list[dict]:
-        self.calls.append(("list_managed_systems", None))
+    async def list_uom(self, resource_type: str) -> list[dict]:
+        assert resource_type == "ManagedSystem"
+        self.calls.append(("list_uom", None))
         if self.systems_error is not None:
             raise self.systems_error
         return self.systems
 
-    async def get_managed_system(self, uuid: str) -> dict | None:
-        self.calls.append(("get_managed_system", uuid))
+    async def get_uom(self, resource_type: str, uuid: str) -> dict | None:
+        assert resource_type == "ManagedSystem"
+        self.calls.append(("get_uom", uuid))
         return next((entry for entry in self.systems if entry["UUID"] == uuid), None)
 
     async def find_system_by_name(self, name: str) -> dict | None:
@@ -283,7 +285,7 @@ def test_selectors_collapse_and_uuid_selectors_read_by_uuid():
     page = _read(hmc, systems=["sys1", _uuid(1), "sys1"])
     assert len(page.systems) == 1
     assert page.systems[0].selector == "sys1"
-    assert ("get_managed_system", _uuid(1)) in hmc.calls
+    assert ("get_uom", _uuid(1)) in hmc.calls
     assert len(page.partitions) == 1
 
 
@@ -382,6 +384,17 @@ def test_transport_error_stops_selector_resolution():
     assert page.partitions == []
 
 
+def test_firmware_feed_failure_is_unavailable_with_the_selector_hint():
+    failure = HMCError("HTTP 500: Nested path contains null property", status_code=500)
+    hmc = FakeHMC([_system(1)], systems_error=failure)
+    page = _read(hmc)
+    assert page.systems_source is not None
+    assert page.systems_source.status == "unavailable"
+    assert "Pass systems selectors" in (page.systems_source.detail or "")
+    assert hmc.calls == [("list_uom", None)]
+    assert page.systems == []
+
+
 def test_resolution_stall_reads_no_partitions_on_that_page():
     hmc = FakeHMC(
         [_system(1), _system(2)],
@@ -394,6 +407,8 @@ def test_resolution_stall_reads_no_partitions_on_that_page():
     assert "timed out" in (statuses["sys1"].detail or "")
     resolved = next(s for s in page.systems if s.selector == "sys1")
     assert resolved.total_memory_mib == 1048576
+    # Every system on the page is reported unavailable, so the page is final.
+    assert (page.truncated, page.next_cursor) == (False, None)
 
 
 @pytest.mark.parametrize(

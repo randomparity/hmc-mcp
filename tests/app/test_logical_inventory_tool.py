@@ -84,11 +84,11 @@ class _HMC:
         self.systems = {SYS_A: _system(SYS_A, "sysA"), SYS_B: _system(SYS_B, "sysB")}
         self.calls: list[str] = []
 
-    async def list_managed_systems(self) -> list[dict]:
-        self.calls.append("list_managed_systems")
+    async def list_uom(self, resource_type: str) -> list[dict]:
+        self.calls.append(f"list_uom {resource_type}")
         return list(self.systems.values())
 
-    async def get_managed_system(self, uuid: str) -> dict | None:
+    async def get_uom(self, resource_type: str, uuid: str) -> dict | None:
         return self.systems.get(uuid)
 
     async def find_system_by_name(self, name: str) -> dict | None:

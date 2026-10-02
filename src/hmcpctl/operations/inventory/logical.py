@@ -204,10 +204,13 @@ async def _enumerate(hmc: Any, admit: Admit) -> tuple[SourceStatus, list[_Candid
     denial = admit(SYSTEMS_TOOL, None)
     if denial is not None:
         return _status(SYSTEMS_TOOL, denial + _SELECTOR_HINT), []
+    # One request, not list_managed_systems: its firmware fallback reads every system
+    # by name and skips the ones that fail, which would report a partial feed as ok.
     try:
-        entries = await hmc.list_managed_systems()
+        entries = await hmc.list_uom("ManagedSystem")
     except HMCError as exc:
-        return _unavailable(SYSTEMS_TOOL, f"managed systems are unavailable: {exc}"), []
+        text = f"managed systems are unavailable: {exc}.{_SELECTOR_HINT}"
+        return _unavailable(SYSTEMS_TOOL, text), []
     candidates = [
         _Candidate(None, str(entry["UUID"]), entry)
         for entry in entries
@@ -254,7 +257,7 @@ async def _resolve(
             continue
         try:
             if is_uuid(selector):
-                entry = await hmc.get_managed_system(selector)
+                entry = await hmc.get_uom("ManagedSystem", selector)
             else:
                 entry = await hmc.find_system_by_name(selector)
         except HMCTransportError as exc:

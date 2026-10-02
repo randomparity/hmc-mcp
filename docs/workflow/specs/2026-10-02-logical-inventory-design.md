@@ -115,10 +115,14 @@ An admitted selector also returns that system's `uuid`, `name` and `state` under
 
 Read paths:
 
-- **Enumeration:** one `list_managed_systems` read per page.
-- **Selectors:** for each admitted selector, `get_managed_system` (UUID) or
-  `find_system_by_name` (name), following `resolve_system_uuid`'s rule. Results collapse by
-  UUID. An `HMCError`, or the `ValueError` an ambiguous name raises, makes that selector
+- **Enumeration:** one `list_uom("ManagedSystem")` read per page. `list_managed_systems` is not
+  used: on firmware that cannot serialize a null hardware property, its fallback reads every
+  system by name and skips the ones that fail, so a partial feed would read as `ok`. That
+  firmware failure makes `systems_source` `unavailable`, with the next action to pass `systems`
+  selectors.
+- **Selectors:** for each admitted selector, one `get_uom("ManagedSystem", uuid)` (UUID) or
+  `find_system_by_name` (name) read, without `get_managed_system`'s multi-read fallback.
+  Results collapse by UUID. An `HMCError`, or the `ValueError` an ambiguous name raises, makes that selector
   `unavailable` with the error text.
 - **Partitions:** one `list_logical_partitions(uuid)` read per admitted system that the page
   reads. An `HMCError` from it makes that source `unavailable`.
@@ -135,7 +139,9 @@ until one of these happens:
 - a read raises `HMCTransportError` (a timeout or connection failure): that system is
   `unavailable`, nothing further is read, and `next_cursor` points at the next system. Selector
   resolution stops the same way: the unresolved selectors are `unavailable` with that detail,
-  and so are the resolved selectors' partitions, which are not read on that page.
+  and so are the resolved selectors' partitions, which are not read on that page. Every
+  system on that page is then `unavailable`, so the page is final (`truncated` is false): retry
+  the call.
   One stalled HMC therefore costs one request timeout per page, not one per system.
 
 `truncated` means "more remains to read", not "more partitions exist". A later page may be
