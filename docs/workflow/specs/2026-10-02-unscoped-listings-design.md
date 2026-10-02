@@ -70,7 +70,8 @@ stderr line per unreadable system, in both modes:
 - the two `jq '.[].UUID'` lines in `docs/recipes/system-inventory.md`
 - the fixtures in their tests
 
-**Docs.** Regenerate `docs/tools/` (`just tool-docs`). Add a CHANGELOG `### Changed` entry. Point
+**Docs.** Regenerate `docs/tools/` (`just tool-docs`). Update the three tools' signatures in `docs/capabilities/operations.json` (checked by
+`just capability-inventory`). Add a CHANGELOG `### Changed` entry. Point
 the kdive Tier A page's ownership row at `FleetListing.entries`.
 
 ## Failure model

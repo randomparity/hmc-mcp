@@ -13,6 +13,9 @@ answered within a second. The operator re-scoped the fix: read the `ManagedSyste
 system that is not `operating`, and read the rest through the scoped feeds. The scoped feeds refuse
 an empty answer from a non-operating system (#1301).
 
+This replaces the one fleet-wide `LogicalPartition` read that [ADR 0071](0071-bulk-lpar-ownership-read-over-rest.md)
+chose for unscoped ownership; the rest of ADR 0071 stands.
+
 Skipping a system makes the result partial. Issue #1293 requires the result to name the system it
 could not read. The three tools returned `list[dict]`, so they had nowhere to put that name.
 
