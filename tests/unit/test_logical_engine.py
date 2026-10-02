@@ -195,6 +195,59 @@ def test_wait_zero_returns_running_and_work_continues():
     assert (later.state, later.outcome) == ("terminal", "completed")
 
 
+def _hold_first_end(monkeypatch):
+    """Hold the first worker after its end state commits, before its thread exits."""
+    real_end, ended, hold, held = engine._end, threading.Event(), threading.Event(), []
+
+    def held_end(*args, **kwargs):
+        real_end(*args, **kwargs)
+        if not held:
+            held.append(threading.current_thread())
+            ended.set()
+            hold.wait(10)
+
+    monkeypatch.setattr(engine, "_end", held_end)
+    return ended, hold, held
+
+
+def test_finishing_worker_keeps_its_successor_registered(monkeypatch):
+    ended, hold, held = _hold_first_end(monkeypatch)
+    release, calls, joined_after_release = threading.Event(), [], []
+
+    async def write():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("timeout")
+        await asyncio.to_thread(release.wait, 10)
+        return {"uuid": "u1"}
+
+    monkeypatch.setitem(engine.CLASSIFIERS, "test.k0", _classify("not_applied"))
+    try:
+        first = _submit(body=_body(write), wait_seconds=0)
+        assert ended.wait(10)
+        joiner = threading.Thread(
+            target=lambda: (
+                engine.join(first.operation_id, 10),
+                joined_after_release.append(release.is_set()),
+            )
+        )
+        joiner.start()
+        resumed = _submit(body=_body(write), continuation="resume", wait_seconds=0)
+        assert resumed.state == "running"
+        hold.set()
+        held[0].join(10)
+        assert engine._has_worker(first.operation_id)
+        assert _submit(body=_body(write), wait_seconds=0).state == "running"
+    finally:
+        hold.set()
+        release.set()
+    joiner.join(10)
+    assert joined_after_release == [True]
+    engine.join(first.operation_id, 10)
+    later = store.operation_status(agent_id="agent-a").operations[0]
+    assert (later.state, later.outcome, len(calls)) == ("terminal", "completed", 2)
+
+
 def test_effect_not_applied_fails_the_operation():
     record = _submit(body=_body(Writer(raises=EffectNotApplied("HMC refused"))))
     assert (record.state, record.outcome) == ("terminal", "failed")

@@ -11,6 +11,7 @@ import re
 import secrets
 import sqlite3
 import threading
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -255,11 +256,21 @@ def _has_worker(operation_id: str) -> bool:
 
 
 def join(operation_id: str, timeout: float) -> None:
-    """Wait up to *timeout* seconds for this process's worker on *operation_id*."""
-    with _WORKERS_GUARD:
-        thread = _WORKERS.get(operation_id)
-    if thread is not None:
-        thread.join(timeout)
+    """Wait up to *timeout* seconds for this process's worker on *operation_id*.
+
+    A worker that finishes may already have a successor started by a resume, so the
+    wait follows the map until no worker is registered or the time is spent.
+    """
+    deadline, joined = time.monotonic() + timeout, None
+    while True:
+        with _WORKERS_GUARD:
+            thread = _WORKERS.get(operation_id)
+        if thread is None or thread is joined:
+            return
+        thread.join(max(0.0, deadline - time.monotonic()))
+        if thread.is_alive():
+            return
+        joined = thread
 
 
 def _work(operation_id: str, body: Body, continuation: str) -> None:
@@ -273,7 +284,9 @@ def _work(operation_id: str, body: Body, continuation: str) -> None:
         )
     finally:
         with _WORKERS_GUARD:
-            _WORKERS.pop(operation_id, None)
+            # A resume may already have registered a successor; never remove it.
+            if _WORKERS.get(operation_id) is threading.current_thread():
+                del _WORKERS[operation_id]
 
 
 def _end(
