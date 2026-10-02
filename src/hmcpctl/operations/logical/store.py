@@ -13,7 +13,7 @@ import stat
 import sys
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -329,21 +329,29 @@ def _still_locked(root: Path, fd: int) -> bool:
     return (held.st_dev, held.st_ino) == (on_disk.st_dev, on_disk.st_ino)
 
 
-def _recover_interrupted(conn: sqlite3.Connection) -> None:
+def _recover_interrupted(conn: sqlite3.Connection, live: Collection[str]) -> None:
     if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
         raise _corrupt("integrity check failed")
+    keep = tuple(live)
+    skip = f" AND operation_id NOT IN ({', '.join('?' * len(keep))})" if keep else ""
     with write_transaction(conn):
         conn.execute(
-            "UPDATE effects SET status = 'uncertain' WHERE status = 'intended'"
+            f"UPDATE effects SET status = 'uncertain' WHERE status = 'intended'{skip}",
+            keep,
         )
         conn.execute(
-            "UPDATE operations SET state = 'interrupted', updated_at = ? WHERE state = 'running'",
-            (_clock(),),
+            "UPDATE operations SET state = 'interrupted', updated_at = ?"
+            f" WHERE state = 'running'{skip}",
+            (_clock(), *keep),
         )
 
 
-def acquire_execution_lock() -> None:
-    """Take this process's execution lock once; refuse while another process holds it."""
+def acquire_execution_lock(live_operation_ids: Collection[str] = ()) -> None:
+    """Take this process's execution lock once; refuse while another process holds it.
+
+    Recovery on acquisition skips *live_operation_ids*: operations whose worker is alive
+    in this process, which a replaced lock file must not turn into orphans.
+    """
     root = state_dir()
     with _LOCKS_GUARD:
         if root in _LOCKS and _still_locked(root, _LOCKS[root]):
@@ -371,7 +379,7 @@ def acquire_execution_lock() -> None:
             try:
                 os.ftruncate(fd, 0)
                 os.pwrite(fd, f"{os.getpid()}\n".encode("ascii"), 0)
-                _recover_interrupted(conn)
+                _recover_interrupted(conn, live_operation_ids)
             except BaseException:
                 os.close(fd)
                 raise

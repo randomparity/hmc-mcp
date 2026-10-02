@@ -79,8 +79,8 @@ in one transaction sets every `running` operation to `interrupted` and every `in
 `uncertain`. A platform without `fcntl` refuses with `state_dir_unresolved`. On every later call
 the holder compares its descriptor's `(st_dev, st_ino)` with `execution.lock` on disk; a missing or
 replaced file means the directory was deleted under it, so it drops the stale descriptor and
-acquires again, recovery included. Refusal texts that tell an operator to delete the directory say
-to stop every hmcpctl process first.
+acquires again; that recovery skips operations whose worker is alive in this process. Refusal
+texts that tell an operator to delete the directory say to stop every hmcpctl process first.
 
 **Bounds and retention** (ADR 0190 D8):
 

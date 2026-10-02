@@ -248,6 +248,30 @@ def test_finishing_worker_keeps_its_successor_registered(monkeypatch):
     assert (later.state, later.outcome, len(calls)) == ("terminal", "completed", 2)
 
 
+def test_lock_recovery_skips_a_live_worker():
+    started, release = threading.Event(), threading.Event()
+
+    async def write():
+        started.set()
+        await asyncio.to_thread(release.wait, 10)
+        return {"uuid": "u1"}
+
+    try:
+        first = _submit(body=_body(write), wait_seconds=0)
+        assert started.wait(10)
+        (store.state_dir() / store.LOCK_NAME).unlink()
+        _submit(_request("r2"))
+        with store.session() as conn:
+            live = store.read_record(conn, first.operation_id)
+        assert live.state == "running"
+        assert live.effects[0].status == "intended"
+    finally:
+        release.set()
+    engine.join(first.operation_id, 10)
+    later = store.operation_status(agent_id="agent-a", request_id="r1").operations[0]
+    assert (later.state, later.outcome) == ("terminal", "completed")
+
+
 def test_effect_not_applied_fails_the_operation():
     record = _submit(body=_body(Writer(raises=EffectNotApplied("HMC refused"))))
     assert (record.state, record.outcome) == ("terminal", "failed")
@@ -534,7 +558,7 @@ def test_register_classifier_rejects_a_duplicate(monkeypatch):
 
 
 def test_a_lock_held_elsewhere_refuses_submit(monkeypatch):
-    def held():
+    def held(live_operation_ids=()):
         raise OperationRefused(
             "execution_lock_held", "process 7 runs logical operations"
         )

@@ -133,10 +133,12 @@ def submit(
     """
     _check_inputs(request, continuation, wait_seconds)
     request_json, digest = canonical_request(request)
-    store.acquire_execution_lock()
-    # Admission and worker start are one step, so no concurrent call in this process can
-    # see a freshly running record before its worker exists and take it for an orphan.
+    # Lock recovery, admission and worker start are one step, so no concurrent call in this
+    # process can see a running record whose worker it has not counted and orphan it.
     with _ADMISSION:
+        with _WORKERS_GUARD:
+            live = frozenset(_WORKERS)
+        store.acquire_execution_lock(live)
         with store.session() as conn, store.write_transaction(conn):
             row = store.find_operation(conn, request.agent_id, request.request_id)
             if row is None:
