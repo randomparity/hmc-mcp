@@ -764,6 +764,8 @@ async def _prepare_boot_media(
 
 
 _SET_BOOT_ORDER_STEP = "hmc_set_lpar_boot_order (boot device list)"
+#: The row whose `pending_boot_string` `live_test_recovery.py` compares against.
+_BOOT_BASELINE_STEP = "hmc_read_lpar_boot_order (baseline)"
 
 
 async def _configure_boot_order(
@@ -786,7 +788,7 @@ async def _configure_boot_order(
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=lpar_uuid,
     )
-    state.record(20, "hmc_read_lpar_boot_order (baseline)", status, data)
+    state.record(20, _BOOT_BASELINE_STEP, status, data)
     pending: list[str] = []
     boot_devices: list[str] = []
     if status == "PASS" and isinstance(data, dict):
@@ -917,7 +919,7 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         "hmc_upload_iso (re-upload for boot test)",
         "hmc_power_off_lpar (pre-boot)",
         "hmc_mount_optical_media (boot test)",
-        "hmc_read_lpar_boot_order (baseline)",
+        _BOOT_BASELINE_STEP,
         _SET_BOOT_ORDER_STEP,
         "hmc_power_on_lpar",
         "hmc_lpar_summary (verify running)",

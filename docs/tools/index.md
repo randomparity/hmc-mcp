@@ -6,13 +6,13 @@ This reference covers every tool the server registers, including the ones a defa
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
-- **156** tools are registered.
-- **155** are exposed by a default deployment.
+- **157** tools are registered.
+- **156** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
-| `destructive` | 31 |
+| `destructive` | 32 |
 | `mutate` | 51 |
 | `read` | 73 |
 
@@ -38,7 +38,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `health` | 1 | [health.md](health.md) |
 | `io_slot` | 1 | [io_slot.md](io_slot.md) |
 | `job` | 2 | [job.md](job.md) |
-| `lpar` | 34 | [lpar.md](lpar.md) |
+| `lpar` | 35 | [lpar.md](lpar.md) |
 | `lpar_profile` | 3 | [lpar_profile.md](lpar_profile.md) |
 | `media` | 10 | [media.md](media.md) |
 | `memory_pool` | 2 | [memory_pool.md](memory_pool.md) |
@@ -112,6 +112,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_detach_storage_mapping` | `destructive` | [storage.md](storage.md) |
 | `hmc_dlpar_mem` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_dlpar_proc` | `mutate` | [lpar.md](lpar.md) |
+| `hmc_dump_restart_lpar` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_effective_permissions` | `read` | [permissions.md](permissions.md) |
 | `hmc_find_placement` | `read` | [placement.md](placement.md) |
 | `hmc_fleet_health` | `read` | [health.md](health.md) |

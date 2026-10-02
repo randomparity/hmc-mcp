@@ -39,6 +39,7 @@ SCOPED_TOOLS = {
     "hmc_delete_lpar",
     "hmc_power_on_lpar",
     "hmc_power_off_lpar",
+    "hmc_dump_restart_lpar",
     "hmc_decommission_lpar",
     "hmc_create_vios",
     "hmc_delete_vios",

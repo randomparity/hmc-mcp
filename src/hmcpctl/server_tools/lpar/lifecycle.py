@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ..._app import (
     with_client,
 )
 from ...client.core import HMCClient
 from ...documents import LparResources
-from ...jobs import BootMode, PowerOffOperation, PowerOnKeylock, PowerOnOperationType
+from ...jobs import BootMode, PowerOnKeylock, PowerOnOperationType
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import (
     LparPcieAssignments,
@@ -27,6 +27,10 @@ from ...operations.lpar.dlpar import modify_lpar, set_lpar_memory, set_lpar_proc
 from ...tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
+
+# PowerOff operations hmc_power_off_lpar admits. dumprestart is served only by
+# hmc_dump_restart_lpar, so a grant of this tool cannot reach the crash (ADR 0188).
+PowerOffToolOperation = Literal["shutdown", "osshutdown"]
 
 
 # Assignment collections can name both a managed system and a nested VIOS.
@@ -435,8 +439,7 @@ def hmc_power_off_lpar(
     system_name_or_uuid: str | None = None,
     ownership_override: bool = False,
     restart: bool = False,
-    operation: PowerOffOperation = "shutdown",
-    allow_dump_restart: bool = False,
+    operation: PowerOffToolOperation = "shutdown",
 ) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation.
 
@@ -455,9 +458,9 @@ def hmc_power_off_lpar(
     restart=true; a graceful shutdown is operation=osshutdown, which needs an active
     RMC connection to the partition's operating system.
 
-    operation=dumprestart crashes the partition and takes a platform dump. It is
-    refused unless allow_dump_restart is true (ADR 0164) — nothing else in this call
-    asks for confirmation. The vendor's fourth value, dumpretry, is not accepted.
+    The force-crash, operation=dumprestart, is not this tool's: it is
+    hmc_dump_restart_lpar, a separate grant (ADR 0188). The vendor's fourth value,
+    dumpretry, is not accepted.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition to power off.
@@ -473,12 +476,9 @@ def hmc_power_off_lpar(
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
         restart: Restart the partition instead of leaving it off; this is what
             kdive's cycle and reset map to.
-        operation: PowerOff shutdown operation — shutdown, osshutdown, or
-            dumprestart. osshutdown asks the operating system to shut down and
-            needs an active RMC connection to it.
-        allow_dump_restart: Confirm operation=dumprestart, which crashes the
-            partition and takes a platform dump; without it that operation is
-            refused.
+        operation: PowerOff shutdown operation — shutdown or osshutdown.
+            osshutdown asks the operating system to shut down and needs an
+            active RMC connection to it.
     """
 
     async def power_off_job(hmc: HMCClient) -> dict[str, Any] | None:
@@ -494,8 +494,58 @@ def hmc_power_off_lpar(
             ownership_override=ownership_override,
             restart=restart,
             operation=operation,
-            allow_dump_restart=allow_dump_restart,
         )
         return result.job
 
     return with_client(power_off_job, profile=profile)
+
+
+@tool(effect="destructive", operation="lpar.dump_restart", target_kind="lpar")
+def hmc_dump_restart_lpar(
+    lpar_name_or_uuid: str,
+    allow_dump_restart: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
+) -> dict[str, Any] | None:
+    """Crash a logical partition and take a platform dump (PowerOff operation=dumprestart).
+
+    This is kdive's force-crash. It is a separate tool from hmc_power_off_lpar so an
+    access policy can grant the ordinary stop without it (ADR 0188). It is refused
+    unless allow_dump_restart is true. Returns the submitted job; with wait=True it
+    blocks until the job is terminal. Do not resubmit a timed-out wait: poll the job.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition to crash.
+        allow_dump_restart: Confirm the crash and platform dump; without it the call is
+            refused and nothing is submitted.
+        wait: Whether to poll the submitted job until terminal or timed out.
+        timeout_seconds: Maximum polling duration in seconds when waiting.
+        poll_interval: Seconds between job polls when waiting; must be positive.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID used to disambiguate its name.
+            With HMC_AUTHORIZE_POWER_OPERATIONS set it also spares the ownership
+            guard a fleet-wide search for the partition's owning system.
+        ownership_override: Bypass ADR 0011 ownership rejection only after operator
+            approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
+    """
+
+    async def dump_restart_job(hmc: HMCClient) -> dict[str, Any] | None:
+        result = await power_lpar(
+            hmc,
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            power_on=False,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            ownership_override=ownership_override,
+            operation="dumprestart",
+            allow_dump_restart=allow_dump_restart,
+        )
+        return result.job
+
+    return with_client(dump_restart_job, profile=profile)
