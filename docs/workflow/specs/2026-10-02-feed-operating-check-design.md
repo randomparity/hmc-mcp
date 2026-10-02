@@ -53,7 +53,10 @@ system keeps today's behaviour.
   adding one changes the MCP output schema, so omission is the representation
   the shape carries without a contract change (the issue delegates this
   choice). `find_placement` inherits it: a system that cannot run a partition
-  is not a placement candidate. The `hmc_capacity_report` and
+  is not a placement candidate. When systems exist but every one is omitted,
+  the report raises the first omitted system's `HMCError` instead of returning
+  an empty list, so no reader shows "No managed systems found" for an estate
+  whose systems cannot be read. The `hmc_capacity_report` and
   `hmc_find_placement` tool descriptions state the omission; `docs/tools/` is
   regenerated.
 - **Composite system summary** (`operations/inventory/composite.py`): no code
@@ -103,9 +106,6 @@ Considered and rejected:
    - One extra system GET per empty scoped feed from an operating system
      (stated in the issue's Expected section). If that GET fails, health and
      capacity fail for the call, the same as a failed feed read today.
-   - When every system is omitted, the CLI `systems capacity` prints its
-     existing "No managed systems found" text. `cli_commands/` is outside the
-     surface; the log names each omitted system. Follow-up candidate.
    - `ambiguous_parent_details` (unscoped ambiguous-name diagnosis) now raises
      the not-operating `HMCError` instead of a `ValueError` naming each
      candidate's parent when a fleet system is not operating. The lookup fails
@@ -138,6 +138,7 @@ Regression tests use an empty scoped feed (HTTP 204) and a `no connection` /
 | Health warns and continues for a non-operating system | focused-test | new HTTP test plus a two-system test in `tests/system/test_fleet_health.py` |
 | Health: operating-system feed error stays fatal | focused-test | existing `test_core_inventory_error_propagates_without_partial_result` |
 | Capacity omits the non-operating system, keeps the rest | focused-test | new HTTP test |
+| Capacity raises when every system is omitted | focused-test | new test |
 | Capacity: operating-system feed error stays fatal | focused-test | new test |
 | Composite surfaces an LPAR warning | focused-test | new HTTP test |
 | Discovery records the non-operating system as unreadable | focused-test | new HTTP test: not-found error names `1 could not be read: <sys-R1 UUID>` |
