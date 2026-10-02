@@ -633,6 +633,7 @@ def record_outcome(
 def add_ledger(
     conn: sqlite3.Connection,
     operation_id: str,
+    *,
     key: str,
     kind: str,
     system_uuid: str,

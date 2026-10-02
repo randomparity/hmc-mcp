@@ -204,14 +204,10 @@ def _conflicting_arguments(row: sqlite3.Row, arguments: Mapping[str, Any]) -> li
     )
 
 
-def _admit_existing(
-    conn: sqlite3.Connection,
-    row: sqlite3.Row,
-    request: OperationRequest,
-    digest: str,
-    continuation: str,
-) -> tuple[str, bool]:
-    operation_id = row["operation_id"]
+def _check_binding(
+    row: sqlite3.Row, request: OperationRequest, digest: str, continuation: str
+) -> None:
+    """Refuse a request whose connection, tool or arguments differ from the record's."""
     if (row["connection"], row["host"]) != (request.connection, request.host):
         raise OperationRefused(
             "connection_mismatch",
@@ -234,6 +230,17 @@ def _admit_existing(
             f"request_id {request.request_id} was used with different {', '.join(conflicts)}; "
             "use a new request_id",
         )
+
+
+def _admit_existing(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    request: OperationRequest,
+    digest: str,
+    continuation: str,
+) -> tuple[str, bool]:
+    _check_binding(row, request, digest, continuation)
+    operation_id = row["operation_id"]
     state = row["state"]
     if state == "running" and not _has_worker(operation_id):
         store.interrupt_orphan(conn, operation_id)
@@ -468,7 +475,13 @@ class OperationContext:
         plain = _check_identity(identity)
         with store.session() as conn, store.write_transaction(conn):
             store.add_ledger(
-                conn, self.operation_id, key, kind, system_uuid, partition_uuid, plain
+                conn,
+                self.operation_id,
+                key=key,
+                kind=kind,
+                system_uuid=system_uuid,
+                partition_uuid=partition_uuid,
+                identity=plain,
             )
 
     def _settle(self, key: str, status: str, identity: dict[str, Any] | None) -> None:

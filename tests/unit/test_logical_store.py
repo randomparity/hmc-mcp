@@ -300,7 +300,15 @@ def test_prune_terminal_after_30_days_keeps_ledger(monkeypatch):
     with store.session() as conn:
         _seed(conn, _oid(1), state="terminal")
         with store.write_transaction(conn):
-            store.add_ledger(conn, _oid(1), "disk", "disk", "sys", None, {"name": "d1"})
+            store.add_ledger(
+                conn,
+                _oid(1),
+                key="disk",
+                kind="disk",
+                system_uuid="sys",
+                partition_uuid=None,
+                identity={"name": "d1"},
+            )
     now += store.RETENTION_SECONDS + 1
     with store.session() as conn:
         _seed(conn, _oid(2))
