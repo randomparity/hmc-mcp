@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import secrets
 import select
 import sys
 import warnings
@@ -126,6 +127,21 @@ def no_ambient_hmc_settings(monkeypatch):
     wanted = {name.lower() for name in _UNSET_FOR_TESTS}
     for name in [n for n in os.environ if n.lower() in wanted]:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def isolate_operation_state(monkeypatch, tmp_path_factory):
+    """Point the ADR 0190 operation store at a per-test directory nobody created yet.
+
+    A developer's own ``HMCPCTL_STATE_DIR`` must never receive a test's records, and
+    the execution lock a test takes must not outlive it.
+    """
+    from hmcpctl.operations.logical import store
+
+    root = tmp_path_factory.getbasetemp() / "operation-state" / secrets.token_hex(8)
+    monkeypatch.setenv(store.STATE_DIR_ENV, str(root))
+    yield
+    store.release_execution_locks()
 
 
 @pytest.fixture(autouse=True)
