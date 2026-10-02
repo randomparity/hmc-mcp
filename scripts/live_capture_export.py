@@ -641,6 +641,40 @@ def observed(field: str, value: str) -> str:
     return "<text>" if NAME_BEARING.search(field) else kept
 
 
+def _enum_members(element: str, enums: dict[str, Any]) -> set[str]:
+    """The values of the enums that apply to *element*.
+
+    The enum a captured schema binds it to, else every enum named for it as `_bound_enum`
+    names one: `State` is shared by objects with different enums, so it binds to none.
+    """
+    types = enums.get("types", {})
+    bound = enums.get("elements", {}).get(element)
+    if bound:
+        return set(types.get(bound, ()))
+    return {
+        value
+        for name, values in types.items()
+        if _named_for(name.removesuffix(".Enum"), element)
+        for value in values
+    }
+
+
+def kept(element: str, value: str, members: set[str]) -> str:
+    """`observed`, except that an enum member it would lose as `<text>` is kept (#1292).
+
+    `LITERAL` caps a kept literal at 41 characters; an enum member is a constant the HMC
+    publishes, whatever its length. A name-bearing element keeps its shape class.
+    """
+    shaped = observed(element, value)
+    if (
+        shaped == "<text>"
+        and value.strip() in members
+        and not NAME_BEARING.search(element)
+    ):
+        return value.strip()
+    return shaped
+
+
 def path_template(path: str) -> str:
     """A captured path with identifiers templated; structure and `group=` kept."""
     base, _, query = path.partition("?")
@@ -748,10 +782,7 @@ def _bound_enum(
     candidates = [t for t, values in types.items() if literals <= set(values)]
     rules = [lambda base: base == element]
     if len(literals) >= 2:
-        rules += [
-            lambda base: base.endswith(element) or element.endswith(base),
-            lambda base: True,
-        ]
+        rules += [lambda base: _named_for(base, element), lambda base: True]
     for rule in rules:
         matches = [t for t in candidates if rule(t.removesuffix(".Enum"))]
         if len(matches) == 1:
@@ -759,6 +790,10 @@ def _bound_enum(
         if matches:
             return None
     return None
+
+
+def _named_for(base: str, element: str) -> bool:
+    return base.endswith(element) or element.endswith(base)
 
 
 def _accept(record: dict[str, Any]) -> str | None:
@@ -775,6 +810,7 @@ def _fold_derived(
     derived: dict[str, Any],
     values: dict[str, set[str]],
     endpoints: set[tuple[Any, ...]],
+    shape_value: Callable[[str, str], str],
 ) -> None:
     """Fold a vocabulary the prototype derived (`rest_values`, `rest_endpoints`) in.
 
@@ -783,7 +819,7 @@ def _fold_derived(
     for element, seen in derived.get("rest_values", {}).items():
         if not element.startswith("<"):
             values[element].update(
-                v if v[:1] == "<" else observed(element, v) for v in seen
+                v if v[:1] == "<" else shape_value(element, v) for v in seen
             )
     for method, path, status, _count in derived.get("rest_endpoints", []):
         template = re.sub(r"\{(?:n|name)\}", "{value}", path)
@@ -814,6 +850,13 @@ def build_vocabulary(
         }
     )
     cli_values: dict[str, set[str]] = collections.defaultdict(set)
+    members: dict[str, set[str]] = {}
+
+    def rest_value(element: str, value: str) -> str:
+        if element not in members:
+            members[element] = _enum_members(element, enums)
+        return kept(element, value, members[element])
+
     for record in corpus:
         if record.get("kind") == "rest" and record.get("status") is not None:
             template = path_template(record.get("path") or "")
@@ -832,7 +875,7 @@ def build_vocabulary(
                     errors.append(error)
             elif not _is_schema(record):
                 for element, value in LEAF.findall(record.get("body") or ""):
-                    values[element].add(observed(element, value))
+                    values[element].add(rest_value(element, value))
         elif record.get("kind") == "ssh" and record.get("command"):
             command = record["command"]
             entry = commands[command_template(command)]
@@ -855,7 +898,7 @@ def build_vocabulary(
                     for field, value in row.items():
                         cli_values[f"{key} :: {field}"].add(observed(field, value))
     for derived in folded:
-        _fold_derived(derived, values, endpoints)
+        _fold_derived(derived, values, endpoints, rest_value)
     types = enums.get("types", {})
     bindings = dict(enums.get("elements", {}))
     for element, seen in values.items():

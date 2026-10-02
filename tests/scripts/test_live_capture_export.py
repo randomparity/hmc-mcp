@@ -401,6 +401,65 @@ def test_one_literal_binds_only_a_same_named_enum() -> None:
     assert export._bound_enum("Status", {"OPERATIONAL", "DOWN"}, types) is not None
 
 
+PENDING = "pending authentication - password updates required"
+STATE_ENUMS = {
+    "types": {
+        "SystemState.Enum": ["operating", PENDING],
+        "PowerState.Enum": [PENDING],
+        "BootMode.Enum": ["Normal"],
+        "HostState.Enum": [PENDING],
+        "MultiCoreScalingValue.Enum": ["1", "16"],
+    },
+    "elements": {"PowerState": "BootMode.Enum"},
+}
+
+
+def _values(*leaves: tuple[str, str]) -> dict[str, list[str]]:
+    body = "".join(f"<{e}>{v}</{e}>" for e, v in leaves)
+    corpus = [_rest("/rest/api/uom/ManagedSystem", body)]
+    return export.build_vocabulary(corpus, STATE_ENUMS, "vX", ["t"])["rest"]["values"]
+
+
+def test_long_enum_member_is_kept_for_a_name_related_element() -> None:
+    """#1292: `State` binds to no enum, yet `SystemState.Enum` lists the 51-char value."""
+    assert _values(("State", PENDING))["State"] == [PENDING]
+    assert _values(("State", PENDING.replace("pending", "awaiting")))["State"] == [
+        "<text>"
+    ]
+    assert _values(("State", PENDING.upper()))["State"] == ["<text>"]
+
+
+def test_a_schema_bound_element_keeps_only_its_own_enum_members() -> None:
+    assert _values(("PowerState", PENDING))["PowerState"] == ["<text>"]
+
+
+def test_enum_members_do_not_reopen_name_bearing_or_classed_values() -> None:
+    values = _values(("HostState", PENDING), ("MultiCoreScalingValue", "16"))
+    assert values["HostState"] == ["<text>"]
+    assert values["MultiCoreScalingValue"] == ["<int>"]
+
+
+def test_a_folded_enum_member_is_kept() -> None:
+    derived = {"rest_values": {"State": {PENDING: 1}}, "rest_endpoints": []}
+    vocab = export.build_vocabulary([], STATE_ENUMS, "vX", ["a", "b"], [derived])
+    assert vocab["rest"]["values"]["State"] == [PENDING]
+
+
+def test_committed_enums_keep_both_spellings_of_pending_authentication() -> None:
+    enums = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "fixtures/live/vocabulary/enums-v11r2-p10-9080-hex.json"
+        ).read_text(encoding="utf-8")
+    )
+    title = PENDING.title()
+    corpus = [_rest("/rest/api/uom/ManagedSystem", f"<State>{PENDING}</State>")]
+    corpus.append(_rest("/rest/api/uom/ManagedFrame", f"<State>{title}</State>"))
+    vocab = export.build_vocabulary(corpus, enums, "vX", ["t"])
+    assert vocab["rest"]["values"]["State"] == sorted([PENDING, title])
+    assert "State" not in vocab["rest"]["element_enums"]
+
+
 def test_sentinel_output_is_kept_only_from_nameless_commands() -> None:
     assert export._sentinel("lsviosbk -F name,type", "No results were found.\n") is None
     assert export._sentinel("lsviosbk -F type", "No results were found.\n") == (
