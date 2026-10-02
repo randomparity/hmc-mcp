@@ -19,6 +19,7 @@ from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
     ambiguous_parent_details,
+    require_operating_system,
 )
 
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
@@ -59,6 +60,10 @@ class LparsMixin:
     ) -> dict[str, Any] | None:
         if system_uuid:
             entries = await self.list_logical_partitions(system_uuid)
+            if not entries:
+                await require_operating_system(
+                    self.get_managed_system, system_uuid, "LPARs"
+                )
             results = [
                 entry
                 for entry in entries

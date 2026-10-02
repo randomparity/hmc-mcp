@@ -8,6 +8,9 @@ from ..discovery_limits import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
+from ..errors import HMCError
+
+_MAX_STATE_TEXT = 100
 
 
 def ambiguity_candidate_ids(
@@ -91,4 +94,36 @@ async def ambiguous_parent_details(
             candidate_ids,
             key=lambda value: (parents[value][0][0], parents[value][0][1], value),
         )
+    )
+
+
+def _state_text(value: object) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()[:_MAX_STATE_TEXT]
+    return "unknown"
+
+
+async def require_operating_system(
+    get_managed_system: Callable[[str], Awaitable[dict[str, Any] | None]],
+    system_uuid: str,
+    resources: str,
+) -> None:
+    """Refuse to read an empty per-system feed as empty unless the system operates.
+
+    A managed system in recovery or with no connection answers its partition
+    and VIOS feeds with HTTP 204 and no body (#1289), which reads the same as
+    a system with none.
+    """
+    system = await get_managed_system(system_uuid)
+    resource = (system or {}).get("Resource") or {}
+    state = _state_text(resource.get("State"))
+    if state.lower() == "operating":
+        return
+    detailed = _state_text(resource.get("DetailedState"))
+    name = _state_text(resource.get("SystemName"))
+    system_label = system_uuid if name == "unknown" else f"{name!r} ({system_uuid})"
+    raise HMCError(
+        f"Cannot list {resources} on managed system {system_label}: it is in "
+        f"State {state!r} (DetailedState {detailed!r}), and the HMC reports no "
+        f"{resources} for a system that is not operating"
     )
