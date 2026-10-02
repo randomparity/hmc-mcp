@@ -24,8 +24,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   record their shape class. The 9080-HEX vocabulary is re-derived with it and now binds
   `NetworkInterface` to `NetworkInterface.Enum`, which `just live-vocabulary` enforces (#1292).
 - The 9028-21B, 9043-MRX, 9242-21B, 9824-42A and 9009-42A vocabularies are re-derived under
-  that rule: `NetworkInterface` and `CurrentConnectionSpeed` record the enum members they had
-  as `<text>`, and the first four bind `NetworkInterface` to `NetworkInterface.Enum`. The
+  that rule. `NetworkInterface` records `eth0` and `eth1` instead of `<text>` in the first four,
+  which bind it to `NetworkInterface.Enum`; `CurrentConnectionSpeed` gains the
+  `ConnectionSpeed.Enum` members it had as `<text>` in 9028-21B and 9009-42A. The
   8247-22L vocabulary is unchanged by it; the V10R3 POWER9 one is not re-derived, because its
   folded window input is no longer available (#1299).
 - `hmc_list_lpars` and `hmc_list_vios` with a system, and system-scoped LPAR and VIOS name
