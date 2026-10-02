@@ -78,8 +78,11 @@ acquisition in a process runs `PRAGMA quick_check` (anything but `ok` is `store_
 in one transaction sets every `running` operation to `interrupted` and every `intended` effect to
 `uncertain`. A platform without `fcntl` refuses with `state_dir_unresolved`. On every later call
 the holder compares its descriptor's `(st_dev, st_ino)` with `execution.lock` on disk; a missing or
-replaced file means the directory was deleted under it, so it drops the stale descriptor and
-acquires again; that recovery skips operations whose worker is alive in this process. Refusal
+replaced file means the lock file or the directory was removed under it, so it drops the stale
+descriptor and acquires again; that recovery skips operations whose worker is alive in this
+process. Removing `execution.lock` alone while a holder runs lets a second process take a fresh
+lock and recover the holder's live operations; that is outside the model, and the operator
+documentation forbids it. Refusal
 texts that tell an operator to delete the directory say to stop every hmcpctl process first.
 
 **Bounds and retention** (ADR 0190 D8):

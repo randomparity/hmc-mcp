@@ -399,7 +399,8 @@ events. The resource ledger is never pruned; its entries leave only through deco
 operation is refused with `store_full` once non-terminal operations plus ledger entries reach
 10,000. To back up or delete the store, stop
 every hmcpctl process first and handle the whole directory; deleting `operations.sqlite3` alone is
-refused as a lost store.
+refused as a lost store. Never remove `execution.lock` while any hmcpctl process runs: another
+process could then take the lock and resume an operation the first is still running.
 
 The store keeps the request arguments, and `hmc_operation_status` never returns them. The tool
 reads only the local store and makes no HMC call. It lists the calling agent's operations newest
