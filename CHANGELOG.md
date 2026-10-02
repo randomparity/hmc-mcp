@@ -45,6 +45,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_search_tools` (operation `tools.search`, `read`) finds the tools this server exposes by
+  intent, or returns one tool's input schema by exact name, at most 20 per call.
+  `hmc_invoke_tool` (operation `tools.invoke`, `destructive`) calls one of them by name through
+  that tool's own validation, authorization and audit, returning `{name, result}`; it refuses
+  the gateway tools, `arbitrary-command` tools and arguments over 64 KiB. `tools/list` now
+  carries a `catalog-tier` metadata entry, `primary` or `secondary`, without changing what is
+  listed (#1219, ADR 0189).
 - `hmc_operation_status` (operation `operation.status`) pages through this agent's logical
   operations in a new local SQLite store under `HMCPCTL_STATE_DIR` (ADR 0190), which the
   logical LPAR tools will record their HMC writes in and resume from (#1218, ADR 0195).

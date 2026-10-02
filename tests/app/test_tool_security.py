@@ -438,6 +438,8 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
     {
         "hmc_backup_lpar_profiles",
         "hmc_dump_restart_lpar",
+        # ADR 0189: classed by the most severe tool it can reach.
+        "hmc_invoke_tool",
         "hmc_migrate_abort_lpar",
         "hmc_remote_restart_lpar",
         # #247: the firmware/software update tools overwrite existing software
@@ -449,6 +451,12 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
         "hmc_vios_update",
         "hmc_vios_upgrade",
     }
+)
+
+
+# Handlers defined inside a factory, which the module-level AST passes cannot reach.
+_FACTORY_TOOLS = frozenset(
+    {"hmc_effective_permissions", "hmc_search_tools", "hmc_invoke_tool"}
 )
 
 
@@ -505,6 +513,8 @@ def test_only_local_tools_open_no_hmc_connection():
     local_only = {
         "hmc_list_configured_hosts",
         "hmc_effective_permissions",
+        "hmc_search_tools",
+        "hmc_invoke_tool",
         "hmc_snapshot_validate",
         "hmc_snapshot_inspect",
         "hmc_snapshot_assess_affinity",
@@ -856,10 +866,11 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             )
             checked.add(name)
 
-    # `hmc_effective_permissions` is defined inside a factory rather than at
-    # module level, so it is the one name this pass cannot reach; every other
-    # tool, including the two that declare no connection argument, is checked.
-    assert set(TOOL_SECURITY) - checked == {"hmc_effective_permissions"}
+    # `hmc_effective_permissions` and the two gateway tools are defined inside a
+    # factory rather than at module level, so they are the names this pass cannot
+    # reach; every other tool, including the ones that declare no connection
+    # argument, is checked.
+    assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
 
 
 def _walk(source: str, argument: str | None = "profile") -> int:
@@ -1217,6 +1228,8 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_capacity_report",
         "hmc_get_console_info",
         "hmc_effective_permissions",
+        "hmc_search_tools",
+        "hmc_invoke_tool",
         "hmc_find_placement",
         "hmc_fleet_health",
         "hmc_list_clusters",
@@ -1461,10 +1474,10 @@ def test_every_handler_reads_the_target_selectors_it_declares():
             checked.add(name)
 
     assert not unread, f"handlers that accept a selector and never read it: {unread}"
-    # The same name G12 cannot reach, for the same reason: it is defined inside
-    # a factory rather than at module level. It declares no selector.
-    assert set(TOOL_SECURITY) - checked == {"hmc_effective_permissions"}
-    assert not TOOL_SECURITY["hmc_effective_permissions"].targets
+    # The same names G12 cannot reach, for the same reason: they are defined inside
+    # a factory rather than at module level. None declares a selector.
+    assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
+    assert not any(TOOL_SECURITY[name].targets for name in _FACTORY_TOOLS)
 
 
 @pytest.mark.parametrize(

@@ -12,7 +12,7 @@ import re
 import sys
 import tempfile
 from collections import Counter
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -228,11 +228,23 @@ def extract_source_units(topic_id: str, text: str) -> list[dict[str, object]]:
     return units
 
 
+def _gateway_handlers() -> dict[str, Callable[..., object]]:
+    """The search and invoke handlers, which exist only bound to an application."""
+    from fastmcp import FastMCP
+
+    from hmcpctl.server_tools.catalog import TOOL_SECURITY
+    from hmcpctl.server_tools.gateway import gateway_handlers
+
+    bound = gateway_handlers(FastMCP(name="capability-inventory"), TOOL_SECURITY)
+    return {name: handler for name, (handler, _security) in bound.items()}
+
+
 def discover_registry() -> tuple[RegistryTool, ...]:
     from hmcpctl.server_tools import command, permissions
     from hmcpctl.server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
 
     modules = (*TOOL_MODULES, command, permissions)
+    composed = _gateway_handlers()
     result: list[RegistryTool] = []
     for tool, security in sorted(TOOL_SECURITY.items()):
         if tool == "hmc_effective_permissions":
@@ -253,7 +265,7 @@ def discover_registry() -> tuple[RegistryTool, ...]:
                 if hasattr(module, tool)
                 for handler in (getattr(module, tool),)
             }.values()
-        )
+        ) + ([composed[tool]] if tool in composed else [])
         if len(handlers) != 1:
             raise InventoryError(
                 f"registry tool {tool!r} resolves to {len(handlers)} handlers"
