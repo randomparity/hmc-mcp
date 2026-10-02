@@ -60,6 +60,7 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
         ("resources", "error"),
     ]
     assert result.warnings == ("resource update failed (HTTP 500)",)
+    hmc.get_managed_system.assert_awaited_once_with("system-uuid-1")
 
 
 @pytest.mark.asyncio
