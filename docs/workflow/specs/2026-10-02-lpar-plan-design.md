@@ -54,8 +54,8 @@ Excluded, with their owners (operator-approved 2026-10-02):
 | `caller_token` | optional; `validate_caller_token`'s grammar, where `''` is an error |
 | `minimum_affinity_policy` | optional; `validate_minimum_affinity_policy` |
 | `affinity_assessment` | optional; `validate_affinity_request`, and its system and LPAR identities must equal `system_name_or_uuid` and `name`, so it requires `system_name_or_uuid` |
-| `power_on` | bool, default true; `true` with `install` is an input error (H1 spec, *Primary tools*) |
-| `boot` | `immediate` (default) or `deferred`; meaningful only with `install` |
+| `power_on` | optional bool; omitted means true without `install`; `true` with `install` is an input error (H1 spec, *Primary tools*) |
+| `boot` | `immediate` (default) or `deferred`; `deferred` without `install` is an input error |
 | `install` | optional `LparInstall` (below) |
 | `exclusive_writer_window` | bool, default false |
 
