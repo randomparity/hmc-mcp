@@ -5,7 +5,7 @@
 `live_capture_export.py vocabulary` shapes every observed REST value with `observed()`,
 which keeps a value verbatim only when `LITERAL` (`[A-Za-z][A-Za-z _/+-]{0,40}`) fully
 matches it. A POWER10 9080-HEX answered `ManagedSystem` `State` with
-`pending authentication - password updates required` (51 characters), which the HMC's own
+`pending authentication - password updates required` (50 characters), which the HMC's own
 `SystemState.Enum` and `FrameState.Enum` list. The committed `v11r2-p10-9080-hex.json`
 records it as `<text>`, losing the value and implying free text for a closed element.
 
@@ -107,7 +107,7 @@ vocabularies are not re-derived here.
 
 ## Tests (`tests/scripts/test_live_capture_export.py`)
 
-- A 51-character member of a suffix-matched enum for an unbound element is kept; a
+- A 50-character member of a suffix-matched enum for an unbound element is kept; a
   non-member of the same length and an all-capitals spelling of the member record `<text>`.
 - With a schema binding, a member of only a different suffix-matched enum records `<text>`.
 - A name-bearing element (`HostState`, with a `HostState.Enum` holding the value) records

@@ -422,11 +422,11 @@ def _values(*leaves: tuple[str, str]) -> dict[str, list[str]]:
 
 
 def test_long_enum_member_is_kept_for_a_name_related_element() -> None:
-    """#1292: `State` binds to no enum, yet `SystemState.Enum` lists the 51-char value."""
+    """#1292: `State` binds to no enum, yet `SystemState.Enum` lists the 50-char value."""
     assert _values(("State", f" {PENDING}\n"))["State"] == [PENDING]
     speed = _values(("CurrentConnectionSpeed", "E10Gbps"))["CurrentConnectionSpeed"]
     assert speed == ["E10Gbps"]
-    assert _values(("State", PENDING.replace("pending", "awaiting")))["State"] == [
+    assert _values(("State", PENDING.replace("pending", "pausing")))["State"] == [
         "<text>"
     ]
     assert _values(("State", PENDING.upper()))["State"] == ["<text>"]

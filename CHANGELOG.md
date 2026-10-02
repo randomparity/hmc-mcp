@@ -20,8 +20,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 - `scripts/live_capture_export.py vocabulary` keeps a value it would record as `<text>` when a
   schema enum for the element lists it exactly: the enum bound to the element, else any enum
   named for it. A value longer than 41 characters, such as `ManagedSystem` `State`
-  `pending authentication - password updates required`, was lost. The 9080-HEX vocabulary is
-  re-derived with it (#1292).
+  `pending authentication - password updates required`, was lost. Name-bearing elements still
+  record their shape class. The 9080-HEX vocabulary is re-derived with it and now binds
+  `NetworkInterface` to `NetworkInterface.Enum`, which `just live-vocabulary` enforces (#1292).
 - `mount-optical-media` / `hmc_mount_optical_media` refuses, with a 409 and before any write, a
   `target_device` that an optical mapping on the VIOS already uses, naming its media and the
   remedies. When the HMC itself answers 500 `name is already used in another mapping`, the error
