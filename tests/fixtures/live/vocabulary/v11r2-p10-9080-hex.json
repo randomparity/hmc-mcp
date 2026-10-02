@@ -1,7 +1,7 @@
 {
  "firmware": "v11r2-p10-9080-hex",
  "sources": [
-  "2026-10-01 read-only sweep: HMC V11R2 SP1120 managing a POWER10 9080-HEX"
+  "2026-10-01 read-only sweep of one HMC, plus partial 2026-10-02 sweeps of another whose feed also lists a 9105-22B, taken while a 9080-HEX was in Recovery, No Connection and Pending Authentication: HMC V11R2 SP1120 managing a POWER10 9080-HEX"
  ],
  "rest": {
   "endpoints": [
@@ -161,6 +161,13 @@
    },
    {
     "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/search/(SystemName=={value})",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=ManagedSystem",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ManagedSystem"
+   },
+   {
+    "method": "GET",
     "path": "/rest/api/uom/ManagedSystem/{uuid}",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=ManagedSystem",
     "status": 200,
@@ -175,6 +182,13 @@
    },
    {
     "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
     "path": "/rest/api/uom/ManagedSystem/{uuid}/NetworkBridge",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=NetworkBridge",
     "status": 200,
@@ -186,6 +200,13 @@
     "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
     "status": 200,
     "content_type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/VirtualIOServer",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+    "status": 204,
+    "content_type": "text/plain"
    },
    {
     "method": "GET",
@@ -511,7 +532,8 @@
   ],
   "values": {
    "AIXCapable": [
-    "Active"
+    "Active",
+    "Unavailable"
    ],
    "AIXUpdateAccessKeyCapable": [
     "false",
@@ -525,10 +547,12 @@
     "true"
    ],
    "ASMAdminPasswordUpdatedRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "ASMGeneralPasswordUpdatedRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "ActivatedLevel": [
     "<int>"
@@ -537,12 +561,15 @@
     "<text>"
    ],
    "ActiveLogicalPartitionMigrationCapable": [
+    "false",
     "true"
    ],
    "ActiveLogicalPartitionMobilityCapable": [
+    "false",
     "true"
    ],
    "ActiveLogicalPartitionSharedIdeProcessorsCapable": [
+    "false",
     "true"
    ],
    "ActiveMemoryDeduplicationCapable": [
@@ -550,6 +577,7 @@
     "true"
    ],
    "ActiveMemoryExpansionCapable": [
+    "false",
     "true"
    ],
    "ActiveMemoryExpansionEnabled": [
@@ -566,6 +594,18 @@
    "ActiveMemorySharingEnabled": [
     "false"
    ],
+   "AdapterConfigOption": [
+    "<int>"
+   ],
+   "AdapterConfigOptionDescription": [
+    "<text>"
+   ],
+   "AdapterConfigOptionEthernetLogicalPort": [
+    "<int>"
+   ],
+   "AdapterConfigOptionRoCELogicalPort": [
+    "<int>"
+   ],
    "AdapterID": [
     "<int>"
    ],
@@ -577,6 +617,7 @@
     "<text>"
    ],
    "AdapterState": [
+    "Missing",
     "NotConfigured",
     "Running"
    ],
@@ -594,6 +635,7 @@
     "false"
    ],
    "AdvancedBootListSupportCapable": [
+    "false",
     "true"
    ],
    "AffinityGroupID": [
@@ -609,6 +651,7 @@
     "<int>"
    ],
    "AllowInactiveSourceStorageVios": [
+    "Disabled",
     "Enabled"
    ],
    "AllowPerformanceDataCollection": [
@@ -619,6 +662,7 @@
     "true"
    ],
    "AllowWebRemoteAccess": [
+    "false",
     "true"
    ],
    "AllowedHardwarePageTableRations": [
@@ -677,6 +721,9 @@
    "AuthenticationType": [
     "local"
    ],
+   "AuthorizedKey": [
+    "<text>"
+   ],
    "AutoManageEnabled": [
     "false"
    ],
@@ -703,6 +750,9 @@
     "<int>"
    ],
    "BIOS": [
+    "<text>"
+   ],
+   "BMCConnectionUserName": [
     "<text>"
    ],
    "BackingDeviceName": [
@@ -737,6 +787,7 @@
     "false"
    ],
    "CAPICapable": [
+    "false",
     "true"
    ],
    "CCIN": [
@@ -747,6 +798,7 @@
     "true"
    ],
    "CapacityOnDemandMemoryCapable": [
+    "false",
     "true"
    ],
    "CapacityOnDemandOnOffMemoryCapable": [
@@ -758,12 +810,15 @@
     "true"
    ],
    "CapacityOnDemandProcessorCapable": [
+    "false",
     "true"
    ],
    "CapacityOnDemandTrialMemoryCapable": [
+    "false",
     "true"
    ],
    "CapacityOnDemandTrialProcessorCapable": [
+    "false",
     "true"
    ],
    "CapacityOnDemandUtilityProcessorCapable": [
@@ -804,6 +859,7 @@
     "<text>"
    ],
    "ConfiguredConnectionSpeed": [
+    "<text>",
     "Auto"
    ],
    "ConfiguredEthernetLogicalPorts": [
@@ -867,6 +923,9 @@
    "CoreMaximumDeltaFrequency": [
     "<text>"
    ],
+   "CurrentAdapterConfigurationOption": [
+    "<int>"
+   ],
    "CurrentAssignedMemoryToPartitions": [
     "<int>"
    ],
@@ -877,6 +936,9 @@
     "<int>"
    ],
    "CurrentAvailableQoS": [
+    "<int>"
+   ],
+   "CurrentAvailableResourceGroupReservedMemory": [
     "<int>"
    ],
    "CurrentAvailableSystemMemory": [
@@ -991,6 +1053,7 @@
     "<int>"
    ],
    "CurrentOptions": [
+    "<text>",
     "PriorityFlowControl",
     "Veb",
     "fullDuplex",
@@ -1009,6 +1072,7 @@
     "Disable",
     "Dynamic_Performance",
     "Maximum_Performance",
+    "Power_Saving",
     "Static"
    ],
    "CurrentProcessingUnits": [
@@ -1027,6 +1091,9 @@
     "Suspended"
    ],
    "CurrentQoS": [
+    "<int>"
+   ],
+   "CurrentResourceGroupReservedMemory": [
     "<int>"
    ],
    "CurrentSecureBoot": [
@@ -1058,9 +1125,11 @@
     "<int>"
    ],
    "CustomLogicalPartitionPlacementCapable": [
+    "false",
     "true"
    ],
    "CustomPhysicalPageTableRatioCapable": [
+    "false",
     "true"
    ],
    "DebugLevel": [
@@ -1074,6 +1143,9 @@
    ],
    "DedicatedProcessorPartitionCapable": [
     "true"
+   ],
+   "DefaultAdapterConfigurationOption": [
+    "<int>"
    ],
    "DefaultFiberChannelTargetsForBackingDevice": [
     "<int>"
@@ -1152,7 +1224,9 @@
     "<int>"
    ],
    "DetailedState": [
-    "None"
+    "None",
+    "Recovery",
+    "Unknown"
    ],
    "DeviceName": [
     "<text>"
@@ -1171,6 +1245,7 @@
     "false"
    ],
    "DisableSecureBootCapable": [
+    "false",
     "true"
    ],
    "DiskCapacity": [
@@ -1221,6 +1296,7 @@
     "true"
    ],
    "DynamicPlatformOptimizationCapable": [
+    "false",
     "true"
    ],
    "DynamicReconfigurationConnectorIndex": [
@@ -1230,9 +1306,14 @@
     "<text>"
    ],
    "DynamicSimplifiedRemoteRestartToggleCapable": [
+    "false",
+    "true"
+   ],
+   "EBMCSystemIPv6Capable": [
     "true"
    ],
    "ElectronicErrorReportingCapable": [
+    "false",
     "true"
    ],
    "ElementName": [
@@ -1251,6 +1332,7 @@
     "<float>"
    ],
    "ExternalIntrusionDetectionCapable": [
+    "false",
     "true"
    ],
    "FailOverPriority": [
@@ -1261,7 +1343,10 @@
    ],
    "FeatureCodes": [
     "<int>",
-    "<text>"
+    "<text>",
+    "EAPE",
+    "EAPF",
+    "ECFW"
    ],
    "FiberChannelTargetsRoundingValue": [
     "<int>"
@@ -1270,6 +1355,7 @@
     "true"
    ],
    "FirmwarePowerSaverCapable": [
+    "false",
     "true"
    ],
    "FruNumber": [
@@ -1278,6 +1364,9 @@
    "GPFSCapable": [
     "true"
    ],
+   "Gateway": [
+    "<text>"
+   ],
    "HCNID": [
     "<int>"
    ],
@@ -1285,21 +1374,25 @@
     "<text>"
    ],
    "HardwareAcceleratorCapable": [
+    "false",
     "true"
    ],
    "HardwareDiscoveryCapable": [
     "true"
    ],
    "HardwareMemoryCompressionCapable": [
+    "false",
     "true"
    ],
    "HardwareMemoryEncryptionCapable": [
+    "false",
     "true"
    ],
    "HardwarePageTableRatio": [
     "<int>"
    ],
    "HardwarePowerSaverCapable": [
+    "false",
     "true"
    ],
    "HasDedicatedProcessors": [
@@ -1330,6 +1423,7 @@
     "true"
    ],
    "HugePageMemoryOverrideCapable": [
+    "false",
     "true"
    ],
    "HugePageSize": [
@@ -1347,6 +1441,7 @@
     "true"
    ],
    "IBMiLogicalPartitionMobilityCapable": [
+    "false",
     "true"
    ],
    "IBMiLogicalPartitionSuspendCapable": [
@@ -1357,9 +1452,11 @@
     "true"
    ],
    "IBMiNetworkInstallCapable": [
+    "false",
     "true"
    ],
    "IBMiNetworkInstallVlanCapable": [
+    "false",
     "true"
    ],
    "IBMiNetworkInstalliSCSICapable": [
@@ -1367,9 +1464,11 @@
     "true"
    ],
    "IBMiPartitionSecureBootCapable": [
-    "false"
+    "false",
+    "true"
    ],
    "IBMiRestrictedIOModeCapable": [
+    "false",
     "true"
    ],
    "IEEE8021QAllowablePriorities": [
@@ -1379,6 +1478,7 @@
     "<int>"
    ],
    "IFLLinuxOrViosProcSupported": [
+    "false",
     "true"
    ],
    "IOBusID": [
@@ -1399,6 +1499,9 @@
    "IPAddress": [
     "<text>"
    ],
+   "IPV6Prefix": [
+    "<int>"
+   ],
    "IdlePowerSaverMode": [
     "false",
     "true"
@@ -1410,9 +1513,11 @@
     "<int>"
    ],
    "InactiveLogicalPartitionMigrationCapable": [
+    "false",
     "true"
    ],
    "InactiveLogicalPartitionMobilityCapable": [
+    "false",
     "true"
    ],
    "InactiveProfileMigrationPolicy": [
@@ -1425,6 +1530,7 @@
     "<int>"
    ],
    "IntelligentPlatformManagementInterfaceCapable": [
+    "false",
     "true"
    ],
    "InterfaceName": [
@@ -1432,6 +1538,9 @@
    ],
    "InternalAndExternalIntrusionDetectionCapable": [
     "false"
+   ],
+   "InternetProtocol": [
+    "static"
    ],
    "Ipv4Address": [
     "<text>"
@@ -1441,7 +1550,8 @@
     "true"
    ],
    "IsAdvancedAutomationAndMonitoringCapable": [
-    "false"
+    "false",
+    "true"
    ],
    "IsAllPartitionsResource": [
     "true"
@@ -1484,6 +1594,9 @@
    ],
    "IsDiagnostic": [
     "false"
+   ],
+   "IsEBMCNTPEnabled": [
+    "true"
    ],
    "IsFibreChannelBacked": [
     "false",
@@ -1725,6 +1838,7 @@
     "true"
    ],
    "LogicalPartitionAffinityGroupCapable": [
+    "false",
     "true"
    ],
    "LogicalPartitionAssignmentCapable": [
@@ -1732,6 +1846,7 @@
     "true"
    ],
    "LogicalPartitionAvailabilityPriorityCapable": [
+    "false",
     "true"
    ],
    "LogicalPartitionEnergyManagementCapable": [
@@ -1742,6 +1857,7 @@
     "true"
    ],
    "LogicalPartitionProcessorCompatibilityModeCapable": [
+    "false",
     "true"
    ],
    "LogicalPartitionRedundantMspsMigrationCapable": [
@@ -1794,6 +1910,7 @@
     "<int>"
    ],
    "MajorBootType": [
+    "Power On",
     "Reboot"
    ],
    "ManagedSystemName": [
@@ -1826,6 +1943,7 @@
     "<text>"
    ],
    "ManagementVLANForControlChannelCapable": [
+    "false",
     "true"
    ],
    "ManagerPassthroughCapable": [
@@ -2079,12 +2197,14 @@
     "<int>"
    ],
    "MergedReferenceCode": [
-    "<empty>"
+    "<empty>",
+    "<text>"
    ],
    "MicroCodeVersion": [
     "<int>"
    ],
    "MicroLogicalPartitionCapable": [
+    "false",
     "true"
    ],
    "Migratable": [
@@ -2218,12 +2338,16 @@
     "true"
    ],
    "MultipleResourceGroupCapable": [
-    "false"
+    "false",
+    "true"
    ],
    "NPIVValidationPolicy": [
     "portdisk"
    ],
    "NetworkAddress": [
+    "<text>"
+   ],
+   "NetworkInterface": [
     "<text>"
    ],
    "NetworkMask": [
@@ -2361,10 +2485,12 @@
     "<int>"
    ],
    "PartitionKeyStoreCapable": [
+    "false",
     "true"
    ],
    "PartitionKeyStoreDecreaseCapable": [
-    "false"
+    "false",
+    "true"
    ],
    "PartitionName": [
     "<text>"
@@ -2373,6 +2499,7 @@
     "<int>"
    ],
    "PartitionSecureBootCapable": [
+    "false",
     "true"
    ],
    "PartitionState": [
@@ -2386,6 +2513,18 @@
    ],
    "PartitionUUID": [
     "<uuid-upper>"
+   ],
+   "PartnerAdapterID": [
+    "<int>"
+   ],
+   "PartnerDynamicReconfigurationConnectorName": [
+    "<text>"
+   ],
+   "PartnerSlotDynamicReconfigurationConnectorIndex": [
+    "<int>"
+   ],
+   "PartnerSlotDynamicReconfigurationConnectorName": [
+    "<text>"
    ],
    "PasswordExpiry": [
     "<int>"
@@ -2450,6 +2589,7 @@
     "<int>"
    ],
    "PersistentMemoryCapable": [
+    "false",
     "true"
    ],
    "PersistentReserveKeyValue": [
@@ -2481,7 +2621,8 @@
     "true"
    ],
    "PlatformPasswordUpdateRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "Port": [
     "<int>",
@@ -2511,7 +2652,8 @@
     "<int>"
    ],
    "PowerChipQueryCapable": [
-    "false"
+    "false",
+    "true"
    ],
    "PowerOffWhenLastLogicalPartitionIsShutdown": [
     "false"
@@ -2526,6 +2668,7 @@
    ],
    "PowerOnSource": [
     "ASMMenu",
+    "Other",
     "SystemManagementConsole"
    ],
    "PowerOnSpeed": [
@@ -2540,6 +2683,7 @@
     "true"
    ],
    "PowerVMLogicalPartitionSimplifiedRemoteRestartCapable": [
+    "false",
     "true"
    ],
    "PowerVMManagementCapable": [
@@ -2592,6 +2736,7 @@
     "LogicalPartition"
    ],
    "RedundantErrorPathReportingCapable": [
+    "false",
     "true"
    ],
    "RedundantErrorPathReportingEnabled": [
@@ -2629,6 +2774,7 @@
     "Invalid"
    ],
    "RemoteRestartToggleCapable": [
+    "false",
     "true"
    ],
    "RemoteSlotNumber": [
@@ -2657,6 +2803,7 @@
     "Disable",
     "Dynamic_Performance",
     "Maximum_Performance",
+    "Power_Saving",
     "Static"
    ],
    "ReservePolicy": [
@@ -2719,6 +2866,7 @@
     "<int>"
    ],
    "SRIOVCapable": [
+    "false",
     "true"
    ],
    "SRIOVCapableDevice": [
@@ -2733,9 +2881,11 @@
     "<int>"
    ],
    "SRIOVMigrationCapable": [
+    "false",
     "true"
    ],
    "SRIOVRoCECapable": [
+    "false",
     "true"
    ],
    "SamplesForComputingUtilzationStatistics": [
@@ -2750,6 +2900,9 @@
    "SearchTimeOut": [
     "<int>"
    ],
+   "SecondaryIPAddress": [
+    "<text>"
+   ],
    "SerialNumber": [
     "<text>"
    ],
@@ -2763,6 +2916,7 @@
     "true"
    ],
    "ServiceProcessorConcurrentMaintenanceCapable": [
+    "false",
     "true"
    ],
    "ServiceProcessorFailoverCapable": [
@@ -2800,6 +2954,7 @@
     "false"
    ],
    "SharedProcessorPoolCapable": [
+    "false",
     "true"
    ],
    "SharedProcessorPoolCount": [
@@ -2856,10 +3011,13 @@
     "<text>"
    ],
    "State": [
+    "<text>",
     "Active",
     "Disconnected",
     "Inactive",
-    "operating"
+    "no connection",
+    "operating",
+    "recovery"
    ],
    "Status": [
     "LINK_DOWN"
@@ -2911,6 +3069,7 @@
     "<int>"
    ],
    "SupportedOptions": [
+    "AdapterLldpForPortDisabled",
     "Veb",
     "Vepa",
     "autoDuplex",
@@ -2929,6 +3088,7 @@
    ],
    "SupportedPowerSavingModeTypes": [
     "Dynamic_Performance",
+    "Efficient_Favor_Power",
     "Maximum_Performance",
     "Power_Saving",
     "Static"
@@ -2958,7 +3118,8 @@
     "<text>"
    ],
    "SupportedVTPMVersions": [
-    "<float>"
+    "<float>",
+    "null"
    ],
    "SuspendCapable": [
     "false"
@@ -2991,6 +3152,7 @@
     "<int>"
    ],
    "SystemType": [
+    "ebmc",
     "fsp"
    ],
    "TCCSlotID": [
@@ -3144,6 +3306,7 @@
     "DeploymentTime"
    ],
    "VLANStatisticsCapable": [
+    "false",
     "true"
    ],
    "VNICFailOverCapable": [
@@ -3173,6 +3336,7 @@
     "<int>"
    ],
    "VirtualEthernetAdapterDynamicLogicalPartitionCapable": [
+    "false",
     "true"
    ],
    "VirtualEthernetAdapterMACAddressPrefix": [
@@ -3180,24 +3344,30 @@
     "<text>"
    ],
    "VirtualEthernetCustomMACAddressCapable": [
+    "false",
     "true"
    ],
    "VirtualEthernetQualityOfServiceCapable": [
+    "false",
     "true"
    ],
    "VirtualFiberChannelCapable": [
+    "false",
     "true"
    ],
    "VirtualIOServerCapable": [
+    "false",
     "true"
    ],
    "VirtualIOServerLicenseAccepted": [
     "true"
    ],
    "VirtualNICDedicatedSRIOVCapable": [
+    "false",
     "true"
    ],
    "VirtualNICFailOverCapable": [
+    "false",
     "true"
    ],
    "VirtualNICSharedSRIOVCapable": [
@@ -3210,15 +3380,18 @@
     "<text>"
    ],
    "VirtualSerialNumberCapable": [
+    "false",
     "true"
    ],
    "VirtualServerNetworkingPhase2Capable": [
+    "false",
     "true"
    ],
    "VirtualSlotNumber": [
     "<int>"
    ],
    "VirtualSwitchCapable": [
+    "false",
     "true"
    ],
    "VirtualSwitchID": [
@@ -3235,6 +3408,7 @@
     "true"
    ],
    "VirtualTrustedPlatformModuleCapable": [
+    "false",
     "true"
    ],
    "VirtualTrustedPlatformModuleKeyLength": [
@@ -3247,6 +3421,7 @@
     "<int>"
    ],
    "VirtualizationEngineTechnologiesActivationCapable": [
+    "false",
     "true"
    ],
    "VolumeCapacity": [
@@ -3558,6 +3733,7 @@
    ]
   },
   "element_enums": {
+   "AIXCapable": "AIXCapability.Enum",
    "AdapterMode": "SRIOVAdapterMode.Enum",
    "AdapterState": "SRIOVAdapterState.Enum",
    "AdapterType": "VirtualIOAdapterType.Enum",
@@ -3574,6 +3750,7 @@
    "DetailedState": "DetailedState.Enum",
    "HighAvailabilityMode": "HighAvailabilityMode.Enum",
    "InactiveProfileMigrationPolicy": "InactiveProfileMigrationPolicy.Enum",
+   "InternetProtocol": "InternetProtocol.Enum",
    "MajorBootType": "MajorBootType.Enum",
    "MemoryMirroringState": "MemoryMirroringState.Enum",
    "MigrationState": "PartitionMigrationState.Enum",
