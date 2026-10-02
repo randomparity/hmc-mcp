@@ -150,7 +150,8 @@ checks still run when their inputs exist.
    - Existing `PhysicalVolume` storage qualifies a VIOS only when it is named in `vios_uuid`.
      Its existence is `unverified`, because no delegated read lists unassigned physical volumes.
    - Exactly one qualifying (VIOS, volume group) pair resolves. Zero is a blocker. More than one
-     is an `ambiguous` blocker that lists at most 8 pairs and asks the caller to name one; it
+     is an `ambiguous` blocker that lists at most 5 pairs as `<VIOS UUID>/<volume-group
+     UUID>`, which fit the detail's 500 characters, and asks the caller to name one; it
      never takes the first.
    - A `VolumeGroup` with an unreadable `FreeSpace` (`free_space_diagnostic` set, or null) cannot
      qualify for a new disk, and the blocker says why.
