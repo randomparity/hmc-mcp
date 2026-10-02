@@ -812,7 +812,7 @@ async def test_an_unreadable_containment_feed_names_the_retry(mock_hmc, operatio
                 LparResources(desired_procs=1.0, desired_memory=1024),
             )
 
-    assert "retry" in str(info.value)
+    assert str(info.value.__cause__) in str(info.value)
     assert isinstance(info.value.__cause__, HMCError)
     assert not route.called
 

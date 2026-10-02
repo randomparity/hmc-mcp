@@ -231,8 +231,7 @@ async def _verify_partition_on_system(
     except HMCError as exc:
         raise ValueError(
             f"Cannot confirm LPAR {lpar_selector!r} belongs to managed system "
-            f"{system_uuid} ({exc}); retry, or omit the selector to have the "
-            "system discovered"
+            f"{system_uuid}: {exc}"
         ) from exc
     if not _hosts_partition(partitions, lpar_uuid):
         raise ValueError(

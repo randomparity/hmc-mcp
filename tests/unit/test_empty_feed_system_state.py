@@ -25,9 +25,21 @@ from hmcpctl.errors import HMCError
 from hmcpctl.operations.inventory.capacity import fetch_capacity_report
 from hmcpctl.operations.inventory.composite import fetch_system_summary
 from hmcpctl.operations.inventory.utilization import read_system
+from hmcpctl.operations.lpar import decommission as decommission_module
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars
-from hmcpctl.operations.lpar.ownership import _discover_owning_system
+from hmcpctl.operations.lpar.decommission import decommission_lpar
+from hmcpctl.operations.lpar.ownership import (
+    _discover_owning_system,
+    _verify_partition_on_system,
+    list_lpar_ownership,
+)
 from hmcpctl.operations.systems.health import fetch_fleet_health
+from hmcpctl.operations.templates import core as templates_module
+from hmcpctl.operations.templates.core import (
+    BASELINE_SNAPSHOT_WARNING,
+    POST_SNAPSHOT_WARNING,
+    deploy_partition_template,
+)
 from hmcpctl.operations.vios.core import list_vios
 from hmcpctl.resource_identity import (
     ResourceNotFoundError,
@@ -40,6 +52,7 @@ SYSTEM_NAME = "sys-R1"
 SYSTEM_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
 OPERATING_UUID = "33333333-3333-3333-3333-333333333333"
 OPERATING_PATH = f"/rest/api/uom/ManagedSystem/{OPERATING_UUID}"
+LPAR_UUID = "22222222-2222-2222-2222-222222222222"
 LPAR_FEED = f"{SYSTEM_PATH}/LogicalPartition"
 VIOS_FEED = f"{SYSTEM_PATH}/VirtualIOServer"
 
@@ -68,6 +81,14 @@ READS: dict[str, tuple[str, Read]] = {
         lambda hmc: resolve_lpar_uuid(hmc, "lpar-a", system_name_or_uuid=SYSTEM_UUID),
     ),
     "list_vios": (VIOS_FEED, lambda hmc: list_vios(hmc, SYSTEM_UUID)),
+    "list_lpar_ownership": (
+        LPAR_FEED,
+        lambda hmc: list_lpar_ownership(hmc, SYSTEM_UUID),
+    ),
+    "decommission_target": (
+        LPAR_FEED,
+        lambda hmc: decommission_lpar(hmc, SYSTEM_UUID, "lpar-a", dry_run=True),
+    ),
     "resolve_vios_uuid": (
         VIOS_FEED,
         lambda hmc: resolve_vios_uuid(hmc, "vios-a", system_name_or_uuid=SYSTEM_UUID),
@@ -396,3 +417,109 @@ async def test_utilization_survey_records_feed_gaps_for_a_non_operating_system(
         "LogicalPartition feed",
         "VirtualIOServer feed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_partition_membership_check_names_the_system_state(mock_hmc) -> None:
+    _mock_no_connection_system(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError) as caught:
+            await _verify_partition_on_system(hmc, SYSTEM_UUID, LPAR_UUID, LPAR_UUID)
+
+    message = str(caught.value)
+    assert repr(SYSTEM_NAME) in message
+    assert "State 'no connection'" in message
+    assert "retry" not in message
+    assert isinstance(caught.value.__cause__, HMCError)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dry_run", [True, False])
+async def test_decommission_refuses_an_untrusted_vios_feed(
+    mock_hmc, monkeypatch, dry_run
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+    identity = (SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, "lpar-a", None)
+    snapshot = ("lpar-a", 3, "not activated")
+    precheck = AsyncMock()
+    monkeypatch.setattr(
+        decommission_module,
+        "_resolve_inventory_identity",
+        AsyncMock(return_value=identity),
+    )
+    monkeypatch.setattr(
+        decommission_module, "_partition_snapshot", AsyncMock(return_value=snapshot)
+    )
+    monkeypatch.setattr(
+        decommission_module, "_inventory_adapters", AsyncMock(return_value=())
+    )
+    monkeypatch.setattr(
+        decommission_module, "authorize_decommission_lpar_ownership_snapshot", precheck
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as caught:
+            await decommission_lpar(hmc, SYSTEM_UUID, "lpar-a", dry_run=dry_run)
+
+    assert type(caught.value) is HMCError
+    message = str(caught.value)
+    assert "Cannot list VIOSes" in message
+    assert repr(SYSTEM_NAME) in message
+    assert "State 'no connection'" in message
+    precheck.assert_not_awaited()
+    writes = [
+        call.request
+        for call in mock_hmc.calls
+        if call.request.method != "GET"
+        and not call.request.url.path.endswith("/web/Logon")
+    ]
+    assert writes == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("snapshot_feeds", "warning"),
+    [
+        ([httpx.Response(204)], BASELINE_SNAPSHOT_WARNING),
+        (
+            [
+                httpx.Response(
+                    200,
+                    text='<feed xmlns="http://www.w3.org/2005/Atom">'
+                    f"{captured_lpar_entry(LPAR_UUID, 'lpar-a')}</feed>",
+                ),
+                httpx.Response(204),
+            ],
+            POST_SNAPSHOT_WARNING,
+        ),
+    ],
+    ids=["baseline", "post"],
+)
+async def test_template_deployment_warns_for_a_non_operating_system(
+    mock_hmc, monkeypatch, snapshot_feeds, warning
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+    mock_hmc.get(LPAR_FEED).mock(side_effect=snapshot_feeds)
+    completed = {"Resource": {"Status": "COMPLETED_OK"}}
+    stamp = AsyncMock()
+    monkeypatch.setattr(
+        templates_module, "wait_for_submitted_job", AsyncMock(return_value=completed)
+    )
+    monkeypatch.setattr(templates_module, "stamp_created_lpar_ownership", stamp)
+
+    async with HMCClient(make_config()) as hmc:
+        monkeypatch.setattr(hmc, "deploy_partition_template", AsyncMock())
+        result = await deploy_partition_template(
+            hmc,
+            "draft-uuid",
+            SYSTEM_UUID,
+            wait=True,
+            timeout_seconds=60,
+            poll_interval=1,
+        )
+
+    assert result["job"] == completed
+    assert result["ownership_stamped"] is None
+    assert result["warnings"] == [warning]
+    stamp.assert_not_awaited()
