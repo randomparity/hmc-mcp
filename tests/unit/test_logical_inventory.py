@@ -390,7 +390,7 @@ def test_firmware_feed_failure_is_unavailable_with_the_selector_hint():
     page = _read(hmc)
     assert page.systems_source is not None
     assert page.systems_source.status == "unavailable"
-    assert "Pass systems selectors" in (page.systems_source.detail or "")
+    assert "Pass system names" in (page.systems_source.detail or "")
     assert hmc.calls == [("list_uom", None)]
     assert page.systems == []
 

@@ -15,6 +15,7 @@ from fastmcp import Client, FastMCP
 
 from hmcpctl.audit import sink as audit_sink
 from hmcpctl.authorization.access_policy import compile_access_policy
+from hmcpctl.errors import HMCTransportError
 from hmcpctl.operations.inventory.logical import DELEGATED_TOOLS
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 
@@ -83,6 +84,7 @@ class _HMC:
     def __init__(self) -> None:
         self.systems = {SYS_A: _system(SYS_A, "sysA"), SYS_B: _system(SYS_B, "sysB")}
         self.calls: list[str] = []
+        self.stalled: set[str] = set()
 
     async def list_uom(self, resource_type: str) -> list[dict]:
         self.calls.append(f"list_uom {resource_type}")
@@ -100,6 +102,8 @@ class _HMC:
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
         self.calls.append(f"list_logical_partitions {uuid}")
+        if uuid in self.stalled:
+            raise HMCTransportError("GET LogicalPartition timed out")
         return [_lpar(uuid, f"web-{uuid[7]}")]
 
 
@@ -117,10 +121,15 @@ def _grant(*tools: str, targets: Any = "all-targets") -> dict:
     return {"tools": list(tools), "connections": ["<default>"], "targets": targets}
 
 
-def _call(app: FastMCP, hmc: _HMC, arguments: dict) -> dict:
+def _call(
+    app: FastMCP, hmc: _HMC, arguments: dict, *, logoff: Exception | None = None
+) -> dict:
     @contextlib.asynccontextmanager
     async def client(*_args: Any, **_kwargs: Any) -> AsyncIterator[_HMC]:
         yield hmc
+        # HMCClient.__aexit__ raises a logoff failure when the body exited cleanly.
+        if logoff is not None:
+            raise logoff
 
     async def go() -> dict:
         async with Client(app) as mcp_client:
@@ -228,3 +237,23 @@ def test_inventory_is_listed_as_primary():
     listed = _listed(_app(_ALL))
     meta = listed[INVENTORY].meta or {}
     assert meta.get("io.github.randomparity.hmcpctl/catalog-tier") == "primary"
+
+
+def test_partition_stall_returns_the_partial_page_with_a_cursor():
+    hmc = _HMC()
+    hmc.stalled.add(SYS_A)
+    page = _call(_app(_ALL), hmc, {})
+    assert page["systems"][0]["sources"]["partitions"]["status"] == "unavailable"
+    assert page["truncated"] is True and page["next_cursor"]
+    assert f"list_logical_partitions {SYS_B}" not in hmc.calls
+
+
+def test_whole_hmc_stall_that_also_times_out_logoff_is_a_tool_error():
+    """The failure model's bound: one read timeout plus the logoff, then a tool error."""
+    from fastmcp.exceptions import ToolError
+
+    hmc = _HMC()
+    hmc.stalled.add(SYS_A)
+    logoff = HMCTransportError("DELETE /rest/api/web/Logon timed out")
+    with pytest.raises(ToolError, match="Logon timed out"):
+        _call(_app(_ALL), hmc, {}, logoff=logoff)

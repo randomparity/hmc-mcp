@@ -37,6 +37,8 @@ _MAX_CURSOR = 256
 _MAX_DETAIL = 500
 _INVALID_CURSOR = "invalid_cursor: pass next_cursor from a previous page unchanged"
 _SELECTOR_HINT = " Pass systems selectors to read named systems."
+# Firmware that fails the feed can refuse a direct UUID read too; a name is searched.
+_FEED_HINT = " Pass system names as systems selectors."
 
 Admit = Callable[[str, str | None], str | None]
 """Asks whether a delegated tool may run for a system selector (or ``None``).
@@ -209,7 +211,7 @@ async def _enumerate(hmc: Any, admit: Admit) -> tuple[SourceStatus, list[_Candid
     try:
         entries = await hmc.list_uom("ManagedSystem")
     except HMCError as exc:
-        text = f"managed systems are unavailable: {exc}.{_SELECTOR_HINT}"
+        text = f"managed systems are unavailable: {exc}.{_FEED_HINT}"
         return _unavailable(SYSTEMS_TOOL, text), []
     candidates = [
         _Candidate(None, str(entry["UUID"]), entry)

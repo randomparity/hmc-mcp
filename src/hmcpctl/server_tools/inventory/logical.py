@@ -79,7 +79,8 @@ def inventory_handler(
         ``hmc_capacity_report``, which only an ``all-targets`` grant admits. A part the
         policy denies, or the HMC fails to return, is reported in ``sources`` as
         ``denied`` or ``unavailable`` and contributes no data; a missing figure is
-        ``null``, never zero. Without ``hmc_list_systems`` authority nothing is read: pass
+        ``null``, never zero. If the HMC stops answering altogether, the call can fail as a
+        tool error instead. Without ``hmc_list_systems`` authority nothing is read: pass
         ``systems`` selectors, each authorized separately. Ids are
         ``<connection>/<system uuid>[/<partition uuid>]``. Pages follow live state, so a
         partition created or deleted between pages can be missed or repeated.

@@ -118,8 +118,8 @@ Read paths:
 - **Enumeration:** one `list_uom("ManagedSystem")` read per page. `list_managed_systems` is not
   used: on firmware that cannot serialize a null hardware property, its fallback reads every
   system by name and skips the ones that fail, so a partial feed would read as `ok`. That
-  firmware failure makes `systems_source` `unavailable`, with the next action to pass `systems`
-  selectors.
+  firmware failure makes `systems_source` `unavailable`, with the next action to pass system
+  names as `systems` selectors, since the same firmware can refuse a direct UUID read.
 - **Selectors:** for each admitted selector, one `get_uom("ManagedSystem", uuid)` (UUID) or
   `find_system_by_name` (name) read, without `get_managed_system`'s multi-read fallback.
   Results collapse by UUID. An `HMCError`, or the `ValueError` an ambiguous name raises, makes that selector
@@ -142,7 +142,9 @@ until one of these happens:
   and so are the resolved selectors' partitions, which are not read on that page. Every
   system on that page is then `unavailable`, so the page is final (`truncated` is false): retry
   the call.
-  One stalled HMC therefore costs one request timeout per page, not one per system.
+  One stalled HMC therefore costs one read timeout per page, not one per system. When the
+  whole HMC has stalled, the session logoff after the page times out as well; that failure
+  then replaces the page as a tool error, so the bound is one read timeout plus the logoff.
 
 `truncated` means "more remains to read", not "more partitions exist". A later page may be
 empty. Filters apply before counting.
@@ -156,7 +158,8 @@ empty. Filters apply before counting.
      filter outcome or in the read itself;
    - every decision the dispatch authorizer makes recorded under the delegated tool's name;
    - published identifiers stable per connection label for #1221;
-   - one HMC's read load bounded per page: at most 32 reads, and at most one request timeout.
+   - one HMC's read load bounded per page: at most 32 reads, and at most one read timeout plus
+     the session logoff.
 3. **Accepted failure classes:**
    - A targets table that lists a system by name denies enumeration-path partitions, which are
      checked by UUID. Bounded: the caller passes the name as a selector.
