@@ -51,6 +51,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_inventory` (operation `inventory.logical`, `read`) lists one connection's systems and
+  partitions with stable `<connection>/<uuid>` ids, state, capacity and owner, paged by
+  `cursor` (at most 16 systems and 200 partitions a page). Each part is authorized as the
+  tool it delegates to and reported per system as `ok`, `unavailable` or `denied`; enumerating
+  systems needs `hmc_list_systems`, or pass `systems` selectors (#1220, ADR 0196).
 - `hmc_search_tools` (operation `tools.search`, `read`) finds the tools this server exposes by
   intent, or returns one tool's input schema by exact name, at most 20 per call.
   `hmc_invoke_tool` (operation `tools.invoke`, `destructive`) calls one of them by name through

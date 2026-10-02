@@ -81,6 +81,7 @@ from .server_tools.command import (
     configure_arbitrary_command_tool,
 )
 from .server_tools.gateway import register_gateway_tools
+from .server_tools.inventory.logical import register_inventory_tool
 from .server_tools.permissions import (
     TOOL_NAME as PERMISSIONS_TOOL_NAME,
 )
@@ -142,6 +143,9 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
         application, policy, TOOL_SECURITY, permits=permits, authorize=authorize
     )
     register_gateway_tools(
+        application, TOOL_SECURITY, permits=permits, authorize=authorize
+    )
+    register_inventory_tool(
         application, TOOL_SECURITY, permits=permits, authorize=authorize
     )
     application.add_middleware(

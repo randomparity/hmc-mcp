@@ -19,6 +19,10 @@ from hmcpctl.server_tools.gateway import (
     SEARCH_TOOL_NAME,
 )
 from hmcpctl.server_tools.inventory import capacity, composite
+from hmcpctl.server_tools.inventory.logical import (
+    INVENTORY_SECURITY,
+    INVENTORY_TOOL_NAME,
+)
 from hmcpctl.server_tools.lpar import (
     configuration,
     lifecycle,
@@ -78,6 +82,7 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
         "hmc_effective_permissions": EFFECTIVE_PERMISSIONS_SECURITY,
         SEARCH_TOOL_NAME: SEARCH_SECURITY,
         INVOKE_TOOL_NAME: INVOKE_SECURITY,
+        INVENTORY_TOOL_NAME: INVENTORY_SECURITY,
     },
 )
 
@@ -86,7 +91,7 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
 # registered marks nothing.
 PRIMARY_TOOLS: frozenset[str] = frozenset(
     {
-        "hmc_inventory",
+        INVENTORY_TOOL_NAME,
         "hmc_plan_lpar",
         "hmc_provision_lpar",
         "hmc_reconfigure_lpar",

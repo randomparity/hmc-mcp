@@ -456,7 +456,12 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
 
 # Handlers defined inside a factory, which the module-level AST passes cannot reach.
 _FACTORY_TOOLS = frozenset(
-    {"hmc_effective_permissions", "hmc_search_tools", "hmc_invoke_tool"}
+    {
+        "hmc_effective_permissions",
+        "hmc_search_tools",
+        "hmc_invoke_tool",
+        "hmc_inventory",
+    }
 )
 
 
@@ -866,9 +871,9 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             )
             checked.add(name)
 
-    # `hmc_effective_permissions` and the two gateway tools are defined inside a
-    # factory rather than at module level, so they are the names this pass cannot
-    # reach; every other tool, including the ones that declare no connection
+    # `hmc_effective_permissions`, the two gateway tools and `hmc_inventory` are
+    # defined inside a factory rather than at module level, so they are the names
+    # this pass cannot reach; every other tool, including the ones that declare no connection
     # argument, is checked.
     assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
 
@@ -1225,6 +1230,7 @@ _NOT_EXHAUSTIVE = frozenset(
     {
         # No selector at all, so a `targets` table has nothing to bind on.
         "hmc_operation_status",
+        "hmc_inventory",
         "hmc_capacity_report",
         "hmc_get_console_info",
         "hmc_effective_permissions",

@@ -228,15 +228,23 @@ def extract_source_units(topic_id: str, text: str) -> list[dict[str, object]]:
     return units
 
 
-def _gateway_handlers() -> dict[str, Callable[..., object]]:
-    """The search and invoke handlers, which exist only bound to an application."""
+def _bound_handlers() -> dict[str, Callable[..., object]]:
+    """The handlers that exist only built by a factory: search, invoke and inventory."""
     from fastmcp import FastMCP
 
     from hmcpctl.server_tools.catalog import TOOL_SECURITY
     from hmcpctl.server_tools.gateway import gateway_handlers
+    from hmcpctl.server_tools.inventory.logical import (
+        INVENTORY_TOOL_NAME,
+        inventory_handler,
+    )
 
     bound = gateway_handlers(FastMCP(name="capability-inventory"), TOOL_SECURITY)
-    return {name: handler for name, (handler, _security) in bound.items()}
+    handlers = {name: handler for name, (handler, _security) in bound.items()}
+    handlers[INVENTORY_TOOL_NAME] = inventory_handler(
+        TOOL_SECURITY, lambda _name: False, lambda *_args: None
+    )
+    return handlers
 
 
 def discover_registry() -> tuple[RegistryTool, ...]:
@@ -244,7 +252,7 @@ def discover_registry() -> tuple[RegistryTool, ...]:
     from hmcpctl.server_tools.catalog import TOOL_MODULES, TOOL_SECURITY
 
     modules = (*TOOL_MODULES, command, permissions)
-    composed = _gateway_handlers()
+    composed = _bound_handlers()
     result: list[RegistryTool] = []
     for tool, security in sorted(TOOL_SECURITY.items()):
         if tool == "hmc_effective_permissions":
