@@ -382,31 +382,33 @@ reason codes, and how to route or silence them.
 
 ### Logical operation state
 
-Logical operations record their progress in a local SQLite store, `operations.sqlite3`, beside
-`store-id` and `execution.lock` in one state directory. The MCP server and the CLI share that
-directory: `HMCPCTL_STATE_DIR` when set, otherwise the platform state directory. It is created
-with mode `0700` and its files with `0600`; hmcpctl refuses a directory or file that other users
-can access.
+The logical LPAR tools will record their progress in a local SQLite store, `operations.sqlite3`,
+beside `store-id` and `execution.lock` in one state directory: `HMCPCTL_STATE_DIR` when set,
+otherwise the platform state directory. No tool in this release starts a logical operation, so
+the store is created only once a later release adds one; operator commands for it are #1286. The
+directory is created with mode `0700` and its files with `0600`; hmcpctl refuses a directory or
+file that other users can access.
 
 One process at a time runs logical operations. Another session can read status but refuses
 a mutation, naming the pid of the process that holds the lock. When a process exits mid-operation,
-status keeps showing `running` until a process that can take the lock recovers it (any
-continuation does). Nothing resumes on its own: an operation continues only on a call with
-`continuation: resume`, or `continuation: boot` for one paused ready to boot.
+status keeps showing `running` until a process that can take the lock recovers it. Nothing resumes
+on its own: the logical tools (#1223, #1225, #1226, #1227) will continue an operation only on a
+call with `continuation: resume`, or `continuation: boot` for one paused ready to boot.
 
 Terminal operations are pruned 30 days after they end, and each operation keeps its newest 1,024
-events. The resource ledger is never pruned; its entries leave only through decommission. A new
-operation is refused with `store_full` once non-terminal operations plus ledger entries reach
-10,000. To back up or delete the store, stop
-every hmcpctl process first and handle the whole directory; deleting `operations.sqlite3` alone is
-refused as a lost store. Never remove `execution.lock` while any hmcpctl process runs: another
-process could then take the lock and resume an operation the first is still running.
+events. The resource ledger is never pruned; decommission will remove its entries (#1229), and
+until then nothing does. A new operation is refused with `store_full` once non-terminal
+operations plus ledger entries reach 10,000. To back up or delete the store, stop every hmcpctl
+process first and handle the whole directory; deleting `operations.sqlite3` alone is refused as
+a lost store. Never remove `execution.lock` while any hmcpctl process runs: another process could
+then take the lock and resume an operation the first is still running.
 
 The store keeps the request arguments, and `hmc_operation_status` never returns them. The tool
 reads only the local store and makes no HMC call. It lists the calling agent's operations newest
 first, with their effects, newest 200 events, warnings and the continuations their state accepts,
-and pages with `next_cursor`. `profile` selects whose records it lists, by that profile's
-`agent_id` (`hmcpctl` when unset).
+and pages with `next_cursor`. `profile` selects whose records it lists: those with that profile's
+`agent_id` (`hmcpctl` when unset) that were started on that profile's connection, or on the
+environment connection when `profile` is omitted.
 
 ## Client setup
 
