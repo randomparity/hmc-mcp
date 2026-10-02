@@ -220,29 +220,33 @@ A `PlanBlocker` is `{code, check, target, tool, detail}`:
 - `tool` is the delegated tool for `denied` and `unavailable`, otherwise `null`;
 - `detail` is at most 500 characters.
 
-`intended_changes[]` entries are `{order, kind, target, detail}`. Their `kind` values, in order:
+`intended_changes[]` entries are `{order, kind, target, detail}`. The list describes the writes
+the H1 spec's provision row names; it is not in the digest, and #1225 owns the execution order.
+Their `kind` values, in order:
 
 1. `create_partition`;
 2. `stamp_ownership`;
 3. `set_minimum_affinity_policy`, with `minimum_affinity_policy` only;
 4. `add_network_adapter`;
-5. `create_virtual_disk`, with `capacity_mib` only;
-6. `map_storage`;
-7. `assign_pcie`, one per entry of `assignments`, in its order.
+5. `add_vscsi_adapter`;
+6. `create_virtual_disk`, with `capacity_mib` only;
+7. `map_storage`;
+8. `assign_pcie`, one per entry of `assignments`, in its order;
+9. `write_profile` (#637's profile write).
 
 Without `install`, these follow:
 
-8. `power_on`, with `power_on` only;
-9. `assess_affinity`, with `affinity_assessment` only.
+10. `power_on`, with `power_on` only;
+11. `assess_affinity`, with `affinity_assessment` only.
 
 With `install`, these follow instead:
 
-8. `bind_media`;
-9. `upload_media`;
-10. `mount_media`;
-11. `set_boot_order`;
-12. `power_on`, whose `detail` says that `boot: deferred` stops before it;
-13. `assess_affinity`, with `affinity_assessment` only.
+10. `bind_media`;
+11. `upload_media`;
+12. `mount_media`;
+13. `set_boot_order`;
+14. `power_on`, whose `detail` says that `boot: deferred` stops before it;
+15. `assess_affinity`, with `affinity_assessment` only.
 
 `unverified[]` is a list of fixed statements. Each one is included when its condition holds:
 
@@ -274,8 +278,8 @@ holds these keys:
   UUIDs in lower case;
 - `"targets"`: those three UUIDs.
 
-`None` fields are kept as `null`. Provision (#1225) builds the same `PlanRequest` from its own
-inputs and calls this function. The digest binds the request and the targets, not the
+`None` fields are kept as `null`. Provision (#1225) will build the same `PlanRequest` from its
+own inputs and call this function; until it lands, nothing consumes the digest. The digest binds the request and the targets, not the
 observations. Revalidation is a fresh plan at execution time (#1225).
 
 ### Failure model
