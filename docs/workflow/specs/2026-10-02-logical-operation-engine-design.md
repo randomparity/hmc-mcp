@@ -212,7 +212,9 @@ def hmc_operation_status(operation_id: str | None = None, request_id: str | None
 ```
 
 - The agent id is `build_config(profile=profile).agent_id or "hmcpctl"`, the same default
-  ownership stamping uses.
+  ownership stamping uses. Records are also filtered to this call's connection,
+  `store.connection_label(profile)` (the profile key, or `"<default>"`), the same label `submit`
+  records, so a policy that grants one connection never lists another connection's records.
 - `target_kind="console"`, as `hmc_get_console_info` uses, keeps `profile` under the policy's
   connection scope without a target selector; `profile` chooses the agent id, so it must stay
   policed.
@@ -309,7 +311,8 @@ field:
 1. The `0700` directory and `0600` files are checked at every open, along with ownership and
    symlinks; a failure refuses with the path and mode only. The store is created with
    `O_EXCL`. Schema version and `store-id` are checked.
-2. Status filters on the caller's agent id, inside the SQL `WHERE` clause. Other agents' records
+2. Status filters on the caller's agent id and its policy-checked connection, inside the SQL
+   `WHERE` clause. Other agents' records
    read as `not_found` to `submit`.
 3. Continuations require the recorded connection, and the consumer's `authorized()` call runs
    first.

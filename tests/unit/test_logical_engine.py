@@ -191,7 +191,9 @@ def test_wait_zero_returns_running_and_work_continues():
     assert _reason(_submit, continuation="resume") == "running"
     release.set()
     engine.join(record.operation_id, 10)
-    later = store.operation_status(agent_id="agent-a").operations[0]
+    later = store.operation_status(
+        agent_id="agent-a", connection="<default>"
+    ).operations[0]
     assert (later.state, later.outcome) == ("terminal", "completed")
 
 
@@ -244,7 +246,9 @@ def test_finishing_worker_keeps_its_successor_registered(monkeypatch):
     joiner.join(10)
     assert joined_after_release == [True]
     engine.join(first.operation_id, 10)
-    later = store.operation_status(agent_id="agent-a").operations[0]
+    later = store.operation_status(
+        agent_id="agent-a", connection="<default>"
+    ).operations[0]
     assert (later.state, later.outcome, len(calls)) == ("terminal", "completed", 2)
 
 
@@ -268,7 +272,9 @@ def test_lock_recovery_skips_a_live_worker():
     finally:
         release.set()
     engine.join(first.operation_id, 10)
-    later = store.operation_status(agent_id="agent-a", request_id="r1").operations[0]
+    later = store.operation_status(
+        agent_id="agent-a", connection="<default>", request_id="r1"
+    ).operations[0]
     assert (later.state, later.outcome) == ("terminal", "completed")
 
 
@@ -621,7 +627,9 @@ def test_a_continuation_from_another_tool_is_refused(continuation):
     reason = _reason(_submit, other, _body(writer), continuation=continuation)
     assert reason == "request_conflict"
     assert writer.calls == 0
-    record = store.operation_status(agent_id="agent-a").operations[0]
+    record = store.operation_status(
+        agent_id="agent-a", connection="<default>"
+    ).operations[0]
     assert (record.state, record.outcome) == ("paused", "needs_attention")
 
 

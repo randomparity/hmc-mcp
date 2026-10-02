@@ -50,6 +50,8 @@ class EffectNotApplied(Exception):
 
 @dataclass(frozen=True)
 class OperationRequest:
+    """One logical-tool call; ``connection`` is ``store.connection_label(profile)``."""
+
     tool: str
     agent_id: str
     connection: str

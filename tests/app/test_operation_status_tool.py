@@ -33,7 +33,7 @@ def _call(arguments: dict):
     return asyncio.run(go())
 
 
-def _seed(agent: str, n: int) -> str:
+def _seed(agent: str, n: int, connection: str = "<default>") -> str:
     operation_id = f"{n:032x}"
     with store.session() as conn, store.write_transaction(conn):
         store.insert_operation(
@@ -42,7 +42,7 @@ def _seed(agent: str, n: int) -> str:
             agent_id=agent,
             request_id=f"r{n}",
             tool="hmc_test_tool",
-            connection="<default>",
+            connection=connection,
             host="hmc.test",
             digest="d" * 64,
             request_json='{"arguments":{"hidden_marker":"zz"}}',
@@ -70,6 +70,14 @@ def test_returns_only_the_callers_records_without_hmc_traffic(monkeypatch):
     assert router.calls.call_count == 0
     assert [r["operation_id"] for r in page["operations"]] == [mine]
     assert "hidden_marker" not in str(page)
+
+
+def test_records_on_another_connection_are_not_listed(monkeypatch):
+    monkeypatch.setenv("HMC_AGENT_ID", "agent-a")
+    mine = _seed("agent-a", 1)
+    _seed("agent-a", 2, connection="prod")
+    page = _call({})
+    assert [r["operation_id"] for r in page["operations"]] == [mine]
 
 
 def test_default_agent_id_is_hmcpctl():
