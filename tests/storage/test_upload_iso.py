@@ -141,7 +141,7 @@ async def test_upload_iso_success(mock_hmc, stage_download):
     assert result["status"] == "uploaded"
     assert result["media_name"] == MEDIA_NAME
     assert result["media_size_bytes"] == len(TEST_CONTENT)
-    assert result["sha256"] == TEST_SHA256
+    assert result["source_sha256"] == TEST_SHA256
     assert result["media"] == VISIBLE
     web_file_requests = [
         (call.request.method, call.request.url.path)
@@ -158,7 +158,7 @@ async def test_upload_iso_success(mock_hmc, stage_download):
         "status",
         "media_name",
         "media_size_bytes",
-        "sha256",
+        "source_sha256",
         "media",
     }
     download.assert_awaited_once_with(ISO_URL)
@@ -706,7 +706,7 @@ async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
     assert max(len(chunk) for chunk in chunks) <= UPLOAD_CHUNK_SIZE
     assert b"".join(chunks) == payload
     assert captured["length"] == len(payload)
-    assert result["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert result["source_sha256"] == hashlib.sha256(payload).hexdigest()
     staged, _, _ = download.return_value
     assert not staged.exists()
 
@@ -756,7 +756,7 @@ async def test_upload_iso_streams_a_zero_byte_file_as_an_empty_body(
     assert request.headers["Content-Length"] == "0"
     assert "Transfer-Encoding" not in request.headers
     assert result["media_size_bytes"] == 0
-    assert result["sha256"] == hashlib.sha256(b"").hexdigest()
+    assert result["source_sha256"] == hashlib.sha256(b"").hexdigest()
     staged, _, _ = download.return_value
     assert not staged.exists()
 
@@ -795,7 +795,7 @@ async def test_upload_iso_large_file(mock_hmc, stage_download):
 
     assert result["status"] == "uploaded"
     assert result["media_size_bytes"] == len(large_content)
-    assert result["sha256"] == large_sha256
+    assert result["source_sha256"] == large_sha256
 
 
 @pytest.mark.asyncio
@@ -1241,7 +1241,7 @@ async def test_upload_iso_uploads_from_an_allowlisted_url_end_to_end(
         )
 
     assert result["status"] == "uploaded"
-    assert result["sha256"] == TEST_SHA256
+    assert result["source_sha256"] == TEST_SHA256
     assert result["media_size_bytes"] == len(TEST_CONTENT)
     assert [str(request.url) for request in requests] == [ISO_URL]
     # The bytes that reached the HMC are the bytes the returned digest describes.
@@ -1250,7 +1250,7 @@ async def test_upload_iso_uploads_from_an_allowlisted_url_end_to_end(
     # still described the whole download (#308).
     uploaded_body = uploaded.calls.last.request.content
     assert uploaded_body == TEST_CONTENT
-    assert hashlib.sha256(uploaded_body).hexdigest() == result["sha256"]
+    assert hashlib.sha256(uploaded_body).hexdigest() == result["source_sha256"]
     assert uploaded.calls.last.request.headers["Content-Length"] == str(
         len(uploaded_body)
     )

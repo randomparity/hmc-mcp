@@ -39,7 +39,7 @@ thing. And the 100 GiB size bound is sized for ISOs — an instance-metadata
 response is a few hundred bytes.
 
 What a caller is *guaranteed* to learn is the response's SHA-256 and exact size
-(returned as `sha256` and `media_size_bytes`), plus status/connect-error text and
+(returned as `source_sha256` and `media_size_bytes`), plus status/connect-error text and
 timing. Not the body: `hmc_list_optical_media` returns `MediaName`, `MediaSize`,
 and `MediaType` only, so recovering content requires mounting the media in a
 guest the caller controls. The guaranteed primitive is an internal-network fetch

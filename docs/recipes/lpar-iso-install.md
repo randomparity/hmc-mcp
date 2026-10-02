@@ -243,7 +243,7 @@ mount with HTTP 500 `REST0269 … Perform Apply profile or Partition activation 
 before retrying` (V10R3 M1060, #1085). One `power-on --partition-profile` followed by
 `power-off`, as in steps 5 and 6, cleared it; then retry the mount.
 
-Expected: `upload-iso` reports `uploaded` with the size and SHA-256 it computed. It refuses a
+Expected: `upload-iso` reports `uploaded` with the size and the `source_sha256` it computed from the download. It refuses a
 `MEDIA_NAME` that already exists in the repository. `list-optical-media` lists `MEDIA_NAME`; its
 `size_mib` may be `null`. `mount-optical-media` prints the new optical mapping and creates
 another vSCSI adapter pair for it. The last `list-mappings` shows the disk mapping from step 3
