@@ -69,8 +69,9 @@ Considered and rejected:
    - A template deployment to a non-operating system is still submitted when
      `wait=True`; the result carries the snapshot warning and no stamp, as for
      any snapshot failure today.
-   - The template log line reports `HTTP status None` for this error; the log
-     already omits the body by design.
+   - Neither the template warning nor its log line (`HTTP status None`) names
+     the non-operating state; the operator learns it from the system's state.
+     Bounded: no LPAR is inferred or stamped.
 4. **Covered elsewhere**
    - Unscoped `list_lpar_ownership` and other HMC-wide feeds: #1293.
    - 204 shape and non-operating sweep: #1290.
@@ -89,5 +90,5 @@ through a real `HMCClient` over respx.
 | Membership check names system and state, no retry advice | focused-test | new test on `_verify_partition_on_system` |
 | `list_lpar_ownership` with a system raises | focused-test | `list_lpar_ownership` row in `READS` |
 | Decommission target resolution raises, no missing-target error | focused-test | `decommission` row in `READS` (dry run) |
-| Decommission storage inventory raises, no preview or mutation | focused-test | new test: dry run and real run, no DELETE |
+| Decommission storage inventory raises, no preview or mutation | focused-test | new test: dry run and real run; exact `HMCError` naming system and state, no non-GET request |
 | Template deployment warns and does not stamp | focused-test | new test: baseline and post snapshot |
