@@ -113,8 +113,7 @@ async def _vios_or_warning(
     """Return a system's VIOS entries, or none and a warning on HMC refusal.
 
     A V11R2 HMC answers a system's VIOS feed with HTTP 500 when a VIOS cannot
-    report its storage (#1202); the rest of the estate is still reported. The
-    partition feed stays core inventory: its failure fails the whole result.
+    report its storage (#1202); the rest of the estate is still reported.
     """
     try:
         return await hmc.list_vios(system_uuid), None
@@ -123,10 +122,30 @@ async def _vios_or_warning(
         return [], warning[:_MAX_WARNING_LENGTH]
 
 
+async def _lpars_or_warning(
+    hmc: HMCClient, system_uuid: str, system_name: str, operating: bool
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Return a system's partitions, or none and a warning if it is not operating.
+
+    The partition feed is core inventory: for an operating system its failure
+    fails the whole result. A system that is not operating refuses the feed
+    (#1301) and is already reported among the unhealthy systems.
+    """
+    try:
+        return await hmc.list_logical_partitions(system_uuid), None
+    except HMCError as exc:
+        if operating:
+            raise
+        warning = f"LPAR inventory for system {system_name} is unavailable: {exc}"
+        return [], warning[:_MAX_WARNING_LENGTH]
+
+
 async def _system_inventory(
-    hmc: HMCClient, system_uuid: str, system_name: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
-    lpar_task = asyncio.create_task(hmc.list_logical_partitions(system_uuid))
+    hmc: HMCClient, system_uuid: str, system_name: str, operating: bool
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], tuple[str, ...]]:
+    lpar_task = asyncio.create_task(
+        _lpars_or_warning(hmc, system_uuid, system_name, operating)
+    )
     vios_task = asyncio.create_task(_vios_or_warning(hmc, system_uuid, system_name))
     tasks = (lpar_task, vios_task)
     try:
@@ -136,7 +155,7 @@ async def _system_inventory(
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
-    lpars = lpar_task.result()
+    lpars, lpar_warning = lpar_task.result()
     vioses, vios_warning = vios_task.result()
     if (
         len(lpars) > _MAX_RESOURCES_PER_SYSTEM
@@ -146,7 +165,10 @@ async def _system_inventory(
             f"Fleet health inventory for system {system_uuid} exceeds the safe "
             f"limit of {_MAX_RESOURCES_PER_SYSTEM} resources per category"
         )
-    return lpars, vioses, vios_warning
+    warnings = tuple(
+        warning for warning in (lpar_warning, vios_warning) if warning is not None
+    )
+    return lpars, vioses, warnings
 
 
 async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
@@ -178,15 +200,14 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
     async def inspect_systems() -> None:
         while not queue.empty():
             try:
-                _, system_uuid, system_name = queue.get_nowait()
+                system, system_uuid, system_name = queue.get_nowait()
             except asyncio.QueueEmpty:
                 return
             try:
-                lpars, vioses, vios_warning = await _system_inventory(
-                    hmc, system_uuid, system_name
+                lpars, vioses, warnings = await _system_inventory(
+                    hmc, system_uuid, system_name, _system_issue(system) is None
                 )
-                if vios_warning is not None:
-                    inventory_warnings.append(vios_warning)
+                inventory_warnings.extend(warnings)
                 lpar_issues.extend(
                     issue
                     for lpar in lpars

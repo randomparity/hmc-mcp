@@ -13,6 +13,7 @@ import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -21,6 +22,7 @@ from conftest import captured_lpar_entry, make_config
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars
+from hmcpctl.operations.systems.health import fetch_fleet_health
 from hmcpctl.operations.vios.core import list_vios
 from hmcpctl.resource_identity import (
     ResourceNotFoundError,
@@ -220,3 +222,34 @@ async def test_non_empty_vios_feed_does_not_read_the_system(mock_hmc) -> None:
 
     assert vios["UUID"] == vios_uuid
     assert not system.called
+
+
+def _fleet_entry(state: str, uuid: str = SYSTEM_UUID, name: str = SYSTEM_NAME):
+    return {"UUID": uuid, "Resource": {"SystemName": name, "State": state}}
+
+
+def _mock_no_connection_system(router) -> None:
+    router.get(LPAR_FEED).mock(return_value=httpx.Response(204))
+    router.get(VIOS_FEED).mock(return_value=httpx.Response(204))
+    router.get(SYSTEM_PATH).mock(
+        return_value=httpx.Response(200, text=_state("no connection", "Unknown"))
+    )
+
+
+@pytest.mark.asyncio
+async def test_fleet_health_warns_for_a_non_operating_system(
+    mock_hmc, monkeypatch
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        fleet = AsyncMock(return_value=[_fleet_entry("no connection")])
+        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        result = await fetch_fleet_health(hmc)
+
+    assert [system["state"] for system in result.systems] == ["no connection"]
+    assert result.lpars == () and result.vios == ()
+    lpar_warning, vios_warning = result.warnings
+    assert lpar_warning.startswith(f"LPAR inventory for system {SYSTEM_NAME}")
+    assert vios_warning.startswith(f"VIOS inventory for system {SYSTEM_NAME}")
+    assert all("State 'no connection'" in warning for warning in result.warnings)
