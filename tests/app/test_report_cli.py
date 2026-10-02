@@ -90,6 +90,7 @@ def configured(monkeypatch):
     calls: dict = {}
 
     async def fake_survey(profiles, open_client, *, concurrency, hmc_timeout):
+        calls["surveys"] = calls.get("surveys", 0) + 1
         calls.update(
             profiles=list(profiles),
             open_client=open_client,
@@ -371,17 +372,116 @@ def test_fleet_row_discloses_systems_it_cannot_deduplicate(
     )
 
 
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        ["--csv", "absent/r.csv"],
+        ["--csv", "r.csv", "--html", "absent/r.html"],
+    ],
+)
 def test_missing_directory_is_a_usage_error_before_surveying(
-    configured, tmp_path
+    configured, tmp_path, outputs
 ) -> None:
-    result = RUNNER.invoke(
-        cli.app,
-        ["report", "utilization", "--csv", str(tmp_path / "absent" / "r.csv")],
-    )
+    args = [str(tmp_path / value) if "." in value else value for value in outputs]
+    result = RUNNER.invoke(cli.app, ["report", "utilization", *args])
 
     assert result.exit_code == 2
     assert "cannot write the report beside" in result.stderr
     assert "profiles" not in configured
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_html_alone_writes_an_owner_only_page(configured, tmp_path) -> None:
+    out = tmp_path / "report.html"
+    result = RUNNER.invoke(cli.app, ["report", "utilization", "--html", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert out.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+    assert stat.S_IMODE(out.stat().st_mode) == 0o600
+    assert list(tmp_path.iterdir()) == [out]
+
+
+def test_csv_and_html_share_one_survey(configured, tmp_path) -> None:
+    csv_out, html_out = tmp_path / "r.csv", tmp_path / "r.html"
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(csv_out), "--html", str(html_out)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert configured["surveys"] == 1
+    assert _rows(csv_out)[0]["system"] == "system-1"
+    assert "system-1" in html_out.read_text(encoding="utf-8")
+    assert sorted(tmp_path.iterdir()) == [csv_out, html_out]
+    summary = "".join(result.stderr.split())  # Rich wraps long paths anywhere
+    assert f"to{csv_out}and{html_out}" in summary
+
+
+def test_no_output_is_a_usage_error(configured) -> None:
+    result = RUNNER.invoke(cli.app, ["report", "utilization"])
+
+    assert result.exit_code == 2
+    assert "--csv" in result.stderr
+    assert "--html" in result.stderr
+    assert "profiles" not in configured
+
+
+@pytest.mark.parametrize("names", [("r.out", "r.out"), ("R.out", "r.out")])
+def test_same_path_for_both_is_a_usage_error(configured, tmp_path, names) -> None:
+    csv_name, html_name = names
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(tmp_path / csv_name),
+         "--html", str(tmp_path / html_name)],
+    )  # fmt: skip
+
+    assert result.exit_code == 2
+    assert "name the same file" in result.stderr
+    assert "profiles" not in configured
+
+
+def test_every_profile_failed_still_writes_both_files(
+    configured, tmp_path, monkeypatch
+) -> None:
+    async def fake(profiles, open_client, *, concurrency, hmc_timeout):
+        return FleetSurvey(
+            ("hmc-a", "hmc-b"),
+            (),
+            (ProfileFailure("hmc-a", "timed out"), ProfileFailure("hmc-b", "refused")),
+        )
+
+    monkeypatch.setattr(report, "survey_fleet", fake)
+    csv_out, html_out = tmp_path / "r.csv", tmp_path / "r.html"
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(csv_out), "--html", str(html_out)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [row["row_type"] for row in _rows(csv_out)] == [
+        "fleet",
+        "failure",
+        "failure",
+    ]
+    page = html_out.read_text(encoding="utf-8")
+    assert "No systems were surveyed." in page
+    assert "<td>hmc-b</td><td>refused</td>" in page
+
+
+def test_html_write_failure_leaves_no_file(configured, tmp_path, monkeypatch) -> None:
+    def broken(rows, profiles, generated):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(report, "render_html", broken)
+    result = RUNNER.invoke(
+        cli.app,
+        ["report", "utilization", "--csv", str(tmp_path / "r.csv"),
+         "--html", str(tmp_path / "r.html")],
+    )  # fmt: skip
+
+    assert result.exit_code == 1
+    assert "No space left on device" in result.stderr
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_no_configured_profiles_fails(configured, tmp_path, monkeypatch) -> None:

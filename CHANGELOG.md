@@ -15,12 +15,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_dump_restart_lpar` (operation `lpar.dump_restart`) crashes a partition and takes a
+  platform dump: the PowerOff job with `operation=dumprestart`. It still refuses unless
+  `allow_dump_restart=true`. It is a separate tool so an access policy can grant the ordinary
+  stop without the crash (#896, ADR 0188).
 - `hmcpctl report utilization --csv PATH` surveys every configured profile read-only and writes
   per-system, per-HMC and fleet CPU and memory allocation, idle reserved capacity, and failed
   profiles (#1252, ADR 0184).
 - `hmcpctl report utilization` adds VIOS disk capacity (internal and SAN; assigned and free),
   I/O slot occupancy and SR-IOV logical ports per system and in each roll-up, appended after
   `notes` (#1253, ADR 0185).
+- `hmcpctl report utilization --html PATH` writes the same survey as one self-contained,
+  printable HTML page: fleet tiles, a per-HMC table, a sortable per-system table and failed
+  profiles, with no network references. `--csv` is now optional; give either or both (#1254).
 - A tracked read-only capture pipeline and an offline gate over it (#1202).
   `scripts/live_capture_sweep.py` calls every read-only MCP tool and a declared list of
   raw GETs and `ls*` commands against one HMC profile, below a guard that refuses any
@@ -280,6 +287,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `false` rather than `true` (#1257).
 - `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
   numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
+- `hmcpctl` output no longer reads HMC-sourced text or command arguments as Rich markup or
+  emoji codes. Before this fix, Rich read a `[word]` segment as markup and dropped it, and
+  turned a `:word:` code into an emoji. This applied to confirmation lines, warnings, error messages,
+  `console info` and every listing table's title, headers and cells. A crafted argument
+  such as `x[bold red]y` could therefore restyle the confirmation that echoed it. Values
+  are no longer passed through `rich.markup.escape`, which doubled a trailing backslash.
+  `raw get` and `raw post` now print the body as received, ANSI codes and control
+  characters included; before, they also wrapped it at 80 columns when piped and expanded
+  tabs. An AST test fails when a `console`/`err_console` call that parses markup
+  interpolates a value without `markup=False` or `Text`, when code calls `from_markup` or
+  `render`, and when a module other than `output.py` imports from `rich` beyond
+  `rich.text` (#1029).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error
@@ -1015,6 +1034,16 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Access-policy contract:** a grant naming `hmc_power_off_lpar` no longer reaches the
+  `dumprestart` crash; add `hmc_dump_restart_lpar` to the grant to keep it. An
+  `effects = ["destructive"]` grant admits both. `hmc_power_off_lpar` now admits `operation`
+  `shutdown` or `osshutdown` only and no longer accepts `allow_dump_restart`; an MCP call that
+  still passes it, even as `false`, is refused, so drop the argument. The CLI and `power_lpar`
+  are unchanged (#896, ADR 0188).
+- `hmcpctl lpars set-boot-order` prints the boot string it set and the pending boot string
+  read back from the HMC, not the whole updated LPAR document; `--json` prints the document
+  as before. The operation and the `hmc_set_lpar_boot_order` tool return value are unchanged
+  (#1248).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc

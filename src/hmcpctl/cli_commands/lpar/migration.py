@@ -43,10 +43,12 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
     result = with_client(fn)
     if isinstance(result, LpmAffinityMigrationResult):
         status = "Submitted" if result.job is not None else "Stopped"
-        console.print(f"[green]{status} {action}[/green]")
+        console.print(f"{status} {action}", style="green", markup=False)
         print_json(asdict(result))
         return
-    console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
+    console.print(
+        f"Submitted {action} for {result.lpar_uuid}", style="green", markup=False
+    )
     job = asdict(result.job) if isinstance(result.job, JobOutcome) else result.job
     print_json(job)
 

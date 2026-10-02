@@ -416,8 +416,8 @@ def test_optional_selectors_must_be_covered_too() -> None:
     all, and a dead grant in a security artifact is the authoring error ADR 0036
     invented the coverage rule to catch.
 
-    `hmc_power_off_lpar` is the live instance: `destructive`, and the surface's
-    only tool whose `managed_system` selector is optional — which is exactly the
+    `hmc_power_off_lpar` is the live instance: `destructive`, and one of the
+    tools whose `managed_system` selector is optional — which is exactly the
     LPAR-name-collision case ADR 0039 had to close.
     """
     with pytest.raises(AccessPolicyError) as raised:

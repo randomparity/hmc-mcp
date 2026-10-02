@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import typer
-from rich.markup import escape
-from rich.table import Table
 
 from ...ssh.memory import list_memory_pools, remove_memory_pool
-from ..output import console, err_console, print_json
+from ..output import VerbatimTable, console, err_console, print_json
 from ..runtime import run_cli_coroutine, ssh_config
 
 
@@ -26,7 +24,7 @@ def memory_pools_list(
         err_console.print("[yellow]No memory pools found[/yellow]")
         return
 
-    table = Table(title=f"Memory Pools — {system_name}")
+    table = VerbatimTable(title=f"Memory Pools — {system_name}")
     for key in pools[0]:
         table.add_column(key)
     for pool in pools:
@@ -51,10 +49,12 @@ def memory_pools_remove(
     )
 
     console.print(
-        f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"
+        f"Memory pool '{pool_name}' removed from '{system_name}'",
+        style="green",
+        markup=False,
     )
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def register_commands(group: typer.Typer) -> None:

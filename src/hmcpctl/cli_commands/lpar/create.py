@@ -124,10 +124,10 @@ def lpars_create(
         )
     )
 
-    console.print(f"[green]Created LPAR '{name}'[/green]")
+    console.print(f"Created LPAR '{name}'", style="green", markup=False)
     print_json(result.lpar)
     for warning in result.warnings:
-        err_console.print(f"[yellow]Warning: {warning}[/yellow]")
+        err_console.print(f"Warning: {warning}", style="yellow", markup=False)
     if result.steps:
         print_json(asdict(result))
     if not result.workflow_completed:
