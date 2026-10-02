@@ -400,10 +400,13 @@ events. The resource ledger is never pruned; decommission will remove its entrie
 until then nothing does. A new operation is refused with `store_full` once non-terminal
 operations plus ledger entries reach 10,000. To back up or delete the store, stop every hmcpctl
 process first and handle the whole directory; deleting `operations.sqlite3` alone is refused as
-a lost store. A restored backup is safe to resume from only if no logical operation ran after
-it was taken: its journal lacks every HMC write made since, so a resumed operation would repeat
-them. Otherwise check the HMC and abandon each non-terminal operation in the restored store
-instead of resuming it. Never remove `execution.lock` while any hmcpctl process runs: another process could
+a lost store. A restored backup lacks everything recorded after it was taken: HMC writes made
+since, whole operations started since, and their ledger entries and partition guards. Resuming
+an operation from it would repeat those writes, and retrying a `request_id` started after it
+would run that operation again. Unless no logical operation ran after the backup, inventory the
+HMC for resources created since, abandon each non-terminal operation in the restored store
+instead of resuming it, and have agents use new `request_id` values. Never remove
+`execution.lock` while any hmcpctl process runs: another process could
 then take the lock and resume an operation the first is still running.
 
 The store keeps the request arguments, and `hmc_operation_status` never returns them. The tool
