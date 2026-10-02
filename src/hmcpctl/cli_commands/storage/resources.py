@@ -631,10 +631,10 @@ def storage_upload_iso(
     ISO_SOURCE must be an http(s) URL; a local file path is not accepted. Its host
     must be on HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the profile) — with
     no allowlist configured every URL is refused — and redirects are not followed.
-    Computes SHA-256 and size before upload, refuses a volume group without a
-    media repository and name collisions, reports success only once the
-    repository lists the media, and releases the HMC upload handle on every
-    outcome.
+    Computes the SHA-256 and size of the downloaded bytes before upload, refuses a
+    volume group without a media repository and name collisions, reports success
+    only once the repository lists the media, and releases the HMC upload handle
+    on every outcome.
     """
 
     async def _go(hmc: HMCClient) -> dict[str, Any]:
@@ -661,7 +661,9 @@ def storage_upload_iso(
         console.print(
             f"  Size: {result.get('media_size_bytes', 0):,} bytes", markup=False
         )
-        console.print(f"  SHA-256: {result.get('sha256', 'N/A')}", markup=False)
+        console.print(
+            f"  Source SHA-256: {result.get('source_sha256', 'N/A')}", markup=False
+        )
         if result.get("media"):
             console.print(
                 f"  Media entry: {result['media'].get('MediaName', 'N/A')}",

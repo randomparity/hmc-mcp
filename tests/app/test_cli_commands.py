@@ -2943,7 +2943,7 @@ def test_storage_upload_iso_reports_uploaded_media(fake_hmc, monkeypatch):
             "status": "uploaded",
             "media_name": "aix.iso",
             "media_size_bytes": 1048576,
-            "sha256": "abc123",
+            "source_sha256": "abc123",
             "media": {"MediaName": "aix.iso"},
         }
 
