@@ -35,8 +35,10 @@ across activations is unverified.
    - the media is uploaded, verified and mounted;
    - the boot order is set.
 
-   `continuation: boot` on the same `request_id` then powers it on. Before power-on it
-   revalidates the mount, the boot order, the media binding and the hold. hmcpctl never
+   `continuation: boot` on the same `request_id` then powers it on. The partition guard stays
+   held while paused (ADR 0190). Before power-on it revalidates the mount, the boot order, the
+   media binding and the hold, and that the partition is still powered off with the owned root
+   disk as its only disk; otherwise it reports `needs_attention` and does not power on. hmcpctl never
    acquires the console during boot, so a console the caller holds is undisturbed.
 2. **Boot started.** Immediately before power-on, hmcpctl reads the partition's newest
    reference code as a baseline. `boot_started` requires both:

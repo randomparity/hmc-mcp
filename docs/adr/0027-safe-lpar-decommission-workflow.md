@@ -4,7 +4,7 @@
 
 Accepted
 
-> **Partially superseded by [0192](0192-decommission-owned-storage-cleanup.md)** (2026-10-01)
+> **Partially superseded by [0190](0190-durable-logical-operation-store.md) and [0192](0192-decommission-owned-storage-cleanup.md)** (2026-10-01)
 
 ## Context
 

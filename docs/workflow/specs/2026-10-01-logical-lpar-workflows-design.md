@@ -143,12 +143,12 @@ the dispatch authorizer admits the call, as that tool, for each resolved target.
 | power `stop` / `restart` | `hmc_power_off_lpar` |
 | decommission `retain` | `hmc_decommission_lpar`'s existing set |
 | decommission `delete_owned` | adds `hmc_detach_storage_mapping`, `hmc_unmount_optical_media`, `hmc_delete_optical_media`, `hmc_delete_virtual_disk` |
-| inspect | `hmc_get_lpar`, `hmc_get_lpar_state`, `hmc_read_lpar_refcodes` |
-| handoff `prepare` | `hmc_get_lpar`, `hmc_list_lpar_ownership` |
+| inspect | `hmc_get_lpar`, `hmc_get_lpar_state`, `hmc_read_lpar_refcodes`; `resources` adds `hmc_get_vios_storage_detail` for each serving VIOS; `profile_drift` adds #637's profile read |
+| handoff `prepare` | `hmc_get_lpar`, `hmc_list_lpar_ownership`, `hmc_get_vios_storage_detail` for each serving VIOS |
 | handoff `release` | none beyond the tool itself |
 | operation status | none beyond the tool itself; it lists only records with the caller's agent id |
 
-The name of #637's profile-write tool is **undecided**, and #637 sets it. #1225 and #1226
+The names of #637's profile-write and profile-read tools are **undecided**, and #637 sets it. #1225 and #1226
 stay blocked on it.
 
 `hmc_power_lpar` never reaches `dumprestart`; that stays `hmc_dump_restart_lpar` (ADR 0188).
@@ -221,7 +221,8 @@ under any agent id, and list and release holds (ADR 0190, ADR 0193).
   volume-group writes the logical tools add require `exclusive_writer_window=true`: provision
   with `install` (disk creation, upload, mount), decommission with `delete_owned`, and #1228's
   attach actions. That flag is the caller's assertion that an operator has paused other writers
-  on those VIOS. Without it, planning reports a blocker. Provision without `install` and the
+  on those VIOS. Without it, planning reports a blocker, and the mutating tool refuses before
+  recording any intent, naming the flag; `delete_owned` never degrades to `retain`. Provision without `install` and the
   specialist tools keep today's behavior and do not take the flag. A 412 response is `failed`
   and is not retried.
 - Decommission storage cleanup follows ADR 0192.
@@ -229,8 +230,9 @@ under any agent id, and list and release holds (ADR 0190, ADR 0193).
 ## Installation media and boot
 
 ADR 0191 governs. The order of steps for `install` is (with `boot: deferred` the operation stops
-after step 7 at `ready_to_boot`, and `continuation: boot` runs steps 8–9 after revalidating the
-mount, boot order, binding and hold):
+after step 7 at `ready_to_boot` with the partition guard held, and `continuation: boot` runs steps
+8–9 after revalidating the mount, boot order, binding and hold, and that the partition is powered
+off with the owned root disk as its only disk):
 
 1. create the partition and adapters;
 2. record the client network adapter's actual MAC;
@@ -291,8 +293,8 @@ Results list each of these under `unverified`.
 ADR 0193 governs the hold:
 
 - one per partition, keyed by system and partition UUID;
-- checked in the shared partition resolver, through a hook the MCP server and CLI install and
-  the library does not, so direct calls, `hmc_invoke_tool` and CLI commands all reach it;
+- checked in every partition-resolution path a mutation uses, through a hook the MCP server and
+  CLI install and the library does not, so direct calls, `hmc_invoke_tool` and CLI commands all reach it;
 - exempt: the handoff tool, console capture, and calls presenting the matching `hold_id`
   (`--hold-id` on the CLI);
 - the `hold` result field carries label, agent id and creation time, and `hold_id` only for the
@@ -428,8 +430,9 @@ Each of #1216's eleven completion criteria maps to one place:
   opaque producer inputs: *Installation media and boot*, ADR 0191;
 - hold and release: *Host handoff*, ADR 0193;
 - releases, native envelope and proof arms: *Native envelope and proof*, ADR 0194;
-- reconciliation with accepted ADRs: the Status sections of ADR 0189 (ADR 0012) and ADR 0192
-  (ADR 0027), and ADR 0190 (ADR 0005: `request_id` becomes required);
+- reconciliation with accepted ADRs: the Status sections of ADR 0189 (ADR 0012, including the
+  primary tools' naming), ADR 0192 (ADR 0027), and ADR 0190 (ADR 0005 and ADR 0027: `request_id`
+  becomes required);
 - facade, workflow language and reuse: *Purpose and boundary*. The logical tools compose the
   existing functions under `src/hmcpctl/operations/`, and `hmcpctl.api` is unchanged.
 

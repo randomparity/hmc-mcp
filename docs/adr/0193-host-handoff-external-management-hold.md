@@ -35,14 +35,18 @@ checks policy; the partition UUID is resolved later, inside the handler's domain
      never carries it.
    - `release` needs the exact `hold_id`, or a call from the placing agent id. It writes
      nothing to the HMC.
-2. **Where the check runs.** In the shared partition resolver that partition mutations call
-   before their first HMC write, through a hold hook. The MCP server and the CLI install the hook
+2. **Where the check runs.** In every partition-resolution path a mutation uses before its
+   first HMC write, through one hold hook. On main `f1b302db` those are `resolve_lpar_uuid`,
+   `resolve_and_authorize_lpar_mutation`, `resolve_and_authorize_lpar_names`, decommission's
+   target resolver and the SSH partition selectors; the hook ignores `read` tools. The MCP server and the CLI install the hook
    at startup; the library leaves it unset. The `authorized()` wrapper records the tool name and
    any presented `hold_id` in the call context the hook reads, so direct calls and
    `hmc_invoke_tool` (ADR 0189) reach it identically. CLI partition commands take `--hold-id`.
    It covers every operation that changes a partition's configuration, power state or
-   existence, whatever `authorize_power_operations` is set to. A registry-driven test enumerates
-   those tools and proves each reaches the hook. `hold_id` is outside the ADR 0190 request
+   existence, or which disks and media it sees, whatever `authorize_power_operations` is set
+   to. A registry-driven test enumerates every non-`read` tool whose target is a partition or
+   that takes a partition selector or nested partition target, including the VIOS mapping and
+   optical tools, and proves each reaches the hook. `hold_id` is outside the ADR 0190 request
    digest, so it may accompany any continuation.
 3. **Exemptions.**
    - `hmc_prepare_host_handoff` itself.

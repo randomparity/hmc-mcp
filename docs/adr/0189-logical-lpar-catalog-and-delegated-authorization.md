@@ -5,8 +5,9 @@
 Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0012 in two places. First, a
 primary logical tool may carry an action discriminator whose variants differ in effect class
 (Decision 2). Second, `hmc_invoke_tool`'s result is the invoked tool's own result, wrapped as
-`{name, result}` (Decision 3). ADR 0012 otherwise stands, including the one-shape rule for every
-other tool.
+`{name, result}` (Decision 3). Third, the primary tools' names, which epic #1215 fixes, are
+exempt from ADR 0012's `hmc_list_<resource>` / `hmc_get_<resource>` grammar (Decision 1). ADR
+0012 otherwise stands, including the one-shape rule and the naming grammar for every other tool.
 
 ## Context
 
@@ -27,6 +28,8 @@ one effect cannot by itself express "may start, may not stop".
    `hmc_inspect_lpar`, `hmc_prepare_host_handoff`, `hmc_operation_status`,
    `hmc_search_tools`, `hmc_invoke_tool`. `hmc_provision_lpar` and `hmc_decommission_lpar`
    extend the existing composites under their existing names; no competing tool is added.
+   The names are the epic's, so `hmc_inventory`, `hmc_inspect_lpar`, `hmc_operation_status` and
+   `hmc_search_tools` do not take the ADR 0012 list/get grammar; new specialists still do.
 2. **Delegated authorization.** Each logical action names the specialist tools whose
    operations it performs (the spec's action table). The action runs only when the served
    policy permits every delegated tool *and* `dispatch_authorizer` admits the call, as that

@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0005: `hmc_provision_lpar` and its
-CLI mirror now require `request_id` (Decision 3). ADR 0005's steps and no-rollback rule stand.
+Accepted (2026-10-01), issue #1216. Partially supersedes ADR 0005 and ADR 0027:
+`hmc_provision_lpar`, `hmc_decommission_lpar` and their CLI mirrors now require `request_id`
+(Decision 3). ADR 0005's steps and no-rollback rule, and ADR 0027's rules, otherwise stand.
 
 ## Context
 
@@ -25,11 +26,14 @@ on 2026-10-01.
    (directory `0700`, file `0600`).
    - The directory is `HMCPCTL_STATE_DIR` if set. Otherwise it is the platform state directory:
      `$XDG_STATE_HOME/hmcpctl` or `~/.local/state/hmcpctl` on Linux, and
-     `~/Library/Application Support/hmcpctl` on macOS.
+     `~/Library/Application Support/hmcpctl-state` on macOS, which stays apart from the config
+     directory `hmcpctl config init` creates there. Other platforms must set
+     `HMCPCTL_STATE_DIR`.
    - The server and the CLI read the same setting.
    - The first logical mutation creates the directory, the store and a `store-id` sentinel. A
      directory whose sentinel exists while the store is missing counts as a lost store: it is
-     refused and never recreated.
+     refused and never recreated. With neither sentinel nor store, the ADR 0193 hold check
+     finds no hold and passes; only the Decision 9 conditions refuse.
 2. **Locks.** Any process may run short SQLite transactions, such as placing or releasing
    holds and reading status.
    - A separate OS *execution lock* gives one process the right to run logical operations.
@@ -59,7 +63,7 @@ on 2026-10-01.
    | --- | --- | --- |
    | `running` | held | none (refused as running) |
    | `interrupted`, or `paused` with outcome `needs_attention` | held | `resume`, `abandon` |
-   | `paused` with outcome `ready_to_boot` | released | `boot`, `abandon` |
+   | `paused` with outcome `ready_to_boot` | held | `boot`, `abandon` |
    | `terminal` (`completed`, `configured`, `boot_started`, `failed`, `abandoned`) | released | none (the record is returned) |
 
    `resume` re-authorizes as a fresh call (ADR 0189) and reconciles each `uncertain` effect
