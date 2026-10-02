@@ -1,0 +1,196 @@
+# Logical inventory: `hmc_inventory`
+
+**Issue:** #1220 (H4 of epic #1215)
+**Decision:** [ADR 0196](../../adr/0196-logical-inventory-authorizes-each-source.md), which
+narrows [ADR 0189](../../adr/0189-logical-lpar-catalog-and-delegated-authorization.md)
+Decision 2 for this tool
+**Contract:** the `hmc_inventory` row of
+[the logical LPAR workflows spec](2026-10-01-logical-lpar-workflows-design.md#primary-tools)
+**Branch:** `feat/logical-inventory-1220` from `main`
+**Guardrails:** `just verify`; `uv run --no-sync prek run --all-files`
+
+## Problem
+
+To find candidate systems and their partitions, an agent calls `hmc_list_systems`,
+`hmc_capacity_report`, `hmc_list_lpars` and `hmc_list_lpar_ownership` and joins the results
+itself. Names repeat across systems and connections. Nothing tells the agent whether a missing
+figure is zero, unknown or withheld.
+
+## Scope
+
+One primary read tool, `hmc_inventory`, for one connection per call. It composes existing reads
+and adds no HMC client call. Excluded, with their owners: planning (#1221), the default
+listing switch (#1232), fan-out across connections in one call, a CLI mirror, VIOS and storage
+inventory, measured utilization (#1242), and any change to the `hmcpctl.api` facade (ADR 0118).
+
+### Inputs
+
+| Input | Rule |
+| --- | --- |
+| `systems` | optional list of 1–16 non-empty `system_name_or_uuid` selectors; duplicates collapse |
+| `lpar_state` | optional `PartitionState` (`operations/partition_state.py`) |
+| `owner` | optional agent id, 1–64 characters, matched exactly against the ADR 0011 stamp |
+| `limit` | 1–200, default 50: the most partitions on one page |
+| `cursor` | `next_cursor` from an earlier page, unchanged |
+| `profile` | the connection, as for every tool |
+
+A violated bound is a tool error that names the input. An invalid cursor is
+`invalid_cursor: pass next_cursor from a previous page unchanged`.
+
+### Result
+
+`InventoryPage`:
+
+- `connection`: the policy label for `profile` (`store.connection_label`).
+- `systems_source`: how systems were found. On the enumeration path it is a `SourceStatus`
+  for `hmc_list_systems`. With `systems` given, it is `null`.
+- `systems`: at most 16 entries, plus `systems_limit` (16) and `systems_truncated`.
+- `partitions`: at most `limit` entries, plus `limit`, `truncated` and `next_cursor`.
+
+`SourceStatus` has three fields:
+
+- `status`: `ok`, `unavailable` or `denied`;
+- `tool`: the delegated tool;
+- `detail`: the denial or HMC error text, at most 500 characters, or `null`.
+
+Each `InventorySystem` carries:
+
+- `id`, `selector` (the caller's selector, or `null` on enumeration), `uuid`, `name`, `state`;
+- `total_memory_mib`, `free_memory_mib`, `total_proc_units`, `free_proc_units`;
+- `sources`, with `capacity`, `partitions` and `ownership`, each a `SourceStatus`.
+
+Each `InventoryPartition` carries:
+
+- `id`, `system_id`, `uuid`, `name`, `partition_id`, `partition_type`;
+- `state`, `rmc_state`;
+- `current_memory_mib`, `current_proc_units`, `dedicated_procs`;
+- `owned`, `owner`.
+
+**Scoped identifiers** are `<connection>/<system uuid>` and
+`<connection>/<system uuid>/<partition uuid>`. HMC UUIDs are stable, so an id survives a
+rename. Two partitions with the same name, on different systems or connections, get different
+ids. #1221 consumes these ids.
+
+**Unknown is not zero.** A figure the HMC omits, or reports unparseably, is `null` and never
+`0`. A capacity figure `system_capacity` refuses is `null`, and `sources.capacity` is
+`unavailable` with the refusal as `detail`. When `sources.ownership` is not `ok`, `owned` and
+`owner` are `null`.
+
+**Empty is not inaccessible.** If `sources.partitions` is `ok` and the system has no matching
+partitions, it is empty. If it is `denied` or `unavailable`, the system contributes no
+partitions and the status says why.
+
+### Authorization (ADR 0196)
+
+`hmc_inventory` registers as `read`, `target_kind="console"`, not exhaustive. That is the
+`hmc_operation_status` shape, so only an `all-targets` grant admits the tool itself. Target
+scope is enforced by the four tools it delegates to. Each delegated check calls the server's
+own `dispatch_authorizer` as that tool, with `profile` and, where the tool declares one, its
+`system_name_or_uuid`. Each check writes the ADR 0040 record under the delegated name.
+
+A tool the policy ceiling withholds is `denied` without an authorizer call. A
+`TargetScopeError` or `ConnectionScopeError` is `denied`, with its message as `detail`.
+
+| Source | Delegated tool | Checked with |
+| --- | --- | --- |
+| systems, without `systems` | `hmc_list_systems` | no selector |
+| partitions, without `systems` | `hmc_list_lpars` | the system's UUID |
+| partitions, with `systems` | `hmc_list_lpars` | the caller's selector, before it is resolved |
+| ownership | `hmc_list_lpar_ownership` | the same value as partitions |
+| capacity | `hmc_capacity_report` | no selector, once per call |
+
+If `hmc_list_systems` is denied, nothing is read. The page has `systems_source` set to `denied`,
+and its `detail` tells the caller to pass `systems` selectors. A denied selector becomes an
+`InventorySystem` with `selector` set, `id`, `uuid` and `name` all `null`, and `partitions`
+`denied`. Nothing is read for it. A selector that is admitted but matches no system has
+`partitions` set to `unavailable`. Denied and unmatched selectors appear on the first page only.
+
+### Reads and paging
+
+Read paths:
+
+- **Enumeration:** one `list_managed_systems` read per page.
+- **Selectors:** for each admitted selector, `get_managed_system` (UUID) or
+  `find_system_by_name` (name), following `resolve_system_uuid`'s rule. Results collapse by
+  UUID.
+- **Partitions:** one `list_logical_partitions(uuid)` read per admitted system that the page
+  reads. An `HMCError` from it makes that source `unavailable`.
+
+Systems are visited in UUID order, and partitions within a system in UUID order. The cursor is
+the unpadded urlsafe base64 of the JSON `[system_uuid, partition_uuid | null]`, at most 256
+characters, and both values must be UUIDs. A page skips systems ordered before the cursor's
+system and, within that system, partitions at or before the cursor's partition. It then reads
+until one of these happens:
+
+- `limit` partitions are collected, and more remain in this system or later ones: `truncated`;
+- 16 systems are read, and more remain: `systems_truncated` and `truncated`;
+- the systems run out: `next_cursor` is `null`.
+
+`truncated` means "more remains to read", not "more partitions exist". A later page may be
+empty. Filters apply before counting.
+
+### Failure model
+
+1. **Actors and deployments:** an MCP agent client of `hmcpctl serve` under an operator-written
+   access policy (stdio or HTTP), against one HMC per call.
+2. **Invariants and assets at stake:**
+   - no data from a source the policy denies for that target, whether in the result, in a
+     filter outcome or in the read itself;
+   - every delegated decision recorded under the delegated tool's name;
+   - published identifiers stable for #1221;
+   - one HMC's read load bounded per page.
+3. **Accepted failure classes:**
+   - A targets table that lists a system by name denies enumeration-path partitions, which are
+     checked by UUID. Bounded: the caller passes the name as a selector.
+   - `hmc_capacity_report` cannot be target-bound, so capacity is `denied` under a
+     targets-table grant. This is the delegated tool's own shape.
+   - Reading live state page by page can miss or repeat a partition created or deleted between
+     pages. This is tolerated for a live read and stated in the tool description.
+4. **Covered elsewhere:**
+   - the connection check on `hmc_inventory` itself (`dispatch_authorizer`, ADR 0038);
+   - target-table matching semantics (ADR 0039);
+   - VIOS and storage visibility (#1221, #1225).
+
+### Threat model
+
+- **Boundaries:** the tool's arguments come from an untrusted MCP client. The boundary this
+  design adds is one call fanning out to four delegated authorizations. HMC responses are an
+  existing boundary.
+- **Actors:** an agent whose policy is narrower than the HMC user's rights. Trust is placed in
+  the operator's policy and the HMC credentials.
+- **Controls:**
+  - the schema plus explicit bound checks validate the arguments;
+  - each source is authorized before its read, and a filter on a denied source drops that
+    system's partitions;
+  - the cursor is decoded with type and UUID checks and a 256-character cap;
+  - `detail` is capped at 500 characters and carries only authorizer or HMC error text that a
+    direct call would show.
+- **Out of scope:** an HMC user who can read more than the policy allows, outside hmcpctl.
+
+## Success
+
+1. A permitting policy lists systems and partitions with scoped ids, state, capacity and owner.
+2. Two partitions with the same name on two systems, and one system read through two profiles,
+   all have distinct ids.
+3. A capacity figure `system_capacity` refuses is `null` with `capacity` `unavailable`. A
+   system with no partitions has `partitions` `ok` and contributes none.
+4. Under a targets-table policy, a call without `systems` reads nothing and reports `denied`. A
+   call with `systems` admits each selector separately. A denied selector or source returns
+   none of its data, and the audit stream records each decision under the delegated tool.
+5. An `HMCError` on one system's partitions makes that system's source `unavailable`. The other
+   systems still answer.
+6. Following `next_cursor` across a 3-system, 450-partition inventory at `limit=200` returns each
+   partition exactly once. A 20-system inventory spans two pages of 16 and 4 systems.
+7. `lpar_state` and `owner` filter before paging. An `owner` filter on a system whose ownership
+   source is denied returns none of that system's partitions.
+
+## Validation
+
+Every material contract above is executable and is covered by a focused test. The tests are:
+
+- `tests/unit/test_logical_inventory.py` (domain, fake client): Success 1–3 and 5–7, plus input
+  bounds and the cursor;
+- `tests/app/test_logical_inventory_tool.py` (served application, real policies): Success 4,
+  the registration shape and the audit records.
+
+The existing guardrails check the generated tool docs, the capability ledger and tool counts.
