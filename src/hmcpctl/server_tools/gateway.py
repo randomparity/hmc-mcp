@@ -150,12 +150,9 @@ def _argument_size(arguments: Mapping[str, Any]) -> int:
 def _unwrapped(result: ToolResult) -> Any:
     """The invoked tool's result as a direct ``tools/call`` client would read it."""
     if result.structured_content is not None:
-        wrapped = (result.meta or {}).get("fastmcp", {}).get("wrap_result")
-        return (
-            result.structured_content["result"]
-            if wrapped
-            else result.structured_content
-        )
+        if (result.meta or {}).get("fastmcp", {}).get("wrap_result"):
+            return result.structured_content["result"]
+        return result.structured_content
     texts = [block.text for block in result.content if isinstance(block, TextContent)]
     if not texts:
         return None
@@ -200,18 +197,18 @@ def gateway_handlers(
             tools = [_entry(tool, security, with_schema=True)] if found else []
             return ToolSearchResult(tools=tools, limit=limit, truncated=False)
         words = _query_words(query or "")
+        exposed = await mcp.list_tools(run_middleware=False)
+        scores = {
+            tool.name: _score(words, tool)
+            for tool in exposed
+            if tool.name in tool_security
+        }
         ranked = sorted(
-            (
-                (-score, tool.name, tool)
-                for tool in await mcp.list_tools(run_middleware=False)
-                if tool.name in tool_security and (score := _score(words, tool)) > 0
-            ),
-            key=lambda item: item[:2],
+            (tool for tool in exposed if scores.get(tool.name, 0) > 0),
+            key=lambda tool: (-scores[tool.name], tool.name),
         )
         return ToolSearchResult(
-            tools=[
-                _entry(tool, tool_security[tool.name]) for *_, tool in ranked[:limit]
-            ],
+            tools=[_entry(tool, tool_security[tool.name]) for tool in ranked[:limit]],
             limit=limit,
             truncated=len(ranked) > limit,
         )
