@@ -10,6 +10,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmcpctl report utilization --csv` quotes a `notes` cell that starts with a spreadsheet
+  formula character, as it already did the other text columns (#1269).
 - `validate_hmc_name` refuses a name starting with `-`, which would reach the HMC CLI in option
   position; this covers the install, VIOS install and reference-code tools (#887).
 

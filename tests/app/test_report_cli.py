@@ -297,16 +297,19 @@ def test_hmc_text_cells_cannot_start_a_spreadsheet_formula(
     reading = replace(_reading("hmc-a", "SER0001"), name='=HYPERLINK("x")', state="-x")
 
     async def fake(profiles, open_client, *, concurrency, hmc_timeout):
-        return FleetSurvey(("hmc-a",), (reading,), ())
+        return FleetSurvey(("hmc-a",), (reading,), (ProfileFailure("hmc-b", "=cmd|x"),))
 
     monkeypatch.setattr(report, "survey_fleet", fake)
     out = tmp_path / "r.csv"
     result = RUNNER.invoke(cli.app, ["report", "utilization", "--csv", str(out)])
 
     assert result.exit_code == 0, result.output
-    system = _rows(out)[0]
+    rows = _rows(out)
+    system = rows[0]
     assert (system["system"], system["state"]) == ('\'=HYPERLINK("x")', "'-x")
     assert system["cpu_installed"] == "48"
+    failure = next(row for row in rows if row["row_type"] == "failure")
+    assert failure["notes"] == "'=cmd|x"
 
 
 def test_root_connection_option_is_refused(configured, tmp_path) -> None:

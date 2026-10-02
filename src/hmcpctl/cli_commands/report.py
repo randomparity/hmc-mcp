@@ -115,6 +115,7 @@ _TEXT_COLUMNS = (
     "serial",
     "firmware",
     "state",
+    "notes",
 )
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 _PARTITION_COLUMNS = {
