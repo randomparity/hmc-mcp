@@ -320,11 +320,12 @@ def test_uom_user_replacement_reduces_unboundable_tool_count():
     )
     assert decision.is_file()
     # #1202 removed hmc_list_recent_jobs, one connection-bearing unboundable tool;
-    # #1218 added hmc_operation_status, one more.
-    assert len(unboundable) == 26
+    # #1218 added hmc_operation_status, one more; #1219 added the two
+    # connectionless gateway tools, hmc_search_tools and hmc_invoke_tool.
+    assert len(unboundable) == 28
     assert len(connection_bearing) == 21
-    assert len(connectionless) == 5
-    assert len(all_nonexhaustive) == 27
+    assert len(connectionless) == 7
+    assert len(all_nonexhaustive) == 29
 
 
 # ---------------------------------------------------------------------------

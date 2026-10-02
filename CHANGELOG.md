@@ -23,6 +23,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `pending authentication - password updates required`, was lost. Name-bearing elements still
   record their shape class. The 9080-HEX vocabulary is re-derived with it and now binds
   `NetworkInterface` to `NetworkInterface.Enum`, which `just live-vocabulary` enforces (#1292).
+- The 9028-21B, 9043-MRX, 9242-21B, 9824-42A and 9009-42A vocabularies are re-derived under
+  that rule. `NetworkInterface` records `eth0` and `eth1` instead of `<text>` in the first four,
+  which bind it to `NetworkInterface.Enum`; `CurrentConnectionSpeed` gains the
+  `ConnectionSpeed.Enum` members it had as `<text>` in 9028-21B and 9009-42A. The
+  8247-22L vocabulary is unchanged by it; the V10R3 POWER9 one is not re-derived, because its
+  folded window input is no longer available (#1299).
 - `hmc_list_lpars` and `hmc_list_vios` with a system, and system-scoped LPAR and VIOS name
   lookups, raise an error naming the system, its `State` and its `DetailedState` when the HMC
   answers the system's partition or VIOS feed with no entries and the system is not
@@ -39,6 +45,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_search_tools` (operation `tools.search`, `read`) finds the tools this server exposes by
+  intent, or returns one tool's input schema by exact name, at most 20 per call.
+  `hmc_invoke_tool` (operation `tools.invoke`, `destructive`) calls one of them by name through
+  that tool's own validation, authorization and audit, returning `{name, result}`; it refuses
+  the gateway tools, `arbitrary-command` tools and arguments over 64 KiB. `tools/list` now
+  carries a `catalog-tier` metadata entry, `primary` or `secondary`, without changing what is
+  listed (#1219, ADR 0189).
 - `hmc_operation_status` (operation `operation.status`) pages through this agent's logical
   operations in a new local SQLite store under `HMCPCTL_STATE_DIR` (ADR 0190), which the
   logical LPAR tools will record their HMC writes in and resume from (#1218, ADR 0195).

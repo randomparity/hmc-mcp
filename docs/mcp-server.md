@@ -84,6 +84,36 @@ with `all-targets` can therefore still disclose the `prod` inventory. When the
 configuration or policy is sensitive, withhold these tools by name: enumerate
 the permitted `tools` without granting the `read` effect class.
 
+### Tool search and invocation
+
+`hmc_search_tools` (`read`) and `hmc_invoke_tool` (`destructive`) let a client find and call
+tools by name without loading the whole catalog (ADR 0189). Both read this server's own
+registry, so they see exactly what `tools/list` shows: the tools the policy's ceiling admits
+and the capabilities this server enabled. Search takes a `query` of at most 200 characters or
+an exact `name`, returns at most 20 entries, and returns an input schema only for an exact
+`name`.
+
+`hmc_invoke_tool` runs the named tool's own registration, so that tool's argument validation,
+connection and target scope, ownership guards and authorization audit record apply exactly as
+for a direct call, and the audit stream carries a record for each of the two tools. Its result
+is `{name, result}`, where `result` is what a direct call returns. It refuses the two gateway
+tools, any `arbitrary-command` tool, and arguments over 64 KiB of JSON. An unknown name and one
+the policy withholds or the server disabled get the same refusal.
+
+Both tools are connectionless and declare no target, so like the tools above they need
+`targets = "all-targets"`. Granting `hmc_invoke_tool` confers nothing by itself: each call
+still needs a grant for the invoked tool. Because its effect is `destructive`, a grant of
+`effects = ["read"]` does not reach it; name it in a grant's `tools` to allow it there.
+A client that remembers approvals by tool name applies an approval of `hmc_invoke_tool` to
+every tool invoke can reach, so a deployment that relies on per-tool client approval as its
+human check should leave `hmc_invoke_tool` out of the policy.
+
+`tools/list` marks each tool's catalog tier under the
+`io.github.randomparity.hmcpctl/catalog-tier` metadata key: `primary` for the ADR 0189
+primary set, `secondary` for every other tool. The listing itself is unchanged; #1232 decides
+when a default deployment lists only the primary set. Calling any listed tool directly keeps
+working either way.
+
 ### Migrating to a required access policy
 
 An access policy used to be optional; a server started without one exposed every tool on

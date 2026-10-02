@@ -6,15 +6,15 @@ This reference covers every tool the server registers, including the ones a defa
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
-- **158** tools are registered.
-- **157** are exposed by a default deployment.
+- **160** tools are registered.
+- **159** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
-| `destructive` | 32 |
+| `destructive` | 33 |
 | `mutate` | 51 |
-| `read` | 74 |
+| `read` | 75 |
 
 ## Maturity vocabulary
 
@@ -59,6 +59,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `system` | 9 | [system.md](system.md) |
 | `task_role` | 1 | [task_role.md](task_role.md) |
 | `template` | 3 | [template.md](template.md) |
+| `tools` | 2 | [tools.md](tools.md) |
 | `update` | 4 | [update.md](update.md) |
 | `upgrade` | 1 | [upgrade.md](upgrade.md) |
 | `user` | 5 | [user.md](user.md) |
@@ -138,6 +139,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_get_vios_storage_detail` | `read` | [vios.md](vios.md) |
 | `hmc_install_vios` | `destructive` | [vios.md](vios.md) |
 | `hmc_install_vios_by_lpar_selector` | `destructive` | [lpar.md](lpar.md) |
+| `hmc_invoke_tool` | `destructive` | [tools.md](tools.md) |
 | `hmc_list_adapters` | `read` | [adapter.md](adapter.md) |
 | `hmc_list_clusters` | `read` | [cluster.md](cluster.md) |
 | `hmc_list_configured_hosts` | `read` | [config.md](config.md) |
@@ -207,6 +209,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_restore_lpar_profiles` | `destructive` | [lpar_profile.md](lpar_profile.md) |
 | `hmc_restore_vios` | `destructive` | [vios.md](vios.md) |
 | `hmc_run_command` | `arbitrary-command` | [command.md](command.md) |
+| `hmc_search_tools` | `read` | [tools.md](tools.md) |
 | `hmc_set_lpar_boot_order` | `mutate` | [boot_order.md](boot_order.md) |
 | `hmc_set_lpar_description` | `mutate` | [lpar.md](lpar.md) |
 | `hmc_set_lpar_msp` | `mutate` | [lpar.md](lpar.md) |
