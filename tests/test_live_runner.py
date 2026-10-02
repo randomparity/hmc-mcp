@@ -2467,11 +2467,10 @@ def test_record_keeps_a_dataclass_result_as_a_mapping(capsys):
 
     state = runner.RunState()
     state.record(0, "hmc_list_vios", "PASS", Listing([{"UUID": "v-1"}], []))
+    state.record(0, "hmc_list_vios", "FAIL", Listing([{"UUID": "v-1"}], []))
 
-    assert state.results[0]["data"] == {
-        "entries": [{"UUID": "v-1"}],
-        "unreadable_systems": [],
-    }
+    for row in state.results:
+        assert row["data"] == {"entries": [{"UUID": "v-1"}], "unreadable_systems": []}
 
 
 def test_result_helpers_filter_malformed_entries_and_resource_shapes():

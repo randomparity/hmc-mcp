@@ -834,10 +834,10 @@ class RunState:
             # the results document, whose redaction pass reads string leaves.
             safe_data: Any = _redact_failure_text(data.message)
         else:
+            if is_dataclass(data) and not isinstance(data, type):
+                # FastMCP serves a dataclass tool result as a generated dataclass.
+                data = asdict(data)
             safe_data = _redact_failure_data(data) if status == "FAIL" else data
-        if is_dataclass(safe_data) and not isinstance(safe_data, type):
-            # FastMCP serves a dataclass tool result as a generated dataclass.
-            safe_data = asdict(safe_data)
         entry = {
             "subtask": subtask,
             "tool": tool,
