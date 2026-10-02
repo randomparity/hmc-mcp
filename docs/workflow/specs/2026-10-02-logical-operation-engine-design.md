@@ -53,43 +53,22 @@ with `store_not_private`, naming the path and the observed mode, never contents.
 | sentinel present, DB missing | `store_lost` | `store_lost` |
 | DB present, sentinel missing | open; rewrite sentinel only when `create` | open and write the sentinel from the DB's `store_id` |
 | sentinel text ≠ DB `store_id` | `store_corrupt` | `store_corrupt` |
-| `schema_version` ≠ `1`, or `sqlite3.DatabaseError` | `store_corrupt` | `store_corrupt` |
-| `OSError` reading either file | `store_unreadable` | `store_unreadable` |
+| `schema_version` ≠ `1`, or a `sqlite3.DatabaseError` other than `OperationalError` | `store_corrupt` | `store_corrupt` |
+| `OSError`, or `sqlite3.OperationalError` (busy past the timeout, I/O error) | `store_unreadable` | `store_unreadable` |
 
 The sentinel is written after the schema commits, so a crash mid-creation leaves a DB without a
 sentinel, which the third row recovers. Connections use `timeout=5`, autocommit
 (`isolation_level=None`) with explicit `BEGIN IMMEDIATE` for writes, and
 `PRAGMA foreign_keys=ON`. One connection per transaction, so worker threads never share one.
 
-**Schema (version 1).**
-
-```sql
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- store_id, schema_version
-CREATE TABLE operations (
-  operation_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, request_id TEXT NOT NULL,
-  tool TEXT NOT NULL, connection TEXT NOT NULL, digest TEXT NOT NULL,
-  request_json TEXT NOT NULL, state TEXT NOT NULL, outcome TEXT, phase TEXT NOT NULL,
-  system_uuid TEXT, partition_uuid TEXT, result_json TEXT, warnings_json TEXT NOT NULL,
-  created_at REAL NOT NULL, updated_at REAL NOT NULL, terminal_at REAL,
-  UNIQUE (agent_id, request_id));
-CREATE UNIQUE INDEX partition_guard ON operations (system_uuid, partition_uuid)
-  WHERE state != 'terminal' AND partition_uuid IS NOT NULL;
-CREATE TABLE effects (
-  operation_id TEXT NOT NULL REFERENCES operations ON DELETE CASCADE, key TEXT NOT NULL,
-  seq INTEGER NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL,
-  identity_json TEXT, PRIMARY KEY (operation_id, key));
-CREATE TABLE events (
-  operation_id TEXT NOT NULL REFERENCES operations ON DELETE CASCADE, seq INTEGER NOT NULL,
-  at REAL NOT NULL, kind TEXT NOT NULL, detail_json TEXT NOT NULL,
-  PRIMARY KEY (operation_id, seq));
-CREATE TABLE ledger (
-  operation_id TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL,
-  system_uuid TEXT NOT NULL, partition_uuid TEXT, identity_json TEXT NOT NULL,
-  created_at REAL NOT NULL, PRIMARY KEY (operation_id, key));
-```
-
-The ledger has no foreign key, so pruning an operation never removes its ledger rows (ADR 0190
-D7). The partial unique index is the partition guard.
+**Schema (version 1).** Tables `meta` (`store_id`, `schema_version`), `operations` (one row per
+operation: identity, `connection`, `host`, `digest`, `request_json`, `state`, `outcome`, `phase`,
+the guarded `system_uuid`/`partition_uuid`, `result_json`, `warnings_json`, timestamps;
+`UNIQUE (agent_id, request_id)`), `effects` and `events` (both `ON DELETE CASCADE` from
+`operations`), and `ledger` (keyed by `(operation_id, key)`, with **no** foreign key, so pruning an
+operation never removes its ledger rows, ADR 0190 D7). The partition guard is a partial unique
+index on `operations (system_uuid, partition_uuid) WHERE state != 'terminal' AND partition_uuid IS
+NOT NULL`. The plan carries the exact DDL.
 
 **Execution lock.** `acquire_execution_lock(state_dir)` opens `execution.lock` (`0600`), takes
 `fcntl.flock(LOCK_EX | LOCK_NB)`, writes the pid, and keeps the descriptor in a process-global
@@ -97,7 +76,11 @@ map until exit. On `BlockingIOError` it reads the recorded pid and refuses with
 `execution_lock_held: held by process <pid>; retry after it exits`. The first successful
 acquisition in a process runs `PRAGMA quick_check` (anything but `ok` is `store_corrupt`), then
 in one transaction sets every `running` operation to `interrupted` and every `intended` effect to
-`uncertain`. A platform without `fcntl` refuses with `state_dir_unresolved`.
+`uncertain`. A platform without `fcntl` refuses with `state_dir_unresolved`. On every later call
+the holder compares its descriptor's `(st_dev, st_ino)` with `execution.lock` on disk; a missing or
+replaced file means the directory was deleted under it, so it drops the stale descriptor and
+acquires again, recovery included. Refusal texts that tell an operator to delete the directory say
+to stop every hmcpctl process first.
 
 **Bounds and retention** (ADR 0190 D8):
 
@@ -114,9 +97,11 @@ in one transaction sets every `running` operation to `interrupted` and every `in
 
 ## Identity
 
-`OperationRequest(tool, agent_id, connection, request_id, arguments)`. `request_id` must match
-`^[A-Za-z0-9._-]{1,64}$` (`invalid_request_id`). `connection` is the profile key, or
-`"<default>"` for the environment connection. The canonical request is
+`OperationRequest(tool, agent_id, connection, host, request_id, arguments)`. `request_id` must
+match `^[A-Za-z0-9._-]{1,64}$` (`invalid_request_id`). `connection` is the profile key, or
+`"<default>"` for the environment connection; `host` is the HMC host that connection resolved to
+for this call (`HMCConfig.host`), because `<default>` binds late (ADR 0038). Both are recorded and
+both must match on every later call. The canonical request is
 `json.dumps({"tool": tool, "arguments": arguments}, sort_keys=True, separators=(",", ":"),
 ensure_ascii=False)` after removing the keys `continuation`, `wait_seconds` and `hold_id` from
 `arguments`; the digest is its SHA-256 hex. `operation_id` is `secrets.token_hex(16)`.
@@ -138,18 +123,21 @@ acquires the lock, and then:
 | --- | --- | --- |
 | absent | `none` | prune, check `store_full`, insert `running`, start the worker |
 | absent | other | `not_found` |
-| present, other connection | any | `connection_mismatch` |
+| present, other connection or host | any | `connection_mismatch`, naming both |
 | present | `none`, digest differs | `request_conflict` |
 | present | `none`, digest equal | return the record (wait on a live worker first) |
 | present | other, a supplied argument ≠ stored | `request_conflict` |
 | `terminal` | other | return the record |
-| `running` | other | `running` |
+| `running`, no live worker in this process | any | first set `interrupted` (its `intended` effects `uncertain`), then apply this table |
+| `running`, live worker | other | `running` |
 | `interrupted`, or `paused`/`needs_attention` | `resume` | set `running`, start the worker |
 | `paused`/`ready_to_boot` | `boot` | set `running`, start the worker |
 | `interrupted` or `paused` | `abandon` | `terminal`/`abandoned`; no HMC write; guard released |
 | otherwise | other | `continuation_not_accepted`, naming the accepted set |
 
-A record under another agent id is never visible: absent and other-agent records both give
+The lock holder is the only process that can have a live worker, so a `running` record without one
+in the holder is orphaned: a worker that could not record its end (a store fault) leaves exactly
+that, and this row recovers it without a restart. A record under another agent id is never visible: absent and other-agent records both give
 `not_found`. "Supplied argument" means a key present in the continuation call's `arguments`;
 continuation calls pass only what the caller supplied.
 
@@ -173,6 +161,7 @@ context. Its exit maps as follows:
 
 | Body exit | State / outcome |
 | --- | --- |
+| returns while any effect is `uncertain` (the body caught the exception) | `paused`/`needs_attention`, warning naming the keys |
 | returns `completed`, `configured` or `boot_started` | `terminal` with that outcome; guard released |
 | returns `ready_to_boot` or `needs_attention` | `paused` with that outcome |
 | raises `OperationFailed` or `EffectNotApplied`, no effect `uncertain` | `terminal`/`failed`, warning = message |
@@ -198,6 +187,12 @@ The body's `result` mapping is stored as `result_json`.
   - Any other exception records `uncertain` and re-raises.
 - `ledger_add(key, kind, system_uuid, partition_uuid, identity)` inserts one ledger row,
   idempotent on `(operation_id, key)`.
+- `recorded(key)` returns the journaled `EffectRecord` or `None`, so a body can skip a
+  precondition its own applied effect invalidates (ADR 0195).
+
+A body opens its own HMC client inside its worker loop with the existing
+`client_from_env(profile)`, where `profile` is `None` for `"<default>"`; the engine binds the
+connection and host but owns no client.
 
 `register_classifier(kind, classifier)` fills the module-level `CLASSIFIERS`, where
 `Classifier = Callable[[OperationContext, EffectRecord], Awaitable[Classification]]`.
@@ -206,7 +201,8 @@ Registering a kind twice is a `ValueError`.
 ## Status tool
 
 ```python
-@tool(effect="read", operation="operation.status", target_kind="none")
+@tool(effect="read", operation="operation.status", target_kind="console",
+      exhaustive_targets=False)
 def hmc_operation_status(operation_id: str | None = None, request_id: str | None = None,
     state: OperationState | None = None, outcome: OperationOutcome | None = None,
     limit: int = 50, cursor: str | None = None, profile: str | None = None) -> OperationPage
@@ -214,8 +210,11 @@ def hmc_operation_status(operation_id: str | None = None, request_id: str | None
 
 - The agent id is `build_config(profile=profile).agent_id or "hmcpctl"`, the same default
   ownership stamping uses.
-- The tool reads with `create=False`: no store means an empty page, and a failed store raises
-  its `OperationRefused` reason. It needs no lock and makes no HMC call.
+- `target_kind="console"`, as `hmc_get_console_info` uses, keeps `profile` under the policy's
+  connection scope without a target selector; `profile` chooses the agent id, so it must stay
+  policed.
+- The tool reads with `create=False` inside one read transaction: no store means an empty page,
+  and a failed store raises its `OperationRefused` reason. It needs no lock and makes no HMC call.
 - Filters are ANDed. `operation_id` must be 32 lower-case hex digits. `limit` is 1–50.
   Results are ordered newest first by (`created_at`, `operation_id`).
 - `cursor` is URL-safe base64 of `[created_at, operation_id]`. A malformed cursor raises
@@ -232,8 +231,9 @@ field:
 
 - `EffectRecord(key, kind, target, status, identity)`.
 - `OperationEvent(seq, at, kind, detail)`; `at` is ISO 8601 UTC with a `Z` suffix.
-- `OperationRecord(operation_id, request_id, tool, connection, state, phase, outcome, effects,
-  events, events_truncated, warnings, next_actions, result, created_at, updated_at)`.
+- `OperationRecord(operation_id, request_id, tool, connection, system_uuid, partition_uuid,
+  state, phase, outcome, effects, events, events_truncated, warnings, next_actions, result,
+  created_at, updated_at)`; the two UUIDs name the guarded partition, or are null.
   `next_actions` is the accepted continuation set for the state, from the table above
   (`[]` for `running` and `terminal`).
 - `OperationPage(operations, limit, truncated, next_cursor)`.
@@ -265,7 +265,11 @@ field:
 - *Store calls block the event loop briefly.* Calls are synchronous with a 5-second busy timeout.
   The bound is stated here; stores hold at most about 10,000 live rows.
 - *An operation whose worker process exits stays `running` until another process takes the lock*
-  (ADR 0190 D2). `hmc_operation_status` shows it as `running` meanwhile.
+  (ADR 0190 D2). `hmc_operation_status` shows it as `running` meanwhile; any continuation from a
+  process that can take the lock recovers it, and `docs/mcp-server.md` says so.
+- *A consumer release that changes an effect key or kind while an operation of its tool is
+  non-terminal* replays that write. ADR 0195 makes keys a persisted contract; each consumer owns
+  keeping it.
 - *An effect the consumer's `write` performed but reported wrongly* (it returned an identity
   for a write that failed, or raised `EffectNotApplied` after a partial write). The engine trusts
   its consumer's classification. Each consumer's tests own it.
@@ -326,9 +330,10 @@ Each item maps to a test in `tests/unit/test_logical_store.py`,
    recovers, and a mismatch is `store_corrupt`. A garbage DB is `store_corrupt`; a wrong
    `schema_version` is `store_corrupt`.
 2. Lock: a second descriptor is refused naming the pid. Acquisition marks `running` records
-   `interrupted` and `intended` effects `uncertain`.
+   `interrupted` and `intended` effects `uncertain`. A lock file replaced under the holder is
+   re-acquired with recovery, and a second process then sees the holder.
 3. Identity: a repeat with the same digest returns the record without a second body run; a
-   different digest is `request_conflict`; another connection is `connection_mismatch`; another
+   different digest is `request_conflict`; another connection or host is `connection_mismatch`; another
    agent gets `not_found`; an excluded key does not change the digest; invalid `request_id`
    values are refused.
 4. Effects: intent precedes the write; an applied effect is not rewritten on replay;
@@ -344,14 +349,16 @@ Each item maps to a test in `tests/unit/test_logical_store.py`,
      `uncertain`;
    - `abandon` makes no `write` call and releases the guard;
    - continuations outside the state's set are refused.
-   A crash before any effect replays the body from the start.
+   A crash before any effect replays the body from the start. A worker whose end write fails
+   leaves a record the next continuation recovers in the same process. A body that swallows an
+   effect's exception ends `needs_attention`.
 7. The guard refuses a second non-terminal operation on the same partition and frees it on
    terminal. Ledger rows survive pruning.
 8. Bounds: a request over 65,536 bytes; a 257th effect; a status page of 50 with `truncated`;
    newest 200 events with `events_truncated`; pruning after 30 days (by clock injection); and
    `store_full` at 10,000.
 9. Each store failure reason refuses `submit` and status (status with no store returns an
-   empty page).
+   empty page); a store busy past the timeout is `store_unreadable`.
 10. The tool: registered as `read` with operation `operation.status`; returns only the caller's
     agent records; paginates through `next_cursor`; refuses an invalid `operation_id`, cursor or
     limit; and makes no HMC request.

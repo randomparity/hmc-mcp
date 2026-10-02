@@ -40,6 +40,12 @@ effects before anything else is written. Two facts shape how:
 - A body must be deterministic in its effect keys for a given request. Keys derived from live
   reads, such as a name chosen from current inventory, must be recorded through an effect or the
   ledger first.
+- A precondition that the operation's own applied effect invalidates, such as provision's
+  name-uniqueness check (ADR 0005) after its partition exists, must run inside that effect's
+  `write` or be skipped when `ctx.recorded(key)` shows it applied; otherwise replay refuses the
+  operation's own work.
+- Effect keys and kinds are a persisted contract. A consumer release must not change them while
+  an operation of its tool can be non-terminal, or `resume` writes again.
 - Reads between writes run again on every replay. That costs HMC calls and is the point:
   replay revalidates live state before the next write.
 - A long-blocking store call holds only its own worker's loop, never another operation's.
