@@ -722,9 +722,9 @@ def hmc_upload_iso(
     MCP server's network position, so the URL's host must be on the operator's
     allowlist (`HMC_ISO_URL_ALLOWLIST`); with no allowlist configured every URL
     is refused, and redirects are never followed. Computes the SHA-256 and size
-    of the downloaded bytes before upload, refuses a volume group without a media repository and name
-    collisions, reports success only once the repository lists the media, and
-    releases the HMC upload handle on every outcome. Returns the result data,
+    of the downloaded bytes before upload, refuses a volume group without a media
+    repository and name collisions, reports success only once the repository lists
+    the media, and releases the HMC upload handle on every outcome. Returns the result data,
     including the HMC repository's media entry.
 
     Args:
