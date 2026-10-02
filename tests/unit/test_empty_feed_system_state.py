@@ -23,7 +23,9 @@ from conftest import captured_lpar_entry, make_config
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.inventory.capacity import fetch_capacity_report
+from hmcpctl.operations.inventory.composite import fetch_system_summary
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars
+from hmcpctl.operations.lpar.ownership import _discover_owning_system
 from hmcpctl.operations.systems.health import fetch_fleet_health
 from hmcpctl.operations.vios.core import list_vios
 from hmcpctl.resource_identity import (
@@ -330,3 +332,49 @@ async def test_capacity_report_raises_when_every_system_is_omitted(
         monkeypatch.setattr(hmc, "list_managed_systems", fleet)
         with pytest.raises(HMCError, match="State 'no connection'"):
             await fetch_capacity_report(hmc)
+
+
+@pytest.mark.asyncio
+async def test_system_summary_warns_for_a_non_operating_system(mock_hmc) -> None:
+    """The capacity figures here are assumed, not captured: no capture shows
+    whether a ``no connection`` system document still carries them (#1301)."""
+    document = _system(
+        "<State>no connection</State>",
+        "<DetailedState>Unknown</DetailedState>",
+        "<AssociatedSystemMemoryConfiguration>"
+        "<ConfigurableSystemMemory>131072</ConfigurableSystemMemory>"
+        "<CurrentAvailableSystemMemory>112448</CurrentAvailableSystemMemory>"
+        "</AssociatedSystemMemoryConfiguration>",
+        "<AssociatedSystemProcessorConfiguration>"
+        "<ConfigurableSystemProcessorUnits>20</ConfigurableSystemProcessorUnits>"
+        "<CurrentAvailableSystemProcessorUnits>18</CurrentAvailableSystemProcessorUnits>"
+        "</AssociatedSystemProcessorConfiguration>",
+    )
+    mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
+    mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(204))
+    mock_hmc.get(SYSTEM_PATH).mock(return_value=httpx.Response(200, text=document))
+
+    async with HMCClient(make_config()) as hmc:
+        summary = await fetch_system_summary(hmc, SYSTEM_UUID)
+
+    assert summary.lpar_count is None and summary.vios_count is None
+    lpar_warning, vios_warning = summary.warnings
+    assert lpar_warning.startswith("LPAR inventory is unavailable")
+    assert vios_warning.startswith("VIOS inventory is unavailable")
+    assert "State 'no connection'" in lpar_warning
+
+
+@pytest.mark.asyncio
+async def test_owning_system_discovery_reports_a_non_operating_system(
+    mock_hmc, monkeypatch
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+    lpar_uuid = "22222222-2222-2222-2222-222222222222"
+
+    async with HMCClient(make_config()) as hmc:
+        fleet = AsyncMock(return_value=[_fleet_entry("no connection")])
+        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        with pytest.raises(ValueError) as caught:
+            await _discover_owning_system(hmc, lpar_uuid, "lpar-a")
+
+    assert f"1 could not be read: {SYSTEM_UUID}" in str(caught.value)
