@@ -271,6 +271,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_install_vios_by_lpar_selector` now refuses a VIOS-type partition name with an error
+  pointing at `hmc_install_vios`, instead of reporting "No LPAR named …". The selector resolves
+  only `LogicalPartition`-feed partitions, and a VIOS is listed only under `VirtualIOServer`
+  (#1247).
 - The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
   HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
   `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
@@ -283,6 +287,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `false` rather than `true` (#1257).
 - `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
   numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
+- `hmcpctl` output no longer reads HMC-sourced text or command arguments as Rich markup or
+  emoji codes. Before this fix, Rich read a `[word]` segment as markup and dropped it, and
+  turned a `:word:` code into an emoji. This applied to confirmation lines, warnings, error messages,
+  `console info` and every listing table's title, headers and cells. A crafted argument
+  such as `x[bold red]y` could therefore restyle the confirmation that echoed it. Values
+  are no longer passed through `rich.markup.escape`, which doubled a trailing backslash.
+  `raw get` and `raw post` now print the body as received, ANSI codes and control
+  characters included; before, they also wrapped it at 80 columns when piped and expanded
+  tabs. An AST test fails when a `console`/`err_console` call that parses markup
+  interpolates a value without `markup=False` or `Text`, when code calls `from_markup` or
+  `render`, and when a module other than `output.py` imports from `rich` beyond
+  `rich.text` (#1029).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error

@@ -344,6 +344,9 @@ def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
     )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
+        return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
+    )
 
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
@@ -353,6 +356,32 @@ def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(
         pytest.raises(ValueError, match="No LPAR named"),
     ):
         hmc_install_vios_by_lpar_selector("nosuchlpar", "sys1", **_INSTALL_KWARGS)
+
+
+def test_install_vios_by_lpar_selector_refuses_a_vios_name(monkeypatch, mock_hmc):
+    """A VIOS answers only in the VirtualIOServer feed; the selector points elsewhere (#1247)."""
+    from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
+
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
+        return_value=httpx.Response(200, text=_system_feed("sys1"))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
+    )
+    vios_feed = _lpar_feed("vios1").replace("LogicalPartition", "VirtualIOServer")
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
+        return_value=httpx.Response(200, text=vios_feed)
+    )
+
+    async def fail(config, cmd):  # pragma: no cover — must never be reached
+        raise AssertionError("run_installios must not be called")
+
+    with (
+        patch("hmcpctl.operations.vios.install.run_installios", new=fail),
+        pytest.raises(ValueError, match="Use hmc_install_vios"),
+    ):
+        hmc_install_vios_by_lpar_selector("vios1", "sys1", **_INSTALL_KWARGS)
 
 
 def _system_feed(name: str) -> str:

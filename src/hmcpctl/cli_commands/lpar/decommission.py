@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.table import Table
+from rich.text import Text
 
 from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
-from ..output import console, print_json
+from ..output import VerbatimTable, console, print_json
 from ..runtime import with_client
 
 
@@ -78,15 +78,18 @@ def _render_decommission_result(
         )
     elif result.workflow_completed:
         console.print(
-            f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]"
+            f"LPAR '{name_or_uuid}' decommissioned successfully",
+            style="green",
+            markup=False,
         )
     else:
         console.print(
-            f"[yellow]LPAR '{name_or_uuid}' was not fully decommissioned — "
-            "check step results[/yellow]"
+            f"LPAR '{name_or_uuid}' was not fully decommissioned — check step results",
+            style="yellow",
+            markup=False,
         )
 
-    table = Table(title=f"Decommission steps: {name_or_uuid}")
+    table = VerbatimTable(title=f"Decommission steps: {name_or_uuid}")
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
     table.add_column("Result")
@@ -95,12 +98,12 @@ def _render_decommission_result(
         style = _step_style(status)
         table.add_row(
             step.step,
-            f"[{style}]{status}[/{style}]",
+            Text(status, style=style),
             "-" if step.result is None else str(step.result),
         )
     console.print(table)
     for warning in result.warnings:
-        console.print(f"[yellow]Warning: {warning}[/yellow]")
+        console.print(f"Warning: {warning}", style="yellow", markup=False)
 
 
 def _step_style(status: str) -> str:

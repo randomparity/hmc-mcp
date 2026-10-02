@@ -8,13 +8,12 @@ from datetime import datetime
 from typing import cast
 
 import typer
-from rich.table import Table
 
 from hmcpctl.operation_maturity import operation_maturity
 from hmcpctl.server_tools.catalog import TOOL_SECURITY
 from hmcpctl.tool_registry import ToolSecurity
 
-from .output import console, print_json
+from .output import VerbatimTable, console, print_json
 
 
 def capability_rows(
@@ -50,7 +49,7 @@ def capabilities(
         print_json(rows)
         return
 
-    table = Table()
+    table = VerbatimTable()
     table.add_column("Operation")
     table.add_column("Tools")
     table.add_column("Implementation")

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.table import Table
 
 from ...jobs import validate_wait_timing
 from ...operations.inventory.capacity import fetch_capacity_report, find_placement
@@ -17,7 +16,15 @@ from ...operations.systems.core import (
 )
 from ...operations.systems.health import fetch_fleet_health
 from ...xmlutil import render_mtms
-from ..output import _resource, console, err_console, first_field, output, print_json
+from ..output import (
+    VerbatimTable,
+    _resource,
+    console,
+    err_console,
+    first_field,
+    output,
+    print_json,
+)
 from ..runtime import with_client
 
 
@@ -36,7 +43,7 @@ def systems_health(
         entries = result[category]
         if not entries:
             continue
-        table = Table(title=category.replace("_", " ").title())
+        table = VerbatimTable(title=category.replace("_", " ").title())
         columns = sorted({key for entry in entries for key in entry})
         for column in columns:
             table.add_column(column.replace("_", " ").title())
@@ -44,7 +51,7 @@ def systems_health(
             table.add_row(*(str(entry.get(column, "-")) for column in columns))
         console.print(table)
     for warning in result["warnings"]:
-        err_console.print(f"[yellow]{warning}[/yellow]")
+        err_console.print(warning, style="yellow", markup=False)
 
 
 def systems_list(
@@ -59,7 +66,7 @@ def systems_list(
 
     table = None
     if not as_json:
-        table = Table(title="Managed Systems")
+        table = VerbatimTable(title="Managed Systems")
         for col in ("Name", "UUID", "State", "MTMS", "IP Address"):
             table.add_column(col)
         for s in systems:
@@ -81,7 +88,9 @@ def systems_show(
     system = with_client(lambda hmc: get_system(hmc, name_or_uuid))
 
     if system is None:
-        err_console.print(f"[yellow]System '{name_or_uuid}' not found[/yellow]")
+        err_console.print(
+            f"System '{name_or_uuid}' not found", style="yellow", markup=False
+        )
         raise typer.Exit(code=1)
     print_json(system)
 
@@ -113,7 +122,7 @@ def systems_power_on(
         )
     )
 
-    console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
+    console.print(f"Submitted PowerOn for {name_or_uuid}", style="green", markup=False)
     print_json(job)
 
 
@@ -147,7 +156,7 @@ def systems_power_off(
         )
     )
 
-    console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
+    console.print(f"Submitted {op} for {name_or_uuid}", style="green", markup=False)
     print_json(job)
 
 
@@ -162,7 +171,7 @@ def systems_summary(
         print_json(result)
         return
 
-    table = Table(title=f"System Summary: {result.get('name') or name_or_uuid}")
+    table = VerbatimTable(title=f"System Summary: {result.get('name') or name_or_uuid}")
     table.add_column("Field")
     table.add_column("Value")
     table.add_row("UUID", result.get("uuid") or "-")
@@ -181,7 +190,7 @@ def systems_summary(
     table.add_row("VIOS Count", "-" if vios_count is None else str(vios_count))
     console.print(table)
     for warning in result.get("warnings") or ():
-        err_console.print(f"[yellow]{warning}[/yellow]")
+        err_console.print(warning, style="yellow", markup=False)
 
 
 def systems_capacity(
@@ -196,7 +205,7 @@ def systems_capacity(
     if not report:
         err_console.print("[yellow]No managed systems found[/yellow]")
         return
-    table = Table(title="System Capacity")
+    table = VerbatimTable(title="System Capacity")
     for col in (
         "System",
         "UUID",
@@ -243,7 +252,7 @@ def systems_find_placement(
     if not candidates:
         err_console.print("[yellow]No systems with sufficient free capacity[/yellow]")
         return
-    table = Table(title="Placement Candidates (sorted by free memory)")
+    table = VerbatimTable(title="Placement Candidates (sorted by free memory)")
     for col in ("System", "UUID", "Free Mem (MiB)", "Free Procs", "Running LPARs"):
         table.add_column(col)
     for r in candidates:

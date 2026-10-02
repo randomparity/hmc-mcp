@@ -17,6 +17,7 @@ from hmcpctl.errors import HMCError
 
 from ...audit import records as audit
 from ...resource_identity import (
+    ResourceNotFoundError,
     is_uuid,
     resolve_lpar_uuid,
     resolve_system_name,
@@ -153,6 +154,30 @@ async def _validate_install_target(
         )
 
 
+async def _resolve_lpar_selector_target(
+    hmc: HMCClient, value: str, *, system_name_or_uuid: str
+) -> str:
+    """Resolve through the ``LogicalPartition`` feed, refusing a VIOS name (#1247).
+
+    A VIOS is listed only in the ``VirtualIOServer`` feed (#1202), so a name the
+    ``LogicalPartition`` lookup misses is probed there before the miss stands.
+    """
+    try:
+        return await resolve_lpar_uuid(
+            hmc, value, system_name_or_uuid=system_name_or_uuid
+        )
+    except ResourceNotFoundError as miss:
+        if not await hmc.find_vios_by_name(value, system_uuid=system_name_or_uuid):
+            raise
+        raise ResourceNotFoundError(
+            "LPAR",
+            value,
+            f"{value!r} is a Virtual I/O Server; this selector resolves only "
+            "partitions in the LogicalPartition feed. Use hmc_install_vios to "
+            "install it.",
+        ) from miss
+
+
 async def _submit_install(
     hmc: HMCClient,
     target_name_or_uuid: str,
@@ -263,6 +288,11 @@ async def install_vios_by_lpar_selector(
     Ownership authorization is classified in ADR 0092 §3.4a, which is the
     authoritative record; that row, not this docstring, carries the reasoning.
 
+    The selector targets only partitions in the ``LogicalPartition`` feed. A VIOS
+    is listed only under ``VirtualIOServer``, so a name the ``LogicalPartition``
+    lookup misses but the managed system's VIOS feed lists is refused with an
+    error pointing at ``hmc_install_vios``; :func:`install_vios` installs it.
+
     Before composing the command, the operation reads the resolved partition
     resource and rejects anything that is not a Virtual I/O Server or is not in
     the ``not activated`` state. This applies to name and UUID selectors, so a
@@ -293,8 +323,9 @@ async def install_vios_by_lpar_selector(
 
     Raises:
         ValueError: If an argument cannot be part of an ``installios``
-            invocation, or if a name resolves to no partition or system. Both
-            are raised before anything is submitted.
+            invocation, if a name resolves to no partition or system, or if a
+            partition name resolves only to a VIOS. All are raised before
+            anything is submitted.
         HMCError: If the target is not a Virtual I/O Server or is not powered
             off. The check runs before SSH submission.
         HMCCLIError: Either from mapping a UUID target to its CLI name over
@@ -310,7 +341,7 @@ async def install_vios_by_lpar_selector(
         hmc,
         lpar_name_or_uuid,
         system_name_or_uuid,
-        resolve_lpar_uuid,
+        _resolve_lpar_selector_target,
         hmc.get_logical_partition,
         request,
     )

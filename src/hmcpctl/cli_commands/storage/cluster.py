@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import typer
-from rich.table import Table
 
 from ...jobs import DeviceType, LuType
 from ...operations.storage.cluster import (
@@ -12,7 +11,7 @@ from ...operations.storage.cluster import (
     validate_logical_unit_create,
     validate_logical_unit_wait,
 )
-from ..output import console, first_field, output, print_json
+from ..output import VerbatimTable, console, first_field, output, print_json
 from ..runtime import with_client
 
 
@@ -25,7 +24,7 @@ def cluster_list(
 
     table = None
     if not as_json:
-        table = Table(title="Clusters")
+        table = VerbatimTable(title="Clusters")
         for col in ("Name", "UUID"):
             table.add_column(col)
         for c in clusters:
@@ -42,7 +41,7 @@ def cluster_list_ssps(
 
     table = None
     if not as_json:
-        table = Table(title="Shared Storage Pools")
+        table = VerbatimTable(title="Shared Storage Pools")
         for col in ("Name", "UUID", "Capacity (GB)", "Free (GB)"):
             table.add_column(col)
         for s in ssps:
@@ -101,7 +100,9 @@ def cluster_create_lu(
         )
     )
 
-    console.print(f"[green]Submitted CreateLogicalUnit job for '{name}'[/green]")
+    console.print(
+        f"Submitted CreateLogicalUnit job for '{name}'", style="green", markup=False
+    )
     print_json(job)
 
 
@@ -135,7 +136,9 @@ def cluster_delete_lu(
         )
     )
 
-    console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
+    console.print(
+        f"Submitted DeleteLogicalUnit job for {udid}", style="green", markup=False
+    )
     print_json(job)
 
 
