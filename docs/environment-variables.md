@@ -28,6 +28,12 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmcpctl storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
 | `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on UOM requests whose call site does not opt out, and on every `/rest/api/web/` request; requests that build their own headers never send it. Must contain only printable ASCII (U+0020 through U+007E); an empty string omits the header. **Leave unset for normal operation** — see note below. |
 
+`hmcpctl` itself, not `HMCConfig`, reads one more variable:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `HMCPCTL_STATE_DIR` | absolute path | platform state directory | Directory holding the logical-operation store (`operations.sqlite3`, `store-id`, `execution.lock`); see [MCP server](mcp-server.md#logical-operation-state) |
+
 ## Notes
 
 - **Header configuration** (`HMC_AUDIT_MEMENTO`, `HMC_SCHEMA_VERSION`): control

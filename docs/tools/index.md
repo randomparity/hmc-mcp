@@ -6,15 +6,15 @@ This reference covers every tool the server registers, including the ones a defa
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
-- **157** tools are registered.
-- **156** are exposed by a default deployment.
+- **158** tools are registered.
+- **157** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
 | `destructive` | 32 |
 | `mutate` | 51 |
-| `read` | 73 |
+| `read` | 74 |
 
 ## Maturity vocabulary
 
@@ -44,6 +44,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `memory_pool` | 2 | [memory_pool.md](memory_pool.md) |
 | `metrics` | 4 | [metrics.md](metrics.md) |
 | `network` | 7 | [network.md](network.md) |
+| `operation` | 1 | [operation.md](operation.md) |
 | `pcie` | 6 | [pcie.md](pcie.md) |
 | `pcm` | 2 | [pcm.md](pcm.md) |
 | `permissions` | 1 | [permissions.md](permissions.md) |
@@ -182,6 +183,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_modify_system` | `mutate` | [system.md](system.md) |
 | `hmc_modify_user` | `mutate` | [user.md](user.md) |
 | `hmc_mount_optical_media` | `mutate` | [media.md](media.md) |
+| `hmc_operation_status` | `read` | [operation.md](operation.md) |
 | `hmc_plan_lpar_memopt_scores` | `read` | [lpar.md](lpar.md) |
 | `hmc_plan_resource_group_memopt_scores` | `read` | [resource_group.md](resource_group.md) |
 | `hmc_plan_system_memopt_score` | `read` | [system.md](system.md) |

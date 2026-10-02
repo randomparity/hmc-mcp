@@ -319,11 +319,12 @@ def test_uom_user_replacement_reduces_unboundable_tool_count():
         / "0076-use-uom-user-profile-and-remote-access.md"
     )
     assert decision.is_file()
-    # #1202 removed hmc_list_recent_jobs, one connection-bearing unboundable tool.
-    assert len(unboundable) == 25
-    assert len(connection_bearing) == 20
+    # #1202 removed hmc_list_recent_jobs, one connection-bearing unboundable tool;
+    # #1218 added hmc_operation_status, one more.
+    assert len(unboundable) == 26
+    assert len(connection_bearing) == 21
     assert len(connectionless) == 5
-    assert len(all_nonexhaustive) == 26
+    assert len(all_nonexhaustive) == 27
 
 
 # ---------------------------------------------------------------------------
