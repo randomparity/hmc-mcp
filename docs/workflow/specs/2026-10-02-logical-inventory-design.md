@@ -182,8 +182,8 @@ empty. Filters apply before counting.
   the operator's policy and the HMC credentials.
 - **Controls:** the bounds under *Inputs* and the cursor checks validate arguments. Each source
   is authorized before its read, and a filter on a denied source drops that system's
-  partitions. `detail` carries only authorizer or HMC error text that a direct call would
-  show.
+  partitions. `detail` carries authorizer or HMC error text, or fixed inventory text naming a
+  delegated tool and a next action; it carries no data from a denied source.
 - **Out of scope:** an HMC user who can read more than the policy allows, outside hmcpctl.
 
 ## Success

@@ -278,3 +278,48 @@ def test_blank_owner_and_cursor_read_as_absent():
     """ADR 0094: an MCP client may send an unset optional string as ""."""
     page = _call(_app(_ALL), _HMC(), {"owner": " ", "cursor": ""})
     assert len(page["partitions"]) == 2
+
+
+@pytest.fixture
+def two_profiles(tmp_path, monkeypatch):
+    """A config.toml with ``lab`` and ``prod``, and no HMC_HOST to collapse them."""
+    from hmcpctl.config import config_dir
+
+    for name in ("XDG_CONFIG_HOME", "APPDATA", "HMC_HOST", "HMC_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    path = config_dir() / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "[profiles.lab]\nhost = 'lab-hmc.test'\nuser = 'u'\npassword = 'p'\n\n"
+        "[profiles.prod]\nhost = 'prod-hmc.test'\nuser = 'u'\npassword = 'p'\n",
+        encoding="utf-8",
+    )
+
+
+def test_profile_reaches_every_delegated_connection_check(two_profiles, records):
+    app = _app(
+        {
+            "tools": [INVENTORY, "hmc_list_systems", "hmc_capacity_report"],
+            "connections": ["lab", "prod"],
+            "targets": "all-targets",
+        },
+        {
+            "tools": ["hmc_list_lpars", "hmc_list_lpar_ownership"],
+            "connections": ["lab"],
+            "targets": "all-targets",
+        },
+    )
+    hmc = _HMC()
+    page = _call(app, hmc, {"profile": "prod"})
+    assert page["systems_source"]["status"] == "ok"
+    for system in page["systems"]:
+        assert system["sources"]["partitions"]["status"] == "denied"
+        assert system["sources"]["ownership"]["status"] == "denied"
+    assert not [
+        call for call in hmc.calls if call.startswith("list_logical_partitions")
+    ]
+    assert ("hmc_list_lpars", "deny") in {(r["tool"], r["decision"]) for r in records}
+    lab = _call(app, _HMC(), {"profile": "lab"})
+    assert {s["sources"]["partitions"]["status"] for s in lab["systems"]} == {"ok"}
