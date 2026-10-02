@@ -790,8 +790,8 @@ async def test_a_partition_name_is_not_re_read_for_containment(mock_hmc, operati
 
 @pytest.mark.parametrize("operation", [set_lpar_processors, set_lpar_memory])
 @pytest.mark.asyncio
-async def test_an_unreadable_containment_feed_names_the_retry(mock_hmc, operation):
-    """The one guarded read with no selector remedy still says what to do."""
+async def test_an_unreadable_feed_carries_its_error(mock_hmc, operation):
+    """An unreadable containment feed refuses with the feed error, not advice."""
     _mock_lpar_detail(mock_hmc)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
@@ -813,6 +813,7 @@ async def test_an_unreadable_containment_feed_names_the_retry(mock_hmc, operatio
             )
 
     assert str(info.value.__cause__) in str(info.value)
+    assert "retry" not in str(info.value)
     assert isinstance(info.value.__cause__, HMCError)
     assert not route.called
 
