@@ -32,7 +32,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `HMCPCTL_STATE_DIR` | path | platform state directory | Directory holding the logical-operation store (`operations.sqlite3`, `store-id`, `execution.lock`); see [MCP server](mcp-server.md#logical-operation-state) |
+| `HMCPCTL_STATE_DIR` | absolute path | platform state directory | Directory holding the logical-operation store (`operations.sqlite3`, `store-id`, `execution.lock`); see [MCP server](mcp-server.md#logical-operation-state) |
 
 ## Notes
 

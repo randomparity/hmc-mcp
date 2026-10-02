@@ -88,13 +88,23 @@ def state_dir() -> Path:
     """Return the ADR 0190 state directory without creating it."""
     override = os.environ.get(STATE_DIR_ENV, "")
     if override:
+        # A relative path would resolve against each process's cwd, so the server and the
+        # CLI could each get a private store and lock without noticing.
+        if not Path(override).is_absolute():
+            raise OperationRefused(
+                "state_dir_unresolved",
+                f"{STATE_DIR_ENV} must be an absolute path (got {override!r}); "
+                "expand ~ and give the full path",
+            )
         return Path(override)
     try:
         if sys.platform == "darwin":
             return Path.home() / "Library" / "Application Support" / "hmcpctl-state"
         if sys.platform.startswith("linux"):
-            xdg = os.environ.get("XDG_STATE_HOME", "")
-            return (Path(xdg) if xdg else Path.home() / ".local" / "state") / "hmcpctl"
+            # The XDG base-directory spec says to ignore a relative XDG_STATE_HOME.
+            xdg = Path(os.environ.get("XDG_STATE_HOME", ""))
+            base = xdg if xdg.is_absolute() else Path.home() / ".local" / "state"
+            return base / "hmcpctl"
     except RuntimeError as exc:
         raise OperationRefused(
             "state_dir_unresolved",

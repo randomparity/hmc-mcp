@@ -75,6 +75,20 @@ def test_state_dir_linux_xdg(monkeypatch, tmp_path):
     assert store.state_dir() == tmp_path / "hmcpctl"
 
 
+@pytest.mark.parametrize("value", ["state", "~/hmc-state", "./s"])
+def test_relative_state_dir_is_refused(monkeypatch, value):
+    monkeypatch.setenv(store.STATE_DIR_ENV, value)
+    assert _reason(store.state_dir) == "state_dir_unresolved"
+
+
+def test_relative_xdg_state_home_is_ignored(monkeypatch, tmp_path):
+    monkeypatch.delenv(store.STATE_DIR_ENV)
+    monkeypatch.setattr(store.sys, "platform", "linux")
+    monkeypatch.setenv("XDG_STATE_HOME", "relative/state")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert store.state_dir() == tmp_path / ".local" / "state" / "hmcpctl"
+
+
 def test_state_dir_linux_default(monkeypatch, tmp_path):
     monkeypatch.delenv(store.STATE_DIR_ENV)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
