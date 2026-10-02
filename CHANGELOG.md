@@ -34,6 +34,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   answers the system's partition or VIOS feed with no entries and the system is not
   `operating` (for example `recovery` or `no connection`). They used to return `[]` or "not
   found". An empty feed from an operating system still means none (#1289).
+- That check now lives in the client's system-scoped partition and VIOS feeds, so every
+  system-scoped read gets it, at one system read per empty feed. Fleet health reports a system
+  that is not operating with an LPAR inventory warning instead of failing;
+  `hmc_capacity_report` and `hmc_find_placement` leave it out, and fail when every system is
+  left out; `hmc_system_summary` warns, owner discovery counts it as unreadable, and the
+  utilization report records a gap instead of zero partitions (#1301).
 - `mount-optical-media` / `hmc_mount_optical_media` refuses, with a 409 and before any write, a
   `target_device` that an optical mapping on the VIOS already uses, naming its media and the
   remedies. When the HMC itself answers 500 `name is already used in another mapping`, the error
