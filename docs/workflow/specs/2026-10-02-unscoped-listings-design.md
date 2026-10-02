@@ -67,6 +67,8 @@ stderr line per unreadable system, in both modes:
 - `scripts/live_test/results.py` `entries()`, and `_rows` in `scripts/live_capture_sweep.py`.
   These read an object's `entries` attribute, because FastMCP hands a dataclass result to a client
   as a generated model, not a mapping.
+- the evidence writers `ToolLog.write` (`scripts/live_capture_sweep.py`) and `RunState.record`
+  (`scripts/live_test_runner.py`), which record a dataclass result as its fields
 - the two `jq '.[].UUID'` lines in `docs/recipes/system-inventory.md`
 - the fixtures in their tests
 
