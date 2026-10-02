@@ -357,7 +357,9 @@ async def test_mount_refuses_an_optical_target_device_already_mapped(mock_hmc):
 
     assert raised.value.status_code == 409
     message = str(raised.value)
-    assert "with media 'media-2'" in message
+    assert (
+        "to LPAR 00000099-ABCD-4EF0-8ABC-000000000099 with media 'media-2'" in message
+    )
     assert "unmount-optical-media" in message
     assert not post.called
 

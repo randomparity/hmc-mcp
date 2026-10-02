@@ -305,14 +305,18 @@ _VTD_NAME_IN_USE = "name is already used in another mapping"
 
 
 def _optical_target_in_use(
-    target_device: str | None, media_name: str | None = None
+    target_device: str | None,
+    media_name: str | None = None,
+    lpar_uuid: str | None = None,
 ) -> str:
     device = (
         f"Target device {target_device!r}" if target_device else "The target device"
     )
+    lpar = f" to LPAR {lpar_uuid}" if lpar_uuid else ""
     media = f" with media {media_name!r}" if media_name else ""
     return (
-        f"{device} is already mapped on the VIOS{media}. Name a different target_device, "
+        f"{device} is already mapped on the VIOS{lpar}{media}. "
+        "Name a different target_device, "
         "or, if media is mapped to it, unmount that media first (unmount-optical-media); "
         "loading media into an existing device is not supported yet."
     )
@@ -330,7 +334,11 @@ def _refuse_mapped_optical_target(mappings: ET.Element, target_device: str) -> N
                 f"{{{_UOM_NS}}}Storage/{{{_UOM_NS}}}VirtualOpticalMedia"
                 f"/{{{_UOM_NS}}}MediaName"
             )
-            raise HMCError(_optical_target_in_use(target_device, media), 409)
+            partition = mapping.find(f"{{{_UOM_NS}}}AssociatedLogicalPartition")
+            lpar = lpar_uuid_from_href(
+                partition.get("href") if partition is not None else None
+            )
+            raise HMCError(_optical_target_in_use(target_device, media, lpar), 409)
 
 
 async def _rmw_vios_mapping(
