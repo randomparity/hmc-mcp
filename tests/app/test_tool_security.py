@@ -121,6 +121,7 @@ LEGACY_READ_ONLY = frozenset(
 LEGACY_DESTRUCTIVE = frozenset(
     {
         "hmc_power_off_lpar",
+        "hmc_dump_restart_lpar",
         "hmc_delete_lpar",
         "hmc_decommission_lpar",
         "hmc_delete_vios",
@@ -231,6 +232,7 @@ def test_selectors_and_connection_arguments_are_public_parameters():
     "tool_name, argument, expected_required",
     [
         ("hmc_power_off_lpar", "system_name_or_uuid", False),
+        ("hmc_dump_restart_lpar", "system_name_or_uuid", False),
         ("hmc_power_off_vios", "system_name_or_uuid", False),
         ("hmc_delete_vios", "system_name_or_uuid", False),
         ("hmc_restore_vios", "system_name_or_uuid", True),
@@ -435,6 +437,7 @@ DESTRUCTIVE_NAME_PREFIXES = (
 DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
     {
         "hmc_backup_lpar_profiles",
+        "hmc_dump_restart_lpar",
         "hmc_migrate_abort_lpar",
         "hmc_remote_restart_lpar",
         # #247: the firmware/software update tools overwrite existing software

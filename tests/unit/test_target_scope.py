@@ -229,8 +229,8 @@ def test_matching_is_exact_with_no_normalization(value):
 def test_an_omitted_optional_selector_denies_under_a_table():
     """The carry-forward: an unpinned system means 'whichever system has one'.
 
-    `hmc_power_off_lpar` is the live instance — `destructive`, with the only
-    optional `managed_system` selector on the surface.
+    `hmc_power_off_lpar` is the live instance — `destructive`, and one of the
+    tools whose `managed_system` selector is optional.
     """
     extracted = selected_targets(
         POWER_OFF_LPAR, {"lpar_name_or_uuid": "db-01", "system_name_or_uuid": None}
