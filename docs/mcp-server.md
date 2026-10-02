@@ -108,6 +108,27 @@ A client that remembers approvals by tool name applies an approval of `hmc_invok
 every tool invoke can reach, so a deployment that relies on per-tool client approval as its
 human check should leave `hmc_invoke_tool` out of the policy.
 
+### Logical inventory
+
+`hmc_inventory` (`read`) lists one connection's managed systems and partitions on one page,
+with capacity, state and the hmcpctl owner (ADR 0196). Ids are `<connection>/<system uuid>`
+and `<connection>/<system uuid>/<partition uuid>`, so equal names on different systems or
+connections stay distinct. A page holds at most 16 systems and `limit` (1–200) partitions;
+follow `next_cursor` for the rest.
+
+Each part is authorized as the tool it delegates to, and the audit stream records each of
+those decisions under that tool's name:
+
+- enumerating systems needs `hmc_list_systems`; without it nothing is read, and the caller
+  passes `systems` (1–16 names or UUIDs), each authorized as `hmc_list_lpars`;
+- partitions need `hmc_list_lpars`, and owners `hmc_list_lpar_ownership`, for each system;
+- capacity needs `hmc_capacity_report`, which only `targets = "all-targets"` grants.
+
+A part that is denied or that the HMC fails to return is reported in that system's `sources`
+as `denied` or `unavailable` and contributes no data; a missing figure is `null`, never zero.
+`hmc_inventory` itself declares no target, so its own grant needs `targets = "all-targets"`;
+the delegated tools' grants carry the target bound.
+
 `tools/list` marks each tool's catalog tier under the
 `io.github.randomparity.hmcpctl/catalog-tier` metadata key: `primary` for the ADR 0189
 primary set, `secondary` for every other tool. The listing itself is unchanged; #1232 decides
