@@ -317,6 +317,7 @@ async def test_create_5xx_names_the_server_adapter_listing(mock_hmc, create):
     message = str(raised.value)
     assert "server adapter" in message
     assert ADAPTER_LISTING in message
+    assert "unmount-optical-media" not in message
 
 
 @pytest.mark.asyncio
@@ -328,3 +329,70 @@ async def test_detach_5xx_does_not_claim_an_adapter_was_created(mock_hmc):
             await _detach(hmc)
 
     assert "lshwres" not in str(raised.value)
+
+
+_MEDIA_FEED = live_fixture("rest-ms-vios-feed-media")["body"]
+# The captured VIOS's mapping collection: dev-277 and dev-278 are
+# VirtualOpticalTargetDevices, dev-265 a PhysicalVolumeVirtualTargetDevice.
+LIVE_MEDIA_MAPPINGS = _MEDIA_FEED[
+    _MEDIA_FEED.index("<VirtualSCSIMappings") : _MEDIA_FEED.index(
+        "</VirtualSCSIMappings>"
+    )
+    + len("</VirtualSCSIMappings>")
+]
+
+
+async def _mount_onto(hmc: HMCClient, target_device: str | None) -> None:
+    await hmc.create_optical_mapping(VIOS_UUID, "install.iso", LPAR_UUID, target_device)
+
+
+@pytest.mark.asyncio
+async def test_mount_refuses_an_optical_target_device_already_mapped(mock_hmc):
+    """A VTD name in use fails on the HMC with a 500 (#1283); refuse it before POST."""
+    _, post = _routes(mock_hmc, _ok(vios_entry(LIVE_MEDIA_MAPPINGS)))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="'dev-277' is already mapped") as raised:
+            await _mount_onto(hmc, "dev-277")
+
+    assert raised.value.status_code == 409
+    message = str(raised.value)
+    assert "with media 'media-2'" in message
+    assert "unmount-optical-media" in message
+    assert not post.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_device", ["vtopt9", None, "dev-265"])
+async def test_mount_posts_when_target_device_is_free(mock_hmc, target_device):
+    """Only an optical TargetName blocks the mount; dev-265 is a physical-volume VTD."""
+    _, post = _routes(mock_hmc, _ok(vios_entry(LIVE_MEDIA_MAPPINGS)))
+
+    async with HMCClient(make_config()) as hmc:
+        await _mount_onto(hmc, target_device)
+
+    assert post.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mount_5xx_name_in_use_names_the_collision(mock_hmc):
+    """The HMC's own VTD-name refusal keeps the side-effect report and adds the remedy."""
+    get = mock_hmc.get(PATH).mock(return_value=_ok())
+    mock_hmc.post(PATH).mock(
+        return_value=httpx.Response(
+            500,
+            text="<HttpErrorResponse><Message>VTD vtopt9 name is already used in "
+            "another mapping</Message></HttpErrorResponse>",
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="possible side effect") as raised:
+            await _mount(hmc)
+
+    assert raised.value.status_code == 500
+    assert get.call_count == 2
+    message = str(raised.value)
+    assert "readback completed" in message
+    assert "'vtopt9' is already mapped" in message
+    assert message.index("unmount-optical-media") < message.index(ADAPTER_LISTING)
