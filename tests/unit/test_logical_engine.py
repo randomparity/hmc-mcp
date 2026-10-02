@@ -606,3 +606,20 @@ def test_a_lost_store_refuses_continuations():
     _submit()
     (store.state_dir() / store.DB_NAME).unlink()
     assert _reason(_submit, continuation="resume") == "store_lost"
+
+
+@pytest.mark.parametrize("continuation", ["resume", "abandon"])
+def test_a_continuation_from_another_tool_is_refused(continuation):
+    async def pauses(ctx):
+        return BodyResult("needs_attention")
+
+    _submit(body=pauses)
+    writer = Writer()
+    other = OperationRequest(
+        "hmc_other_tool", "agent-a", "<default>", "hmc.test", "r1", {}
+    )
+    reason = _reason(_submit, other, _body(writer), continuation=continuation)
+    assert reason == "request_conflict"
+    assert writer.calls == 0
+    record = store.operation_status(agent_id="agent-a").operations[0]
+    assert (record.state, record.outcome) == ("paused", "needs_attention")

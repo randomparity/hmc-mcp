@@ -216,6 +216,12 @@ def _admit_existing(
             f"request_id {request.request_id} belongs to connection {row['connection']} on "
             f"HMC {row['host']}, not {request.connection} on {request.host}; continue it there",
         )
+    if row["tool"] != request.tool:
+        raise OperationRefused(
+            "request_conflict",
+            f"request_id {request.request_id} belongs to {row['tool']}; continue it with that "
+            "tool, or use a new request_id",
+        )
     if continuation == "none":
         conflicts = ["arguments"] if row["digest"] != digest else []
     else:
