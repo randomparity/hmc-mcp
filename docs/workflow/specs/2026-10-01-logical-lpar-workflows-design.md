@@ -21,9 +21,6 @@ installer boot has started (ADR 0191). Everything after that point is the user's
 success, disk boot, guest identity and SSH. That boundary was the operator's decision on
 2026-10-01.
 
-The existing `hmc_provision_lpar` and `hmc_decommission_lpar` gain a required `request_id`. This is
-a pre-release replacement with no compatibility path, so #1225 and #1229 carry the CHANGELOG entry.
-
 Not in this design (the approved exclusions):
 
 - implementation of the eleven tools;
@@ -37,65 +34,88 @@ Not in this design (the approved exclusions):
 
 ## Primary tools
 
-All eleven are MCP tools. Each mutating tool takes `request_id` and the ADR 0190 identity
-fields. Every result is a typed record, and every collection in a result carries an explicit
-`limit` and `truncated` flag. Effects are those registered under ADR 0189.
+All eleven are MCP tools. Every result is a typed record, and every collection in a result
+carries `limit` and `truncated`. Effects are as registered under ADR 0189.
 
-| Tool | Effect | Inputs (beyond `profile`) | Result |
+**Mutating tools** (provision, reconfigure, decommission, power) also take:
+
+- `request_id`;
+- `continuation`: `none` (default), `resume` or `abandon`, plus `boot` for provision only;
+- `wait_seconds`.
+
+All of these follow ADR 0190. A tool whose operation writes a VIOS or volume-group document also
+takes `exclusive_writer_window` (see *Ownership and shared VIOS state*). Specialist and logical
+partition mutations take an optional `hold_id` (ADR 0193).
+
+| Tool | Effect | Inputs (beyond `profile` and the common fields) | Result |
 | --- | --- | --- | --- |
-| `hmc_inventory` | read | `systems?` (≤ 16 selectors), `lpar_state?`, `owner?`, `limit` 1–200 (default 50), `cursor?` | systems and partitions with scoped ids, state, capacity, owner; `sources` with per-source `ok`/`unavailable`/`denied` |
-| `hmc_plan_lpar` | read | `desired` (below), `system?` *or* `placement` constraints | `plan_digest`, resolved targets, `blockers[]`, `intended_changes[]`, `unverified[]` |
-| `hmc_provision_lpar` | mutate | `request_id`, `desired`, `system`, `expected_plan_digest?`, `install?`, `power_on`, `dry_run`, `wait_seconds`, `resume` | operation result (below) |
-| `hmc_reconfigure_lpar` | destructive | `request_id`, `lpar`, `patch` (below), `allow_disruption`, `wait_seconds`, `resume` | operation result plus `changes[]`, each `live` / `profile` / `pending_activation` |
-| `hmc_decommission_lpar` | destructive | existing ADR 0027 inputs, plus `request_id`, `storage_cleanup` (`retain` default / `delete_owned`), `resume` | ADR 0027 result plus `storage`: `deleted[]`, `retained[]` with reasons, `pending[]` |
-| `hmc_power_lpar` | destructive | `request_id`, `lpar`, `action` (`start` / `stop` / `restart`), `mode` (`graceful` default / `immediate`), `wait_seconds`, `resume` | operation result plus `already_in_state`, `observed_state` |
+| `hmc_inventory` | read | `systems?` (≤ 16 selectors), `lpar_state?`, `owner?`, `limit` 1–200 (default 50), `cursor?` | systems and partitions with scoped ids, state, capacity and owner; `sources` with per-source `ok` / `unavailable` / `denied` |
+| `hmc_plan_lpar` | read | provision's inputs, with `system_name_or_uuid` optional and a `placement` constraint as the alternative | `plan_digest`, resolved targets, `blockers[]`, `intended_changes[]`, `unverified[]` |
+| `hmc_provision_lpar` | mutate | today's inputs, unchanged, plus `expected_plan_digest?`, `install?` and `boot` (`immediate` default / `deferred`) | `ProvisionResult` (today's fields) plus the operation fields |
+| `hmc_reconfigure_lpar` | destructive | `lpar`, `patch`, `allow_disruption` (default false) | operation fields plus `changes[]`, each `live` / `profile` / `pending_activation` |
+| `hmc_decommission_lpar` | destructive | ADR 0027 inputs plus `storage_cleanup` (`retain` default / `delete_owned`) | `DecommissionResult` plus `storage` (`deleted[]`, `retained[]` with reasons, `pending[]`) and the operation fields |
+| `hmc_power_lpar` | destructive | `lpar`, `action` (`start` / `stop` / `restart`), `mode` (`graceful` default / `immediate`) | operation fields plus `already_in_state` and `observed_state` |
 | `hmc_inspect_lpar` | read | `lpar`, `include` ⊆ {`resources`, `rmc`, `profile_drift`, `refcodes`} | state, RMC, profile drift, ≤ 20 refcodes, `next_actions[]` (tool names only) |
-| `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer`, `hold_id` | handoff document (below) or release confirmation |
-| `hmc_operation_status` | read | `operation_id` *or* `request_id`; or a listing with `state?` and `limit` 1–50 | operation records with ≤ 200 events per page |
+| `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer`, `hold_id` | handoff document or release confirmation |
+| `hmc_operation_status` | read | `operation_id` *or* `request_id`; or a listing by `state?` / `outcome?` with `limit` 1–50 | operation records with ≤ 200 events per page |
 | `hmc_search_tools` | read | `query` (≤ 200 characters) *or* `name`, `limit` 1–20 | names, one-line summaries, effect, maturity; the full input schema only for an exact `name` |
 | `hmc_invoke_tool` | destructive | `name`, `arguments` (≤ 64 KiB) | the invoked tool's own result, unchanged |
 
 Selectors are the existing `system_name_or_uuid` / `lpar_name_or_uuid` pairs. Names are
-resolved within one system; ADR 0015's UUID pass-through does not apply.
+resolved within one system, and ADR 0015's UUID pass-through does not apply.
 
-`desired` contains:
+### Provision's existing inputs
 
-- `name`;
-- `processors`: `mode`, plus `entitled` / `virtual` with min/desired/max;
-- `memory_mib`: min/desired/max;
-- `networks[]`: `vlan_id`;
-- `root_disk`: `size_gib`, plus an explicit `vios` and `volume_group` or a placement hint.
+`hmc_provision_lpar` keeps every existing input and every `ProvisionResult` field, including:
 
-When more than one VIOS or volume group qualifies and none was named, the result is a blocker.
-The first match is never chosen.
+- `adapters`, `storage` (which already creates a disk), `resources`, `partition_type`;
+- `power_on`, `dry_run`, `assignments`, `caller_token`;
+- the affinity options;
+- the nested `storage.vios_uuid` selector.
 
-`patch` covers `name`, `processors` and `memory_mib`. Any omitted field is preserved. #1228
-extends `patch`, under the same rules, with networks, added disks, `installer_media: detach` and
-`boot: root_disk` — the post-install steps ADR 0191 leaves to the caller.
+The new inputs are additive except `request_id`, which is required. That is a pre-release
+change with no compatibility path. The CLI mirror gains `--request-id` and uses the same store.
+#1225 and #1229 write the CHANGELOG entry.
 
-A tool whose operation writes a VIOS or volume-group document also takes
-`exclusive_writer_window` (see *Ownership and shared VIOS state*).
+When `storage` omits `vios_uuid` or `vg_uuid` and more than one VIOS or volume group qualifies,
+planning returns a blocker. It never chooses the first match.
+
+### Patch and install inputs
+
+`patch` covers `name`, `processors` and `memory_mib`. Omitted fields are preserved.
+`allow_disruption=false` refuses live removals (memory or processors decreasing while the
+partition is Running) and writes them as `pending_activation`. `true` permits live removal
+through DLPAR. #1228 extends `patch` under the same rules with:
+
+- networks;
+- added disks;
+- `installer_media: detach`;
+- `boot: root_disk`.
 
 `install` contains:
 
 - `profile`: `ubuntu-26.04.1` or `rocky-9.8`;
-- `network`: `address` as CIDR, `routes` (1–16, including a default route), `dns` (≤ 3);
-- `ssh_authorized_keys`: public keys, 1–16;
+- `network`: `address` as CIDR, `routes` (1–16, including a default), `dns` (≤ 3);
+- `ssh_authorized_keys` (1–16 public keys);
 - `login_user`;
 - `media`: either `{mode: prepared, url, sha256, size}` or `{mode: built}`.
 
-The operation result carries:
+### Operation fields
 
-- `operation_id`, `request_id`, `state`;
-- `phase`, from {`validating`, `creating`, `configured`, `media_bound`, `installer_booting`};
-- `outcome`, from {`configured`, `boot_started`, `needs_attention`, `failed`}, or `null` while
-  running;
+- `operation_id`, `request_id`, `state` (`running` / `interrupted` / `terminal`).
+- `phase`, per tool:
+  - provision: `validating`, `creating`, `configured`, `media_bound`, `ready_to_boot`,
+    `installer_booting`;
+  - reconfigure: `validating`, `applying`;
+  - power: `validating`, `transitioning`;
+  - decommission: `validating`, `tearing_down`, `cleaning_storage`.
+- `outcome`, or `null` while running:
+  - `completed` for reconfigure, power and decommission;
+  - `configured`, `ready_to_boot` or `boot_started` for provision;
+  - `needs_attention`, `failed` or `abandoned` for any tool.
 - `effects[]`, each with `kind`, `target`, `status` (`intended` / `applied` / `not_applied` /
-  `uncertain`) and created identity;
-- `steps` (`WorkflowStep`, kept for ADR 0005 and ADR 0027 callers);
+  `uncertain`) and the created identity.
 - `warnings[]` and `next_actions[]`.
-
-`state` is one of `running`, `interrupted`, `terminal`.
 
 ## Delegated authorization
 
@@ -142,8 +162,14 @@ ADR 0190 governs. The contract each implementer must hold is:
   power off again. It reads state and continues from the next effect.
 - **Installer power-on** is applied at most once per operation. A resume after `boot_started`
   returns the recorded outcome.
-- `hmc_operation_status` and resume on another connection or agent id return "not found",
-  the same answer as for an operation that does not exist.
+- **Abandon** (`continuation: abandon`) ends an `interrupted` or `needs_attention` operation as
+  `abandoned` with no HMC write; its recorded effects stay visible to status and to ADR 0192
+  cleanup.
+- `hmc_operation_status` and continuation under another agent id return "not found", the same
+  answer as for an operation that does not exist.
+- **Deployment.** Logical mutations run only in the process holding the store's writer lock. A
+  second stdio client session gets status and hold enforcement but no logical mutations (ADR
+  0190); the server instructions say so.
 
 ## Persistent and live changes
 
@@ -155,9 +181,8 @@ ADR 0190 governs. The contract each implementer must hold is:
   - otherwise the change is written to the profile and reported `pending_activation`;
   - a min/max change, or a processor-mode change, is always `pending_activation`, and the
     processor mode is never changed implicitly.
-- **No reboot.** hmcpctl never reboots to apply a change. With `allow_disruption=false` (the
-  default), a `pending_activation` change is still written to the profile and reported. The
-  preview names the activation the change needs.
+- **No reboot.** hmcpctl never reboots to apply a change. A `pending_activation` change is
+  written to the profile and reported, and the preview names the activation it needs.
 
 ## Ownership and shared VIOS state
 
@@ -172,7 +197,9 @@ ADR 0190 governs. The contract each implementer must hold is:
 
 ## Installation media and boot
 
-ADR 0191 governs. The order of steps for `install` is:
+ADR 0191 governs. The order of steps for `install` is (with `boot: deferred` the operation stops
+after step 7 at `ready_to_boot`, and `continuation: boot` runs steps 8–9 after revalidating the
+mount, boot order, binding and hold):
 
 1. create the partition and adapters;
 2. record the client network adapter's actual MAC;
@@ -183,9 +210,15 @@ ADR 0191 governs. The order of steps for `install` is:
 5. upload with a digest check;
 6. mount;
 7. set the boot order to installer media first;
-8. power on;
-9. poll refcodes until `boot_started` or `wait_seconds` runs out, then report `needs_attention`
-   with the observed codes.
+8. read the newest reference code as a baseline, then power on;
+9. poll refcodes until a newer row (HMC time and row order) carries a code in the boot-started
+   set, or `wait_seconds` runs out, then report `needs_attention` with the observed codes.
+
+hmcpctl never acquires the console during boot. A caller who wants the console from its first
+byte uses `boot: deferred`, attaches their own console (HMC `mkvterm`/`vtmenu` or the `hmcpctl`
+console CLI), then sends `continuation: boot`. Firmware that stops at SMS, Open Firmware or a menu
+waiting for input reports `needs_attention` with its reference code; answering it is the caller's,
+on their console.
 
 The media name is `hmcpctl_<first 12 hex of operation_id>.iso`, which fits upload's
 `[A-Za-z0-9_.]{1,79}` rule.
@@ -201,11 +234,14 @@ The media name is `hmcpctl_<first 12 hex of operation_id>.iso`, which fits uploa
 - `operation_binding` (the `operation_id`);
 - `url` (built mode only).
 
-The installer must refuse to install unless exactly one non-optical disk is present. Caller SSH
-keys and the login user pass through to the producer untouched.
+Producer behavior hmcpctl relies on (ADR 0191 Decision 6): the launcher's default entry boots the
+installed disk when it carries a boot record, after a bounded menu timeout, and the installer
+otherwise; the installer refuses unless exactly one non-optical disk is present and blank. That is
+what keeps the media-first boot order from reinstalling on the guest's reboot. Caller SSH keys and
+the login user pass through to the producer untouched.
 
-**Undecided:** the boot-started reference-code set. #1230 fills it from native evidence. Until
-then `boot_started` is never reported.
+**Undecided:** the boot-started reference-code set and the refcode timestamp's zone handling.
+#1230 fills both from native evidence. Until then `boot_started` is never reported.
 
 **Not verified by hmcpctl:**
 
@@ -217,7 +253,9 @@ Results list each of these under `unverified`.
 
 ## Host handoff
 
-ADR 0193 governs the hold. The `prepare` document has three groups of facts:
+ADR 0193 governs the hold: one per partition, keyed by system and partition UUID, enforced by
+hmcpctl's MCP dispatch and CLI, exempting the handoff tool, console capture and calls presenting the
+matching `hold_id`. The `prepare` document has three groups of facts:
 
 - `observed`: system and partition identity, state, resources, adapters, MACs, disks and
   mounted media, each from a read made during this call;
@@ -242,7 +280,9 @@ no live run.
 
 **Actors and deployments**
 
-- An MCP client agent on a server deployment that has a served access policy and one store.
+- An MCP client agent on a deployment with a served access policy and one store. Deployments named:
+  one long-lived server, or stdio with one client session at a time; extra stdio sessions are
+  read-and-hold-only (ADR 0190).
 - An operator with a CLI on the same host.
 - Other HMC writers (GUI, other deployments, scripts), whose writes hmcpctl cannot see in advance.
 - External consumers: kdive.
@@ -265,6 +305,12 @@ no live run.
   deleted, storage.
 - *Two clients sharing one agent id share operations.* Accepted because MCP carries no
   principal (ADR 0190).
+- *A server process exiting mid-operation* (for example a stdio client closing). Accepted: the
+  effect in flight becomes `uncertain`, and `resume` reconciles it.
+- *Library callers (kdive) are not fenced by holds.* Accepted: stated in the handoff document
+  (ADR 0193).
+- *Reinstall on reboot if the producer misbehaves.* Covered by iso-chain-loader#23–#25's launcher
+  and blank-disk contract; hmcpctl cannot observe it.
 - *A Running guest whose install failed.* Out of scope by operator decision (ADR 0191).
 
 **Covered elsewhere**
@@ -348,6 +394,6 @@ Listed for the operator; this PR does not edit them.
 | #1222 | Guest SSH readiness is obsolete under ADR 0191; it should be closed or rescoped. |
 | #1230 | Acceptance becomes `boot_started` per distro, plus filling the boot-started code set. |
 | Epic #1215 | Requirement 7 and the SSH success criteria conflict with ADR 0191. |
-| iso-chain-loader#24, #25 | The "host-identity handoff" wording conflicts. They should inject caller keys only and refuse unless exactly one disk is present. |
+| iso-chain-loader#24, #25 | The "host-identity handoff" wording conflicts. They should inject caller keys only, refuse unless exactly one blank disk is present, and default the launcher to an installed disk. |
 | iso-chain-loader#23 | Must emit the producer result fields above. |
 | #1228 | Gains the `installer_media: detach` and `boot: root_disk` patch fields. |

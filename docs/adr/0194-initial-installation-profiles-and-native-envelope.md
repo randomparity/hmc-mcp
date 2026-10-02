@@ -19,7 +19,8 @@ Evidence observed on 2026-10-01:
   26.04 the recommended Power release. 26.04 standard support runs to May 2031.
 - Launchpad bug 2142695 (26.04 ISO boot on PowerVM POWER9/POWER10) was fixed in grub2
   2.14-2ubuntu2 on 2026-03-06.
-- The Rocky 9 release notes and the RHEL 9.8 notes give POWER9 as the floor. The Rocky 10.1 and
+- The Rocky 9 release notes (`https://docs.rockylinux.org/10/releases/release_notes/9_0/`) and
+  the RHEL 9.8 notes give POWER9 as the floor. The Rocky 10.1 and
   RHEL 10.2 notes give POWER10. The Rocky wiki gives Rocky 9 active support to 2027-05-31 and
   security support to 2032-05-31.
 
@@ -49,7 +50,7 @@ Evidence observed on 2026-10-01:
 
 - **Ubuntu 24.04.5.** judgment: fit. Supported, but 26.04 is Canonical's recommended Power
   release and is supported two years longer.
-- **Rocky 10.2.** verified: Rocky 10.1 and RHEL 10.2 release notes list POWER10 as the
-  ppc64le floor (observed 2026-10-01). The POWER9 lab could not prove it.
+- **Rocky 10.2.** verified: `https://docs.rockylinux.org/10/releases/release_notes/10_1/` and
+  the RHEL 10.2 release notes overview list POWER10 as the ppc64le floor (observed 2026-10-01). The POWER9 lab could not prove it.
 - **Accept any distribution the producer offers.** judgment: fit. Each profile needs its own
   native proof before it is supported.
