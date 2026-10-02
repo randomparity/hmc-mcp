@@ -1,4 +1,9 @@
-"""Run logical operations against the durable store (ADR 0190, ADR 0195)."""
+"""Run logical operations against the durable store (ADR 0190, ADR 0195).
+
+A warning keeps at most 512 characters of an exception's text or a classifier's reason, and
+``hmc_operation_status`` returns it to the agent: a body, effect write or classifier must
+raise messages that carry no request arguments.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ _PAUSING = frozenset({"ready_to_boot", "needs_attention"})
 # A run starts with no earlier worker live on its operation, so an ``intended`` effect it
 # loads is as unknown as an ``uncertain`` one (a failed outcome write leaves it there).
 _OPEN = frozenset({"intended", "uncertain"})
+_MAX_WARNING = 512
 _ABSENT = object()
 _LOG = logging.getLogger(__name__)
 
@@ -312,6 +318,15 @@ def _end(
         )
 
 
+def _warning(detail: str, prefix: str = "", suffix: str = "") -> str:
+    """Cut *detail* so the warning fits ``_MAX_WARNING`` with its fixed text intact."""
+    return prefix + detail[: _MAX_WARNING - len(prefix) - len(suffix)] + suffix
+
+
+def _failure(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _result_json(result: BodyResult) -> str:
     text = json.dumps(dict(result.result), sort_keys=True)
     if len(text.encode("utf-8")) > store.MAX_RESULT_BYTES:
@@ -334,13 +349,11 @@ async def _run(operation_id: str, body: Body, continuation: str) -> None:
             operation_id,
             "terminal" if definite else "paused",
             "failed" if definite else "needs_attention",
-            (f"{type(exc).__name__}: {exc}",),
+            (_warning(_failure(exc)),),
         )
         return
     except Exception as exc:  # noqa: BLE001 - any body defect pauses for attention
-        _end(
-            operation_id, "paused", "needs_attention", (f"{type(exc).__name__}: {exc}",)
-        )
+        _end(operation_id, "paused", "needs_attention", (_warning(_failure(exc)),))
         return
     if ctx.has_uncertain():
         _end(
@@ -511,8 +524,13 @@ class OperationContext:
                 else _check_identity(verdict.identity or {})
             )
         except Exception as exc:  # noqa: BLE001 - a failing live check stays open
-            return f"effect {effect.key} live check failed ({type(exc).__name__}: {exc}); retry resume"
+            return _warning(
+                _failure(exc),
+                f"effect {effect.key} live check failed (",
+                "); retry resume",
+            )
         if verdict.status == "needs_attention":
-            return f"effect {effect.key}: {verdict.reason or 'live state does not match the record'}"
+            reason = verdict.reason or "live state does not match the record"
+            return _warning(reason, f"effect {effect.key}: ")
         self._settle(effect.key, verdict.status, identity)
         return None

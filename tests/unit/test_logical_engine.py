@@ -287,6 +287,22 @@ def test_effect_with_unknown_outcome_needs_attention():
     assert record.next_actions == ("resume", "abandon")
 
 
+def test_warning_text_is_bounded(monkeypatch):
+    record = _submit(body=_body(Writer(raises=RuntimeError("x" * 2000))))
+    assert record.warnings[0] == ("RuntimeError: " + "x" * 2000)[:512]
+    monkeypatch.setitem(
+        engine.CLASSIFIERS, "test.k0", _classify("needs_attention", reason="y" * 2000)
+    )
+    resumed = _submit(body=_body(Writer()), continuation="resume")
+    assert resumed.warnings[0] == ("effect step0: " + "y" * 2000)[:512]
+    monkeypatch.setitem(
+        engine.CLASSIFIERS, "test.k0", _classify("applied", raises=OSError("z" * 2000))
+    )
+    again = _submit(body=_body(Writer()), continuation="resume")
+    assert len(again.warnings[0]) == 512
+    assert again.warnings[0].endswith("zz); retry resume")
+
+
 def test_body_defect_before_any_effect_needs_attention():
     async def body(ctx):
         raise KeyError("missing")
