@@ -57,8 +57,8 @@ system keeps today's behaviour.
   the report raises the first omitted system's `HMCError` instead of returning
   an empty list, so no reader shows "No managed systems found" for an estate
   whose systems cannot be read. The `hmc_capacity_report` and
-  `hmc_find_placement` tool descriptions state the omission; `docs/tools/` is
-  regenerated.
+  `hmc_find_placement` tool descriptions state the omission. `docs/tools/`
+  carries only each description's first line, so it does not change.
 - **Composite system summary** (`operations/inventory/composite.py`): no code
   change. `_inventory_or_warning` already turns the `HMCError` into the
   warning `"LPAR inventory is unavailable: …"` with `lpar_count` `None`. This
@@ -142,4 +142,5 @@ Regression tests use an empty scoped feed (HTTP 204) and a `no connection` /
 | Capacity: operating-system feed error stays fatal | focused-test | new test |
 | Composite surfaces an LPAR warning | focused-test | new HTTP test |
 | Discovery records the non-operating system as unreadable | focused-test | new HTTP test: not-found error names `1 could not be read: <sys-R1 UUID>` |
-| Tool descriptions name the capacity omission | focused-test | `just tool-docs-check` diff of regenerated `docs/tools/` |
+| Tool descriptions name the capacity omission | task-test-not-applicable | prose on later description lines; `docs/tools/` renders only the first line, and no consumer validates the rest |
+| Utilization survey records feed gaps, not zero partitions | focused-test | new HTTP test |

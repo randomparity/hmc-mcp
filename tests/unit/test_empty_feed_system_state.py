@@ -24,6 +24,7 @@ from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.inventory.capacity import fetch_capacity_report
 from hmcpctl.operations.inventory.composite import fetch_system_summary
+from hmcpctl.operations.inventory.utilization import read_system
 from hmcpctl.operations.lpar.core import get_lpar, list_lpars
 from hmcpctl.operations.lpar.ownership import _discover_owning_system
 from hmcpctl.operations.systems.health import fetch_fleet_health
@@ -378,3 +379,20 @@ async def test_owning_system_discovery_reports_a_non_operating_system(
             await _discover_owning_system(hmc, lpar_uuid, "lpar-a")
 
     assert f"1 could not be read: {SYSTEM_UUID}" in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_utilization_survey_records_feed_gaps_for_a_non_operating_system(
+    mock_hmc,
+) -> None:
+    _mock_no_connection_system(mock_hmc)
+    system = _capacity_entry("no connection", SYSTEM_UUID, SYSTEM_NAME)
+
+    async with HMCClient(make_config()) as hmc:
+        reading = await read_system(hmc, "default", system)
+
+    feed_gaps = [gap for gap in reading.gaps if "State 'no connection'" in gap]
+    assert [gap.split(":")[0] for gap in feed_gaps] == [
+        "LogicalPartition feed",
+        "VirtualIOServer feed",
+    ]
