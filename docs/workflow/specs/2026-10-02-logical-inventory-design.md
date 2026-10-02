@@ -106,7 +106,8 @@ If `hmc_list_systems` is denied, nothing is read. The page has `systems_source` 
 and its `detail` tells the caller to pass `systems` selectors. A denied selector becomes an
 `InventorySystem` with `selector` set, `id`, `uuid` and `name` all `null`, and `partitions`
 `denied`. Nothing is read for it. A selector that is admitted but matches no system has
-`partitions` set to `unavailable`. Denied and unmatched selectors appear on the first page only.
+`partitions` set to `unavailable`. Denied selectors appear on the first page only. Selectors are
+resolved again on every page, so one that fails to resolve on a later page is reported there.
 An admitted selector also returns that system's `uuid`, `name` and `state` under the
 `hmc_list_lpars` decision. This is accepted: the selector already names the system.
 
@@ -133,7 +134,8 @@ until one of these happens:
 - the systems run out: `next_cursor` is `null`;
 - a read raises `HMCTransportError` (a timeout or connection failure): that system is
   `unavailable`, nothing further is read, and `next_cursor` points at the next system. Selector
-  resolution stops the same way: the unresolved selectors are `unavailable` with that detail.
+  resolution stops the same way: the unresolved selectors are `unavailable` with that detail,
+  and so are the resolved selectors' partitions, which are not read on that page.
   One stalled HMC therefore costs one request timeout per page, not one per system.
 
 `truncated` means "more remains to read", not "more partitions exist". A later page may be

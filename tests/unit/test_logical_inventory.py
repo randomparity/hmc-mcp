@@ -382,6 +382,34 @@ def test_transport_error_stops_selector_resolution():
     assert page.partitions == []
 
 
+def test_resolution_stall_reads_no_partitions_on_that_page():
+    hmc = FakeHMC(
+        [_system(1), _system(2)],
+        by_name={"sys2": HMCTransportError("timed out")},
+    )
+    page = _read(hmc, systems=["sys1", "sys2"])
+    assert not [call for call in hmc.calls if call[0] == "list_logical_partitions"]
+    statuses = {s.selector: s.sources.partitions for s in page.systems}
+    assert {status.status for status in statuses.values()} == {"unavailable"}
+    assert "timed out" in (statuses["sys1"].detail or "")
+    resolved = next(s for s in page.systems if s.selector == "sys1")
+    assert resolved.total_memory_mib == 1048576
+
+
+@pytest.mark.parametrize(
+    "failure", [HMCError("gone"), HMCTransportError("timed out"), None]
+)
+def test_selector_failing_on_a_cursor_page_is_reported(failure):
+    hmc = FakeHMC(
+        [_system(1), _system(2)],
+        {_uuid(2): [_lpar(2, 1)]},
+        by_name={"sys2": failure},
+    )
+    later = _read(hmc, systems=["sys1", "sys2"], cursor=encode_cursor(_uuid(1), None))
+    statuses = {s.selector: s.sources.partitions.status for s in later.systems}
+    assert statuses["sys2"] == "unavailable"
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

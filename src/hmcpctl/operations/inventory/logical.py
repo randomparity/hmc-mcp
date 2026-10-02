@@ -233,8 +233,12 @@ def _unresolved(selector: str, status: SourceStatus) -> InventorySystem:
 
 async def _resolve(
     hmc: Any, admit: Admit, selectors: Sequence[str]
-) -> tuple[list[InventorySystem], list[_Candidate]]:
-    """Admit, then resolve, each distinct selector, as ``resolve_system_uuid`` does."""
+) -> tuple[list[InventorySystem], list[_Candidate], str | None]:
+    """Admit, then resolve, each distinct selector, as ``resolve_system_uuid`` does.
+
+    The third value is a transport failure's detail: the HMC has stalled, so the
+    resolved selectors' partitions are not read on this page.
+    """
     unresolved: list[InventorySystem] = []
     candidates: list[_Candidate] = []
     stopped: str | None = None
@@ -272,7 +276,7 @@ async def _resolve(
             )
             continue
         candidates.append(_Candidate(selector, str(entry["UUID"]), entry))
-    return unresolved, candidates
+    return unresolved, candidates, stopped
 
 
 def _partition(
@@ -310,6 +314,7 @@ class _Reader:
     enumerated: bool
     lpar_state: PartitionState | None
     owner: str | None
+    stalled: str | None = None
     capacity_denial: str | None = None
     capacity_asked: bool = False
 
@@ -337,7 +342,9 @@ class _Reader:
         ownership_status = _status(OWNERSHIP_TOOL, self.admit(OWNERSHIP_TOOL, selector))
         entries: list[dict[str, Any]] = []
         stop: str | None = None
-        if partitions_status.status == "ok":
+        if partitions_status.status == "ok" and self.stalled is not None:
+            partitions_status = _unavailable(PARTITIONS_TOOL, self.stalled)
+        elif partitions_status.status == "ok":
             try:
                 entries = await self.hmc.list_logical_partitions(candidate.uuid)
             except HMCError as exc:
@@ -409,19 +416,28 @@ async def read_inventory(
     """Read one page of the connection's systems and partitions (ADR 0196)."""
     _check_inputs(systems, owner, limit)
     start = decode_cursor(cursor) if cursor is not None else None
+    stalled: str | None = None
     if systems is None:
         systems_source, candidates = await _enumerate(hmc, admit)
         unresolved: list[InventorySystem] = []
     else:
         systems_source = None
-        unresolved, candidates = await _resolve(hmc, admit, systems)
+        unresolved, candidates, stalled = await _resolve(hmc, admit, systems)
     ordered = sorted(
         {c.uuid: c for c in reversed(candidates)}.values(), key=lambda c: c.uuid
     )
     if start is not None:
         ordered = [c for c in ordered if c.uuid >= start[0]]
-    reader = _Reader(hmc, admit, connection, systems is None, lpar_state, owner)
-    page_systems = list(unresolved) if start is None else []
+    reader = _Reader(
+        hmc, admit, connection, systems is None, lpar_state, owner, stalled
+    )
+    # A denial is reported once, on the first page; a selector that fails to resolve on
+    # a later page is reported there, or its remaining partitions would vanish silently.
+    page_systems = [
+        s
+        for s in unresolved
+        if start is None or s.sources.partitions.status != "denied"
+    ]
     partitions: list[InventoryPartition] = []
     next_cursor: str | None = None
     systems_truncated = False
