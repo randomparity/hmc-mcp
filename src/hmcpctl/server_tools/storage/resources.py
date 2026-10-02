@@ -721,11 +721,11 @@ def hmc_upload_iso(
     a path on the MCP server's filesystem is refused. The download runs from the
     MCP server's network position, so the URL's host must be on the operator's
     allowlist (`HMC_ISO_URL_ALLOWLIST`); with no allowlist configured every URL
-    is refused, and redirects are never followed. Computes SHA-256 and size
-    before upload, refuses a volume group without a media repository and name
+    is refused, and redirects are never followed. Computes the SHA-256 and size
+    of the downloaded bytes before upload, refuses a volume group without a media repository and name
     collisions, reports success only once the repository lists the media, and
     releases the HMC upload handle on every outcome. Returns the result data,
-    including the repository's media entry.
+    including the HMC repository's media entry.
 
     Args:
         vios_name_or_uuid: VIOS name or UUID to target.
@@ -739,7 +739,11 @@ def hmc_upload_iso(
         profile: HMC profile name (uses default if omitted).
 
     Returns:
-        Dict with upload status, media details, SHA-256 checksum, and size.
+        Dict with upload status, media name, size, `source_sha256`, and `media`.
+        `source_sha256` is the SHA-256 of the bytes downloaded from the source
+        URL, computed locally and not read back from the VIOS. `media` is the
+        HMC REST repository entry; its `MountType` is the HMC's own value and can
+        differ from the access mode VIOS `lsrep` reports.
 
     Raises:
         HMCError: For HMC API errors during the upload, or when the repository

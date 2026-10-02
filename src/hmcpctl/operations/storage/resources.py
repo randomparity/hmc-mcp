@@ -927,9 +927,13 @@ async def upload_iso(
         Dict with:
         - 'status': 'uploaded'
         - 'media_name': Name of the media in the repository.
-        - 'media_size_bytes': Size of the uploaded ISO.
-        - 'sha256': SHA-256 checksum of the uploaded ISO.
-        - 'media': The repository's entry for the uploaded media.
+        - 'media_size_bytes': Size of the downloaded ISO.
+        - 'source_sha256': SHA-256 of the bytes downloaded from the source URL.
+          It is computed locally, not read back from the VIOS, so it shows the
+          download was intact and nothing about the media the VIOS holds.
+        - 'media': The HMC REST repository entry for the uploaded media. Its
+          ``MountType`` is the HMC's own value and can differ from the access
+          mode VIOS ``lsrep`` reports (for example ``rw`` here, ``ro`` there).
 
     Raises:
         HMCError: For malformed ISO URLs, HMC API errors during the web File
@@ -984,7 +988,7 @@ async def upload_iso(
             "status": "uploaded",
             "media_name": media_name,
             "media_size_bytes": file_size,
-            "sha256": iso_sha256,
+            "source_sha256": iso_sha256,
             "media": uploaded_media_entry,
         }
     finally:

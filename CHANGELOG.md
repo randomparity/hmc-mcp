@@ -8,6 +8,13 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ## [Unreleased]
 
+### Changed
+
+- `hmc_upload_iso` and `hmcpctl storage upload-iso` return the download digest as
+  `source_sha256` instead of `sha256`, with no alias. It is computed from the bytes fetched from
+  the source URL, not read back from the VIOS; `media` is documented as the HMC repository entry,
+  whose `MountType` can differ from VIOS `lsrep` (#1281).
+
 ### Fixed
 
 - `hmcpctl report utilization --csv` quotes a `notes` cell that starts with a spreadsheet
