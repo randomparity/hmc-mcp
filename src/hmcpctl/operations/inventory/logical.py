@@ -363,10 +363,9 @@ class _Reader:
                 partitions_status = _unavailable(PARTITIONS_TOOL, text)
                 stop = text if isinstance(exc, HMCTransportError) else None
         if partitions_status.status != "ok":
-            detail = f"ownership is read from {PARTITIONS_TOOL}, which is {partitions_status.status}"
-            ownership_status = SourceStatus(
-                partitions_status.status, OWNERSHIP_TOOL, detail
-            )
+            state = partitions_status.status
+            detail = f"ownership is read from {PARTITIONS_TOOL}, which is {state}"
+            ownership_status = SourceStatus(state, OWNERSHIP_TOOL, detail)
         capacity_status, figures = self.capacity(candidate.entry)
         resource = candidate.entry.get("Resource") or {}
         system = InventorySystem(
@@ -439,7 +438,13 @@ async def read_inventory(
     if start is not None:
         ordered = [c for c in ordered if c.uuid >= start[0]]
     reader = _Reader(
-        hmc, admit, connection, systems is None, lpar_state, owner, stalled
+        hmc,
+        admit,
+        connection,
+        enumerated=systems is None,
+        lpar_state=lpar_state,
+        owner=owner,
+        stalled=stalled,
     )
     # A denial is reported once, on the first page; a selector that fails to resolve on
     # a later page is reported there, or its remaining partitions would vanish silently.
