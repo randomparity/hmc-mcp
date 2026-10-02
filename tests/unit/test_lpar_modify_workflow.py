@@ -14,9 +14,23 @@ from hmcpctl.operations.lpar.dlpar import modify_lpar
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 
 
+def _hmc_with_system(configurable_memory_mib: int = 16384) -> AsyncMock:
+    """An HMC double whose system reads return the dict documents production gets."""
+    hmc = AsyncMock()
+    hmc.find_system_by_name.return_value = {"UUID": "system-uuid-1"}
+    hmc.get_managed_system.return_value = {
+        "Resource": {
+            "AssociatedSystemMemoryConfiguration": {
+                "ConfigurableSystemMemory": str(configurable_memory_mib)
+            }
+        }
+    }
+    return hmc
+
+
 @pytest.mark.asyncio
 async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch):
-    hmc = AsyncMock()
+    hmc = _hmc_with_system()
     hmc.update_logical_partition.side_effect = [
         {"UUID": "lpar-1", "PartitionName": "renamed"},
         HMCError("resource update failed", 500),
@@ -46,13 +60,14 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
         ("resources", "error"),
     ]
     assert result.warnings == ("resource update failed (HTTP 500)",)
+    hmc.get_managed_system.assert_awaited_once_with("system-uuid-1")
 
 
 @pytest.mark.asyncio
 async def test_modify_lpar_propagates_resource_failure_without_partial_state(
     monkeypatch,
 ):
-    hmc = AsyncMock()
+    hmc = _hmc_with_system()
     hmc.update_logical_partition.side_effect = HMCError("resource update failed", 500)
     monkeypatch.setattr(
         "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
@@ -71,6 +86,30 @@ async def test_modify_lpar_propagates_resource_failure_without_partial_state(
             LparResources(desired_memory=8192),
             LparPcieAssignments(),
         )
+
+
+@pytest.mark.asyncio
+async def test_modify_lpar_refuses_memory_above_the_system_bound(monkeypatch):
+    hmc = _hmc_with_system(configurable_memory_mib=4096)
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.dlpar.resolve_and_authorize_lpar_mutation",
+        AsyncMock(return_value="lpar-1"),
+    )
+    monkeypatch.setattr(
+        "hmcpctl.operations.lpar.dlpar.prevalidate_lpar_pcie_assignments",
+        AsyncMock(),
+    )
+
+    with pytest.raises(ValueError, match="exceeds the managed system's configurable"):
+        await modify_lpar(
+            hmc,
+            "system-1",
+            "lpar-1",
+            LparResources(desired_memory=8192),
+            LparPcieAssignments(),
+        )
+
+    hmc.update_logical_partition.assert_not_awaited()
 
 
 @pytest.mark.asyncio
