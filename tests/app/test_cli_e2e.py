@@ -35,9 +35,9 @@ LOGON = b"""<?xml version="1.0"?>
 SYSTEMS = b"""<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:sys-uuid-1</id>
+    <id>urn:uuid:33333333-3333-4333-8333-333333333333</id>
     <title>ManagedSystem:9179-MHD*06064FV</title>
-    <link rel="SELF" href="https://hmc/rest/api/uom/ManagedSystem/sys-uuid-1"/>
+    <link rel="SELF" href="https://hmc/rest/api/uom/ManagedSystem/33333333-3333-4333-8333-333333333333"/>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
         <SystemName>server1</SystemName>
@@ -138,7 +138,10 @@ class _MockHMC(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/rest/api/uom/ManagedSystem":
             self._send(SYSTEMS)
-        elif path == "/rest/api/uom/LogicalPartition":
+        elif (
+            path
+            == "/rest/api/uom/ManagedSystem/33333333-3333-4333-8333-333333333333/LogicalPartition"
+        ):
             self._send(LPARS)
         else:
             self._send(b"", 404)

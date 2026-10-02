@@ -287,17 +287,9 @@ def test_lpar_document_link_preserves_mixed_case():
     )
 
 
-@pytest.mark.parametrize(
-    "method,resource_type",
-    [
-        ("list_logical_partitions", "LogicalPartition"),
-        ("list_vios", "VirtualIOServer"),
-    ],
-)
-@pytest.mark.parametrize("scope", [None, ""])
-def test_optional_uuid_scopes_still_allow_unscoped_lists(
-    method, resource_type, scope, monkeypatch
-):
+@pytest.mark.parametrize("method", ["list_logical_partitions", "list_vios"])
+def test_an_empty_system_scope_never_reads_the_hmc_wide_feed(method, monkeypatch):
+    """The HMC-wide feeds time out while one system has no connection (#1293)."""
     client = _client()
     requested = []
 
@@ -306,8 +298,9 @@ def test_optional_uuid_scopes_still_allow_unscoped_lists(
         return ""
 
     monkeypatch.setattr(client, "_get", record)
-    asyncio.run(getattr(client, method)(scope))
-    assert requested == [f"/rest/api/uom/{resource_type}"]
+    with pytest.raises(ValueError, match="^system_uuid must be a UUID$"):
+        asyncio.run(getattr(client, method)(""))
+    assert requested == []
 
 
 def test_lpm_operation_refusal_precedes_uuid_refusal():

@@ -3,7 +3,8 @@
 The HMC's search parser refuses a PartitionState value with a space:
 ``LogicalPartition/search/(PartitionState==not%20activated)`` is a captured
 ``500 Unable to parse expression``. ``list_lpars`` therefore filters the
-captured ``GET /rest/api/uom/LogicalPartition`` feed itself.
+partition feeds itself; without a system it reads each operating system's
+``ManagedSystem/{uuid}/LogicalPartition`` feed (ADR 0197).
 """
 
 from __future__ import annotations
@@ -24,6 +25,15 @@ _FEED = (
     '<feed xmlns="http://www.w3.org/2005/Atom">'
     f"{_ENTRY.split('?>', 1)[-1]}{_RUNNING_ENTRY.split('?>', 1)[-1]}</feed>"
 )
+_SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
+_SYSTEMS = (
+    '<feed xmlns="http://www.w3.org/2005/Atom"><entry>'
+    f"<id>urn:uuid:{_SYSTEM_UUID}</id>"
+    '<content type="application/vnd.ibm.powervm.uom+xml">'
+    '<ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
+    "<SystemName>sys-E2</SystemName><State>operating</State>"
+    "</ManagedSystem></content></entry></feed>"
+)
 
 
 @pytest.mark.asyncio
@@ -36,17 +46,24 @@ async def test_fleet_wide_state_filter_reads_the_feed_not_the_search(
     search = mock_hmc.get(url__regex=r"/rest/api/uom/LogicalPartition/search/.*").mock(
         return_value=refused
     )
-    feed = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_SYSTEMS)
+    )
+    feed = mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{_SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(200, text=_FEED))
+    fleet_wide = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
         return_value=httpx.Response(200, text=_FEED)
     )
 
     async with HMCClient(make_config()) as hmc:
-        lpars = await list_lpars(hmc, state=state)
+        listing = await list_lpars(hmc, state=state)
 
     assert "PartitionState==not%20activated" in search_path
     assert not search.called
+    assert not fleet_wide.called
     assert feed.call_count == 1
-    assert [lpar["Resource"]["PartitionState"] for lpar in lpars] == [state]
+    assert [lpar["Resource"]["PartitionState"] for lpar in listing.entries] == [state]
 
 
 def test_partition_states_are_the_hmc_schema_enumeration() -> None:

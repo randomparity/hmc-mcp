@@ -12,7 +12,8 @@ def entries(data: object) -> list[Mapping[str, object]]:
     elif isinstance(data, Mapping):
         raw_entries = data.get("entries", [])
     else:
-        raw_entries = []
+        # A dataclass tool result (ADR 0197's listing) arrives as a generated model.
+        raw_entries = getattr(data, "entries", [])
     if not isinstance(raw_entries, list):
         return []
     return [entry for entry in raw_entries if isinstance(entry, Mapping)]

@@ -95,14 +95,16 @@ async def test_adapter_listing_ignores_a_blank_system(blank):
 @pytest.mark.asyncio
 async def test_lpar_and_vios_inventory_ignore_a_blank_system(blank):
     hmc = _hmc()
+    hmc.inventory_managed_systems.return_value = ([], [])
 
     await list_lpars(hmc, blank)
     await list_vios(hmc, blank)
     await get_lpar(hmc, "lp1", system_name_or_uuid=blank)
 
     hmc.find_system_by_name.assert_not_awaited()
-    hmc.list_logical_partitions.assert_awaited_once_with(None)
-    hmc.list_vios.assert_awaited_once_with(None)
+    assert hmc.inventory_managed_systems.await_count == 2
+    hmc.list_logical_partitions.assert_not_awaited()
+    hmc.list_vios.assert_not_awaited()
     hmc.find_partition_by_name.assert_awaited_once_with("lp1", system_uuid=None)
 
 
@@ -110,12 +112,12 @@ async def test_lpar_and_vios_inventory_ignore_a_blank_system(blank):
 @pytest.mark.asyncio
 async def test_ownership_listing_walks_the_fleet_for_a_blank_system(blank):
     hmc = _hmc()
-    hmc.list_uom.return_value = []
+    hmc.inventory_managed_systems.return_value = ([], [])
 
-    assert await list_lpar_ownership(hmc, blank) == []
+    assert (await list_lpar_ownership(hmc, blank)).entries == []
 
     hmc.find_system_by_name.assert_not_awaited()
-    hmc.list_uom.assert_awaited_once_with("LogicalPartition")
+    hmc.inventory_managed_systems.assert_awaited_once_with()
 
 
 @BLANKS

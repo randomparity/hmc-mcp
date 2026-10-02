@@ -14,6 +14,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `source_sha256` instead of `sha256`, with no alias. It is computed from the bytes fetched from
   the source URL, not read back from the VIOS; `media` is documented as the HMC repository entry,
   whose `MountType` can differ from VIOS `lsrep` (#1281).
+- `hmc_list_lpars`, `hmc_list_vios` and `hmc_list_lpar_ownership` return `entries` and
+  `unreadable_systems` instead of a bare list, as do `hmcpctl lpars list --json` and
+  `hmcpctl vios list --json` and the `list_lpars`, `list_vios` and `list_lpar_ownership`
+  operations. Without a system they no longer read the HMC-wide partition or VIOS feeds,
+  which timed out on an HMC with one system in `No Connection`. They read each operating
+  managed system's own feed and name every other system in `unreadable_systems`; the CLI also
+  prints one `Skipped managed system` line per skipped system on stderr. A VIOS state filter is
+  now always applied locally (ADR 0197, #1293).
 
 ### Fixed
 

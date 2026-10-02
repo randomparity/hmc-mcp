@@ -76,7 +76,11 @@ async def test_baseline_capture_preserves_identity_and_adapter_topology() -> Non
             "hmc_get_lpar_msp": True,
             "hmc_get_lpar_proc_compat": "POWER10",
             "hmc_list_adapters": adapters,
-            "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "2"}}],
+            # A FleetListing result arrives as a generated dataclass (ADR 0197).
+            "hmc_list_vios": SimpleNamespace(
+                entries=[{"UUID": "vios-uuid", "Resource": {"PartitionID": "2"}}],
+                unreadable_systems=[],
+            ),
             "hmc_run_command": "name=lp three",
         }
     )

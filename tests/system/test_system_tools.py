@@ -12,6 +12,7 @@ import pytest
 from conftest import captured_lpar_entry, captured_system_entry
 
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems.fleet import FleetListing, UnreadableSystem
 from hmcpctl.server_tools.inventory.capacity import (
     hmc_capacity_report,
     hmc_find_placement,
@@ -59,6 +60,55 @@ def _feed(uuid: str, rtype: str, **fields: str) -> str:
   </entry>
 </feed>
 """
+
+
+OFFLINE_UUID = "00000000-0000-0000-0000-000000000009"
+
+
+def _fleet(mock_hmc) -> list:
+    """sys-R1 in No Connection and sys-E2 operating; returns the HMC-wide routes.
+
+    Each returned route must stay uncalled: the HMC-wide feeds time out while
+    any one system has no connection (#1293).
+    """
+    entries = [
+        _feed(uuid, "ManagedSystem", **fields)
+        .split("<entry>", 1)[1]
+        .split("</entry>")[0]
+        for uuid, fields in (
+            (
+                OFFLINE_UUID,
+                {
+                    "SystemName": "sys-R1",
+                    "State": "No Connection",
+                    "DetailedState": "None",
+                },
+            ),
+            (SYSTEM_UUID, {"SystemName": "sys-E2", "State": "operating"}),
+        )
+    ]
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(
+            200,
+            text='<feed xmlns="http://www.w3.org/2005/Atom">'
+            + "".join(f"<entry>{entry}</entry>" for entry in entries)
+            + "</feed>",
+        )
+    )
+    return [
+        mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+            return_value=httpx.Response(504)
+        ),
+        mock_hmc.get("/rest/api/uom/VirtualIOServer").mock(
+            return_value=httpx.Response(504)
+        ),
+        mock_hmc.get(url__regex=r"/rest/api/uom/VirtualIOServer/search/.*").mock(
+            return_value=httpx.Response(504)
+        ),
+    ]
+
+
+SKIPPED = [UnreadableSystem("sys-R1", OFFLINE_UUID, "No Connection", "None")]
 
 
 LPAR_SEARCH_FEED = """\
@@ -255,16 +305,19 @@ def test_find_system_list_error_propagates(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_lpars_no_arg_lists_all(monkeypatch, mock_hmc):
-    """hmc_list_lpars() GETs the global LogicalPartition feed."""
+def test_lpars_no_arg_reads_each_operating_system(monkeypatch, mock_hmc):
+    """hmc_list_lpars() reads operating systems' feeds and names the rest."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+    fleet_wide = _fleet(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(
             200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1")
         )
     )
     result = hmc_list_lpars()
-    assert result[0]["Resource"]["PartitionName"] == "aix1"
+    assert [e["Resource"]["PartitionName"] for e in result.entries] == ["aix1"]
+    assert result.unreadable_systems == SKIPPED
+    assert not any(route.called for route in fleet_wide)
 
 
 def test_lpars_system_uuid_scopes(monkeypatch, mock_hmc):
@@ -331,16 +384,19 @@ def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_vios_no_arg_lists_all(monkeypatch, mock_hmc):
-    """hmc_list_vios() GETs the VirtualIOServer feed."""
+def test_vios_no_arg_reads_each_operating_system(monkeypatch, mock_hmc):
+    """hmc_list_vios() reads operating systems' feeds and names the rest."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/VirtualIOServer").mock(
+    fleet_wide = _fleet(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(
             200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
         )
     )
     result = hmc_list_vios()
-    assert result[0]["Resource"]["PartitionName"] == "vios1"
+    assert [e["Resource"]["PartitionName"] for e in result.entries] == ["vios1"]
+    assert result.unreadable_systems == SKIPPED
+    assert not any(route.called for route in fleet_wide)
 
 
 def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
@@ -588,7 +644,10 @@ def test_systems_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
 def test_lpars_state_filter_reads_the_partition_feed(monkeypatch, mock_hmc):
     """hmc_list_lpars(state='running') filters the feed; V10R3 cannot search it (#1202)."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+    fleet_wide = _fleet(mock_hmc)
+    route = mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=_feed(
@@ -601,14 +660,16 @@ def test_lpars_state_filter_reads_the_partition_feed(monkeypatch, mock_hmc):
     )
     result = hmc_list_lpars(state="running")
     assert route.called
-    assert len(result) == 1
-    assert result[0]["Resource"]["PartitionState"] == "running"
+    assert not any(route.called for route in fleet_wide)
+    assert len(result.entries) == 1
+    assert result.entries[0]["Resource"]["PartitionState"] == "running"
 
 
 def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
-    """hmc_list_lpars(state='not activated') returns [] when no partition matches."""
+    """hmc_list_lpars(state='not activated') returns no entries when none match."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+    _fleet(mock_hmc)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(
             200,
             text=_feed(
@@ -620,14 +681,15 @@ def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
         )
     )
     result = hmc_list_lpars(state="not activated")
-    assert result == []
+    assert result == FleetListing([], SKIPPED)
 
 
-def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
-    """hmc_list_vios(state='running') GETs the VirtualIOServer PartitionState search endpoint."""
+def test_vios_state_filter_reads_each_operating_system(monkeypatch, mock_hmc):
+    """hmc_list_vios(state='running') filters scoped feeds, never the HMC-wide search."""
     _hmc_env(monkeypatch)
+    fleet_wide = _fleet(mock_hmc)
     route = mock_hmc.get(
-        "/rest/api/uom/VirtualIOServer/search/(PartitionState==running)"
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -641,8 +703,9 @@ def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
     )
     result = hmc_list_vios(state="running")
     assert route.called
-    assert len(result) == 1
-    assert result[0]["Resource"]["PartitionState"] == "running"
+    assert not any(route.called for route in fleet_wide)
+    assert [e["Resource"]["PartitionState"] for e in result.entries] == ["running"]
+    assert result.unreadable_systems == SKIPPED
 
 
 def test_vios_state_filter_rejects_unknown_state(monkeypatch, mock_hmc):
@@ -675,4 +738,4 @@ def test_vios_system_and_state_filters_compose(monkeypatch, mock_hmc):
 
     result = hmc_list_vios(system_name_or_uuid=SYSTEM_UUID, state="running")
 
-    assert result == []
+    assert result == FleetListing([], [])

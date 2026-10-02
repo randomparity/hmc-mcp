@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 
 from ..._app import (
+    require_valid_limit,
     run_limited_collection,
     with_client,
 )
@@ -29,6 +32,7 @@ from ...operations.systems.core import (
     modify_system,
     power_system,
 )
+from ...operations.systems.fleet import FleetListing
 from ...operations.vios.core import get_vios_storage_detail, list_vios
 from ...tool_registry import tool_module
 
@@ -103,12 +107,16 @@ def hmc_list_lpars(
     state: PartitionState | None = None,
     profile: str | None = None,
     limit: int | None = None,
-) -> list[dict[str, Any]]:
+) -> FleetListing:
     """List LPARs, optionally filtered by system and state.
 
-    When both filters are supplied, retrieves the managed system's LPAR feed and
-    retains entries with the requested state. Use hmc_get_lpar for a single
-    partition or hmc_get_lpar_state for a lightweight state lookup.
+    Returns ``entries`` (the partitions) and ``unreadable_systems``. Without a
+    system, each operating managed system's LPAR feed is read in turn; a system
+    that is not operating is not read and is named in ``unreadable_systems``
+    instead, so its partitions are absent from ``entries``. With a system,
+    ``unreadable_systems`` is empty. A state filter is applied to the feed
+    entries locally. Use hmc_get_lpar for a single partition or
+    hmc_get_lpar_state for a lightweight state lookup.
 
     Args:
         system_name_or_uuid: Optional SystemName or UUID whose partitions to list.
@@ -116,9 +124,10 @@ def hmc_list_lpars(
         profile: Optional configured HMC profile name; uses the default when omitted.
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries. This client-side cap does not
-            reduce HMC work or network transfer.
+            reduce HMC work or network transfer, and never truncates
+            unreadable_systems.
     """
-    return run_limited_collection(
+    return _limited_listing(
         lambda hmc: list_lpars(hmc, system_name_or_uuid, state),
         limit,
         profile=profile,
@@ -181,27 +190,27 @@ def hmc_list_vios(
     state: PartitionState | None = None,
     profile: str | None = None,
     limit: int | None = None,
-) -> list[dict[str, Any]]:
+) -> FleetListing:
     """List Virtual I/O Servers, optionally filtered by system or state.
 
-    Results may be restricted to one managed system via system_name_or_uuid
-    (accepts either a SystemName or a UUID).
-
-    When state is provided without a system scope, returns only
-    VIOS entries whose PartitionState matches the given value, using the HMC
-    server-side search endpoint. With a system scope, the returned feed is
-    filtered locally after the scoped request. Use hmc_get_vios_storage_detail
-    for the storage-detail mappings of one VIOS.
+    Returns ``entries`` (the VIOSes) and ``unreadable_systems``. Without a
+    system, each operating managed system's VIOS feed is read in turn; a system
+    that is not operating is not read and is named in ``unreadable_systems``
+    instead, so its VIOSes are absent from ``entries``. With a system,
+    ``unreadable_systems`` is empty. A state filter is applied to the feed
+    entries locally. Use hmc_get_vios_storage_detail for the storage-detail
+    mappings of one VIOS.
 
     Args:
         system_name_or_uuid: Optional SystemName or UUID whose VIOSes to list.
-        state: Optional exact PartitionState value to filter server-side.
+        state: Optional exact PartitionState value to filter.
         profile: Optional configured HMC profile name; uses the default when omitted.
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries. This client-side cap does not
-            reduce HMC work or network transfer.
+            reduce HMC work or network transfer, and never truncates
+            unreadable_systems.
     """
-    return run_limited_collection(
+    return _limited_listing(
         lambda hmc: list_vios(hmc, system_name_or_uuid, state),
         limit,
         profile=profile,
@@ -387,4 +396,18 @@ def hmc_power_off_system(
             poll_interval=poll_interval,
         ),
         profile=profile,
+    )
+
+
+def _limited_listing(
+    fn: Callable[[Any], Awaitable[FleetListing]],
+    limit: int | None,
+    *,
+    profile: str | None,
+) -> FleetListing:
+    """Run a fleet listing, then cap its entries; skipped systems stay named."""
+    require_valid_limit(limit)
+    listing = with_client(fn, profile=profile)
+    return (
+        listing if limit is None else replace(listing, entries=listing.entries[:limit])
     )

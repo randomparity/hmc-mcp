@@ -189,7 +189,7 @@ class LparsClient(Protocol):
     ) -> None: ...
 
     async def list_logical_partitions(
-        self, system_uuid: str | None = None
+        self, system_uuid: str
     ) -> list[dict[str, Any]]: ...
 
     async def list_uom(
@@ -483,15 +483,17 @@ class SystemsClient(JobClient, Protocol):
 
     async def list_managed_systems(self) -> list[dict[str, Any]]: ...
 
+    async def inventory_managed_systems(
+        self,
+    ) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]: ...
+
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None: ...
 
     async def find_system_by_name(self, name: str) -> dict[str, Any] | None: ...
 
     async def _quick_all_system_names(self) -> dict[str, str]: ...
 
-    async def list_vios(
-        self, system_uuid: str | None = None
-    ) -> list[dict[str, Any]]: ...
+    async def list_vios(self, system_uuid: str) -> list[dict[str, Any]]: ...
 
 
 class TemplatesClient(JobClient, Protocol):

@@ -5,10 +5,12 @@ from __future__ import annotations
 import csv
 import io
 import shlex
+from dataclasses import replace
 from typing import Any, Literal
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
+from hmcpctl.operations.systems.fleet import FleetListing, read_fleet
 
 from ...documents import LparResources, build_vios_document
 from ...errors import HMCError
@@ -33,8 +35,12 @@ async def list_vios(
     hmc: HMCClient,
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
-) -> list[dict[str, Any]]:
-    """List VIOSes, optionally scoped to one system or partition state."""
+) -> FleetListing:
+    """List VIOSes, optionally scoped to one system or partition state.
+
+    Without a system, each operating managed system is read in turn and the
+    others are named in ``unreadable_systems`` (ADR 0197).
+    """
     if state is not None and state not in PARTITION_STATES:
         allowed = ", ".join(sorted(PARTITION_STATES))
         raise ValueError(f"state must be one of: {allowed}")
@@ -42,18 +48,21 @@ async def list_vios(
     system_uuid = (
         await resolve_system_uuid(hmc, selector) if selector is not None else None
     )
-    vios = (
-        await hmc.search_uom("VirtualIOServer", "PartitionState", state)
-        if system_uuid is None and state is not None
-        else await hmc.list_vios(system_uuid)
+    listing = (
+        FleetListing(await hmc.list_vios(system_uuid))
+        if system_uuid is not None
+        else await read_fleet(hmc, hmc.list_vios, "VIOSes")
     )
-    if state is None or system_uuid is None:
-        return vios
-    return [
-        entry
-        for entry in vios
-        if (entry.get("Resource") or {}).get("PartitionState") == state
-    ]
+    if state is None:
+        return listing
+    return replace(
+        listing,
+        entries=[
+            entry
+            for entry in listing.entries
+            if (entry.get("Resource") or {}).get("PartitionState") == state
+        ],
+    )
 
 
 async def get_vios_storage_detail(

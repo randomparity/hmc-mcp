@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from hmcpctl.client.core import HMCClient
@@ -24,6 +24,7 @@ from hmcpctl.operations.lpar.ownership import (
 from hmcpctl.operations.lpar.profile_sync import profile_adapter_warnings
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
+from hmcpctl.operations.systems.fleet import FleetListing, read_fleet
 
 from ...audit import records as audit
 from ...documents import (
@@ -117,8 +118,12 @@ async def list_lpars(
     hmc: HMCClient,
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
-) -> list[dict[str, Any]]:
-    """List LPARs, optionally scoped to one system and partition state."""
+) -> FleetListing:
+    """List LPARs, optionally scoped to one system and partition state.
+
+    Without a system, each operating managed system is read in turn and the
+    others are named in ``unreadable_systems`` (ADR 0197).
+    """
     if state is not None and state not in PARTITION_STATES:
         allowed = ", ".join(sorted(PARTITION_STATES))
         raise ValueError(f"state must be one of: {allowed}")
@@ -128,14 +133,21 @@ async def list_lpars(
     )
     # No PartitionState search: a V10R3 HMC answers a value with a space
     # ("not activated") with 500 "Unable to parse expression" (#1202).
-    lpars = await hmc.list_logical_partitions(system_uuid)
+    listing = (
+        FleetListing(await hmc.list_logical_partitions(system_uuid))
+        if system_uuid is not None
+        else await read_fleet(hmc, hmc.list_logical_partitions, "LPARs")
+    )
     if state is None:
-        return lpars
-    return [
-        entry
-        for entry in lpars
-        if (entry.get("Resource") or {}).get("PartitionState") == state
-    ]
+        return listing
+    return replace(
+        listing,
+        entries=[
+            entry
+            for entry in listing.entries
+            if (entry.get("Resource") or {}).get("PartitionState") == state
+        ],
+    )
 
 
 async def get_lpar(

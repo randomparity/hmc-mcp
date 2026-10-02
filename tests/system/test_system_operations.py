@@ -52,4 +52,7 @@ async def test_lpar_inventory_composes_system_and_state_filters(monkeypatch) -> 
     resolve_system.assert_awaited_once_with(hmc, "system-1")
     hmc.list_logical_partitions.assert_awaited_once_with("system-uuid")
     hmc.search_uom.assert_not_awaited()
-    assert result == [{"UUID": "one", "Resource": {"PartitionState": "running"}}]
+    assert result.entries == [
+        {"UUID": "one", "Resource": {"PartitionState": "running"}}
+    ]
+    assert result.unreadable_systems == []

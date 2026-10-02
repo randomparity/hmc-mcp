@@ -15,6 +15,7 @@ from dataclasses import FrozenInstanceError, asdict
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -2456,6 +2457,22 @@ def test_assertion_id_must_be_a_closed_shape_token():
         observation.Assertion("entry UUID equals job id", True)
 
 
+def test_record_keeps_a_dataclass_result_as_a_mapping(capsys):
+    """A FleetListing tool result arrives as a generated dataclass (ADR 0197)."""
+
+    @dataclasses.dataclass
+    class Listing:
+        entries: list
+        unreadable_systems: list
+
+    state = runner.RunState()
+    state.record(0, "hmc_list_vios", "PASS", Listing([{"UUID": "v-1"}], []))
+    state.record(0, "hmc_list_vios", "FAIL", Listing([{"UUID": "v-1"}], []))
+
+    for row in state.results:
+        assert row["data"] == {"entries": [{"UUID": "v-1"}], "unreadable_systems": []}
+
+
 def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     raw_entries = [
         {"Resource": {"UUID": "nested"}},
@@ -2467,6 +2484,10 @@ def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     assert results.entries({"entries": raw_entries}) == [raw_entries[0], raw_entries[2]]
     assert results.entries({"entries": {"UUID": "not-a-list"}}) == []
     assert results.entries("invalid") == []
+    # FastMCP hands a dataclass result (ADR 0197's FleetListing) to a client as a
+    # generated model rather than a mapping.
+    model = SimpleNamespace(entries=raw_entries, unreadable_systems=[])
+    assert results.entries(model) == [raw_entries[0], raw_entries[2]]
     assert results.resource(raw_entries[0]) == {"UUID": "nested"}
     assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
     assert results.resource({"Resource": "not-a-mapping"}) == {
@@ -3611,7 +3632,10 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         calls.append((tool, kwargs))
         counts[tool] = counts.get(tool, 0) + 1
         if tool == "hmc_list_vios":
-            return "PASS", [{"UUID": "vios", "Resource": {"PartitionID": "2"}}]
+            return "PASS", SimpleNamespace(
+                entries=[{"UUID": "vios", "Resource": {"PartitionID": "2"}}],
+                unreadable_systems=[],
+            )
         if tool == "hmc_get_lpar":
             return "PASS", {"uuid": "lp3"}
         if tool == "hmc_list_volume_groups":
@@ -4186,7 +4210,10 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
                 }
             ],
             "hmc_get_lpar": {"UUID": "lpar-uuid"},
-            "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
+            "hmc_list_vios": SimpleNamespace(
+                entries=[{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
+                unreadable_systems=[],
+            ),
         }
         return "PASS", responses.get(tool, {})
 
