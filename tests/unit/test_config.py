@@ -143,6 +143,27 @@ def test_response_bytes_invalid_toml(tmp_path, value):
         load_profile("dev", config_path=path)
 
 
+def test_validation_error_hides_rejected_password():
+    with pytest.raises(ValidationError) as caught:
+        HMCConfig.from_mapping({"host": "h", "user": "u", "password": 99887766})
+    text = str(caught.value)
+    assert "99887766" not in text
+    assert "input_value" not in text
+    assert "password" in text
+
+
+def test_load_profile_error_hides_unquoted_numeric_password(tmp_path):
+    path = _write_toml(
+        tmp_path / "config.toml",
+        '[profiles.dev]\nhost = "h"\nuser = "u"\npassword = 99887766\n',
+    )
+    with pytest.raises(ValidationError) as caught:
+        load_profile("dev", config_path=path)
+    text = str(caught.value)
+    assert "99887766" not in text
+    assert "password" in text
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1050,6 +1071,39 @@ def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
     )
     with pytest.raises(ConfigError, match="must map to a profile-key string"):
         list_profiles_and_nicknames(config_path=cfg)
+
+
+def _inventory_toml(tmp_path, body):
+    return _write_toml(
+        tmp_path / "config.toml",
+        f'[profiles.good]\nhost = "h"\n\n[profiles.bad]\nhost = "h"\n{body}\n',
+    )
+
+
+@pytest.mark.parametrize("value", ['"x443"', "[1]"])
+def test_config_inventory_names_profile_and_field_for_bad_port(tmp_path, value):
+    cfg = _inventory_toml(tmp_path, f"port = {value}")
+    with pytest.raises(
+        ConfigError, match=r"profile 'bad': port must be an integer, got"
+    ):
+        config_inventory(config_path=cfg)
+
+
+def test_config_inventory_names_profile_and_field_for_bad_verify_ssl(tmp_path):
+    cfg = _inventory_toml(tmp_path, 'verify_ssl = "maybe"')
+    with pytest.raises(
+        ConfigError, match=r"profile 'bad': verify_ssl must be a boolean"
+    ):
+        config_inventory(config_path=cfg)
+
+
+def test_config_inventory_coerces_like_hmcconfig(tmp_path):
+    cfg = _inventory_toml(tmp_path, 'port = "8443"\nverify_ssl = "false"')
+    bad = next(
+        p for p in config_inventory(config_path=cfg)["profiles"] if p["name"] == "bad"
+    )
+    assert bad["port"] == 8443
+    assert bad["verify_ssl"] is False
 
 
 # ---------------------------------------------------------------------------

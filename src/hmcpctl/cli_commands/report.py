@@ -6,7 +6,10 @@ import csv
 import math
 import os
 import tempfile
+from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import fields
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
@@ -17,13 +20,13 @@ from rich.markup import escape
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import ConfigError, config_inventory, env_var_value, load_profile
 from hmcpctl.operations.inventory.utilization import (
-    CpuFigures,
+    FIGURE_GROUPS,
     FleetSurvey,
     FleetSystem,
-    MemoryFigures,
-    PartitionFigures,
     Rollup,
+    SystemReading,
     allocated,
+    capacity_pairs,
     fleet_systems,
     rollup,
     survey_fleet,
@@ -31,6 +34,7 @@ from hmcpctl.operations.inventory.utilization import (
 )
 
 from .output import err_console, fail, usage_error
+from .report_html import render_html
 from .runtime import current_options, run_cli_coroutine
 
 COLUMNS = (
@@ -72,7 +76,25 @@ COLUMNS = (
     "profile_claim_mem_mib",
     "profile_claim_cpu",
     "notes",
+    "disk_internal_total_mib",
+    "disk_internal_assigned_mib",
+    "disk_internal_free_mib",
+    "disk_san_total_mib",
+    "disk_san_assigned_mib",
+    "disk_san_free_mib",
+    "disk_util_pct",
+    "slots_assigned",
+    "slots_unassigned",
+    "slots_sriov",
+    "slots_empty",
+    "slots_util_pct",
+    "sriov_adapters",
+    "sriov_logical_ports",
+    "sriov_logical_ports_free",
+    "sriov_util_pct",
 )
+# Utilizations beyond CPU and memory, each a capacity_pairs key with a *_util_pct column.
+_UTILIZATIONS = ("disk", "slots", "sriov")
 _UNKNOWN = "unknown"
 # An exported value would override every profile's own, sending one HMC's host,
 # credentials or TLS setting to all of them (load_profile's env-over-TOML precedence).
@@ -118,25 +140,20 @@ def _column(group: str, figure: str) -> str:
         return f"cpu_{figure}"
     if group == "memory":
         return f"mem_{figure}_mib"
+    if group == "disk":
+        return f"disk_{figure}_mib"
+    if group == "adapters":
+        return figure
     return _PARTITION_COLUMNS[figure]
 
 
-def _figure_cells(
-    cpu: CpuFigures, memory: MemoryFigures, partitions: PartitionFigures
-) -> dict[str, str]:
-    cells: dict[str, str] = {}
-    for group, figures in (
-        ("cpu", cpu),
-        ("memory", memory),
-        ("partitions", partitions),
-    ):
-        cells.update(
-            {
-                _column(group, item.name): _cell(getattr(figures, item.name))
-                for item in fields(figures)
-            }
-        )
-    return cells
+def _figure_cells(source: SystemReading | Rollup) -> dict[str, str]:
+    return {
+        _column(group, item.name): _cell(getattr(figures, item.name))
+        for group in FIGURE_GROUPS
+        for figures in (getattr(source, group),)
+        for item in fields(figures)
+    }
 
 
 def _system_row(system: FleetSystem) -> dict[str, str]:
@@ -167,7 +184,11 @@ def _system_row(system: FleetSystem) -> dict[str, str]:
         "mem_util_pct": _cell(
             utilization_pct(reading.memory.configurable, reading.memory.free)
         ),
-        **_figure_cells(reading.cpu, reading.memory, reading.partitions),
+        **{
+            f"{name}_util_pct": _cell(utilization_pct(*capacity_pairs(reading)[name]))
+            for name in _UTILIZATIONS
+        },
+        **_figure_cells(reading),
     }
 
 
@@ -185,7 +206,11 @@ def _rollup_row(row_type: str, profiles: str, total: Rollup) -> dict[str, str]:
         "mem_allocated_mib": _cell(total.mem_allocated),
         "mem_util_pct": _cell(total.mem_util_pct),
         "notes": notes,
-        **_figure_cells(total.cpu, total.memory, total.partitions),
+        **{
+            f"{name}_util_pct": _cell(getattr(total, f"{name}_util_pct"))
+            for name in _UTILIZATIONS
+        },
+        **_figure_cells(total),
     }
 
 
@@ -251,19 +276,58 @@ def _inert(row: dict[str, str]) -> dict[str, str]:
     }
 
 
-def _scratch_file(csv_path: Path) -> tuple[int, Path]:
-    """Create the owner-only temporary file the report is written to, beside *csv_path*.
+def _scratch_file(path: Path) -> tuple[int, Path]:
+    """Create the owner-only temporary file a report is written to, beside *path*.
 
     The open descriptor is returned so the report is written to the file mkstemp
     created, not to whatever its name points at by the time the survey ends.
     """
     try:
         handle, name = tempfile.mkstemp(
-            prefix=f".{csv_path.name}.", suffix=".tmp", dir=csv_path.parent
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
         )
     except OSError as exc:
-        usage_error(f"cannot write the report beside {csv_path}: {exc}")
+        usage_error(f"cannot write the report beside {path}: {exc}")
     return handle, Path(name)
+
+
+def _write_reports(
+    csv_path: Path | None,
+    html_path: Path | None,
+    survey_once: Callable[[], FleetSurvey],
+) -> FleetSurvey:
+    """Survey once and write each requested report through its own scratch file.
+
+    Every scratch file exists before the survey starts, so an unwritable directory fails
+    before any HMC is contacted, and none is renamed until every report is written.
+    """
+    targets = [
+        (path, kind) for path, kind in ((csv_path, "csv"), (html_path, "html")) if path
+    ]
+    try:
+        with ExitStack() as cleanup:
+            outputs = []
+            for path, kind in targets:
+                handle, scratch = _scratch_file(path)
+                cleanup.callback(scratch.unlink, missing_ok=True)
+                stream = cleanup.enter_context(
+                    os.fdopen(handle, "w", newline="", encoding="utf-8")
+                )
+                outputs.append((path, kind, scratch, stream))
+            survey = survey_once()
+            generated = datetime.now(UTC)
+            rows = report_rows(survey)
+            for _, kind, _, stream in outputs:
+                if kind == "csv":
+                    write_csv(stream, rows)
+                else:
+                    stream.write(render_html(rows, survey.profiles, generated))
+                stream.close()
+            for path, _, scratch, _ in outputs:
+                scratch.replace(path)
+    except OSError as exc:
+        fail(exc)
+    return survey
 
 
 def _selected_profiles(requested: list[str] | None) -> list[str]:
@@ -287,8 +351,14 @@ def _selected_profiles(requested: list[str] | None) -> list[str]:
 
 
 def report_utilization(
-    csv_path: Path = typer.Option(
-        ..., "--csv", dir_okay=False, help="Write the CSV report to this file."
+    csv_path: Path | None = typer.Option(
+        None, "--csv", dir_okay=False, help="Write the CSV report to this file."
+    ),
+    html_path: Path | None = typer.Option(
+        None,
+        "--html",
+        dir_okay=False,
+        help="Write the self-contained HTML report to this file.",
     ),
     profiles: list[str] | None = typer.Option(
         None,
@@ -302,7 +372,9 @@ def report_utilization(
         300.0, "--hmc-timeout", min=1.0, help="Seconds allowed per profile."
     ),
 ) -> None:
-    """Survey configured HMCs and write CPU and memory allocation as CSV.
+    """Survey configured HMCs and write CPU, memory, disk and adapter allocation.
+
+    Give --csv PATH, --html PATH, or both; both are written from one survey.
 
     The report holds internal hostnames, system names and serials: never commit it
     or post it publicly.
@@ -311,6 +383,14 @@ def report_utilization(
         usage_error(
             f"--hmc-timeout must be a finite number of seconds, got {hmc_timeout}"
         )
+    if csv_path is None and html_path is None:
+        usage_error("give --csv PATH, --html PATH, or both")
+    if (
+        csv_path is not None
+        and html_path is not None
+        and str(csv_path.resolve()).casefold() == str(html_path.resolve()).casefold()
+    ):
+        usage_error("--csv and --html name the same file; give two paths")
     exported = [name for name in _PROFILE_OVERRIDES if env_var_value(name) is not None]
     if exported:
         usage_error(
@@ -333,8 +413,9 @@ def report_utilization(
         try:
             config = load_profile(profile)
         except ValidationError as exc:
-            # The failure reason lands in a circulated CSV; pydantic's own text echoes
-            # each rejected input, which can be the profile's password.
+            # The failure reason lands in a circulated CSV on one line; pydantic's own
+            # text spans several lines and ends with a docs URL. errors() still carries
+            # each rejected input, which can be the password, so render only loc and msg.
             problems = "; ".join(
                 f"{'.'.join(map(str, error['loc']))}: {error['msg']}"
                 for error in exc.errors()
@@ -342,28 +423,24 @@ def report_utilization(
             raise ConfigError(f"profile {profile!r} is invalid: {problems}") from None
         return HMCClient(config)
 
-    handle, scratch = _scratch_file(csv_path)
-    try:
-        with os.fdopen(handle, "w", newline="", encoding="utf-8") as stream:
-            survey = run_cli_coroutine(
-                lambda: survey_fleet(
-                    selected, opened, concurrency=concurrency, hmc_timeout=hmc_timeout
-                )
+    def survey_once() -> FleetSurvey:
+        survey = run_cli_coroutine(
+            lambda: survey_fleet(
+                selected, opened, concurrency=concurrency, hmc_timeout=hmc_timeout
             )
-            for failure in survey.failures:
-                err_console.print(
-                    f"[yellow]{escape(failure.profile)}[/yellow]: {escape(failure.reason)}"
-                )
-            write_csv(stream, report_rows(survey))
-        scratch.replace(csv_path)
-    except OSError as exc:
-        fail(exc)
-    finally:
-        scratch.unlink(missing_ok=True)
+        )
+        for failure in survey.failures:
+            err_console.print(
+                f"[yellow]{escape(failure.profile)}[/yellow]: {escape(failure.reason)}"
+            )
+        return survey
+
+    survey = _write_reports(csv_path, html_path, survey_once)
     surveyed = len(survey.profiles) - len(survey.failures)
+    written = " and ".join(escape(str(path)) for path in (csv_path, html_path) if path)
     err_console.print(
         f"Wrote {len(fleet_systems(survey.readings))} systems from {surveyed} of "
-        f"{len(survey.profiles)} profiles to {escape(str(csv_path))}"
+        f"{len(survey.profiles)} profiles to {written}"
     )
 
 

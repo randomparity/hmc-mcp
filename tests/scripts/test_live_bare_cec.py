@@ -202,8 +202,11 @@ class World:
                 "the operating system image running does not support remote "
                 "execution of this task from the management console.",
             )
-        restarts = kwargs.get("restart") or kwargs.get("operation") == "dumprestart"
-        self.lpar_state = "open firmware" if restarts else "not activated"
+        self.lpar_state = "open firmware" if kwargs.get("restart") else "not activated"
+        return _job()
+
+    def _hmc_dump_restart_lpar(self, _kwargs: dict[str, Any]) -> dict[str, Any]:
+        self.lpar_state = "open firmware"
         return _job()
 
     def _hmc_get_lpar_state(self, _kwargs: dict[str, Any]) -> str:
@@ -382,7 +385,7 @@ def test_happy_path_issues_the_issue_876_sequence(schemas):
     (capture,) = world.calls_to("hmc_capture_lpar_console")
     assert capture["duration_seconds"] == 30.0
     assert capture["idle_timeout_seconds"] == 30.0
-    assert _row(state, "hmc_power_off_lpar (dumprestart)")["status"] == "SKIP"
+    assert _row(state, "hmc_dump_restart_lpar")["status"] == "SKIP"
     assert "#868" in _row(state, "network boot")["note"]
     assert "data_base64" not in _row(state, "hmc_capture_lpar_console")["data"]
 
@@ -464,12 +467,12 @@ def test_platform_dump_runs_only_on_opt_in(schemas):
 
     _run(world, state)
 
-    dumps = [
-        k
-        for k in world.calls_to("hmc_power_off_lpar")
-        if k.get("operation") == "dumprestart"
-    ]
-    assert dumps and dumps[0]["allow_dump_restart"] is True
+    (dump,) = world.calls_to("hmc_dump_restart_lpar")
+    assert dump["allow_dump_restart"] is True
+    assert dump["wait"] is True
+    assert all(
+        "allow_dump_restart" not in k for k in world.calls_to("hmc_power_off_lpar")
+    )
     assert _row(state, "state after dumprestart")["status"] == "PASS"
     _assert_torn_down(world)
 

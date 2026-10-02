@@ -36,6 +36,10 @@ The moved package-level symbols and their sole owners are:
 | `storage` | `STORAGE_KINDS`, `StorageKind` |
 | `system` | `MEM_MIRRORING_MODES`, `POWER_OFF_POLICIES`, `POWER_ON_LPAR_START_POLICIES`, `MemoryMirroringMode`, `PowerOffPolicy`, `PowerOnLparStartPolicy` |
 
+> **Superseded in part by #1179** (2026-10-01). `OS_TYPES` and `OsType` in the `lpar`
+> row no longer exist: #1179 removed `os_type` from the create path. The table records the
+> design as approved.
+
 Private LPAR XML helpers are implementation details and are not package exports. Boot
 builders call `document_envelope("LogicalPartition", body)` directly, rather than
 importing `lpar_envelope` from `lpar.py`; this retains a shared-infrastructure dependency

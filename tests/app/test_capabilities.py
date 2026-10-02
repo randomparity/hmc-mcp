@@ -459,6 +459,7 @@ def test_destructive_partition_tools_expose_system_scope():
     for tool_name in (
         "hmc_decommission_lpar",
         "hmc_power_off_lpar",
+        "hmc_dump_restart_lpar",
         "hmc_delete_vios",
         "hmc_restore_vios",
         "hmc_power_off_vios",

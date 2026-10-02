@@ -665,19 +665,6 @@
                 "constraint": "PartitionName or UUID"
               }
             ]
-          },
-          {
-            "variant": "dump-restart",
-            "parameters": [
-              {
-                "name": "allow_dump_restart",
-                "constraint": "true"
-              },
-              {
-                "name": "lpar_name_or_uuid",
-                "constraint": "PartitionName or UUID"
-              }
-            ]
           }
         ],
         "missing_scope": []
@@ -701,6 +688,29 @@
           "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
         }
       ]
+    },
+    {
+      "operation": "lpar.dump_restart",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "dump-restart",
+            "parameters": [
+              {
+                "name": "allow_dump_restart",
+                "constraint": "true"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
     },
     {
       "operation": "pcie.unassign_dedicated_slot",

@@ -508,16 +508,16 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
     async def served_client():
         yield served
 
-    async def no_findings(call, inputs):
+    async def no_findings(call, pcie, partition):
         return []
 
     monkeypatch.setattr(recovery.runner, "served_client", served_client)
     monkeypatch.setattr(
         recovery, "_read_only_caller", lambda client, state: seen.append(client)
     )
-    monkeypatch.setattr(recovery, "check", no_findings)
+    monkeypatch.setattr(recovery, "check_run", no_findings)
 
-    assert await recovery._run_checks(_INPUTS) == []
+    assert await recovery._run_checks(_INPUTS, None) == []
     assert seen == [served]
 
 
@@ -528,6 +528,7 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
 
 def _document(**artifact_overrides) -> dict:
     return {
+        "run": {"subtasks": [24]},
         "config": {
             "dedicated_pcie_system_name": _SYSTEM,
             "dedicated_pcie_profile_name": "default",
@@ -580,7 +581,7 @@ def test_a_document_with_no_fixture_exits_zero_without_contacting_the_hmc(
     path.write_text(json.dumps(_document(pcie_run_marker=None)), encoding="utf-8")
 
     assert recovery.main(["--results", str(path)]) == 0
-    assert "created nothing to recover" in capsys.readouterr().out
+    assert "CLEAN" in capsys.readouterr().out
 
 
 def test_an_unreadable_document_exits_two_not_zero(tmp_path, capsys):
@@ -595,7 +596,7 @@ def test_an_unreadable_document_exits_two_not_zero(tmp_path, capsys):
 
 
 def test_a_clean_report_names_the_marker_it_matched_on(capsys):
-    recovery._report(_INPUTS, [])
+    recovery._report(_document(), [], [], [])
 
     output = capsys.readouterr().out
     assert "CLEAN" in output
@@ -605,9 +606,543 @@ def test_a_clean_report_names_the_marker_it_matched_on(capsys):
 def test_a_stranded_report_prints_the_command_and_disclaims_acting(capsys):
     finding = recovery.Finding("stranded slot", "detail here", "hmc chsyscfg ...")
 
-    recovery._report(_INPUTS, [finding])
+    recovery._report(_document(), [finding], [], [])
 
     output = capsys.readouterr().out
     assert "STRANDED" in output
     assert "hmc chsyscfg ..." in output
     assert "issues no mutating call" in output
+    assert "CLEAN" not in output
+
+
+# ---------------------------------------------------------------------------
+# The read-only guard admits the test-partition reads and nothing more
+# ---------------------------------------------------------------------------
+
+_TEST_SYSTEM = "sys-E2"
+_TEST_LPAR = "lt-lpar"
+_VIOS = "vios-uuid-1"
+_VIOS_ID = 2
+_VG = "vg-uuid-1"
+_ISO = "lt.iso"
+_LISTING = (
+    f"lshwres -r virtualio --rsubtype scsi -m {_TEST_SYSTEM} --level lpar "
+    f"--filter lpar_ids={_VIOS_ID} -F slot_num,remote_lpar_name,remote_slot_num"
+)
+
+
+def test_run_command_is_allowed_for_lshwres():
+    recovery.guard_read_only("hmc_run_command", {"cmd": _LISTING})
+
+
+@pytest.mark.parametrize("character", list(";|&$`<>()") + ["\n"])
+def test_run_command_refuses_a_shell_metacharacter(character):
+    """A command built from a results document must not chain a second one."""
+    with pytest.raises(recovery.MutatingCallRefused, match="metacharacter"):
+        recovery.guard_read_only(
+            "hmc_run_command", {"cmd": f"lshwres -m x{character}rmsyscfg"}
+        )
+
+
+def test_every_allowlisted_tool_is_a_read():
+    """`hmc_run_command` is the one exception, bounded by its command prefix."""
+    from hmcpctl.server import TOOL_SECURITY
+
+    for tool in recovery._READ_ONLY_TOOLS - {"hmc_run_command"}:
+        assert TOOL_SECURITY[tool].effect == "read", tool
+
+
+def test_every_mutating_vmedia_call_has_a_trigger():
+    """A new mutating vMedia call must not land outside every witnessed class."""
+    import re
+
+    from hmcpctl.server import TOOL_SECURITY
+
+    source = (SCRIPTS_ROOT / "live_test" / "vmedia.py").read_text(encoding="utf-8")
+    called = set(re.findall(r'state\.call\(\s*client,\s*"(hmc_\w+)"', source))
+    mutating = {tool for tool in called if TOOL_SECURITY[tool].effect != "read"}
+
+    assert mutating
+    assert mutating <= recovery._VMEDIA_MUTATIONS
+
+
+# ---------------------------------------------------------------------------
+# Which test-partition classes a document makes applicable
+# ---------------------------------------------------------------------------
+
+
+def _row(subtask: int, tool: str, status: str = "PASS", data=None) -> dict:
+    return {"subtask": subtask, "tool": tool, "status": status, "data": data}
+
+
+def _lpar_document(subtasks, rows=(), **artifacts) -> dict:
+    return {
+        "run": {"subtasks": list(subtasks), "group": "vmedia"},
+        "config": {
+            "system_name": _TEST_SYSTEM,
+            "lp3_name": _TEST_LPAR,
+            "iso_media_name": _ISO,
+        },
+        "artifacts": {
+            "vios_uuid": _VIOS,
+            "vios_partition_id": _VIOS_ID,
+            "vg_uuid": _VG,
+            "vmedia_repo_created": False,
+            "vmedia_iso_name": None,
+            "vmedia_orig_boot_order": [],
+            **artifacts,
+        },
+        "results": list(rows),
+    }
+
+
+_VMEDIA_ROWS = (
+    _row(16, "hmc_create_media_repository"),
+    _row(19, "hmc_mount_optical_media"),
+    _row(
+        20, "hmc_read_lpar_boot_order (baseline)", data={"pending_boot_string": "/a /b"}
+    ),
+    _row(20, "hmc_set_lpar_boot_order (boot device list)"),
+    _row(20, "hmc_power_on_lpar"),
+)
+
+
+def _inputs(document):
+    return recovery.lpar_inputs_from_document(
+        document, recovery.dispatched_subtasks(document)
+    )
+
+
+def test_a_vmedia_document_makes_every_class_applicable():
+    inputs = _inputs(
+        _lpar_document(range(16, 23), _VMEDIA_ROWS, vmedia_iso_name="uploaded.iso")
+    )
+
+    assert inputs.vmedia_ran and inputs.repository_owned and inputs.powered_on
+    assert inputs.boot_written and inputs.boot_baseline == "/a /b"
+    assert inputs.iso_names == {_ISO, "uploaded.iso"}
+    assert not inputs.provisioned
+
+
+def test_a_teardown_only_run_reads_the_ownership_it_restored():
+    """ST22 acts on artifacts an earlier invocation recorded (subset restore)."""
+    document = _lpar_document(
+        [22],
+        [_row(22, "hmc_set_lpar_boot_order (boot order restore guard)", "FAIL")],
+        vmedia_repo_created=True,
+        vmedia_orig_boot_order=["/a", "/b"],
+    )
+
+    inputs = _inputs(document)
+
+    assert inputs.vmedia_ran and inputs.repository_owned and inputs.boot_written
+    assert inputs.boot_baseline == "/a /b"
+    assert not inputs.powered_on
+
+
+def test_an_upload_only_run_owns_the_repository_it_wrote_to():
+    inputs = _inputs(_lpar_document([18], [_row(18, "hmc_upload_iso (via HTTP)")]))
+
+    assert inputs.repository_owned
+
+
+def test_a_skipped_power_on_was_never_made_and_a_failed_one_was():
+    skipped = _lpar_document([20], [_row(20, "hmc_power_on_lpar", "SKIP")])
+    failed = _lpar_document([20], [_row(20, "hmc_power_on_lpar", "FAIL")])
+
+    assert not _inputs(skipped).powered_on
+    assert _inputs(failed).powered_on
+
+
+def test_a_bare_cec_power_on_is_not_the_test_partitions():
+    document = _lpar_document(
+        [25], [_row(25, "hmc_power_on_lpar (no partition profile)")]
+    )
+
+    assert _inputs(document) is None
+
+
+def test_a_round2_provision_triggers_only_the_adapter_class():
+    document = _lpar_document(range(16), [_row(14, "hmc_provision_lpar (live)")])
+
+    inputs = _inputs(document)
+
+    assert inputs.provisioned
+    assert not (inputs.vmedia_ran or inputs.repository_owned or inputs.powered_on)
+    assert not inputs.boot_written
+
+
+def test_a_dedicated_document_yields_no_partition_inputs():
+    assert _inputs(_document()) is None
+
+
+@pytest.mark.parametrize(
+    "run",
+    [None, {}, {"subtasks": "16"}, {"subtasks": [16, "17"]}, {"subtasks": [True]}],
+)
+def test_unrecorded_subtasks_are_unknown(run):
+    document = _lpar_document([16])
+    document["run"] = run
+
+    assert recovery.dispatched_subtasks(document) is None
+
+
+# ---------------------------------------------------------------------------
+# Each test-partition class is detected, and clean when it is not stranded
+# ---------------------------------------------------------------------------
+
+
+def _optical(media: str) -> dict:
+    return {
+        "Storage": {"VirtualOpticalMedia": {"MediaName": media}},
+        "AssociatedLogicalPartition": {"href": "https://hmc/LogicalPartition/LP-1"},
+    }
+
+
+_LPAR_CLEAN = {
+    "hmc_list_optical_mappings": [_optical("operator.iso")],
+    "hmc_run_command": f"5,{_TEST_LPAR},3\n6,other-lpar,3\n",
+    "hmc_list_storage_mappings": [{"id": "vhost0/vtscsi0"}],
+    "hmc_get_media_repository": None,
+    "hmc_get_lpar_state": "not activated",
+    "hmc_read_lpar_boot_order": {"pending_boot_string": "/a  /b"},
+}
+
+
+def _lpar_responses(**overrides) -> dict:
+    return {**_LPAR_CLEAN, **overrides}
+
+
+def _lpar_caller(responses: dict, seen: list | None = None):
+    """Like `_caller`, but a `None` response is an answer, not a failure."""
+
+    async def call(tool: str, **arguments):
+        recovery.guard_read_only(tool, arguments)
+        if seen is not None:
+            seen.append((tool, arguments))
+        if tool not in responses:
+            return "FAIL", None
+        response = responses[tool]
+        if isinstance(response, CallFailure):
+            return "FAIL", response
+        return "PASS", response
+
+    return call
+
+
+_ALL = _inputs(_lpar_document(range(16, 23), _VMEDIA_ROWS))
+
+
+@pytest.mark.asyncio
+async def test_a_clean_test_partition_yields_no_findings():
+    seen: list = []
+
+    assert (
+        await recovery.check_test_partition(_lpar_caller(_LPAR_CLEAN, seen), _ALL) == []
+    )
+    assert {tool for tool, _ in seen} == set(_LPAR_CLEAN)
+
+
+@pytest.mark.asyncio
+async def test_the_adapter_listing_is_the_1237_command_by_vios_id():
+    seen: list = []
+
+    await recovery.check_test_partition(_lpar_caller(_LPAR_CLEAN, seen), _ALL)
+
+    assert ("hmc_run_command", {"cmd": _LISTING}) in seen
+
+
+@pytest.mark.parametrize(
+    ("overrides", "what", "remedy"),
+    [
+        (
+            {"hmc_list_optical_mappings": [_optical(_ISO)]},
+            "optical mapping left",
+            f"hmcpctl storage unmount-optical-media {_VIOS} {_TEST_LPAR} {_ISO}",
+        ),
+        (
+            {"hmc_run_command": f"5,{_TEST_LPAR},3\n7,{_TEST_LPAR},4\n"},
+            "unmapped server adapter",
+            f"-o r --id {_VIOS_ID} -s <slot>",
+        ),
+        (
+            {"hmc_get_media_repository": {"RepositoryName": "VMLibrary"}},
+            "media repository left",
+            f"hmcpctl storage delete-media-repo {_VIOS} {_VG}",
+        ),
+        (
+            {"hmc_get_lpar_state": "running"},
+            "test partition running",
+            f"hmcpctl lpars power-off {_TEST_LPAR} --system {_TEST_SYSTEM}",
+        ),
+        (
+            {"hmc_read_lpar_boot_order": {"pending_boot_string": "/b /a"}},
+            "boot string drift",
+            f"hmcpctl lpars set-boot-order {_TEST_SYSTEM} {_TEST_LPAR} /a /b",
+        ),
+        (
+            {"hmc_read_lpar_boot_order": {"pending_boot_string": None}},
+            "boot string drift",
+            "set-boot-order",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_each_stranded_class_is_reported_with_its_remedy(overrides, what, remedy):
+    findings = await recovery.check_test_partition(
+        _lpar_caller(_lpar_responses(**overrides)), _ALL
+    )
+
+    assert [finding.what for finding in findings] == [what]
+    assert remedy in findings[0].remedy
+
+
+@pytest.mark.asyncio
+async def test_no_listed_adapter_reads_as_zero():
+    responses = _lpar_responses(
+        hmc_run_command="No results were found.", hmc_list_storage_mappings=[]
+    )
+
+    assert await recovery.check_test_partition(_lpar_caller(responses), _ALL) == []
+
+
+@pytest.mark.asyncio
+async def test_a_class_whose_trigger_is_absent_makes_no_call():
+    seen: list = []
+    inputs = _inputs(_lpar_document(range(16), [_row(14, "hmc_provision_lpar (live)")]))
+
+    await recovery.check_test_partition(_lpar_caller(_LPAR_CLEAN, seen), inputs)
+
+    assert {tool for tool, _ in seen} == {
+        "hmc_run_command",
+        "hmc_list_storage_mappings",
+    }
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        "hmc_list_optical_mappings",
+        "hmc_run_command",
+        "hmc_list_storage_mappings",
+        "hmc_get_media_repository",
+        "hmc_get_lpar_state",
+        "hmc_read_lpar_boot_order",
+    ],
+)
+@pytest.mark.asyncio
+async def test_each_failed_read_is_unreadable(tool):
+    responses = {key: value for key, value in _LPAR_CLEAN.items() if key != tool}
+
+    with pytest.raises(recovery.StateUnreadable):
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+
+@pytest.mark.parametrize(
+    ("artifact", "value", "message"),
+    [
+        ("vios_uuid", None, "vios_uuid"),
+        ("vg_uuid", None, "vg_uuid"),
+        ("vios_partition_id", "2", "vios_partition_id"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_missing_document_field_is_unreadable(artifact, value, message):
+    inputs = _inputs(_lpar_document(range(16, 23), _VMEDIA_ROWS, **{artifact: value}))
+
+    with pytest.raises(recovery.StateUnreadable, match=message):
+        await recovery.check_test_partition(_lpar_caller(_LPAR_CLEAN), inputs)
+
+
+@pytest.mark.asyncio
+async def test_a_boot_write_with_no_baseline_is_unreadable():
+    inputs = _inputs(
+        _lpar_document([22], [_row(22, "hmc_set_lpar_boot_order (guard)", "PASS")])
+    )
+
+    with pytest.raises(recovery.StateUnreadable, match="baseline"):
+        await recovery.check_test_partition(_lpar_caller(_LPAR_CLEAN), inputs)
+
+
+@pytest.mark.asyncio
+async def test_a_mapping_without_an_adapter_id_is_unreadable_and_names_the_slots():
+    responses = _lpar_responses(hmc_list_storage_mappings=[{"id": None}])
+
+    with pytest.raises(recovery.StateUnreadable, match="slots 5"):
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+
+@pytest.mark.parametrize("listing", ["5", "x,lt-lpar", "5;lt-lpar"])
+@pytest.mark.asyncio
+async def test_a_malformed_adapter_listing_is_unreadable(listing):
+    responses = _lpar_responses(hmc_run_command=listing)
+
+    with pytest.raises(recovery.StateUnreadable, match="server adapter"):
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+
+@pytest.mark.asyncio
+async def test_an_optical_entry_it_cannot_read_is_unreadable():
+    responses = _lpar_responses(hmc_list_optical_mappings=[{"Storage": {}}])
+
+    with pytest.raises(recovery.StateUnreadable, match="optical"):
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_class_does_not_stop_the_others():
+    responses = _lpar_responses(
+        hmc_get_media_repository={"RepositoryName": "VMLibrary"},
+    )
+    del responses["hmc_list_optical_mappings"]
+
+    with pytest.raises(recovery.StateUnreadable) as raised:
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+    assert [finding.what for finding in raised.value.findings] == [
+        "media repository left"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pcie_findings_survive_an_unreadable_partition_class():
+    responses = {
+        **_responses(
+            hmc_list_dedicated_pcie_slots={
+                "items": [{"drc_index": _DRC, "owner_lpar": "someone"}]
+            }
+        ),
+        **{
+            key: value for key, value in _LPAR_CLEAN.items() if key != "hmc_run_command"
+        },
+        "hmc_get_lpar_state": "Not Activated",
+    }
+    responses["hmc_run_command"] = _readback(_BASELINE)
+
+    with pytest.raises(recovery.StateUnreadable) as raised:
+        await recovery.check_run(_lpar_caller(responses), _INPUTS, _ALL)
+
+    assert "stranded slot" in [finding.what for finding in raised.value.findings]
+
+
+# ---------------------------------------------------------------------------
+# main: exit codes and what the report names
+# ---------------------------------------------------------------------------
+
+
+def _main(tmp_path, monkeypatch, document, findings=None, raises=None):
+    """Run `main` over *document*; return (exit code, whether the HMC was contacted)."""
+    contacted = []
+
+    async def run_checks(pcie, partition):
+        contacted.append((pcie, partition))
+        if raises is not None:
+            raise raises
+        return findings or []
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", run_checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return recovery.main(["--results", str(path)]), bool(contacted)
+
+
+_FINDING = recovery.Finding("test partition running", "detail", "hmcpctl ...")
+
+
+def test_a_clean_vmedia_run_exits_zero(tmp_path, monkeypatch, capsys):
+    document = _lpar_document(range(16, 23), _VMEDIA_ROWS)
+
+    assert _main(tmp_path, monkeypatch, document) == (0, True)
+    assert "CLEAN" in capsys.readouterr().out
+
+
+def test_a_stranded_vmedia_run_exits_one(tmp_path, monkeypatch):
+    document = _lpar_document(range(16, 23), _VMEDIA_ROWS)
+
+    assert _main(tmp_path, monkeypatch, document, [_FINDING]) == (1, True)
+
+
+def test_a_round2_run_is_not_witnessed_and_exits_two(tmp_path, monkeypatch, capsys):
+    """Its partition, user and network changes are checked by hand."""
+    document = _lpar_document(range(16))
+
+    assert _main(tmp_path, monkeypatch, document) == (2, False)
+    output = capsys.readouterr().out
+    assert "NOT WITNESSED" in output
+    assert "CLEAN" not in output
+
+
+def test_a_finding_beside_unwitnessed_subtasks_exits_two_and_prints_both(
+    tmp_path, monkeypatch, capsys
+):
+    document = _lpar_document(range(26), _VMEDIA_ROWS)
+
+    assert _main(tmp_path, monkeypatch, document, [_FINDING]) == (2, True)
+    output = capsys.readouterr().out
+    assert "STRANDED" in output
+    assert "NOT WITNESSED  subtasks 0, 1," in output
+
+
+def test_a_document_with_no_subtasks_exits_two(tmp_path, monkeypatch, capsys):
+    document = _lpar_document(range(16, 23), _VMEDIA_ROWS)
+    del document["run"]
+
+    assert _main(tmp_path, monkeypatch, document) == (2, False)
+    assert "run.subtasks" in capsys.readouterr().err
+
+
+def test_an_unreadable_class_exits_two_with_its_findings(tmp_path, monkeypatch, capsys):
+    document = _lpar_document(range(16, 23), _VMEDIA_ROWS)
+    unreadable = recovery.StateUnreadable("could not read X", [_FINDING])
+
+    assert _main(tmp_path, monkeypatch, document, raises=unreadable) == (2, True)
+    captured = capsys.readouterr()
+    assert "STRANDED" in captured.out
+    assert "NOT confirmed clean" in captured.err
+
+
+def test_the_report_names_the_run_it_witnessed(capsys):
+    document = _lpar_document([16])
+    document["run"].update(tested_commit="abc1234", finished="2026-10-01T00:00:00")
+
+    recovery._report(document, [], [], [])
+
+    output = capsys.readouterr().out
+    assert "abc1234" in output
+    assert "2026-10-01T00:00:00" in output
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_pcie_check_still_reads_the_test_partition():
+    responses = {
+        **{key: value for key, value in _LPAR_CLEAN.items()},
+        "hmc_get_lpar_state": "running",
+    }
+
+    with pytest.raises(recovery.StateUnreadable) as raised:
+        await recovery.check_run(_lpar_caller(responses), _INPUTS, _ALL)
+
+    assert "test partition running" in [
+        finding.what for finding in raised.value.findings
+    ]
+
+
+@pytest.mark.asyncio
+async def test_more_mapped_adapters_than_listed_ones_is_unreadable():
+    """The surplus could cancel out an unmapped adapter, so the count cannot judge."""
+    responses = _lpar_responses(
+        hmc_list_storage_mappings=[{"id": "vhost0/vtscsi0"}, {"id": "vhost1/vtopt0"}]
+    )
+
+    with pytest.raises(recovery.StateUnreadable, match="2 mapped"):
+        await recovery.check_test_partition(_lpar_caller(responses), _ALL)
+
+
+@pytest.mark.parametrize("state", ["not activated", "Not Activated"])
+@pytest.mark.asyncio
+async def test_a_powered_off_test_partition_reads_clean_in_either_spelling(state):
+    """REST answers lower case; the CLI answers title case."""
+    responses = _lpar_responses(hmc_get_lpar_state=state)
+
+    assert await recovery.check_test_partition(_lpar_caller(responses), _ALL) == []
