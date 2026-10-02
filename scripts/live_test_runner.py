@@ -57,7 +57,7 @@ import subprocess
 import tempfile
 from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -835,6 +835,9 @@ class RunState:
             safe_data: Any = _redact_failure_text(data.message)
         else:
             safe_data = _redact_failure_data(data) if status == "FAIL" else data
+        if is_dataclass(safe_data) and not isinstance(safe_data, type):
+            # FastMCP serves a dataclass tool result as a generated dataclass.
+            safe_data = asdict(safe_data)
         entry = {
             "subtask": subtask,
             "tool": tool,

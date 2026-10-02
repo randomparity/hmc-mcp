@@ -7,6 +7,7 @@ MCP client by a fake that serves tool definitions and answers.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import stat
@@ -339,6 +340,28 @@ def test_sweep_tools_runs_read_only_tools_after_discovery(tmp_path: Path) -> Non
     failed = [r for r in records if r.get("ok") is False]
     assert failed[0]["error"] == "RuntimeError: refused"
     assert steps == names
+
+
+def test_tool_log_records_a_dataclass_result_as_json(tmp_path: Path) -> None:
+    """FastMCP serves a dataclass result as a generated dataclass (ADR 0197)."""
+
+    @dataclasses.dataclass
+    class Skipped:
+        system_name: str
+
+    @dataclasses.dataclass
+    class Listing:
+        entries: list
+        unreadable_systems: list
+
+    path = tmp_path / "tools.capture.jsonl"
+    log = sweep.ToolLog(path)
+    log.write({"data": Listing([{"UUID": "l-1"}], [Skipped("sys-R1")])})
+    log.close()
+    assert json.loads(path.read_text())["data"] == {
+        "entries": [{"UUID": "l-1"}],
+        "unreadable_systems": [{"system_name": "sys-R1"}],
+    }
 
 
 def test_tool_log_is_private(tmp_path: Path) -> None:

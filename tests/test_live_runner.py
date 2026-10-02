@@ -2457,6 +2457,23 @@ def test_assertion_id_must_be_a_closed_shape_token():
         observation.Assertion("entry UUID equals job id", True)
 
 
+def test_record_keeps_a_dataclass_result_as_a_mapping(capsys):
+    """A FleetListing tool result arrives as a generated dataclass (ADR 0197)."""
+
+    @dataclasses.dataclass
+    class Listing:
+        entries: list
+        unreadable_systems: list
+
+    state = runner.RunState()
+    state.record(0, "hmc_list_vios", "PASS", Listing([{"UUID": "v-1"}], []))
+
+    assert state.results[0]["data"] == {
+        "entries": [{"UUID": "v-1"}],
+        "unreadable_systems": [],
+    }
+
+
 def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     raw_entries = [
         {"Resource": {"UUID": "nested"}},

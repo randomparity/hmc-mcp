@@ -29,7 +29,7 @@ import re
 import shlex
 import sys
 from collections.abc import Awaitable, Callable, Iterator, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -316,10 +316,17 @@ class ToolLog:
         os.fchmod(self._fd, 0o600)
 
     def write(self, record: dict[str, Any]) -> None:
-        os.write(self._fd, (json.dumps(record, default=str) + "\n").encode())
+        os.write(self._fd, (json.dumps(record, default=_jsonable) + "\n").encode())
 
     def close(self) -> None:
         os.close(self._fd)
+
+
+def _jsonable(value: Any) -> Any:
+    """A dataclass result (FastMCP's generated model) as its fields, else its text."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    return str(value)
 
 
 def prepare_output(directory: Path) -> Path:
