@@ -74,7 +74,7 @@ unavailable capability, and error.txt files are distinct evidence.
 
 ```bash
 capture lpars.json hmcpctl lpars list --system "$SYSTEM" --json
-jq -r '.[].UUID' "$CAPTURE_DIR/lpars.json" | while IFS= read -r lpar; do
+jq -r '.entries[].UUID' "$CAPTURE_DIR/lpars.json" | while IFS= read -r lpar; do
   capture "lpar-$lpar.json" hmcpctl lpars show "$lpar" --json
   capture "lpar-$lpar-summary.json" hmcpctl lpars summary "$lpar" --json
   capture "lpar-$lpar-network.json" hmcpctl adapters list "$lpar" --type ClientNetworkAdapter --json
@@ -89,7 +89,7 @@ Full documents and summaries retain LPAR state, memory, CPU allocation, and desc
 
 ```bash
 capture vios.json hmcpctl vios list --system "$SYSTEM" --json
-jq -r '.[].UUID' "$CAPTURE_DIR/vios.json" | while IFS= read -r vios; do
+jq -r '.entries[].UUID' "$CAPTURE_DIR/vios.json" | while IFS= read -r vios; do
   capture "vios-$vios.raw.xml" hmcpctl raw get "/rest/api/uom/VirtualIOServer/$vios"
   capture "vios-$vios-vgs.json" hmcpctl storage list-vgs "$vios" --system "$SYSTEM" --json
   capture "vios-$vios-mappings.json" hmcpctl storage list-mappings "$vios" --system "$SYSTEM" --json

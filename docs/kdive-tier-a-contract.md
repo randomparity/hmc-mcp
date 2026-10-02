@@ -17,7 +17,7 @@ kdive imports the LPAR domain modules under `hmcpctl.operations.lpar`:
 | Partition and RMC readback | `hmcpctl.operations.lpar.core.get_lpar` |
 | Partition state only | `hmcpctl.operations.lpar.core.get_lpar_state` |
 | Console capture | `hmcpctl.operations.lpar.console.capture_lpar_console_by_selector` |
-| Ownership readback | `hmcpctl.operations.lpar.ownership.list_lpar_ownership` |
+| Ownership readback | `hmcpctl.operations.lpar.ownership.list_lpar_ownership`, returning `hmcpctl.operations.systems.fleet.FleetListing`, whose `hmcpctl.operations.systems.fleet.FleetListing.entries` holds the rows |
 
 These are **pre-release** domain operations: importable, but not compatibility promises.
 Only the six names in `hmcpctl.api` are stable, and ADR 0118 keeps these operations out of

@@ -34,6 +34,8 @@ EXPECTED_IMPORT_PATHS = {
     "hmcpctl.operations.lpar.core.LparPowerResult",
     "hmcpctl.operations.lpar.console.capture_lpar_console_by_selector",
     "hmcpctl.operations.lpar.ownership.list_lpar_ownership",
+    "hmcpctl.operations.systems.fleet.FleetListing",
+    "hmcpctl.operations.systems.fleet.FleetListing.entries",
     "hmcpctl.ssh.console.ConsoleCapture.released",
     "hmcpctl.ssh.console.ConsoleCapture.error",
     "hmcpctl.ssh.console.ConsoleHeldError",
