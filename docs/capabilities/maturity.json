@@ -1,5 +1,5 @@
 {
-  "format_version": 3,
+  "format_version": 4,
   "admission_policy": "existing-runtime-guards",
   "operations": [
     {
@@ -75,6 +75,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -119,6 +120,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -167,6 +169,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -211,6 +214,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -260,6 +264,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -295,6 +300,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -330,6 +336,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "7e725cbf8a7e34b53c9fd28c8ed2c58d28eecf6e9160dbbc4e0501efbe94ef30"
         }
       ]
@@ -365,6 +372,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "7e725cbf8a7e34b53c9fd28c8ed2c58d28eecf6e9160dbbc4e0501efbe94ef30"
         }
       ]
@@ -400,6 +408,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
         }
       ]
@@ -454,6 +463,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
         }
       ]
@@ -500,6 +510,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "28b5af9901c2a4f46ee8c46dc0954c98f507c2622da2c67e50df7b83a8349f38"
         }
       ]
@@ -537,6 +548,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "28b5af9901c2a4f46ee8c46dc0954c98f507c2622da2c67e50df7b83a8349f38"
         }
       ]
@@ -577,6 +589,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "a6008e3ae10ece502f6e7ed9a8a7ffe6fd8200dcca837504fadbdf855590dd5f"
         }
       ]
@@ -617,6 +630,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "6f06a4606b3ab392c8fde97db058046774b199b9d0f8fde75ae8243b5e05be9f"
         }
       ]
@@ -651,19 +665,6 @@
                 "constraint": "PartitionName or UUID"
               }
             ]
-          },
-          {
-            "variant": "dump-restart",
-            "parameters": [
-              {
-                "name": "allow_dump_restart",
-                "constraint": "true"
-              },
-              {
-                "name": "lpar_name_or_uuid",
-                "constraint": "PartitionName or UUID"
-              }
-            ]
           }
         ],
         "missing_scope": []
@@ -683,9 +684,33 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
         }
       ]
+    },
+    {
+      "operation": "lpar.dump_restart",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "dump-restart",
+            "parameters": [
+              {
+                "name": "allow_dump_restart",
+                "constraint": "true"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
     },
     {
       "operation": "pcie.unassign_dedicated_slot",
@@ -727,6 +752,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "213055828d77e05559b2217100d945bc7c890866c4c161314bb272d317ad9d15"
         }
       ]
@@ -764,6 +790,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "ea0e0b387f2c9e65e4d276d7d6d1871cc313c1e216d308112c5091d847b648f3"
         }
       ]
@@ -805,6 +832,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
         }
       ]
@@ -845,6 +873,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "ea9b69d0435d441f4e58859579cb6661c138313b880a73db5591582cd3b6f593"
         }
       ]
@@ -889,6 +918,7 @@
           "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
           "hmc_release": "V10R3",
           "hardware_family": "POWER9",
+          "schema_version": "unrecorded",
           "closure_fingerprint": "213055828d77e05559b2217100d945bc7c890866c4c161314bb272d317ad9d15"
         }
       ]

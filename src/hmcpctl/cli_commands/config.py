@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any, Final
 
 import typer
-from rich.markup import escape
 
 from ..authorization.access_policy import AccessPolicyError
 from ..config import (
@@ -92,7 +91,7 @@ def config_init() -> None:
     # Same treatment as `init-access-policy` below, and for the same two reasons: this
     # line is the command's machine-readable output, and the path comes from
     # Path.home()/XDG_CONFIG_HOME/APPDATA, any of which may legally contain brackets.
-    console.print(escape(str(target)), soft_wrap=True)
+    console.print(str(target), soft_wrap=True, markup=False)
 
 
 def config_list() -> None:
@@ -102,7 +101,7 @@ def config_list() -> None:
     if config_path is None:
         # Compute what the path *would* be for the helpful message.
         would_be = config_dir() / "config.toml"
-        console.print(f"No config file found at {would_be}")
+        console.print(f"No config file found at {would_be}", markup=False)
         return
 
     # Parse once so profile names, the default marker, and nicknames all derive
@@ -119,13 +118,13 @@ def config_list() -> None:
 
     for entry in profiles:
         marker = "  (default)" if entry["is_default"] else ""
-        console.print(f"{entry['name']}{marker}")
+        console.print(f"{entry['name']}{marker}", markup=False)
 
     # Surface nicknames (secret-free): each maps to a profile key, flagged if
     # its target does not exist.
     for entry in inventory["nicknames"]:
         status = "" if entry["target_exists"] else "  (no such profile)"
-        console.print(f"{entry['name']} -> {entry['target']}{status}")
+        console.print(f"{entry['name']} -> {entry['target']}{status}", markup=False)
 
 
 def config_show(
@@ -165,7 +164,7 @@ def config_show(
     else:
         width = max(len(k) for k in data)
         for key, value in data.items():
-            console.print(f"{key:<{width}}  {value}")
+            console.print(f"{key:<{width}}  {value}", markup=False)
 
 
 def _write_exclusive(target: Path, text: str) -> None:
@@ -287,22 +286,21 @@ def config_init_access_policy(
     except OSError as exc:
         fail(exc)
 
-    # Escaped for the reason `fail` escapes: these render through a markup-enabled
-    # rich Console, and under --output the path is the operator's own. A bracketed
-    # path would print with the bracketed segment silently deleted — so the operator
-    # copies a path that does not exist — and a `[/x]`-shaped one would raise
-    # MarkupError in place of the success line.
+    # Markup off: these render through a markup-enabled rich Console, and under
+    # --output the path is the operator's own. A bracketed path would print with the
+    # bracketed segment silently deleted — so the operator copies a path that does not
+    # exist — and a `[/x]`-shaped one would raise MarkupError in place of the success
+    # line.
     # `soft_wrap=True` because this line is the command's machine-readable output: a
     # rich Console hard-folds at 80 columns on a non-tty, so
     # `hmcpctl config init-access-policy > path.txt` would otherwise capture a path
-    # broken across lines. Escaped for the reason `fail` escapes — under --output the
-    # path is the operator's own, and a bracketed segment would be silently deleted
-    # while a `[/x]`-shaped one would raise MarkupError in place of the success line.
-    console.print(escape(str(target)), soft_wrap=True)
+    # broken across lines. Markup off for the same reason as above.
+    console.print(str(target), soft_wrap=True, markup=False)
     if output is None:
         err_console.print(
             "Review it, then start the server with: hmcpctl serve --access-policy "
-            f"{LEGACY_POLICY_NAME}"
+            f"{LEGACY_POLICY_NAME}",
+            markup=False,
         )
     else:
         # `--access-policy` selects a NAME inside the platform-native file, and no
@@ -420,9 +418,10 @@ def config_diff_access_policy(
         # `soft_wrap=True`: like init-access-policy's success line, this carries the
         # operator's own path, and an 80-column fold on a non-tty would break it.
         err_console.print(
-            f"No differences: {escape(str(path))} matches what this build and the "
+            f"No differences: {path} matches what this build and the "
             "current config.toml generate.",
             soft_wrap=True,
+            markup=False,
         )
         return
 
@@ -430,7 +429,7 @@ def config_diff_access_policy(
     # Console; soft-wrapped because the diff IS the command's machine-readable
     # output and a hard fold at 80 columns would corrupt its lines.
     for line in diff:
-        console.print(escape(line.rstrip("\n")), soft_wrap=True, highlight=False)
+        console.print(line.rstrip("\n"), soft_wrap=True, highlight=False, markup=False)
     raise typer.Exit(code=DIFF_DIFFERS)
 
 

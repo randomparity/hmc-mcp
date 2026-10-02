@@ -15,7 +15,7 @@ from typing import TextIO
 
 import typer
 from pydantic import ValidationError
-from rich.markup import escape
+from rich.text import Text
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import ConfigError, config_inventory, env_var_value, load_profile
@@ -432,16 +432,17 @@ def report_utilization(
         )
         for failure in survey.failures:
             err_console.print(
-                f"[yellow]{escape(failure.profile)}[/yellow]: {escape(failure.reason)}"
+                Text.assemble((failure.profile, "yellow"), f": {failure.reason}")
             )
         return survey
 
     survey = _write_reports(csv_path, html_path, survey_once)
     surveyed = len(survey.profiles) - len(survey.failures)
-    written = " and ".join(escape(str(path)) for path in (csv_path, html_path) if path)
+    written = " and ".join(str(path) for path in (csv_path, html_path) if path)
     err_console.print(
         f"Wrote {len(fleet_systems(survey.readings))} systems from {surveyed} of "
-        f"{len(survey.profiles)} profiles to {written}"
+        f"{len(survey.profiles)} profiles to {written}",
+        markup=False,
     )
 
 

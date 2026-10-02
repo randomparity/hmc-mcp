@@ -49,10 +49,10 @@ is therefore the setting under which no request carries it at all.
 
 A live run prints the resolved value in its run header, on stdout, and records
 the same string (`(not set)` when unset) as `run.schema_version` in the
-`test-results-*.json` document. The observations document does not record it,
-so observations cited as evidence do not by themselves say which of those two
-request environments produced them — read that from the results document or the
-run's output.
+`test-results-*.json` document. Each observation it emits records the same
+string as `schema_version`, so an observation cited as evidence says which of
+those two request environments produced it; observations stored before maturity
+format 4 read `unrecorded` ([ADR 0186](adr/0186-observation-schema-version-stamp.md)).
 See [`docs/environment-variables.md`](environment-variables.md) for all
 supported variables.
 

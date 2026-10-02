@@ -227,6 +227,10 @@ def hmc_install_vios_by_lpar_selector(
     Requires hmcsuperadmin-level HMC authority (e.g. hscroot). The target must
     be a powered-off partition that already exists with a profile.
 
+    The selector targets only partitions in the LogicalPartition feed. A VIOS
+    partition is listed only under VirtualIOServer, so naming one is refused
+    with an error pointing at hmc_install_vios, which installs it.
+
     Args:
         lpar_name_or_uuid: Powered-off partition name or UUID.
         system_name_or_uuid: Managed-system name or UUID hosting the

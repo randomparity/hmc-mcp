@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import typer
-from rich.markup import escape
-from rich.table import Table
+from rich.text import Text
 
 from hmcpctl.operations.lpar.ownership import set_lpar_ownership_description
 
@@ -36,7 +35,7 @@ from ...ssh.profiles import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from ..output import console, print_json, usage_error
+from ..output import VerbatimTable, console, print_json, usage_error
 from ..runtime import run_cli_coroutine, ssh_config, with_client
 
 
@@ -85,7 +84,8 @@ def lpars_memopt_score(
     else:
         console.print(
             f"{score['lpar_name']} (id {score['lpar_id']}): "
-            f"curr_lpar_score={score['curr_lpar_score']}"
+            f"curr_lpar_score={score['curr_lpar_score']}",
+            markup=False,
         )
 
 
@@ -100,11 +100,12 @@ def lpars_get_minimum_affinity_policy(
         print_json(asdict(policy))
         return
     if policy.capability == "capability-unavailable":
-        console.print(f"unavailable: {policy.unavailable_reason}")
+        console.print(f"unavailable: {policy.unavailable_reason}", markup=False)
         return
     console.print(
         f"minimum affinity score: {policy.min_affinity_score} "
-        f"({policy.min_affinity_score_action})"
+        f"({policy.min_affinity_score_action})",
+        markup=False,
     )
 
 
@@ -123,7 +124,7 @@ def lpars_memopt_scores(
     if not scores:
         console.print("[yellow]No memory-optimization scores reported[/yellow]")
         return
-    table = Table(title=f"Memory-optimization scores on {system_name}")
+    table = VerbatimTable(title=f"Memory-optimization scores on {system_name}")
     for column in ("lpar_name", "lpar_id", "curr_lpar_score"):
         table.add_column(column)
     for row in scores:
@@ -144,7 +145,7 @@ def lpars_system_memopt_score(
     if as_json:
         print_json(score)
         return
-    console.print(f"current: {score['curr_sys_score']}")
+    console.print(f"current: {score['curr_sys_score']}", markup=False)
 
 
 def _run_memopt_plan(
@@ -194,7 +195,9 @@ def _run_resource_group_memopt(
         return
     if result.capability == "capability-unavailable":
         console.print(
-            f"[yellow]Capability unavailable:[/yellow] {result.unavailable_reason}"
+            Text.assemble(
+                ("Capability unavailable:", "yellow"), f" {result.unavailable_reason}"
+            )
         )
         return
     if not result.items:
@@ -207,7 +210,7 @@ def _run_resource_group_memopt(
         )
         if result.mode == "calculated":
             line += f"; predicted: {item['predicted_score']}; prediction guaranteed: no"
-        console.print(line)
+        console.print(line, markup=False)
 
 
 def lpars_resource_group_memopt_scores(
@@ -271,7 +274,8 @@ def lpars_plan_memopt_scores(
             f"{score['lpar_name']} (id {score['lpar_id']}): "
             f"current: {score['curr_lpar_score']}; "
             f"predicted: {score['predicted_lpar_score']}; "
-            "prediction guaranteed: no"
+            "prediction guaranteed: no",
+            markup=False,
         )
 
 
@@ -298,7 +302,8 @@ def lpars_plan_system_memopt_score(
     console.print(
         f"current: {score['curr_sys_score']}; "
         f"predicted: {score['predicted_sys_score']}; "
-        "prediction guaranteed: no"
+        "prediction guaranteed: no",
+        markup=False,
     )
 
 
@@ -311,7 +316,7 @@ def lpars_get_description(
         lambda: get_lpar_description(ssh_config(), system_name, lpar_name)
     )
 
-    console.print(escape(result.strip()) or "(no description set)")
+    console.print(result.strip() or "(no description set)", markup=False)
 
 
 def lpars_set_description(
@@ -347,9 +352,9 @@ def lpars_set_description(
         )
     )
 
-    console.print(f"[green]Description updated for '{lpar_name}'[/green]")
+    console.print(f"Description updated for '{lpar_name}'", style="green", markup=False)
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def lpars_get_msp(
@@ -379,9 +384,9 @@ def lpars_set_msp(
         lambda: set_lpar_msp(ssh_config(), system_name, lpar_name, enabled)
     )
 
-    console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
+    console.print(f"MSP updated for '{lpar_name}'", style="green", markup=False)
     if result.strip():
-        console.print(escape(result.strip()))
+        console.print(result.strip(), markup=False)
 
 
 def lpars_get_proc_compat_modes(
@@ -390,7 +395,7 @@ def lpars_get_proc_compat_modes(
     """Get processor compatibility modes supported by a managed system (HMC CLI via SSH)."""
     modes = run_cli_coroutine(lambda: get_proc_compat_modes(ssh_config(), system_name))
 
-    console.print(",".join(modes) or "(no modes returned)")
+    console.print(",".join(modes) or "(no modes returned)", markup=False)
 
 
 def lpars_get_proc_compat(
@@ -412,7 +417,7 @@ def lpars_get_proc_compat(
     if as_json:
         print_json(info)
     else:
-        table = Table(title=f"Processor Compatibility Mode: {lpar_name}")
+        table = VerbatimTable(title=f"Processor Compatibility Mode: {lpar_name}")
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
         table.add_row("Desired Mode", desired or "-")
@@ -448,8 +453,9 @@ def lpars_set_proc_compat(
     )
 
     console.print(
-        f"[green]Processor compatibility mode updated on profile "
-        f"'{escape(profile)}' of '{lpar_name}'[/green]"
+        f"Processor compatibility mode updated on profile '{profile}' of '{lpar_name}'",
+        style="green",
+        markup=False,
     )
 
 

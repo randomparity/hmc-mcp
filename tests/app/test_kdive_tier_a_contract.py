@@ -45,6 +45,7 @@ EXPECTED_IMPORT_PATHS = {
 EXPECTED_TOOLS = {
     "hmc_power_on_lpar",
     "hmc_power_off_lpar",
+    "hmc_dump_restart_lpar",
     "hmc_get_lpar",
     "hmc_get_lpar_state",
     "hmc_capture_lpar_console",

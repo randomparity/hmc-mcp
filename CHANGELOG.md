@@ -17,6 +17,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_dump_restart_lpar` (operation `lpar.dump_restart`) crashes a partition and takes a
+  platform dump: the PowerOff job with `operation=dumprestart`. It still refuses unless
+  `allow_dump_restart=true`. It is a separate tool so an access policy can grant the ordinary
+  stop without the crash (#896, ADR 0188).
 - `hmcpctl report utilization --csv PATH` surveys every configured profile read-only and writes
   per-system, per-HMC and fleet CPU and memory allocation, idle reserved capacity, and failed
   profiles (#1252, ADR 0184).
@@ -269,6 +273,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   and recording the firmware-500 gap for `console.info` on this hardware (#625).
 
 ### Fixed
+- `hmc_install_vios_by_lpar_selector` now refuses a VIOS-type partition name with an error
+  pointing at `hmc_install_vios`, instead of reporting "No LPAR named …". The selector resolves
+  only `LogicalPartition`-feed partitions, and a VIOS is listed only under `VirtualIOServer`
+  (#1247).
 - The dedicated PCIe slot read behind `hmc_list_dedicated_pcie_slots` returns no slots for the
   HMC's `No results were found.` reply instead of failing, and a malformed reply now raises
   `HMCCLIError` naming the read and its expected fields instead of a bare `ValueError`. The
@@ -281,6 +289,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `false` rather than `true` (#1257).
 - `HMCConfig` validation errors no longer repeat the rejected input value, so an unquoted
   numeric `password` in `config.toml` is not echoed by any CLI or MCP path (#1256).
+- `hmcpctl` output no longer reads HMC-sourced text or command arguments as Rich markup or
+  emoji codes. Before this fix, Rich read a `[word]` segment as markup and dropped it, and
+  turned a `:word:` code into an emoji. This applied to confirmation lines, warnings, error messages,
+  `console info` and every listing table's title, headers and cells. A crafted argument
+  such as `x[bold red]y` could therefore restyle the confirmation that echoed it. Values
+  are no longer passed through `rich.markup.escape`, which doubled a trailing backslash.
+  `raw get` and `raw post` now print the body as received, ANSI codes and control
+  characters included; before, they also wrapped it at 80 columns when piped and expanded
+  tabs. An AST test fails when a `console`/`err_console` call that parses markup
+  interpolates a value without `markup=False` or `Text`, when code calls `from_markup` or
+  `render`, and when a module other than `output.py` imports from `rich` beyond
+  `rich.text` (#1029).
 - A mapping create that fails with a 5xx (`hmc_mount_optical_media`, `hmc_map_storage_to_lpar`,
   `hmc_attach_disk_to_lpar`, the storage step of `hmc_provision_lpar`, and `storage
   mount-optical-media`, `map` and `attach-disk`) now says in its "possible side effect" error
@@ -1016,10 +1036,21 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- **Access-policy contract:** a grant naming `hmc_power_off_lpar` no longer reaches the
+  `dumprestart` crash; add `hmc_dump_restart_lpar` to the grant to keep it. An
+  `effects = ["destructive"]` grant admits both. `hmc_power_off_lpar` now admits `operation`
+  `shutdown` or `osshutdown` only and no longer accepts `allow_dump_restart`; an MCP call that
+  still passes it, even as `false`, is refused, so drop the argument. The CLI and `power_lpar`
+  are unchanged (#896, ADR 0188).
 - `hmcpctl lpars set-boot-order` prints the boot string it set and the pending boot string
   read back from the HMC, not the whole updated LPAR document; `--json` prints the document
   as before. The operation and the `hmc_set_lpar_boot_order` tool return value are unchanged
   (#1248).
+- `docs/capabilities/maturity.json` moves to format 4: every live observation carries a
+  required `schema_version` — the run's `HMC_SCHEMA_VERSION` as a `V<n>_<n>[_<n>...]` token
+  or `(not set)`, the string its header prints — and the 20 observations stored before it
+  read `unrecorded`. A run whose variable fits neither form writes no observations; the
+  runner warns at startup when an observation environment is configured (#1090, ADR 0186).
 - `WritableConsoleSession.send_sysrq` defaults its keyword-only `prefix` to `b"\x0f"`
   (Ctrl-O); a caller can still pass another prefix. A live run on HMC V10R3 M1060 with
   partition firmware FW950 showed the vterm passing Ctrl-O plus `h` to a Linux guest's hvc

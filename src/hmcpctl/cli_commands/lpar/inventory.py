@@ -7,7 +7,6 @@ from dataclasses import asdict
 from typing import Any
 
 import typer
-from rich.table import Table
 
 from ...operations.inventory.composite import fetch_lpar_summary
 from ...operations.lpar.core import (
@@ -18,7 +17,14 @@ from ...operations.lpar.core import (
 from ...operations.partition_state import PartitionState
 from ...resource_identity import ResourceNotFoundError
 from ...ssh.refcodes import MAX_REFCODE_COUNT, list_lpar_refcodes
-from ..output import console, first_field, output, partition_not_found, print_json
+from ..output import (
+    VerbatimTable,
+    console,
+    first_field,
+    output,
+    partition_not_found,
+    print_json,
+)
 from ..runtime import run_cli_coroutine, ssh_config, with_client
 
 
@@ -43,7 +49,7 @@ def lpars_summary(
 
 def _render_lpar_summary(summary: Mapping[str, Any], name_or_uuid: str) -> None:
     """Render a fetched LPAR summary as a terminal table."""
-    table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
+    table = VerbatimTable(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
     for property_name, value in _summary_rows(summary):
@@ -97,7 +103,7 @@ def lpars_list(
 
     table = None
     if not as_json:
-        table = Table(title="Logical Partitions")
+        table = VerbatimTable(title="Logical Partitions")
         for col in ("Name", "ID", "UUID", "State", "Type", "OS", "RMC"):
             table.add_column(col)
         for lpar in lpars:
@@ -141,7 +147,7 @@ def lpars_state(
 
     if state is None:
         partition_not_found(name_or_uuid)
-    console.print(state)
+    console.print(state, markup=False)
 
 
 def lpars_refcodes(

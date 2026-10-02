@@ -2,7 +2,7 @@
 
 # `lpar` tools
 
-34 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
+35 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
@@ -14,6 +14,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
 | `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
 | `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |
+| `hmc_dump_restart_lpar` | `destructive` | `lpar.dump_restart` | `lpar` | `implemented` | `unevidenced` | `existing-runtime-guards` | Crash a logical partition and take a platform dump (PowerOff operation=dumprestart). |
 | `hmc_get_lpar` | `read` | `lpar.get` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Get one logical partition by partition name or UUID. |
 | `hmc_get_lpar_description` | `read` | `lpar.get_description` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's CLI-only description, resolving names or UUIDs. |
 | `hmc_get_lpar_memopt_score` | `read` | `lpar.get_memopt_score` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return an LPAR's current memory-optimization affinity score. |
