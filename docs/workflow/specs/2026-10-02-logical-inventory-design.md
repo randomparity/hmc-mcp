@@ -69,12 +69,15 @@ Each `InventoryPartition` carries:
 **Scoped identifiers** are `<connection>/<system uuid>` and
 `<connection>/<system uuid>/<partition uuid>`. HMC UUIDs are stable, so an id survives a
 rename. Two partitions with the same name, on different systems or connections, get different
-ids. #1221 consumes these ids.
+ids. #1221 consumes these ids. An id is stable per connection label. `<default>` names whatever
+an omitted `profile` resolves to at call time (ADR 0038), so it can differ from the same
+profile named explicitly, and under `HMC_HOST` every profile is `<default>`.
 
 **Unknown is not zero.** A figure the HMC omits, or reports unparseably, is `null` and never
 `0`. A capacity figure `system_capacity` refuses is `null`, and `sources.capacity` is
 `unavailable` with the refusal as `detail`. When `sources.ownership` is not `ok`, `owned` and
-`owner` are `null`.
+`owner` are `null`. Ownership has no read of its own: when `sources.partitions` is not `ok`,
+`sources.ownership` takes the same status, with `detail` naming `hmc_list_lpars`.
 
 **Empty is not inaccessible.** If `sources.partitions` is `ok` and the system has no matching
 partitions, it is empty. If it is `denied` or `unavailable`, the system contributes no
@@ -86,9 +89,9 @@ partitions and the status says why.
 `hmc_operation_status` shape, so only an `all-targets` grant admits the tool itself. Target
 scope is enforced by the four tools it delegates to. Each delegated check calls the server's
 own `dispatch_authorizer` as that tool, with `profile` and, where the tool declares one, its
-`system_name_or_uuid`. Each check writes the ADR 0040 record under the delegated name.
-
-A tool the policy ceiling withholds is `denied` without an authorizer call. A
+`system_name_or_uuid`. Each authorizer check writes the ADR 0040 record under the delegated
+name. A tool the policy ceiling withholds is `denied` without an authorizer call, and so writes
+no record, since no grant names it. A
 `TargetScopeError` or `ConnectionScopeError` is `denied`, with its message as `detail`.
 
 | Source | Delegated tool | Checked with |
@@ -104,6 +107,8 @@ and its `detail` tells the caller to pass `systems` selectors. A denied selector
 `InventorySystem` with `selector` set, `id`, `uuid` and `name` all `null`, and `partitions`
 `denied`. Nothing is read for it. A selector that is admitted but matches no system has
 `partitions` set to `unavailable`. Denied and unmatched selectors appear on the first page only.
+An admitted selector also returns that system's `uuid`, `name` and `state` under the
+`hmc_list_lpars` decision. This is accepted: the selector already names the system.
 
 ### Reads and paging
 
@@ -112,7 +117,8 @@ Read paths:
 - **Enumeration:** one `list_managed_systems` read per page.
 - **Selectors:** for each admitted selector, `get_managed_system` (UUID) or
   `find_system_by_name` (name), following `resolve_system_uuid`'s rule. Results collapse by
-  UUID.
+  UUID. An `HMCError`, or the `ValueError` an ambiguous name raises, makes that selector
+  `unavailable` with the error text.
 - **Partitions:** one `list_logical_partitions(uuid)` read per admitted system that the page
   reads. An `HMCError` from it makes that source `unavailable`.
 
@@ -124,7 +130,11 @@ until one of these happens:
 
 - `limit` partitions are collected, and more remain in this system or later ones: `truncated`;
 - 16 systems are read, and more remain: `systems_truncated` and `truncated`;
-- the systems run out: `next_cursor` is `null`.
+- the systems run out: `next_cursor` is `null`;
+- a read raises `HMCTransportError` (a timeout or connection failure): that system is
+  `unavailable`, nothing further is read, and `next_cursor` points at the next system. Selector
+  resolution stops the same way: the unresolved selectors are `unavailable` with that detail.
+  One stalled HMC therefore costs one request timeout per page, not one per system.
 
 `truncated` means "more remains to read", not "more partitions exist". A later page may be
 empty. Filters apply before counting.
@@ -136,9 +146,9 @@ empty. Filters apply before counting.
 2. **Invariants and assets at stake:**
    - no data from a source the policy denies for that target, whether in the result, in a
      filter outcome or in the read itself;
-   - every delegated decision recorded under the delegated tool's name;
-   - published identifiers stable for #1221;
-   - one HMC's read load bounded per page.
+   - every decision the dispatch authorizer makes recorded under the delegated tool's name;
+   - published identifiers stable per connection label for #1221;
+   - one HMC's read load bounded per page: at most 32 reads, and at most one request timeout.
 3. **Accepted failure classes:**
    - A targets table that lists a system by name denies enumeration-path partitions, which are
      checked by UUID. Bounded: the caller passes the name as a selector.
@@ -158,13 +168,10 @@ empty. Filters apply before counting.
   existing boundary.
 - **Actors:** an agent whose policy is narrower than the HMC user's rights. Trust is placed in
   the operator's policy and the HMC credentials.
-- **Controls:**
-  - the schema plus explicit bound checks validate the arguments;
-  - each source is authorized before its read, and a filter on a denied source drops that
-    system's partitions;
-  - the cursor is decoded with type and UUID checks and a 256-character cap;
-  - `detail` is capped at 500 characters and carries only authorizer or HMC error text that a
-    direct call would show.
+- **Controls:** the bounds under *Inputs* and the cursor checks validate arguments. Each source
+  is authorized before its read, and a filter on a denied source drops that system's
+  partitions. `detail` carries only authorizer or HMC error text that a direct call would
+  show.
 - **Out of scope:** an HMC user who can read more than the policy allows, outside hmcpctl.
 
 ## Success
@@ -176,9 +183,11 @@ empty. Filters apply before counting.
    system with no partitions has `partitions` `ok` and contributes none.
 4. Under a targets-table policy, a call without `systems` reads nothing and reports `denied`. A
    call with `systems` admits each selector separately. A denied selector or source returns
-   none of its data, and the audit stream records each decision under the delegated tool.
-5. An `HMCError` on one system's partitions makes that system's source `unavailable`. The other
-   systems still answer.
+   none of its data, and the audit stream records each authorizer decision under the delegated
+   tool.
+5. An `HMCError` on one system's partitions, or an ambiguous selector name, makes that system
+   or selector `unavailable`, and the other systems still answer. A transport error ends the
+   page with a cursor at the next system.
 6. Following `next_cursor` across a 3-system, 450-partition inventory at `limit=200` returns each
    partition exactly once. A 20-system inventory spans two pages of 16 and 4 systems.
 7. `lpar_state` and `owner` filter before paging. An `owner` filter on a system whose ownership
@@ -186,7 +195,7 @@ empty. Filters apply before counting.
 
 ## Validation
 
-Every material contract above is executable and is covered by a focused test. The tests are:
+Each Success item is covered by a focused test in one of these files:
 
 - `tests/unit/test_logical_inventory.py` (domain, fake client): Success 1–3 and 5–7, plus input
   bounds and the cursor;

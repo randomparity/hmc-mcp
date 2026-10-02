@@ -12,15 +12,8 @@ ADR 0189 Decision 2 runs a logical action only when the policy permits every too
 to. The H1 spec gives `hmc_inventory` the same delegated row as `hmc_plan_lpar`, which includes
 `hmc_list_vios` and `hmc_get_vios_storage_detail`. Inventory returns no VIOS data.
 
-The same spec also gives inventory a `sources` field with per-source `ok`, `unavailable` and
-`denied` statuses. If any withheld tool refused the whole call, `denied` would be unreachable.
-
-A served policy binds only a tool's name and its effect. Target scope is checked per call
-(ADRs 0038 and 0039). Of the delegated tools:
-
-- `hmc_list_systems` and `hmc_capacity_report` have no target selector, so only an
-  `all-targets` grant admits them;
-- `hmc_list_lpars` and `hmc_list_lpar_ownership` bind one managed system.
+The same spec gives inventory per-source `ok`, `unavailable` and `denied` statuses. If any
+withheld tool refused the whole call, `denied` would be unreachable.
 
 ## Decision
 
@@ -42,8 +35,11 @@ A served policy binds only a tool's name and its effect. Target scope is checked
 
 - An operator can give an agent a partial view, for example partitions without capacity. The
   result says which part is withheld, and nothing leaks into it.
-- Each delegated decision writes its own ADR 0040 record. An enumeration page can write up to
-  33: one for systems, one for capacity, and two for each of up to 16 systems.
+- Each authorizer decision writes its own ADR 0040 record. An enumeration page can write up to
+  34 delegated records (one for systems, one for capacity, two for each of up to 16 systems),
+  plus `hmc_inventory`'s own. A tool the ceiling withholds is reported `denied` and writes none.
+- An admitted selector also returns that system's UUID, name and state under the
+  `hmc_list_lpars` decision, which no delegated listing returns on its own.
 - On the enumeration path, partitions are checked by UUID. A targets table that names systems
   only by name therefore denies them there, and the caller passes the names as `systems`.
 - Renaming one of the four tools changes inventory's effective authority, so a test pins the
@@ -55,8 +51,8 @@ A served policy binds only a tool's name and its effect. Target scope is checked
   whose data the tool never returns, and it makes the spec's `denied` status unreachable. The
   operator chose per-source denial on 2026-10-02.
 - **Enumerate every system and silently drop those the policy hides.** judgment: fit. It reads
-  the systems feed the policy withholds through `hmc_list_systems`, and it writes a deny record
-  for every hidden system. The operator rejected it on 2026-10-02.
+  the systems feed the policy withholds through `hmc_list_systems`, and it hides what it drops.
+  The operator rejected it on 2026-10-02.
 - **Give `hmc_inventory` a selector so a targets table can bind it directly.** verified:
   `REQUIRED_TARGET_ARGUMENTS` in `src/hmcpctl/tool_registry.py` (main `74bb5cb8`) maps only
   scalar arguments such as `system_name_or_uuid`. A list argument of up to 16 selectors has no
