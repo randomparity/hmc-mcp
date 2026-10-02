@@ -102,15 +102,16 @@ def test_create_mcp_returns_independent_complete_applications():
     # upgrades into separate tools, for 148 total. Issue #874 adds the read-only
     # hmc_read_lpar_refcodes, the bounded LPAR reference-code read. Issue #1202
     # removes hmc_list_recent_jobs, whose Job feed no HMC serves.
-    # Issue #1218 adds the read-only hmc_operation_status, for 157.
+    # Issue #1218 adds the read-only hmc_operation_status, for 157. Issue #1219
+    # adds hmc_search_tools and hmc_invoke_tool, for 159.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 157
-    assert len(asyncio.run(second.list_tools())) == 157
+    assert len(asyncio.run(first.list_tools())) == 159
+    assert len(asyncio.run(second.list_tools())) == 159
 
 
 def test_operations_do_not_import_application_modules():
