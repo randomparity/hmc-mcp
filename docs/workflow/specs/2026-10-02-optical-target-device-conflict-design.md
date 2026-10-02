@@ -28,7 +28,8 @@ holds every mapping's `VirtualOpticalTargetDevice` `TargetName`
    declaration mirrors the widened type.
 3. **Conflict message** (one helper, both paths): names the device (or "the target device" when
    the HMC chose it), says it is already mapped on the VIOS, and, on the pre-POST path, names the
-   matched mapping's `MediaName` when it has one. Remedies available today: name a different
+   matched mapping's client LPAR and `MediaName` when it has them, since `unmount-optical-media`
+   selects by LPAR and media name. Remedies available today: name a different
    `target_device`, or, when media is mapped to the device, unmount that media first
    (`unmount-optical-media`); loading media into an existing device is not supported yet. No
    command that does not exist is named (#1285 is unbuilt). A device with no media loaded is not
