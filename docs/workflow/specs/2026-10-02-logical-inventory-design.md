@@ -34,8 +34,9 @@ inventory, measured utilization (#1242), and any change to the `hmcpctl.api` fac
 | `cursor` | `next_cursor` from an earlier page, unchanged |
 | `profile` | the connection, as for every tool |
 
-A violated bound is a tool error that names the input. An invalid cursor is
-`invalid_cursor: pass next_cursor from a previous page unchanged`.
+A violated bound is a tool error that names the input, raised before the HMC session opens. An
+invalid cursor is `invalid_cursor: pass next_cursor from a previous page unchanged`. A blank
+`owner` or `cursor` reads as absent (ADR 0094).
 
 ### Result
 

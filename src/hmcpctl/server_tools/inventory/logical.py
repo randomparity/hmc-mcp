@@ -15,7 +15,12 @@ from fastmcp import FastMCP
 from ..._app import with_client
 from ...authorization.connection_scope import ConnectionScopeError
 from ...authorization.target_scope import TargetScopeError
-from ...operations.inventory.logical import Admit, InventoryPage, read_inventory
+from ...operations.inventory.logical import (
+    Admit,
+    InventoryPage,
+    check_inputs,
+    read_inventory,
+)
 from ...operations.logical.store import connection_label
 from ...operations.partition_state import PartitionState
 from ...tool_registry import (
@@ -93,6 +98,10 @@ def inventory_handler(
             cursor: ``next_cursor`` from the previous page, unchanged.
             profile: HMC connection profile.
         """
+        # ADR 0094: a client may send an unset optional string as "".
+        owner = (owner or "").strip() or None
+        cursor = (cursor or "").strip() or None
+        check_inputs(systems, owner, limit, cursor)
         admit = _admitter(tool_security, permits, authorize, profile)
         connection = connection_label(profile, tool=INVENTORY_TOOL_NAME)
         return with_client(

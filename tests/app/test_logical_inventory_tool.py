@@ -257,3 +257,24 @@ def test_whole_hmc_stall_that_also_times_out_logoff_is_a_tool_error():
     logoff = HMCTransportError("DELETE /rest/api/web/Logon timed out")
     with pytest.raises(ToolError, match="Logon timed out"):
         _call(_app(_ALL), hmc, {}, logoff=logoff)
+
+
+def test_bad_arguments_fail_before_the_hmc_session_opens():
+    from fastmcp.exceptions import ToolError
+
+    async def go() -> None:
+        async with Client(_app(_ALL)) as mcp_client:
+            await mcp_client.call_tool(INVENTORY, {"limit": 0})
+
+    with (
+        patch("hmcpctl._app.client_from_env") as client,
+        pytest.raises(ToolError, match="limit"),
+    ):
+        asyncio.run(go())
+    client.assert_not_called()
+
+
+def test_blank_owner_and_cursor_read_as_absent():
+    """ADR 0094: an MCP client may send an unset optional string as ""."""
+    page = _call(_app(_ALL), _HMC(), {"owner": " ", "cursor": ""})
+    assert len(page["partitions"]) == 2

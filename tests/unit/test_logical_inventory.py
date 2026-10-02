@@ -391,8 +391,16 @@ def test_firmware_feed_failure_is_unavailable_with_the_selector_hint():
     assert page.systems_source is not None
     assert page.systems_source.status == "unavailable"
     assert "Pass system names" in (page.systems_source.detail or "")
+    assert ".." not in (page.systems_source.detail or "")
     assert hmc.calls == [("list_uom", None)]
     assert page.systems == []
+
+
+def test_stalled_feed_does_not_suggest_selectors():
+    hmc = FakeHMC([_system(1)], systems_error=HMCTransportError("timed out"))
+    source = _read(hmc).systems_source
+    assert source is not None and source.status == "unavailable"
+    assert "Pass" not in (source.detail or "")
 
 
 def test_resolution_stall_reads_no_partitions_on_that_page():

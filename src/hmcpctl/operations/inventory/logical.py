@@ -167,7 +167,10 @@ def decode_cursor(cursor: str) -> tuple[str, str | None]:
     return system, partition
 
 
-def _check_inputs(systems: Sequence[str] | None, owner: str | None, limit: int) -> None:
+def check_inputs(
+    systems: Sequence[str] | None, owner: str | None, limit: int, cursor: str | None
+) -> tuple[str, str | None] | None:
+    """Raise ``ValueError`` naming the first bad argument; return the decoded cursor."""
     if systems is not None:
         if not 1 <= len(systems) <= MAX_SELECTORS:
             raise ValueError(
@@ -179,6 +182,7 @@ def _check_inputs(systems: Sequence[str] | None, owner: str | None, limit: int) 
         raise ValueError(f"limit: must be 1 to {MAX_LIMIT}")
     if owner is not None and not 1 <= len(owner) <= MAX_OWNER:
         raise ValueError(f"owner: must be 1 to {MAX_OWNER} characters")
+    return decode_cursor(cursor) if cursor is not None else None
 
 
 def _text(value: object) -> str | None:
@@ -211,7 +215,9 @@ async def _enumerate(hmc: Any, admit: Admit) -> tuple[SourceStatus, list[_Candid
     try:
         entries = await hmc.list_uom("ManagedSystem")
     except HMCError as exc:
-        text = f"managed systems are unavailable: {exc}.{_FEED_HINT}"
+        text = f"managed systems are unavailable: {exc}"
+        if not isinstance(exc, HMCTransportError):
+            text = f"{text.rstrip('.')}.{_FEED_HINT}"
         return _unavailable(SYSTEMS_TOOL, text), []
     candidates = [
         _Candidate(None, str(entry["UUID"]), entry)
@@ -419,8 +425,7 @@ async def read_inventory(
     cursor: str | None,
 ) -> InventoryPage:
     """Read one page of the connection's systems and partitions (ADR 0196)."""
-    _check_inputs(systems, owner, limit)
-    start = decode_cursor(cursor) if cursor is not None else None
+    start = check_inputs(systems, owner, limit, cursor)
     stalled: str | None = None
     if systems is None:
         systems_source, candidates = await _enumerate(hmc, admit)
