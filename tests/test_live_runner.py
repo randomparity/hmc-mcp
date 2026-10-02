@@ -3633,7 +3633,10 @@ async def test_vmedia_workflows_execute_their_behavioral_contracts(
         calls.append((tool, kwargs))
         counts[tool] = counts.get(tool, 0) + 1
         if tool == "hmc_list_vios":
-            return "PASS", [{"UUID": "vios", "Resource": {"PartitionID": "2"}}]
+            return "PASS", SimpleNamespace(
+                entries=[{"UUID": "vios", "Resource": {"PartitionID": "2"}}],
+                unreadable_systems=[],
+            )
         if tool == "hmc_get_lpar":
             return "PASS", {"uuid": "lp3"}
         if tool == "hmc_list_volume_groups":
@@ -4208,7 +4211,10 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
                 }
             ],
             "hmc_get_lpar": {"UUID": "lpar-uuid"},
-            "hmc_list_vios": [{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
+            "hmc_list_vios": SimpleNamespace(
+                entries=[{"UUID": "vios-uuid", "Resource": {"PartitionID": "7"}}],
+                unreadable_systems=[],
+            ),
         }
         return "PASS", responses.get(tool, {})
 
