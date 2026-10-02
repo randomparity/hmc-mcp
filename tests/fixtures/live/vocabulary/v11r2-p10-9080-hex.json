@@ -1,7 +1,7 @@
 {
  "firmware": "v11r2-p10-9080-hex",
  "sources": [
-  "2026-10-01 read-only sweep of one HMC, plus a partial 2026-10-02 sweep of another whose feed also lists a 9105-22B, taken as a 9080-HEX moved from Recovery to No Connection: HMC V11R2 SP1120 managing a POWER10 9080-HEX"
+  "2026-10-01 read-only sweep of one HMC, plus partial 2026-10-02 sweeps of another whose feed also lists a 9105-22B, taken while a 9080-HEX was in Recovery, No Connection and Pending Authentication: HMC V11R2 SP1120 managing a POWER10 9080-HEX"
  ],
  "rest": {
   "endpoints": [
@@ -200,6 +200,13 @@
     "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
     "status": 200,
     "content_type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/VirtualIOServer",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+    "status": 204,
+    "content_type": "text/plain"
    },
    {
     "method": "GET",
@@ -540,10 +547,12 @@
     "true"
    ],
    "ASMAdminPasswordUpdatedRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "ASMGeneralPasswordUpdatedRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "ActivatedLevel": [
     "<int>"
@@ -653,6 +662,7 @@
     "true"
    ],
    "AllowWebRemoteAccess": [
+    "false",
     "true"
    ],
    "AllowedHardwarePageTableRations": [
@@ -710,6 +720,9 @@
    ],
    "AuthenticationType": [
     "local"
+   ],
+   "AuthorizedKey": [
+    "<text>"
    ],
    "AutoManageEnabled": [
     "false"
@@ -2608,7 +2621,8 @@
     "true"
    ],
    "PlatformPasswordUpdateRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "Port": [
     "<int>",
@@ -2997,6 +3011,7 @@
     "<text>"
    ],
    "State": [
+    "<text>",
     "Active",
     "Disconnected",
     "Inactive",
