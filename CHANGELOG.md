@@ -40,6 +40,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmc_capacity_report` and `hmc_find_placement` leave it out, and fail when every system is
   left out; `hmc_system_summary` warns, owner discovery counts it as unreadable, and the
   utilization report records a gap instead of zero partitions (#1301).
+- A mutation that names both a managed system and an LPAR UUID, when the system's partition
+  feed cannot be read, now refuses with the feed error itself, which names the system and its
+  state when it is not operating, instead of advising a retry. Ownership listing for one system
+  and `hmc_decommission_lpar`, dry run included, refuse the same way rather than report no
+  partitions, a missing LPAR or an empty storage blast radius. A waited template deployment
+  still submits and skips the ownership stamp with its snapshot warning (#1302).
 - `mount-optical-media` / `hmc_mount_optical_media` refuses, with a 409 and before any write, a
   `target_device` that an optical mapping on the VIOS already uses, naming its media and the
   remedies. When the HMC itself answers 500 `name is already used in another mapping`, the error
