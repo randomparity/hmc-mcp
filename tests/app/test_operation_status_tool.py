@@ -80,6 +80,13 @@ def test_records_on_another_connection_are_not_listed(monkeypatch):
     assert [r["operation_id"] for r in page["operations"]] == [mine]
 
 
+def test_profile_is_filtered_as_the_connection_the_policy_authorized(monkeypatch):
+    """HMC_HOST collapses every profile to <default> (ADR 0038), so 'prod' lists nothing."""
+    monkeypatch.setenv("HMC_AGENT_ID", "agent-a")
+    _seed("agent-a", 1, connection="prod")
+    assert _call({"profile": "prod"})["operations"] == []
+
+
 def test_default_agent_id_is_hmcpctl():
     _seed("hmcpctl", 1)
     assert len(_call({})["operations"]) == 1

@@ -431,9 +431,47 @@ def test_status_lists_only_the_callers_connection():
     assert [r.operation_id for r in prod.operations] == [_oid(2)]
 
 
-def test_connection_label_matches_the_access_policy_default_token():
+_NICKNAME_CONFIG = """\
+[profiles.lab]
+host = "lab-hmc.example.test"
+user = "admin"
+
+[nicknames]
+big-iron = "lab"
+"""
+
+
+@pytest.fixture
+def lab_config(tmp_path, monkeypatch):
+    """A home holding one ``lab`` profile and its ``big-iron`` nickname."""
+    from hmcpctl.config import config_dir
+
+    for name in ("XDG_CONFIG_HOME", "APPDATA", "HMC_HOST", "HMC_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    path = config_dir() / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_NICKNAME_CONFIG, encoding="utf-8")
+
+
+def test_connection_label_matches_the_access_policy_default_token(lab_config):
     from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 
     assert store.DEFAULT_CONNECTION == DEFAULT_CONNECTION_TOKEN
-    assert store.connection_label(None) == DEFAULT_CONNECTION_TOKEN
-    assert store.connection_label("lab") == "lab"
+    assert store.connection_label(None, tool="t") == DEFAULT_CONNECTION_TOKEN
+    assert store.connection_label("lab", tool="t") == "lab"
+
+
+def test_connection_label_resolves_a_nickname_to_its_profile_key(lab_config):
+    assert store.connection_label("big-iron", tool="t") == "lab"
+
+
+def test_connection_label_follows_hmc_host_to_the_default(lab_config, monkeypatch):
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    assert store.connection_label("lab", tool="t") == store.DEFAULT_CONNECTION
+
+
+def test_connection_label_refuses_an_unconfigured_profile(lab_config):
+    with pytest.raises(ValueError, match="names no configured connection"):
+        store.connection_label("never-configured", tool="t")

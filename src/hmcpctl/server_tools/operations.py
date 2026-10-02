@@ -57,7 +57,7 @@ def hmc_operation_status(
     agent_id = build_config(profile=profile).agent_id or "hmcpctl"
     return operation_status(
         agent_id=agent_id,
-        connection=connection_label(profile),
+        connection=connection_label(profile, tool="hmc_operation_status"),
         operation_id=operation_id,
         request_id=request_id,
         state=state,

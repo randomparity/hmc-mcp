@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ...authorization.connection_scope import UNRESOLVED, selected_connection
 from ..lpar.workflow_contract import (
     EffectRecord,
     OperationEvent,
@@ -717,9 +718,16 @@ def _decode_cursor(cursor: str) -> tuple[float, str]:
     return float(created_at), operation_id
 
 
-def connection_label(profile: str | None) -> str:
-    """Return the connection label an operation records for *profile*."""
-    return profile or DEFAULT_CONNECTION
+def connection_label(profile: str | None, *, tool: str) -> str:
+    """Return the connection the access policy authorizes *profile* as (ADR 0038).
+
+    ``HMC_HOST`` collapses every profile to ``<default>`` and a nickname resolves to its
+    profile key, so records are labelled and filtered by the connection actually used.
+    """
+    connection = selected_connection(profile, tool=tool)
+    if connection == UNRESOLVED:
+        raise ValueError(f"{tool}: profile {profile!r} names no configured connection")
+    return DEFAULT_CONNECTION if connection is None else connection
 
 
 def operation_status(

@@ -101,8 +101,10 @@ texts that tell an operator to delete the directory say to stop every hmcpctl pr
 ## Identity
 
 `OperationRequest(tool, agent_id, connection, host, request_id, arguments)`. `request_id` must
-match `^[A-Za-z0-9._-]{1,64}$` (`invalid_request_id`). `connection` is the profile key, or
-`"<default>"` for the environment connection; `host` is the HMC host that connection resolved to
+match `^[A-Za-z0-9._-]{1,64}$` (`invalid_request_id`). `connection` is
+`store.connection_label(profile, tool=...)`: the connection the access policy authorized, as
+`connection_scope.selected_connection` resolves it (a nickname becomes its profile key, and
+`HMC_HOST` makes every profile `"<default>"`); an unconfigured profile is refused. `host` is the HMC host that connection resolved to
 for this call (`HMCConfig.host`), because `<default>` binds late (ADR 0038). Both are recorded and
 both must match on every later call. The canonical request is
 `json.dumps({"tool": tool, "arguments": arguments}, sort_keys=True, separators=(",", ":"),
@@ -213,8 +215,8 @@ def hmc_operation_status(operation_id: str | None = None, request_id: str | None
 
 - The agent id is `build_config(profile=profile).agent_id or "hmcpctl"`, the same default
   ownership stamping uses. Records are also filtered to this call's connection,
-  `store.connection_label(profile)` (the profile key, or `"<default>"`), the same label `submit`
-  records, so a policy that grants one connection never lists another connection's records.
+  `store.connection_label(profile, tool="hmc_operation_status")`, the same policy-resolved label
+  `submit` records, so a policy that grants one connection never lists another connection's records.
 - `target_kind="console"`, as `hmc_get_console_info` uses, keeps `profile` under the policy's
   connection scope without a target selector; `profile` chooses the agent id, so it must stay
   policed.
