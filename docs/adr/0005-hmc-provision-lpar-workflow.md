@@ -4,6 +4,8 @@
 
 Accepted; module ownership superseded by ADR 0013
 
+> **Partially superseded by [0190](0190-durable-logical-operation-store.md)** (2026-10-01)
+
 ## Context
 
 Provisioning a new LPAR currently requires six separate MCP tool calls in a
