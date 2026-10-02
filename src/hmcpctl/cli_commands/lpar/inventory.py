@@ -24,6 +24,7 @@ from ..output import (
     output,
     partition_not_found,
     print_json,
+    report_unreadable,
 )
 from ..runtime import run_cli_coroutine, ssh_config, with_client
 
@@ -99,14 +100,15 @@ def lpars_list(
 ) -> None:
     """List logical partitions."""
 
-    lpars = with_client(lambda hmc: list_lpars(hmc, system, state))
+    listing = with_client(lambda hmc: list_lpars(hmc, system, state))
+    report_unreadable(listing)
 
     table = None
     if not as_json:
         table = VerbatimTable(title="Logical Partitions")
         for col in ("Name", "ID", "UUID", "State", "Type", "OS", "RMC"):
             table.add_column(col)
-        for lpar in lpars:
+        for lpar in listing.entries:
             table.add_row(
                 first_field(lpar, "PartitionName"),
                 first_field(lpar, "PartitionID"),
@@ -116,7 +118,7 @@ def lpars_list(
                 first_field(lpar, "OperatingSystemVersion", default="-"),
                 first_field(lpar, "ResourceMonitoringControlState", "RMCState"),
             )
-    output(lpars, as_json, table, "No logical partitions found")
+    output(asdict(listing), as_json, table, "No logical partitions found")
 
 
 def lpars_show(

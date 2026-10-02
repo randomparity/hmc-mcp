@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import Any, NoReturn, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
 import typer
 from rich.console import Console, RenderableType
 from rich.style import StyleType
 from rich.table import Table
 from rich.text import Text, TextType
+
+if TYPE_CHECKING:
+    from ..operations.systems.fleet import FleetListing
 
 # Emoji codes are off: no CLI string uses one, and an HMC value such as ``a:smile:b``
 # must print as received (#1029).
@@ -97,6 +100,18 @@ def output(
         err_console.print(empty_msg, style="yellow", markup=False)
     else:
         print_json(entries)
+
+
+def report_unreadable(listing: FleetListing) -> None:
+    """Name each managed system a fleet listing could not read (ADR 0197)."""
+    for system in listing.unreadable_systems:
+        err_console.print(
+            f"Skipped managed system {system.system_name} ({system.system_uuid}): "
+            f"State {system.state}",
+            style="yellow",
+            markup=False,
+            soft_wrap=True,
+        )
 
 
 def fail(exc: Exception, *, code: int = 1) -> NoReturn:

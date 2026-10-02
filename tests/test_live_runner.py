@@ -15,6 +15,7 @@ from dataclasses import FrozenInstanceError, asdict
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -2467,6 +2468,10 @@ def test_result_helpers_filter_malformed_entries_and_resource_shapes():
     assert results.entries({"entries": raw_entries}) == [raw_entries[0], raw_entries[2]]
     assert results.entries({"entries": {"UUID": "not-a-list"}}) == []
     assert results.entries("invalid") == []
+    # FastMCP hands a dataclass result (ADR 0197's FleetListing) to a client as a
+    # generated model rather than a mapping.
+    model = SimpleNamespace(entries=raw_entries, unreadable_systems=[])
+    assert results.entries(model) == [raw_entries[0], raw_entries[2]]
     assert results.resource(raw_entries[0]) == {"UUID": "nested"}
     assert results.resource({"UUID": "flat"}) == {"UUID": "flat"}
     assert results.resource({"Resource": "not-a-mapping"}) == {

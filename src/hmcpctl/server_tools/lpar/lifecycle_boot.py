@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from hmcpctl.operations.lpar.ownership import list_lpar_ownership
+from hmcpctl.operations.systems.fleet import FleetListing
 
 from ..._app import ssh_with_client, with_client
 from ...operations.lpar.boot_order import (
@@ -166,20 +167,23 @@ def hmc_clear_lpar_boot_order(
 def hmc_list_lpar_ownership(
     system_name_or_uuid: str | None = None,
     profile: str | None = None,
-) -> list[dict[str, Any]]:
+) -> FleetListing:
     """Read parsed ownership for every LPAR on a system in one REST call.
 
     Parses the advisory ADR 0011 ownership token out of each partition's
     description via the bulk list feed, so one request covers the whole system
-    (#375). Every partition is returned: ``owned`` partitions carry the
-    ``owner`` agent id; a description with no well-formed stamp is reported
-    with ``unparsed=True``; a partition with no description at all has
-    ``description=None`` — the three facts stay distinct for reconciliation.
+    (#375). Returns ``entries`` and ``unreadable_systems``. Every partition read
+    is an entry: ``owned`` partitions carry the ``owner`` agent id; a
+    description with no well-formed stamp is reported with ``unparsed=True``; a
+    partition with no description at all has ``description=None`` — the three
+    facts stay distinct for reconciliation.
 
     Args:
         system_name_or_uuid: Optional SystemName or UUID whose partitions to
-            read; omitted reads the fleet-wide LogicalPartition feed in one
-            call (entries then carry no parent-system attribution).
+            read. Omitted reads each operating managed system's LPAR feed in
+            turn; a system that is not operating is not read and is named in
+            unreadable_systems instead. Entries carry no parent-system
+            attribution.
         profile: Optional configured HMC profile name; uses the default when
             omitted.
     """

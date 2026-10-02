@@ -245,8 +245,11 @@ def _leaf(value: Any) -> str:
 
 
 def _rows(data: Any) -> list[dict[str, Any]]:
-    if isinstance(data, dict):
-        data = data.get("items", [data])
+    # A dataclass tool result (ADR 0197's listing) arrives as a generated model.
+    if hasattr(data, "entries"):
+        data = data.entries
+    elif isinstance(data, dict):
+        data = data["entries"] if "entries" in data else data.get("items", [data])
     return (
         [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
     )

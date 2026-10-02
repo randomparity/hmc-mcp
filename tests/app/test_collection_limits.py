@@ -13,6 +13,7 @@ from hmcpctl._app import run_limited_collection
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
 from hmcpctl.operations.lpar import core as lpar_core
+from hmcpctl.operations.systems.fleet import FleetListing, UnreadableSystem
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.server_tools.storage import resources as server_storage
 from hmcpctl.server_tools.systems import core as server_systems
@@ -145,8 +146,15 @@ def test_collection_tool_signatures_and_limit_schema(tool_name, entry):
     assert "parsed" in description
 
 
+# These return a FleetListing (ADR 0197): ``limit`` caps its entries only.
+LISTING_TOOLS = {"hmc_list_lpars", "hmc_list_vios"}
+
+
 @pytest.mark.parametrize("limit", [None, 2, 0, -1])
-@pytest.mark.parametrize(("tool_name", "entry"), COLLECTION_TOOLS.items())
+@pytest.mark.parametrize(
+    ("tool_name", "entry"),
+    [item for item in COLLECTION_TOOLS.items() if item[0] not in LISTING_TOOLS],
+)
 def test_collection_tools_delegate_limit_to_shared_helper(tool_name, entry, limit):
     module, args, _expected_parameters = entry
     function = getattr(module, tool_name)
@@ -158,6 +166,30 @@ def test_collection_tools_delegate_limit_to_shared_helper(tool_name, entry, limi
 
     assert result == [{"id": 1}]
     assert run.call_args.args[1] == limit
+
+
+@pytest.mark.parametrize("limit", [None, 1, 0])
+@pytest.mark.parametrize("tool_name", sorted(LISTING_TOOLS))
+def test_listing_limit_caps_entries_and_keeps_every_skipped_system(tool_name, limit):
+    skipped = [UnreadableSystem("sys-R1", "r1", "No Connection", None)] * 2
+    listing = FleetListing([{"id": 1}, {"id": 2}], skipped)
+
+    with patch.object(server_systems, "with_client", return_value=listing):
+        result = getattr(server_systems, tool_name)(limit=limit)
+
+    assert result.entries == listing.entries[:limit]
+    assert result.unreadable_systems == skipped
+
+
+@pytest.mark.parametrize("tool_name", sorted(LISTING_TOOLS))
+def test_listing_rejects_negative_limit_before_any_request(tool_name):
+    with (
+        patch.object(server_systems, "with_client") as run,
+        pytest.raises(ValueError, match="^limit must be greater than or equal to 0$"),
+    ):
+        getattr(server_systems, tool_name)(limit=-1)
+
+    run.assert_not_called()
 
 
 def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, mock_hmc):
@@ -231,7 +263,7 @@ def test_lpar_parent_selector_runs_before_results_are_capped():
     ):
         result = server_systems.hmc_list_lpars("system-name", limit=2)
 
-    assert result == entries[:2]
+    assert result == FleetListing(entries[:2], [])
     resolve.assert_awaited_once_with(client, "system-name")
     client.list_logical_partitions.assert_awaited_once_with("system-uuid")
 

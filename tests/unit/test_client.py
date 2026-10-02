@@ -764,18 +764,6 @@ async def test_a_failed_logon_traceback_carries_no_credential(failure, mock_hmc)
 
 
 @pytest.mark.asyncio
-async def test_list_logical_partitions(mock_hmc):
-    mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=LPAR_FEED)
-    )
-    async with HMCClient(make_config()) as hmc:
-        lpars = await hmc.list_logical_partitions()
-    assert len(lpars) == 2
-    assert lpars[0]["Resource"]["PartitionName"] == "lpar1"
-    assert lpars[1]["Resource"]["PartitionState"] == "not activated"
-
-
-@pytest.mark.asyncio
 async def test_list_lpars_for_system(mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=LPAR_FEED)
@@ -1016,6 +1004,33 @@ async def test_list_managed_systems_fallback_warns_on_skipped_names(mock_hmc, ca
     assert "duplicate" in messages[0] and "Ambiguous" in messages[0]
     assert "unavailable" in messages[1] and "resolution unavailable" in messages[1]
     assert "missing" in messages[2] and "not found" in messages[2]
+
+
+@pytest.mark.asyncio
+async def test_inventory_fallback_returns_the_names_it_could_not_resolve(mock_hmc):
+    firmware_error = HMCError(
+        "GET failed: Nested path contains null property", status_code=500
+    )
+    found = {"UUID": "sys-uuid-1", "Resource": {"SystemName": "sys-E2"}}
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"UUID": "SYS-UUID-4", "SystemName": "sys-R1"},
+                {"UUID": "sys-uuid-5", "SystemName": "sys-R3"},
+                {"UUID": "sys-uuid-1", "SystemName": "sys-E2"},
+            ],
+        )
+    )
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_uom = AsyncMock(side_effect=firmware_error)
+        hmc.search_uom = AsyncMock(
+            side_effect=[HMCError("unavailable", status_code=503), [], [found]]
+        )
+        systems, unresolved = await hmc.inventory_managed_systems()
+
+    assert systems == [found]
+    assert unresolved == [("sys-uuid-4", "sys-R1"), ("sys-uuid-5", "sys-R3")]
 
 
 @pytest.mark.asyncio
@@ -1687,7 +1702,7 @@ async def test_uom_headers_sends_schema_version_when_configured(mock_hmc):
         )
     )
     async with HMCClient(make_config(schema_version="V1_0")) as hmc:
-        await hmc.list_logical_partitions()
+        await hmc.list_uom("LogicalPartition")
     sent_headers = route.calls.last.request.headers
     assert sent_headers.get("x-hmc-schema-version") == "V1_0"
 
@@ -1702,7 +1717,7 @@ async def test_uom_headers_omits_schema_version_when_not_configured(mock_hmc):
         )
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.list_logical_partitions()
+        await hmc.list_uom("LogicalPartition")
     sent_headers = route.calls.last.request.headers
     assert "x-hmc-schema-version" not in sent_headers
 

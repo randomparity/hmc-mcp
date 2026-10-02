@@ -88,7 +88,7 @@ def test_bulk_read_parses_mixed_ownership(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=MIXED_FEED))
 
-    result = hmc_list_lpar_ownership(SYSTEM_UUID)
+    result = hmc_list_lpar_ownership(SYSTEM_UUID).entries
 
     by_name = {row["lpar_name"]: row for row in result}
     assert set(by_name) == {"lp-owned", "lp-owned-caller", "lp-foreign", "lp-empty"}
@@ -130,7 +130,7 @@ def test_bulk_read_reads_text_of_attributed_description(monkeypatch, mock_hmc):
     )
     mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=feed))
 
-    (row,) = hmc_list_lpar_ownership(SYSTEM_UUID)
+    (row,) = hmc_list_lpar_ownership(SYSTEM_UUID).entries
 
     assert row["owned"] is True
     assert row["owner"] == "hmcpctl"
@@ -145,7 +145,7 @@ def test_bulk_read_issues_exactly_one_rest_call(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=MIXED_FEED)
     )
 
-    result = hmc_list_lpar_ownership(SYSTEM_UUID)
+    result = hmc_list_lpar_ownership(SYSTEM_UUID).entries
 
     assert route.call_count == 1
     assert len(result) == 4
@@ -158,7 +158,7 @@ def test_token_characters_round_trip_unescaped(monkeypatch, mock_hmc):
     feed = _feed(_lpar_entry("11111111-1111-4111-8111-111111111115", "lp-chars", raw))
     mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=feed))
 
-    result = hmc_list_lpar_ownership(SYSTEM_UUID)
+    result = hmc_list_lpar_ownership(SYSTEM_UUID).entries
 
     assert len(result) == 1
     assert result[0]["description"] == raw
@@ -174,7 +174,7 @@ def test_absent_element_differs_from_empty_element(monkeypatch, mock_hmc):
     )
     mock_hmc.get(LIST_ROUTE).mock(return_value=httpx.Response(200, text=feed))
 
-    result = hmc_list_lpar_ownership(SYSTEM_UUID)
+    result = hmc_list_lpar_ownership(SYSTEM_UUID).entries
 
     by_name = {row["lpar_name"]: row for row in result}
     assert by_name["lp-absent"]["description"] is None
@@ -209,7 +209,7 @@ def test_selector_by_system_name_resolves_then_lists_once(monkeypatch, mock_hmc)
         return_value=httpx.Response(200, text=MIXED_FEED)
     )
 
-    result = hmc_list_lpar_ownership(SYSTEM_NAME)
+    result = hmc_list_lpar_ownership(SYSTEM_NAME).entries
 
     assert route.call_count == 1
     assert {row["lpar_name"] for row in result} == {
@@ -220,17 +220,48 @@ def test_selector_by_system_name_resolves_then_lists_once(monkeypatch, mock_hmc)
     }
 
 
-def test_omitted_selector_reads_fleet_feed_once(monkeypatch, mock_hmc):
-    """No selector follows the hmc_list_lpars convention: one fleet-wide read."""
+def _system_entry(uuid: str, name: str, state: str) -> str:
+    return (
+        "  <entry>"
+        f"<id>urn:uuid:{uuid}</id>"
+        f"<title>ManagedSystem:{name}</title>"
+        '<content type="application/vnd.ibm.powervm.uom+xml">'
+        '<ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/'
+        'firmware/uom/mc/2012_10/">'
+        f"<SystemName>{name}</SystemName><State>{state}</State>"
+        "<DetailedState>None</DetailedState>"
+        "</ManagedSystem></content></entry>"
+    )
+
+
+def test_omitted_selector_reads_each_operating_system(monkeypatch, mock_hmc):
+    """No selector reads each operating system's feed and names the rest (#1293)."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+    offline_uuid = "33333333-3333-4333-8333-333333333333"
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(
+            200,
+            text=_feed(
+                _system_entry(offline_uuid, "sys-R1", "No Connection"),
+                _system_entry(SYSTEM_UUID, "sys-E2", "operating"),
+            ),
+        )
+    )
+    route = mock_hmc.get(LIST_ROUTE).mock(
+        return_value=httpx.Response(200, text=MIXED_FEED)
+    )
+    fleet_wide = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
         return_value=httpx.Response(200, text=MIXED_FEED)
     )
 
     result = hmc_list_lpar_ownership()
 
     assert route.call_count == 1
-    assert len(result) == 4
+    assert fleet_wide.call_count == 0
+    assert len(result.entries) == 4
+    assert [
+        (s.system_name, s.system_uuid, s.state) for s in result.unreadable_systems
+    ] == [("sys-R1", offline_uuid, "No Connection")]
 
 
 def test_operation_reuses_the_shared_ownership_parser(monkeypatch, mock_hmc):
@@ -251,7 +282,7 @@ def test_operation_reuses_the_shared_ownership_parser(monkeypatch, mock_hmc):
 
     async def _run_op():
         async with client_from_env() as hmc:
-            return await lpar_ownership.list_lpar_ownership(hmc, SYSTEM_UUID)
+            return (await lpar_ownership.list_lpar_ownership(hmc, SYSTEM_UUID)).entries
 
     result = asyncio.run(_run_op())
 

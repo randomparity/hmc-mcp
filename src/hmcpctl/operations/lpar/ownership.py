@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from hmcpctl.audit import records as audit
@@ -15,6 +15,7 @@ from hmcpctl.discovery_limits import (
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
 )
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems.fleet import FleetListing, read_fleet
 from hmcpctl.resource_identity import (
     is_uuid,
     lpar_name_from_uuid,
@@ -380,15 +381,21 @@ def lpar_ownership_entry(entry: dict[str, Any]) -> dict[str, Any]:
 async def list_lpar_ownership(
     hmc: HMCClient,
     system_name_or_uuid: str | None = None,
-) -> list[dict[str, Any]]:
-    """Read parsed ownership for every LPAR on one system or across the fleet."""
+) -> FleetListing:
+    """Read parsed ownership for every LPAR on one system or across the fleet.
+
+    Without a system, each operating managed system is read in turn and the
+    others are named in ``unreadable_systems`` (ADR 0197).
+    """
     selector = optional_system_selector(system_name_or_uuid)
     if selector is not None:
         system_uuid = await resolve_system_uuid(hmc, selector)
-        entries = await hmc.list_logical_partitions(system_uuid)
+        listing = FleetListing(await hmc.list_logical_partitions(system_uuid))
     else:
-        entries = await hmc.list_uom("LogicalPartition")
-    return [lpar_ownership_entry(entry) for entry in entries]
+        listing = await read_fleet(hmc, hmc.list_logical_partitions, "LPARs")
+    return replace(
+        listing, entries=[lpar_ownership_entry(entry) for entry in listing.entries]
+    )
 
 
 def _audit_lpar_ownership_override(
@@ -482,7 +489,7 @@ async def _authorize_system_lpar_profile_restore(
         return system_name
 
     try:
-        rows = await list_lpar_ownership(hmc, system_uuid)
+        rows = (await list_lpar_ownership(hmc, system_uuid)).entries
     except HMCError as exc:
         raise ValueError(
             "LPAR ownership inventory is unavailable; retry after the managed-system "

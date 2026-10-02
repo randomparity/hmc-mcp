@@ -106,7 +106,6 @@ async def test_lpar_mixin_routes_scoped_and_global_reads():
     client.get_managed_system.return_value = {"Resource": {"State": "operating"}}
 
     assert await client.list_logical_partitions(UUID_A) == []
-    assert await client.list_logical_partitions() == []
     assert await client.get_logical_partition("lpar-1") is None
     assert await client.find_partition_by_name("aix1") is None
 
@@ -115,7 +114,7 @@ async def test_lpar_mixin_routes_scoped_and_global_reads():
         "LogicalPartition",
     )
     client.get_managed_system.assert_awaited_once_with(UUID_A)
-    client.list_uom.assert_awaited_once_with("LogicalPartition")
+    client.list_uom.assert_not_awaited()
     client.get_uom.assert_awaited_once_with("LogicalPartition", "lpar-1")
     client.search_uom.assert_awaited_once_with(
         "LogicalPartition", "PartitionName", "aix1"

@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import typer
 
 from ...jobs import validate_wait_timing
 from ...operations.partition_state import PartitionState
 from ...operations.vios.core import list_vios, power_vios
-from ..output import VerbatimTable, console, first_field, output, print_json
+from ..output import (
+    VerbatimTable,
+    console,
+    first_field,
+    output,
+    print_json,
+    report_unreadable,
+)
 from ..runtime import with_client
 
 
@@ -16,20 +25,21 @@ def vios_list(
         None, "--system", "-s", help="Restrict to this managed system name or UUID"
     ),
     state: PartitionState | None = typer.Option(
-        None, "--state", help="Filter by PartitionState (server-side search)"
+        None, "--state", help="Filter by PartitionState"
     ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual I/O Servers."""
 
-    vios = with_client(lambda hmc: list_vios(hmc, system, state))
+    listing = with_client(lambda hmc: list_vios(hmc, system, state))
+    report_unreadable(listing)
 
     table = None
     if not as_json:
         table = VerbatimTable(title="Virtual I/O Servers")
         for col in ("Name", "ID", "UUID", "State", "Version"):
             table.add_column(col)
-        for v in vios:
+        for v in listing.entries:
             table.add_row(
                 first_field(v, "PartitionName"),
                 first_field(v, "PartitionID"),
@@ -37,7 +47,7 @@ def vios_list(
                 first_field(v, "PartitionState"),
                 first_field(v, "IOSLevel", "VIOSVersion", default="-"),
             )
-    output(vios, as_json, table, "No VIOS found")
+    output(asdict(listing), as_json, table, "No VIOS found")
 
 
 def vios_power_on(

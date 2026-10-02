@@ -223,6 +223,12 @@ def with_config(
     return run_sync(operation)
 
 
+def require_valid_limit(limit: int | None) -> None:
+    """Reject a negative collection limit before any HMC request."""
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be greater than or equal to 0")
+
+
 def run_limited_collection(
     fn: Callable[[HMCClient], Awaitable[list[_T]]],
     limit: int | None,
@@ -230,8 +236,7 @@ def run_limited_collection(
     profile: str | None = None,
 ) -> list[_T]:
     """Run a full collection request, then cap its agent-facing result."""
-    if limit is not None and limit < 0:
-        raise ValueError("limit must be greater than or equal to 0")
+    require_valid_limit(limit)
     entries = with_client(fn, profile=profile)
     return entries if limit is None else entries[:limit]
 

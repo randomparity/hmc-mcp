@@ -39,12 +39,10 @@ class SurveyClient(Protocol):
     async def list_managed_systems(self) -> list[dict[str, Any]]: ...
 
     async def list_logical_partitions(
-        self, system_uuid: str | None = None
+        self, system_uuid: str
     ) -> list[dict[str, Any]]: ...
 
-    async def list_vios(
-        self, system_uuid: str | None = None
-    ) -> list[dict[str, Any]]: ...
+    async def list_vios(self, system_uuid: str) -> list[dict[str, Any]]: ...
 
     async def list_child(
         self, parent_type: str, parent_uuid: str, child_type: str

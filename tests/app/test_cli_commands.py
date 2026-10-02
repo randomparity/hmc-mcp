@@ -450,6 +450,10 @@ class FakeHMC:
         self._record("list_managed_systems")
         return [self.system]
 
+    async def inventory_managed_systems(self):
+        self._record("inventory_managed_systems")
+        return [self.system], []
+
     async def get_managed_system(self, uuid):
         self._record("get_managed_system", uuid)
         return self.system if uuid == SYSTEM_UUID else None
@@ -856,15 +860,23 @@ def test_lpars_list_table(fake_hmc):
     assert result.exit_code == 0
     assert LPAR_NAME in result.stdout
     assert "running" in result.stdout
-    assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
+    assert fake_hmc.calls == [
+        ("inventory_managed_systems", (), {}),
+        ("list_logical_partitions", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_lpars_list_json(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "list", "--json"])
 
     assert result.exit_code == 0
-    assert LPAR_UUID in result.stdout
-    assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
+    payload = json.loads(result.stdout)
+    assert [entry["UUID"] for entry in payload["entries"]] == [LPAR_UUID]
+    assert payload["unreadable_systems"] == []
+    assert fake_hmc.calls == [
+        ("inventory_managed_systems", (), {}),
+        ("list_logical_partitions", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_lpars_list_state_filter(fake_hmc):
@@ -873,7 +885,35 @@ def test_lpars_list_state_filter(fake_hmc):
     assert result.exit_code == 0
     assert LPAR_NAME in result.stdout
     # The partition feed, filtered locally: V10R3 cannot search a state (#1202).
-    assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
+    assert fake_hmc.calls == [
+        ("inventory_managed_systems", (), {}),
+        ("list_logical_partitions", (SYSTEM_UUID,), {}),
+    ]
+
+
+def test_lpars_list_names_a_skipped_system_on_stderr(fake_hmc):
+    resource = {**fake_hmc.system["Resource"], "State": "No Connection"}
+    fake_hmc.system = {**fake_hmc.system, "Resource": resource}
+
+    result = RUNNER.invoke(cli.app, ["lpars", "list", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "entries": [],
+        "unreadable_systems": [
+            {
+                "system_name": "sys1",
+                "system_uuid": SYSTEM_UUID,
+                "state": "No Connection",
+                "detailed_state": None,
+            }
+        ],
+    }
+    assert (
+        f"Skipped managed system sys1 ({SYSTEM_UUID}): State No Connection"
+        in result.stderr
+    )
+    assert fake_hmc.calls == [("inventory_managed_systems", (), {})]
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
@@ -4109,15 +4149,23 @@ def test_vios_list_table(fake_hmc):
     assert result.exit_code == 0
     assert "vios1" in result.stdout
     assert "3.1.0" in result.stdout
-    assert fake_hmc.calls == [("list_vios", (None,), {})]
+    assert fake_hmc.calls == [
+        ("inventory_managed_systems", (), {}),
+        ("list_vios", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_vios_list_json(fake_hmc):
     result = RUNNER.invoke(cli.app, ["vios", "list", "--json"])
 
     assert result.exit_code == 0
-    assert VIOS_UUID in result.stdout
-    assert fake_hmc.calls == [("list_vios", (None,), {})]
+    assert [entry["UUID"] for entry in json.loads(result.stdout)["entries"]] == [
+        VIOS_UUID
+    ]
+    assert fake_hmc.calls == [
+        ("inventory_managed_systems", (), {}),
+        ("list_vios", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_vios_list_restricted_to_system(fake_hmc):

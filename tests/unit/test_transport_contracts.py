@@ -93,7 +93,7 @@ async def test_session_token_propagates_to_subsequent_requests(mock_hmc):
         return_value=httpx.Response(200, text=_EMPTY_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.list_logical_partitions()
+        await hmc.list_uom("LogicalPartition")
     sent = route.calls.last.request.headers.get("x-api-session", "")
     assert sent == "test-session-token-123", (
         f"Expected session token on resource request, got: {sent!r}"

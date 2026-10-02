@@ -33,6 +33,7 @@ from hmcpctl.operations.lpar.ownership import (
     _verify_partition_on_system,
     list_lpar_ownership,
 )
+from hmcpctl.operations.systems.fleet import FleetListing
 from hmcpctl.operations.systems.health import fetch_fleet_health
 from hmcpctl.operations.templates import core as templates_module
 from hmcpctl.operations.templates.core import (
@@ -65,13 +66,19 @@ _VOCABULARY = json.loads(
 NOT_OPERATING = [("recovery", "Recovery"), ("no connection", "Unknown")]
 
 Read = Callable[[HMCClient], Awaitable[Any]]
+
+
+async def _entries(listing: Awaitable[FleetListing]) -> list[dict[str, Any]]:
+    return (await listing).entries
+
+
 READS: dict[str, tuple[str, Read]] = {
     "client_list_lpars": (
         LPAR_FEED,
         lambda hmc: hmc.list_logical_partitions(SYSTEM_UUID),
     ),
     "client_list_vios": (VIOS_FEED, lambda hmc: hmc.list_vios(SYSTEM_UUID)),
-    "list_lpars": (LPAR_FEED, lambda hmc: list_lpars(hmc, SYSTEM_UUID)),
+    "list_lpars": (LPAR_FEED, lambda hmc: _entries(list_lpars(hmc, SYSTEM_UUID))),
     "get_lpar": (
         LPAR_FEED,
         lambda hmc: get_lpar(hmc, "lpar-a", system_name_or_uuid=SYSTEM_UUID),
@@ -80,10 +87,10 @@ READS: dict[str, tuple[str, Read]] = {
         LPAR_FEED,
         lambda hmc: resolve_lpar_uuid(hmc, "lpar-a", system_name_or_uuid=SYSTEM_UUID),
     ),
-    "list_vios": (VIOS_FEED, lambda hmc: list_vios(hmc, SYSTEM_UUID)),
+    "list_vios": (VIOS_FEED, lambda hmc: _entries(list_vios(hmc, SYSTEM_UUID))),
     "list_lpar_ownership": (
         LPAR_FEED,
-        lambda hmc: list_lpar_ownership(hmc, SYSTEM_UUID),
+        lambda hmc: _entries(list_lpar_ownership(hmc, SYSTEM_UUID)),
     ),
     "decommission_target": (
         LPAR_FEED,
@@ -227,7 +234,7 @@ async def test_non_empty_feed_does_not_read_the_system(mock_hmc) -> None:
     )
 
     async with HMCClient(make_config()) as hmc:
-        assert await list_lpars(hmc, SYSTEM_UUID, state="running") == []
+        assert (await list_lpars(hmc, SYSTEM_UUID, state="running")).entries == []
         assert await get_lpar(hmc, "lpar-b", system_name_or_uuid=SYSTEM_UUID) is None
 
     assert not system.called

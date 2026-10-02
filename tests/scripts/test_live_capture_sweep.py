@@ -245,6 +245,23 @@ def test_discovery_prefers_operating_systems_and_running_lpars() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda rows: {"entries": rows, "unreadable_systems": []},
+        lambda rows: SimpleNamespace(entries=rows, unreadable_systems=[]),
+    ],
+    ids=["structured-content", "generated-model"],
+)
+def test_discovery_reads_a_fleet_listing_envelope(wrap) -> None:
+    """hmc_list_lpars / hmc_list_vios return a FleetListing (ADR 0197)."""
+    context = _context()
+    lpars = [{"UUID": "l-on", "Resource": {"PartitionState": "running"}}]
+    sweep.discover(context, "hmc_list_lpars", wrap(lpars))
+    sweep.discover(context, "hmc_list_vios", wrap([{"UUID": "v-1"}]))
+    assert (context.lpar, context.vios) == ("l-on", "v-1")
+
+
 def test_discovery_never_overrides_the_operator() -> None:
     context = _context(system="mine")
     sweep.discover(context, "hmc_list_systems", [{"UUID": "other"}])
