@@ -17,6 +17,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `mount-optical-media` / `hmc_mount_optical_media` refuses, with a 409 and before any write, a
+  `target_device` that an optical mapping on the VIOS already uses, naming its media and the
+  remedies. When the HMC itself answers 500 `name is already used in another mapping`, the error
+  keeps its side-effect report and adds the same remedies (#1283).
 - `hmcpctl report utilization --csv` quotes a `notes` cell that starts with a spreadsheet
   formula character, as it already did the other text columns (#1269).
 - `validate_hmc_name` refuses a name starting with `-`, which would reach the HMC CLI in option

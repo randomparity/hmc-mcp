@@ -13,6 +13,7 @@ from xml.etree.ElementTree import Element  # nosec B405
 import httpx
 
 from ..config import HMCConfig
+from ..errors import HMCError
 from ..resource_identity import is_uuid
 
 AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
@@ -333,7 +334,7 @@ class StorageClient(Protocol):
         operation: str,
         snapshot: Callable[[], Awaitable[Any]],
         dispatch: Callable[[], Awaitable[Any]],
-        note: str = "",
+        note: str | Callable[[HMCError], str] = "",
     ) -> Any: ...
 
     async def list_volume_groups(self, vios_uuid: str) -> list[dict[str, Any]]: ...

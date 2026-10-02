@@ -299,6 +299,47 @@ _ADAPTER_SIDE_EFFECT = (
     "and compare them with the mappings."
 )
 
+# The HMC's 500 body when a mapping create names a VTD another mapping holds,
+# observed once on V10R3 (#1280); no capture pins the wording yet (#1284).
+_VTD_NAME_IN_USE = "name is already used in another mapping"
+
+
+def _optical_target_in_use(
+    target_device: str | None,
+    media_name: str | None = None,
+    lpar_uuid: str | None = None,
+) -> str:
+    device = (
+        f"Target device {target_device!r}" if target_device else "The target device"
+    )
+    lpar = f" to LPAR {lpar_uuid}" if lpar_uuid else ""
+    media = f" with media {media_name!r}" if media_name else ""
+    return (
+        f"{device} is already mapped on the VIOS{lpar}{media}. "
+        "Name a different target_device, "
+        "or, if media is mapped to it, unmount that media first (unmount-optical-media); "
+        "loading media into an existing device is not supported yet."
+    )
+
+
+def _refuse_mapped_optical_target(mappings: ET.Element, target_device: str) -> None:
+    """Refuse, before any POST, a target device an optical mapping already names (#1283)."""
+    for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping"):
+        name = mapping.find(
+            f"{{{_UOM_NS}}}TargetDevice/{{{_UOM_NS}}}VirtualOpticalTargetDevice"
+            f"/{{{_UOM_NS}}}TargetName"
+        )
+        if name is not None and name.text == target_device:
+            media = mapping.findtext(
+                f"{{{_UOM_NS}}}Storage/{{{_UOM_NS}}}VirtualOpticalMedia"
+                f"/{{{_UOM_NS}}}MediaName"
+            )
+            partition = mapping.find(f"{{{_UOM_NS}}}AssociatedLogicalPartition")
+            lpar = lpar_uuid_from_href(
+                partition.get("href") if partition is not None else None
+            )
+            raise HMCError(_optical_target_in_use(target_device, media, lpar), 409)
+
 
 async def _rmw_vios_mapping(
     client: StorageClient,
@@ -306,7 +347,7 @@ async def _rmw_vios_mapping(
     path: str,
     uuid_path_arguments: Mapping[str, str],
     mutate: Callable[[ET.Element, str | None], None],
-    note: str = "",
+    note: str | Callable[[HMCError], str] = "",
 ) -> str:
     """Read-modify-write the VIOS ``ViosSCSIMapping`` group under If-Match (ADR 0169).
 
@@ -495,12 +536,12 @@ class StorageMixin:
         operation: str,
         snapshot: Callable[[], Awaitable[Any]],
         dispatch: Callable[[], Awaitable[Any]],
-        note: str = "",
+        note: str | Callable[[HMCError], str] = "",
     ) -> Any:
         """Read state around a failed storage mutation without retrying it.
 
         *note* adds what the caller knows the failed write may have left that the
-        snapshot cannot show.
+        snapshot cannot show; a callable note receives the failed write's error.
         """
         try:
             return await dispatch()
@@ -513,9 +554,10 @@ class StorageMixin:
                 observation = f"readback failed: {readback_error}"
             else:
                 observation = "readback completed"
+            detail = note if isinstance(note, str) else note(exc)
             raise HMCError(
                 f"{operation} may have a possible side effect. Do not retry until state "
-                f"is verified; {observation}" + (f". {note}" if note else ""),
+                f"is verified; {observation}" + (f". {detail}" if detail else ""),
                 exc.status_code,
                 exc.body,
             ) from exc
@@ -1278,6 +1320,18 @@ class StorageMixin:
                 target_device=target_device,
             )
 
+        append = _append_mapping("create_optical_mapping", _document)
+
+        def _mutate(mappings: ET.Element, system_uuid: str | None) -> None:
+            if target_device:
+                _refuse_mapped_optical_target(mappings, target_device)
+            append(mappings, system_uuid)
+
+        def _note(failure: HMCError) -> str:
+            if _VTD_NAME_IN_USE not in (failure.body or ""):
+                return _ADAPTER_SIDE_EFFECT
+            return f"{_optical_target_in_use(target_device)} {_ADAPTER_SIDE_EFFECT}"
+
         _reject_non_uuid_path_argument("vios_uuid", vios_uuid)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
         response = await _rmw_vios_mapping(
@@ -1285,8 +1339,8 @@ class StorageMixin:
             "create_optical_mapping",
             path,
             {"vios_uuid": vios_uuid},
-            _append_mapping("create_optical_mapping", _document),
-            _ADAPTER_SIDE_EFFECT,
+            _mutate,
+            _note,
         )
         entries = _parse_feed(response, path) if response else []
         return entries[0].get("Resource", entries[0]) if entries else None
