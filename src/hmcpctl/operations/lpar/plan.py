@@ -489,6 +489,15 @@ def plan_digest(request: PlanRequest, targets: PlanTargets, connection: str) -> 
     body["system_name_or_uuid"] = system
     body["storage"]["vios_uuid"] = vios
     body["storage"]["vg_uuid"] = group
+    # Fields whose meaning depends on another are hashed as what they mean, so two
+    # requests that plan the same provisioning share one digest.
+    if request.install is None:
+        body["power_on"] = request.power_on is not False
+        body["exclusive_writer_window"] = False
+    else:
+        body["power_on"] = None
+    if body["affinity_assessment"] is not None:
+        body["affinity_assessment"]["system_name_or_uuid"] = system
     document = {
         "format": DIGEST_FORMAT,
         "connection": connection,
@@ -1083,7 +1092,8 @@ async def _resolve(
                 entry = await hmc.get_uom("ManagedSystem", selector)
             else:
                 entry = await hmc.find_system_by_name(selector)
-        except HMCError as exc:
+        except (HMCError, ValueError) as exc:
+            # find_system_by_name raises ValueError when several systems share a name.
             if isinstance(exc, HMCTransportError):
                 stalled = f"the HMC stopped answering: {exc}"
             entry, text = None, f"managed system {selector!r} is unavailable: {exc}"
@@ -1095,7 +1105,9 @@ async def _resolve(
             )
             unresolved.append(_unresolved(selector, blocker))
             continue
-        candidates.append(_Candidate(selector, str(entry["UUID"]), entry))
+        uuid = str(entry["UUID"])
+        if all(candidate.uuid.lower() != uuid.lower() for candidate in candidates):
+            candidates.append(_Candidate(selector, uuid, entry))
     return candidates, unresolved, stalled
 
 
@@ -1149,10 +1161,11 @@ def _request_blockers(hmc: Any, request: PlanRequest) -> list[PlanBlocker]:
     return blockers
 
 
-def _assignment_count(assignments: LparPcieAssignments) -> int:
-    return sum(
-        len(getattr(assignments, item.name)) for item in dataclasses.fields(assignments)
-    )
+def _assignment_counts(assignments: LparPcieAssignments) -> dict[str, int]:
+    return {
+        item.name: len(getattr(assignments, item.name))
+        for item in dataclasses.fields(assignments)
+    }
 
 
 def _intended_changes(
@@ -1187,10 +1200,10 @@ def _intended_changes(
             )
         )
     steps.append(("map_storage", vios, f"map {storage.kind} {storage.storage_name!r}"))
-    steps.extend(
-        ("assign_pcie", system, f"assignment {index + 1}")
-        for index in range(_assignment_count(request.assignments))
-    )
+    counts = _assignment_counts(request.assignments)
+    if any(counts.values()):
+        detail = ", ".join(f"{count} {name}" for name, count in counts.items() if count)
+        steps.append(("assign_pcie", system, f"apply {detail}, in order"))
     steps.append(
         ("write_profile", system, "write and read back the partition profile (#637)")
     )
@@ -1247,7 +1260,7 @@ def _unverified(request: PlanRequest) -> list[str]:
         )
     if request.storage.kind == "PhysicalVolume":
         statements.append("the physical volume's existence")
-    if _assignment_count(request.assignments):
+    if any(_assignment_counts(request.assignments).values()):
         statements.append(
             "PCIe, SR-IOV and vNIC prevalidation, which provision runs over SSH"
         )

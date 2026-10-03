@@ -88,8 +88,10 @@ disk name must be absent on the chosen VIOS. Without it, the named storage must 
 0191 Decision 6). `adapters.mac` is accepted only with prepared media. It must be in lower-case
 colon form, with no group or broadcast bit (`int(first octet) & 1 == 0`).
 
-Every rule above is checked before the HMC session opens. A violation is a tool error that names
-the first bad input and echoes no key, URL or producer-result content. A blank `system_name_or_uuid`,
+Every rule above is checked before the HMC session opens. A violation of one of these rules is
+a tool error that names the first bad input and echoes no key, URL or producer-result content. A
+value of the wrong JSON type fails the MCP schema first, and that framework error can echo the
+value, as it does for every tool. A blank `system_name_or_uuid`,
 `adapters.mac`, `storage.vios_uuid` or `storage.vg_uuid` reads as absent (ADR 0094); the
 normalization lives in `check_request`, which `plan_digest` also applies, so a caller of either
 gets the same request. `caller_token` is not normalized.
@@ -174,8 +176,9 @@ reported `unavailable`.
 
 `placement` evaluates at most 16 systems:
 
-- the `systems` selectors, deduplicated, each admitted as `hmc_list_lpars` before it is resolved
-  (ADR 0196 Decision 3's rule); or
+- the `systems` selectors, deduplicated by spelling and then by resolved UUID, each admitted as
+  `hmc_list_lpars` before it is resolved (ADR 0196 Decision 3's rule); a name several systems
+  share is an `unavailable` candidate; or
 - the connection's enumerated systems, in UUID order. More than 16 sets `candidates_truncated`,
   and the rest are not read.
 
@@ -232,7 +235,7 @@ Their `kind` values, in order:
 5. `add_vscsi_adapter`;
 6. `create_virtual_disk`, with `capacity_mib` only;
 7. `map_storage`;
-8. `assign_pcie`, one per entry of `assignments`, in its order;
+8. `assign_pcie`, once, with the count of each `assignments` collection, when any is set;
 9. `write_profile` (#637's profile write).
 
 Without `install`, these follow:
@@ -279,7 +282,10 @@ holds these keys:
   UUIDs in lower case;
 - `"targets"`: those three UUIDs.
 
-`None` fields are kept as `null`; a `datetime` is encoded as its ISO 8601 text and a `Decimal` as its string. Provision (#1225) will build the same `PlanRequest` from its
+`None` fields are kept as `null`; a `datetime` is encoded as its ISO 8601 text and a `Decimal` as its string.
+A field whose meaning depends on another is hashed as what it means: without `install`,
+`power_on` is its effective boolean and `exclusive_writer_window` is `false`; with `install`,
+`power_on` is `null`; and `affinity_assessment.system_name_or_uuid` is the selected system UUID. Provision (#1225) will build the same `PlanRequest` from its
 own inputs and call this function; until it lands, nothing consumes the digest. The digest binds the request and the targets, not the
 observations. Revalidation is a fresh plan at execution time (#1225).
 

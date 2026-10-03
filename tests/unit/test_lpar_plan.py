@@ -593,7 +593,6 @@ _CHANGES: list[tuple[str, Any]] = [
     ),
     ("affinity assessment", lambda: _request(affinity_assessment=_assessment())),
     ("power_on", lambda: _request(power_on=False)),
-    ("writer window", lambda: _request(exclusive_writer_window=True)),
 ]
 _INSTALL_CHANGES: list[tuple[str, Any]] = [
     ("install profile", lambda: _install_request(_built(profile="rocky-9.8"))),
@@ -604,6 +603,10 @@ _INSTALL_CHANGES: list[tuple[str, Any]] = [
     ("key", lambda: _install_request(_built(ssh_authorized_keys=(_KEY + "2",)))),
     ("media mode", lambda: _install_request(_prepared())),
     ("boot", lambda: _install_request(_built(), boot="deferred")),
+    (
+        "writer window",
+        lambda: _install_request(_built(), exclusive_writer_window=False),
+    ),
 ]
 
 
@@ -643,7 +646,7 @@ def test_plan_digest_changes_with_targets(
 
 def test_plan_digest_is_pinned() -> None:
     # A SHA-256 digest, not a credential.
-    expected = "32f5ecbbdc8c604c44e916cfc6d56bcd3fdf004121aba91b74730e8d988cab9d"  # pragma: allowlist secret
+    expected = "0ae18fef64bcd92d67a2c7056df8396d774cf8a6ef6dea328feb2ecc4dc9b64e"  # pragma: allowlist secret
     assert plan_digest(_request(), _targets(), "lab") == expected
 
 
@@ -931,7 +934,6 @@ def test_install_plan_adds_media_changes_and_unverified() -> None:
             [
                 "set_minimum_affinity_policy",
                 "assign_pcie",
-                "assign_pcie",
                 "assess_affinity",
             ],
             id="every non-install option",
@@ -1032,6 +1034,9 @@ def _scenario(name: str) -> tuple[FakeHMC, PlanRequest, str]:
     return FakeHMC(world), request, name
 
 
+_REQUEST_CODES = {"exclusive_writer_window_required", "url_not_allowlisted"}
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -1061,16 +1066,17 @@ def _scenario(name: str) -> tuple[FakeHMC, PlanRequest, str]:
 def test_check_blockers(name: str) -> None:
     hmc, request, code = _scenario(name)
     plan = _plan(hmc, request)
-    found = _codes(plan.blockers) + [
-        code for candidate in plan.candidates for code in _codes(candidate.blockers)
-    ]
-    assert code in found
+    (candidate,) = plan.candidates
+    if code in _REQUEST_CODES:
+        assert _codes(plan.blockers) == [code]
+        assert _codes(candidate.blockers) == []
+    else:
+        assert _codes(plan.blockers) == ["no_candidate"]
+        assert _codes(candidate.blockers) == [code]
     assert plan.plan_digest is None
-    for blocker in plan.blockers + plan.candidates[0].blockers:
+    for blocker in plan.blockers + candidate.blockers:
         assert "secret-path" not in blocker.detail
         assert len(blocker.detail) <= 500
-    if code == "system_not_operating":
-        assert _codes(plan.candidates[0].blockers) == [code]
 
 
 def test_unavailable_volume_groups_name_the_tool() -> None:
@@ -1360,3 +1366,64 @@ def test_resolution_transport_failure_stops_later_selectors() -> None:
     plan = _plan(hmc, _placement(systems=("sys1", _uuid(2))))
     assert all(_codes(c.blockers) == ["unavailable"] for c in plan.candidates)
     assert ("get_uom", _uuid(2)) not in hmc.calls
+
+
+def test_intended_changes_collapse_assignments_into_one_bounded_change() -> None:
+    assignments = LparPcieAssignments(
+        dedicated=tuple(
+            DedicatedPcieAssignment("default", f"2101{i:04d}") for i in range(40)
+        )
+    )
+    plan = _plan(FakeHMC(World()), _new_disk(assignments=assignments))
+    (change,) = [c for c in plan.intended_changes if c.kind == "assign_pcie"]
+    assert "40 dedicated" in change.detail
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        pytest.param(
+            _request(), _request(power_on=True), id="power_on omitted vs true"
+        ),
+        pytest.param(
+            _install_request(_built()),
+            _install_request(_built(), power_on=False),
+            id="power_on under install",
+        ),
+        pytest.param(
+            _request(),
+            _request(exclusive_writer_window=True),
+            id="writer window unused",
+        ),
+        pytest.param(
+            _request(affinity_assessment=_assessment()),
+            _request(
+                system_name_or_uuid=_uuid(1),
+                affinity_assessment=_assessment(system_name_or_uuid=_uuid(1)),
+            ),
+            id="assessment by name vs UUID",
+        ),
+    ],
+)
+def test_plan_digest_is_equal_for_equivalent_requests(
+    left: PlanRequest, right: PlanRequest
+) -> None:
+    assert plan_digest(left, _targets(), "lab") == plan_digest(right, _targets(), "lab")
+
+
+def test_ambiguous_system_name_is_an_unresolved_candidate() -> None:
+    hmc = FakeHMC(World(1), World(2))
+    hmc.by_name_error = ValueError("Ambiguous managed-system name 'sys1'")
+    plan = _plan(hmc, _placement(systems=("sys1", _uuid(2))))
+    unresolved = [c for c in plan.candidates if c.targets is None]
+    assert [(c.selector, _codes(c.blockers)) for c in unresolved] == [
+        ("sys1", ["unavailable"])
+    ]
+    assert plan.selected is not None
+    assert plan.selected.system.uuid == _uuid(2)
+
+
+def test_one_system_named_twice_is_evaluated_once() -> None:
+    plan = _plan(FakeHMC(World()), _placement(systems=("sys1", _uuid(1).upper())))
+    assert len(plan.candidates) == 1
+    assert plan.candidates[0].selector == "sys1"
