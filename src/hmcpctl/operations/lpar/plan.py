@@ -244,14 +244,18 @@ def _check_storage(storage: PlanStorage) -> None:
             "belongs to one VIOS"
         )
     if storage.capacity_mib is not None:
-        if storage.kind != "VirtualDisk":
-            raise ValueError(
-                "storage.capacity_mib: creates a VirtualDisk; kind must be VirtualDisk"
-            )
-        try:
-            validate_virtual_disk(storage.storage_name, storage.capacity_mib)
-        except ValueError as exc:
-            raise ValueError(f"storage.capacity_mib: {exc}") from None
+        _check_new_disk(storage, storage.capacity_mib)
+
+
+def _check_new_disk(storage: PlanStorage, capacity_mib: int) -> None:
+    if storage.kind != "VirtualDisk":
+        raise ValueError(
+            "storage.capacity_mib: creates a VirtualDisk; kind must be VirtualDisk"
+        )
+    try:
+        validate_virtual_disk(storage.storage_name, capacity_mib)
+    except ValueError as exc:
+        raise ValueError(f"storage.capacity_mib: {exc}") from None
 
 
 def _check_mac(request: PlanRequest) -> None:
@@ -312,6 +316,15 @@ def _check_network(network: InstallNetwork) -> None:
         raise ValueError(
             f"{label}.address: must be an IPv4 interface in CIDR form, prefix 1 to 32"
         )
+    _check_routes(network, interface.network)
+    if len(network.dns) > MAX_DNS:
+        raise ValueError(f"{label}.dns: pass at most {MAX_DNS} servers")
+    for index, server in enumerate(network.dns):
+        _ipv4_address(server, f"{label}.dns[{index}]")
+
+
+def _check_routes(network: InstallNetwork, subnet: ipaddress.IPv4Network) -> None:
+    label = "install.network"
     if not 1 <= len(network.routes) <= MAX_ROUTES:
         raise ValueError(f"{label}.routes: pass 1 to {MAX_ROUTES} routes")
     defaults = 0
@@ -325,17 +338,13 @@ def _check_network(network: InstallNetwork) -> None:
             ) from None
         defaults += destination == _DEFAULT_ROUTE
         gateway = _ipv4_address(route.gateway, f"{label}.routes[{index}].gateway")
-        if gateway not in interface.network:
+        if gateway not in subnet:
             raise ValueError(
                 f"{label}.routes[{index}].gateway: must be inside "
                 f"{network.address}'s network"
             )
     if defaults != 1:
         raise ValueError(f"{label}.routes: exactly one route must be 0.0.0.0/0")
-    if len(network.dns) > MAX_DNS:
-        raise ValueError(f"{label}.dns: pass at most {MAX_DNS} servers")
-    for index, server in enumerate(network.dns):
-        _ipv4_address(server, f"{label}.dns[{index}]")
 
 
 def _check_login(install: LparInstall) -> None:
@@ -407,6 +416,10 @@ def _check_install(request: PlanRequest) -> None:
     if install.profile not in INSTALL_PROFILES:
         raise ValueError(f"install.profile: must be one of {list(INSTALL_PROFILES)}")
     _check_network(install.network)
+    _check_media(install)
+
+
+def _check_media(install: LparInstall) -> None:
     if install.media.mode == "built":
         if install.media.url is not None or install.media.producer_result is not None:
             raise ValueError(
@@ -689,6 +702,20 @@ class _Pair:
     group: PlanResource | None
 
 
+def _ambiguous(pairs: list[_Pair]) -> PlanBlocker:
+    shown = ", ".join(
+        f"{pair.vios.uuid}/{pair.group.uuid if pair.group else '-'}"
+        for pair in pairs[:MAX_AMBIGUOUS_PAIRS]
+    )
+    more = len(pairs) - MAX_AMBIGUOUS_PAIRS
+    text = (
+        f"{len(pairs)} VIOS/volume-group pairs qualify; name one with "
+        f"storage.vios_uuid and storage.vg_uuid: {shown}"
+        + (f", and {more} more" if more > 0 else "")
+    )
+    return _blocker("ambiguous", "storage", text)
+
+
 class _Stalled(Exception):
     """The HMC stopped answering; later reads are not attempted."""
 
@@ -947,6 +974,22 @@ class _Evaluator:
                 pairs.append(_Pair(vios, PlanResource(group.uuid, group.name)))
         return pairs
 
+    async def _pairs(
+        self, vioses: list[PlanResource], spelling: str, blockers: list[PlanBlocker]
+    ) -> tuple[list[_Pair], list[str]] | None:
+        """Every qualifying pair and the reasons others did not; ``None`` if one VIOS
+        went unread, since an unread VIOS could make the choice ambiguous."""
+        pairs: list[_Pair] = []
+        reasons: list[str] = []
+        complete = True
+        for vios in vioses:
+            groups = await self._groups(vios, spelling, blockers)
+            if groups is None:
+                complete = False
+                continue
+            pairs.extend(self._qualifying(vios, groups, reasons))
+        return (pairs, reasons) if complete else None
+
     async def _storage(
         self, candidate: _Candidate, spelling: str, blockers: list[PlanBlocker]
     ) -> _Pair | None:
@@ -961,33 +1004,16 @@ class _Evaluator:
                 blockers.append(_blocker("storage_unplaceable", "storage", text))
                 return None
             return _Pair(vioses[0], None)
-        pairs: list[_Pair] = []
-        reasons: list[str] = []
-        complete = True
-        for vios in vioses:
-            groups = await self._groups(vios, spelling, blockers)
-            if groups is None:
-                complete = False
-                continue
-            pairs.extend(self._qualifying(vios, groups, reasons))
-        if not complete:
+        found = await self._pairs(vioses, spelling, blockers)
+        if found is None:
             return None
+        pairs, reasons = found
         if not pairs:
             text = "; ".join(reasons) or "no volume group qualifies"
             blockers.append(_blocker("storage_unplaceable", "storage", text))
             return None
         if len(pairs) > 1:
-            shown = ", ".join(
-                f"{pair.vios.uuid}/{pair.group.uuid if pair.group else '-'}"
-                for pair in pairs[:MAX_AMBIGUOUS_PAIRS]
-            )
-            more = len(pairs) - MAX_AMBIGUOUS_PAIRS
-            text = (
-                f"{len(pairs)} VIOS/volume-group pairs qualify; name one with "
-                f"storage.vios_uuid and storage.vg_uuid: {shown}"
-                + (f", and {more} more" if more > 0 else "")
-            )
-            blockers.append(_blocker("ambiguous", "storage", text))
+            blockers.append(_ambiguous(pairs))
             return None
         return pairs[0]
 
@@ -1074,6 +1100,25 @@ def _unresolved(selector: str, blocker: PlanBlocker) -> PlanCandidate:
     return PlanCandidate(None, selector, None, None, [blocker], False)
 
 
+async def _lookup(
+    hmc: Any, selector: str, stalled: str | None
+) -> tuple[dict[str, Any] | None, str, str | None]:
+    """Read one selector's system entry; the third value is a transport stall."""
+    try:
+        if stalled is not None:
+            raise HMCError(stalled)
+        if is_uuid(selector):
+            entry = await hmc.get_uom("ManagedSystem", selector)
+        else:
+            entry = await hmc.find_system_by_name(selector)
+    except (HMCError, ValueError) as exc:
+        # find_system_by_name raises ValueError when several systems share a name.
+        if isinstance(exc, HMCTransportError):
+            stalled = f"the HMC stopped answering: {exc}"
+        return None, f"managed system {selector!r} is unavailable: {exc}", stalled
+    return entry, f"no managed system matches {selector!r}", stalled
+
+
 async def _resolve(
     hmc: Any, admit: PlanAdmit, selectors: Sequence[str]
 ) -> tuple[list[_Candidate], list[PlanCandidate], str | None]:
@@ -1089,20 +1134,7 @@ async def _resolve(
             )
             unresolved.append(_unresolved(selector, blocker))
             continue
-        try:
-            if stalled is not None:
-                raise HMCError(stalled)
-            if is_uuid(selector):
-                entry = await hmc.get_uom("ManagedSystem", selector)
-            else:
-                entry = await hmc.find_system_by_name(selector)
-        except (HMCError, ValueError) as exc:
-            # find_system_by_name raises ValueError when several systems share a name.
-            if isinstance(exc, HMCTransportError):
-                stalled = f"the HMC stopped answering: {exc}"
-            entry, text = None, f"managed system {selector!r} is unavailable: {exc}"
-        else:
-            text = f"no managed system matches {selector!r}"
+        entry, text, stalled = await _lookup(hmc, selector, stalled)
         if not entry or not entry.get("UUID"):
             blocker = _blocker(
                 "unavailable", "system", text, target=selector, tool=PARTITIONS_TOOL
@@ -1302,7 +1334,8 @@ async def plan_lpar(
     placement = request.placement
     if placement is not None and placement.systems is None:
         found, refused, truncated = await _enumerate(hmc, admit)
-        blockers[:0] = [refused] if refused else []
+        if refused is not None:
+            blockers.insert(0, refused)
     else:
         selectors = (
             placement.systems
