@@ -3,8 +3,9 @@
 ## Status
 
 Accepted (2026-10-02), issue #1221. Partially supersedes ADR 0189 Decision 2 for
-`hmc_plan_lpar` only, by replacing the H1 spec's plan row. ADR 0189 otherwise stands, including
-its all-or-nothing rule, which this record keeps for planning. ADR 0196 is unaffected.
+`hmc_plan_lpar` only: it replaces the H1 spec's plan row, and it replaces the per-target refusal
+with a `denied` blocker (Decision 3). ADR 0189 otherwise stands, including its all-or-nothing
+permit rule, which this record keeps for planning. ADR 0196 is unaffected.
 
 ## Context
 
@@ -48,7 +49,9 @@ partition and reads no ownership stamp.
 - Renaming any of the seven tools changes planning's authority, so a test pins the row (ADR 0189
   Consequences).
 - Each admission writes its own ADR 0040 record. With 16 candidates and several VIOSes each, one
-  call can write a few hundred records.
+  call can write a few hundred records. A Decision 2 refusal writes none of its own: the audit
+  trail shows the plan's own `allow` and the call ends in a tool error naming the withheld tool,
+  as `hmc_inventory`'s source checks do.
 
 ## Considered & rejected
 
