@@ -393,6 +393,36 @@ _REJECTED: list[tuple[str, Any, str]] = [
         lambda: _install_request(_built(ssh_authorized_keys=(_KEY + "\n" + _KEY,))),
         "install.ssh_authorized_keys[0]",
     ),
+    *(
+        (
+            f"key with {name}",
+            lambda char=char: _install_request(
+                _built(ssh_authorized_keys=(_KEY + char,))
+            ),
+            "install.ssh_authorized_keys[0]",
+        )
+        for name, char in (("U+2028", "\u2028"), ("NEL", "\x85"), ("NUL", "\x00"))
+    ),
+    *(
+        (
+            f"prepared URL {name}",
+            lambda url=url: _install_request(
+                _prepared(
+                    media=InstallMedia(
+                        mode="prepared", url=url, producer_result={"a": 1}
+                    )
+                )
+            ),
+            "install.media.url",
+        )
+        for name, url in (
+            ("with a bracketed non-IP host", "http://[secret-path-host]/x.iso"),
+            (
+                "with an NFKC-invalid host",
+                "https://ex\uff0eample\u2100.com/secret-path",
+            ),
+        )
+    ),
     (
         "17 keys",
         lambda: _install_request(_built(ssh_authorized_keys=(_KEY,) * 17)),

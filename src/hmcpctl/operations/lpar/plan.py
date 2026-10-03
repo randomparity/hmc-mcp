@@ -348,8 +348,8 @@ def _check_login(install: LparInstall) -> None:
         if (
             not isinstance(key, str)
             or not 1 <= len(key) <= MAX_KEY_LENGTH
-            or "\n" in key
-            or "\r" in key
+            # Rejects every line break (U+2028 and NEL included) and control character.
+            or not key.isprintable()
         ):
             raise ValueError(
                 f"install.ssh_authorized_keys[{index}]: must be one line of 1 to "
@@ -372,7 +372,11 @@ def _check_prepared(install: LparInstall) -> None:
             "install.login_user: prepared media carries its own user; omit it"
         )
     media = install.media
-    if media.url is None or urlparse(media.url).scheme not in ("http", "https"):
+    try:
+        scheme = urlparse(media.url).scheme if media.url is not None else None
+    except ValueError:  # its message quotes the URL's host
+        scheme = None
+    if scheme not in ("http", "https"):
         raise ValueError("install.media.url: prepared media needs an http or https URL")
     result = media.producer_result
     if result is None:

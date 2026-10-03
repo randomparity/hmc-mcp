@@ -76,7 +76,8 @@ disk name must be absent on the chosen VIOS. Without it, the named storage must 
     network, exactly one route is `0.0.0.0/0`, and every `gateway` is an IPv4 address inside
     `address`'s network;
   - `dns`: 0–3 IPv4 addresses;
-- `ssh_authorized_keys`: 1–16 single-line strings, each 1–8192 characters;
+- `ssh_authorized_keys`: 1–16 printable strings (no line break or control character), each
+  1–8192 characters;
 - `login_user`: 1–32 characters matching `[a-z_][a-z0-9_-]*`;
 - `media`, an `InstallMedia` with `mode` and the fields that mode needs:
   - `built`: no other field. `ssh_authorized_keys` and `login_user` are both required.
@@ -202,7 +203,8 @@ pairs listed; a caller who prefers it re-plans naming the system and the pair.
   - `system`: `{id, uuid, name}`;
   - `vios`: `{uuid, name}`, or `null`;
   - `volume_group`: `{uuid, name}`, or `null`.
-- `blockers[]`: request-level blockers (check 7, check 8, and `no_candidate`).
+- `blockers[]`: request-level blockers (check 7, check 8, `denied` or `unavailable` for
+  `hmc_list_systems` when enumeration is refused or fails, and `no_candidate`).
 - `candidates[]`: one `PlanCandidate` per evaluated system, in rank order, each with these
   fields:
   - `targets`;
@@ -339,7 +341,8 @@ observations. Revalidation is a fresh plan at execution time (#1225).
 1. Bounded, typed inputs checked before the session opens, with errors that echo no payload.
    The producer result is only size- and type-checked; it is never parsed for binding here.
 2. All-or-nothing permits plus per-target admission (ADR 0198), with an ADR 0040 record per
-   decision. A denied target is never read.
+   admission; a permit refusal is a tool error naming the tool, with no record of its own. A
+   denied target is never read.
 
 **Out of scope**
 
