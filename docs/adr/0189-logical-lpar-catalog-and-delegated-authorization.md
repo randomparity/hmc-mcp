@@ -10,6 +10,7 @@ exempt from ADR 0012's `hmc_list_<resource>` / `hmc_get_<resource>` grammar (Dec
 0012 otherwise stands, including the one-shape rule and the naming grammar for every other tool.
 
 > **Partially superseded by [0196](0196-logical-inventory-authorizes-each-source.md)** (2026-10-02)
+> **Partially superseded by [0198](0198-lpar-plan-delegates-to-the-reads-it-makes.md)** (2026-10-02)
 
 ## Context
 

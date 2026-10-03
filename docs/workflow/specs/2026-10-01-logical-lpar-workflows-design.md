@@ -141,7 +141,7 @@ the dispatch authorizer admits the call, as that tool, for each resolved target.
 
 | Action | Delegated tools |
 | --- | --- |
-| plan | `hmc_list_systems`, `hmc_list_lpars`, `hmc_capacity_report`, `hmc_list_vios`, `hmc_get_vios_storage_detail`, `hmc_list_lpar_ownership` |
+| plan | `hmc_list_systems` (enumerating placement only), `hmc_list_lpars`, `hmc_capacity_report`, `hmc_list_virtual_networks`, `hmc_list_vios`, `hmc_list_volume_groups`, `hmc_get_vios_storage_detail` (ADR 0198) |
 | inventory | `hmc_list_systems`, `hmc_list_lpars`, `hmc_capacity_report`, `hmc_list_lpar_ownership`, each authorized per source (ADR 0196) |
 | provision (no install) | `hmc_create_lpar`, `hmc_add_network_adapter`, `hmc_add_vscsi_adapter`, `hmc_create_virtual_disk`, `hmc_map_storage_to_lpar`, #637's profile write |
 | provision `install` | the row above, plus `hmc_upload_iso`, `hmc_mount_optical_media`, `hmc_set_lpar_boot_order`, `hmc_power_on_lpar`, `hmc_read_lpar_refcodes` |

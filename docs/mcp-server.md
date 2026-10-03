@@ -129,6 +129,23 @@ as `denied` or `unavailable` and contributes no data; a missing figure is `null`
 `hmc_inventory` itself declares no target, so its own grant needs `targets = "all-targets"`;
 the delegated tools' grants carry the target bound.
 
+`hmc_plan_lpar` (`read`) plans provisioning one LPAR without writing or reserving anything
+(ADR 0198). It takes provisioning's inputs, with `system_name_or_uuid` or `placement`, and an
+optional `install`. It returns the selected system, VIOS and volume group, a `plan_digest`,
+each evaluated candidate's blockers, the changes provisioning would make, and what it could not
+verify. Placement evaluates at most 16 systems and selects the tightest fit with no blocker; two
+qualifying VIOS and volume-group pairs are an `ambiguous` blocker, never a first match.
+Provisioning does not consume the digest until #1225.
+
+Planning needs every tool it reads, all or nothing: `hmc_list_lpars`, `hmc_capacity_report`,
+`hmc_list_virtual_networks`, `hmc_list_vios` and `hmc_list_volume_groups`, plus
+`hmc_list_systems` when `placement` enumerates and `hmc_get_vios_storage_detail` for existing
+storage. A withheld one refuses the call, naming it. Each read is then authorized as its tool
+for its system (the caller's spelling, or the UUID when enumerated) or VIOS (its UUID), and a
+denied target becomes a `denied` blocker that is not read. Under a targets table, grant
+`hmc_capacity_report` separately at `targets = "all-targets"` and list VIOSes by UUID. Each
+decision writes its own audit record, so one placement call can write a few hundred.
+
 `tools/list` marks each tool's catalog tier under the
 `io.github.randomparity.hmcpctl/catalog-tier` metadata key: `primary` for the ADR 0189
 primary set, `secondary` for every other tool. The listing itself is unchanged; #1232 decides
