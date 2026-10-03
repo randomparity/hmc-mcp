@@ -338,7 +338,8 @@ observations. Revalidation is a fresh plan at execution time (#1225).
 
 **Controls**
 
-1. Bounded, typed inputs checked before the session opens, with errors that echo no payload.
+1. Bounded, typed inputs checked before the session opens, with errors that echo no key, URL
+   or producer-result content; a network address the caller sent can appear in its own error.
    The producer result is only size- and type-checked; it is never parsed for binding here.
 2. All-or-nothing permits plus per-target admission (ADR 0198), with an ADR 0040 record per
    admission; a permit refusal is a tool error naming the tool, with no record of its own. A
