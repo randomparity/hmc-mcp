@@ -40,10 +40,11 @@ partition and reads no ownership stamp.
 ## Consequences
 
 - A policy that withholds volume-group listing cannot plan. The denial says which tool to grant.
-- `hmc_capacity_report` is a console tool, so a targets-table policy gets a `denied` capacity
-  blocker on every candidate. A selectable plan under a targets table needs a second grant of
-  `hmc_capacity_report` at `all-targets`, and the table must list VIOSes by UUID, because target
-  scope matches spellings literally.
+- `hmc_capacity_report` is a console tool, and the policy compiler refuses it in a targets
+  table. Planning under a targets table therefore needs a second grant of
+  `hmc_capacity_report` at `all-targets`, or the call is refused by Decision 2. The table must
+  list VIOSes by UUID, because target scope matches spellings literally. A `denied` capacity
+  blocker arises only when that grant does not cover the call's connection.
 - Renaming any of the seven tools changes planning's authority, so a test pins the row (ADR 0189
   Consequences).
 - Each admission writes its own ADR 0040 record. With 16 candidates and several VIOSes each, one

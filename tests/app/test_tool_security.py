@@ -461,6 +461,7 @@ _FACTORY_TOOLS = frozenset(
         "hmc_search_tools",
         "hmc_invoke_tool",
         "hmc_inventory",
+        "hmc_plan_lpar",
     }
 )
 
@@ -871,9 +872,10 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             )
             checked.add(name)
 
-    # `hmc_effective_permissions`, the two gateway tools and `hmc_inventory` are
-    # defined inside a factory rather than at module level, so they are the names
-    # this pass cannot reach; every other tool, including the ones that declare no connection
+    # `hmc_effective_permissions`, the two gateway tools, `hmc_inventory` and
+    # `hmc_plan_lpar` are defined inside a factory rather than at module level, so they
+    # are the names this pass cannot reach; every other tool, including the ones that
+    # declare no connection
     # argument, is checked.
     assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
 
@@ -1256,6 +1258,7 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_restore_lpar_profiles",
         "hmc_restore_vios",
         "hmc_provision_lpar",
+        "hmc_plan_lpar",
         # Selectors, but one of them is a per-system slot number the fleet-wide
         # `vios` allowlist cannot pin down.
         "hmc_add_vfc_adapter",
@@ -1299,6 +1302,7 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_create_lpar",
         "hmc_get_job",
         "hmc_modify_lpar",
+        "hmc_plan_lpar",
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
         "hmc_restore_vios",
@@ -1479,11 +1483,29 @@ def test_every_handler_reads_the_target_selectors_it_declares():
                 unread[name] = missing
             checked.add(name)
 
-    assert not unread, f"handlers that accept a selector and never read it: {unread}"
     # The same names G12 cannot reach, for the same reason: they are defined inside
-    # a factory rather than at module level. None declares a selector.
+    # a factory rather than at module level. One that declares a selector is found
+    # as a nested definition instead, and held to the same rule.
     assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
-    assert not any(TOOL_SECURITY[name].targets for name in _FACTORY_TOOLS)
+    selecting = {name for name in _FACTORY_TOOLS if TOOL_SECURITY[name].targets}
+    for path in sorted(root.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, _Def) and node.name in selecting:
+                loaded = {
+                    n.id
+                    for n in ast.walk(node)
+                    if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+                }
+                missing = [
+                    target.path
+                    for target in TOOL_SECURITY[node.name].targets
+                    if (target.container or target.argument) not in loaded
+                ]
+                if missing:
+                    unread[node.name] = missing
+                checked.add(node.name)
+    assert not unread, f"handlers that accept a selector and never read it: {unread}"
+    assert selecting <= checked
 
 
 @pytest.mark.parametrize(

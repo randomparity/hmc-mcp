@@ -229,7 +229,7 @@ def extract_source_units(topic_id: str, text: str) -> list[dict[str, object]]:
 
 
 def _bound_handlers() -> dict[str, Callable[..., object]]:
-    """The handlers that exist only built by a factory: search, invoke and inventory."""
+    """The handlers that exist only built by a factory: search, invoke, inventory, plan."""
     from fastmcp import FastMCP
 
     from hmcpctl.server_tools.catalog import TOOL_SECURITY
@@ -238,10 +238,14 @@ def _bound_handlers() -> dict[str, Callable[..., object]]:
         INVENTORY_TOOL_NAME,
         inventory_handler,
     )
+    from hmcpctl.server_tools.lpar.plan import PLAN_TOOL_NAME, plan_handler
 
     bound = gateway_handlers(FastMCP(name="capability-inventory"), TOOL_SECURITY)
     handlers = {name: handler for name, (handler, _security) in bound.items()}
     handlers[INVENTORY_TOOL_NAME] = inventory_handler(
+        TOOL_SECURITY, lambda _name: False, lambda *_args: None
+    )
+    handlers[PLAN_TOOL_NAME] = plan_handler(
         TOOL_SECURITY, lambda _name: False, lambda *_args: None
     )
     return handlers

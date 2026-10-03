@@ -113,14 +113,14 @@ Each read is then admitted through `dispatch_authorizer`, as its tool, for its t
 
 Target scope matches spellings literally, so a targets table admits a VIOS read only when it
 lists the VIOS UUID. A denied target becomes a `denied` blocker naming the tool, and that target
-is not read. `hmc_capacity_report` is a console tool, so only an `all-targets` grant admits it:
-under a targets table, a plan can select a candidate only with a second grant of
-`hmc_capacity_report` at `all-targets`.
+is not read. `hmc_capacity_report` is a console tool, and the policy compiler admits it only
+under `all-targets`, so planning under a targets table needs a second grant of it there.
 
 `hmc_plan_lpar` registers as `read`, `operation="lpar.plan"`, `target_kind="console"`, with
-`system_name_or_uuid` declared as a selector and `exhaustive_targets=False`. The VIOS and volume
-group sit below its signature, so the delegated tools carry the target bound, as with ADR 0196
-Decision 4.
+`system_name_or_uuid` and the nested `storage.vios_uuid` declared as selectors, so the audit
+record names them, and `exhaustive_targets=False`. Placement names no system, and the VIOS and
+volume group sit below its signature, so the delegated tools carry the target bound, as with
+ADR 0196 Decision 4.
 
 ### Checks
 

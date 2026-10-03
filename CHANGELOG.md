@@ -57,6 +57,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_plan_lpar` (operation `lpar.plan`, `read`) plans provisioning one LPAR without writing
+  or reserving anything: the selected system, VIOS and volume group, a `plan_digest`, each
+  candidate's blockers, the intended changes and what it could not verify. `placement`
+  evaluates at most 16 systems. It needs every tool it reads, and each read is authorized as
+  that tool for its system or VIOS; a denied target is a `denied` blocker (#1221, ADR 0198).
 - `hmc_inventory` (operation `inventory.logical`, `read`) lists one connection's systems and
   partitions with stable `<connection>/<uuid>` ids, state, capacity and owner, paged by
   `cursor` (at most 16 systems and 200 partitions a page). Each part is authorized as the

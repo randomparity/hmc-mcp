@@ -2,7 +2,7 @@
 
 # `lpar` tools
 
-35 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
+36 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
@@ -33,6 +33,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_migrate_recover_lpar` | `mutate` | `lpar.migrate_recover` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Recover an LPAR after a failed LPM migration. |
 | `hmc_migrate_validate_lpar` | `mutate` | `lpar.migrate_validate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Validate whether an LPM migration of an LPAR to target_system would succeed. |
 | `hmc_modify_lpar` | `mutate` | `lpar.modify` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify an LPAR's memory or CPU resource assignment. |
+| `hmc_plan_lpar` | `read` | `lpar.plan` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Plan provisioning an LPAR on one connection: fit, targets, blockers and changes. |
 | `hmc_plan_lpar_memopt_scores` | `read` | `lpar.plan_memopt_scores` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return predicted LPAR affinity scores without applying optimization. |
 | `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation. |
 | `hmc_power_on_lpar` | `mutate` | `lpar.power_on` | `lpar` | `partial` | `stale (closure-changed)` | `existing-runtime-guards` | Submit a PowerOn job for a logical partition, optionally against a partition-profile UUID — not `profile`, which selects the HMC connection. |
