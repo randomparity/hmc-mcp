@@ -448,6 +448,11 @@ class OperationContext:
         keys = sorted(k for k, e in self._effects.items() if e.status in _OPEN)
         return f"the body returned with effects of unknown outcome: {', '.join(keys)}"
 
+    @property
+    def partition(self) -> tuple[str, str] | None:
+        """The (system UUID, partition UUID) this operation guards, once it holds one."""
+        return self._partition
+
     def recorded(self, key: str) -> EffectRecord | None:
         """Return the journaled effect for *key*, or None if it was never attempted."""
         return self._effects.get(key)
