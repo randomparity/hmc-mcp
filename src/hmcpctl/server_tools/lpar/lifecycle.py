@@ -448,8 +448,9 @@ def hmc_power_off_lpar(
     unused when lpar_name_or_uuid is already a UUID, unless the server runs with
     HMC_AUTHORIZE_POWER_OPERATIONS set, where it also spares the ownership guard
     a fleet-wide search for the partition's owning system.
-    immediate=True forces an immediate power off (no graceful OS shutdown).
-    Returns the submitted job. This changes the state of a real partition.
+    immediate=True forces an immediate power off; immediate=False requests a
+    delayed shutdown, which is not an operating-system shutdown. The graceful path
+    is operation=osshutdown. Returns the submitted job. This changes the state of a real partition.
 
     Set wait=True to block until the job reaches a terminal state.
 
@@ -458,13 +459,18 @@ def hmc_power_off_lpar(
     restart=true; a graceful shutdown is operation=osshutdown, which needs an active
     RMC connection to the partition's operating system.
 
+    operation=shutdown with restart=true requires immediate=true and is refused
+    otherwise: on the HMC that combination is a dump restart, which crashes the
+    partition (ADR 0164). For an operating-system restart use
+    operation=osshutdown with restart=true.
+
     The force-crash, operation=dumprestart, is not this tool's: it is
     hmc_dump_restart_lpar, a separate grant (ADR 0188). The vendor's fourth value,
     dumpretry, is not accepted.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition to power off.
-        immediate: Whether to request immediate shutdown instead of graceful shutdown.
+        immediate: Whether to request immediate shutdown instead of a delayed one.
         wait: Whether to poll the submitted job until terminal or timed out.
         timeout_seconds: Maximum polling duration in seconds when waiting.
         poll_interval: Seconds between job polls when waiting; must be positive.
@@ -475,7 +481,8 @@ def hmc_power_off_lpar(
         ownership_override: Bypass ADR 0011 ownership rejection only after operator
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
         restart: Restart the partition instead of leaving it off; this is what
-            kdive's cycle and reset map to.
+            kdive's cycle and reset map to. With operation=shutdown it needs
+            immediate=true.
         operation: PowerOff shutdown operation — shutdown or osshutdown.
             osshutdown asks the operating system to shut down and needs an
             active RMC connection to it.

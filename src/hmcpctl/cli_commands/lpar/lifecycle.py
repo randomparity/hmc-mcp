@@ -79,7 +79,7 @@ def lpars_power_on(
 def lpars_power_off(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     immediate: bool = typer.Option(
-        False, "--immediate", help="Immediate power off (no graceful shutdown)"
+        False, "--immediate", help="Immediate power off instead of a delayed shutdown"
     ),
     wait: bool = typer.Option(
         False, "--wait/--no-wait", help="Wait for job completion"
@@ -101,7 +101,9 @@ def lpars_power_off(
         help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
     ),
     restart: bool = typer.Option(
-        False, "--restart", help="Restart the partition instead of leaving it off"
+        False,
+        "--restart",
+        help="Restart the partition instead of leaving it off; with --operation shutdown it needs --immediate",
     ),
     operation: PowerOffOperation = typer.Option(
         "shutdown",
