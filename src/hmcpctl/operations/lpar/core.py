@@ -76,7 +76,7 @@ _LPAR_POWER_OPERATIONS = frozenset({"PowerOn", "PowerOff"})
 # with HSCL3681, and ``chsysstate -o on`` with HSCL05EA). In these
 # states the partition is already activated, so the request is already satisfied;
 # every other state is refused before a job the HMC would fail is submitted.
-_ACTIVATED_STATES: frozenset[PartitionState] = frozenset(
+ACTIVATED_STATES: frozenset[PartitionState] = frozenset(
     {"running", "starting", "open firmware"}
 )
 
@@ -814,7 +814,7 @@ async def power_lpar(
         # REST reports the state in lower case and the CLI in title case; the
         # guard holds for either rendering.
         observed = (state or "").strip().lower()
-        if observed in _ACTIVATED_STATES:
+        if observed in ACTIVATED_STATES:
             unapplied = _unapplied_activation_clause(
                 boot_mode, partition_profile_uuid, operation_type, keylock
             )
@@ -849,39 +849,63 @@ async def power_lpar(
     if path_operation not in _LPAR_POWER_OPERATIONS:
         allowed = ", ".join(sorted(_LPAR_POWER_OPERATIONS))
         raise ValueError(f"LPAR power job operation must be one of: {allowed}")
-    document = (
-        power_on_lpar_job(
-            profile_uuid=partition_profile_uuid,
-            bootmode=boot_mode,
-            operation_type=operation_type,
-            keylock=keylock,
+    if power_on:
+        job = await hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{path_operation}",
+            power_on_lpar_job(
+                profile_uuid=partition_profile_uuid,
+                bootmode=boot_mode,
+                operation_type=operation_type,
+                keylock=keylock,
+            ),
         )
-        if power_on
-        else power_off_lpar_job(
+    else:
+        job = await submit_power_off(
+            hmc,
+            lpar_uuid,
+            operation=operation,
             immediate=immediate,
             restart=restart,
-            operation=operation,
             allow_dump_restart=allow_dump_restart,
         )
-    )
-    if not power_on:
-        # After validation and the ADR 0011 guard, before the submit: a refused
-        # call sent nothing, and a submit that raises may still have reached the HMC.
-        audit.record_lpar_power_off(
-            lpar=lpar_uuid,
-            host=hmc.config.host,
-            operation=operation,
-            immediate=immediate,
-            restart=restart,
-            agent_id=hmc.config.agent_id or "hmcpctl",
-        )
-    job = await hmc.submit_job(
-        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{path_operation}", document
-    )
     selected_job = await wait_for_submitted_job(
         hmc, job, wait, timeout_seconds, poll_interval
     )
     return LparPowerResult(lpar_uuid, selected_job, warnings)
+
+
+async def submit_power_off(
+    hmc: HMCClient,
+    lpar_uuid: str,
+    *,
+    operation: PowerOffOperation,
+    immediate: bool,
+    restart: bool,
+    allow_dump_restart: bool = False,
+) -> dict[str, Any] | None:
+    """Audit, then submit, one PowerOff job for an already-authorized partition.
+
+    The document is built first, so a refused vocabulary records nothing. The audit
+    record is written before the submit: a submit that raises may still have reached
+    the HMC.
+    """
+    document = power_off_lpar_job(
+        immediate=immediate,
+        restart=restart,
+        operation=operation,
+        allow_dump_restart=allow_dump_restart,
+    )
+    audit.record_lpar_power_off(
+        lpar=lpar_uuid,
+        host=hmc.config.host,
+        operation=operation,
+        immediate=immediate,
+        restart=restart,
+        agent_id=hmc.config.agent_id or "hmcpctl",
+    )
+    return await hmc.submit_job(
+        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff", document
+    )
 
 
 async def rename_lpar(

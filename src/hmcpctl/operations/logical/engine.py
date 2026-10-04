@@ -110,6 +110,22 @@ def canonical_request(request: OperationRequest) -> tuple[str, str]:
     return text, hashlib.sha256(encoded).hexdigest()
 
 
+def recorded_arguments(
+    agent_id: str, request_id: str, tool: str
+) -> Mapping[str, Any] | None:
+    """Return the arguments *tool* recorded for (*agent_id*, *request_id*), or None.
+
+    A continuation re-authorizes as a fresh call (ADR 0190 Decision 6), so a tool needs
+    the recorded targets before ``submit``. Reading never creates the store.
+    """
+    store.validate_request_id(request_id)
+    with store.read_session() as conn:
+        row = None if conn is None else store.find_operation(conn, agent_id, request_id)
+    if row is None or row["tool"] != tool:
+        return None
+    return json.loads(row["request_json"])["arguments"]
+
+
 def _check_inputs(
     request: OperationRequest, continuation: str, wait_seconds: int
 ) -> None:
