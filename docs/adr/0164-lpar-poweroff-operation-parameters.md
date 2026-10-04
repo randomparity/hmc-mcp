@@ -7,6 +7,9 @@ Accepted (2026-09-22)
 > **Amended by [0188](0188-dump-restart-is-its-own-operation.md)** (2026-10-01):
 > `dumprestart` is served by `hmc_dump_restart_lpar`, not `hmc_power_off_lpar`, so a grant of
 > the power-off tool no longer reaches the crash. The `allow_dump_restart` opt-in stands.
+>
+> **Amended** (2026-10-04, issue #1314): `operation="shutdown"` with `restart=True` and
+> `immediate=False` is refused. See *Amendment: the implicit dump restart* below.
 
 ## Context
 
@@ -95,6 +98,36 @@ that do exist already read `stale` on `main` (`just verification-report`: 8 stal
 and `jobs/requests.py` is inside every one of their ADR 0127 closures, so this change
 re-fingerprints them without moving any of them off a state they already hold. That is why
 epic #871 requirement 9 sequences this ahead of the #879 live window rather than after it.
+
+## Amendment: the implicit dump restart
+
+**Context.** The vendor command reference describes `-o shutdown --restart` without `--immed`
+as a dump restart (operator panel function 22), the same crash `dumprestart` names
+(`docs/refs/hmc-commands-p10/commands/chsysstate.md:106`; ADR 0199 records the same reading).
+This record's validator gated only the spelling `operation="dumprestart"`, so
+`hmc_power_off_lpar(restart=True)` with its defaults reached the crash with no
+`allow_dump_restart` and no `hmc_dump_restart_lpar` grant (ADR 0188). No live run has shown
+whether the REST PowerOff job behaves as the CLI does; the refusal does not depend on it.
+
+**Decision.** `validate_power_off_operation` takes `immediate` and `restart` as required
+keyword arguments and refuses `operation="shutdown"` with `restart=True` and `immediate=False`
+with a `ValueError` that names the three ways forward: `immediate=true` for an immediate
+restart, `osshutdown` for an operating-system restart, and `hmc_dump_restart_lpar` for the
+dump. Both call sites from the Decision above pass them, so the refusal reaches every builder
+caller and lands in `power_lpar` before the ownership leg. Every other combination builds as
+before.
+
+**Considered & rejected.** *Treat the combination as `dumprestart`, behind
+`allow_dump_restart`.* judgment: ADR 0188 gave the crash its own tool and grant; admitting a
+second spelling of it on `hmc_power_off_lpar` would reopen the grant split that record closed.
+*Map it to an immediate restart.* judgment: silently changing what a caller asked for hides
+the decision; a refusal names it.
+
+**Consequences.** The input contract of `hmc_power_off_lpar`, the CLI's `--restart`, and the
+re-exported builder narrows: a caller relying on the defaults with `restart=true` now gets a
+refusal. kdive's `cycle` and `reset` (`immediate=true`) and `hmc_power_lpar` (ADR 0199) never
+form the combination. `lpar.power_off` stays `stale (closure-changed)`; nothing here promotes
+it.
 
 ## Considered & rejected
 

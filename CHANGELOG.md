@@ -10,6 +10,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_power_off_lpar`, `hmcpctl lpars power-off`, `power_lpar`, `submit_power_off` and
+  `jobs.power_off_lpar_job` refuse `operation=shutdown` with `restart=true` and
+  `immediate=false` before any job is built. On the HMC that combination is a dump restart,
+  which crashes the partition, and it previously needed no `allow_dump_restart` grant. Pass
+  `immediate=true` (CLI: `--immediate`) for an immediate restart, use `operation=osshutdown`
+  for an operating-system restart, or use `hmc_dump_restart_lpar` for the dump. The tool's
+  docstring no longer calls `immediate=false` graceful: it is a delayed shutdown
+  (ADR 0164 amendment, #1314).
 - `hmc_upload_iso` and `hmcpctl storage upload-iso` return the download digest as
   `source_sha256` instead of `sha256`, with no alias. It is computed from the bytes fetched from
   the source URL, not read back from the VIOS; `media` is documented as the HMC repository entry,
