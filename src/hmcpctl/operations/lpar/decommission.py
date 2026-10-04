@@ -271,7 +271,7 @@ def _backing_device(mapping: dict[str, Any]) -> str | None:
     return None
 
 
-async def _resolve_target_lpar(
+async def resolve_target_lpar(
     hmc: HMCClient, system_uuid: str, lpar_name_or_uuid: str
 ) -> dict[str, Any]:
     children = await hmc.list_logical_partitions(system_uuid)
@@ -297,7 +297,7 @@ async def _resolve_inventory_identity(
     ownership_override: bool,
 ) -> tuple[str, str, str, str, str | None]:
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    child = await _resolve_target_lpar(hmc, system_uuid, lpar_name_or_uuid)
+    child = await resolve_target_lpar(hmc, system_uuid, lpar_name_or_uuid)
     lpar_uuid = _text(child.get("UUID"))
     if lpar_uuid is None:
         raise ValueError("Resolved LPAR child is missing its UUID.")
@@ -354,7 +354,7 @@ def _mapping_record(
     return record
 
 
-def _collect_storage_records(
+def collect_storage_records(
     detail_resource: dict[str, Any],
     vios_uuid: str,
     lpar_uuid: str,
@@ -397,7 +397,7 @@ async def _inventory_storage_mappings(
             )
             continue
         detail_resource = _resource(detail)
-        records, unresolved_count = _collect_storage_records(
+        records, unresolved_count = collect_storage_records(
             detail_resource, vios_uuid, lpar_uuid, partition_id_text
         )
         storage_mappings.extend(records)
