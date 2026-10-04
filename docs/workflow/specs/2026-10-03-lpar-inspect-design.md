@@ -29,20 +29,25 @@ duplicates collapse; an empty list includes no section), `profile`.
 | `connection`, `id` | ADR 0189 scoped id `<connection>/<system uuid>/<partition uuid>` |
 | `system_uuid`, `uuid`, `name`, `partition_id`, `state` | from the base read |
 | `rmc` | `{source, state}`, or null when not included |
-| `resources` | `{source, current_memory_mib, desired_memory_mib, current_proc_units, desired_proc_units, desired_vcpus, dedicated_procs, vios[], mappings[], unresolved_mappings}`, or null |
+| `resources` | `{current_memory_mib, desired_memory_mib, current_proc_units, desired_proc_units, desired_vcpus, dedicated_procs, storage_source, vios[], mappings[], unresolved_mappings}`, or null |
 | `refcodes` | `{source, codes[]}` with at most 20 rows, newest first, or null |
 | `profile_drift` | a `source`, always `unavailable` (ADR 0200 Decision 4), or null |
 | `next_actions` | tool names |
 
 A `source` is `{status: ok | unavailable | denied, tool, detail}`. `detail` is null on `ok` and
-at most 500 characters otherwise. `resources.vios[]` holds one `{uuid, status, detail}` per VIOS
-on the system, in listing order, at most 16. `mappings[]` holds the decommission mapping records
-(`vios_uuid`, `type`, `uuid`, `backing_device` when known) that name this partition.
-`resources.source.status` is the VIOS list's status when that is not `ok`; otherwise `denied`
-if any VIOS was denied, else `unavailable` if any was not read, else `ok`. A system with more
-than 16 VIOSes reads the first 16 and reports `unavailable`.
+at most 500 characters otherwise. The `resources` figures come from the base read and are
+always present when `resources` is included; `storage_source` covers only `vios[]`,
+`mappings[]` and `unresolved_mappings`. `vios[]` holds one `{uuid, status, detail}` per VIOS on
+the system, in listing order, at most 16. A listed VIOS with no UUID is a row with `uuid: null`
+and status `unavailable`, and is never admitted; a VIOS whose storage detail is empty is
+`unavailable`. `mappings[]` holds the decommission mapping records (`vios_uuid`, `type`,
+`uuid`, `backing_device` when known) that name this partition, from VIOS rows that are `ok`
+only. `storage_source.status` is the VIOS list's status when that is not `ok`; otherwise
+`denied` if any VIOS was denied, else `unavailable` if any was not read, else `ok`. A system
+with more than 16 VIOSes reads the first 16 and reports `unavailable`.
 
-**`next_actions`**, filtered to tools the policy permits:
+**`next_actions`**, filtered to tools the policy's capability ceiling admits (a target grant
+may still deny one for this partition):
 
 | State | Tools |
 | --- | --- |
@@ -69,14 +74,19 @@ denial text when the policy withholds the tool or denies the target, and `None` 
 | `resources` (each VIOS) | `hmc_get_vios_storage_detail` | VIOS UUID, caller's system selector |
 
 `rmc` and the `resources` figures come from the base read. `profile_drift` reads nothing.
+VIOSes are admitted by UUID, so a policy bounding `hmc_get_vios_storage_detail` lists them by
+UUID.
 
 ## Errors
 
 - The system does not resolve, or the selector matches zero or several partitions on it: the
-  call fails with a `ValueError` naming the selector and system.
+  call fails with a `ValueError` naming the selector and system. Matching reuses
+  decommission's `resolve_target_lpar` (a UUID selector matches only a UUID).
 - An `HMCError` from the base read propagates as a tool error.
 - A section's `HMCError` (the SSH transport's `HMCCLIError` included) or `ValueError` becomes
   `unavailable` with bounded detail; the other sections still answer.
+- After an `HMCTransportError` from a VIOS read, the remaining VIOSes are not read and are
+  reported `unavailable` with "the HMC stopped answering", as ADR 0196 and 0198 do.
 
 ## Failure model
 
@@ -85,10 +95,12 @@ denial text when the policy withholds the tool or denies the target, and `None` 
 2. **Invariants and assets at stake:** no data from a source the policy denies reaches the
    result; nothing is written to the HMC and no console is acquired; a section that did not
    answer never reads as healthy; the published result schema.
-3. **Accepted failure classes:** state read between sections can change (each section is a
-   separate read, bounded by one call's duration); `detail` repeats the HMC or SSH error text,
-   which can name the configured HMC host, already known to the caller; more than 16 VIOSes is
-   reported `unavailable` rather than read.
+3. **Accepted failure classes:** state can change between sections, which are separate reads;
+   a degraded HMC can hold the call for one REST timeout per read up to the first transport
+   failure (base, VIOS list, one VIOS) plus the SSH timeout for refcodes, after which the rest
+   is `unavailable`; a UUID system selector costs `refcodes` one extra REST session to resolve
+   the system name; `detail` repeats the HMC or SSH error text, which can name the configured
+   HMC host, already known to the caller; more than 16 VIOSes is reported `unavailable`.
 4. **Covered elsewhere:** the profile read (#637); console capture (`hmc_capture_lpar_console`);
    guest readiness (ADR 0191); ADR 0040 audit records (`dispatch_authorizer`).
 
@@ -106,7 +118,9 @@ denial text when the policy withholds the tool or denies the target, and `None` 
 ## Testing
 
 Unit tests drive `inspect_lpar` with a fake HMC and fake `admit` and SSH reader: each status per
-section, the VIOS precedence rule, the 16-VIOS and 20-refcode bounds, `next_actions` per state,
-and the not-found and ambiguous selectors. App tests drive the registered tool: a withheld
+section, the VIOS precedence rule (two VIOSes, one denied), a UUID-less VIOS and an empty
+storage detail, the stop after a transport failure, figures present under a denied VIOS list,
+the 16-VIOS and 20-refcode bounds, `next_actions` per state, and the not-found and ambiguous
+selectors. App tests drive the registered tool: a withheld
 `hmc_get_lpar` refuses the call, a withheld VIOS tool reports `denied`, and next actions are
 filtered by the policy. The registry, catalog and generated docs gain the one tool.
