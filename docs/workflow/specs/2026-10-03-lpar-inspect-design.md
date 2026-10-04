@@ -28,7 +28,7 @@ duplicates collapse; an empty list includes no section), `profile`.
 | --- | --- |
 | `connection`, `id` | ADR 0189 scoped id `<connection>/<system uuid>/<partition uuid>` |
 | `system_uuid`, `uuid`, `name`, `partition_id`, `state` | from the base read |
-| `rmc` | `{source, state}`, or null when not included |
+| `rmc` | `{source, state}`, or null when not included; `unavailable` when the read carries no RMC state |
 | `resources` | `{current_memory_mib, desired_memory_mib, current_proc_units, desired_proc_units, desired_vcpus, dedicated_procs, storage_source, vios[], mappings[], unresolved_mappings}`, or null |
 | `refcodes` | `{source, codes[]}` with at most 20 rows, newest first, or null |
 | `profile_drift` | a `source`, always `unavailable` (ADR 0200 Decision 4), or null |
@@ -97,9 +97,9 @@ UUID.
    answer never reads as healthy; the published result schema.
 3. **Accepted failure classes:** state can change between sections, which are separate reads;
    a degraded HMC can hold the call for one REST timeout per read up to the first transport
-   failure (base, VIOS list, one VIOS) plus the SSH timeout for refcodes, after which the rest
-   is `unavailable`; a UUID system selector costs `refcodes` one extra REST session to resolve
-   the system name; `detail` repeats the HMC or SSH error text, which can name the configured
+   failure (base, VIOS list, one VIOS), after which the rest is `unavailable`, plus the
+   `refcodes` tail: with a UUID system selector that is one REST timeout to resolve the system
+   name in a new session, an SSH fallback lookup, and the `lsrefcode` SSH timeout; `detail` repeats the HMC or SSH error text, which can name the configured
    HMC host, already known to the caller; more than 16 VIOSes is reported `unavailable`.
 4. **Covered elsewhere:** the profile read (#637); console capture (`hmc_capture_lpar_console`);
    guest readiness (ADR 0191); ADR 0040 audit records (`dispatch_authorizer`).
