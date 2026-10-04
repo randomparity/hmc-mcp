@@ -68,6 +68,11 @@ applied must not power off again. Four facts shape how:
   state: inspect it, then resume or abandon. That is the cost of never writing twice.
 - A submit the HMC refused also needs attention, because the engine cannot tell a refused job
   from one that ran (ADR 0195 Considered & rejected).
+- A job that ends with warnings, or is cancelled while running, makes the operation `failed`
+  even though it may have acted; inspect the partition before retrying, above all a restart.
+- A pause the body returns (job not done, state not settled, replayed restart without its
+  job) carries no reason of its own; `job_id` and `observed_state` are the evidence. A
+  restart that pauses again on every resume needs `abandon`.
 - Callers who know only a partition name must now name its system.
 - A long IBM i or graceful shutdown can outlast the bounds and pause; `resume` continues it.
 - Effect keys, kinds and the identity shape are a persisted contract (ADR 0195).
