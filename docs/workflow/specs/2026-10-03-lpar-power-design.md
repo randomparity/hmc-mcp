@@ -44,7 +44,8 @@ to `hmc_power_off_lpar`. Before `engine.submit`, the handler:
 
 1. resolves the effective `action` and selectors: the call's, or on a continuation the
    recorded operation's (agent id and `request_id`, read without creating the store). A
-   continuation with no record goes straight to `submit`, which answers `not_found`;
+   continuation with no record is refused `not_found` here, before the permit check,
+   authorization or admission;
 2. refuses with `PermissionError` naming the delegated tool when the policy does not permit it;
 3. authorizes the call as that tool through `dispatch_authorizer` with its `lpar`,
    `managed_system` and connection arguments. A denial is raised unchanged, so the call fails
@@ -75,7 +76,9 @@ Runs in the engine's worker thread with its own HMC client for the recorded conn
 
 Every refusal in steps 2–3 raises `OperationFailed`, so the operation ends `failed` and the guard
 is released. Its message names no request argument: the partition is named by UUID, and an
-ownership refusal keeps only its exception type.
+ownership refusal keeps only its exception type. A failed job's warning carries the HMC's own
+result text, which can name the partition: it is the HMC's answer, not a request argument, and
+it tells the caller why the job failed.
 
 Classifiers for `lpar.power_on` and `lpar.power_off` (ADR 0199 Decision 4) register when the
 operations module is imported, read `PartitionState` through their own client, and record
