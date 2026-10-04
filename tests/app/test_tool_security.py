@@ -441,6 +441,8 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
         # ADR 0189: classed by the most severe tool it can reach.
         "hmc_invoke_tool",
         "hmc_migrate_abort_lpar",
+        # ADR 0199: its stop and restart actions power the partition off.
+        "hmc_power_lpar",
         "hmc_remote_restart_lpar",
         # #247: the firmware/software update tools overwrite existing software
         # they did not create (ADR 0035 amendment). No prefix is newly reliable:
@@ -462,6 +464,7 @@ _FACTORY_TOOLS = frozenset(
         "hmc_invoke_tool",
         "hmc_inventory",
         "hmc_plan_lpar",
+        "hmc_power_lpar",
     }
 )
 
@@ -872,11 +875,10 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             )
             checked.add(name)
 
-    # `hmc_effective_permissions`, the two gateway tools, `hmc_inventory` and
-    # `hmc_plan_lpar` are defined inside a factory rather than at module level, so they
-    # are the names this pass cannot reach; every other tool, including the ones that
-    # declare no connection
-    # argument, is checked.
+    # `hmc_effective_permissions`, the two gateway tools, `hmc_inventory`,
+    # `hmc_plan_lpar` and `hmc_power_lpar` are defined inside a factory rather than at
+    # module level, so they are the names this pass cannot reach; every other tool,
+    # including the ones that declare no connection argument, is checked.
     assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
 
 
@@ -1259,6 +1261,8 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_restore_vios",
         "hmc_provision_lpar",
         "hmc_plan_lpar",
+        # Selectors, but a continuation names none; the delegated tool binds (ADR 0199).
+        "hmc_power_lpar",
         # Selectors, but one of them is a per-system slot number the fleet-wide
         # `vios` allowlist cannot pin down.
         "hmc_add_vfc_adapter",
@@ -1303,6 +1307,7 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_get_job",
         "hmc_modify_lpar",
         "hmc_plan_lpar",
+        "hmc_power_lpar",
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
         "hmc_restore_vios",

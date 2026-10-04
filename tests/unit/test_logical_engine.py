@@ -653,3 +653,24 @@ def test_a_worker_that_fails_to_start_is_recoverable(monkeypatch):
             _submit()
     record = _submit(continuation="abandon")
     assert (record.state, record.outcome) == ("terminal", "abandoned")
+
+
+def test_recorded_arguments_reads_without_creating_the_store():
+    assert engine.recorded_arguments("agent-a", "r1", "hmc_test_tool") is None
+    assert not store.state_dir().exists()
+
+
+def test_recorded_arguments_returns_the_tools_own_record():
+    _submit(_request(lpar="p1", action="stop"))
+    assert engine.recorded_arguments("agent-a", "r1", "hmc_test_tool") == {
+        "lpar": "p1",
+        "action": "stop",
+    }
+    assert engine.recorded_arguments("agent-a", "r1", "hmc_other_tool") is None
+    assert engine.recorded_arguments("agent-b", "r1", "hmc_test_tool") is None
+
+
+def test_recorded_arguments_refuses_a_malformed_request_id():
+    assert _reason(engine.recorded_arguments, "agent-a", "bad id", "t") == (
+        "invalid_request_id"
+    )

@@ -6,13 +6,13 @@ This reference covers every tool the server registers, including the ones a defa
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
-- **162** tools are registered.
-- **161** are exposed by a default deployment.
+- **163** tools are registered.
+- **162** are exposed by a default deployment.
 
 | Effect class | Tools |
 | --- | --- |
 | `arbitrary-command` | 1 |
-| `destructive` | 33 |
+| `destructive` | 34 |
 | `mutate` | 51 |
 | `read` | 77 |
 
@@ -39,7 +39,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `inventory` | 1 | [inventory.md](inventory.md) |
 | `io_slot` | 1 | [io_slot.md](io_slot.md) |
 | `job` | 2 | [job.md](job.md) |
-| `lpar` | 36 | [lpar.md](lpar.md) |
+| `lpar` | 37 | [lpar.md](lpar.md) |
 | `lpar_profile` | 3 | [lpar_profile.md](lpar_profile.md) |
 | `media` | 10 | [media.md](media.md) |
 | `memory_pool` | 2 | [memory_pool.md](memory_pool.md) |
@@ -192,6 +192,7 @@ The maturity fields come from the [canonical HMC reference capability ledger](..
 | `hmc_plan_lpar_memopt_scores` | `read` | [lpar.md](lpar.md) |
 | `hmc_plan_resource_group_memopt_scores` | `read` | [resource_group.md](resource_group.md) |
 | `hmc_plan_system_memopt_score` | `read` | [system.md](system.md) |
+| `hmc_power_lpar` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_power_off_lpar` | `destructive` | [lpar.md](lpar.md) |
 | `hmc_power_off_system` | `destructive` | [system.md](system.md) |
 | `hmc_power_off_vios` | `destructive` | [vios.md](vios.md) |

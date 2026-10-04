@@ -30,6 +30,7 @@ from ...tool_registry import (
     authorized,
     validate_security,
 )
+from ..delegation import authorize_as
 
 INVENTORY_TOOL_NAME = "hmc_inventory"
 # "console" and not exhaustive, as hmc_operation_status: a list of selectors has no
@@ -48,12 +49,10 @@ def _admitter(
     def admit(name: str, system: str | None) -> str | None:
         if not permits(name):
             return f"{name} is not permitted by this server's access policy"
-        security = tool_security[name]
-        arguments = {target.argument: system for target in security.targets}
-        if security.connection_argument is not None:
-            arguments[security.connection_argument] = profile
         try:
-            authorize(name, security, arguments)
+            authorize_as(
+                tool_security, authorize, name, {"managed_system": system}, profile
+            )
         except (TargetScopeError, ConnectionScopeError) as exc:
             return str(exc)
         return None
