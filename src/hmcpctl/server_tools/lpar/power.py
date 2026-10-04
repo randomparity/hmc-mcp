@@ -109,6 +109,8 @@ def power_handler(
         (host power state only, not guest readiness) and ``job_id``. A job not done in
         300 seconds, or a state that does not settle in 120 more, pauses as
         ``needs_attention``; ``continuation=resume`` re-checks without submitting again.
+        A completed restart means its job succeeded and the partition reads activated,
+        not that a cycle was observed.
         An interrupted restart always needs attention: inspect the partition, then
         ``abandon``. Crash with dump is ``hmc_dump_restart_lpar``, not this tool.
 

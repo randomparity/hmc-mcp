@@ -401,3 +401,45 @@ def test_the_guard_is_keyed_by_the_canonical_system_uuid(hmc):
     assert _end(record) == ("terminal", "failed")
     assert "partition_busy" in record.warnings[0]
     assert len(hmc.submits) == 1
+
+
+def test_start_waits_out_a_lagging_not_activated_read(hmc, monkeypatch):
+    reads = iter(["not activated", "starting"])
+
+    async def lagging(*_args):
+        return next(reads)
+
+    hmc.after = "not activated"
+    monkeypatch.setattr(hmc, "get_quick_property", lagging)
+    record = _run("start")
+    assert _end(record) == ("terminal", "completed")
+    assert record.result["observed_state"] == "starting"
+
+
+def test_start_never_activated_pauses_rather_than_fails(hmc, monkeypatch):
+    monkeypatch.setattr(power, "SETTLE_SECONDS", 0)
+    hmc.after = "not activated"
+    record = _run("start")
+    assert _end(record) == ("paused", "needs_attention")
+    assert record.result["observed_state"] == "not activated"
+
+
+def test_replay_with_an_unreadable_job_settles_from_state(hmc, monkeypatch):
+    hmc.state, hmc.status = "running", "RUNNING"
+    _run("stop", "immediate")
+
+    async def purged(*_args):
+        raise HMCError("HTTP 404")
+
+    monkeypatch.setattr(hmc, "wait_for_job_entry", purged)
+    hmc.state = "not activated"
+    record = _run("stop", "immediate", continuation="resume")
+    assert _end(record) == ("terminal", "completed")
+    assert len(hmc.submits) == 1
+
+
+def test_a_failed_job_names_the_partition_state(hmc):
+    hmc.state, hmc.status = "running", "COMPLETED_WITH_WARNINGS"
+    record = _run("stop", "immediate")
+    assert _end(record) == ("terminal", "failed")
+    assert "'running'" in record.warnings[0]

@@ -52,8 +52,9 @@ applied must not power off again. Four facts shape how:
 6. **Verified state, bounded.** After a successful job the body re-reads the state until it is
    the action's target (activated for `start` and `restart`, `not activated` for `stop`) or
    120 seconds pass. A job not terminal after 300 seconds, or a state that never settles,
-   pauses with `needs_attention`; `resume` re-polls. A failed job, or `error` /
-   `not activated` after a start, is `failed`. For `restart` the evidence is the job's
+   pauses with `needs_attention`; `resume` re-polls, and on a replay a job the HMC no longer
+   returns is skipped for the state check. A failed job, or `error` after a start, is
+   `failed`; `not activated` after a start may be lag, so it pauses instead. For `restart` the evidence is the job's
    success plus an activated reading, not proof that a cycle happened. Both bounds are
    assumptions until a live run measures them.
 7. **ADR 0011 ownership** applies as for the specialists: with

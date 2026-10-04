@@ -56,7 +56,6 @@ JOB_TIMEOUT_SECONDS = 300
 SETTLE_SECONDS = 120
 POLL_SECONDS = 5
 _NOT_ACTIVATED = "not activated"
-_FAILED_START = frozenset({"error", _NOT_ACTIVATED})
 
 
 def check_inputs(action: str, mode: str) -> None:
@@ -195,37 +194,52 @@ async def _settle(hmc: HMCClient, action: PowerAction, lpar_uuid: str) -> str:
     deadline = time.monotonic() + SETTLE_SECONDS
     while True:
         state = await _state(hmc, lpar_uuid)
-        if _reached(action, state) or (action == "start" and state in _FAILED_START):
+        # 'not activated' right after a PowerOn may be lag, so only 'error' ends a start.
+        if _reached(action, state) or (action == "start" and state == "error"):
             return state
         if time.monotonic() >= deadline:
             return state
         await asyncio.sleep(POLL_SECONDS)
 
 
+async def _read_job(hmc: HMCClient, job_id: str, replay: bool) -> dict[str, Any] | None:
+    """Poll the job; on a replay an unreadable job (aged out, HMC restarted) is None."""
+    try:
+        return await hmc.wait_for_job_entry(job_id, JOB_TIMEOUT_SECONDS, POLL_SECONDS)
+    except HMCError:
+        if not replay:
+            raise
+        return None
+
+
 async def _finish(
     hmc: HMCClient,
     action: PowerAction,
     lpar_uuid: str,
-    job_id: str | None,
     result: dict[str, Any],
+    *,
+    replay: bool,
 ) -> BodyResult:
-    if job_id is not None:
-        job = await hmc.wait_for_job_entry(job_id, JOB_TIMEOUT_SECONDS, POLL_SECONDS)
+    job_id = result["job_id"]
+    job = None if job_id is None else await _read_job(hmc, job_id, replay)
+    if job is not None:
         outcome = job_outcome(job_id, job)
         if outcome.timed_out:
             result["observed_state"] = await _state(hmc, lpar_uuid)
             return BodyResult("needs_attention", result)
         if outcome.status not in SUCCESSFUL_JOB_STATUSES:
+            state = await _state(hmc, lpar_uuid)
             raise OperationFailed(
-                f"{EFFECT_KINDS[action]} job {job_id} ended {outcome.status}: {outcome.error}"
+                f"{EFFECT_KINDS[action]} job {job_id} ended {outcome.status}: "
+                f"{outcome.error}; LPAR {lpar_uuid} is {state!r}"
             )
     state = await _settle(hmc, action, lpar_uuid)
     result["observed_state"] = state
     if _reached(action, state):
         return BodyResult("completed", result)
-    if action == "start" and state in _FAILED_START:
+    if action == "start" and state == "error":
         raise OperationFailed(
-            f"LPAR {lpar_uuid} is {state!r} after PowerOn: activation failed"
+            f"LPAR {lpar_uuid} is 'error' after PowerOn: activation failed"
         )
     return BodyResult("needs_attention", result)
 
@@ -256,7 +270,8 @@ def power_body(
     async def body(ctx: OperationContext) -> BodyResult:
         recorded = ctx.recorded(EFFECT_KEY)
         async with open_client(ctx.connection) as hmc:
-            if recorded is not None and recorded.status == "applied":
+            replay = recorded is not None and recorded.status == "applied"
+            if replay:
                 # Replay after the write: re-resolving could turn a transient read
                 # error into a terminal "failed" for a partition already powered.
                 ctx.phase("transitioning")
@@ -281,7 +296,7 @@ def power_body(
                     lambda: _submit(hmc, action, mode, lpar_uuid),
                 )
             result["job_id"] = identity.get("job_id")
-            return await _finish(hmc, action, lpar_uuid, result["job_id"], result)
+            return await _finish(hmc, action, lpar_uuid, result, replay=replay)
 
     return body
 
