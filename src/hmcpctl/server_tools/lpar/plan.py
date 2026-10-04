@@ -42,6 +42,7 @@ from ...tool_registry import (
     authorized,
     validate_security,
 )
+from ..delegation import authorize_as
 
 PLAN_TOOL_NAME = "hmc_plan_lpar"
 # "console" and not exhaustive, as hmc_inventory: placement names no system, and the
@@ -65,15 +66,9 @@ def _admitter(
     profile: str | None,
 ) -> PlanAdmit:
     def admit(name: str, system: str | None, vios: str | None) -> str | None:
-        security = tool_security[name]
         by_kind = {"managed_system": system, "vios": vios}
-        arguments = {
-            target.argument: by_kind.get(target.kind) for target in security.targets
-        }
-        if security.connection_argument is not None:
-            arguments[security.connection_argument] = profile
         try:
-            authorize(name, security, arguments)
+            authorize_as(tool_security, authorize, name, by_kind, profile)
         except (TargetScopeError, ConnectionScopeError) as exc:
             return str(exc)
         return None
