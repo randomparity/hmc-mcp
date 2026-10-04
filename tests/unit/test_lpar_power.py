@@ -429,7 +429,7 @@ def test_replay_with_an_unreadable_job_settles_from_state(hmc, monkeypatch):
     _run("stop", "immediate")
 
     async def purged(*_args):
-        raise HMCError("HTTP 404")
+        raise HMCError("job not found", status_code=404)
 
     monkeypatch.setattr(hmc, "wait_for_job_entry", purged)
     hmc.state = "not activated"
@@ -443,3 +443,38 @@ def test_a_failed_job_names_the_partition_state(hmc):
     record = _run("stop", "immediate")
     assert _end(record) == ("terminal", "failed")
     assert "'running'" in record.warnings[0]
+
+
+@pytest.mark.parametrize(
+    ("error", "end"),
+    [
+        (HMCError("job not found", status_code=404), ("paused", "needs_attention")),
+        (HMCError("unavailable", status_code=503), ("paused", "needs_attention")),
+    ],
+)
+def test_a_replayed_restart_without_job_evidence_never_completes(
+    hmc, monkeypatch, error, end
+):
+    hmc.state, hmc.status = "running", "RUNNING"
+    _run("restart", "immediate")
+
+    async def unreadable(*_args):
+        raise error
+
+    monkeypatch.setattr(hmc, "wait_for_job_entry", unreadable)
+    record = _run("restart", "immediate", continuation="resume")
+    assert _end(record) == end
+    assert len(hmc.submits) == 1
+
+
+def test_a_replayed_stop_with_a_transient_job_error_pauses(hmc, monkeypatch):
+    hmc.state, hmc.status = "running", "RUNNING"
+    _run("stop", "immediate")
+
+    async def unavailable(*_args):
+        raise HMCError("unavailable", status_code=503)
+
+    monkeypatch.setattr(hmc, "wait_for_job_entry", unavailable)
+    hmc.state = "not activated"
+    record = _run("stop", "immediate", continuation="resume")
+    assert _end(record) == ("paused", "needs_attention")

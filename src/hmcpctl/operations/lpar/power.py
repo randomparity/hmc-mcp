@@ -203,13 +203,13 @@ async def _settle(hmc: HMCClient, action: PowerAction, lpar_uuid: str) -> str:
 
 
 async def _read_job(hmc: HMCClient, job_id: str, replay: bool) -> dict[str, Any] | None:
-    """Poll the job; on a replay an unreadable job (aged out, HMC restarted) is None."""
+    """Poll the job; on a replay a job the HMC no longer has (404) is None."""
     try:
         return await hmc.wait_for_job_entry(job_id, JOB_TIMEOUT_SECONDS, POLL_SECONDS)
-    except HMCError:
-        if not replay:
-            raise
-        return None
+    except HMCError as exc:
+        if replay and exc.status_code == 404:
+            return None
+        raise
 
 
 async def _finish(
@@ -222,6 +222,11 @@ async def _finish(
 ) -> BodyResult:
     job_id = result["job_id"]
     job = None if job_id is None else await _read_job(hmc, job_id, replay)
+    if job is None and action == "restart":
+        # A cycled partition and an uncycled one both read activated, so without the
+        # job's own success there is no evidence the restart happened (ADR 0199).
+        result["observed_state"] = await _state(hmc, lpar_uuid)
+        return BodyResult("needs_attention", result)
     if job is not None:
         outcome = job_outcome(job_id, job)
         if outcome.timed_out:
