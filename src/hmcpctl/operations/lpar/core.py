@@ -795,7 +795,9 @@ async def power_lpar(
         validate_power_on_activation(boot_mode, operation_type, keylock)
     else:
         # Same reason on this arm: the ownership leg runs before the builder does.
-        validate_power_off_operation(operation, allow_dump_restart)
+        validate_power_off_operation(
+            operation, allow_dump_restart, immediate=immediate, restart=restart
+        )
     if hmc.config.authorize_power_operations:
         lpar_uuid = await resolve_and_authorize_lpar_mutation(
             hmc,

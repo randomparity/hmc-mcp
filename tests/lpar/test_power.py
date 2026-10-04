@@ -207,7 +207,7 @@ def test_power_off_lpar_job_default_document_is_unchanged():
 
 @pytest.mark.parametrize(
     ("immediate", "restart"),
-    [(False, False), (True, False), (False, True)],
+    [(False, False), (True, False), (True, True)],
 )
 def test_power_off_lpar_job_emits_restart_and_operation(immediate, restart):
     """All three parameters are emitted on every call, in the document's order."""
@@ -238,6 +238,40 @@ def test_power_off_lpar_job_gates_dumprestart_behind_the_opt_in():
 
     permitted = power_off_lpar_job(operation="dumprestart", allow_dump_restart=True)
     assert _parameter_values(permitted, "operation") == ["dumprestart"]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"restart": True},
+        {"immediate": False, "restart": True, "operation": "shutdown"},
+    ],
+)
+def test_power_off_lpar_job_refuses_the_implicit_dump_restart(kwargs):
+    """shutdown + restart without immediate is the HMC's dump restart, so it is refused.
+
+    The message names every way to ask for what the caller probably meant.
+    """
+    with pytest.raises(ValueError) as refused:
+        power_off_lpar_job(**kwargs)
+    message = str(refused.value)
+    assert "immediate=true" in message
+    assert "osshutdown" in message
+    assert "hmc_dump_restart_lpar" in message
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"immediate": True, "restart": True},
+        {"restart": True, "operation": "osshutdown"},
+        {"restart": True, "operation": "dumprestart", "allow_dump_restart": True},
+    ],
+)
+def test_power_off_lpar_job_still_builds_every_other_restart(kwargs):
+    """The refusal is scoped to shutdown without immediate; other restarts build."""
+    document = power_off_lpar_job(**kwargs)
+    assert _parameter_values(document, "restart") == ["true"]
 
 
 @pytest.mark.asyncio
@@ -390,6 +424,7 @@ async def test_power_lpar_power_on_document_ignores_power_off_parameters():
     [
         ({"operation": "dumpretry"}, "dumprestart, osshutdown, shutdown"),
         ({"operation": "dumprestart"}, "allow_dump_restart"),
+        ({"restart": True}, "hmc_dump_restart_lpar"),
     ],
 )
 async def test_power_lpar_refuses_before_any_side_effect(kwargs, expected, caplog):
@@ -425,7 +460,7 @@ def _audit_records(caplog) -> list[dict]:
     ("operation", "immediate", "restart"),
     [
         ("shutdown", True, False),
-        ("shutdown", False, True),
+        ("shutdown", True, True),
         ("osshutdown", False, False),
         ("dumprestart", False, True),
     ],

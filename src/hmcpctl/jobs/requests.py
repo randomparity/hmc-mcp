@@ -120,15 +120,21 @@ def power_on_lpar_job(
 
 
 def validate_power_off_operation(
-    operation: PowerOffOperation, allow_dump_restart: bool
+    operation: PowerOffOperation,
+    allow_dump_restart: bool,
+    *,
+    immediate: bool,
+    restart: bool,
 ) -> None:
-    """Validate the PowerOff shutdown vocabulary and its one gated member.
+    """Validate the PowerOff shutdown vocabulary and its gated combinations.
 
     Exposed the way ``validate_power_on_activation`` is: ``power_lpar`` reaches the
     ADR 0092 ownership leg — which can write an audited override record — before it
     reaches a builder, so it calls this first. ``dumprestart`` crashes the partition
     and takes a platform dump, and no layer below the CLI asks for confirmation, so
-    it is refused unless the caller opts in by name.
+    it is refused unless the caller opts in by name. ``shutdown`` with ``restart``
+    and without ``immediate`` is the same dump restart under another spelling
+    (operator panel function 22), so it is refused outright (ADR 0164 amendment).
     """
     if operation not in POWER_OFF_OPERATIONS:
         allowed = ", ".join(sorted(POWER_OFF_OPERATIONS))
@@ -138,6 +144,14 @@ def validate_power_off_operation(
             "PowerOff operation 'dumprestart' crashes the partition and takes a "
             "platform dump; pass allow_dump_restart=True (CLI: --allow-dump-restart) "
             "to request it."
+        )
+    if operation == "shutdown" and restart and not immediate:
+        raise ValueError(
+            "PowerOff operation 'shutdown' with restart=true and immediate=false is a "
+            "dump restart, which crashes the partition and takes a platform dump. "
+            "Pass immediate=true (CLI: --immediate) for an immediate restart, use "
+            "operation osshutdown for an operating-system restart, or use "
+            "hmc_dump_restart_lpar to request the dump."
         )
 
 
@@ -155,7 +169,9 @@ def power_off_lpar_job(
     what kdive's ``cycle`` and ``reset`` map to. A call passing none of the three
     emits the document this builder has always emitted.
     """
-    validate_power_off_operation(operation, allow_dump_restart)
+    validate_power_off_operation(
+        operation, allow_dump_restart, immediate=immediate, restart=restart
+    )
     return build_job_request(
         "PowerOff",
         "LogicalPartition",
