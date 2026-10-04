@@ -91,6 +91,7 @@ class _HMC:
             "PartitionName": "web1",
             "PartitionID": "7",
             "PartitionState": self.state,
+            "ResourceMonitoringControlState": "inactive",
         }
         return [{"UUID": LPAR, "Resource": resource}]
 

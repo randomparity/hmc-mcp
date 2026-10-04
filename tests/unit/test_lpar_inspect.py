@@ -175,6 +175,19 @@ def test_rmc_comes_from_the_base_read():
     assert result.rmc == Rmc(SectionSource("ok", "hmc_get_lpar"), "inactive")
 
 
+def test_missing_rmc_state_is_unavailable():
+    partition = _partition()
+    del partition["Resource"]["ResourceMonitoringControlState"]
+    result = _inspect(_HMC([partition]), ("rmc",))
+    assert result.rmc is not None
+    assert result.rmc.source.status == "unavailable"
+    hmc = _HMC([_partition(ResourceMonitoringControlState=None)])
+    result = _inspect(hmc, ("rmc",))
+    assert result.rmc is not None
+    assert result.rmc.source.status == "unavailable"
+    assert result.rmc.state is None
+
+
 def test_refcodes_are_capped_and_newest_first(_seams: list[tuple]):
     result = _inspect(_HMC(), ("refcodes",))
     assert result.refcodes is not None

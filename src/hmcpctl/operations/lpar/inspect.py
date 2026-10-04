@@ -144,6 +144,9 @@ async def _partition(hmc: Any, system: str, lpar: str) -> tuple[str, dict[str, A
 
 def _rmc(resource: dict[str, Any]) -> Rmc:
     state = _text(resource.get("ResourceMonitoringControlState"))
+    if not state:
+        text = "the partition read carried no RMC state"
+        return Rmc(SectionSource("unavailable", BASE_TOOL, text), None)
     return Rmc(SectionSource("ok", BASE_TOOL), state)
 
 
