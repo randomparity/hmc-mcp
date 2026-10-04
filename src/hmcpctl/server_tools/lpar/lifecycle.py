@@ -449,8 +449,8 @@ def hmc_power_off_lpar(
     HMC_AUTHORIZE_POWER_OPERATIONS set, where it also spares the ownership guard
     a fleet-wide search for the partition's owning system.
     immediate=True forces an immediate power off; immediate=False requests a
-    delayed shutdown, which is not an operating-system shutdown. The graceful path
-    is operation=osshutdown. Returns the submitted job. This changes the state of a real partition.
+    delayed shutdown, which is not an operating-system shutdown.
+    Returns the submitted job. This changes the state of a real partition.
 
     Set wait=True to block until the job reaches a terminal state.
 
