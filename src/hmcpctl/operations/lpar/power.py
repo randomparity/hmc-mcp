@@ -22,7 +22,6 @@ from ...jobs import (
     power_on_lpar_job,
 )
 from ...resource_identity import resolve_system_uuid
-from ...ssh.transport import HMCCLIError
 from ..logical import engine
 from ..logical.engine import (
     BodyResult,
@@ -73,10 +72,6 @@ def open_client(connection: str) -> HMCClient:
     return client_from_env(None if connection == DEFAULT_CONNECTION else connection)
 
 
-def _target(lpar_uuid: str) -> str:
-    return f"lpar:{lpar_uuid}"
-
-
 def _norm(value: Any) -> str:
     return value.strip().lower() if isinstance(value, str) else ""
 
@@ -104,7 +99,7 @@ async def _resolve(
         # Lower-cased: the guard key must not depend on the caller's spelling (ADR 0094).
         system_uuid = (await resolve_system_uuid(hmc, system)).lower()
         matches = _match(await hmc.list_logical_partitions(system_uuid), lpar)
-    except (HMCError, HMCCLIError, ValueError, LookupError) as exc:
+    except (HMCError, ValueError, LookupError) as exc:
         raise OperationFailed(
             f"the managed system or its partition list could not be read ({type(exc).__name__})"
         ) from exc
@@ -120,7 +115,7 @@ async def _resolve(
             await resolve_and_authorize_lpar_mutation(
                 hmc, system_uuid, lpar_uuid, ownership_override=False
             )
-        except (HMCError, HMCCLIError, ValueError, LookupError, PermissionError) as exc:
+        except (HMCError, ValueError, LookupError, PermissionError) as exc:
             # The refusal text names the partition and an override this tool does not
             # offer (ADR 0199 Decision 7), so only its type is kept.
             raise OperationFailed(
@@ -297,7 +292,7 @@ def power_body(
                 identity = await ctx.effect(
                     EFFECT_KEY,
                     EFFECT_KINDS[action],
-                    _target(lpar_uuid),
+                    f"lpar:{lpar_uuid}",
                     lambda: _submit(hmc, action, mode, lpar_uuid),
                 )
             result["job_id"] = identity.get("job_id")
