@@ -41,7 +41,10 @@ _TRANSITIONAL = frozenset(
         "hardware discovery",
     }
 )
-_PROFILE_DRIFT = "no read-only partition-profile tool exists yet (#637), so profile drift is not checked"
+_PROFILE_DRIFT = (
+    "no read-only partition-profile tool exists yet (#637), "
+    "so profile drift is not checked"
+)
 
 Admit = Callable[[str, Mapping[str, str | None]], str | None]
 """Asks whether a delegated tool may run for the given targets by kind.
@@ -125,8 +128,8 @@ def _detail(text: str) -> str:
     return text[:_MAX_DETAIL]
 
 
-def _failed(tool: str | None, exc: Exception) -> SectionSource:
-    return SectionSource("unavailable", tool, _detail(str(exc) or type(exc).__name__))
+def _error_text(exc: Exception) -> str:
+    return _detail(str(exc) or type(exc).__name__)
 
 
 async def _read(tool: str, read: Awaitable[_T]) -> tuple[_T | None, SectionSource]:
@@ -134,7 +137,7 @@ async def _read(tool: str, read: Awaitable[_T]) -> tuple[_T | None, SectionSourc
     try:
         return await read, SectionSource("ok", tool)
     except (HMCError, ValueError) as exc:
-        return None, _failed(tool, exc)
+        return None, SectionSource("unavailable", tool, _error_text(exc))
 
 
 async def _partition(hmc: Any, system: str, lpar: str) -> tuple[str, dict[str, Any]]:
@@ -202,7 +205,7 @@ async def _vios_reads(
             reads.append(ViosRead(uuid, "unavailable", _STALLED))
             continue
         except (HMCError, ValueError) as exc:
-            reads.append(ViosRead(uuid, "unavailable", _failed(None, exc).detail))
+            reads.append(ViosRead(uuid, "unavailable", _error_text(exc)))
             continue
         if detail is None:
             reads.append(ViosRead(uuid, "unavailable", "no storage detail"))
@@ -228,9 +231,7 @@ def _storage_source(
         )
     if "unavailable" in statuses or extra:
         text = (
-            "a VIOS was not read; see vios"
-            if not extra
-            else f"only {MAX_VIOS} VIOSes read"
+            f"only {MAX_VIOS} VIOSes read" if extra else "a VIOS was not read; see vios"
         )
         return SectionSource("unavailable", VIOS_DETAIL_TOOL, text)
     return listing
