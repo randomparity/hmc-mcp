@@ -27,8 +27,11 @@ value given must match them (ADR 0190 Decision 3). A new operation needs all thr
 **Result:** the `OperationRecord` `hmc_operation_status` returns: phase `validating` then
 `transitioning`, the one `power` effect, warnings and `next_actions`. When the body ends, its
 `result` holds `action`, `mode`, `system_uuid`, `lpar_uuid`, `already_in_state` (bool),
-`observed_state` (the last partition state read) and `job_id` (or null). Host power state is the
-only readiness reported; guest readiness is not (ADR 0191).
+`observed_state` (the last partition state read) and `job_id` (or null) when the operation ends
+`completed` or pauses `needs_attention`. A `failed` operation has no `result`; its warning names
+the partition UUID and the state or job status. Host power state is the only readiness
+reported; guest readiness is not (ADR 0191). For `restart`, `observed_state` shows the
+partition activated after a successful job, not proof that it cycled (ADR 0199 Decision 6).
 
 **Registration:** `effect="destructive"`, `operation="lpar.power"`, `target_kind="console"`,
 not exhaustive, with the two selectors declared optional so audit records name them. It is in
@@ -56,22 +59,27 @@ replacing the two copies of the same code in `server_tools/lpar/plan.py` and
 
 Runs in the engine's worker thread with its own HMC client for the recorded connection.
 
-1. `validating`: list the named system's partitions; the selector must match exactly one by
-   UUID or name. With `HMC_AUTHORIZE_POWER_OPERATIONS` set, run the ADR 0011 ownership check
-   (no override). Take the partition guard.
-2. If the `power` effect is already `applied`, skip to step 5 with its JobID.
-3. Already in state (ADR 0199 Decision 5) completes with no effect. `start` from any state
-   other than `not activated` and the activated set fails naming the state. A graceful stop or
-   restart needs RMC `active`; otherwise it fails naming `mode=immediate`.
+1. If the `power` effect is already `applied`, skip to step 5 with the recorded partition and
+   JobID; nothing is resolved again, so a read error there pauses rather than fails. With no
+   JobID (applied by classification) step 5 skips the job poll.
+2. `validating`: resolve the system UUID (lower-cased) and list its partitions; the selector
+   must match exactly one by UUID or name. With `HMC_AUTHORIZE_POWER_OPERATIONS` set, run the
+   ADR 0011 ownership check (no override). Take the partition guard.
+3. States per ADR 0199 Decision 5: already in state completes with no effect; any other state
+   the action does not accept fails naming it; a graceful stop or restart without RMC `active`
+   fails naming `mode=immediate`.
 4. `transitioning`: write the one effect (ADR 0199 Decisions 1 and 3). The PowerOff submit
-   shares `power_lpar`'s audit-before-submit step through one extracted function.
+   shares `power_lpar`'s audit-before-submit step through one extracted function. Any submit
+   error leaves the effect `uncertain` (ADR 0199 Consequences).
 5. Poll the job (300 s) and settle the state (120 s) per ADR 0199 Decision 6.
 
-Every refusal in steps 1–3 raises `OperationFailed`, so the operation ends `failed` and the guard
-is released. Its message names no request argument; the partition is named by UUID.
+Every refusal in steps 2–3 raises `OperationFailed`, so the operation ends `failed` and the guard
+is released. Its message names no request argument: the partition is named by UUID, and an
+ownership refusal keeps only its exception type.
 
 Classifiers for `lpar.power_on` and `lpar.power_off` (ADR 0199 Decision 4) register when the
-operations module is imported, and read `PartitionState` through their own client.
+operations module is imported, read `PartitionState` through their own client, and record
+identity `{"job_id": null}` when they answer `applied`.
 
 ## Failure model
 
@@ -83,7 +91,7 @@ operations module is imported, and read `PartitionState` through their own clien
 
 **Invariants and assets at stake**
 
-- A partition is never powered off twice by one operation, and never crashed (`dumprestart`).
+- One operation writes at most one power job, and none is a dump restart.
 - Stop or restart authority withheld from `hmc_power_off_lpar` is never conferred by the
   `hmc_power_lpar` grant.
 - `immediate` is reached only when the caller states it.
@@ -91,12 +99,12 @@ operations module is imported, and read `PartitionState` through their own clien
 
 **Accepted failure classes**
 
-- *An interrupted restart or a stop whose job may be queued needs a human.* Accepted: ADR 0199
-  Consequences; the alternative risks a second power-off.
+- *An interrupted write, or a refused submit, needs a human unless the partition already shows
+  the target state.* Accepted: ADR 0199 Consequences; the alternative risks a second job.
 - *Another writer changes the state mid-operation.* Accepted as in the H1 spec: not a fence. The
   settle step reports the observed state.
-- *A PowerOn replayed after an unrecorded first submit.* Accepted: a second start on a starting
-  partition fails its job and changes nothing.
+- *The 300 s and 120 s bounds are unmeasured.* Accepted: exceeding them pauses, and `resume`
+  continues; a live run measures them.
 
 **Covered elsewhere**
 
@@ -112,8 +120,9 @@ served policy and the private state directory.
 
 **Controls:** the delegated permit check and `dispatch_authorizer` per call, including every
 continuation (re-authorized as a fresh call, ADR 0190 Decision 6); the engine's connection and
-digest binding on continuations; ADR 0011 ownership as the specialists apply it; `dumprestart`
-is unreachable because the body only builds `shutdown` and `osshutdown` documents.
+digest binding on continuations; ADR 0011 ownership as the specialists apply it; no dump restart
+is reachable because the body builds only `osshutdown`, or `shutdown` with `immediate=true`
+(ADR 0199 Decision 1), never `shutdown` with `restart` and without `immediate`.
 
 **Out of scope:** a local user who can write the state directory (H1 spec threat model).
 
@@ -122,8 +131,8 @@ is unreachable because the body only builds `shutdown` and `osshutdown` document
 | Contract | Mode | Evidence |
 | --- | --- | --- |
 | delegation per action, withheld tool, target denial, continuation re-authorization | focused-test | `tests/app/test_lpar_power_tool.py` |
-| start/stop/restart bodies, already-in-state, refusals, mode mapping, replay, settle, timeouts | focused-test | `tests/unit/test_lpar_power.py` |
-| classifiers and restart's absent classifier | focused-test | `tests/unit/test_lpar_power.py` |
+| start/stop/restart bodies, already-in-state, state refusals, mode mapping (all four PowerOff documents), replay without re-resolving, read error after the write, settle, timeouts, guard key casing | focused-test | `tests/unit/test_lpar_power.py` |
+| classifiers (applied without JobID, never resubmitted) and restart's absent classifier | focused-test | `tests/unit/test_lpar_power.py` |
 | shared `authorize_as`; plan and inventory unchanged | focused-test | existing plan and inventory tool tests |
 | PowerOff submit extraction | focused-test | existing `power_lpar` tests |
 | registry counts, catalog, generated docs | focused-test | `tests/app/test_tool_security.py`, `just tool-docs-check`, capability inventory |
