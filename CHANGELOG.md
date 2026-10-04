@@ -65,6 +65,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_power_lpar` (operation `lpar.power`, `destructive`) starts, stops or restarts one LPAR as
+  a durable logical operation: one journaled HMC job, a bounded wait, and a verified host power
+  state, with `already_in_state` when nothing needed doing. `mode=immediate` must be stated;
+  graceful is PowerOff `osshutdown`. `start` is authorized as `hmc_power_on_lpar` and
+  `stop`/`restart` as `hmc_power_off_lpar`, per partition, on every call. A resumed operation
+  never submits a second power job (#1223, ADR 0199).
 - `hmc_plan_lpar` (operation `lpar.plan`, `read`) plans provisioning one LPAR without writing
   or reserving anything: the selected system, VIOS and volume group, a `plan_digest`, each
   candidate's blockers, the intended changes and what it could not verify. `placement`

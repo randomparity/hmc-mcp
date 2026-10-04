@@ -152,3 +152,18 @@ def test_continuing_an_unknown_request_is_not_found(hmc: FakeHMC):
         _call(
             _app(_grant(POWER, ON, OFF)), {"request_id": "r9", "continuation": "resume"}
         )
+
+
+def test_an_omitted_mode_is_recorded_as_graceful(hmc: FakeHMC):
+    hmc.state, hmc.status = "running", "RUNNING"
+    app = _app(_grant(POWER, ON, OFF))
+    first = _call(app, {**NEW, "request_id": "r1", "action": "stop"})
+    again = _call(
+        app, {**NEW, "request_id": "r1", "action": "stop", "mode": "graceful"}
+    )
+    assert again["operation_id"] == first["operation_id"]
+    resumed = _call(
+        app, {"request_id": "r1", "continuation": "resume", "mode": "graceful"}
+    )
+    assert resumed["operation_id"] == first["operation_id"]
+    assert len(hmc.submits) == 1

@@ -146,6 +146,21 @@ denied target becomes a `denied` blocker that is not read. Under a targets table
 `hmc_capacity_report` separately at `targets = "all-targets"` and list VIOSes by UUID. Each
 decision writes its own audit record, so one placement call can write a few hundred.
 
+`hmc_power_lpar` (`destructive`) starts, stops or restarts one LPAR as a durable operation
+(ADR 0190, ADR 0199). It needs `request_id`, `lpar_name_or_uuid`, `system_name_or_uuid` and
+`action` (`start`, `stop` or `restart`); `mode` is `graceful` (PowerOff `osshutdown`, RMC must
+be active) unless `immediate` is stated, and nothing switches to `immediate` on its own. The
+call returns within `wait_seconds` with the operation record; the work continues, and
+`hmc_operation_status` or a `continuation=resume` call reads it. A partition already in the
+requested state completes with `already_in_state` true and no job. The final `result` carries
+`observed_state`, the host power state only. A job not done in 300 seconds, or a state that has
+not settled 120 seconds later, pauses as `needs_attention`; `resume` re-checks without submitting
+again. An interrupted restart, or a stop or start whose job may still be queued, always needs
+attention, so one operation never writes a second power job. `start` needs
+`hmc_power_on_lpar`, and `stop` and `restart` need `hmc_power_off_lpar`: the policy must permit
+that tool and admit the partition for it, on every call including a continuation. Crash with
+dump stays `hmc_dump_restart_lpar`.
+
 `tools/list` marks each tool's catalog tier under the
 `io.github.randomparity.hmcpctl/catalog-tier` metadata key: `primary` for the ADR 0189
 primary set, `secondary` for every other tool. The listing itself is unchanged; #1232 decides
