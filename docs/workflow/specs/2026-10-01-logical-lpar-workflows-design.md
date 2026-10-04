@@ -56,7 +56,7 @@ logical partition mutations take an optional `hold_id` (ADR 0193).
 | `hmc_reconfigure_lpar` | destructive | `lpar`, `patch`, `allow_disruption` (default false) | operation fields plus `changes[]`, each `live` / `profile` / `pending_activation` |
 | `hmc_decommission_lpar` | destructive | ADR 0027 inputs plus `storage_cleanup` (`retain` default / `delete_owned`) | `DecommissionResult` plus `storage` (`deleted[]`, `retained[]` with reasons, `pending[]`) and the operation fields |
 | `hmc_power_lpar` | destructive | `lpar`, `system_name_or_uuid` (required, ADR 0199), `action` (`start` / `stop` / `restart`), `mode` (`graceful` default / `immediate`) | operation fields plus `already_in_state` and `observed_state` |
-| `hmc_inspect_lpar` | read | `lpar`, `include` ⊆ {`resources`, `rmc`, `profile_drift`, `refcodes`} | state, RMC, profile drift, ≤ 20 refcodes, `next_actions[]` (tool names only) |
+| `hmc_inspect_lpar` | read | `lpar`, `system_name_or_uuid` (required, ADR 0200), `include` ⊆ {`resources`, `rmc`, `profile_drift`, `refcodes`} | state, RMC, resources, profile drift, ≤ 20 refcodes, `next_actions[]` (tool names only) |
 | `hmc_prepare_host_handoff` | mutate | `action` (`prepare` / `release`), `lpar`, `hold`, `consumer_label` (≤ 64 characters), `hold_id` | `{action, hold, document}`; `document` is null on `release` |
 | `hmc_operation_status` | read | `operation_id?`, `request_id?`, `state?`, `outcome?`, `limit` 1–50, `cursor?`; with neither id it lists the caller's operations | always a page of at most 50 operation records (a lookup is a page of at most one), each with its newest ≤ 200 events (phase changes and effect intents and outcomes) and `truncated` |
 | `hmc_search_tools` | read | `query` (≤ 200 characters) *or* `name`, `limit` 1–20 | names, one-line summaries, effect, maturity; the full input schema only for an exact `name` |
@@ -151,7 +151,7 @@ the dispatch authorizer admits the call, as that tool, for each resolved target.
 | power `stop` / `restart` | `hmc_power_off_lpar` |
 | decommission `retain` | `hmc_decommission_lpar`'s existing set |
 | decommission `delete_owned` | adds `hmc_detach_storage_mapping`, `hmc_unmount_optical_media`, `hmc_delete_optical_media`, `hmc_delete_virtual_disk` |
-| inspect | `hmc_get_lpar`, `hmc_get_lpar_state`, `hmc_read_lpar_refcodes`; `resources` adds `hmc_get_vios_storage_detail` for each serving VIOS; `profile_drift` adds #637's profile read |
+| inspect | `hmc_get_lpar` (required); `refcodes` adds `hmc_read_lpar_refcodes`; `resources` adds `hmc_list_vios` and `hmc_get_vios_storage_detail` for each VIOS; each section authorized on its own (ADR 0200); `profile_drift` adds #637's profile read |
 | handoff `prepare` | `hmc_get_lpar`, `hmc_list_lpar_ownership`, `hmc_get_vios_storage_detail` for each serving VIOS |
 | handoff `release` | none beyond the tool itself |
 | operation status | none beyond the tool itself; it lists only records with the caller's agent id |

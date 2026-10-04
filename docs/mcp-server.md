@@ -161,6 +161,19 @@ attention, so one operation never writes a second power job. `start` needs
 that tool and admit the partition for it, on every call including a continuation. Crash with
 dump stays `hmc_dump_restart_lpar`.
 
+`hmc_inspect_lpar` (`read`) reports one LPAR's state and the sections named in `include`:
+`rmc`, `refcodes` (at most 20, newest first, over SSH), `resources` (memory and processor
+figures, plus the storage mappings each of the system's VIOSes holds for the partition, at most
+16 VIOSes) and `profile_drift` (always `unavailable` until a read-only profile read exists). It
+needs `lpar_name_or_uuid` and `system_name_or_uuid`; `include` defaults to `rmc` and
+`refcodes`. The partition is read as `hmc_get_lpar`, and a policy that withholds it refuses the
+call. Each section is then authorized as the tool it uses (`hmc_read_lpar_refcodes`;
+`hmc_list_vios` for the system and `hmc_get_vios_storage_detail` for each VIOS by UUID) and
+reports `ok`, `unavailable` or `denied` on its own, with no data unless `ok` (ADR 0200).
+`next_actions` names tools the capability ceiling admits, chosen from the state and RMC; a
+target grant may still deny one. It never opens a console: `hmc_capture_lpar_console` is
+named, not run.
+
 `tools/list` marks each tool's catalog tier under the
 `io.github.randomparity.hmcpctl/catalog-tier` metadata key: `primary` for the ADR 0189
 primary set, `secondary` for every other tool. The listing itself is unchanged; #1232 decides

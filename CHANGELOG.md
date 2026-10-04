@@ -65,6 +65,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- `hmc_inspect_lpar` (operation `lpar.inspect`, `read`) reports one LPAR's state, RMC,
+  resources (memory and processor figures, and the storage mappings its system's VIOSes hold
+  for it), up to 20 reference codes and profile drift, with `next_actions` naming tools only.
+  It reads as `hmc_get_lpar`, and each section is authorized as the tool it uses and reports
+  `ok`, `unavailable` or `denied`. It never opens a console; `profile_drift` is `unavailable`
+  until a read-only profile read exists (#1224, ADR 0200).
 - `hmc_power_lpar` (operation `lpar.power`, `destructive`) starts, stops or restarts one LPAR as
   a durable logical operation: one journaled HMC job, a bounded wait, and a verified host power
   state, with `already_in_state` when nothing needed doing. `mode=immediate` must be stated;

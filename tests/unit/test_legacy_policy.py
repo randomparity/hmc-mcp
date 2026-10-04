@@ -322,12 +322,12 @@ def test_uom_user_replacement_reduces_unboundable_tool_count():
     # #1202 removed hmc_list_recent_jobs, one connection-bearing unboundable tool;
     # #1218 added hmc_operation_status, one more; #1219 added the two
     # connectionless gateway tools, hmc_search_tools and hmc_invoke_tool; #1220
-    # added hmc_inventory, #1221 hmc_plan_lpar and #1223 hmc_power_lpar, each one more
-    # connection-bearing.
-    assert len(unboundable) == 31
-    assert len(connection_bearing) == 24
+    # added hmc_inventory, #1221 hmc_plan_lpar, #1223 hmc_power_lpar and #1224
+    # hmc_inspect_lpar, each one more connection-bearing.
+    assert len(unboundable) == 32
+    assert len(connection_bearing) == 25
     assert len(connectionless) == 7
-    assert len(all_nonexhaustive) == 32
+    assert len(all_nonexhaustive) == 33
 
 
 # ---------------------------------------------------------------------------

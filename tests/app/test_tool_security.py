@@ -462,6 +462,7 @@ _FACTORY_TOOLS = frozenset(
         "hmc_effective_permissions",
         "hmc_search_tools",
         "hmc_invoke_tool",
+        "hmc_inspect_lpar",
         "hmc_inventory",
         "hmc_plan_lpar",
         "hmc_power_lpar",
@@ -876,9 +877,10 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             checked.add(name)
 
     # `hmc_effective_permissions`, the two gateway tools, `hmc_inventory`,
-    # `hmc_plan_lpar` and `hmc_power_lpar` are defined inside a factory rather than at
-    # module level, so they are the names this pass cannot reach; every other tool,
-    # including the ones that declare no connection argument, is checked.
+    # `hmc_plan_lpar`, `hmc_power_lpar` and `hmc_inspect_lpar` are defined inside a
+    # factory rather than at module level, so they are the names this pass cannot
+    # reach; every other tool, including the ones that declare no connection argument,
+    # is checked.
     assert set(TOOL_SECURITY) - checked == _FACTORY_TOOLS
 
 
@@ -1263,6 +1265,8 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_plan_lpar",
         # Selectors, but a continuation names none; the delegated tool binds (ADR 0199).
         "hmc_power_lpar",
+        # Selectors, but the VIOS reads sit below the signature (ADR 0200).
+        "hmc_inspect_lpar",
         # Selectors, but one of them is a per-system slot number the fleet-wide
         # `vios` allowlist cannot pin down.
         "hmc_add_vfc_adapter",
@@ -1305,6 +1309,7 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_backup_vios",
         "hmc_create_lpar",
         "hmc_get_job",
+        "hmc_inspect_lpar",
         "hmc_modify_lpar",
         "hmc_plan_lpar",
         "hmc_power_lpar",
