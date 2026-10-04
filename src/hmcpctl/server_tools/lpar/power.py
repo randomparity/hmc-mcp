@@ -16,7 +16,7 @@ from fastmcp import FastMCP
 from ...config import build_config
 from ...operations.logical import engine
 from ...operations.logical.engine import OperationRequest
-from ...operations.logical.store import connection_label
+from ...operations.logical.store import OperationRefused, connection_label
 from ...operations.lpar.power import (
     DELEGATED,
     PowerAction,
@@ -62,7 +62,7 @@ def _given(**values: Any) -> dict[str, Any]:
 
 def _effective(
     given: dict[str, Any], agent_id: str, request_id: str, continuation: str
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """The arguments to authorize: the call's, over the record's on a continuation."""
     if continuation == "none":
         missing = [
@@ -74,7 +74,14 @@ def _effective(
             raise ValueError(f"a new operation needs {', '.join(missing)}")
         return {"mode": "graceful", **given}
     recorded = engine.recorded_arguments(agent_id, request_id, POWER_TOOL_NAME)
-    return None if recorded is None else {**recorded, **given}
+    if recorded is None:
+        # Refused here, not by submit: nothing may be admitted without the delegated
+        # check, even if a concurrent call records this request_id meanwhile.
+        raise OperationRefused(
+            "not_found",
+            f"no operation has request_id {request_id}; omit continuation to start one",
+        )
+    return {**recorded, **given}
 
 
 def power_handler(
@@ -137,55 +144,45 @@ def power_handler(
         config = build_config(profile=profile)
         agent_id = config.agent_id or "hmcpctl"
         effective = _effective(given, agent_id, request_id, continuation)
-        if effective is not None:
-            check_inputs(effective["action"], effective["mode"])
-            delegated = DELEGATED[effective["action"]]
-            if not permits(delegated):
-                raise PermissionError(
-                    f"{delegated} is not permitted by this server's access policy; "
-                    f"{POWER_TOOL_NAME} action={effective['action']} needs it (ADR 0189)"
-                )
-            authorize_as(
-                tool_security,
-                authorize,
-                delegated,
-                {
-                    "lpar": effective["lpar_name_or_uuid"],
-                    "managed_system": effective["system_name_or_uuid"],
-                },
-                profile,
+        check_inputs(effective["action"], effective["mode"])
+        delegated = DELEGATED[effective["action"]]
+        if not permits(delegated):
+            raise PermissionError(
+                f"{delegated} is not permitted by this server's access policy; "
+                f"{POWER_TOOL_NAME} action={effective['action']} needs it (ADR 0189)"
             )
+        authorize_as(
+            tool_security,
+            authorize,
+            delegated,
+            {
+                "lpar": effective["lpar_name_or_uuid"],
+                "managed_system": effective["system_name_or_uuid"],
+            },
+            profile,
+        )
         request = OperationRequest(
             POWER_TOOL_NAME,
             agent_id,
             connection_label(profile, tool=POWER_TOOL_NAME),
             config.host,
             request_id,
-            given if effective is None or continuation != "none" else effective,
+            effective if continuation == "none" else given,
         )
-        body = (
-            None
-            if effective is None
-            else power_body(
-                effective["action"],
-                effective["mode"],
-                effective["system_name_or_uuid"],
-                effective["lpar_name_or_uuid"],
-            )
+        body = power_body(
+            effective["action"],
+            effective["mode"],
+            effective["system_name_or_uuid"],
+            effective["lpar_name_or_uuid"],
         )
         return engine.submit(
             request,
-            body or _never,
+            body,
             continuation=continuation,
             wait_seconds=wait_seconds,
         )
 
     return hmc_power_lpar
-
-
-async def _never(_ctx: engine.OperationContext) -> engine.BodyResult:
-    """Unreachable: a continuation with no record is refused by ``submit``."""
-    raise engine.OperationFailed("no recorded power operation to continue")
 
 
 def register_power_tool(

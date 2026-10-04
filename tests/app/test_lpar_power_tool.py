@@ -167,3 +167,19 @@ def test_an_omitted_mode_is_recorded_as_graceful(hmc: FakeHMC):
     )
     assert resumed["operation_id"] == first["operation_id"]
     assert len(hmc.submits) == 1
+
+
+def test_an_unknown_continuation_is_refused_before_admission(
+    hmc: FakeHMC, monkeypatch: pytest.MonkeyPatch
+):
+    from hmcpctl.operations.logical import engine
+
+    def admitted(*_args, **_kwargs):
+        raise AssertionError("admitted without the delegated check")
+
+    monkeypatch.setattr(engine, "submit", admitted)
+    with pytest.raises(ToolError, match="no operation has request_id"):
+        _call(
+            _app(_grant(POWER, ON, OFF)),
+            {"request_id": "r9", "continuation": "abandon"},
+        )
