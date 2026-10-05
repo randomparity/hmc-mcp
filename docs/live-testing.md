@@ -148,6 +148,11 @@ merge-restore. It backs up to `hmcpctl-live-st10`, a file in the HMC's
 overwritten by the next successful backup. The restore runs only when this
 run's backup succeeded.
 
+The restore resets a not-activated partition's `resource_config` from 1 to 0,
+even though it merges a backup taken moments earlier, so its observation fails
+on that side effect. The arm then re-applies each such partition's current
+profile, which leaves it `Not Activated`.
+
 If a run stops partway, restore by hand what it may have left changed. Use
 the values in the run's baseline:
 
@@ -155,6 +160,8 @@ the values in the run's baseline:
 - `chsyscfg -r lpar -m <system> -i "name=<vios>,msp=<0|1>"`
 - `chsyscfg -r prof -m <system> -i "name=<profile>,lpar_name=<lpar>,lpar_proc_compat_mode=<mode>"`
 - `chsyscfg -r lpar -m <system> -i "name=<lpar>,sync_curr_profile=<0|1|2>"`
+- `chsyscfg -r lpar -m <system> -o apply -p <lpar> -n <profile>`, for a
+  not-activated partition whose `resource_config` the restore left at 0
 
 If the restore itself failed or was interrupted, review the profiles before
 anything else, then restore them with

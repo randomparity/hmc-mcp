@@ -899,7 +899,7 @@ async def test_a_wrong_read_shape_fails_its_observation(
 def _st10_answers(**overrides: object) -> dict[str, object]:
     """A not-activated test partition, one VIOS, and a default-mode profile."""
     msp = iter([True, False, True])
-    profile_mode = iter(["default", "POWER9_base", "default"])
+    profile_mode = iter(["default", "POWER9", "default"])
     sync = iter(["1,Not Activated", "0,Not Activated"])
 
     def run_command(kwargs):
@@ -971,8 +971,9 @@ async def test_st10_round_trips_pass_and_restore_each_value(monkeypatch) -> None
         ("vios-a", True),
     ]
     assert all("ownership_override" not in m for m in msp)
+    # POWER9_base is the CLI's spelling, which the tool schema refuses (#1319).
     assert [m["mode"] for m in _tool_calls(calls, "hmc_set_lpar_proc_compat")] == [
-        "POWER9_base",
+        "POWER9",
         "default",
     ]
     assert [m["mode"] for m in _tool_calls(calls, "hmc_sync_lpar_profile")] == [
@@ -1103,6 +1104,93 @@ async def test_changed_profiles_fail_the_restore_observation(monkeypatch) -> Non
     assert (
         "profiles-unchanged-after-merge-current-wins" not in observation["assertions"]
     )
+
+
+_CONFIGURED = (
+    "name=lpar-name,state=Not Activated,resource_config=1,curr_profile=default_profile"
+)
+
+
+@pytest.mark.asyncio
+async def test_restore_side_effect_fails_the_observation_and_is_reapplied(
+    monkeypatch,
+) -> None:
+    """rstprofdata -l 3 unconfigures a not-activated partition (#627, observed live)."""
+    partitions = iter(
+        [_CONFIGURED, _CONFIGURED.replace("config=1", "config=0"), _CONFIGURED]
+    )
+    base = _st10_answers()
+    run_command = base["hmc_run_command"]
+
+    def answer(kwargs):
+        if (
+            kwargs["cmd"].startswith("lssyscfg -r lpar -m ")
+            and "-F" not in kwargs["cmd"]
+        ):
+            return "PASS", next(partitions) + "\n"
+        return run_command(kwargs)  # type: ignore[operator]  # the scripted answer is callable
+
+    calls, scripted = _answer({**base, "hmc_run_command": answer})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observation = _verified(state)["lpar_profile.restore"]
+    assert observation["result"] == "failed"
+    assert (
+        "partitions-unchanged-after-merge-current-wins" not in observation["assertions"]
+    )
+    assert observation["cleanup"] == "passed"
+    applies = [
+        kwargs["cmd"]
+        for tool, kwargs in calls
+        if tool == "hmc_run_command" and " -o apply " in kwargs["cmd"]
+    ]
+    assert applies == [
+        f"chsyscfg -r lpar -m {state.config.system_name} -o apply -p lpar-name -n default_profile"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_reordered_profile_listing_is_not_a_change(monkeypatch) -> None:
+    dumps = iter(["profile-a\nprofile-b\n", "profile-b\nprofile-a\n"])
+    base = _st10_answers()
+    run_command = base["hmc_run_command"]
+
+    def answer(kwargs):
+        if kwargs["cmd"].startswith("lssyscfg -r prof "):
+            return "PASS", next(dumps)
+        return run_command(kwargs)  # type: ignore[operator]  # the scripted answer is callable
+
+    _calls, scripted = _answer({**base, "hmc_run_command": answer})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _verified(state)["lpar_profile.restore"]["result"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_proc_compat_round_trip_skips_an_original_the_tool_cannot_write(
+    monkeypatch,
+) -> None:
+    calls, scripted = _answer(
+        _st10_answers(
+            hmc_get_lpar_proc_compat=(
+                "PASS",
+                {"profile": "default_profile", "profile_mode": "POWER9_base"},
+            )
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    assert "lpar.set_proc_compat" not in _verified(state)
 
 
 @pytest.mark.asyncio
@@ -5618,6 +5706,7 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "backup-file-restorable",
             "merge-current-wins-accepted",
             "profiles-unchanged-after-merge-current-wins",
+            "partitions-unchanged-after-merge-current-wins",
         },
         "st1-console-identity": {"console-uuid-present"},
         "st1-system-inventory": {

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import csv
 import shlex
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 from fastmcp import Client
 
+from hmcpctl.operations.lpar.core import ProcessorCompatibilityMode
 from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
@@ -246,6 +248,9 @@ _PROBE_DESCRIPTION = "MCP live-test probe R2 safe to clear"
 _ABSENT_POOL = "hmcpctl-live-absent-pool"
 # A relative bkprofdata file lands in /var/hsc/profiles/<serial>/ on the HMC.
 _PROFILE_BACKUP_FILE = "hmcpctl-live-st10"
+# The modes hmc_set_lpar_proc_compat accepts. The CLI reads `POWER9_base`, which
+# the schema spells `POWER9_Base`, so a profile in that mode is not probed (#1319).
+_SETTABLE_MODES = frozenset(get_args(ProcessorCompatibilityMode))
 # sync_curr_profile values and the hmc_sync_lpar_profile mode that writes each (ADR 0201).
 _SYNC_MODES = {"0": "disable", "1": "enable", "2": "suspend"}
 
@@ -446,13 +451,14 @@ async def _exercise_proc_compat(client: Client, state: RunState) -> None:
     candidates = [
         mode
         for mode in (modes if status == "PASS" and isinstance(modes, list) else [])
-        if mode not in (original, "default")
+        if mode in _SETTABLE_MODES and mode not in (original, "default")
     ]
-    if not profile or not original or not candidates:
+    if not profile or original not in _SETTABLE_MODES or not candidates:
         state.skip(
             10,
             "hmc_set_lpar_proc_compat (round trip)",
-            f"profile {profile!r} mode {original!r}; no other supported mode to set",
+            f"profile {profile!r} mode {original!r}: no settable probe mode, or the "
+            "original cannot be written back through the tool (#1319)",
         )
         return
     probe = candidates[-1]
@@ -538,23 +544,75 @@ async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
     )
 
 
-async def _read_profiles(client: Client, state: RunState, label: str) -> object:
+def _records(text: object) -> list[dict[str, str]]:
+    """Parse ``lssyscfg`` output into one attribute mapping per line."""
+    if not isinstance(text, str):
+        return []
+    records = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        pairs = (item.partition("=") for item in next(csv.reader([line])))
+        records.append({key: value for key, _, value in pairs})
+    return records
+
+
+async def _read_system(
+    client: Client, state: RunState, resource: str, label: str
+) -> object:
+    """Read every ``lpar`` or ``prof`` record on the system; ``None`` on failure."""
     config = state.config
     status, data = await state.call(
         client,
         "hmc_run_command",
-        cmd=f"lssyscfg -r prof -m {shlex.quote(config.system_name)}",
+        cmd=f"lssyscfg -r {resource} -m {shlex.quote(config.system_name)}",
     )
-    state.record(10, f"lssyscfg -r prof ({label})", status, data)
-    return data if status == "PASS" else None
+    state.record(10, f"lssyscfg -r {resource} ({label})", status, data)
+    return data if status == "PASS" and isinstance(data, str) else None
+
+
+def _same_lines(before: object, after: object) -> bool:
+    """Equal line sets: the HMC reorders a partition's profiles after a restore."""
+    return (
+        isinstance(before, str)
+        and isinstance(after, str)
+        and sorted(before.splitlines()) == sorted(after.splitlines())
+    )
+
+
+async def _reapply_unconfigured(
+    client: Client, state: RunState, before: object, after: object
+) -> None:
+    """Re-apply each not-activated partition whose resources the restore unconfigured.
+
+    `rstprofdata -l 3` resets a not-activated partition's ``resource_config``
+    from 1 to 0, even merging a backup taken moments earlier (#627, observed live).
+    """
+    config = state.config
+    configured = {
+        record["name"]: record.get("curr_profile", "")
+        for record in _records(before)
+        if record.get("resource_config") == "1"
+        and record.get("state") == "Not Activated"
+    }
+    for record in _records(after):
+        profile = configured.get(record.get("name", ""))
+        if profile and record.get("resource_config") == "0":
+            status, data = await state.call(
+                client,
+                "hmc_run_command",
+                cmd=f"chsyscfg -r lpar -m {shlex.quote(config.system_name)} -o apply "
+                f"-p {shlex.quote(record['name'])} -n {shlex.quote(profile)}",
+            )
+            state.record(10, "chsyscfg -o apply (re-apply after restore)", status, data)
 
 
 async def _exercise_profile_backup_restore(client: Client, state: RunState) -> None:
-    """Back up every profile, merge-restore that file, and compare the profiles.
+    """Back up every profile, merge-restore that file, and compare the system.
 
     A type-3 merge from a backup taken moments earlier, current data winning,
-    shows the restore is non-destructive; it cannot show that data was restored.
-    The system-wide restore runs only in the ``profiles`` arm.
+    shows whether the restore is non-destructive; it cannot show that data was
+    restored. The system-wide restore runs only in the ``profiles`` arm.
     """
     config = state.config
     if state.group != "profiles":
@@ -564,7 +622,8 @@ async def _exercise_profile_backup_restore(client: Client, state: RunState) -> N
             "the system-wide profile restore runs only in the profiles arm",
         )
         return
-    before = await _read_profiles(client, state, "before")
+    profiles_before = await _read_system(client, state, "prof", "before")
+    partitions_before = await _read_system(client, state, "lpar", "before")
     status, data = await state.call(
         client,
         "hmc_backup_lpar_profiles",
@@ -593,7 +652,10 @@ async def _exercise_profile_backup_restore(client: Client, state: RunState) -> N
         system_wide_restore_approved=True,
         ownership_override=True,
     )
-    after = await _read_profiles(client, state, "after")
+    profiles_after = await _read_system(client, state, "prof", "after")
+    partitions_after = await _read_system(client, state, "lpar", "after")
+    await _reapply_unconfigured(client, state, partitions_before, partitions_after)
+    partitions_final = await _read_system(client, state, "lpar", "final")
     state.record_verified(
         10,
         "hmc_backup_lpar_profiles",
@@ -615,10 +677,16 @@ async def _exercise_profile_backup_restore(client: Client, state: RunState) -> N
             Assertion("merge-current-wins-accepted", restore_status == "PASS"),
             Assertion(
                 "profiles-unchanged-after-merge-current-wins",
-                before is not None and before == after,
+                _same_lines(profiles_before, profiles_after),
+            ),
+            Assertion(
+                "partitions-unchanged-after-merge-current-wins",
+                _same_lines(partitions_before, partitions_after),
             ),
         ],
-        cleanup="not-required",
+        cleanup="passed"
+        if _same_lines(partitions_before, partitions_final)
+        else "failed",
         data=restore_data,
     )
 

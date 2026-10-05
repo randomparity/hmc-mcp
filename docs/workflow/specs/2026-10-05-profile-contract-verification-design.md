@@ -79,7 +79,9 @@ on 2026-10-05 before this design found:
      non-promoting check.
    - **Processor compatibility.** Read the default profile's `profile_mode` immediately before
      the change and set a supported mode other than it. Restore the value read, `default`
-     included.
+     included. Only modes the tool's schema accepts are used, because the CLI reads
+     `POWER9_base` where the schema spells `POWER9_Base` (#1319). An original mode the tool
+     cannot write back is a SKIP.
    - **Sync.** If the ST0 value is absent or not in `0|1|2`, record SKIP with the manual
      `chsyscfg … sync_curr_profile=<n>` command and do not enable. If the ST0 state is not
      `Not Activated`, record SKIP naming the activated-partition gap and do not enable. Otherwise run `enable`,
@@ -87,10 +89,17 @@ on 2026-10-05 before this design found:
    - **Backup and restore.** Run only when `RunState.group == "profiles"`; any other dispatch,
      round2 and all included, records SKIP. Back up to `hmcpctl-live-st10` with `force=True`.
      Only if the backup PASSes, run `rstprofdata -l 3` from that file with
-     `system_wide_restore_approved` and `ownership_override`. The assertion
-     `profiles-unchanged-after-merge-current-wins` compares the full `lssyscfg -r prof -m
-     <system>` output before and after. It proves the type-3 merge is non-destructive, not that
-     data was restored.
+     `system_wide_restore_approved` and `ownership_override`. Two assertions compare the
+     system before and after, each as a set of lines, because the HMC reorders a partition's
+     profiles after a restore:
+     - `profiles-unchanged-after-merge-current-wins` compares `lssyscfg -r prof -m <system>`;
+     - `partitions-unchanged-after-merge-current-wins` compares `lssyscfg -r lpar -m <system>`.
+
+     Together they show whether the type-3 merge is non-destructive, not that data was
+     restored. A live run on 2026-10-05 showed that it is not: the merge resets a not-activated
+     partition's `resource_config` from 1 to 0. The arm then re-applies each such partition's
+     current profile with `chsyscfg -o apply` through `hmc_run_command`. `cleanup` is `passed`
+     when the partition records match the pre-run read again.
    - **Memory-pool removal.** `memory_pool.remove` with an absent pool name is a non-promoting
      check that the refusal precedes `chhwres`.
 6. **ST15** drops its sync call. Its proc-compat restore sets the ST0 baseline `profile_mode`;
@@ -117,6 +126,8 @@ on 2026-10-05 before this design found:
 | non-empty `memory_pool.list` and positive `memory_pool.remove` | an AMS-capable system with an unused pool | not run |
 | sync `enable` on an activated partition | an active test partition | not run |
 | sync `suspend` | a scenario that activates the partition after suspending | automated only |
+| `hmc_set_lpar_msp` on a VIOS | VIOS-aware ownership resolution (#1318) | failed live |
+| a profile in mode `POWER9_base` | schema and read vocabulary agree (#1319) | not run |
 | `snapshot.assess_affinity` | none; it issues no HMC command | not applicable |
 
 ## Success
@@ -127,8 +138,8 @@ on 2026-10-05 before this design found:
   or `failed` result. A closure-changing edit after a run forces that arm to re-run. A SKIP or
   non-promoting check is never copied as an observation.
 - After the `profiles` run, an independent `lssyscfg` read of the test partition, all
-  profiles, and the VIOS `msp` equals the pre-run read byte for byte. The backup file is the
-  one exception.
+  profiles, and the VIOS `msp` equals the pre-run read line for line. Two exceptions: the
+  backup file, and the HMC's listing order of a partition's profiles.
 - `hmc_sync_lpar_profile(mode=…)` renders `1`, `0` and `2`, and refuses any other value
   before I/O.
 - No arm other than `profiles` dispatches `hmc_restore_lpar_profiles`.
