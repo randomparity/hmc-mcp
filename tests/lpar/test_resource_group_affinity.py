@@ -186,6 +186,38 @@ def test_captured_v11r2_power11_current_scores():
     ]
 
 
+def test_captured_v11r2_power11_calculated_scores():
+    """V11R2 on POWER11: a calculated row with no requested names still parses."""
+    capture = live_fixture("cli-memopt-resgroup-calc")
+    connection = _captured_connection(
+        live_fixture("cli-lshmc-version-v11r2")["stdout"], capture["stdout"]
+    )
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=connection):
+        result = asyncio.run(
+            query_resource_group_memopt_scores(
+                _config(),
+                "sys-2",
+                MemoptResourceGroupSelector(all=True),
+                calculated=True,
+            )
+        )
+    assert connection.run.await_args_list[1].args[0] == capture["command"]
+    assert result.unavailable_reason is None
+    assert result.items == [
+        {
+            "resource_group_name": "label-1",
+            "resource_group_id": "0",
+            "curr_score": "100",
+            "predicted_score": "100",
+            "requested_lpar_names": "",
+            "requested_lpar_ids": "none",
+            "protected_lpar_names": "",
+            "protected_lpar_ids": "none",
+            "prediction_guaranteed": False,
+        }
+    ]
+
+
 def test_captured_hsclca00_returns_managed_system_capability_result():
     """V11R2 on POWER9 refuses with HSCLCA00 on stdout, stderr empty."""
     connection = _captured_connection(

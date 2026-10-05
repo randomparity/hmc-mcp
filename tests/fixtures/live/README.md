@@ -23,6 +23,9 @@ SP1120 managing a POWER11 9824-42A.
 the V10R3 HMC and POWER9 system above: a VIOS create PUT to each collection, read
 back and then deleted.
 
+`cli-memopt-resgroup-calc` (`capture` prefix `2026-10-05-v11r2-p11-9824/`) is a read-only
+capture for #627 on the V11R2 HMC and POWER11 9824-42A system above.
+
 ## Format
 
 Every file is a JSON object with these keys:
