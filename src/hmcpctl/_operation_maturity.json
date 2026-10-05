@@ -66,6 +66,41 @@
       "observed_at": "2026-09-30T22:55:13Z"
     },
     {
+      "operation": "lpar.get_description",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar.get_memopt_score",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar.get_minimum_affinity_policy",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar.get_msp",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar.get_proc_compat",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "lpar.get_state",
       "implementation": "implemented",
       "verification": "stale",
@@ -80,11 +115,25 @@
       "observed_at": "2026-09-30T22:55:12Z"
     },
     {
+      "operation": "lpar.list_memopt_scores",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "lpar.list_refcodes",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-09-30T22:50:02Z"
+    },
+    {
+      "operation": "lpar.plan_memopt_scores",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "lpar.power_off",
@@ -101,11 +150,67 @@
       "observed_at": "2026-09-30T22:49:59Z"
     },
     {
+      "operation": "lpar.set_description",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar.set_msp",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar.set_proc_compat",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "lpar.summary",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-09-30T22:56:30Z"
+    },
+    {
+      "operation": "lpar_profile.backup",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar_profile.restore",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "lpar_profile.sync",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "memory_pool.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "memory_pool.remove",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "pcie.assign_dedicated_slot",
@@ -129,6 +234,27 @@
       "observed_at": "2026-09-30T22:53:38Z"
     },
     {
+      "operation": "resource_group.list_memopt_scores",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "resource_group.plan_memopt_scores",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "snapshot.assess_affinity",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "sriov.set_mode",
       "implementation": "partial",
       "verification": "unevidenced",
@@ -143,7 +269,28 @@
       "observed_at": "2026-09-30T22:55:08Z"
     },
     {
+      "operation": "system.get_memopt_score",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "system.get_proc_compat_modes",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "system.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "system.plan_memopt_score",
       "implementation": "implemented",
       "verification": "unevidenced",
       "reason": null,
