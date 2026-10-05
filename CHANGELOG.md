@@ -33,6 +33,14 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_sync_lpar_profile` no longer claims to save the running configuration over the current
+  profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
+  live capture confirmed. The tool and `synchronize_lpar_profile` now take
+  `mode="enable" | "disable" | "suspend"` (default `enable`, the previous command), so the
+  setting can be turned off again, and they refuse any other mode before running anything.
+  The live harness no longer leaves synchronization enabled on its test partition
+  (ADR 0201, #627).
+
 - `scripts/live_capture_export.py vocabulary` keeps a value it would record as `<text>` when a
   schema enum for the element lists it exactly: the enum bound to the element, else any enum
   named for it. A value longer than 41 characters, such as `ManagedSystem` `State`
@@ -72,6 +80,19 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   position; this covers the install, VIOS install and reference-code tools (#887).
 
 ### Added
+
+- Live verification of the partition-profile, LPAR-property, memory-pool and memory-affinity
+  operations (#627). It runs through a new `profiles` arm, `scripts/live_profiles.py`
+  (subtasks 0, 4, 10 and 15), the only arm that runs the system-wide profile backup and
+  type-3 merge-restore. Each round trip restores the value it read first. The maturity
+  catalog records:
+  - passed observations for 17 of these operations, on V10R3/POWER9 and, for the
+    capability-gated affinity reads, V11R2/POWER11;
+  - a failed `lpar.set_msp`: the tool cannot resolve a VIOS (#1318);
+  - a failed `lpar_profile.restore`: the merge resets a not-activated partition's
+    `resource_config`.
+
+  Their capability-ledger rows now name the commands they issue.
 
 - `hmc_inspect_lpar` (operation `lpar.inspect`, `read`) reports one LPAR's state, RMC,
   resources (memory and processor figures, and the storage mappings its system's VIOSes hold

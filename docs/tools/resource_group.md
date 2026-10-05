@@ -8,5 +8,5 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_list_resource_group_memopt_scores` | `read` | `resource_group.list_memopt_scores` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | Return current resource-group affinity scores when supported. |
-| `hmc_plan_resource_group_memopt_scores` | `read` | `resource_group.plan_memopt_scores` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | Return potential resource-group affinity scores without running DPO. |
+| `hmc_list_resource_group_memopt_scores` | `read` | `resource_group.list_memopt_scores` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | Return current resource-group affinity scores when supported. |
+| `hmc_plan_resource_group_memopt_scores` | `read` | `resource_group.plan_memopt_scores` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | Return potential resource-group affinity scores without running DPO. |

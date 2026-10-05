@@ -935,7 +935,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st10-hmc-backup-lpar-profiles",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st10-profile-backup-restore",
+          "observed_at": "2026-10-05T21:40:39Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "backup-accepted",
+            "backup-file-restorable"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1aa264c5928b4021f2e39110570bb5d70b2e1cbc289d22ef9d68cd87075772a2"
+        }
+      ]
     },
     {
       "operation": "lpar_profile.restore",
@@ -957,7 +975,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st10-hmc-restore-lpar-profiles",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st10-profile-backup-restore",
+          "observed_at": "2026-10-05T21:40:39Z",
+          "cleanup": "passed",
+          "assertions": [
+            "merge-current-wins-accepted",
+            "profiles-unchanged-after-merge-current-wins"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1aa264c5928b4021f2e39110570bb5d70b2e1cbc289d22ef9d68cd87075772a2"
+        }
+      ]
     },
     {
       "operation": "lpar_profile.sync",
@@ -971,7 +1007,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st10-hmc-sync-lpar-profile",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st10-sync-round-trip",
+          "observed_at": "2026-10-05T21:39:10Z",
+          "cleanup": "passed",
+          "assertions": [
+            "sync-enable-read-1",
+            "sync-restored-baseline"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1aa264c5928b4021f2e39110570bb5d70b2e1cbc289d22ef9d68cd87075772a2"
+        }
+      ]
     },
     {
       "operation": "lpar.set_description",
@@ -985,7 +1039,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st10-hmc-set-lpar-description",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st10-description-round-trip",
+          "observed_at": "2026-10-05T21:37:23Z",
+          "cleanup": "passed",
+          "assertions": [
+            "probe-description-read-back",
+            "baseline-description-restored"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.set_msp",
@@ -999,7 +1071,22 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st10-hmc-set-lpar-msp",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st10-msp-round-trip",
+          "observed_at": "2026-10-05T21:37:54Z",
+          "cleanup": "failed",
+          "assertions": [],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.set_proc_compat",
@@ -1013,7 +1100,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st10-hmc-set-lpar-proc-compat",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st10-proc-compat-round-trip",
+          "observed_at": "2026-10-05T21:38:33Z",
+          "cleanup": "passed",
+          "assertions": [
+            "profile-mode-changed",
+            "profile-mode-restored"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.get_description",
@@ -1027,7 +1132,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-lpar-description",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-profile-reads",
+          "observed_at": "2026-10-05T21:35:31Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "description-is-text"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.get_msp",
@@ -1041,7 +1163,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-lpar-msp",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-profile-reads",
+          "observed_at": "2026-10-05T21:35:33Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "msp-is-bool"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.get_proc_compat",
@@ -1055,7 +1194,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-lpar-proc-compat",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-profile-reads",
+          "observed_at": "2026-10-05T21:35:37Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "current-mode-supported",
+            "profile-mode-supported"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.get_minimum_affinity_policy",
@@ -1069,7 +1226,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-minimum-affinity-policy",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:43:08Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "capability-available-policy"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "system.get_proc_compat_modes",
@@ -1083,7 +1257,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-proc-compat-modes",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-profile-reads",
+          "observed_at": "2026-10-05T21:35:34Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "modes-include-default"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "425a5298ccaa410b4d1af3b8a3533783d6bea5f1d47b5a0f8541f881031e293e"
+        }
+      ]
     },
     {
       "operation": "memory_pool.list",
@@ -1097,7 +1288,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-list-memory-pools",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-profile-reads",
+          "observed_at": "2026-10-05T21:35:39Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "memory-pools-empty-branch"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "425a5298ccaa410b4d1af3b8a3533783d6bea5f1d47b5a0f8541f881031e293e"
+        }
+      ]
     },
     {
       "operation": "memory_pool.remove",
@@ -1125,7 +1333,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-lpar-memopt-score",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:35:50Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "score-names-partition",
+            "score-in-range"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.list_memopt_scores",
@@ -1139,7 +1365,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-list-lpar-memopt-scores",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:35:57Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "partition-listed",
+            "scores-in-range"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "system.get_memopt_score",
@@ -1153,7 +1397,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-get-system-memopt-score",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:36:05Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "score-in-range"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "lpar.plan_memopt_scores",
@@ -1167,7 +1428,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-plan-lpar-memopt-scores",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:36:22Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "predictions-in-range",
+            "prediction-not-guaranteed"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "system.plan_memopt_score",
@@ -1181,7 +1460,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-plan-system-memopt-score",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:36:39Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "prediction-in-range",
+            "prediction-not-guaranteed"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "resource_group.list_memopt_scores",
@@ -1195,7 +1492,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-list-resource-group-memopt-scores",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:42:51Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "capability-available-rows"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "resource_group.plan_memopt_scores",
@@ -1209,7 +1523,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st4-hmc-plan-resource-group-memopt-scores",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st4-affinity-reads",
+          "observed_at": "2026-10-05T21:43:03Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "capability-available-rows"
+          ],
+          "tested_commit": "c5830a6cd860408bbfb5607cf993b548e0c9cbb4",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "165fdbd83a23595212a50351ebc3f57931c18c05ec92a3b5452cc1804f4bf85f"
+        }
+      ]
     },
     {
       "operation": "snapshot.assess_affinity",
