@@ -264,8 +264,9 @@ subtasks the check does not witness. For those, check by hand:
   partition, and its profile no longer lists it.
 - **profiles**: compare an independent `lssyscfg` read with one taken before
   the run. That read covers the test partition, every profile on the system
-  (`lssyscfg -r prof -m <system>`) and the VIOS `msp` flag, and it should
-  match byte for byte.
+  (`lssyscfg -r prof -m <system>`) and the VIOS `msp` flag. It should match
+  line for line as a set: the HMC reorders a partition's profiles after a
+  restore. The backup file `hmcpctl-live-st10` is the one expected addition.
 
 The check issues no mutating call. When it reports something stranded, run the
 command it prints yourself, then run the check again.

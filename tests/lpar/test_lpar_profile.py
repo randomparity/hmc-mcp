@@ -11,6 +11,7 @@ from fastmcp import Client
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operations.lpar.configuration import synchronize_lpar_profile
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
@@ -263,6 +264,22 @@ def test_sync_rejects_unknown_mode():
         asyncio.run(sync_lpar_profile(make_config(), SYSTEM_NAME, LPAR_NAME, "on"))  # type: ignore[arg-type]  # deliberately invalid
 
     run.assert_not_awaited()
+
+
+def test_synchronize_refuses_an_unknown_mode_before_any_hmc_call():
+    """The operation validates the mode before resolving or authorizing anything."""
+    hmc = MagicMock(side_effect=AssertionError("the HMC was contacted"))
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.configuration.resolve_and_authorize_lpar_names",
+            new=AsyncMock(side_effect=AssertionError("names were resolved")),
+        ),
+        pytest.raises(ValueError, match="enable, disable or suspend"),
+    ):
+        asyncio.run(
+            synchronize_lpar_profile(hmc, SYSTEM_NAME, LPAR_NAME, mode="on")  # type: ignore[arg-type]  # deliberately invalid
+        )
 
 
 def test_sync_tool_schema_offers_only_the_three_modes():

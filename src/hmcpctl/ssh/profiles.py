@@ -334,6 +334,12 @@ ProfileSyncMode = Literal["enable", "disable", "suspend"]
 _PROFILE_SYNC_VALUES: dict[str, int] = {"enable": 1, "disable": 0, "suspend": 2}
 
 
+def validate_profile_sync_mode(mode: object) -> None:
+    """Refuse a mode other than ``enable``, ``disable`` or ``suspend``."""
+    if mode not in _PROFILE_SYNC_VALUES:
+        raise ValueError(f"mode must be enable, disable or suspend, got {mode!r}")
+
+
 async def sync_lpar_profile(
     config: HMCConfig,
     system_name: str,
@@ -355,8 +361,7 @@ async def sync_lpar_profile(
         HMCCLIError: If *lpar_name* contains a character the ``-i`` record's
             parser treats as structure.
     """
-    if mode not in _PROFILE_SYNC_VALUES:
-        raise ValueError(f"mode must be enable, disable or suspend, got {mode!r}")
+    validate_profile_sync_mode(mode)
     record = build_attribute_record(
         [("name", lpar_name), ("sync_curr_profile", _PROFILE_SYNC_VALUES[mode])]
     )

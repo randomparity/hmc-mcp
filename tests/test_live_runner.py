@@ -1028,6 +1028,28 @@ async def test_description_round_trip_fails_when_the_restore_reads_back_wrong(
 
 
 @pytest.mark.asyncio
+async def test_a_refused_msp_toggle_that_changed_nothing_is_a_clean_failure(
+    monkeypatch,
+) -> None:
+    """#1318: both writes refused; the read-back still shows the original value."""
+    _calls, scripted = _answer(
+        _st10_answers(
+            hmc_set_lpar_msp=("FAIL", "No LPAR named 'vios-a' found."),
+            hmc_get_lpar_msp=("PASS", True),
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observation = _verified(state)["lpar.set_msp"]
+    assert observation["result"] == "failed"
+    assert observation["assertions"] == ["vios-msp-restored"]
+    assert observation["cleanup"] == "passed"
+
+
+@pytest.mark.asyncio
 async def test_msp_pre_read_failure_skips_the_toggle(monkeypatch) -> None:
     calls, scripted = _answer(_st10_answers(hmc_get_lpar_msp=("FAIL", "ssh lost")))
     monkeypatch.setattr(runner.RunState, "call", scripted)

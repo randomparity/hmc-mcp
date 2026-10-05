@@ -170,7 +170,34 @@ def _bare_cec_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
-_ARM_VERDICTS = {"dedicated": _dedicated_verdict, "bare-cec": _bare_cec_verdict}
+def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name what the profiles arm (#627) changes, each restored by the arm itself."""
+    return ArmVerdict(
+        "profiles",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                f"partition {config.lp3_name}: description, default-profile processor "
+                "compatibility mode and sync_curr_profile (each restored)"
+            ),
+            "the first VIOS by name: msp (toggled, then restored)",
+            (
+                "every profile on the system: backed up to hmcpctl-live-st10, then "
+                "type-3 merge-restored"
+            ),
+            "not-activated partitions the restore unconfigures: profile re-applied",
+        ),
+        config.system_name,
+    )
+
+
+_ARM_VERDICTS = {
+    "dedicated": _dedicated_verdict,
+    "bare-cec": _bare_cec_verdict,
+    "profiles": _profiles_verdict,
+}
 
 
 def _generic_verdict(group: str, config: runner.LiveTestConfig) -> ArmVerdict:

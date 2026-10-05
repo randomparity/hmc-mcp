@@ -391,10 +391,8 @@ async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
         enabled=original,
     )
     state.record(10, "hmc_set_lpar_msp (restore)", restore_status, restore_data)
-    restored = (
-        restore_status == "PASS"
-        and (await _read_msp(client, state, vios, "verify restore")) is original
-    )
+    # Cleanup is judged by the state read back, not by whether the restore call ran.
+    restored = (await _read_msp(client, state, vios, "verify restore")) is original
     state.record_verified(
         10,
         "hmc_set_lpar_msp",
@@ -469,7 +467,7 @@ async def _exercise_proc_compat(client: Client, state: RunState) -> None:
     )
     state.record(10, "hmc_set_lpar_proc_compat (restore)", restore_status, restore_data)
     _, final = await _read_profile_mode(client, state)
-    restored = restore_status == "PASS" and final == original
+    restored = final == original
     state.record_verified(
         10,
         "hmc_set_lpar_proc_compat",
@@ -526,7 +524,7 @@ async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
     )
     state.record(10, "hmc_sync_lpar_profile (restore)", restore_status, restore_data)
     final = await read_sync_state(client, state, 10)
-    restored = restore_status == "PASS" and final is not None and final[0] == original
+    restored = final is not None and final[0] == original
     state.record_verified(
         10,
         "hmc_sync_lpar_profile",

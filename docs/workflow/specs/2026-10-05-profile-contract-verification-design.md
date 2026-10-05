@@ -31,7 +31,7 @@ on 2026-10-05 before this design found:
 | `lpar.get_description`, `lpar.get_msp`, `lpar.get_proc_compat`, `lpar.get_minimum_affinity_policy` | `lssyscfg` | `cli:commands/lssyscfg` | `by-name-or-uuid` |
 | `system.get_proc_compat_modes` | `lssyscfg` | `cli:commands/lssyscfg` | `system-scoped` |
 | `memory_pool.list` | `lshwres` | `cli:commands/lshwres` | `system-scoped` |
-| `memory_pool.remove` | `lshwres`, `chhwres` | `cli:commands/lshwres`, `cli:commands/chhwres` | `unassigned-pool` |
+| `memory_pool.remove` | `lshwres`, `chhwres` | `cli:commands/lshwres`, `cli:commands/chhwres` | `unassigned-pool-precheck` (partial; see Live gaps) |
 | `lpar.get_memopt_score`, `lpar.list_memopt_scores`, `system.get_memopt_score` | `lsmemopt` | `cli:commands/lsmemopt` | `current-score` |
 | `lpar.plan_memopt_scores`, `system.plan_memopt_score` | `lsmemopt` | `cli:commands/lsmemopt` | `calculated-score` |
 | `resource_group.list_memopt_scores`, `resource_group.plan_memopt_scores` | `lshmc`, `lsmemopt` | `cli:commands/lshmc`, `cli:commands/lsmemopt` | `capability-gated` |
@@ -128,6 +128,7 @@ on 2026-10-05 before this design found:
 | sync `suspend` | a scenario that activates the partition after suspending | automated only |
 | `hmc_set_lpar_msp` on a VIOS | VIOS-aware ownership resolution (#1318) | failed live |
 | a profile in mode `POWER9_base` | schema and read vocabulary agree (#1319) | not run |
+| `memory_pool.remove` reference syntax | the tool sends `-a <pool_name>`; the reference removes the system's one pool with `chhwres -r mempool -o r`, so fixing it needs an AMS-capable system to capture against | catalogued `partial`, missing `reference-syntax-remove` |
 | `snapshot.assess_affinity` | none; it issues no HMC command | not applicable |
 
 ## Success

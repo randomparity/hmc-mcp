@@ -37,7 +37,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
   live capture confirmed. The tool and `synchronize_lpar_profile` now take
   `mode="enable" | "disable" | "suspend"` (default `enable`, the previous command), so the
-  setting can be turned off again, and they refuse any other mode before running anything.
+  setting can be turned off again, and they refuse any other mode before any HMC call.
   The live harness no longer leaves synchronization enabled on its test partition
   (ADR 0201, #627).
 
