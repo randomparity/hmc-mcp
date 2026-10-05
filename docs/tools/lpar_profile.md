@@ -10,4 +10,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_backup_lpar_profiles` | `destructive` | `lpar_profile.backup` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Backup all LPAR profiles on a Power system via the HMC CLI. |
 | `hmc_restore_lpar_profiles` | `destructive` | `lpar_profile.restore` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Restore LPAR profiles from a backup file via the HMC CLI. |
-| `hmc_sync_lpar_profile` | `destructive` | `lpar_profile.sync` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Sync an LPAR's running configuration back to its current profile. |
+| `hmc_sync_lpar_profile` | `destructive` | `lpar_profile.sync` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set an LPAR's profile-synchronization setting (``sync_curr_profile``). |

@@ -329,23 +329,37 @@ async def restore_lpar_profiles(
     return await run_hmc_command(config, cmd)
 
 
+# The ``sync_curr_profile`` partition setting's documented values (chsyscfg).
+ProfileSyncMode = Literal["enable", "disable", "suspend"]
+_PROFILE_SYNC_VALUES: dict[str, int] = {"enable": 1, "disable": 0, "suspend": 2}
+
+
 async def sync_lpar_profile(
     config: HMCConfig,
     system_name: str,
     lpar_name: str,
+    mode: ProfileSyncMode = "enable",
 ) -> str:
-    """Sync *lpar_name*'s running configuration back to its current profile.
+    """Set *lpar_name*'s ``sync_curr_profile`` partition setting (ADR 0201).
 
     Runs ``chsyscfg -r lpar -m <system_name>
-    -i "name=<lpar_name>,sync_curr_profile=1"`` and returns the raw command
-    output. This saves the LPAR's current running configuration to its
-    current named profile, overwriting the previous profile definition.
+    -i "name=<lpar_name>,sync_curr_profile=<1|0|2>"`` and returns the raw command
+    output. ``enable`` (1) keeps the partition's current configuration
+    synchronized with its active profile, ``disable`` (0) turns that off, and
+    ``suspend`` (2) pauses it until the next activation or apply. The setting
+    persists; the call itself writes no profile on a not-activated partition.
 
     Raises:
+        ValueError: If *mode* is not ``enable``, ``disable`` or ``suspend``,
+            before any command runs.
         HMCCLIError: If *lpar_name* contains a character the ``-i`` record's
             parser treats as structure.
     """
-    record = build_attribute_record([("name", lpar_name), ("sync_curr_profile", 1)])
+    if mode not in _PROFILE_SYNC_VALUES:
+        raise ValueError(f"mode must be enable, disable or suspend, got {mode!r}")
+    record = build_attribute_record(
+        [("name", lpar_name), ("sync_curr_profile", _PROFILE_SYNC_VALUES[mode])]
+    )
     cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 

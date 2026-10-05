@@ -10,6 +10,7 @@ from hmcpctl.operations.lpar.ownership import (
 
 from ...ssh.profiles import (
     ProfileRestoreType,
+    ProfileSyncMode,
     restore_lpar_profiles,
     set_lpar_msp,
     set_lpar_proc_compat,
@@ -41,15 +42,16 @@ async def synchronize_lpar_profile(
     lpar_name_or_uuid: str,
     *,
     ownership_override: bool = False,
+    mode: ProfileSyncMode = "enable",
 ) -> str:
-    """Authorize and synchronize an LPAR's active configuration to its profile."""
+    """Authorize and set an LPAR's ``sync_curr_profile`` setting (ADR 0201)."""
     system_name, lpar_name = await resolve_and_authorize_lpar_names(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
         ownership_override=ownership_override,
     )
-    return await sync_lpar_profile(hmc.config, system_name, lpar_name)
+    return await sync_lpar_profile(hmc.config, system_name, lpar_name, mode)
 
 
 async def configure_lpar_msp(

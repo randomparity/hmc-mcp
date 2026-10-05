@@ -14,7 +14,7 @@ from ...operations.virtualization.pcie import (
     assign_dedicated_pcie_slot,
     unassign_dedicated_pcie_slot,
 )
-from ...ssh.profiles import ProfileRestoreType, backup_lpar_profiles
+from ...ssh.profiles import ProfileRestoreType, ProfileSyncMode, backup_lpar_profiles
 from ...tool_registry import tool_module
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
@@ -148,17 +148,25 @@ def hmc_sync_lpar_profile(
     lpar_name_or_uuid: str,
     ownership_override: bool = False,
     profile: str | None = None,
+    mode: ProfileSyncMode = "enable",
 ) -> str:
-    """Sync an LPAR's running configuration back to its current profile.
+    """Set an LPAR's profile-synchronization setting (``sync_curr_profile``).
 
-    Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,sync_curr_profile=1"``
-    on the HMC via SSH and returns the raw command output.
+    Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,sync_curr_profile=<n>"``
+    on the HMC via SSH and returns the raw command output. This changes a
+    persistent partition setting (ADR 0201); it is not a one-shot save of the
+    running configuration:
 
-    This operation saves the LPAR's current running configuration to its
-    current named profile, overwriting the previous profile definition.
+    - ``enable`` (1): keep the partition's current configuration synchronized
+      with its active profile.
+    - ``disable`` (0): stop synchronizing.
+    - ``suspend`` (2): pause synchronization until the profile is next
+      activated or applied.
 
-    WARNING: Overwrites the current profile definition. Confirm the
-    system_name_or_uuid and lpar_name_or_uuid before calling.
+    WARNING: with ``enable`` on an activated partition, synchronization keeps
+    the active profile in step with the running configuration and so can
+    overwrite that profile's definition. Confirm the system_name_or_uuid and
+    lpar_name_or_uuid before calling.
 
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
@@ -167,9 +175,10 @@ def hmc_sync_lpar_profile(
 
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
-        lpar_name_or_uuid: The name or UUID of the logical partition to sync.
+        lpar_name_or_uuid: The name or UUID of the logical partition.
         ownership_override: Bypass ownership rejection after operator approval.
         profile: optional TOML profile name; when omitted the env-default HMC is used.
+        mode: ``enable``, ``disable`` or ``suspend``; defaults to ``enable``.
 
     Returns:
         The raw HMC CLI output."""
@@ -180,6 +189,7 @@ def hmc_sync_lpar_profile(
             system_name_or_uuid,
             lpar_name_or_uuid,
             ownership_override=ownership_override,
+            mode=mode,
         ),
         profile=profile,
     )

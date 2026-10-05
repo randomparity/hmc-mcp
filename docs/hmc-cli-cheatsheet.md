@@ -331,7 +331,7 @@ chsyscfg -r lpar -m <system> -i "name=<vios>,msp=1"
 chsyscfg -r prof -m <system> \
     -i "name=<profile>,lpar_name=<lpar>,lpar_proc_compat_mode=POWER10"
 
-# sync running config back to the active profile
+# keep the current config synced to the active profile (persistent: 0 off, 1 on, 2 suspend)
 chsyscfg -r lpar -m <system> -i "name=<lpar>,sync_curr_profile=1"
 
 # rename an LPAR
