@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import shlex
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastmcp import Client
@@ -12,7 +10,9 @@ from fastmcp import Client
 from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
-from .observation import ExpectedOutcome, judge_create_result
+from .inventory import read_sync_state
+from .observation import Assertion, ExpectedOutcome, judge_create_result
+from .results import field
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
@@ -185,14 +185,14 @@ def _baseline_description(state: RunState) -> str | None:
     return str(description) if description else ""
 
 
-async def _restore_description(client: Client, state: RunState, scenario: int) -> None:
+async def _restore_description(client: Client, state: RunState, scenario: int) -> bool:
     """Restore the captured description, or fail with a manual-recovery row.
 
     The baseline carries the partition's ownership stamp, so a description the
     CLI cannot write back is a FAIL, not a SKIP: every ownership-guarded command
     refuses the partition until someone restores it (#968). An absent baseline
     takes the same FAIL path rather than silently writing an empty description
-    (#1038).
+    (#1038). Returns whether the description read back equals the baseline.
     """
     description = _baseline_description(state)
     config = state.config
@@ -211,7 +211,7 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
             f"where the CLI record cannot carry it. ST{scenario} left its probe "
             "description in place.",
         )
-        return
+        return False
     blocked = _unrestorable_description(description)
     if blocked:
         state.record(
@@ -225,7 +225,7 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
             f"ST{scenario} left its probe description because the original cannot be "
             f"written back via CLI: {blocked}",
         )
-        return
+        return False
     status, data = await state.call(
         client,
         "hmc_set_lpar_description",
@@ -234,73 +234,94 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
         description=description,
     )
     state.record(scenario, "hmc_set_lpar_description (restore)", status, data)
-
-
-async def _exercise_description_round_trip(client: Client, state: RunState) -> None:
-    """Set, read, and restore an ASCII-safe LPAR description."""
-    config = state.config
-    status, data = await state.call(
-        client,
-        "hmc_set_lpar_description",
-        system_name_or_uuid=config.system_name,
-        lpar_name_or_uuid=config.lp3_name,
-        description="MCP live-test probe R2 safe to clear",
+    if status != "PASS":
+        return False
+    return (
+        await _read_description(client, state, scenario, "verify restore")
+        == description
     )
-    state.record(10, "hmc_set_lpar_description", status, data)
+
+
+_PROBE_DESCRIPTION = "MCP live-test probe R2 safe to clear"
+_ABSENT_POOL = "hmcpctl-live-absent-pool"
+# A relative bkprofdata file lands in /var/hsc/profiles/<serial>/ on the HMC.
+_PROFILE_BACKUP_FILE = "hmcpctl-live-st10"
+# sync_curr_profile values and the hmc_sync_lpar_profile mode that writes each (ADR 0201).
+_SYNC_MODES = {"0": "disable", "1": "enable", "2": "suspend"}
+
+
+def _description_text(data: object) -> str | None:
+    """The CLI description value without its line terminator, or ``None``."""
+    if isinstance(data, dict):
+        data = data.get("description")
+    if not isinstance(data, str):
+        return None
+    return data.removesuffix("\n").removesuffix("\r")
+
+
+async def _read_description(
+    client: Client, state: RunState, scenario: int, label: str
+) -> str | None:
+    config = state.config
     status, data = await state.call(
         client,
         "hmc_get_lpar_description",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
     )
-    state.record(10, "hmc_get_lpar_description (verify)", status, data)
-    await _restore_description(client, state, 10)
+    state.record(scenario, f"hmc_get_lpar_description ({label})", status, data)
+    return _description_text(data) if status == "PASS" else None
 
 
-async def _lpar_environment(client: Client, state: RunState) -> str:
-    """Read the target partition environment through the HMC CLI."""
+async def _exercise_description_round_trip(client: Client, state: RunState) -> None:
+    """Set a probe description, read it back, and restore the ST0 baseline."""
+    config = state.config
+    status, data = await state.call(
+        client,
+        "hmc_set_lpar_description",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        description=_PROBE_DESCRIPTION,
+    )
+    probe = await _read_description(client, state, 10, "verify")
+    restored = await _restore_description(client, state, 10)
+    state.record_verified(
+        10,
+        "hmc_set_lpar_description",
+        operation="lpar.set_description",
+        scenario="st10-description-round-trip",
+        assertions=[
+            Assertion(
+                "probe-description-read-back",
+                status == "PASS"
+                and probe is not None
+                and probe.endswith(_PROBE_DESCRIPTION),
+            ),
+            Assertion("baseline-description-restored", restored),
+        ],
+        cleanup="passed" if restored else "failed",
+        data=data,
+    )
+
+
+async def _partition_environments(client: Client, state: RunState) -> dict[str, str]:
+    """Map each partition on the system to its ``lpar_env``."""
     config = state.config
     status, data = await state.call(
         client,
         "hmc_run_command",
-        cmd=f"lssyscfg -r lpar -m {shlex.quote(config.system_name)}"
-        f" --filter {shlex.quote(build_filter([('lpar_names', config.lp3_name)]))} -F lpar_env",
+        cmd=f"lssyscfg -r lpar -m {shlex.quote(config.system_name)} -F name,lpar_env",
     )
-    state.record(10, "lssyscfg lpar_env check", status, data)
-    return (data or "").strip() if status == "PASS" else ""
+    state.record(10, "lssyscfg name,lpar_env", status, data)
+    if status != "PASS" or not isinstance(data, str):
+        return {}
+    pairs = (line.rsplit(",", 1) for line in data.splitlines() if "," in line)
+    return {name: environment.strip() for name, environment in pairs}
 
 
-async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
-    """Round-trip MSP on VIOS, or verify clean rejection on other LPARs."""
+async def _check_non_vios_msp_refusal(client: Client, state: RunState) -> None:
+    """A non-VIOS partition's MSP write is refused; a non-promoting check."""
     config = state.config
-    artifacts = state.artifacts
-    environment = await _lpar_environment(client, state)
-    if environment == "vioserver":
-        original = artifacts.lp3_baseline.get("msp")
-        if isinstance(original, dict):
-            original = original.get("msp") or original.get("enabled")
-        for label, enabled in (
-            ("toggle", not bool(original)),
-            ("restore", bool(original)),
-        ):
-            status, data = await state.call(
-                client,
-                "hmc_set_lpar_msp",
-                system_name_or_uuid=config.system_name,
-                lpar_name_or_uuid=config.lp3_name,
-                enabled=enabled,
-            )
-            state.record(10, f"hmc_set_lpar_msp ({label})", status, data)
-            if label == "toggle":
-                status, data = await state.call(
-                    client,
-                    "hmc_get_lpar_msp",
-                    system_name_or_uuid=config.system_name,
-                    lpar_name_or_uuid=config.lp3_name,
-                )
-                state.record(10, "hmc_get_lpar_msp (verify)", status, data)
-        return
-
     status, data = await state.call(
         client,
         "hmc_set_lpar_msp",
@@ -308,37 +329,85 @@ async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
         lpar_name_or_uuid=config.lp3_name,
         enabled=True,
     )
-    rejection = str(data).lower()
-    expected = status == "FAIL" and any(
-        text in rejection
-        for text in ("only valid for a vios", "vioserver", "not found")
-    )
-    if expected:
-        state.record(
-            10,
-            "hmc_set_lpar_msp (non-VIOS rejection — expected)",
-            "PASS",
-            f"correctly rejected: {str(data)[:200]}",
-        )
-    else:
-        state.record(
-            10,
-            "hmc_set_lpar_msp (non-VIOS rejection)",
-            status,
-            data,
-            f"lpar_env={environment!r}",
-        )
-    state.skip(
+    refused = status == "FAIL" and "vioserver" in str(data).lower()
+    state.record(
         10,
-        "hmc_set_lpar_msp (toggle/verify/restore)",
-        f"lp3 is not a VIOS (lpar_env={environment!r})",
+        "hmc_set_lpar_msp (non-VIOS refusal)",
+        "PASS" if refused else "FAIL",
+        data,
+        "refused before chsyscfg" if refused else "expected a lpar_env refusal",
     )
 
 
-async def _set_current_proc_compat(
-    client: Client, state: RunState, scenario: int, action: str
-) -> None:
-    """Read and idempotently set the live non-default processor mode."""
+async def _read_msp(client: Client, state: RunState, vios: str, label: str) -> object:
+    config = state.config
+    status, data = await state.call(
+        client,
+        "hmc_get_lpar_msp",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=vios,
+    )
+    state.record(10, f"hmc_get_lpar_msp ({label})", status, data)
+    return data if status == "PASS" else None
+
+
+async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
+    """Toggle the system's first VIOS's MSP flag and restore the value read first."""
+    config = state.config
+    environments = await _partition_environments(client, state)
+    if environments.get(config.lp3_name) != "vioserver":
+        await _check_non_vios_msp_refusal(client, state)
+    vioses = sorted(name for name, env in environments.items() if env == "vioserver")
+    if not vioses:
+        state.skip(10, "hmc_set_lpar_msp (VIOS round trip)", "no VIOS on the system")
+        return
+    vios = vioses[0]
+    original = await _read_msp(client, state, vios, "VIOS pre-read")
+    if not isinstance(original, bool):
+        state.skip(
+            10,
+            "hmc_set_lpar_msp (VIOS round trip)",
+            f"the VIOS MSP pre-read gave {original!r}; nothing toggled",
+        )
+        return
+    status, data = await state.call(
+        client,
+        "hmc_set_lpar_msp",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=vios,
+        enabled=not original,
+    )
+    toggled = await _read_msp(client, state, vios, "verify toggle")
+    restore_status, restore_data = await state.call(
+        client,
+        "hmc_set_lpar_msp",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=vios,
+        enabled=original,
+    )
+    state.record(10, "hmc_set_lpar_msp (restore)", restore_status, restore_data)
+    restored = (
+        restore_status == "PASS"
+        and (await _read_msp(client, state, vios, "verify restore")) is original
+    )
+    state.record_verified(
+        10,
+        "hmc_set_lpar_msp",
+        operation="lpar.set_msp",
+        scenario="st10-msp-round-trip",
+        assertions=[
+            Assertion(
+                "vios-msp-toggled", status == "PASS" and toggled is (not original)
+            ),
+            Assertion("vios-msp-restored", restored),
+        ],
+        cleanup="passed" if restored else "failed",
+        data=data,
+    )
+
+
+async def _read_profile_mode(client: Client, state: RunState) -> tuple[str, str]:
+    """Return the default profile's name and ``lpar_proc_compat_mode``, or blanks."""
     config = state.config
     status, data = await state.call(
         client,
@@ -346,74 +415,267 @@ async def _set_current_proc_compat(
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
     )
-    mode = (
-        (data.get("desired") or data.get("curr") or "").strip()
-        if status == "PASS" and isinstance(data, dict)
-        else ""
+    state.record(10, "hmc_get_lpar_proc_compat", status, data)
+    if status != "PASS":
+        return "", ""
+    return str(field(data, "profile") or ""), str(field(data, "profile_mode") or "")
+
+
+async def _set_profile_mode(
+    client: Client, state: RunState, profile: str, mode: str
+) -> tuple[str, object]:
+    config = state.config
+    return await state.call(
+        client,
+        "hmc_set_lpar_proc_compat",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        mode=mode,
+        profile_name=profile,
     )
-    if mode and mode.lower() != "default":
-        status, data = await state.call(
-            client,
-            "hmc_set_lpar_proc_compat",
-            system_name_or_uuid=config.system_name,
-            lpar_name_or_uuid=config.lp3_name,
-            mode=mode,
-        )
-        state.record(scenario, action, status, data)
-    else:
-        state.skip(
-            scenario,
-            action,
-            f"proc compat mode is {mode!r} — skipping idempotent set (chsyscfg rejects 'default')",
-        )
 
 
 async def _exercise_proc_compat(client: Client, state: RunState) -> None:
-    """Set the current processor mode and verify the resulting value."""
-    await _set_current_proc_compat(client, state, 10, "hmc_set_lpar_proc_compat")
+    """Set a supported mode other than the profile's own, then restore it."""
     config = state.config
-    status, data = await state.call(
-        client,
-        "hmc_get_lpar_proc_compat",
-        system_name_or_uuid=config.system_name,
-        lpar_name_or_uuid=config.lp3_name,
+    status, modes = await state.call(
+        client, "hmc_get_proc_compat_modes", system_name_or_uuid=config.system_name
     )
-    state.record(10, "hmc_get_lpar_proc_compat (verify)", status, data)
+    state.record(10, "hmc_get_proc_compat_modes", status, modes)
+    profile, original = await _read_profile_mode(client, state)
+    candidates = [
+        mode
+        for mode in (modes if status == "PASS" and isinstance(modes, list) else [])
+        if mode not in (original, "default")
+    ]
+    if not profile or not original or not candidates:
+        state.skip(
+            10,
+            "hmc_set_lpar_proc_compat (round trip)",
+            f"profile {profile!r} mode {original!r}; no other supported mode to set",
+        )
+        return
+    probe = candidates[-1]
+    status, data = await _set_profile_mode(client, state, profile, probe)
+    _, changed = await _read_profile_mode(client, state)
+    restore_status, restore_data = await _set_profile_mode(
+        client, state, profile, original
+    )
+    state.record(10, "hmc_set_lpar_proc_compat (restore)", restore_status, restore_data)
+    _, final = await _read_profile_mode(client, state)
+    restored = restore_status == "PASS" and final == original
+    state.record_verified(
+        10,
+        "hmc_set_lpar_proc_compat",
+        operation="lpar.set_proc_compat",
+        scenario="st10-proc-compat-round-trip",
+        assertions=[
+            Assertion("profile-mode-changed", status == "PASS" and changed == probe),
+            Assertion("profile-mode-restored", restored),
+        ],
+        cleanup="passed" if restored else "failed",
+        data=data,
+    )
 
 
-async def _maintain_lpar_profile(client: Client, state: RunState) -> None:
-    """Synchronize the active profile and exercise forced profile backup."""
+async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
+    """Enable profile sync on the not-activated partition, then restore ST0's value."""
     config = state.config
+    baseline = state.artifacts.lp3_baseline
+    original = baseline.get("sync_curr_profile")
+    manual = (
+        f"chsyscfg -r lpar -m {shlex.quote(config.system_name)} "
+        f'-i "name={config.lp3_name},sync_curr_profile=<0|1|2>"'
+    )
+    if original not in _SYNC_MODES:
+        state.skip(
+            10,
+            "hmc_sync_lpar_profile (round trip)",
+            f"no valid ST0 sync_curr_profile ({original!r}); restore by hand if needed: {manual}",
+        )
+        return
+    if baseline.get("state") != "Not Activated":
+        state.skip(
+            10,
+            "hmc_sync_lpar_profile (round trip)",
+            "the partition is activated; enabling sync there can overwrite its active "
+            "profile and is a recorded live gap",
+        )
+        return
     status, data = await state.call(
         client,
         "hmc_sync_lpar_profile",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
+        mode="enable",
     )
-    state.record(10, "hmc_sync_lpar_profile", status, data)
+    enabled = await read_sync_state(client, state, 10)
+    restore_mode = _SYNC_MODES[original]
+    restore_status, restore_data = await state.call(
+        client,
+        "hmc_sync_lpar_profile",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        mode=restore_mode,
+    )
+    state.record(10, "hmc_sync_lpar_profile (restore)", restore_status, restore_data)
+    final = await read_sync_state(client, state, 10)
+    restored = restore_status == "PASS" and final is not None and final[0] == original
+    state.record_verified(
+        10,
+        "hmc_sync_lpar_profile",
+        operation="lpar_profile.sync",
+        scenario="st10-sync-round-trip",
+        assertions=[
+            Assertion(
+                "sync-enable-read-1",
+                status == "PASS" and enabled is not None and enabled[0] == "1",
+            ),
+            Assertion("sync-restored-baseline", restored),
+        ],
+        cleanup="passed" if restored else "failed",
+        data=data,
+    )
+
+
+async def _read_profiles(client: Client, state: RunState, label: str) -> object:
+    config = state.config
+    status, data = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=f"lssyscfg -r prof -m {shlex.quote(config.system_name)}",
+    )
+    state.record(10, f"lssyscfg -r prof ({label})", status, data)
+    return data if status == "PASS" else None
+
+
+async def _exercise_profile_backup_restore(client: Client, state: RunState) -> None:
+    """Back up every profile, merge-restore that file, and compare the profiles.
+
+    A type-3 merge from a backup taken moments earlier, current data winning,
+    shows the restore is non-destructive; it cannot show that data was restored.
+    The system-wide restore runs only in the ``profiles`` arm.
+    """
+    config = state.config
+    if state.group != "profiles":
+        state.skip(
+            10,
+            "hmc_backup_lpar_profiles / hmc_restore_lpar_profiles",
+            "the system-wide profile restore runs only in the profiles arm",
+        )
+        return
+    before = await _read_profiles(client, state, "before")
     status, data = await state.call(
         client,
         "hmc_backup_lpar_profiles",
         system_name_or_uuid=config.system_name,
-        file_path=str(Path(tempfile.gettempdir()) / "mcp-lp3-profiles-r2"),
+        file_path=_PROFILE_BACKUP_FILE,
         force=True,
     )
-    state.record(10, "hmc_backup_lpar_profiles (force=True)", status, data)
+    if status != "PASS":
+        state.record_verified(
+            10,
+            "hmc_backup_lpar_profiles",
+            operation="lpar_profile.backup",
+            scenario="st10-profile-backup-restore",
+            assertions=[Assertion("backup-accepted", False)],
+            cleanup="not-required",
+            data=data,
+        )
+        state.skip(10, "hmc_restore_lpar_profiles", "the backup failed; not restoring")
+        return
+    restore_status, restore_data = await state.call(
+        client,
+        "hmc_restore_lpar_profiles",
+        system_name_or_uuid=config.system_name,
+        file_path=_PROFILE_BACKUP_FILE,
+        restore_type=3,
+        system_wide_restore_approved=True,
+        ownership_override=True,
+    )
+    after = await _read_profiles(client, state, "after")
+    state.record_verified(
+        10,
+        "hmc_backup_lpar_profiles",
+        operation="lpar_profile.backup",
+        scenario="st10-profile-backup-restore",
+        assertions=[
+            Assertion("backup-accepted", True),
+            Assertion("backup-file-restorable", restore_status == "PASS"),
+        ],
+        cleanup="not-required",
+        data=data,
+    )
+    state.record_verified(
+        10,
+        "hmc_restore_lpar_profiles",
+        operation="lpar_profile.restore",
+        scenario="st10-profile-backup-restore",
+        assertions=[
+            Assertion("merge-current-wins-accepted", restore_status == "PASS"),
+            Assertion(
+                "profiles-unchanged-after-merge-current-wins",
+                before is not None and before == after,
+            ),
+        ],
+        cleanup="not-required",
+        data=restore_data,
+    )
+
+
+async def _check_memory_pool_removal_refusal(client: Client, state: RunState) -> None:
+    """Removing an absent pool is refused before chhwres; a non-promoting check."""
+    config = state.config
+    status, data = await state.call(
+        client,
+        "hmc_remove_memory_pool",
+        system_name_or_uuid=config.system_name,
+        pool_name=_ABSENT_POOL,
+    )
+    refused = status == "FAIL" and "no pool with that name" in str(data)
+    state.record(
+        10,
+        "hmc_remove_memory_pool (absent pool refusal)",
+        "PASS" if refused else "FAIL",
+        data,
+        "refused before chhwres" if refused else "expected the missing-pool refusal",
+    )
 
 
 async def mutate_lpar_properties(client: Client, state: RunState) -> None:
-    """Run the ordered ST10 property checks against the baseline LPAR."""
+    """Run the ordered ST10 property round trips against the baseline LPAR."""
     print("\n=== ST10: LPAR Properties Mutations ===")
     await _exercise_description_round_trip(client, state)
     await _exercise_msp_behavior(client, state)
     await _exercise_proc_compat(client, state)
-    await _maintain_lpar_profile(client, state)
+    await _exercise_sync_round_trip(client, state)
+    await _exercise_profile_backup_restore(client, state)
+    await _check_memory_pool_removal_refusal(client, state)
 
 
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # ST15 — Restore the baseline LPAR
 # ---------------------------------------------------------------------------
+
+
+async def _restore_baseline_profile_mode(client: Client, state: RunState) -> None:
+    """Write ST0's profile ``lpar_proc_compat_mode`` back, or ask for it by hand."""
+    config = state.config
+    captured = state.artifacts.lp3_baseline.get("proc_compat")
+    profile = field(captured, "profile")
+    mode = field(captured, "profile_mode")
+    if not profile or not mode:
+        state.record(
+            15,
+            "hmc_set_lpar_proc_compat (restore)",
+            "FAIL",
+            "MANUAL RECOVERY REQUIRED: no baseline profile mode was captured; confirm "
+            f"chsyscfg -r prof -m {shlex.quote(config.system_name)} -i "
+            f'"name=<profile>,lpar_name={config.lp3_name},lpar_proc_compat_mode=<mode>"',
+        )
+        return
+    status, data = await _set_profile_mode(client, state, str(profile), str(mode))
+    state.record(15, "hmc_set_lpar_proc_compat (restore)", status, data)
 
 
 async def restore_lpar_baseline(client: Client, state: RunState) -> None:
@@ -426,9 +688,7 @@ async def restore_lpar_baseline(client: Client, state: RunState) -> None:
     state.record(15, "hmc_lpar_summary (post-test)", st, data)
 
     await _restore_description(client, state, 15)
-    await _set_current_proc_compat(
-        client, state, 15, "hmc_set_lpar_proc_compat (restore)"
-    )
+    await _restore_baseline_profile_mode(client, state)
 
     # Final adapter audit
     st, data = await state.call(
@@ -438,15 +698,6 @@ async def restore_lpar_baseline(client: Client, state: RunState) -> None:
         adapter_type="ClientNetworkAdapter",
     )
     state.record(15, "hmc_list_adapters (final audit)", st, data)
-
-    # Profile sync
-    st, data = await state.call(
-        client,
-        "hmc_sync_lpar_profile",
-        system_name_or_uuid=config.system_name,
-        lpar_name_or_uuid=config.lp3_name,
-    )
-    state.record(15, "hmc_sync_lpar_profile", st, data)
 
     # Final CLI dump
     st, data = await state.call(
