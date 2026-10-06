@@ -187,8 +187,10 @@ system shares. It reads the five flags (`LongTermMonitorEnabled`,
 `EnergyMonitorEnabled`) and records that read as the row
 `hmc_get_pcm_preferences (snapshot)` before its first write. Then, for each flag,
 it sets the opposite value, reads it back, and writes all five snapshot values
-again: the HMC couples the flags, and enabling aggregation enables long-term
-monitoring. It passes only when a final read equals the snapshot. A flag the HMC
+again: the HMC couples the flags, and enabling aggregation also enables
+long-term monitoring and, where the system supports it, energy monitoring. It
+reads the flags back after each restore and stops toggling if they differ from
+the snapshot. It passes only when a final read equals the snapshot. A flag the HMC
 refuses to change, or changes together with another, fails its assertion.
 
 Before the run, save a read of the flags outside the repository. A hang-up writes

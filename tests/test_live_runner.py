@@ -866,6 +866,7 @@ def _round_trip(final: dict[str, bool]) -> list[tuple[str, str, object]]:
             ("hmc_set_pcm_preferences", "PASS", {}),
             ("hmc_get_pcm_preferences", "PASS", _flags(**{name: not _PREFS[name]})),
             ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", _flags()),
         ]
     return [*transcript, ("hmc_get_pcm_preferences", "PASS", final)]
 
@@ -924,6 +925,30 @@ async def test_st38_mismatched_final_read_fails_cleanup() -> None:
     assert manual["tool"] == "hmc_set_pcm_preferences (MANUAL RECOVERY REQUIRED)"
     assert manual["status"] == "FAIL"
     assert "EnergyMonitorEnabled=True" in manual["note"]
+
+
+@pytest.mark.asyncio
+async def test_st38_stops_toggling_after_a_restore_that_did_not_hold() -> None:
+    ltm_off = _flags(LongTermMonitorEnabled=False)
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", _flags()),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", ltm_off),
+            ("hmc_set_pcm_preferences", "FAIL", _failure("HMCError: x (HTTP 400)")),
+            ("hmc_get_pcm_preferences", "PASS", ltm_off),
+            ("hmc_get_pcm_preferences", "PASS", ltm_off),
+        ]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    sets = [tool for tool, _ in state.calls if tool == "hmc_set_pcm_preferences"]
+    assert len(sets) == 2
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("failed", "failed")
+    assert state.results[-1]["tool"].endswith("(MANUAL RECOVERY REQUIRED)")
 
 
 @pytest.mark.asyncio

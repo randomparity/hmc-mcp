@@ -494,7 +494,9 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
     The snapshot read is a results row before the first write, so a finished or
     interrupted results document carries the values to restore by hand
     (docs/live-testing.md). Each restore writes all five values: the HMC couples
-    the flags (enabling aggregation enables long-term monitoring).
+    the flags (enabling aggregation also enables long-term monitoring and, where
+    the system supports it, energy monitoring). A restore that does not read back
+    as the snapshot stops the loop before the next toggle.
     """
     print("\n=== ST38: PCM Preference Round Trip ===")
     if state.group != "pcm":
@@ -509,13 +511,15 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
         )
         return
     restore = {keyword: bool(snapshot[name]) for name, keyword in PCM_FLAGS}
-    toggled: dict[str, bool] = {}
+    toggled = {name: False for name, _ in PCM_FLAGS}
     for name, keyword in PCM_FLAGS:
         flipped = not snapshot[name]
         await _set_preferences(client, state, f"{keyword} toggle", {keyword: flipped})
         after = await _read_preferences(client, state, f"{keyword} toggled")
         toggled[name] = after[name] is flipped
         await _set_preferences(client, state, f"{keyword} restore", restore)
+        if await _read_preferences(client, state, f"{keyword} restored") != snapshot:
+            break  # widen nothing further: the final read reports the deviation
     final = await _read_preferences(client, state, "final")
     restored = final == snapshot
     state.record_verified(
