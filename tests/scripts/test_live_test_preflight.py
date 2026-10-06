@@ -270,6 +270,22 @@ def test_the_profiles_verdict_names_each_change_it_makes(
     assert "skipped when ST0 reads sync_curr_profile as 1" in output
 
 
+def test_the_network_verdict_names_each_change_it_makes(workspace, monkeypatch, capsys):
+    """#629. Every mutation the network arm makes, and that it touches no existing network."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "network", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "no existing network is changed" in output
+    assert "only while Not Activated" in output
+    assert "vSCSI and a vFC client adapter" in output
+    assert "FC port's label (set, removed, restored)" in output
+    assert "vFC group label (created, renamed, removed)" in output
+
+
 def test_the_vios_backup_verdict_names_the_restore_and_its_cleanup(
     workspace, monkeypatch, capsys
 ):

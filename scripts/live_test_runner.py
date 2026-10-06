@@ -18,7 +18,8 @@ Usage:
 stops importing (AGENTS.md).
 
 With no selection every subtask runs, 0 through 37: there is none from 26 to 36,
-which are other arms' row ids, and 37 SKIPs outside its own `vios-backup` group. A
+which are other arms' row ids; 9 SKIPs outside the `network` group and 37 outside
+`vios-backup`. A
 bare number runs that one subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
 or `test-results-round2.json` for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
@@ -1194,6 +1195,8 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     "dedicated": [24],
     "bare-cec": [25],
     "profiles": [0, 4, 10, 15],
+    # ST9 runs only here: its round trips need the operator's network authorization.
+    "network": [2, 9],
     # Not in "all": the arm restores a VIOS's I/O configuration and needs its own
     # operator authorization (docs/live-testing.md).
     "vios-backup": [37],

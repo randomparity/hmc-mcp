@@ -230,11 +230,38 @@ def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name what the network arm (#629) changes, each reversed by the arm itself."""
+    return ArmVerdict(
+        "network",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                "one virtual network on the first unused VLAN in "
+                f"{config.vlan_range_start}-{config.vlan_range_end} (created, a "
+                "duplicate attempted, then deleted); no existing network is changed"
+            ),
+            (
+                f"partition {config.lp3_name}, only while Not Activated: a client "
+                "network, a vSCSI and a vFC client adapter (each added, then removed)"
+            ),
+            (
+                f"the one VIOS serving {config.lp3_name}: one FC port's label (set, "
+                "removed, restored) and a vFC group label (created, renamed, removed)"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
     "profiles": _profiles_verdict,
     "vios-backup": _vios_backup_verdict,
+    "network": _network_verdict,
 }
 
 

@@ -861,6 +861,7 @@ def test_the_scan_finds_every_known_site():
     assert by_label["-i"] == {
         "create_lpar_via_cli",
         "create_vios_vfc_group_label",
+        "fc_port_label_round_trip",
         "remove_vios_fc_port_label",
         "set_lpar_description",
         "set_lpar_msp",
@@ -897,6 +898,7 @@ def test_the_scan_finds_every_known_site():
         "get_lpar_default_profile",
         "get_lpar_proc_compat",
         "query_minimum_affinity_policy",
+        "find_boundary",
         "list_vios_backups",
         "preconditions",
         "rmc_active",
