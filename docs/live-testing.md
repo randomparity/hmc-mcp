@@ -90,6 +90,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | dedicated | `uv run --no-sync python scripts/live_dedicated.py` | subtask 24 |
 | bare-cec | `uv run --no-sync python scripts/live_bare_cec.py` | subtask 25 |
 | profiles | `uv run --no-sync python scripts/live_profiles.py` | subtasks 0, 4, 10 and 15 |
+| vios-backup | `uv run --no-sync python scripts/live_vios_backup.py` | subtask 37 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -100,14 +101,15 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 36, while the ids you
-can dispatch stop at 25.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids go up to 37, while the ids you
+can dispatch are 0 to 25 and 37.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
 bare-cec arm, which records its own steps as row 35. It reuses the dedicated
 arm's baseline, fixture-create and cleanup steps, so rows 29, 30 and 34 appear
-in a bare-cec run too, with their dedicated-arm wording.
+in a bare-cec run too, with their dedicated-arm wording. Subtask 37 is the
+vios-backup arm, and its rows carry its own id.
 
 A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent —
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses —
@@ -175,6 +177,58 @@ If the restore itself failed or was interrupted, review the profiles before
 anything else, then restore them with
 `rstprofdata -m <system> -l 1 -f hmcpctl-live-st10`. Do not run the arm
 again until the profiles are confirmed: its next backup overwrites that file.
+
+### The vios-backup arm
+
+The vios-backup arm verifies the VIOS backup catalog, a `viosioconfig` backup
+and its restore (#1349) on the VIOS serving `LIVE_TEST_LPAR_NAME`. It runs only
+when dispatched as its own group; `all` and a bare run skip it.
+
+Before it, an operator confirms with read-only commands where that VIOS's
+management IP address sits relative to its Shared Ethernet Adapter, and rules on
+whether to go ahead when it is on the SEA. The arm records the interfaces but
+does not gate on them. Because a restore can rewrite that SEA, the way back is
+the HMC console, so the arm guards on it instead.
+
+- **Preconditions.** The test partition is `Not Activated`, it is the only
+  non-VIOS partition on the system, and exactly one VIOS holds exactly one disk
+  mapping toward it. That VIOS's RMC state reads `active`, and it has a virtual
+  serial server adapter the HMC can open a console on. Otherwise the arm SKIPs
+  and changes nothing.
+- **What it changes.** It backs up the VIOS's I/O configuration to
+  `hmcpctl-live-st37-<8 hex>`, removes the test partition's disk VTD (the backing
+  logical volume stays), and restores the backup with `-r`, which lets the HMC
+  restart the VIOS. Run it with `HMC_SSH_TIMEOUT=2400` exported: the restart
+  happens inside one `rstviosbk` call. Preflight refuses a lower value.
+- **What it checks.** The disk mapping is back on the same server adapter with
+  the same backing device; the VIOS's mapping list and its `lsmap -all`,
+  `lsmap -all -net`, `lsmap -all -npiv` and `lsdev -virtual` listings equal the
+  baseline, line order aside. If the mapping is not back, it recreates it with
+  `mkvdev` and records the restore as failed.
+- **Cleanup.** hmcpctl has no backup-removal tool (#698). The arm removes its
+  backup through `hmc_run_command` only when a final read equals the baseline:
+  the REST mapping set, the four listings, and the VIOS's own
+  `lsmap -vadapter`. After the restore it waits, up to 2400 s, for RMC to read
+  `active` and the VIOS to answer `ioslevel`. When that never happens, the
+  restore call ended without an exit status from the HMC (a timeout or a dropped
+  session), or a read failed after a change, it recreates nothing and changes
+  nothing more. In those cases, and whenever the final read is off the baseline,
+  it keeps the backup: it is the way back. The recovery check then reports
+  `VIOS off baseline, backup kept` (exit 1), never the backup's bare removal. Recover the VIOS
+  through its HMC console first, then remove the backup by hand, as the recovery
+  check prints:
+
+  ```sh
+  rmviosbk -t viosioconfig -m <system> -p <vios> -f hmcpctl-live-st37-<8 hex>.tar.gz
+  ```
+
+  Use the name `lsviosbk` lists: the HMC catalogs a backup made with
+  `-f <name>` as `<name>.tar.gz`, and `rstviosbk` and `rmviosbk` refuse the bare
+  name with `HSCLC455`.
+
+  and recreate a missing mapping with
+  `viosvrcmd -m <system> -p <vios> -c "mkvdev -vdev <backing> -vadapter <vhostN> -dev <vtd>"`.
+  The names are in the results document's `artifacts.vios_backup_*` fields.
 
 ### The bare-cec arm
 
@@ -248,15 +302,16 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov` or `profiles`.
+`bare-cec`, `round2`, `sriov`, `profiles` or `vios-backup`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-two sets of them:
+three sets of them:
 
 | Subtasks | What it reads |
 |---|---|
 | 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
+| 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
 partition. Every other dispatched subtask is printed as `NOT WITNESSED`.

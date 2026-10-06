@@ -44,7 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, pcie
+from live_test import bare_cec, pcie, vios_backup
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -197,10 +197,44 @@ def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name what the vios-backup arm (#1349) changes and removes again."""
+    if HMCConfig().ssh_timeout < vios_backup.MIN_SSH_TIMEOUT:
+        return ArmVerdict(
+            "vios-backup",
+            False,
+            f"HMC_SSH_TIMEOUT must be at least {vios_backup.MIN_SSH_TIMEOUT}: the "
+            "restore restarts the VIOS inside one rstviosbk call",
+        )
+    return ArmVerdict(
+        "vios-backup",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                f"the VIOS serving {config.lp3_name}: I/O configuration backed up to "
+                f"{vios_backup.BACKUP_PREFIX}<8 hex>"
+            ),
+            f"that VIOS: {config.lp3_name}'s disk VTD removed (the backing device kept)",
+            (
+                "that VIOS: viosioconfig restore with -r (the HMC may restart the "
+                "VIOS); requires active RMC and an HMC console adapter first"
+            ),
+            (
+                "that backup: removed with rmviosbk only when a final read equals "
+                "the baseline; otherwise kept for the operator"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
     "profiles": _profiles_verdict,
+    "vios-backup": _vios_backup_verdict,
 }
 
 

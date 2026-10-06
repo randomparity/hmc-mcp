@@ -1637,6 +1637,144 @@
         ]
       },
       "evidence": []
+    },
+    {
+      "operation": "vios.list_backups",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-vios",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st37-hmc-list-vios-backups",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st37-vios-io-backup-restore",
+          "observed_at": "2026-10-06T15:24:49Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "listing-parsed",
+            "listing-names-run-backup"
+          ],
+          "tested_commit": "9055993ca137897c485eae6f5e620f7bfd710f85",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "28783b3d7877f9377404c4c2af80ab3548cc384d5918e974ea69b97fabe9a75c"
+        }
+      ]
+    },
+    {
+      "operation": "vios.backup",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "viosioconfig",
+            "parameters": []
+          },
+          {
+            "variant": "vios",
+            "parameters": []
+          },
+          {
+            "variant": "ssp",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st37-hmc-backup-vios",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st37-vios-io-backup-restore",
+          "observed_at": "2026-10-06T15:27:07Z",
+          "cleanup": "passed",
+          "assertions": [
+            "backup-accepted",
+            "backup-newly-listed",
+            "backup-type-viosioconfig"
+          ],
+          "tested_commit": "9055993ca137897c485eae6f5e620f7bfd710f85",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "28783b3d7877f9377404c4c2af80ab3548cc384d5918e974ea69b97fabe9a75c"
+        }
+      ]
+    },
+    {
+      "operation": "vios.restore",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "viosioconfig",
+            "parameters": []
+          },
+          {
+            "variant": "ssp",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st37-hmc-restore-vios",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st37-vios-io-backup-restore",
+          "observed_at": "2026-10-06T15:27:07Z",
+          "cleanup": "passed",
+          "assertions": [
+            "restore-accepted",
+            "mapping-restored",
+            "baseline-restored"
+          ],
+          "tested_commit": "9055993ca137897c485eae6f5e620f7bfd710f85",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "28783b3d7877f9377404c4c2af80ab3548cc384d5918e974ea69b97fabe9a75c"
+        }
+      ]
+    },
+    {
+      "operation": "vios.install",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "detached-installios",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "lpar.install_os",
+      "implementation": {
+        "state": "absent",
+        "implemented_scope": [],
+        "missing_scope": [
+          {
+            "variant": "vios-install-via-lpar-selector",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": []
     }
   ]
 }

@@ -108,6 +108,13 @@
       "observed_at": "2026-10-06T12:59:53Z"
     },
     {
+      "operation": "lpar.install_os",
+      "implementation": "absent",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "lpar.list",
       "implementation": "implemented",
       "verification": "current",
@@ -339,11 +346,39 @@
       "observed_at": null
     },
     {
+      "operation": "vios.backup",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T15:27:07Z"
+    },
+    {
+      "operation": "vios.install",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "vios.list",
       "implementation": "implemented",
       "verification": "current",
       "reason": null,
       "observed_at": "2026-10-06T12:33:01Z"
+    },
+    {
+      "operation": "vios.list_backups",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T15:24:49Z"
+    },
+    {
+      "operation": "vios.restore",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T15:27:07Z"
     }
   ]
 }
