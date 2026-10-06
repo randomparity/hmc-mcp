@@ -14,6 +14,13 @@ matrix and a non-zero exit, because an unattributed matrix is the failure this
 script exists to prevent. A run whose tree was dirty is rendered with that
 stated: the sha names a tree nobody exercised.
 
+**Marks an interrupted run PARTIAL.** A document whose `run.partial` is present
+and not `false` came from a run an exception or interrupt stopped: its rows end
+where the run stopped, and `run.subtasks` is the selection, not what ran. The
+matrix still renders, because its rows remain attributable, but its first line
+says PARTIAL and the selection line is labelled as such. A non-boolean marker
+fails closed as partial; a document without the key renders as before.
+
 **Renders through a closed allowlist.** Result rows are HMC-derived and are
 *not* uniformly redacted — `RunState.record` applies its redaction pass only
 when `status == "FAIL"`, and the `tool` label on no path at all. So this emits
@@ -44,6 +51,11 @@ _COLUMN_TITLES = {
 }
 
 _STATUSES = ("PASS", "FAIL", "SKIP")
+
+_PARTIAL_HEADING = (
+    "**PARTIAL run** — interrupted before it finished. Its rows end where it "
+    "stopped, and the call in flight then has no row."
+)
 
 
 def _cell(key: str, value: str) -> str:
@@ -97,6 +109,11 @@ def _schema_version(run: dict[str, Any]) -> str:
     return "(not recorded)"
 
 
+def _is_partial(run: dict[str, Any]) -> bool:
+    """Whether the run was interrupted; anything but an absent key or `false` is."""
+    return run.get("partial", False) is not False
+
+
 def render(document: dict[str, Any]) -> str | None:
     """The Markdown matrix, or `None` when the document cannot be attributed."""
     attribution = _provenance(document)
@@ -110,11 +127,16 @@ def render(document: dict[str, Any]) -> str | None:
         for status in _STATUSES
     }
 
+    partial = _is_partial(run)
+    subtasks_label = (
+        "Subtasks selected (not all ran)" if partial else "Subtasks dispatched"
+    )
+    finished_label = "Interrupted" if partial else "Finished"
     selection = (
         f"Group: `{run.get('group') or '(none)'}` · "
         f"Schema version: `{_schema_version(run)}` · "
-        f"Subtasks dispatched: `{run.get('subtasks')}` · "
-        f"Finished: `{run.get('finished')}`"
+        f"{subtasks_label}: `{run.get('subtasks')}` · "
+        f"{finished_label}: `{run.get('finished')}`"
     )
     totals = (
         f"**TOTAL {len(rows)}** · PASS {counts['PASS']} · "
@@ -127,7 +149,9 @@ def render(document: dict[str, Any]) -> str | None:
         "FAIL rows."
     )
 
+    interruption = [_PARTIAL_HEADING, ""] if partial else []
     lines = [
+        *interruption,
         f"Live run on `{commit}`{qualifier}",
         "",
         selection,
