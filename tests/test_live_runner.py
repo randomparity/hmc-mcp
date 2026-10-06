@@ -16,6 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -757,12 +758,12 @@ def _answer(answers: dict[str, object]):
     return calls, scripted_call
 
 
-def _verified(state) -> dict[str, dict[str, object]]:
+def _verified(state) -> dict[str, dict[str, Any]]:
     return {entry["operation"]: entry["observation"] for entry in state.observations}
 
 
-def _held(observation: dict[str, object]) -> set[str]:
-    return set(observation["assertions"])  # type: ignore[arg-type]  # observation assertions are a list of ids
+def _held(observation: dict[str, Any]) -> set[str]:
+    return set(observation["assertions"])
 
 
 def test_profiles_group_selects_only_property_subtasks() -> None:

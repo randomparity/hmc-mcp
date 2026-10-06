@@ -140,6 +140,10 @@ async def _profile_reads(client: Client, state: RunState) -> None:
         data=data,
     )
 
+
+async def _pool_and_vnic_reads(client: Client, state: RunState) -> None:
+    config = state.config
+
     st, data = await state.call(
         client, "hmc_list_memory_pools", system_name_or_uuid=config.system_name
     )
@@ -375,6 +379,7 @@ async def _capability_reads(client: Client, state: RunState) -> None:
 async def inventory_lpar_profiles(client: Client, state: RunState) -> None:
     print("\n=== ST4: LPAR Properties & Profile Inventory ===")
     await _profile_reads(client, state)
+    await _pool_and_vnic_reads(client, state)
     await _score_reads(client, state)
     await _plan_reads(client, state)
     await _capability_reads(client, state)

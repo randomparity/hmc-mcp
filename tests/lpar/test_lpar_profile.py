@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -255,13 +256,17 @@ def test_sync_mode_renders_setting_value(monkeypatch, mock_hmc, mode, value):
     conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
 
 
+# Deliberately outside ProfileSyncMode; typed Any so the call type-checks.
+_BAD_MODE: Any = "on"
+
+
 def test_sync_rejects_unknown_mode():
     """An unknown mode is refused before any SSH connection is opened."""
     with (
         patch("hmcpctl.ssh.profiles.run_hmc_command", new=AsyncMock()) as run,
         pytest.raises(ValueError, match="enable, disable or suspend"),
     ):
-        asyncio.run(sync_lpar_profile(make_config(), SYSTEM_NAME, LPAR_NAME, "on"))  # type: ignore[arg-type]  # deliberately invalid
+        asyncio.run(sync_lpar_profile(make_config(), SYSTEM_NAME, LPAR_NAME, _BAD_MODE))
 
     run.assert_not_awaited()
 
@@ -278,7 +283,7 @@ def test_synchronize_refuses_an_unknown_mode_before_any_hmc_call():
         pytest.raises(ValueError, match="enable, disable or suspend"),
     ):
         asyncio.run(
-            synchronize_lpar_profile(hmc, SYSTEM_NAME, LPAR_NAME, mode="on")  # type: ignore[arg-type]  # deliberately invalid
+            synchronize_lpar_profile(hmc, SYSTEM_NAME, LPAR_NAME, mode=_BAD_MODE)
         )
 
 
