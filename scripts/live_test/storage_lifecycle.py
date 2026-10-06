@@ -483,7 +483,13 @@ class _Lifecycle(_Scenario):
             ),
         )
         still = await self.volumes("after the guarded delete")
-        if still is None or self.name not in still:
+        if still is None:
+            self.manual(
+                f"cannot confirm whether the guarded delete removed {self.name}",
+                self.detach_command(),
+            )
+            raise _Stop("guarded delete state unknown")
+        if self.name not in still:
             self.state.record_verified(
                 SUBTASK,
                 "hmc_delete_virtual_disk",

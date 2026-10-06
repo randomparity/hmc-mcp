@@ -129,7 +129,7 @@ async def _recreate_test_disk(
         [_TEST_DISK_ABSENT],
     )
 
-    # No refusal is declared expected: ST40 re-checked the create live, so a
+    # No refusal is declared expected: ST40 re-checks the create live, so a
     # refused create is a failure, not a known gap (#1348).
     status, data = await state.call(
         client,

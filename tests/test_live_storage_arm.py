@@ -477,6 +477,27 @@ async def test_only_the_guards_own_refusal_counts_as_refused(arm):
 
 
 @pytest.mark.asyncio
+async def test_an_unreadable_listing_after_the_guarded_delete_is_not_a_guard_miss(
+    arm, monkeypatch
+):
+    state, hmc = arm
+    listing = hmc._volume_listing
+
+    def flaky():
+        # Unreadable from the guarded delete on.
+        return None if "hmc_delete_virtual_disk" in _mutations(hmc) else listing()
+
+    monkeypatch.setattr(hmc, "_volume_listing", flaky)
+    await _run(state, 0, 40)
+
+    assert "storage.delete_disk" not in _observations(state)
+    assert any(
+        "cannot confirm whether the guarded" in r["note"] for r in _manual(state)
+    )
+    assert "hmc_detach_storage_mapping" not in _mutations(hmc)
+
+
+@pytest.mark.asyncio
 async def test_a_failed_detach_never_deletes_the_mapped_volume(arm):
     state, hmc = arm
     hmc.detach_fails = True
