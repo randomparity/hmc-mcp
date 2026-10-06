@@ -362,6 +362,11 @@ async def _exercise_msp_behavior(client: Client, state: RunState) -> None:
     environments = await _partition_environments(client, state)
     if environments.get(config.lp3_name) != "vioserver":
         await _check_non_vios_msp_refusal(client, state)
+    if state.group != "profiles":
+        state.skip(
+            10, "hmc_set_lpar_msp (VIOS round trip)", "runs only in the profiles arm"
+        )
+        return
     vioses = sorted(name for name, env in environments.items() if env == "vioserver")
     if not vioses:
         state.skip(10, "hmc_set_lpar_msp (VIOS round trip)", "no VIOS on the system")
@@ -610,16 +615,9 @@ async def _exercise_profile_backup_restore(client: Client, state: RunState) -> N
 
     A type-3 merge from a backup taken moments earlier, current data winning,
     shows whether the restore is non-destructive; it cannot show that data was
-    restored. The system-wide restore runs only in the ``profiles`` arm.
+    restored.
     """
     config = state.config
-    if state.group != "profiles":
-        state.skip(
-            10,
-            "hmc_backup_lpar_profiles / hmc_restore_lpar_profiles",
-            "the system-wide profile restore runs only in the profiles arm",
-        )
-        return
     profiles_before = await _read_system(client, state, "prof", "before")
     partitions_before = await _read_system(client, state, "lpar", "before")
     status, data = await state.call(
@@ -713,9 +711,17 @@ async def mutate_lpar_properties(client: Client, state: RunState) -> None:
     print("\n=== ST10: LPAR Properties Mutations ===")
     await _exercise_description_round_trip(client, state)
     await _exercise_msp_behavior(client, state)
-    await _exercise_proc_compat(client, state)
-    await _exercise_sync_round_trip(client, state)
-    await _exercise_profile_backup_restore(client, state)
+    if state.group == "profiles":
+        await _exercise_proc_compat(client, state)
+        await _exercise_sync_round_trip(client, state)
+        await _exercise_profile_backup_restore(client, state)
+    else:
+        state.skip(
+            10,
+            "proc-compat, sync and profile backup/restore round trips",
+            "they change the VIOS, the profile and every profile on the system, so "
+            "they run only in the profiles arm",
+        )
     await _check_memory_pool_removal_refusal(client, state)
 
 
@@ -738,6 +744,14 @@ async def _restore_baseline_profile_mode(client: Client, state: RunState) -> Non
             "MANUAL RECOVERY REQUIRED: no baseline profile mode was captured; confirm "
             f"chsyscfg -r prof -m {shlex.quote(config.system_name)} -i "
             f'"name=<profile>,lpar_name={config.lp3_name},lpar_proc_compat_mode=<mode>"',
+        )
+        return
+    if mode not in _SETTABLE_MODES:
+        state.skip(
+            15,
+            "hmc_set_lpar_proc_compat (restore)",
+            f"baseline mode {mode!r} cannot be written through the tool (#1319); "
+            "ST10 does not change it",
         )
         return
     status, data = await _set_profile_mode(client, state, str(profile), str(mode))

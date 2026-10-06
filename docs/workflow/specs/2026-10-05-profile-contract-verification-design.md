@@ -67,7 +67,9 @@ on 2026-10-05 before this design found:
    or `capability-unavailable-reason`; for `memory_pool.list` they are
    `memory-pools-empty-branch` or `memory-pool-rows-named`. An empty pool list is not row-shape
    evidence.
-5. **ST10.** Each step reads back what it changed. Restores run even after a failed assertion,
+5. **ST10.** Each step reads back what it changed. In any arm other than `profiles`, ST10 runs
+   only the description round trip, the non-VIOS MSP refusal and the memory-pool check; the
+   VIOS MSP, processor-compatibility, sync and backup/restore round trips are SKIPs there. Restores run even after a failed assertion,
    and `cleanup="passed"` only when the restore read-back equals the restore source.
    - **Description.** Probe text, then restore the ST0 baseline; the existing manual-recovery
      row applies.
@@ -103,7 +105,8 @@ on 2026-10-05 before this design found:
    - **Memory-pool removal.** `memory_pool.remove` with an absent pool name is a non-promoting
      check that the refusal precedes `chhwres`.
 6. **ST15** drops its sync call. Its proc-compat restore sets the ST0 baseline `profile_mode`;
-   when that is absent it records the manual-recovery row instead.
+   when that is absent it records the manual-recovery row instead, and when the tool cannot
+   write it (#1319) it records a SKIP.
 7. **Contract fixture.** The only captured shape no test covers is the resource-group calculated
    row with an empty `requested_lpar_names`. It becomes
    `tests/fixtures/live/cli-memopt-resgroup-calc.json`, tested in

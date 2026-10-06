@@ -1226,6 +1226,32 @@ async def test_other_arms_never_restore_profiles(monkeypatch, group) -> None:
 
     assert _tool_calls(calls, "hmc_backup_lpar_profiles") == []
     assert _tool_calls(calls, "hmc_restore_lpar_profiles") == []
+    # Only the profiles arm touches the VIOS, the profile mode or the sync setting.
+    assert [m["lpar_name_or_uuid"] for m in _tool_calls(calls, "hmc_set_lpar_msp")] == [
+        "lpar-name"
+    ]
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    assert _tool_calls(calls, "hmc_sync_lpar_profile") == []
+
+
+@pytest.mark.asyncio
+async def test_st15_leaves_a_baseline_mode_the_tool_cannot_write(monkeypatch) -> None:
+    """#1319: ST10 never changes a POWER9_base profile, so ST15 has nothing to restore."""
+    calls, scripted = _answer({})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.artifacts.lp3_baseline.update(
+        description="baseline",
+        proc_compat={"profile": "default_profile", "profile_mode": "POWER9_base"},
+    )
+
+    await runner.restore_lpar_baseline(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (restore)"
+    )
+    assert row["status"] == "SKIP"
 
 
 @pytest.mark.asyncio
@@ -5412,7 +5438,7 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
+    state = runner.RunState(group="profiles")
     state.artifacts.lp3_baseline["description"] = "original description"
 
     await runner.mutate_lpar_properties(None, state)
