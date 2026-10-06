@@ -373,6 +373,32 @@ def _record_lifecycle(
         cleanup=cleanup,
         data=run.create[1],
     )
+    # An operation the run never called has no observation: a failed one would
+    # read as the HMC refusing it. The create's cleanup already says whether a
+    # user was left behind.
+    if not run.reads:
+        for tool in ("hmc_get_user", "hmc_modify_user"):
+            state.skip(11, tool, "not reached: no user profile was listed")
+    else:
+        _record_reads_and_modifies(state, run, cleanup)
+    if run.delete[0] == "SKIP":
+        state.skip(11, "hmc_delete_user", "not reached: there was no user to delete")
+        return
+    state.record_verified(
+        11,
+        "hmc_delete_user",
+        operation="user.delete",
+        scenario="st11-user-lifecycle",
+        assertions=[
+            Assertion("scratch-profile-absent", run.delete[0] == "PASS" and gone),
+            Assertion("pre-existing-profiles-unchanged", untouched),
+        ],
+        cleanup=cleanup,
+        data=run.final[1],
+    )
+
+
+def _record_reads_and_modifies(state: RunState, run: _Lifecycle, cleanup: str) -> None:
     state.record_verified(
         11,
         "hmc_get_user",
@@ -429,18 +455,6 @@ def _record_lifecycle(
         ],
         cleanup=cleanup,
         data=run.modifies[-1][1] if run.modifies else None,
-    )
-    state.record_verified(
-        11,
-        "hmc_delete_user",
-        operation="user.delete",
-        scenario="st11-user-lifecycle",
-        assertions=[
-            Assertion("scratch-profile-absent", run.delete[0] == "PASS" and gone),
-            Assertion("pre-existing-profiles-unchanged", untouched),
-        ],
-        cleanup=cleanup,
-        data=run.final[1],
     )
 
 

@@ -383,3 +383,20 @@ async def test_a_modify_that_resets_remote_access_fails_the_modify(hmc, monkeypa
     modify = _observations(state)["user.modify"]
     assert modify["result"] == "failed"
     assert "remote-access-unchanged" not in modify["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_create_records_no_observation_for_steps_never_called(hmc):
+    """Live 2026-10-06: the create was refused, so get, modify and delete never ran."""
+    hmc.fail["hmc_create_user"] = 1
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    observed = _observations(state)
+    assert observed["user.create"]["result"] == "failed"
+    assert observed["user.create"]["cleanup"] == "passed"
+    assert not {"user.get", "user.modify", "user.delete"} & set(observed)
+    skipped = {row["tool"] for row in state.results if row["status"] == "SKIP"}
+    assert skipped == {"hmc_get_user", "hmc_modify_user", "hmc_delete_user"}
+    assert "hmc_delete_user" not in [tool for tool, _ in hmc.calls]
