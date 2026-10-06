@@ -10,6 +10,7 @@ into :class:`HMCClient` by inheritance.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import warnings
 from collections.abc import Mapping
@@ -45,6 +46,8 @@ from .client_updates import UpdatesMixin
 from .client_users import UsersMixin
 
 # Media-type fragments used by the HMC API.
+_logger = logging.getLogger(__name__)
+
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
@@ -459,12 +462,27 @@ class HMCClient(
         behind an incidental one. A failing logoff (an HMC rejection as
         :class:`HMCError`, or a transport failure as
         :class:`HMCTransportError`) is therefore recorded as a note on the
-        body's exception rather than raised. Only when the body exited
-        cleanly does a cleanup error propagate.
+        body's exception rather than raised.
+
+        When the body exited cleanly, a logoff :class:`HMCTransportError` is
+        logged as a warning instead of raised: the operation already
+        succeeded, and the session may persist until the HMC times it out.
+        Every other cleanup error, an HMC rejection of the logoff included,
+        propagates (ADR 0028, amendment for #1325).
         """
         cleanup_error: BaseException | None = None
         try:
             await self.logoff()
+        except HMCTransportError as logoff_error:
+            if exc is not None:
+                cleanup_error = logoff_error
+            else:
+                _logger.warning(
+                    "HMC logoff to %s failed before a complete response was read; "
+                    "the HMC session may persist until the HMC times it out: %s",
+                    self.config.host,
+                    logoff_error,
+                )
         except BaseException as logoff_error:  # noqa: BLE001 - BaseException is deliberate: the failure is noted on the in-flight exception, and narrowing would swallow CancelledError
             cleanup_error = logoff_error
 
@@ -556,6 +574,8 @@ class HMCClient(
         a closed session (ADR 0028). A transport-level failure surfaces as
         :class:`HMCTransportError` from ``_request`` — distinct from an HMC
         rejection, because they mean different things to a caller.
+        ``__aexit__`` logs, rather than raises, that transport failure when
+        the ``async with`` body exited cleanly.
 
         Local state clears either way: the token and the ``X-API-Session``
         header are dropped even when the request fails, so a client that
