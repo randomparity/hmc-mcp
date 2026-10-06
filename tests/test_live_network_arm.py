@@ -449,7 +449,7 @@ async def test_a_failed_network_delete_records_manual_recovery_and_stops(monkeyp
 
     assert _results(state)["network.delete_network"] == "failed"
     assert "hmc_add_vscsi_adapter" not in hmc.mutations()
-    assert any("hmcpctl-live-vlan3101" in text for text in _manual(state))
+    assert any("hmcpctl-live-vlan3101-" in text for text in _manual(state))
 
 
 @pytest.mark.asyncio
@@ -753,3 +753,64 @@ async def test_mappings_are_compared_without_their_order(monkeypatch):
     assert (
         "vios-side-unchanged" in _observation(state, "adapter.add_vscsi")["assertions"]
     )
+
+
+@pytest.mark.asyncio
+async def test_another_network_on_the_run_vlan_is_reported_not_deleted(monkeypatch):
+    """A network the run did not name is never a delete target, even on its VLAN."""
+    hmc = FakeHMC()
+    stranger = "0000000D-0000-4000-8000-00000000000D"
+    original = hmc._hmc_create_virtual_network
+
+    def create(kwargs):
+        hmc.networks.setdefault(stranger, (kwargs["vlan_id"], "someone-else"))
+        return original(kwargs)
+
+    hmc._hmc_create_virtual_network = create  # type: ignore[method-assign]
+
+    state = await _run(monkeypatch, hmc)
+
+    deleted = {
+        k["network_uuid"] for t, k in hmc.calls if t == "hmc_delete_virtual_network"
+    }
+    assert stranger not in deleted
+    assert stranger in hmc.networks
+    assert _results(state)["network.create_network"] == "failed"
+    assert any("remain" in text for text in _manual(state))
+
+
+@pytest.mark.asyncio
+async def test_a_group_label_someone_else_adds_is_never_removed(monkeypatch):
+    hmc = FakeHMC()
+    original = hmc._hmc_create_vios_vfc_group_label
+
+    def create(kwargs):
+        hmc.groups.add("someone-else")
+        return original(kwargs)
+
+    hmc._hmc_create_vios_vfc_group_label = create  # type: ignore[method-assign]
+
+    await _run(monkeypatch, hmc)
+
+    removed = {
+        k["label"] for t, k in hmc.calls if t == "hmc_remove_vios_vfc_group_label"
+    }
+    assert "someone-else" not in removed
+    assert "someone-else" in hmc.groups
+
+
+@pytest.mark.asyncio
+async def test_an_unformattable_port_still_records_its_manual_recovery(monkeypatch):
+    hmc = FakeHMC(fc_labels={"fcs0,x": "prod-a"})
+
+    def set_label(kwargs):
+        if kwargs["label"] == "prod-a":
+            return "FAIL", "refused"
+        hmc.fc_labels[kwargs["port_name"]] = kwargs["label"]
+        return "PASS", {}
+
+    hmc._hmc_set_vios_fc_port_label = set_label  # type: ignore[method-assign]
+
+    state = await _run(monkeypatch, hmc)
+
+    assert any("label is not its original" in text for text in _manual(state))

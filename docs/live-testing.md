@@ -190,12 +190,12 @@ every change whatever the call returned, and reverses the difference:
   changed. The adapter and label round trips also need exactly one VIOS with a
   vSCSI server adapter toward the test partition (the serving VIOS); otherwise
   only the VLAN round trip runs.
-- **VLAN.** It creates `hmcpctl-live-vlan<id>` on the first VLAN in
+- **VLAN.** It creates `hmcpctl-live-vlan<id>-<8 hex>` on the first VLAN in
   `LIVE_TEST_VLAN_RANGE_START`–`END` that no network uses, tries a second network
   on the same VLAN (expected refused; deleted if not), adds a client network
   adapter on that VLAN to the test partition, deletes an unknown adapter UUID
-  (expected refused), then removes the adapter and every network on the VLAN.
-  No existing network is touched.
+  (expected refused), then removes the adapter and the run's own networks. Any
+  other network on that VLAN is reported, never deleted.
 - **vSCSI and vFC clients.** Each first tries an add on the virtual slot the
   test partition's own vSCSI client uses (expected refused), then adds a client
   adapter to the test partition paired to a server slot of the serving VIOS (one open to any partition, else

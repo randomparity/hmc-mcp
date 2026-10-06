@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
+from hmcpctl.errors import HMCError
 from hmcpctl.ssh.commands import build_attribute_record, build_filter
 
 from .observation import Assertion
@@ -371,15 +372,20 @@ def _plain_label(value: str) -> bool:
     )
 
 
-def _run_networks(current: Networks | None, vlan: int) -> Networks | None:
-    """Networks on the run's VLAN.
+def _run_networks(current: Networks | None, vlan: int, name: str) -> Networks | None:
+    """The networks this run created: on its VLAN, under its own name.
 
-    The VLAN was unused at baseline, so every one of them is the run's own,
-    whatever call created it.
+    The VLAN was unused at baseline and the name carries the run's tag, so a
+    network matching both is the run's own whatever call created it. Anything
+    else on the VLAN is never deleted: the baseline compare reports it.
     """
     if current is None:
         return None
-    return {key: value for key, value in current.items() if value[0] == vlan}
+    return {
+        key: value
+        for key, value in current.items()
+        if value[0] == vlan and value[1].startswith(name)
+    }
 
 
 def _server_slot(servers: Iterable[tuple[str, ...]], lpar_id: str) -> str | None:
@@ -727,9 +733,9 @@ class _Arm:
         if found is None:
             return
         baseline, vlan, switch, cna = found
-        name = f"{NAME_PREFIX}vlan{vlan}"
+        name = f"{NAME_PREFIX}vlan{vlan}-{self.tag}"
         created = await self.create_network("create", name, vlan, switch)
-        ours = _run_networks(await self.networks("after create"), vlan)
+        ours = _run_networks(await self.networks("after create"), vlan, name)
         listed = ours is not None and [n for _, n in ours.values()] == [name]
         duplicate_refused = False
         if listed and ours is not None:
@@ -737,7 +743,7 @@ class _Arm:
             duplicate = await self.create_network(
                 "duplicate VLAN", f"{name}-dup", vlan, switch
             )
-            again = _run_networks(await self.networks("after duplicate"), vlan)
+            again = _run_networks(await self.networks("after duplicate"), vlan, name)
             duplicate_refused = duplicate == "FAIL" and again == ours
             try:
                 await self.client_network_adapter(vlan, switch, cna)
@@ -748,7 +754,7 @@ class _Arm:
                     f"remove the adapter, then delete networks {name}* on "
                     f"{self.system}",
                 )
-        deleted, restored = await self.delete_run_networks(baseline, vlan)
+        deleted, restored = await self.delete_run_networks(baseline, vlan, name)
         self.state.record_verified(
             SUBTASK,
             "hmc_create_virtual_network",
@@ -786,14 +792,14 @@ class _Arm:
             )
 
     async def delete_run_networks(
-        self, baseline: Networks, vlan: int
+        self, baseline: Networks, vlan: int, name: str
     ) -> tuple[bool | None, bool]:
         """Delete every network the run left on its VLAN.
 
         Returns whether every delete was accepted (None when there was nothing to
         delete) and whether the set read back equals the baseline.
         """
-        ours = _run_networks(await self.networks("before delete"), vlan)
+        ours = _run_networks(await self.networks("before delete"), vlan, name)
         if ours is None:
             return False, False
         accepted: bool | None = None
@@ -1142,19 +1148,24 @@ class _Arm:
             data=None,
         )
         if not restored:
-            record = build_attribute_record(
-                [
-                    ("resource", "fcport"),
-                    ("port_name", port),
-                    ("vios_names", boundary.vios),
-                ]
-            )
             operation = f"-o s -l {shlex.quote(original)}" if original else "-o r"
-            self.manual(
-                f"{boundary.vios} {port} label is not its original",
-                f"labelvios -m {shlex.quote(self.system)} {operation} "
-                f"-i {shlex.quote(record)}",
-            )
+            try:
+                record = build_attribute_record(
+                    [
+                        ("resource", "fcport"),
+                        ("port_name", port),
+                        ("vios_names", boundary.vios),
+                    ]
+                )
+                command = (
+                    f"labelvios -m {shlex.quote(self.system)} {operation} "
+                    f"-i {shlex.quote(record)}"
+                )
+            except (HMCError, ValueError):
+                command = (
+                    f"labelvios {operation} for port {port!r} on {boundary.vios!r}"
+                )
+            self.manual(f"{boundary.vios} {port} label is not its original", command)
 
     # -- (e) vFC group label -------------------------------------------------
 
@@ -1185,7 +1196,7 @@ class _Arm:
         """Remove every group the run left; None when there was none to remove."""
         current = await self.groups("before remove")
         removed: bool | None = None
-        for label in sorted((names if current is None else current) - baseline):
+        for label in sorted(names if current is None else (current - baseline) & names):
             result = await self.state.call(
                 self.client,
                 "hmc_remove_vios_vfc_group_label",

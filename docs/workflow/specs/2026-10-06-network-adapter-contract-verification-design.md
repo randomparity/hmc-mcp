@@ -71,8 +71,8 @@ reaches the HMC.
 
    *Reconcile rule.* After **every** mutation call, whatever it returned, the scenario
    re-reads its state and treats any difference from its baseline as the run's own
-   change: on the test VLAN, any network UUID absent from the baseline (the VLAN was
-   unused at baseline); on the test partition, any adapter UUID absent from the
+   change: on the test VLAN, any network carrying the run's tagged name (the VLAN was
+   unused at baseline; any other network on it is reported, never deleted); on the test partition, any adapter UUID absent from the
    baseline, compared with its slot and pairing so an in-place change shows; for
    labels, any label differing from the baseline. Reversal targets that difference,
    so a timed-out call, an accepted negative, or an implicitly created object is
@@ -86,7 +86,7 @@ reaches the HMC.
       an unparsable VLAN; the test VLAN is the first id in `LIVE_TEST_VLAN_RANGE_*` no
       network uses; the switch id from `hmc_list_virtual_switches` (first `SwitchID`,
       else 0); the test partition's `ClientNetworkAdapter` UUIDs.
-      1. `hmc_create_virtual_network(name=hmcpctl-live-vlan<id>)`; read back.
+      1. `hmc_create_virtual_network(name=hmcpctl-live-vlan<id>-<8 hex>)`; read back.
       2. Collision: create on the same VLAN as `hmcpctl-live-vlan<id>-dup`; read back.
          Any new network beyond the first is reconciled away.
       3. `hmc_add_network_adapter(port_vlan_id=<id>, virtual_switch_id=<switch>)` on
