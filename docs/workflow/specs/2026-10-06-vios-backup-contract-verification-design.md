@@ -38,11 +38,12 @@ captured empty, so its attribute names are unverified.
       `lsmap -all`, `lsmap -all -net`, `lsmap -all -npiv`, `lsdev -virtual`.
       The mapping identity (`vhostN/<vtd>`, backing name) and the backup name go into
       `LiveTestArtifacts` before any mutation, so the recovery check can read them.
-   3. *Read*: `hmc_list_vios_backups` → `vios.list_backups` observation (assertion
-      `listing-parsed`); the run's backup name must be absent.
+   3. *Read*: `hmc_list_vios_backups` before the backup (non-promoting row); the run's
+      backup name must be absent.
    4. *Backup*: `hmc_backup_vios(-t viosioconfig, backup_name=hmcpctl-live-st37-<8 hex>)`;
       a raw `lsviosbk -F --header` capture row (non-promoting) before and after, for the
-      attribute names.
+      attribute names; the listing after the backup is the `vios.list_backups`
+      observation.
    5. *Delta*, only when the backup call passed and the raw after-capture names the
       backup (the parsed listing is asserted, not gated on: its projection is unverified):
       `viosvrcmd ... rmvdev -vtd <vtd>`; assert the disk mapping is gone and the server
@@ -55,13 +56,14 @@ captured empty, so its attribute names are unverified.
       restore observation fails, and recovery names both remedies.
    7. *Assert*: `mapping-restored` — the mapping list has the baseline mapping id with
       the same backing; `baseline-restored` — the VIOS's REST mapping set, compared
-      order-insensitively as (id, lpar_uuid, backing_kind, backing_name), equals the
-      baseline's. The four texts are re-read and recorded with their diff, not asserted.
+      order-insensitively as (id, lpar_uuid, backing_kind, backing_name), and each of the
+      four texts, compared as its set of whitespace-normalized non-empty lines, equal the
+      baseline's. Any difference is recorded with its diff.
    8. *Fallback*: when step 7 read the mapping list and it lacks the mapping,
       `mkvdev -vdev <backing> -vadapter vhostN -dev <vtd>`, then re-read; the restore
       observation stays failed.
    9. *Cleanup*: when the final read shows the mapping back (restored or recreated),
-      `rmviosbk -t viosioconfig -m <sys> --uuid <vios> -f <name>` through
+      `rmviosbk -t viosioconfig -m <sys> -p <vios> -f <name>` through
       `hmc_run_command`, then confirm absence (parsed listing, else the raw capture).
       Otherwise the backup is kept for the operator and recovery reports it.
 
@@ -72,7 +74,7 @@ captured empty, so its attribute names are unverified.
 
    | Operation | Assertions | Cleanup |
    |---|---|---|
-   | `vios.list_backups` | `listing-parsed` | not-required |
+   | `vios.list_backups` | `listing-parsed`, `listing-names-run-backup` (parsed row with the run's name, type `viosioconfig`) | not-required |
    | `vios.backup` | `backup-accepted`, `backup-newly-listed`, `backup-type-viosioconfig` | rmviosbk confirmed absent → passed; kept (step 9) → not-run; else failed |
    | `vios.restore` | `restore-accepted`, `mapping-restored`, `baseline-restored` | final mapping equals baseline → passed, else failed |
 
@@ -116,8 +118,8 @@ captured empty, so its attribute names are unverified.
    promotion without asserted postconditions).
 3. **Accepted failure classes** — a VIOS restart during restore (operator-authorized,
    `-r`); a restore outage of the boundary VIOS (no other clients, precondition-gated);
-   text differences in the four recorded VIOS listings (reported with their diff, not
-   asserted).
+   line order and whitespace in the four VIOS listings (normalized away; any other
+   difference fails `baseline-restored`).
 4. **Covered elsewhere** — backup-removal tool: #698; access policy and ownership
    guards: existing runtime guards; recovery-check read-only enforcement:
    `guard_read_only`.
