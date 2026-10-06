@@ -448,9 +448,23 @@ async def _set_profile_mode(
     )
 
 
+# The HMC refuses a profile change while the partition's profile is kept in sync (#1333).
+_SYNCHRONIZED_PROFILE = (
+    "ST0 sync_curr_profile is 1, so the HMC refuses a profile change and ST10 "
+    "leaves the profile's lpar_proc_compat_mode as it is"
+)
+
+
+def _profile_synchronized(state: RunState) -> bool:
+    return state.artifacts.lp3_baseline.get("sync_curr_profile") == "1"
+
+
 async def _exercise_proc_compat(client: Client, state: RunState) -> None:
     """Set a supported mode other than the profile's own, then restore it."""
     config = state.config
+    if _profile_synchronized(state):
+        state.skip(10, "hmc_set_lpar_proc_compat (round trip)", _SYNCHRONIZED_PROFILE)
+        return
     status, modes = await state.call(
         client, "hmc_get_proc_compat_modes", system_name_or_uuid=config.system_name
     )
@@ -792,6 +806,9 @@ async def _restore_baseline_profile_mode(client: Client, state: RunState) -> Non
     captured = state.artifacts.lp3_baseline.get("proc_compat")
     profile = field(captured, "profile")
     mode = field(captured, "profile_mode")
+    if _profile_synchronized(state):
+        state.skip(15, "hmc_set_lpar_proc_compat (restore)", _SYNCHRONIZED_PROFILE)
+        return
     if not profile or not mode:
         state.record(
             15,
