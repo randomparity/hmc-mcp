@@ -903,6 +903,22 @@ def test_update_firmware_rejects_missing_hmc_version(monkeypatch, mock_hmc):
     assert not route.called
 
 
+def test_update_firmware_refuses_a_named_system_before_resolving_it(
+    monkeypatch, mock_hmc
+):
+    """The live V10R3 check passes a name; the gate must refuse before any lookup."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed(("10", "3", "1060")))
+    )
+    lookup = mock_hmc.route(url__regex=r".*/ManagedSystem.*")
+
+    with pytest.raises(ValueError, match="HMC 11.1.1111 .* below the minimum"):
+        hmc_update_firmware("sys-A", PLATFORM_UPDATE)
+
+    assert not lookup.called
+
+
 def test_update_firmware_wait_returns_terminal_submission_without_poll(
     monkeypatch, mock_hmc
 ):
