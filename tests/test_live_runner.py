@@ -6227,11 +6227,34 @@ def test_a_lone_environment_key_is_rejected(tmp_path):
 def test_both_environment_keys_are_read(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
+        "LIVE_TEST_ENV_HMC_RELEASE=V10R3M1060\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
+        encoding="utf-8",
+    )
+
+    assert runner._read_environment(env_file) == ("V10R3M1060", "POWER10")
+
+
+def test_a_release_without_its_maintenance_level_is_rejected(tmp_path):
+    """#1335: one HMC must not be recorded as both `V10R3` and `V10R3M1060`.
+
+    The catalog grammar still admits the bare rows recorded before this rule.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text(
         "LIVE_TEST_ENV_HMC_RELEASE=V10R3\nLIVE_TEST_ENV_HARDWARE_FAMILY=POWER10\n",
         encoding="utf-8",
     )
 
-    assert runner._read_environment(env_file) == ("V10R3", "POWER10")
+    assert runner.check_capability_inventory.HMC_RELEASE.fullmatch("V10R3")
+    with pytest.raises(ValueError, match=r"expected V<n>R<n>M<n>, e\.g\. V10R3M1060"):
+        runner._read_environment(env_file)
+
+
+def test_the_example_environment_is_accepted():
+    """Copying `.env.example` must not fail the release rule at startup."""
+    example = Path(__file__).parents[1] / ".env.example"
+
+    assert runner._read_environment(example) is not None
 
 
 def test_observations_are_not_emitted_without_environment(tmp_path, capsys):
@@ -6466,8 +6489,9 @@ def test_an_environment_value_outside_its_grammar_is_rejected(tmp_path, value):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="does not match its grammar"):
+    with pytest.raises(ValueError, match="does not match its grammar") as raised:
         runner._read_environment(env_file)
+    assert value not in str(raised.value)
 
 
 def test_the_repository_root_is_resolved_from_git_not_the_working_directory(
