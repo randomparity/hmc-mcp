@@ -107,6 +107,23 @@ def test_virtual_network_document():
     assert "AssociatedSwitch" in xml and "VirtualSwitch/vswitch-uuid-1" in xml
 
 
+def test_virtual_network_document_kb_matches_the_live_feed():
+    """Each element's kb is the one the V10R3 feed serves (2026-10-06 live run).
+
+    A create carrying NetworkName kb="CUD" was refused with REST0001: "Value 'CUD'
+    is not facet-valid with respect to enumeration '[CUR]'".
+    """
+    import re
+
+    served = dict(re.findall(r"<(\w+) [^>]*?kb=\"(\w+)\"", VNETWORK_FEED))
+    sent = dict(
+        re.findall(r"<(\w+) kb=\"(\w+)\"", build_virtual_network_document("n", 2, 0))
+    )
+
+    assert sent
+    assert {name: served[name] for name in sent} == sent
+
+
 def test_virtual_network_document_tagged():
     xml = build_virtual_network_document("n", 200, 3, tagged=True)
     assert "TaggedNetwork" in xml and ">true<" in xml
