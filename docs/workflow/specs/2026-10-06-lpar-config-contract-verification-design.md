@@ -20,7 +20,7 @@ shared plumbing and are not bound, as in PR #1320 and PR #1361.
 
 | Operation | Issues | Rows bound | Implemented variant(s) |
 |---|---|---|---|
-| `lpar.modify` | `LogicalPartition` GET + POST (`If-Match`); assignments delegate to `pcie.assign_dedicated_slot`, `sriov.assign_logical_port`, `vnic.add` | `rest:managed-system/logical-partition` | `resource-read-modify-write`, `delegated-pcie-assignments` |
+| `lpar.modify` | `LogicalPartition` GET + POST (`If-Match`); assignments delegate to `pcie.assign_dedicated_slot`, `sriov.assign_logical_port`, `vnic.add` | `rest:managed-system/logical-partition`, `cli:commands/lshwres` (its own assignment prevalidation reads `lshwres -r sriov` and `-r virtualio --rsubtype vnicbkdev`) | `resource-read-modify-write`, `delegated-pcie-assignments` |
 | `lpar.rename` | same GET + POST | same | `name-read-modify-write` |
 | `lpar.dlpar_proc` | same | same | `processor-read-modify-write` |
 | `lpar.dlpar_mem` | same | same | `memory-read-modify-write` |
@@ -31,8 +31,8 @@ shared plumbing and are not bound, as in PR #1320 and PR #1361.
 
 Criterion 1 is met for `lpar.modify`'s resource path. Its assignment step reuses the
 `pcie.assign_dedicated_slot`, `sriov.assign_logical_port` and `vnic.add` operations,
-whose own rows are still the bulk assignment; binding them belongs to #630, and
-`lpar.modify` gains those rows when #630 lands. Copying the delegates' current rows
+whose own rows are still the bulk assignment. The delegates' writes are not bound
+here; this is reported as a follow-up for #630, which does not yet claim it. Copying the delegates' current rows
 would bind commands nobody issues.
 
 ## Design
