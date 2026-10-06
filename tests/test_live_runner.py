@@ -612,9 +612,13 @@ _GATE_REFUSAL = (
 @pytest.mark.parametrize(
     ("status", "data", "expected"),
     [
-        ("FAIL", _GATE_REFUSAL, "PASS"),
+        ("FAIL", _failure(_GATE_REFUSAL), "PASS"),
         ("PASS", {"UUID": "job-uuid"}, "FAIL"),
-        ("FAIL", "No managed system named 'hmcpctl-live-absent-system' found.", "FAIL"),
+        (
+            "FAIL",
+            _failure("No managed system named 'hmcpctl-live-absent-system' found."),
+            "FAIL",
+        ),
     ],
 )
 async def test_platform_update_check_passes_only_on_the_version_refusal(
