@@ -268,10 +268,14 @@ async def test_a_refused_create_that_echoes_the_password_records_none_of_it(
         ),
         (
             lambda fake: fake.fail.update({"hmc_list_users": 1}),
-            "the user listing failed",
+            "the user listing failed or could not be read",
+        ),
+        (
+            lambda fake: fake.users["uuid-1"].pop("UUID"),
+            "the user listing failed or could not be read",
         ),
     ],
-    ids=["no-viewer-role", "residue", "listing-failed"],
+    ids=["no-viewer-role", "residue", "listing-failed", "listing-unmappable"],
 )
 async def test_no_user_is_created_without_its_preconditions(hmc, setup, reason):
     setup(hmc)
@@ -300,3 +304,19 @@ def test_profile_rows_read_the_parser_shapes():
     }
     assert users.is_empty(_CAPTURED["Resource"]["UserProfilePassword"])
     assert not users.is_empty(_CAPTURED["Resource"]["UserID"])
+
+
+@pytest.mark.asyncio
+async def test_a_refused_delete_records_the_hmc_error(hmc):
+    """The verified row carries the final listing; the refusal needs its own row."""
+    hmc.fail["hmc_delete_user"] = 1
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    refused = [
+        row for row in state.results if row["tool"] == "hmc_delete_user (refused)"
+    ]
+    assert [row["status"] for row in refused] == ["FAIL"]
+    assert "hmc_delete_user refused" in json.dumps(refused)
+    assert _observations(state)["user.delete"]["result"] == "failed"

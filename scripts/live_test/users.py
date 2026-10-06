@@ -240,12 +240,18 @@ async def _lifecycle(
     state.artifacts.test_user_name = run.name
     responses: list[Any] = []
 
-    def kept(result: tuple[str, Any]) -> tuple[str, Any]:
+    def kept(tool: str, result: tuple[str, Any]) -> tuple[str, Any]:
         responses.append(result[1])
-        return result[0], _scrub(result[1], password)
+        scrubbed = result[0], _scrub(result[1], password)
+        if scrubbed[0] == "FAIL":
+            # The verified rows below carry one step's data each; a refused step's
+            # HMC error is recorded here so a failed observation can be diagnosed.
+            state.record(11, f"{tool} (refused)", *scrubbed)
+        return scrubbed
 
     try:
         run.create = kept(
+            "hmc_create_user",
             await state.call(
                 client,
                 "hmc_create_user",
@@ -256,11 +262,12 @@ async def _lifecycle(
                 description=_DESCRIPTION,
                 allow_web_remote_access=False,
                 allow_ssh_remote_access=False,
-            )
+            ),
         )
         # Listed whatever the create returned: a timed-out create may still exist.
         listed = kept(
-            await state.call(client, "hmc_list_users", console_uuid=console_uuid)
+            "hmc_list_users",
+            await state.call(client, "hmc_list_users", console_uuid=console_uuid),
         )
         run.uuid = run.uuid_in(listed[1])
         for description in (f"{_DESCRIPTION} (modified)", "", None):
@@ -268,24 +275,26 @@ async def _lifecycle(
                 break
             run.reads.append(
                 kept(
+                    "hmc_get_user",
                     await state.call(
                         client,
                         "hmc_get_user",
                         console_uuid=console_uuid,
                         user_profile_uuid=run.uuid,
-                    )
+                    ),
                 )
             )
             if description is not None:
                 run.modifies.append(
                     kept(
+                        "hmc_modify_user",
                         await state.call(
                             client,
                             "hmc_modify_user",
                             console_uuid=console_uuid,
                             user_profile_uuid=run.uuid,
                             description=description,
-                        )
+                        ),
                     )
                 )
     finally:
@@ -299,26 +308,29 @@ async def _delete_scratch_user(
     state: RunState,
     console_uuid: str,
     run: _Lifecycle,
-    kept: Callable[[tuple[str, Any]], tuple[str, Any]],
+    kept: Callable[[str, tuple[str, Any]], tuple[str, Any]],
 ) -> None:
     """Delete only this run's user, by the UUID listed for its minted name."""
     target = run.uuid
     if target is None:
         listing = kept(
-            await state.call(client, "hmc_list_users", console_uuid=console_uuid)
+            "hmc_list_users",
+            await state.call(client, "hmc_list_users", console_uuid=console_uuid),
         )
         target = run.uuid_in(listing[1])
     if target is not None:
         run.delete = kept(
+            "hmc_delete_user",
             await state.call(
                 client,
                 "hmc_delete_user",
                 console_uuid=console_uuid,
                 user_profile_uuid=target,
-            )
+            ),
         )
     run.final = kept(
-        await state.call(client, "hmc_list_users", console_uuid=console_uuid)
+        "hmc_list_users",
+        await state.call(client, "hmc_list_users", console_uuid=console_uuid),
     )
 
 
@@ -435,8 +447,10 @@ async def exercise_users(client: Client, state: RunState) -> None:
     )
     rows = profile_rows(before)
     reason = None
-    if before_status != "PASS":
-        reason = "the user listing failed"
+    if before_status != "PASS" or not rows or len(rows) != len(entries(before)):
+        # Without every UUID and UserID the arm could neither find its own user
+        # to delete nor tell that every other user survived.
+        reason = "the user listing failed or could not be read"
     elif VIEWER_TASK_ROLE not in role_names:
         reason = f"task role {VIEWER_TASK_ROLE} is not listed"
     elif scratch_users(rows):
