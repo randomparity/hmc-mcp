@@ -87,7 +87,9 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
    #637 (partition profiles) to #698, which owns the remaining coverage obligations
    (`IsPredefinedUser`, directory authentication); other rows keep their owners. Each operation gets an `implemented` record; observations are copied from
    the emitted file (ADR 0126). Regenerate the projection and `docs/tools/`; CHANGELOG notes
-   the role-name change and the retired setting.
+   the role-name change and the retired setting. `hmcpctl.documents` is in every handler's
+   import closure, so the builder edit reports every other recorded observation (39 at this
+   design) as stale under ADR 0127 until its own arm re-runs.
 
 ## Live gaps
 
