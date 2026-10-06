@@ -43,8 +43,9 @@ reading the tool description is not told.
   `tests/lpar/test_lpar_profile.py::test_restore_tool_description_warns_merge_unconfigures_partitions`;
   red on the old docstring (`resource_config` absent); green with
   `uv run --no-sync pytest tests/lpar/test_lpar_profile.py -q`.
-- `docs/tools/` — `focused-test`: `just tool-docs-check` red after the docstring
-  edit, green after `just tool-docs`.
+- `docs/tools/` — `focused-test`: it renders only the description's summary
+  line and each operation's live state, so `just tool-docs-check` goes red after
+  the observation recopy and green after `just tool-docs`.
 - Recopied observations — `focused-test`: `just verification-report` shows the
   three operations stale after the docstring edit and current after the recopy;
   `just capability-inventory` validates the catalog.
