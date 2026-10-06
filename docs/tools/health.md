@@ -8,4 +8,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_fleet_health` | `read` | `health.fleet` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Return issue-only health across managed systems and partitions. |
+| `hmc_fleet_health` | `read` | `health.fleet` | `console` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return issue-only health across managed systems and partitions. |

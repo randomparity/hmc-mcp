@@ -22,10 +22,10 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_get_lpar_proc_compat` | `read` | `lpar.get_proc_compat` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return an LPAR's processor compatibility modes and a profile's mode. |
 | `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return the current state of one LPAR by partition name or UUID. |
 | `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return an LPAR's minimum-affinity policy when supported. |
-| `hmc_inspect_lpar` | `read` | `lpar.inspect` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Inspect one LPAR: state, RMC, resources, reference codes and next actions. |
+| `hmc_inspect_lpar` | `read` | `lpar.inspect` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Inspect one LPAR: state, RMC, resources, reference codes and next actions. |
 | `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | `absent` | `unevidenced` | `existing-runtime-guards` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
 | `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List current memory-optimization affinity scores for a system's LPARs. |
-| `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Read parsed ownership for every LPAR on a system in one REST call. |
+| `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Read parsed ownership for every LPAR on a system in one REST call. |
 | `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List LPARs, optionally filtered by system and state. |
 | `hmc_lpar_summary` | `read` | `lpar.summary` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return state, resources, OS details, adapters, and description for one LPAR. |
 | `hmc_migrate_abort_lpar` | `destructive` | `lpar.migrate_abort` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Abort an in-progress LPM migration of an LPAR. |
@@ -34,7 +34,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_migrate_recover_lpar` | `mutate` | `lpar.migrate_recover` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Recover an LPAR after a failed LPM migration. |
 | `hmc_migrate_validate_lpar` | `mutate` | `lpar.migrate_validate` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Validate whether an LPM migration of an LPAR to target_system would succeed. |
 | `hmc_modify_lpar` | `mutate` | `lpar.modify` | `lpar` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Modify an LPAR's memory or CPU resource assignment. |
-| `hmc_plan_lpar` | `read` | `lpar.plan` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Plan provisioning an LPAR on one connection: fit, targets, blockers and changes. |
+| `hmc_plan_lpar` | `read` | `lpar.plan` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | Plan provisioning an LPAR on one connection: fit, targets, blockers and changes. |
 | `hmc_plan_lpar_memopt_scores` | `read` | `lpar.plan_memopt_scores` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return predicted LPAR affinity scores without applying optimization. |
 | `hmc_power_lpar` | `destructive` | `lpar.power` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Start, stop or restart one LPAR, wait a bounded time, and verify its state. |
 | `hmc_power_off_lpar` | `destructive` | `lpar.power_off` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Submit a PowerOff job for a logical partition, optionally restarting it or selecting the shutdown operation. |
