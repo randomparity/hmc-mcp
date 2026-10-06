@@ -3094,6 +3094,241 @@
         "missing_scope": []
       },
       "evidence": []
+    },
+    {
+      "operation": "lpar.modify",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "resource-read-modify-write",
+            "parameters": []
+          },
+          {
+            "variant": "delegated-pcie-assignments",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st39-hmc-modify-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-06T22:17:41Z",
+          "cleanup": "passed",
+          "assertions": [
+            "memory-read-back",
+            "processing-units-read-back",
+            "other-values-unchanged"
+          ],
+          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.rename",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "name-read-modify-write",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st39-hmc-rename-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-06T22:17:41Z",
+          "cleanup": "passed",
+          "assertions": [
+            "renamed-same-uuid",
+            "old-name-absent",
+            "ownership-stamp-kept",
+            "original-name-restored"
+          ],
+          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.dlpar_proc",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "processor-read-modify-write",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st39-hmc-dlpar-proc",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-06T22:17:41Z",
+          "cleanup": "passed",
+          "assertions": [
+            "small-change-read-back",
+            "large-change-read-back",
+            "no-op-accepted-unchanged",
+            "empty-request-refused"
+          ],
+          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.dlpar_mem",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "memory-read-modify-write",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st39-hmc-dlpar-mem",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-06T22:17:41Z",
+          "cleanup": "passed",
+          "assertions": [
+            "small-change-read-back",
+            "large-change-read-back",
+            "no-op-accepted-unchanged",
+            "empty-request-refused"
+          ],
+          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+        }
+      ]
+    },
+    {
+      "operation": "boot_order.set",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "pending-boot-string",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st39-hmc-set-lpar-boot-order",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-06T22:17:41Z",
+          "cleanup": "passed",
+          "assertions": [
+            "pending-boot-string-read-back"
+          ],
+          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "ef4d1ba462314add58fa990f66629f84fd921456cca0d591b63b512c919d70cc"
+        }
+      ]
+    },
+    {
+      "operation": "boot_order.clear",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "authorized-refusal",
+            "parameters": []
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "clear-pending-boot-order",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "st39-hmc-clear-lpar-boot-order",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-06T22:17:41Z",
+          "cleanup": "passed",
+          "assertions": [
+            "clear-refused-after-authorization",
+            "pending-boot-string-unchanged"
+          ],
+          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "ef4d1ba462314add58fa990f66629f84fd921456cca0d591b63b512c919d70cc"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.set_minimum_affinity_policy",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "power11-capability-gated",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "system.modify",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system-attributes",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
     }
   ]
 }

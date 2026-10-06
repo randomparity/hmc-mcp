@@ -38,11 +38,25 @@
       "observed_at": "2026-10-06T19:18:02Z"
     },
     {
+      "operation": "boot_order.clear",
+      "implementation": "partial",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:17:41Z"
+    },
+    {
       "operation": "boot_order.read",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T20:36:29Z"
+    },
+    {
+      "operation": "boot_order.set",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:17:41Z"
     },
     {
       "operation": "capacity.report",
@@ -113,6 +127,20 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:04:44Z"
+    },
+    {
+      "operation": "lpar.dlpar_mem",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:17:41Z"
+    },
+    {
+      "operation": "lpar.dlpar_proc",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:17:41Z"
     },
     {
       "operation": "lpar.dump_restart",
@@ -213,6 +241,13 @@
       "observed_at": "2026-10-06T13:00:00Z"
     },
     {
+      "operation": "lpar.modify",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:17:41Z"
+    },
+    {
       "operation": "lpar.plan",
       "implementation": "implemented",
       "verification": "unevidenced",
@@ -241,11 +276,25 @@
       "observed_at": "2026-10-06T12:59:53Z"
     },
     {
+      "operation": "lpar.rename",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:17:41Z"
+    },
+    {
       "operation": "lpar.set_description",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T09:44:15Z"
+    },
+    {
+      "operation": "lpar.set_minimum_affinity_policy",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "lpar.set_msp",
@@ -498,6 +547,13 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T20:33:07Z"
+    },
+    {
+      "operation": "system.modify",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "system.plan_memopt_score",
