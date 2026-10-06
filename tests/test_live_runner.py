@@ -3309,7 +3309,7 @@ def test_help_renders_the_docstring_unwrapped_with_every_group(capsys):
 def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
 
-    block = runner._run_provenance([24], "dedicated", repo_root, "V1_0")
+    block = runner._run_provenance([24], "dedicated", repo_root, "V1_0", False)
 
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -3328,7 +3328,7 @@ def test_run_provenance_stamps_the_commit_and_a_clean_tree(tmp_path):
 
 def test_run_provenance_outside_a_repository_reports_no_commit():
     """A run that cannot be attributed says so; it does not omit the block."""
-    block = runner._run_provenance([0, 1], None, None, "(not set)")
+    block = runner._run_provenance([0, 1], None, None, "(not set)", True)
 
     assert block == {
         "tested_commit": None,
@@ -3337,6 +3337,7 @@ def test_run_provenance_outside_a_repository_reports_no_commit():
         "subtasks": [0, 1],
         "schema_version": "(not set)",
         "finished": block["finished"],
+        "partial": True,
     }
 
 
@@ -3354,7 +3355,7 @@ def test_run_provenance_reports_a_dirty_tree(tmp_path):
         subprocess.run(["git", *args], cwd=tmp_path, check=True)
     (tmp_path / "scripts" / "thing.py").write_text("x = 2\n", encoding="utf-8")
 
-    block = runner._run_provenance([24], "dedicated", tmp_path, "(not set)")
+    block = runner._run_provenance([24], "dedicated", tmp_path, "(not set)", False)
 
     assert block["tested_commit"] is not None
     assert block["tree_clean"] is False
@@ -4909,7 +4910,9 @@ async def test_main_stamps_run_provenance_into_the_results_document(
         "subtasks",
         "schema_version",
         "finished",
+        "partial",
     }
+    assert block["partial"] is False
 
 
 @pytest.mark.asyncio
@@ -6522,3 +6525,74 @@ def test_the_two_assertion_id_patterns_agree():
         anchored.removeprefix("\\A").removesuffix("\\Z")
         == runner.check_capability_inventory.ASSERTION_ID.pattern
     )
+
+
+# --- #1332: an interrupted run still writes its results document -------------
+
+
+def _baseline_then_raise(monkeypatch, error: BaseException) -> None:
+    """ST0 captures a baseline and records a row; the next subtask raises *error*."""
+
+    async def capture_baseline(_client, state):
+        state.artifacts.lp3_baseline = {"description": "original", "msp": False}
+        state.record(0, "hmc_get_lpar_description", "PASS", "original")
+
+    async def interrupted(_client, _state):
+        raise error
+
+    monkeypatch.setattr(runner, "SUBTASKS", {0: capture_baseline, 4: interrupted})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [RuntimeError("boom"), KeyboardInterrupt()])
+async def test_main_writes_partial_results_when_a_subtask_raises(
+    monkeypatch, tmp_path, error
+):
+    """The ST0 baseline survives the interruption the operator must recover from."""
+    _isolate_runner(monkeypatch)
+    _baseline_then_raise(monkeypatch, error)
+    closed: list[bool] = []
+    monkeypatch.setattr(
+        runner.IsoHttpServer, "close", lambda _self: closed.append(True)
+    )
+    results_path = tmp_path / "results.json"
+
+    with pytest.raises(type(error)) as raised:
+        await runner.main(
+            results_path=str(results_path), config=runner.LiveTestConfig()
+        )
+
+    assert raised.value is error
+    assert closed == [True]
+    saved = json.loads(results_path.read_text())
+    assert saved["artifacts"]["lp3_baseline"] == {
+        "description": "original",
+        "msp": False,
+    }
+    assert saved["run"]["partial"] is True
+    assert saved["run"]["subtasks"] == [0, 4]
+    assert [row["tool"] for row in saved["results"]] == ["hmc_get_lpar_description"]
+
+
+@pytest.mark.asyncio
+async def test_partial_results_write_failure_does_not_mask_the_run_failure(
+    monkeypatch, tmp_path, capsys
+):
+    """The run's own exception is what propagates, whatever the write does."""
+    _isolate_runner(monkeypatch)
+    error = RuntimeError("boom")
+    _baseline_then_raise(monkeypatch, error)
+
+    def refuse(_path, _document):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(runner, "_write_results", refuse)
+
+    with pytest.raises(RuntimeError) as raised:
+        await runner.main(
+            results_path=str(tmp_path / "results.json"),
+            config=runner.LiveTestConfig(),
+        )
+
+    assert raised.value is error
+    assert "Could not write partial results: disk full" in capsys.readouterr().out
