@@ -49,7 +49,7 @@ are not limitations as limitations:
 | `metrics.aggregated` | feed GET, then the newest JSON link | same | same |
 | `template.list` | `GET /rest/api/templates/PartitionTemplate` | `rest:template-library` | `library` |
 | `template.get` | `GET …/PartitionTemplate/{uuid}` | `rest:template-library` | `by-uuid` |
-| `template.deploy` | `POST …/PartitionTemplate/{uuid}/do/deploy` | `rest:template-library`, `rest:template-library/template-rest-job-api` | `draft-deploy` |
+| `template.deploy` | `POST …/PartitionTemplate/{uuid}/do/deploy` | `rest:template-library`, `rest:template-library/template-rest-job-api` | `draft-deploy` (unevidenced) |
 
 Excluded, with owners: template capture/check/transform/delete (#644); raw LTM/STM, energy,
 SSP and threshold rows (#649–#652); LPAR metrics dynamic parameters (#638); `template.deploy`
@@ -64,49 +64,69 @@ authority/role changes (operator).
    feeds. `fetch_json` keeps `Accept: application/json`, which no capture contradicts; the live
    data fetch is the check. A unit test asserting the feed request's Accept is `*/*` fails
    first.
-2. **Declarations.** The three "unlicensed" PCM declarations become one authority declaration
-   per operation (`error_codes={"403"}`, variant `pcm-authority`, reason "the connecting
-   user lacks PCM authority (HTTP 403)"). The template declaration is removed: the only
-   outcome it matched was the 406 #1202 fixed, and a recurrence must fail.
+2. **Declarations.** The three "unlicensed" PCM declarations become module-level authority
+   declarations, one per declared operation (`error_codes={"403"}`, variant `pcm-authority`,
+   reason "the connecting user lacks PCM authority (HTTP 403)"). The template declaration is
+   removed: the only outcome it matched was the 406 #1202 fixed, and a recurrence must fail.
+   The runner's startup validator (`_validate_declared_outcomes`) requires each
+   `expected=[NAME]` to be a literal list of module-level names and each declared call to be
+   recorded by `record_with_expected(5, tool, st, data, [NAME])` in the same async function;
+   only the verified branch may go through a helper.
 3. **ST5 (round2, read-only)** records through `record_verified` when the call returned, and
-   through `record_with_expected` otherwise (refusals stay non-promoting):
+   through `record_with_expected` otherwise (refusals stay non-promoting). Each row's label is
+   the tool's own name, so observation ids stay unique (`_observation_id` drops a ` (…)` suffix):
    - `pcm.get_preferences` — `five-flags-boolean` (all five fields present and boolean).
    - `metrics.processed_links` / `metrics.aggregated_links` over the last two hours —
-     `links-returned` (non-empty), `links-name-feed-and-system` (each href names the feed kind
-     and the system UUID, case-insensitively).
+     `links-name-system` (each href names the system UUID, case-insensitively; the reference
+     file name is `<Category>_<uuid>_…json`). An empty list is a SKIP naming the prerequisite
+     (`AggregationEnabled`/`LongTermMonitorEnabled` and collection time), and the matching data
+     tool is then a SKIP with the same reason — never a promoting or failed observation.
    - `metrics.processed` / `metrics.aggregated` over the same window, only after links were
      returned — `document-names-system` (`systemUtil.utilInfo.uuid` equals the system UUID),
-     `samples-present` (`utilSamples` non-empty). An empty `{}` result (no sample retained)
-     records a SKIP naming the prerequisite instead of a promoting row.
-   - `template.list` — `entries-are-partition-templates` (non-empty; each entry's
-     `ResourceType` is `PartitionTemplate` and carries a UUID). `template.get` on the first
-     listed UUID — `template-identity-matches`. No template → SKIP.
+     `samples-present` (`utilSamples` non-empty), both from the reference JSON specification.
+     An empty `{}` result (sample aged out) is a SKIP with the prerequisite.
+   - `template.list` — `entries-are-template-summaries` (non-empty; each entry's
+     `ResourceType` is `PartitionTemplateSummary`, as `tests/fixtures/live/rest-templates-feed.json`
+     captures, and carries a `UUID`). `template.get` on the first listed UUID —
+     `template-identity-matches` (the returned entry's `UUID` equals it, case-insensitively).
+     No template → SKIP. Unit tests build the list from that capture.
    - The system UUID is `artifacts.system_uuid` when ST1 set it; otherwise one
      `hmc_get_system` read, recorded as a non-promoting row, supplies it. No UUID → the
      metric rows SKIP.
 4. **ST12** keeps job inspection only; its PCM toggle is removed from round2.
-5. **ST38, arm `pcm` (opt-in).** Group `pcm: [38]`, not in `all`, dispatched by
+5. **ST38, arm `pcm` (opt-in).** Group `pcm: [38]`. A bare run selects every `SUBTASKS` key and
+   `live_test_runner.py 38` selects it positionally, so ST38 itself SKIPs ("runs only in the
+   pcm arm") unless `state.group == "pcm"`, as the profiles arm gates its system-wide steps
+   (`scripts/live_test/lpar.py`). Dispatched by
    `scripts/live_pcm.py` (tested by `tests/scripts/test_live_pcm.py`), disclosed by a
    `_pcm_verdict` in preflight: "PCM preferences on managed system X: each of the five
    collection flags toggled, then all five restored to the pre-run read". The scenario:
    1. read the snapshot; all five flags must be boolean, otherwise SKIP with nothing changed;
+      the snapshot read is recorded as a results row before the first write, so a finished or
+      interrupted `test-results-pcm.json` carries the original values;
    2. for each flag: set it to the opposite value; read back; then restore **all five** to the
       snapshot in one call (the HMC couples flags — enabling aggregation enables LTM) and read
       back;
    3. a final read must equal the snapshot.
-   One `record_verified` observation for `pcm.set_preferences` with assertions
-   `<flag>-toggled` per flag that read back flipped, `snapshot-restored`; `cleanup` is
+   One `record_verified` observation for `pcm.set_preferences` with five `<flag>-toggled`
+   assertions, always present (a flag the HMC refuses or couples fails its assertion and the
+   observation records `failed`), and `snapshot-restored`; `cleanup` is
    `passed` only when the final read equals the snapshot, otherwise `failed` and a
    `MANUAL RECOVERY REQUIRED` row naming the five original values. Intermediate reads and
    writes are non-promoting `state.record` rows.
 6. **Catalog.** Rebind rows as tabled. Add nine maturity records: implementation state and
-   scope as tabled (`template.deploy` `partial`, missing `draft-deploy` with no
-   confirmation), evidence copied from the run's observations file, gaps from its gap file.
+   scope as tabled (`template.deploy` `implemented`, unevidenced: its positive path is #644's),
+   evidence copied from the run's observations file, gaps from its gap file.
    Regenerate `src/hmcpctl/_operation_maturity.json` and `docs/tools/`.
-7. **Docs.** `docs/live-testing.md` gains the `pcm` arm row, a section with the manual restore
-   (`hmc_set_pcm_preferences` with the five original values), and the recovery note
-   (recovery does not witness ST38: exit 2 expected; compare a preferences read before and
-   after). `CHANGELOG.md` records the feed Accept fix and the arm.
+7. **Docs.** `docs/live-testing.md` gains the `pcm` arm row and a section: before the run, save
+   `hmcpctl metrics prefs ManagedSystem <system>` outside the repo (a hang-up writes no
+   results document); after an interrupted or failed run, restore from that read or the
+   snapshot row with `hmcpctl metrics set-prefs ManagedSystem <system> --ltm/--no-ltm
+   --aggregation/--no-aggregation --stm/--no-stm --compute-ltm/--no-compute-ltm
+   --energy/--no-energy --yes`, and do not run the arm again until the flags match (the next
+   run overwrites the document and takes the current flags as its baseline). Recovery does not
+   witness ST38 (exit 2 expected). The dispatch-range sentence names 38. `CHANGELOG.md`
+   records the feed Accept fix and the arm.
 
 ## Failure model
 
@@ -122,10 +142,12 @@ authority/role changes (operator).
    - Generated docs and the runtime projection stay in step with the catalog.
    - Public evidence carries no lab identifiers.
 3. **Accepted failure classes**
-   - A partial toggle the HMC refuses or couples (aggregation enables LTM): accepted — the
-     restore writes all five snapshot values and the final read decides cleanup.
-   - An interrupted ST38 leaving a flag changed: accepted at bounded cost — the snapshot is
-     printed before the first write and the runbook names the manual restore.
+   - A toggle the HMC refuses or couples (aggregation enables LTM): its assertion fails and the
+     observation records `failed`; the restore writes all five snapshot values and the final
+     read decides cleanup.
+   - An interrupted ST38 leaving a flag changed: accepted at bounded cost — the snapshot row
+     precedes the first write, the runbook's saved pre-read covers a hang-up, and the runbook
+     names the restore command and forbids a re-run until the flags match.
    - A V11R2 or other firmware answering `*/*` differently from V10R3: accepted; the live
      check runs on the boundary system only and other levels surface as FAIL rows.
    - Empty aggregated/processed data in the window: SKIP with the prerequisite, never a pass.
@@ -137,10 +159,12 @@ authority/role changes (operator).
 
 ## Verification
 
-- Unit: feed Accept `*/*` (red first); declarations no longer match 406 or bare `PCM`; ST5
-  assertion paths (pass, empty data → SKIP, 403 → gap); ST12 makes no `hmc_set_pcm_preferences`
-  call; ST38 toggles each flag, restores all five, fails cleanup on a mismatched final read,
-  SKIPs on a non-boolean snapshot; preflight lists the PCM mutation; wrapper dispatches
+- Unit: feed Accept `*/*` (red first); declarations no longer match 406 or bare `PCM`, and
+  `_validate_declared_outcomes()` passes over the real modules; ST5 assertion paths (pass,
+  empty links → SKIP, empty data → SKIP, 403 → gap, unique observation ids); ST12 makes no
+  `hmc_set_pcm_preferences` call; ST38 SKIPs outside the pcm group, records the snapshot row
+  before any write, toggles each flag, restores all five, fails cleanup on a mismatched final
+  read, SKIPs on a non-boolean snapshot; preflight lists the PCM mutation; wrapper dispatches
   `--group pcm`.
 - Live (boundary system, V10R3): preflight; `live_test_runner.py 5`; `live_pcm.py`; recovery
   for each; a five-flag read before and after.
