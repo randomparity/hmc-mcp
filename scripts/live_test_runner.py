@@ -122,6 +122,11 @@ _ENVIRONMENT_PREFIX = "LIVE_TEST_ENV_"
 #: is a configuration error, caught at startup rather than after a hardware run.
 ENVIRONMENT_KEYS = ("LIVE_TEST_ENV_HMC_RELEASE", "LIVE_TEST_ENV_HARDWARE_FAMILY")
 
+#: A run records its release with the maintenance level, so one HMC is never
+#: catalogued under two tokens (#1335). Stricter than the catalog's own
+#: `HMC_RELEASE`, which still admits the bare `V<n>R<n>` rows recorded earlier.
+RUN_HMC_RELEASE = re.compile(r"V\d+R\d+M\d+")
+
 _SECRET_VALUE_RE = re.compile(
     r"(?i)\b(?P<name>password|passwd|token|secret|api[_-]?key)"
     r"(?P<separator>\s*(?:=|:)\s*)(?P<quote>['\"]?)(?P<value>[^\s,;'\"&]+)"
@@ -1462,24 +1467,31 @@ def _read_environment(path: Path | None = None) -> tuple[str, str] | None:
             + " and ".join(ENVIRONMENT_KEYS)
             + " must be set together"
         )
-    # The catalog's own grammars, applied here rather than at copy-in: these two
-    # strings are the only free text an observation carries, and a hostname or a
-    # serial typed into either would otherwise be written to disk and discovered
-    # only when a human pastes it into `maturity.json`.
+    # Grammars applied here rather than at copy-in: these two strings are the only
+    # free text an observation carries, and a hostname or a serial typed into
+    # either would otherwise be written to disk and discovered only when a human
+    # pastes it into `maturity.json`. The message never echoes the value.
     release, family = values[ENVIRONMENT_KEYS[0]], values[ENVIRONMENT_KEYS[1]]
     invalid = [
-        key
-        for key, value, pattern in (
-            (ENVIRONMENT_KEYS[0], release, check_capability_inventory.HMC_RELEASE),
-            (ENVIRONMENT_KEYS[1], family, check_capability_inventory.HARDWARE_FAMILY),
+        f"{key} does not match its grammar (expected {form})"
+        for key, value, pattern, form in (
+            (
+                ENVIRONMENT_KEYS[0],
+                release,
+                RUN_HMC_RELEASE,
+                "V<n>R<n>M<n>, e.g. V10R3M1060",
+            ),
+            (
+                ENVIRONMENT_KEYS[1],
+                family,
+                check_capability_inventory.HARDWARE_FAMILY,
+                "POWER<n>, e.g. POWER10",
+            ),
         )
         if not pattern.fullmatch(value)
     ]
     if invalid:
-        raise ValueError(
-            "invalid live-test configuration: "
-            + ", ".join(f"{key} does not match its grammar" for key in invalid)
-        )
+        raise ValueError("invalid live-test configuration: " + ", ".join(invalid))
     return release, family
 
 

@@ -66,7 +66,7 @@ Evidence retains one observation shape, with an exact key set:
   "scenario": "st12-job-inspection",
   "tested_commit": "<40 hex>",
   "observed_at": "2026-09-06T00:03:02Z",
-  "hmc_release": "V10R3",
+  "hmc_release": "V10R3M1060",
   "hardware_family": "POWER10",
   "schema_version": "V1_0",
   "cleanup": "not-required",
@@ -81,7 +81,9 @@ ids that **held**, in declaration order — so a `failed` observation is disting
 from a `passed` one on that field alone. `hmc_release` and `hardware_family` are the
 only free text and each has a grammar (`V<n>R<n>[M<n>]` and `POWER<n>`) rather than a
 permissive character class, so a hostname, serial, or location code cannot be written
-there. `schema_version` is the run's `HMC_SCHEMA_VERSION` as its header printed it — a
+there. The catalog keeps the maintenance level optional only for rows recorded before
+#1335; the runner requires it (see *Recording an observation*). `schema_version` is
+the run's `HMC_SCHEMA_VERSION` as its header printed it — a
 `V<n>_<n>[_<n>...]` token or `(not set)` — and observations stored before format 4 read
 `unrecorded`, because nothing recorded the value for them; it attributes the observation and does not
 affect currency or promotion. An operation carries at most one live observation;
@@ -105,7 +107,7 @@ Copy an emitted `missing_scope` object into the operation's implementation recor
   "confirmation": {
     "tested_commit": "<40 hex>",
     "observed_at": "2026-09-10T00:00:00Z",
-    "hmc_release": "V10R3",
+    "hmc_release": "V10R3M1060",
     "hardware_family": "POWER10",
     "closure_fingerprint": "<64 hex>"
   }
@@ -166,7 +168,9 @@ The live runner writes observations and confirmed gaps to a gitignored file besi
 and never into the catalog: a human copies them in, and the pull request that commits
 one is where the record is reviewed. The runner writes nothing unless the tree is clean
 under `src/` and `scripts/`, both environment settings are present in `.env`
-(`LIVE_TEST_ENV_HMC_RELEASE` and `LIVE_TEST_ENV_HARDWARE_FAMILY` — both or neither),
+(`LIVE_TEST_ENV_HMC_RELEASE` and `LIVE_TEST_ENV_HARDWARE_FAMILY` — both or neither,
+the release in its canonical `V<n>R<n>M<n>` form such as `V10R3M1060`, so one HMC is
+never recorded under two tokens),
 `HMC_SCHEMA_VERSION` is unset or a `V<n>_<n>[_<n>...]` token (a run with both environment
 settings present warns at startup otherwise), and `git check-ignore` claims the destination.
 
