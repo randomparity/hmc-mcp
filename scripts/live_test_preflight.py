@@ -44,7 +44,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, pcie, storage_lifecycle, users, vios_backup, vmedia
+from live_test import (
+    bare_cec,
+    lpar_config,
+    pcie,
+    storage_lifecycle,
+    users,
+    vios_backup,
+    vmedia,
+)
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -247,6 +255,28 @@ def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _lpar_config_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the one partition the lpar-config arm (#1345) creates and deletes again."""
+    return ArmVerdict(
+        "lpar-config",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                f"one partition {lpar_config.NAME_PREFIX}<8 hex> (created; memory, "
+                "processors, name and pending boot order changed; activated to SMS "
+                "and powered off; then deleted)"
+            ),
+            (
+                "no other partition: the system's partition names and free "
+                "processing units and memory are compared with the pre-run read"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name what the network arm (#629) changes, each reversed by the arm itself."""
     return ArmVerdict(
@@ -356,6 +386,7 @@ _ARM_VERDICTS = {
     "vios-backup": _vios_backup_verdict,
     "network": _network_verdict,
     "users": _users_verdict,
+    "lpar-config": _lpar_config_verdict,
     "vmedia": _vmedia_verdict,
     "storage": _storage_verdict,
 }

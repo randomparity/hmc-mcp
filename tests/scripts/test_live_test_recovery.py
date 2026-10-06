@@ -510,7 +510,13 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
         yield served
 
     async def no_findings(
-        call, pcie, partition, vios, network_inputs=None, users=False
+        call,
+        pcie,
+        partition,
+        vios,
+        network_inputs=None,
+        users=False,
+        lpar_config_inputs=None,
     ):
         return []
 
@@ -1086,8 +1092,10 @@ def _main(tmp_path, monkeypatch, document, findings=None, raises=None):
     """Run `main` over *document*; return (exit code, whether the HMC was contacted)."""
     contacted = []
 
-    async def run_checks(pcie, partition, vios, network_inputs=None, users=False):
-        contacted.append((pcie, partition, users))
+    async def run_checks(
+        pcie, partition, vios, network_inputs=None, users=False, lpar_config=None
+    ):
+        contacted.append((pcie, partition, users, lpar_config))
         if raises is not None:
             raise raises
         return findings or []
@@ -1347,6 +1355,95 @@ def test_a_pre_632_round2_document_still_runs_its_partition_checks(
 
 
 # ---------------------------------------------------------------------------
+# The lpar-config arm (ST39, #1345)
+# ---------------------------------------------------------------------------
+
+_LPAR_CONFIG = recovery.LparConfigInputs(_SYSTEM)
+_LISTING_CMD = f"lssyscfg -r lpar -m {_SYSTEM} -F name,state"
+
+
+def _lpar_config_caller(listing: str | None, seen: list[str]):
+    async def call(tool: str, **arguments):
+        recovery.guard_read_only(tool, arguments)
+        seen.append(arguments.get("cmd", tool))
+        return ("PASS", listing) if listing is not None else ("FAIL", None)
+
+    return call
+
+
+@pytest.mark.asyncio
+async def test_lpar_config_scratch_partition_is_reported():
+    seen: list[str] = []
+    listing = (
+        "lpar-A,Running\n"
+        "hmcpctl-live-lpar-0a1b2c3d,Not Activated\n"
+        "hmcpctl-live-lpar-0a1b2c3e-rn,Open Firmware\n"
+    )
+
+    findings = await recovery.check_run(
+        _lpar_config_caller(listing, seen),
+        None,
+        None,
+        lpar_config_inputs=_LPAR_CONFIG,
+    )
+
+    assert seen == [_LISTING_CMD]
+    assert [f.what for f in findings] == [
+        "partition hmcpctl-live-lpar-0a1b2c3d",
+        "partition hmcpctl-live-lpar-0a1b2c3e-rn",
+    ]
+    assert findings[0].remedy == (
+        f"rmsyscfg -r lpar -m {_SYSTEM} -n hmcpctl-live-lpar-0a1b2c3d"
+    )
+    assert findings[1].remedy.startswith(
+        f"chsysstate -m {_SYSTEM} -r lpar -n hmcpctl-live-lpar-0a1b2c3e-rn "
+        "-o shutdown --immed; rmsyscfg"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lpar_config_clean_system_has_no_finding():
+    call = _lpar_config_caller("lpar-A,Running\n", [])
+
+    assert (
+        await recovery.check_run(call, None, None, lpar_config_inputs=_LPAR_CONFIG)
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_lpar_config_unreadable_listing_is_not_clean():
+    with pytest.raises(recovery.StateUnreadable, match="partitions of"):
+        await recovery.check_run(
+            _lpar_config_caller(None, []), None, None, lpar_config_inputs=_LPAR_CONFIG
+        )
+
+
+def test_lpar_config_run_is_witnessed(tmp_path, monkeypatch, capsys):
+    document = {
+        "run": {"subtasks": [39], "group": "lpar-config"},
+        "config": {"system_name": _SYSTEM},
+        "artifacts": {},
+        "results": [],
+    }
+
+    seen = []
+
+    async def run_checks(pcie, partition, vios, network_inputs, users, lpar_config):
+        seen.append(lpar_config)
+        return []
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", run_checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    assert recovery.main(["--results", str(path)]) == 0
+    assert seen == [recovery.LparConfigInputs(_SYSTEM)]
+    assert "CLEAN" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
 # The vios-backup arm (ST37, #1349)
 # ---------------------------------------------------------------------------
 
@@ -1470,7 +1567,9 @@ def test_vios_backup_inputs_need_subtask_37_and_its_artifacts():
 
 
 def test_a_vios_backup_run_is_witnessed(tmp_path, monkeypatch, capsys):
-    async def checks(pcie, partition, vios, network_inputs=None, users=False):
+    async def checks(
+        pcie, partition, vios, network_inputs=None, users=False, lpar_config=None
+    ):
         assert pcie is None and partition is None
         return await recovery.check_vios_backup(
             _caller({"hmc_list_vios_backups": [], "hmc_list_storage_mappings": []}),
@@ -1670,7 +1769,9 @@ async def test_an_unreadable_network_listing_is_not_clean(tool):
 
 
 def test_a_network_run_is_witnessed_and_can_exit_clean(tmp_path, monkeypatch, capsys):
-    async def checks(pcie, partition, vios, network_inputs=None, users=False):
+    async def checks(
+        pcie, partition, vios, network_inputs=None, users=False, lpar_config=None
+    ):
         assert network_inputs is not None
         return await recovery.check_network(_caller(_clean_hmc()), network_inputs)
 

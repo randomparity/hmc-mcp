@@ -47,6 +47,7 @@ from live_test import (  # noqa: E402
     escape_hatch,
     inventory,
     lpar,
+    lpar_config,
     metrics,
     network,
     observation,
@@ -67,6 +68,7 @@ LIVE_WORKFLOW_MODULES = (
     escape_hatch,
     inventory,
     lpar,
+    lpar_config,
     metrics,
     network,
     pcie,
@@ -1045,6 +1047,12 @@ async def test_st38_runs_only_in_the_pcm_group(group) -> None:
 def test_pcm_group_is_opt_in() -> None:
     assert runner.SUBTASK_GROUPS["pcm"] == [38]
     assert 38 not in runner.SUBTASK_GROUPS["all"]
+
+
+def test_lpar_config_group_is_opt_in() -> None:
+    assert runner.SUBTASK_GROUPS["lpar-config"] == [39]
+    assert 39 not in runner.SUBTASK_GROUPS["all"]
+    assert runner.SUBTASKS[39] is lpar_config.exercise_lpar_config
 
 
 @pytest.mark.asyncio
@@ -3447,7 +3455,6 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
 @pytest.mark.parametrize(
     ("outcome", "message"),
     [
-        ("lpar._REST_MODIFY_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
         (
             "metrics._PREFERENCES_AUTHORITY",
             "HMCError: The connecting user does not have PCM authority (HTTP 403)",
@@ -6470,6 +6477,22 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "restore-accepted",
             "mapping-restored",
             "baseline-restored",
+        },
+        "st39-lpar-config": {
+            "memory-read-back",
+            "processing-units-read-back",
+            "other-values-unchanged",
+            "small-change-read-back",
+            "large-change-read-back",
+            "no-op-accepted-unchanged",
+            "empty-request-refused",
+            "renamed-same-uuid",
+            "old-name-absent",
+            "ownership-stamp-kept",
+            "original-name-restored",
+            "pending-boot-string-read-back",
+            "clear-refused-after-authorization",
+            "pending-boot-string-unchanged",
         },
     }
 
