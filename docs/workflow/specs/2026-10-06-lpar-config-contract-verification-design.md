@@ -64,7 +64,7 @@ would bind commands nobody issues.
 5. **Not Activated cases** (`R` = `mem_region_size` from the baseline):
    - `lpar.modify`: desired memory `2048 + R`, maximum memory `4096 + R` and desired
      units `0.6` in one call; assertions `memory-read-back`,
-     `processing-units-read-back`. This call is criterion 3's re-capture of the
+     `processing-units-read-back`, `other-values-unchanged`. This call is criterion 3's re-capture of the
      declared 406 (ST8's call changes desired and maximum memory the same way).
    - `lpar.dlpar_mem`: small (`desired + R`), large (`desired = max`), no-op (current
      desired again), empty request; assertions `small-change-read-back`,

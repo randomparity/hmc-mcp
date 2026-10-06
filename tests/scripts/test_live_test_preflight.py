@@ -317,6 +317,21 @@ def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
     assert "all five restored to the pre-run read" in output
 
 
+def test_the_lpar_config_verdict_names_its_one_partition(
+    workspace, monkeypatch, capsys
+):
+    """#1345. The arm's only mutation target is the partition it creates."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "lpar-config", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "one partition hmcpctl-live-lpar-<8 hex>" in output
+    assert "activated to SMS" in output
+
+
 def test_the_vios_backup_verdict_names_the_restore_and_its_cleanup(
     workspace, monkeypatch, capsys
 ):
