@@ -508,7 +508,7 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
     async def served_client():
         yield served
 
-    async def no_findings(call, pcie, partition, users):
+    async def no_findings(call, pcie, partition, vios, users):
         return []
 
     monkeypatch.setattr(recovery.runner, "served_client", served_client)
@@ -517,7 +517,7 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
     )
     monkeypatch.setattr(recovery, "check_run", no_findings)
 
-    assert await recovery._run_checks(_INPUTS, None, False) == []
+    assert await recovery._run_checks(_INPUTS, None) == []
     assert seen == [served]
 
 
@@ -1034,7 +1034,7 @@ def _main(tmp_path, monkeypatch, document, findings=None, raises=None):
     """Run `main` over *document*; return (exit code, whether the HMC was contacted)."""
     contacted = []
 
-    async def run_checks(pcie, partition, users):
+    async def run_checks(pcie, partition, vios, users):
         contacted.append((pcie, partition, users))
         if raises is not None:
             raise raises
@@ -1291,3 +1291,184 @@ def test_a_pre_632_round2_document_still_runs_its_partition_checks(
     assert _main(tmp_path, monkeypatch, document, [_FINDING]) == (2, True)
     output = capsys.readouterr().out
     assert "STRANDED" in output and "predates the users arm" in output
+
+
+# ---------------------------------------------------------------------------
+# The vios-backup arm (ST37, #1349)
+# ---------------------------------------------------------------------------
+
+_VIOS_INPUTS = recovery.VIOSBackupInputs(
+    system_name=_SYSTEM,
+    lpar_name="sys-R1-lp3",
+    vios="vios-A",
+    vios_uuid="0000000A-ABCD-4EF0-8ABC-00000000000A",
+    backup_name="hmcpctl-live-st37-0a1b2c3d",
+    mapping_id="vhost0/lp3-disk",
+    backing="lp3-vd1",
+)
+_MAPPED = [{"id": "vhost0/lp3-disk", "backing_name": "lp3-vd1"}]
+
+
+def _vios_document(subtasks=(37,), **artifacts) -> dict:
+    return {
+        "run": {"subtasks": list(subtasks)},
+        "config": {"system_name": _SYSTEM, "lp3_name": "sys-R1-lp3"},
+        "artifacts": {
+            "vios_backup_vios": "vios-A",
+            "vios_backup_vios_uuid": "0000000A-ABCD-4EF0-8ABC-00000000000A",
+            "vios_backup_name": "hmcpctl-live-st37-0a1b2c3d",
+            "vios_backup_mapping": "vhost0/lp3-disk",
+            "vios_backup_backing": "lp3-vd1",
+            **artifacts,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_clean_vios_backup_run_yields_no_findings():
+    seen: list[str] = []
+    responses = {"hmc_list_vios_backups": [], "hmc_list_storage_mappings": _MAPPED}
+
+    assert (
+        await recovery.check_vios_backup(_caller(responses, seen), _VIOS_INPUTS) == []
+    )
+    assert set(seen) == {"hmc_list_vios_backups", "hmc_list_storage_mappings"}
+
+
+@pytest.mark.asyncio
+async def test_a_kept_backup_is_reported_with_its_rmviosbk():
+    responses = {
+        "hmc_list_vios_backups": [
+            {"name": "hmcpctl-live-st37-0a1b2c3d", "type": "viosioconfig"}
+        ],
+        "hmc_list_storage_mappings": _MAPPED,
+    }
+
+    (finding,) = await recovery.check_vios_backup(_caller(responses), _VIOS_INPUTS)
+
+    assert finding.remedy == (
+        "rmviosbk -t viosioconfig -m sys-R1 -p vios-A -f hmcpctl-live-st37-0a1b2c3d"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rendered",
+    ["hmcpctl-live-st37-0a1b2c3d.tar.gz", "vios-A/hmcpctl-live-st37-0a1b2c3d"],
+)
+async def test_a_kept_backup_rendered_differently_is_still_reported(rendered):
+    responses = {
+        "hmc_list_vios_backups": [{"name": rendered, "type": "viosioconfig"}],
+        "hmc_list_storage_mappings": _MAPPED,
+    }
+
+    (finding,) = await recovery.check_vios_backup(_caller(responses), _VIOS_INPUTS)
+
+    assert finding.what == "VIOS backup left"
+
+
+@pytest.mark.asyncio
+async def test_a_missing_disk_mapping_is_reported_with_its_mkvdev():
+    responses = {"hmc_list_vios_backups": [], "hmc_list_storage_mappings": []}
+
+    (finding,) = await recovery.check_vios_backup(_caller(responses), _VIOS_INPUTS)
+
+    assert finding.remedy == (
+        'viosvrcmd -m sys-R1 -p vios-A -c "mkvdev -vdev lp3-vd1 -vadapter vhost0 '
+        '-dev lp3-disk"'
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "responses",
+    [
+        {"hmc_list_storage_mappings": _MAPPED},
+        {"hmc_list_vios_backups": []},
+    ],
+    ids=["backups-unreadable", "mappings-unreadable"],
+)
+async def test_an_unreadable_vios_listing_is_not_clean(responses):
+    with pytest.raises(recovery.StateUnreadable):
+        await recovery.check_vios_backup(_caller(responses), _VIOS_INPUTS)
+
+
+@pytest.mark.asyncio
+async def test_a_mapping_name_that_is_not_a_device_name_is_not_used():
+    inputs = recovery.VIOSBackupInputs(
+        **{**vars(_VIOS_INPUTS), "mapping_id": "vhost0/x;rmdev"}
+    )
+
+    with pytest.raises(recovery.StateUnreadable, match="plain device names"):
+        await recovery.check_vios_backup(_caller({}), inputs)
+
+
+def test_vios_backup_inputs_need_subtask_37_and_its_artifacts():
+    assert recovery.vios_backup_inputs_from_document(_vios_document(), [37]) == (
+        _VIOS_INPUTS
+    )
+    assert recovery.vios_backup_inputs_from_document(_vios_document(), [16]) is None
+    assert (
+        recovery.vios_backup_inputs_from_document(
+            _vios_document(vios_backup_name=None), [37]
+        )
+        is None
+    )
+
+
+def test_a_vios_backup_run_is_witnessed(tmp_path, monkeypatch, capsys):
+    async def checks(pcie, partition, vios, users):
+        assert pcie is None and partition is None
+        return await recovery.check_vios_backup(
+            _caller({"hmc_list_vios_backups": [], "hmc_list_storage_mappings": []}),
+            vios,
+        )
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(_vios_document()), encoding="utf-8")
+
+    assert recovery.main(["--results", str(path)]) == 1
+    output = capsys.readouterr().out
+    assert "disk mapping missing" in output
+    assert "NOT WITNESSED" not in output
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backups", "what"),
+    [
+        (
+            [{"name": "hmcpctl-live-st37-0a1b2c3d", "type": "viosioconfig"}],
+            "VIOS off baseline, backup kept",
+        ),
+        ([], "VIOS off baseline, backup gone"),
+    ],
+)
+async def test_an_off_baseline_run_is_never_clean(backups, what):
+    inputs = recovery.VIOSBackupInputs(**{**vars(_VIOS_INPUTS), "off_baseline": True})
+    responses = {"hmc_list_vios_backups": backups, "hmc_list_storage_mappings": _MAPPED}
+
+    (finding,) = await recovery.check_vios_backup(_caller(responses), inputs)
+
+    assert finding.what == what
+
+
+def test_the_kept_backup_row_marks_the_run_off_baseline():
+    document = _vios_document()
+    document["results"] = [
+        {"tool": "final compare (lsmap -all -net)", "status": "FAIL"},
+        {"tool": recovery.vios_backup.KEPT_ROW, "status": "FAIL"},
+    ]
+
+    inputs = recovery.vios_backup_inputs_from_document(document, [37])
+
+    assert inputs is not None and inputs.off_baseline
+    compared_only = _vios_document()
+    compared_only["results"] = [
+        {"tool": "final compare (lsmap -all)", "status": "FAIL"}
+    ]
+    assert not recovery.vios_backup_inputs_from_document(
+        compared_only, [37]
+    ).off_baseline

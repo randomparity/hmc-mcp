@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
+from hmcpctl.xmlutil import console_version
+
 from .observation import Assertion, ExpectedOutcome
 from .results import entries
 from .results import resource as get_resource
@@ -40,7 +42,7 @@ _FIRMWARE_PLACEMENT_500 = ExpectedOutcome(
 # ---------------------------------------------------------------------------
 
 
-async def _discover_console(client: Client, state: RunState) -> None:
+async def _discover_console(client: Client, state: RunState) -> object:
     st, data = await state.call(client, "hmc_get_console_info")
     console_uuid = None
     if st == "PASS" and isinstance(data, dict):
@@ -58,6 +60,7 @@ async def _discover_console(client: Client, state: RunState) -> None:
     )
     if console_uuid:
         state.artifacts.console_uuid = console_uuid
+    return data
 
 
 async def _discover_system(client: Client, state: RunState) -> None:
@@ -296,11 +299,58 @@ async def _record_inventory_summaries(client: Client, state: RunState) -> None:
     )
 
 
+# PlatformUpdate needs HMC 11.1.1111 (docs/refs/hmc-rest-api-p11/jobs/managedsystem-jobs/
+# 065-platformupdate_managedsystem-job.md:12). The name is absent on purpose: an HMC past
+# the gate would still stop at the name lookup, before any PlatformUpdate PUT.
+_PLATFORM_UPDATE_MINIMUM = (11, 1, 1111)
+_ABSENT_SYSTEM = "hmcpctl-live-absent-system"
+_PLATFORM_UPDATE_CHECK = "hmc_update_firmware (pre-11.1.1111 refusal)"
+
+
+async def _check_platform_update_refusal(
+    client: Client, state: RunState, console: object
+) -> None:
+    """A pre-11.1.1111 HMC refuses PlatformUpdate before any lookup; a non-promoting check."""
+    resource = console.get("Resource") if isinstance(console, dict) else None
+    version = console_version(resource) if isinstance(resource, dict) else None
+    if version is None or version >= _PLATFORM_UPDATE_MINIMUM:
+        state.skip(
+            1,
+            _PLATFORM_UPDATE_CHECK,
+            "runs only on an HMC whose version reads below 11.1.1111",
+        )
+        return
+    status, data = await state.call(
+        client,
+        "hmc_update_firmware",
+        system_name_or_uuid=_ABSENT_SYSTEM,
+        platform_update={
+            "SystemFirmwareUpdate": {"UpdateType": "Update", "UpdateOrder": 1}
+        },
+    )
+    text = str(data)
+    refused = (
+        status == "FAIL"
+        and "requires HMC 11.1.1111" in text
+        and "below the minimum" in text
+    )
+    state.record(
+        1,
+        _PLATFORM_UPDATE_CHECK,
+        "PASS" if refused else "FAIL",
+        data,
+        "refused before resolving the system"
+        if refused
+        else "expected the 11.1.1111 version refusal",
+    )
+
+
 async def inventory_connectivity(client: Client, state: RunState) -> None:
     print("\n=== ST1: Connectivity & Inventory ===")
-    await _discover_console(client, state)
+    console = await _discover_console(client, state)
     await _discover_system(client, state)
     await _discover_partitions(client, state)
     await _discover_vios(client, state)
     await _probe_capacity_and_resources(client, state)
     await _record_inventory_summaries(client, state)
+    await _check_platform_update_refusal(client, state, console)

@@ -54,6 +54,7 @@ from live_test import (  # noqa: E402
     results,
     storage,
     users,
+    vios_backup,
     vmedia,
 )
 
@@ -70,6 +71,7 @@ LIVE_WORKFLOW_MODULES = (
     provisioning,
     storage,
     users,
+    vios_backup,
     vmedia,
 )
 
@@ -589,6 +591,71 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
     assert all(entry["subtask"] == 1 for entry in state.results)
 
 
+def _console_at(version: str, release: str, service_pack: str) -> dict[str, object]:
+    return {
+        "UUID": "console-uuid",
+        "Resource": {
+            "VersionInfo": {
+                "Version": version,
+                "Release": release,
+                "ServicePackName": service_pack,
+            }
+        },
+    }
+
+
+_GATE_REFUSAL = (
+    "PlatformUpdate requires HMC 11.1.1111 or later; the connected HMC version "
+    "is below the minimum. Upgrade the HMC before retrying."
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "data", "expected"),
+    [
+        ("FAIL", _failure(_GATE_REFUSAL), "PASS"),
+        ("PASS", {"UUID": "job-uuid"}, "FAIL"),
+        (
+            "FAIL",
+            _failure("No managed system named 'hmcpctl-live-absent-system' found."),
+            "FAIL",
+        ),
+    ],
+)
+async def test_platform_update_check_passes_only_on_the_version_refusal(
+    status, data, expected
+) -> None:
+    state = _ScriptedSriovState([("hmc_update_firmware", status, data)])
+
+    await connectivity._check_platform_update_refusal(
+        object(), state, _console_at("10", "3", "1060")
+    )
+
+    (_, kwargs) = state.calls[0]
+    assert kwargs["system_name_or_uuid"] == "hmcpctl-live-absent-system"
+    [row] = state.results
+    assert (row["subtask"], row["status"]) == (1, expected)
+    assert not state.observations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "console",
+    [_console_at("11", "1", "1111"), {"UUID": "console-uuid"}, None],
+)
+async def test_platform_update_check_skips_without_a_pre_minimum_version(
+    console,
+) -> None:
+    state = _ScriptedSriovState([])
+
+    await connectivity._check_platform_update_refusal(object(), state, console)
+
+    assert state.calls == []
+    [row] = state.results
+    assert row["status"] == "SKIP"
+
+
 @pytest.mark.asyncio
 async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
     state = _ScriptedSriovState(
@@ -769,6 +836,13 @@ def _held(observation: dict[str, Any]) -> set[str]:
 def test_profiles_group_selects_only_property_subtasks() -> None:
     """The profiles arm never selects lifecycle, networking, users or storage."""
     assert runner.SUBTASK_GROUPS["profiles"] == [0, 4, 10, 15]
+
+
+def test_vios_backup_group_is_subtask_37_and_outside_all() -> None:
+    """The ST37 restore needs its own authorization, so `all` never reaches it."""
+    assert runner.SUBTASK_GROUPS["vios-backup"] == [37]
+    assert 37 not in runner.SUBTASK_GROUPS["all"]
+    assert runner.SUBTASKS[37].__module__ == "live_test.vios_backup"
 
 
 @pytest.mark.asyncio
@@ -3489,6 +3563,34 @@ def test_users_group_is_opt_in():
     assert runner.SUBTASK_GROUPS["users"] == [11]
 
 
+def test_restore_artifacts_tolerates_a_document_from_before_the_vios_backup_arm(
+    tmp_path,
+):
+    """A report written before #1349 added the ST37 fields is still a restore source."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    for name in runner._VIOS_BACKUP_ARTIFACTS:
+        del document["artifacts"][name]
+    document["artifacts"]["vios_uuid"] = "vios-1"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.vios_uuid == "vios-1"
+    assert state.artifacts.vios_backup_name is None
+
+
+def test_decode_artifacts_refuses_a_non_string_vios_backup_field():
+    artifacts = asdict(runner.LiveTestArtifacts())
+    artifacts["vios_backup_mapping"] = 3
+
+    with pytest.raises(TypeError, match="vios_backup_mapping"):
+        runner._decode_artifacts(artifacts)
+
+
 def test_restore_artifacts_tolerates_a_config_with_the_removed_vios_slot_settings(
     tmp_path,
 ):
@@ -6131,6 +6233,16 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "list-call-succeeded",
             "fixture-slot-listed",
             "fixture-slot-unowned",
+        },
+        "st37-vios-io-backup-restore": {
+            "listing-parsed",
+            "listing-names-run-backup",
+            "backup-accepted",
+            "backup-newly-listed",
+            "backup-type-viosioconfig",
+            "restore-accepted",
+            "mapping-restored",
+            "baseline-restored",
         },
     }
 
