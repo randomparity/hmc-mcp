@@ -114,9 +114,11 @@ authority/role changes (operator).
       snapshot in one call (the HMC couples flags — enabling aggregation enables LTM) and read
       back;
    3. a final read must equal the snapshot.
-   One `record_verified` observation for `pcm.set_preferences` with five `<flag>-toggled`
-   assertions, always present (a flag the HMC refuses or couples fails its assertion and the
-   observation records `failed`), and `snapshot-restored`; `cleanup` is
+   One `record_verified` observation for `pcm.set_preferences` with one assertion per flag
+   and `snapshot-restored`. While the snapshot has aggregation on, long-term monitoring (and
+   energy monitoring when capable and on) is held by the documented coupling, so its
+   assertion is `<flag>-held-by-aggregation` (read back unchanged); every other flag's is
+   `<flag>-toggled` (orchestrator ruling 2026-10-06, after the live run held both). `cleanup` is
    `passed` only when the final read equals the snapshot, otherwise `failed` and a
    `MANUAL RECOVERY REQUIRED` row naming the five original values. Intermediate reads and
    writes are non-promoting `state.record` rows.
@@ -149,9 +151,9 @@ authority/role changes (operator).
    - Generated docs and the runtime projection stay in step with the catalog.
    - Public evidence carries no lab identifiers.
 3. **Accepted failure classes**
-   - A toggle the HMC refuses or couples (aggregation enables LTM): its assertion fails and the
-     observation records `failed`; the restore writes all five snapshot values and the final
-     read decides cleanup.
+   - A toggle the documented coupling holds is expected and asserted as held; any other
+     refused or coupled toggle fails its assertion and the observation records `failed`. The
+     restore writes all five snapshot values and the final read decides cleanup.
    - An interrupted ST38 leaving a flag changed: accepted at bounded cost — the snapshot row
      precedes the first write, the runbook's saved pre-read covers a hang-up, and the runbook
      names the restore command and forbids a re-run until the flags match.

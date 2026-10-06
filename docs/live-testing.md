@@ -244,8 +244,10 @@ it sets the opposite value, reads it back, and writes all five snapshot values
 again: the HMC couples the flags, and enabling aggregation also enables
 long-term monitoring and, where the system supports it, energy monitoring. It
 reads the flags back after each restore and stops toggling if they differ from
-the snapshot. It passes only when a final read equals the snapshot. A flag the HMC
-refuses to change, or changes together with another, fails its assertion.
+the snapshot. It passes only when a final read equals the snapshot. While
+aggregation is on, the HMC holds long-term monitoring on, and energy monitoring on
+when the system is capable, so the arm expects those two toggles to read back
+unchanged. Any other flag that does not read back flipped fails its assertion.
 
 Before the run, save a read of the flags outside the repository. A hang-up writes
 no results document at all:

@@ -858,17 +858,30 @@ def _flags(**overrides: bool) -> dict[str, bool]:
     return {**_PREFS, **overrides}
 
 
-def _round_trip(final: dict[str, bool]) -> list[tuple[str, str, object]]:
-    """Each flag toggled and read back flipped, then a restore; `final` is the last read."""
+#: With aggregation on, the HMC holds these on (the reference, and the 2026-10-06 run).
+_HELD = {"LongTermMonitorEnabled", "EnergyMonitorEnabled"}
+
+
+def _round_trip(
+    final: dict[str, bool], baseline: dict[str, bool] | None = None
+) -> list[tuple[str, str, object]]:
+    """Each flag toggled and read back as the HMC answers, then a restore.
+
+    A flag the baseline's aggregation holds reads back unchanged; every other
+    flag reads back flipped. `final` is the last read.
+    """
+    base = baseline or _flags()
+    held = _HELD if base["AggregationEnabled"] else set()
     transcript: list[tuple[str, str, object]] = [
-        ("hmc_get_pcm_preferences", "PASS", _flags())
+        ("hmc_get_pcm_preferences", "PASS", base)
     ]
     for name, _ in metrics.PCM_FLAGS:
+        after = base if name in held else {**base, name: not base[name]}
         transcript += [
             ("hmc_set_pcm_preferences", "PASS", {}),
-            ("hmc_get_pcm_preferences", "PASS", _flags(**{name: not _PREFS[name]})),
+            ("hmc_get_pcm_preferences", "PASS", after),
             ("hmc_set_pcm_preferences", "PASS", {}),
-            ("hmc_get_pcm_preferences", "PASS", _flags()),
+            ("hmc_get_pcm_preferences", "PASS", base),
         ]
     return [*transcript, ("hmc_get_pcm_preferences", "PASS", final)]
 
@@ -894,15 +907,48 @@ async def test_st38_round_trip_restores_snapshot() -> None:
     assert observation_entry["operation"] == "pcm.set_preferences"
     assert recorded["result"] == "passed"
     assert recorded["cleanup"] == "passed"
-    assert recorded["assertions"][-1] == "snapshot-restored"
-    assert len(recorded["assertions"]) == 6
+    assert recorded["assertions"] == [
+        "long-term-monitor-held-by-aggregation",
+        "aggregation-toggled",
+        "short-term-monitor-toggled",
+        "compute-ltm-toggled",
+        "energy-monitor-held-by-aggregation",
+        "snapshot-restored",
+    ]
 
 
 @pytest.mark.asyncio
-async def test_st38_coupled_flag_fails_its_assertion() -> None:
+async def test_st38_toggles_every_flag_when_aggregation_is_off() -> None:
+    baseline = _flags(
+        AggregationEnabled=False,
+        LongTermMonitorEnabled=False,
+        EnergyMonitorEnabled=False,
+    )
+    state = _ScriptedSriovState(_round_trip(baseline, baseline))
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    recorded = state.observations[0]["observation"]
+    assert recorded["result"] == "passed"
+    assert recorded["assertions"][:5] == [
+        "long-term-monitor-toggled",
+        "aggregation-toggled",
+        "short-term-monitor-toggled",
+        "compute-ltm-toggled",
+        "energy-monitor-toggled",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_st38_a_held_flag_that_flips_fails_its_assertion() -> None:
     transcript = _round_trip(_flags())
-    # LTM stays on: the HMC keeps it while aggregation is enabled.
-    transcript[2] = ("hmc_get_pcm_preferences", "PASS", _flags())
+    # The coupling says LTM stays on while aggregation is enabled; it did not.
+    transcript[2] = (
+        "hmc_get_pcm_preferences",
+        "PASS",
+        _flags(LongTermMonitorEnabled=False),
+    )
     state = _ScriptedSriovState(transcript)
     state.group = "pcm"
 
@@ -911,7 +957,7 @@ async def test_st38_coupled_flag_fails_its_assertion() -> None:
     recorded = state.observations[0]["observation"]
     assert recorded["result"] == "failed"
     assert recorded["cleanup"] == "passed"
-    assert "long-term-monitor-toggled" not in recorded["assertions"]
+    assert "long-term-monitor-held-by-aggregation" not in recorded["assertions"]
 
 
 @pytest.mark.asyncio
@@ -6428,6 +6474,8 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "short-term-monitor-toggled",
             "compute-ltm-toggled",
             "energy-monitor-toggled",
+            "long-term-monitor-held-by-aggregation",
+            "energy-monitor-held-by-aggregation",
             "snapshot-restored",
         },
         "st4-profile-reads": {

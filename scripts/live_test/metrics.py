@@ -457,17 +457,47 @@ async def _read_preferences(
     )
     state.record(38, f"hmc_get_pcm_preferences ({label})", st, data)
     source = data if st == "PASS" and isinstance(data, dict) else {}
-    return {name: source.get(name) for name, _ in PCM_FLAGS}
+    flags = {name: source.get(name) for name, _ in PCM_FLAGS}
+    return {**flags, "EnergyMonitoringCapable": source.get("EnergyMonitoringCapable")}
 
 
-def _round_trip_assertions(toggled: dict[str, bool], restored: bool) -> list[Assertion]:
-    """One assertion per flag that read back flipped, and the final restore."""
+def _held_by_aggregation(snapshot: dict[str, Any], capable: bool) -> set[str]:
+    """The flags the HMC keeps on while aggregation is, so a toggle off is held.
+
+    Aggregation requires long-term monitoring, and enabling it enables energy
+    monitoring when the system is capable
+    (docs/refs/hmc-rest-api-p10/performance-and-capacity-monitoring/167-managed-system-pcm-preferences.md:23).
+    A V10R3 run on 2026-10-06 held both on through an accepted toggle (#634).
+    """
+    if snapshot["AggregationEnabled"] is not True:
+        return set()
+    held = {"LongTermMonitorEnabled"}
+    if capable and snapshot["EnergyMonitorEnabled"] is True:
+        held.add("EnergyMonitorEnabled")
+    return held
+
+
+def _round_trip_assertions(
+    as_expected: dict[str, bool], held: set[str], restored: bool
+) -> list[Assertion]:
+    """One assertion per flag — flipped, or held by aggregation — and the restore."""
     return [
-        Assertion("long-term-monitor-toggled", toggled["LongTermMonitorEnabled"]),
-        Assertion("aggregation-toggled", toggled["AggregationEnabled"]),
-        Assertion("short-term-monitor-toggled", toggled["ShortTermMonitorEnabled"]),
-        Assertion("compute-ltm-toggled", toggled["ComputeLTMEnabled"]),
-        Assertion("energy-monitor-toggled", toggled["EnergyMonitorEnabled"]),
+        Assertion(
+            "long-term-monitor-held-by-aggregation",
+            as_expected["LongTermMonitorEnabled"],
+        )
+        if "LongTermMonitorEnabled" in held
+        else Assertion(
+            "long-term-monitor-toggled", as_expected["LongTermMonitorEnabled"]
+        ),
+        Assertion("aggregation-toggled", as_expected["AggregationEnabled"]),
+        Assertion("short-term-monitor-toggled", as_expected["ShortTermMonitorEnabled"]),
+        Assertion("compute-ltm-toggled", as_expected["ComputeLTMEnabled"]),
+        Assertion(
+            "energy-monitor-held-by-aggregation", as_expected["EnergyMonitorEnabled"]
+        )
+        if "EnergyMonitorEnabled" in held
+        else Assertion("energy-monitor-toggled", as_expected["EnergyMonitorEnabled"]),
         Assertion("snapshot-restored", restored),
     ]
 
@@ -497,15 +527,16 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
     interrupted results document carries the values to restore by hand
     (docs/live-testing.md). Each restore writes all five values: the HMC couples
     the flags (enabling aggregation also enables long-term monitoring and, where
-    the system supports it, energy monitoring). A restore that does not read back
-    as the snapshot stops the loop before the next toggle.
+    the system supports it, energy monitoring), so while aggregation is on a toggle
+    of either is expected to be held. A restore that does not read back as the
+    snapshot stops the loop before the next toggle.
     """
     print("\n=== ST38: PCM Preference Round Trip ===")
     if state.group != "pcm":
         state.skip(38, "hmc_set_pcm_preferences", "runs only in the pcm arm")
         return
     snapshot = await _read_preferences(client, state, "snapshot")
-    if not all(isinstance(value, bool) for value in snapshot.values()):
+    if not all(isinstance(snapshot[name], bool) for name, _ in PCM_FLAGS):
         state.skip(
             38,
             "hmc_set_pcm_preferences",
@@ -513,12 +544,13 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
         )
         return
     restore = {keyword: bool(snapshot[name]) for name, keyword in PCM_FLAGS}
-    toggled = {name: False for name, _ in PCM_FLAGS}
+    held = _held_by_aggregation(snapshot, snapshot["EnergyMonitoringCapable"] is True)
+    as_expected = {name: False for name, _ in PCM_FLAGS}
     for name, keyword in PCM_FLAGS:
         flipped = not snapshot[name]
         await _set_preferences(client, state, f"{keyword} toggle", {keyword: flipped})
         after = await _read_preferences(client, state, f"{keyword} toggled")
-        toggled[name] = after[name] is flipped
+        as_expected[name] = after[name] is (snapshot[name] if name in held else flipped)
         await _set_preferences(client, state, f"{keyword} restore", restore)
         if await _read_preferences(client, state, f"{keyword} restored") != snapshot:
             break  # widen nothing further: the final read reports the deviation
@@ -529,7 +561,7 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
         "hmc_set_pcm_preferences",
         operation="pcm.set_preferences",
         scenario=_ST38_SCENARIO,
-        assertions=_round_trip_assertions(toggled, restored),
+        assertions=_round_trip_assertions(as_expected, held, restored),
         cleanup="passed" if restored else "failed",
         data=final,
     )

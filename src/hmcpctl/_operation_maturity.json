@@ -278,9 +278,9 @@
     {
       "operation": "pcm.set_preferences",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T17:18:16Z"
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "resource_group.list_memopt_scores",
