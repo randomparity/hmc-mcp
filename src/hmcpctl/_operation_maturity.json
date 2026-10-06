@@ -38,6 +38,20 @@
       "observed_at": "2026-10-06T19:18:02Z"
     },
     {
+      "operation": "boot_order.read",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:36:29Z"
+    },
+    {
+      "operation": "capacity.report",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:34:59Z"
+    },
+    {
       "operation": "console.info",
       "implementation": "implemented",
       "verification": "stale",
@@ -50,6 +64,20 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T12:34:53Z"
+    },
+    {
+      "operation": "health.fleet",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:37:22Z"
+    },
+    {
+      "operation": "inventory.logical",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:36:49Z"
     },
     {
       "operation": "job.get",
@@ -143,6 +171,13 @@
       "observed_at": "2026-10-06T12:59:53Z"
     },
     {
+      "operation": "lpar.inspect",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:36:43Z"
+    },
+    {
       "operation": "lpar.install_os",
       "implementation": "absent",
       "verification": "unevidenced",
@@ -164,11 +199,25 @@
       "observed_at": "2026-10-06T09:42:42Z"
     },
     {
+      "operation": "lpar.list_ownership",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:36:22Z"
+    },
+    {
       "operation": "lpar.list_refcodes",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:00:00Z"
+    },
+    {
+      "operation": "lpar.plan",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "lpar.plan_memopt_scores",
@@ -367,6 +416,13 @@
       "observed_at": null
     },
     {
+      "operation": "placement.find",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:35:43Z"
+    },
+    {
       "operation": "remote_access.configure",
       "implementation": "implemented",
       "verification": "unevidenced",
@@ -439,9 +495,9 @@
     {
       "operation": "system.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T20:33:07Z"
     },
     {
       "operation": "system.plan_memopt_score",
