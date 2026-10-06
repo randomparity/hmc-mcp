@@ -1562,6 +1562,81 @@
         "missing_scope": []
       },
       "evidence": []
+    },
+    {
+      "operation": "update.console",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "update-management-console-job",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "update.list_ptfs",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "list-management-console-updates-job",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "update.vios",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "update-vios-job",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "upgrade.vios",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "upgrade-vios-job",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "update.firmware",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "platform-update-job",
+            "parameters": []
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "partition-migration",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": []
     }
   ]
 }

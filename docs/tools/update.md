@@ -8,7 +8,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_submit_available_hmc_ptfs_query` | `mutate` | `update.list_ptfs` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit the documented job that lists available HMC PTFs. |
-| `hmc_update_console_software` | `destructive` | `update.console` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a documented HMC software update job. |
-| `hmc_update_firmware` | `destructive` | `update.firmware` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a documented Power11 PlatformUpdate job. |
-| `hmc_vios_update` | `destructive` | `update.vios` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a VIOS software update job. |
+| `hmc_submit_available_hmc_ptfs_query` | `mutate` | `update.list_ptfs` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | Submit the documented job that lists available HMC PTFs. |
+| `hmc_update_console_software` | `destructive` | `update.console` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | Submit a documented HMC software update job. |
+| `hmc_update_firmware` | `destructive` | `update.firmware` | `managed_system` | `partial` | `unevidenced` | `existing-runtime-guards` | Submit a documented Power11 PlatformUpdate job. |
+| `hmc_vios_update` | `destructive` | `update.vios` | `vios` | `implemented` | `unevidenced` | `existing-runtime-guards` | Submit a VIOS software update job. |

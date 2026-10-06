@@ -304,6 +304,41 @@
       "observed_at": "2026-10-06T12:35:03Z"
     },
     {
+      "operation": "update.console",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "update.firmware",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "update.list_ptfs",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "update.vios",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "upgrade.vios",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "vios.list",
       "implementation": "implemented",
       "verification": "current",
