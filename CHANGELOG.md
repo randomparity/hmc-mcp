@@ -10,6 +10,18 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- The live harness gained an opt-in `lpar-config` arm (`scripts/live_lpar_config.py`, subtask
+  39). It creates one `hmcpctl-live-lpar-<8 hex>` partition, verifies `hmc_modify_lpar`,
+  `hmc_rename_lpar`, `hmc_dlpar_mem`, `hmc_dlpar_proc`, `hmc_set_lpar_boot_order` and the
+  `hmc_clear_lpar_boot_order` refusal against it, activates it to SMS for the activated DLPAR
+  case, and deletes it; preflight names it and `scripts/live_test_recovery.py` reports any
+  `hmcpctl-live-lpar-` partition left behind (#1345). Live on V10R3 all six observations
+  passed. ST8 no longer declares an expected HTTP 406 for `hmc_modify_lpar`: the
+  read-modify-write path is accepted, so a 406 there is now a failure, not a gap. DLPAR on a
+  partition activated to SMS was refused (`HSCL7016`, the partition must be running), so DLPAR
+  on a running operating system stays unverified; the `hmc_modify_lpar` observation covers its
+  resource path, not its PCIe assignments. Memory above the maximum is refused with
+  `REST0264`.
 - `hmc_create_user` and `hmc_modify_user` take `associated_task_role` as a task-role name
   (`TaskRoleName` from `hmc_list_task_roles`) and `associated_resource_roles` as resource-role
   names, not hrefs. The `UserProfile` document now writes them as the documented
