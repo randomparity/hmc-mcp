@@ -3114,25 +3114,288 @@
       "evidence": []
     },
     {
-      "operation": "io_slot.list",
+      "operation": "media.get_repository",
       "implementation": {
         "state": "implemented",
         "implemented_scope": [
           {
-            "variant": "all-classes",
+            "variant": "by-volume-group",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st16-hmc-get-media-repository",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st16-repository-read",
+          "observed_at": "2026-10-06T22:19:55Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "repository-named",
+            "repository-size-positive"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "media.create_repository",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "whole-gib-size",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.delete_repository",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "empty-repository",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-volume-group",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st19-hmc-list-optical-media",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st19-optical-round-trip",
+          "observed_at": "2026-10-06T22:20:08Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "media-entries-named"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "media.create",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "blank-whole-gib",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st19-hmc-create-optical-media",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st19-optical-round-trip",
+          "observed_at": "2026-10-06T22:20:22Z",
+          "cleanup": "passed",
+          "assertions": [
+            "baseline-media-kept"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "media.delete",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "unmapped-media",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.upload_iso",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "allowlisted-http-url",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.mount",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "hmc-created-adapter-pair",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.unmount",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-lpar-and-media-name",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.list_mappings",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "vios-wide-or-lpar-scoped",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "storage.list_mappings",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "vios-wide-or-lpar-scoped",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st21-hmc-list-storage-mappings",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st21-mapping-inventory",
+          "observed_at": "2026-10-06T22:20:42Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "mapping-ids-identified",
+            "lpar-scope-subset",
+            "optical-backing-agrees"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "vnic.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "lpar-scoped",
             "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
               {
                 "name": "system_name_or_uuid",
                 "constraint": "SystemName or UUID"
               }
             ]
-          },
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "vnic.add",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
           {
-            "variant": "pci-class-filter",
+            "variant": "single-sriov-backing",
             "parameters": [
               {
-                "name": "pci_class",
-                "constraint": "one of eth, sas, san, nvme"
+                "name": "backing",
+                "constraint": "one SR-IOV backing device: VIOS, adapter, physical port, capacity"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "failover-backing",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": []
+    },
+    {
+      "operation": "pcie.list_sriov_logical_ports",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "adapter-scoped",
+            "parameters": [
+              {
+                "name": "adapter_id",
+                "constraint": "positive decimal; required"
               },
               {
                 "name": "system_name_or_uuid",
@@ -3156,52 +3419,6 @@
               {
                 "name": "adapter_id",
                 "constraint": "optional positive decimal filter"
-              },
-              {
-                "name": "system_name_or_uuid",
-                "constraint": "SystemName or UUID"
-              }
-            ]
-          }
-        ],
-        "missing_scope": []
-      },
-      "evidence": []
-    },
-    {
-      "operation": "pcie.list_sriov_physical_ports",
-      "implementation": {
-        "state": "implemented",
-        "implemented_scope": [
-          {
-            "variant": "adapter-scoped",
-            "parameters": [
-              {
-                "name": "adapter_id",
-                "constraint": "positive decimal; required"
-              },
-              {
-                "name": "system_name_or_uuid",
-                "constraint": "SystemName or UUID"
-              }
-            ]
-          }
-        ],
-        "missing_scope": []
-      },
-      "evidence": []
-    },
-    {
-      "operation": "pcie.list_sriov_logical_ports",
-      "implementation": {
-        "state": "implemented",
-        "implemented_scope": [
-          {
-            "variant": "adapter-scoped",
-            "parameters": [
-              {
-                "name": "adapter_id",
-                "constraint": "positive decimal; required"
               },
               {
                 "name": "system_name_or_uuid",
@@ -3270,16 +3487,25 @@
       "evidence": []
     },
     {
-      "operation": "vnic.list",
+      "operation": "io_slot.list",
       "implementation": {
         "state": "implemented",
         "implemented_scope": [
           {
-            "variant": "lpar-scoped",
+            "variant": "all-classes",
             "parameters": [
               {
-                "name": "lpar_name_or_uuid",
-                "constraint": "PartitionName or UUID"
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "pci-class-filter",
+            "parameters": [
+              {
+                "name": "pci_class",
+                "constraint": "one of eth, sas, san, nvme"
               },
               {
                 "name": "system_name_or_uuid",
@@ -3293,26 +3519,25 @@
       "evidence": []
     },
     {
-      "operation": "vnic.add",
+      "operation": "pcie.list_sriov_physical_ports",
       "implementation": {
-        "state": "partial",
+        "state": "implemented",
         "implemented_scope": [
           {
-            "variant": "single-sriov-backing",
+            "variant": "adapter-scoped",
             "parameters": [
               {
-                "name": "backing",
-                "constraint": "one SR-IOV backing device: VIOS, adapter, physical port, capacity"
+                "name": "adapter_id",
+                "constraint": "positive decimal; required"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
               }
             ]
           }
         ],
-        "missing_scope": [
-          {
-            "variant": "failover-backing",
-            "parameters": []
-          }
-        ]
+        "missing_scope": []
       },
       "evidence": []
     },
