@@ -69,6 +69,12 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
    `failed`; nothing is masked as SKIP. Before ST11 records anything, it replaces the minted
    password in the data (a refused PUT may echo its body). The ST6 round2 listing drops the
    `REST000E` declaration and stays non-promoting.
+
+   *Target constraints* (criterion 3) means two things here: the scenario only addresses the
+   scratch user, by the UUID this run resolved for the minted name; and each `user.*` tool's
+   ADR 0039 target selector (`console_uuid` for list, `user_id` for create,
+   `user_profile_uuid` for get/modify/delete) is pinned by an offline test in
+   `tests/app/test_user_tool_contracts.py`.
 4. **Recovery.** `live_test_recovery.py` witnesses subtask 11 by the prefix, not the document:
    when 11 was dispatched it reads the console UUID (`hmc_get_console_info`), lists users
    (both join the read-only allowlist), and reports STRANDED with `rmhmcusr -u <name>` for
@@ -77,9 +83,9 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
    non-SKIP ST11 `hmc_create_user` row but no `test_user_name` (written before this change) is
    unreadable: exit 2.
 5. **Catalog.** `user.*` bind `rest:user-management/userprofile`; `remote_access.*` bind the
-   `ldap` and `kerberos` rows; role lists keep theirs. The `userprofile` row becomes
-   `supported` (its GET/PUT/POST/DELETE and modifiable fields are all reachable); other rows
-   keep their owners. Each operation gets an `implemented` record; observations are copied from
+   `ldap` and `kerberos` rows; role lists keep theirs. The `userprofile` row's owner moves from
+   #637 (partition profiles) to #698, which owns the remaining coverage obligations
+   (`IsPredefinedUser`, directory authentication); other rows keep their owners. Each operation gets an `implemented` record; observations are copied from
    the emitted file (ADR 0126). Regenerate the projection and `docs/tools/`; CHANGELOG notes
    the role-name change and the retired setting.
 
