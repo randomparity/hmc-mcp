@@ -214,16 +214,11 @@ A reversal that fails or cannot be confirmed is a FAIL row marked
 `MANUAL RECOVERY REQUIRED`, and nothing after it runs. The arm ends with one
 `network baseline compare` row per baseline it read.
 
-The recovery check does not witness subtask 9, so it exits 2. Check by hand,
-from the run's `network baseline compare` rows and an independent read:
-
-- no virtual network named `hmcpctl-live-*` and none on the run's VLAN
-  (`artifacts.test_vlan_id`);
-- the test partition's client network, vSCSI and vFC adapters as before;
-- the serving VIOS's FC-port labels as before, and no vFC group label named
-  `hmcpctl-live-*`.
-
-Check the same after an interrupted run.
+The recovery check witnesses subtask 9 from the baselines the run recorded:
+no network on the run's VLAN (`artifacts.test_vlan_id`), whatever its name; the
+test partition's client network, vSCSI and vFC adapters as before; the serving
+VIOS's FC-port labels as before; and no vFC group label named `hmcpctl-live-*`.
+Subtask 2 only reads. After an interrupted run (exit 2), check the same by hand.
 
 ### The vios-backup arm
 
@@ -352,13 +347,14 @@ After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
 `bare-cec`, `round2`, `sriov`, `profiles`, `vios-backup` or `network`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-three sets of them:
+four sets of them:
 
 | Subtasks | What it reads |
 |---|---|
 | 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
+| 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcpctl-live-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
 partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
@@ -369,13 +365,12 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 | 1 | something is stranded; the output names it and the command that clears it |
 | 2 | some state could not be read, the run dispatched subtasks the check does not witness, or the run was interrupted (`run.partial`), even when something is also stranded — **this is not clean** |
 
-Exit 2 is expected after round2, SR-IOV, profiles, network and `all` runs: they dispatch
+Exit 2 is expected after round2, SR-IOV, profiles and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
 
 - **round2**: the scratch partition is gone, the test user is gone, the test
   partition's description and properties match the baseline, and the
   provisioned test partition and its disk exist.
-- **network**: see the checks under *The network arm*.
 - **SR-IOV**: the test logical port is no longer assigned to the test
   partition, and its profile no longer lists it.
 - **profiles**: compare an independent `lssyscfg` read with one taken before

@@ -34,7 +34,11 @@ reaches the HMC.
 
 2. **VLAN range (defect).** `create_virtual_network` (`vlan_id`) and
    `add_network_adapter` (`port_vlan_id`) refuse a value outside 1–4094 with
-   `ValueError` before any write, in `client_network.py` / `client_adapters.py`.
+   `ValueError` before any HMC call, in the operations layer
+   (`operations/virtualization/network.py`, `adapters.py`; orchestrator ruling — the
+   client mixins stay untouched, so no other operation's closure changes). LPAR
+   provisioning calls the client's `add_network_adapter` directly, but only after
+   `_check_vlan_exists` has required an existing network on that VLAN.
    IEEE 802.1Q reserves 0 and 4095; the HMC's own refusal is what callers got before.
 
 3. **`network` live arm**, `scripts/live_network.py` (`--group network` = subtasks 2
@@ -65,7 +69,10 @@ reaches the HMC.
    `lslabelvios` refused on POWER9 — ADR 0105 scopes labels to POWER10/11, or no vFC
    server slot), the gap is recorded by hand from the live run into the operation's
    `missing_scope` and the Live gaps table below; the arm emits no gap row. Shared preconditions (non-promoting rows; failure SKIPs all of ST9):
-   the test partition reads `Not Activated` (`lssyscfg` through `hmc_run_command`).
+   the test partition reads `Not Activated` (`lssyscfg` through `hmc_run_command`);
+   the boundary VIOS is derived here, read-only: the one VIOS with a vSCSI server
+   adapter whose `remote_lpar_id` is the test partition's id. None or several: only
+   (a) runs, and (b)-(e) SKIP.
    Identities come only from this run's reads, never from `artifacts` restored from
    an earlier results document.
 
@@ -104,9 +111,9 @@ reaches the HMC.
    b. **vSCSI client** (`st9-vscsi-client-adapter`). Baseline: the server rows of
       `lshwres -r virtualio --rsubtype scsi --level lpar -F
       lpar_name,lpar_id,slot_num,adapter_type,remote_lpar_id,remote_slot_num`
-      (read through `hmc_run_command`); the boundary VIOS is the one VIOS with a server
-      adapter whose `remote_lpar_id` is the test partition's id (exactly one, else SKIP);
-      its slot is preferred with `remote_lpar_id` `any`, else that slot. Also the test
+      (read through `hmc_run_command`), filtered to the boundary VIOS. The slot is the
+      lowest server slot assigned to the test partition; a slot open to `any` partition
+      is never used (orchestrator ruling); none → SKIP as a gap. Also the test
       partition's storage mappings on that VIOS and its `VirtualSCSIClientAdapter` UUIDs.
       Negative (collision): the same add with `slot_number` set to the virtual slot
       the test partition's own vSCSI client already uses; read back (anything an
@@ -117,9 +124,9 @@ reaches the HMC.
         (`RemoteLogicalPartitionID`, `RemoteSlotNumber` equal the request),
         `slot-collision-refused` (when the partition has a client slot),
         `adapters-equal-baseline`, `vios-side-unchanged`.
-   c. **vFC client** (`st9-vfc-client-adapter`). Baseline: the boundary VIOS's vFC
-      server rows from `hmc_list_fc_ports`; eligible only with `remote_lpar_id` equal
-      to the test partition's id or `any`; none → SKIP and the gap below. Same steps as
+   c. **vFC client** (`st9-vfc-client-adapter`). Baseline: the boundary VIOS's
+      `--rsubtype fc` server rows (`hmc_list_fc_ports`); eligible only with
+      `remote_lpar_id` equal to the test partition's id; none → SKIP and the gap below. Same steps as
       (b). `adapter.add_vfc`: `adapter-added`, `pairing-matches`
       (`ConnectingPartitionID`, `ConnectingVirtualSlotNumber`),
       `slot-collision-refused`, `adapters-equal-baseline`, `vios-side-unchanged`.
@@ -156,11 +163,13 @@ reaches the HMC.
    `network.create_network` observation, settled by the live run.
 
 4. **Preflight** names the arm's mutations (the test VLAN, the client adapters on the
-   test partition, the label changes on the VIOS serving it). **Recovery** does not
-   witness ST9 (exit 2, as for profiles); `docs/live-testing.md` lists the manual
-   checks (no `hmcpctl-live-*` network or group label; the test partition's adapters
-   and the VIOS's FC-port labels as before). An interrupted run is checked by hand
-   the same way.
+   test partition, the label changes on the VIOS serving it, and each negative).
+   **Recovery** witnesses subtask 9 from the run's own ST9 baseline rows (orchestrator
+   ruling): no network on the run's VLAN, whatever its name; the test partition's
+   client adapters equal their baseline placements; the serving VIOS's FC-port labels
+   equal their originals; no `hmcpctl-live-*` vFC group label. Subtask 2 only reads.
+   It adds the four listing tools to its read-only allowlist; a failed read is
+   `StateUnreadable` (exit 2). An interrupted run is checked by hand the same way.
 5. **Catalog**: maturity records for the 19 operations; regenerated projection and
    `docs/tools/`.
 
@@ -168,7 +177,8 @@ reaches the HMC.
 
 | Case | Prerequisite |
 |---|---|
-| vFC client adapter (if the boundary VIOS has no vFC server adapter) | a VIOS vFC server adapter on the boundary system |
+| vFC client adapter (if the boundary VIOS has no vFC server adapter assigned to the test partition) | a vFC server adapter on the serving VIOS assigned to the test partition |
+| vSCSI client adapter paired to a slot open to any partition | not exercised by policy |
 | group label `add-members` / `remove-members` | a second VIOS on the boundary system |
 | adapters on a running partition (DLPAR) | an activated disposable partition; excluded |
 | NPIV fabric login | a zoned fabric; excluded |
