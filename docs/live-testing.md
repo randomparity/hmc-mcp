@@ -266,6 +266,11 @@ uv run --no-sync hmcpctl metrics set-prefs ManagedSystem <system> \
   --compute-ltm|--no-compute-ltm --energy|--no-energy --yes
 ```
 
+If long-term or energy monitoring still reads back on after that restore while the
+saved read has aggregation off, turn aggregation off first
+(`hmcpctl metrics set-prefs ManagedSystem <system> --no-aggregation --yes`) and run the
+five-flag restore again: aggregation holds both on.
+
 Do not run the arm again until a fresh read matches the saved one. The next run
 overwrites `test-results-pcm.json` and takes the flags as it finds them as its
 snapshot.
