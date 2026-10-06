@@ -81,9 +81,9 @@ ids that **held**, in declaration order — so a `failed` observation is disting
 from a `passed` one on that field alone. `hmc_release` and `hardware_family` are the
 only free text and each has a grammar (`V<n>R<n>[M<n>]` and `POWER<n>`) rather than a
 permissive character class, so a hostname, serial, or location code cannot be written
-there. The catalog keeps the maintenance level optional only for rows recorded before
-#1335; the runner requires it (see *Recording an observation*). `schema_version` is
-the run's `HMC_SCHEMA_VERSION` as its header printed it — a
+there. The catalog grammar keeps the maintenance level optional so rows recorded before
+#1335 stay valid; the runner requires it (see *Recording an observation*).
+`schema_version` is the run's `HMC_SCHEMA_VERSION` as its header printed it — a
 `V<n>_<n>[_<n>...]` token or `(not set)` — and observations stored before format 4 read
 `unrecorded`, because nothing recorded the value for them; it attributes the observation and does not
 affect currency or promotion. An operation carries at most one live observation;

@@ -6439,8 +6439,9 @@ def test_an_environment_value_outside_its_grammar_is_rejected(tmp_path, value):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="does not match its grammar"):
+    with pytest.raises(ValueError, match="does not match its grammar") as raised:
         runner._read_environment(env_file)
+    assert value not in str(raised.value)
 
 
 def test_the_repository_root_is_resolved_from_git_not_the_working_directory(
