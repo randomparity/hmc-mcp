@@ -138,7 +138,9 @@ restores the value it read just before:
 
 - the test partition's description;
 - the first VIOS's `msp` flag;
-- the processor compatibility mode of the test partition's default profile;
+- the processor compatibility mode of the test partition's default profile,
+  unless ST0 read its `sync_curr_profile` as 1: the HMC refuses a profile change
+  then, so the arm records the round trip and the subtask 15 restore as SKIP;
 - its `sync_curr_profile` setting, which it touches only while the partition is
   `Not Activated`.
 
