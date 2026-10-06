@@ -1329,7 +1329,12 @@ def _decimal(value: object) -> Decimal | None:
     return parsed if parsed.is_finite() else None
 
 
-def _ids(items: list[dict[str, Any]], key: str = "drc_index") -> list[Any]:
+def _ids(items: list[dict[str, Any]], key: str = "drc_index") -> list[str | None]:
+    """Each item's *key* when it is text, else None, so every id is hashable."""
+    return [value if isinstance(value, str) else None for value in _values(items, key)]
+
+
+def _values(items: list[dict[str, Any]], key: str) -> list[object]:
     return [item.get(key) for item in items]
 
 
@@ -1347,7 +1352,7 @@ def record_dedicated_listing(state: RunState, status: str, data: object) -> None
             Assertion(
                 "slot-rows-identified",
                 bool(items)
-                and all(isinstance(i, str) and i.strip() for i in _ids(items))
+                and all(i is not None and i.strip() for i in _ids(items))
                 and len(set(_ids(items))) == len(items),
             ),
             # An unowned slot's owner is the CLI's literal `null` until normalized (#1195).
@@ -1372,17 +1377,26 @@ async def record_inventory_reads(
     print("\n=== ST29: PCIe, SR-IOV and vNIC inventory reads (issue #630) ===")
     await _record_io_slots(client, state, arm, _listed_items("PASS", dedicated) or [])
     adapter_id = await _record_sriov_adapters(client, state, arm)
-    if adapter_id is None:
-        state.skip(
-            29,
-            "SR-IOV port inventory",
-            "no adapter in SR-IOV mode is listed — SKIP the physical- and "
-            "logical-port reads (gap: an SR-IOV-mode adapter at run time)",
-        )
-    else:
-        ports = await _record_sriov_physical_ports(client, state, arm, adapter_id)
+    if adapter_id is _UNREAD:
+        _skip_sriov_reads(state, "the adapter listing could not be read")
+    elif not isinstance(adapter_id, str):
+        _skip_sriov_reads(state, "no adapter in SR-IOV mode is listed (gap)")
+    elif ports := await _record_sriov_physical_ports(client, state, arm, adapter_id):
         await _record_sriov_logical_ports(client, state, arm, adapter_id, ports)
+    else:
+        # A logical port is checked against its listed parent, so none can be here.
+        _skip_sriov_reads(state, "no physical port was read", "logical-port read")
     await _record_vnics(client, state, arm)
+
+
+#: What `_record_sriov_adapters` returns when the adapter listing was not read.
+_UNREAD = object()
+
+
+def _skip_sriov_reads(
+    state: RunState, why: str, what: str = "physical- and logical-port reads"
+) -> None:
+    state.skip(29, "SR-IOV port inventory", f"{why} — SKIP the {what}")
 
 
 async def _record_io_slots(
@@ -1405,17 +1419,10 @@ async def _record_io_slots(
         )
     )
     expected = {
-        row.get("drc_index")
-        for row in rows or []
+        drc
+        for row, drc in zip(rows or [], _ids(rows or []), strict=True)
         if row.get("pci_class") == _ETH_PCI_CLASS
     }
-    if rows is not None and eth is not None and not expected:
-        state.skip(
-            29,
-            "hmc_list_io_slots (eth)",
-            "no slot of PCI class 0200 is listed, so the class filter selects "
-            "nothing to compare (gap: an Ethernet-class slot)",
-        )
     state.record_verified(
         29,
         "hmc_list_io_slots",
@@ -1431,16 +1438,10 @@ async def _record_io_slots(
             Assertion(
                 "matches-dedicated-inventory", set(_ids(rows)) == set(_ids(dedicated))
             ),
-            # Without an Ethernet-class slot the filter has nothing to compare.
-            *(
-                [
-                    Assertion(
-                        "class-filter-exact",
-                        len(eth) == len(expected) and set(_ids(eth)) == expected,
-                    )
-                ]
-                if expected
-                else []
+            # With no Ethernet-class slot, the filter must select nothing.
+            Assertion(
+                "class-filter-exact",
+                len(eth) == len(expected) and set(_ids(eth)) == expected,
             ),
         ],
         cleanup="not-required",
@@ -1450,8 +1451,11 @@ async def _record_io_slots(
 
 async def _record_sriov_adapters(
     client: Client, state: RunState, arm: _DedicatedConfig
-) -> str | None:
-    """Record the adapter listing; return the first SR-IOV-mode adapter's ID, if any."""
+) -> object:
+    """Record the adapter listing; return the first SR-IOV-mode adapter's ID.
+
+    None when no adapter is in SR-IOV mode, `_UNREAD` when the listing was not read.
+    """
     status, data = await state.call(
         client, "hmc_list_sriov_adapters", system_name_or_uuid=arm.system_name
     )
@@ -1513,7 +1517,7 @@ async def _record_sriov_adapters(
         cleanup="not-required",
         data=data if items is None else f"selected adapter_id={adapter_id!r}",
     )
-    return adapter_id
+    return _UNREAD if items is None else adapter_id
 
 
 async def _record_sriov_physical_ports(
@@ -1527,11 +1531,15 @@ async def _record_sriov_physical_ports(
         adapter_id=str(adapter_id),
     )
     items = _listed_items(status, data)
-    bare = "PASS"
+    refused = False
     if items is not None:
         # The negative: the inventory refuses a port read with no adapter selector.
-        bare, _ = await state.call(
+        # A transport failure is not that refusal, so the message decides.
+        _, bare = await state.call(
             client, "hmc_list_sriov_physical_ports", system_name_or_uuid=arm.system_name
+        )
+        refused = (
+            isinstance(bare, CallFailure) and "adapter_id is required" in bare.message
         )
     carried = [
         _decimal(value)
@@ -1553,12 +1561,12 @@ async def _record_sriov_physical_ports(
                 "granularity-positive",
                 bool(carried) and all(v is not None and v > 0 for v in carried),
             ),
-            Assertion("adapter-required-refused", bare != "PASS"),
+            Assertion("adapter-required-refused", refused),
         ],
         cleanup="not-required",
         data=data if items is None else f"{len(items)} port(s)",
     )
-    return {str(port) for port in _ids(items or [], "physical_port_id")}
+    return {port for port in _ids(items or [], "physical_port_id") if port is not None}
 
 
 def _logical_port_bounded(item: dict[str, Any]) -> bool:
@@ -1604,7 +1612,7 @@ async def _record_sriov_logical_ports(
             ),
             Assertion(
                 "parents-are-listed-ports",
-                {str(p) for p in _ids(items, "physical_port_id")} <= ports,
+                set(_ids(items, "physical_port_id")) <= ports,
             ),
             Assertion(
                 "configured-capacity-bounded",
@@ -1637,19 +1645,21 @@ async def _record_vnics(client: Client, state: RunState, arm: _DedicatedConfig) 
         if status == "PASS" and isinstance(data, str)
         else None
     )
-    if names == []:
+    if names is None:
+        # The harness's own discovery read failed; `hmc_list_vnics` never ran.
+        state.record(29, "vNIC discovery", "FAIL", data)
+        return
+    if not names:
         state.record(29, "hmc_list_vnics (empty)", "PASS", "no partition has a vNIC")
         return
-    rows = None
-    if names:
-        lpar_name = names[0]
-        status, data = await state.call(
-            client,
-            "hmc_list_vnics",
-            system_name_or_uuid=arm.system_name,
-            lpar_name_or_uuid=lpar_name,
-        )
-        rows = _rows(status, data)
+    lpar_name = names[0]
+    status, data = await state.call(
+        client,
+        "hmc_list_vnics",
+        system_name_or_uuid=arm.system_name,
+        lpar_name_or_uuid=lpar_name,
+    )
+    rows = _rows(status, data)
     state.record_verified(
         29,
         "hmc_list_vnics",

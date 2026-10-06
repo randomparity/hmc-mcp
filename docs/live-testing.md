@@ -127,8 +127,9 @@ inventory and records each read as an observation, scenario
 the `eth` class), the SR-IOV adapters, and the physical and logical ports of the
 first adapter in SR-IOV mode. It also reads the vNICs of the first partition the
 system lists one for. Every read is read-only, and none of them decides what
-the arm selects or mutates. An empty listing records an `(empty)` row and no
-observation. No adapter in SR-IOV mode SKIPs the port reads. The bare-cec arm
+the arm selects or mutates. An empty SR-IOV or vNIC listing records an
+`(empty)` row and no observation. No adapter in SR-IOV mode SKIPs the port
+reads. The bare-cec arm
 reuses the dedicated baseline without these reads.
 
 Before and after the run, save three read-only snapshots outside the

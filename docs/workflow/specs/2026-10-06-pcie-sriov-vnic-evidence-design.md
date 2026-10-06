@@ -44,8 +44,13 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
      failure is recorded too.
    - **No gating.** The phase never SKIPs the arm, and it never changes what the arm
      selects or mutates.
-   - **Empty listings.** An empty listing proves no row shape. It records a non-promoting
-     `<tool> (empty)` row and a gap, never an observation.
+   - **Empty listings.** An empty SR-IOV or vNIC listing proves no row shape. It records a
+     non-promoting `<tool> (empty)` row and a gap, never an observation. The two slot
+     listings must hold at least one row, because the arm runs only where a slot exists.
+   - **Dependent reads.** A read that only feeds another read is not an observation of
+     the operation. If the vNIC discovery read fails, the run records a FAIL row and
+     `vnic.list` gets no observation. If the adapter or physical-port read fails, the
+     reads that depend on it SKIP, with the failed read as the reason.
    - **Total evaluation.** Assertion evaluation never raises. A value of an unexpected
      type or form makes its assertion not hold.
    - **Wire form.** Scripted test data uses the JSON wire form the served tools return:
@@ -55,9 +60,9 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
    | Operation | Call | Assertions |
    |---|---|---|
    | `pcie.list_dedicated_slots` | the existing ST29 baseline listing | `slot-rows-identified` (≥ 1 item, each with a non-blank, unique `drc_index`), `owners-normalized` (no `owner_lpar` is the literal `null`) |
-   | `io_slot.list` | `hmc_list_io_slots` (`all`, then `eth`) | `slot-rows-identified` (≥ 1 row, each with a `drc_index`), `matches-dedicated-inventory` (the `drc_index` set equals the dedicated listing's), `class-filter-exact` (the `eth` rows' `drc_index` set equals the `all` rows whose `pci_class` is `0200`; asserted only when that subset is non-empty, otherwise a gap) |
+   | `io_slot.list` | `hmc_list_io_slots` (`all`, then `eth`) | `slot-rows-identified` (≥ 1 row, each with a `drc_index`), `matches-dedicated-inventory` (the `drc_index` set equals the dedicated listing's), `class-filter-exact` (the `eth` rows are exactly the `all` rows whose `pci_class` is `0200`; with no such slot, the `eth` listing must be empty) |
    | `pcie.list_sriov_adapters` | unfiltered, then `adapter_id=<A>` | `capability-available`, `adapter-rows-parsed` (each `mode` is `sriov` or `dedicated`, and each `dedicated` row has a null `adapter_id`), `adapter-filter-selects-one` (exactly adapter A; asserted only when A exists) |
-   | `pcie.list_sriov_physical_ports` | `adapter_id=<A>`, then without one | `capability-available`, `ports-listed` (≥ 1 port), `granularity-positive` (at least one port carries a minimum granularity, and every one carried is a decimal > 0; `null` is allowed, because `eth_capacity_granularity` admits it), `adapter-required-refused` (the call without `adapter_id` fails) |
+   | `pcie.list_sriov_physical_ports` | `adapter_id=<A>`, then without one | `capability-available`, `ports-listed` (≥ 1 port), `granularity-positive` (at least one port carries a minimum granularity, and every one carried is a decimal > 0; `null` is allowed, because `eth_capacity_granularity` admits it), `adapter-required-refused` (the call without `adapter_id` is refused with the inventory's "adapter_id is required" error; a transport failure does not count) |
    | `pcie.list_sriov_logical_ports` | `adapter_id=<A>` | `capability-available`, `ports-belong-to-adapter`, `parents-are-listed-ports` (each `physical_port_id` is a port the previous read listed), `configured-capacity-bounded` (each configured port has 0 < capacity ≤ maximum ≤ 100, and each `unconfigured` port has no capacity) |
    | `vnic.list` | `hmc_list_vnics` on partition V | `vnic-rows-parsed` (≥ 1 row, each naming partition V and a `slot_num`) |
 
@@ -169,7 +174,7 @@ never published.
 | a non-empty `vnic.list` | a partition with a vNIC at run time |
 | SR-IOV port reads | an adapter in SR-IOV mode at run time |
 | `sriov.set_mode` current-mode confirmation | orchestrator grant (Ambiguities), else none |
-| `io_slot.list` class filter (`eth`) | a slot of PCI class `0200` on the system |
+| `io_slot.list` class filter selecting a non-empty set | a slot of PCI class `0200` on the system |
 | an `is_required=1` element removed by `//0` (ADR 0166) | ST36's two further free slots, if this run's ST36 SKIPs |
 
 ## Failure model

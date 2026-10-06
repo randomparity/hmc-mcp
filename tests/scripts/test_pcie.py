@@ -2402,7 +2402,8 @@ async def test_failed_inventory_reads_are_failed_observations_not_skips() -> Non
     world = {
         "hmc_list_io_slots": lambda _k, _n: _CONNECTION_LOST,
         "hmc_list_sriov_adapters": lambda _k, _n: {"capability": "available"},
-        "hmc_run_command": lambda _k, _n: _CONNECTION_LOST,
+        "hmc_run_command": lambda _k, _n: "lpar-v\n",
+        "hmc_list_vnics": lambda _k, _n: _CONNECTION_LOST,
     }
     state = await _read_inventory(world)
 
@@ -2414,6 +2415,19 @@ async def test_failed_inventory_reads_are_failed_observations_not_skips() -> Non
     ):
         assert emitted[observation][2:] == ("failed", "not-required", [])
     assert "hmc_list_sriov_physical_ports" not in state.tools()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_vnic_discovery_is_not_a_vnic_list_observation() -> None:
+    """The harness's own discovery read failing says nothing about `vnic.list`."""
+    world = _inventory_world()
+    world["hmc_run_command"] = lambda _k, _n: _CONNECTION_LOST
+    state = await _read_inventory(world)
+
+    assert "st29-hmc-list-vnics" not in _emitted(state)
+    assert "hmc_list_vnics" not in state.tools()
+    row = state.row("vNIC discovery")
+    assert row is not None and row[2] == "FAIL"
 
 
 @pytest.mark.asyncio
@@ -2466,10 +2480,11 @@ async def test_no_sriov_mode_adapter_skips_the_port_reads() -> None:
         "capability": "available",
         "items": [{"adapter_id": None, "mode": "dedicated"}],
     }
-    world["hmc_list_io_slots"] = lambda _k, _n: [
-        {"drc_index": _DRC},
-        {"drc_index": _SLOT_ETH},
-    ]
+    world["hmc_list_io_slots"] = lambda k, _n: (
+        []
+        if k.get("pci_class") == "eth"
+        else [{"drc_index": _DRC}, {"drc_index": _SLOT_ETH}]
+    )
     state = await _read_inventory(world)
 
     emitted = _emitted(state)
@@ -2485,11 +2500,80 @@ async def test_no_sriov_mode_adapter_skips_the_port_reads() -> None:
         "hmc_list_sriov_logical_ports",
     } & set(state.tools())
     row = state.row("SR-IOV port inventory")
-    assert row is not None and row[2] == "SKIP"
-    # No Ethernet-class slot: the filter has nothing to compare, so it is a gap.
-    assert "class-filter-exact" not in emitted["st29-hmc-list-io-slots"][4]
-    eth = state.row("hmc_list_io_slots (eth)")
-    assert eth is not None and eth[2] == "SKIP"
+    assert (
+        row is not None and row[2] == "SKIP" and "no adapter in SR-IOV mode" in row[3]
+    )
+    # No Ethernet-class slot: the filter must then select nothing, and it does.
+    assert emitted["st29-hmc-list-io-slots"][2] == "passed"
+    assert "class-filter-exact" in emitted["st29-hmc-list-io-slots"][4]
+
+
+@pytest.mark.asyncio
+async def test_eth_filter_selecting_rows_with_no_eth_slot_fails() -> None:
+    world = _inventory_world()
+    world["hmc_list_io_slots"] = lambda _k, _n: [
+        {"drc_index": _DRC},
+        {"drc_index": _SLOT_ETH},
+    ]
+    state = await _read_inventory(world)
+
+    emitted = _emitted(state)["st29-hmc-list-io-slots"]
+    assert emitted[2] == "failed" and "class-filter-exact" not in emitted[4]
+
+
+@pytest.mark.asyncio
+async def test_a_transport_failure_is_not_the_selector_refusal() -> None:
+    """Only the inventory's own "adapter_id is required" refusal holds the negative."""
+    world = _inventory_world()
+    ports = world["hmc_list_sriov_physical_ports"]
+    world["hmc_list_sriov_physical_ports"] = lambda k, n: (
+        _CONNECTION_LOST if k.get("adapter_id") is None else ports(k, n)
+    )
+    state = await _read_inventory(world)
+
+    emitted = _emitted(state)["st29-hmc-list-sriov-physical-ports"]
+    assert emitted[2] == "failed" and "adapter-required-refused" not in emitted[4]
+
+
+@pytest.mark.asyncio
+async def test_unhashable_ids_fail_their_assertions_without_raising() -> None:
+    world = _inventory_world()
+    world["hmc_list_io_slots"] = lambda _k, _n: [
+        {"drc_index": {"x": 1}, "pci_class": "0200"}
+    ]
+    logical = world["hmc_list_sriov_logical_ports"]
+    world["hmc_list_sriov_logical_ports"] = lambda k, n: {
+        **logical(k, n),
+        "items": [{"adapter_id": ["1"], "physical_port_id": {"p": 0}}],
+    }
+    listing = {"capability": "available", "items": [{"drc_index": {"x": 1}}]}
+    state = await _read_inventory(world, listing)
+
+    emitted = _emitted(state)
+    for observation in (
+        "st29-hmc-list-dedicated-pcie-slots",
+        "st29-hmc-list-io-slots",
+        "st29-hmc-list-sriov-logical-ports",
+    ):
+        assert emitted[observation][2] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_failed_adapter_or_port_reads_skip_what_depends_on_them() -> None:
+    world = _inventory_world()
+    world["hmc_list_sriov_adapters"] = lambda _k, _n: _CONNECTION_LOST
+    state = await _read_inventory(world)
+    row = state.row("SR-IOV port inventory")
+    assert row is not None and "could not be read" in row[3]
+    assert _emitted(state)["st29-hmc-list-sriov-adapters"][2] == "failed"
+
+    world = _inventory_world()
+    world["hmc_list_sriov_physical_ports"] = lambda _k, _n: _CONNECTION_LOST
+    state = await _read_inventory(world)
+    row = state.row("SR-IOV port inventory")
+    assert row is not None and "logical-port read" in row[3]
+    assert "hmc_list_sriov_logical_ports" not in state.tools()
+    assert "st29-hmc-list-sriov-logical-ports" not in _emitted(state)
 
 
 @pytest.mark.asyncio
