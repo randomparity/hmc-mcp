@@ -117,7 +117,7 @@ authority/role changes (operator).
    One `record_verified` observation for `pcm.set_preferences` with one assertion per flag
    and `snapshot-restored`. While the snapshot has aggregation on, long-term monitoring (and
    energy monitoring when capable and on) is held by the documented coupling, so its
-   assertion is `<flag>-held-by-aggregation` (read back unchanged); every other flag's is
+   assertion is `<flag>-held-by-aggregation` (the write accepted and read back unchanged); every other flag's is
    `<flag>-toggled` (orchestrator ruling 2026-10-06, after the live run held both). `cleanup` is
    `passed` only when the final read equals the snapshot, otherwise `failed` and a
    `MANUAL RECOVERY REQUIRED` row naming the five original values. Intermediate reads and

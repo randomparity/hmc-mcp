@@ -941,6 +941,25 @@ async def test_st38_toggles_every_flag_when_aggregation_is_off() -> None:
 
 
 @pytest.mark.asyncio
+async def test_st38_a_refused_held_toggle_fails_its_assertion() -> None:
+    """Held means accepted and unchanged; a refused request is not evidence."""
+    transcript = _round_trip(_flags())
+    transcript[1] = (
+        "hmc_set_pcm_preferences",
+        "FAIL",
+        _failure("HMCError: (HTTP 500)"),
+    )
+    state = _ScriptedSriovState(transcript)
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    recorded = state.observations[0]["observation"]
+    assert recorded["result"] == "failed"
+    assert "long-term-monitor-held-by-aggregation" not in recorded["assertions"]
+
+
+@pytest.mark.asyncio
 async def test_st38_a_held_flag_that_flips_fails_its_assertion() -> None:
     transcript = _round_trip(_flags())
     # The coupling says LTM stays on while aggregation is enabled; it did not.
@@ -973,6 +992,7 @@ async def test_st38_mismatched_final_read_fails_cleanup() -> None:
     assert manual["tool"] == "hmc_set_pcm_preferences (MANUAL RECOVERY REQUIRED)"
     assert manual["status"] == "FAIL"
     assert "EnergyMonitorEnabled=True" in manual["note"]
+    assert "EnergyMonitoringCapable" not in manual["note"]
 
 
 @pytest.mark.asyncio

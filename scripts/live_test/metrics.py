@@ -504,8 +504,11 @@ def _round_trip_assertions(
 
 async def _set_preferences(
     client: Client, state: RunState, label: str, values: dict[str, bool]
-) -> None:
-    """Write the named flags (keyword -> value), recorded as a non-promoting row."""
+) -> bool:
+    """Write the named flags (keyword -> value), recorded as a non-promoting row.
+
+    Returns whether the HMC accepted the write.
+    """
     st, data = await state.call(
         client,
         "hmc_set_pcm_preferences",
@@ -518,6 +521,7 @@ async def _set_preferences(
         energy_monitor=values.get("energy_monitor"),
     )
     state.record(38, f"hmc_set_pcm_preferences ({label})", st, data)
+    return st == "PASS"
 
 
 async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
@@ -548,9 +552,13 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
     as_expected = {name: False for name, _ in PCM_FLAGS}
     for name, keyword in PCM_FLAGS:
         flipped = not snapshot[name]
-        await _set_preferences(client, state, f"{keyword} toggle", {keyword: flipped})
+        accepted = await _set_preferences(
+            client, state, f"{keyword} toggle", {keyword: flipped}
+        )
         after = await _read_preferences(client, state, f"{keyword} toggled")
-        as_expected[name] = after[name] is (snapshot[name] if name in held else flipped)
+        # Held means accepted and read back unchanged: a refused write proves nothing.
+        expected = snapshot[name] if name in held else flipped
+        as_expected[name] = accepted and after[name] is expected
         await _set_preferences(client, state, f"{keyword} restore", restore)
         if await _read_preferences(client, state, f"{keyword} restored") != snapshot:
             break  # widen nothing further: the final read reports the deviation
@@ -572,5 +580,5 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
             "FAIL",
             snapshot,
             "restore the snapshot: "
-            + ", ".join(f"{name}={value}" for name, value in snapshot.items()),
+            + ", ".join(f"{name}={snapshot[name]}" for name, _ in PCM_FLAGS),
         )
