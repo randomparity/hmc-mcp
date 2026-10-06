@@ -122,13 +122,12 @@ read are shared plumbing and are not bound, as in PR #1320 and PR #1364.
    failing, so cleanup reads the volume and mapping listings, not the result: a
    created disk with no listed mapping is deleted.
 5. **ST14.** The `_VOLUME_GROUP_POST_UNSUPPORTED` declaration is removed, so a
-   refused create is a FAIL. ST14's `rmvlog` passes the VIOS UUID to `viosvrcmd -p`,
-   which takes a partition name (`docs/hmc-cli-cheatsheet.md`), and its expected
-   outcome matches "not found", so the wrong identifier reads as an absent disk and
-   the stale disk is never removed. It moves to `--id <vios partition id>`, and
-   without a recorded id the step is skipped. The before-snapshot runs the
-   read-only `viosvrcmd -m <system> -p <vios uuid> -c ioslevel` to record what the
-   old form did.
+   refused create is a FAIL. ST14's old-disk removal is a follow-up, not changed
+   here: it runs `rmvlog`, the VIOS virtual-log command, with `-vg`/`-lv` options,
+   and passes the VIOS UUID to `viosvrcmd -p`, which takes a partition name. Its
+   expected outcome matches "not found", so the step can never have removed a
+   disk. Replacing it needs a live-verified destructive command in a scenario this
+   arm does not run.
 6. **Recovery.** A storage run (subtask 40 dispatched) is checked for:
    - `run disk mapping left`: a VIOS storage mapping backed by an `hpctl<8 hex>`
      volume;

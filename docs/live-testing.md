@@ -94,6 +94,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | vios-backup | `uv run --no-sync python scripts/live_vios_backup.py` | subtask 37 |
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
+| storage | `uv run --no-sync python scripts/live_storage.py` | subtasks 0, 3 and 40 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -282,6 +283,36 @@ unmount, or an unmount the arm cannot confirm, is a FAIL row marked
 removes an adapter. Subtask 22 unmounts and deletes any medium of this run's
 that is left, and nothing else.
 
+### The storage arm
+
+The storage arm verifies the volume-group, virtual-disk, mapping and cluster
+reads and the disk lifecycle (#1348). Subtask 0 resolves the VIOS and the test
+partition; subtask 3 reads the inventory; subtask 40 runs only in this arm.
+
+- **Inventory (subtask 3).** The volume-group listing is compared with the VIOS's
+  own `lsvg`. Clusters and shared storage pools are promoted only when the HMC
+  lists some; an empty feed stays a plain row. An absent pool UUID must come back
+  empty or not found, and a listed pool is read back.
+- **Preconditions (subtask 40).** The test partition must not be in
+  `LIVE_TEST_PROTECTED_LPAR_NAMES` and must read `Not Activated`, and
+  `LIVE_TEST_VDISK_VOLUME_GROUP_NAME` must have 1 GiB free. Each failed
+  precondition is a SKIP naming why.
+- **Lifecycle.** The arm reads its baselines: the group's free space, its logical
+  volumes through `viosvrcmd … -c 'lsvg -lv <group>'`, every storage mapping on
+  the VIOS, and the vSCSI adapter rows of the VIOS and the test partition. It
+  creates a 1 GiB volume `hpctl<8 hex>` and maps it to the test partition (the
+  HMC adds a vSCSI adapter pair). A delete while it is mapped is expected to be
+  refused. It then detaches the mapping, checks the volume survived, deletes it,
+  and compares each read with its baseline.
+- **Attach.** Only when the lifecycle left everything at its baseline: the same
+  through `hmc_attach_disk_to_lpar`, then detach and delete.
+
+A mapping the arm cannot confirm gone, or mappings or adapters that differ from
+the baseline, is a FAIL row marked `MANUAL RECOVERY REQUIRED` with the command
+that clears it. The arm never removes an adapter. It deletes the volume only
+after a listing shows no mapping backed by it, except for the one guarded delete
+it expects to be refused.
+
 ### The vios-backup arm
 
 The vios-backup arm verifies the VIOS backup catalog, a `viosioconfig` backup
@@ -449,10 +480,11 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm` or `network`.
+`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm`, `network`
+or `storage`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-four sets of them:
+these sets of them:
 
 | Subtasks | What it reads |
 |---|---|
@@ -460,6 +492,7 @@ four sets of them:
 | 11 (users) | any HMC user named `hmcpctl-live-*`, whichever run's document you pass |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
+| 0, 3, 40 (storage) | a mapping backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
