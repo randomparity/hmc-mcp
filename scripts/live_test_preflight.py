@@ -197,10 +197,28 @@ def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the system-wide PCM preferences the pcm arm (#634) toggles and restores."""
+    return ArmVerdict(
+        "pcm",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                "PCM collection preferences (system-wide): each of the five flags "
+                "toggled, then all five restored to the pre-run read"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
     "profiles": _profiles_verdict,
+    "pcm": _pcm_verdict,
 }
 
 

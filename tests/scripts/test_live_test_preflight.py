@@ -270,6 +270,21 @@ def test_the_profiles_verdict_names_each_change_it_makes(
     assert "skipped when ST0 reads sync_curr_profile as 1" in output
 
 
+def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
+    workspace, monkeypatch, capsys
+):
+    """#634. PCM preferences are shared by every PCM consumer of the system."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "pcm", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "PCM collection preferences (system-wide)" in output
+    assert "all five restored to the pre-run read" in output
+
+
 def test_a_pinned_slot_predicts_the_io_slots_scenario_will_skip(
     workspace, monkeypatch, capsys
 ):

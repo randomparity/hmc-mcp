@@ -6,7 +6,8 @@ a JSON document on exit.
 
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
-`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles}.py` to dispatch one arm,
+`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,pcm}.py` to dispatch one
+arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
@@ -16,9 +17,11 @@ Usage:
 `--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
 stops importing (AGENTS.md).
 
-With no selection every subtask runs, 0 through 25. A bare number runs that one
-subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`,
-or `test-results-round2.json` for a bare or whole-suite run, unless
+With no selection every subtask runs, 0 through 38: there is none from 26 to 37,
+which are other arms' row ids, and 38 SKIPs outside its own `pcm` group. A bare
+number runs that one subtask; `--group NAME` runs one arm. Results go to
+`test-results-<group>.json`, or `test-results-round2.json` for a bare or
+whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
 
 Pre-run requirement: HMC credentials, from the environment, a `config.toml`
@@ -73,7 +76,11 @@ from live_test.lpar import (
     mutate_lpar_properties,
     restore_lpar_baseline,
 )
-from live_test.metrics import inspect_metrics_jobs, inspect_metrics_templates
+from live_test.metrics import (
+    exercise_pcm_preferences,
+    inspect_metrics_jobs,
+    inspect_metrics_templates,
+)
 from live_test.network import inventory_network, mutate_virtual_networking
 from live_test.observation import (
     CLEANUP,
@@ -1001,6 +1008,7 @@ SUBTASKS = {
     23: exercise_sriov_assignment,
     24: exercise_dedicated_pcie_assignment,
     25: exercise_bare_cec,
+    38: exercise_pcm_preferences,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
 
@@ -1183,6 +1191,9 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     "dedicated": [24],
     "bare-cec": [25],
     "profiles": [0, 4, 10, 15],
+    # Not in "all": the arm changes the managed system's PCM collection preferences,
+    # which every PCM consumer of the system shares (docs/live-testing.md).
+    "pcm": [38],
     "all": list(range(26)),
 }
 
