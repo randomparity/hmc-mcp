@@ -54,6 +54,7 @@ from live_test.pcie import (
     partition_not_found,
     select_profile_io_slots,
 )
+from live_test.results import entries
 from live_test.users import profile_rows, scratch_users
 from live_test.vmedia import (
     _BOOT_BASELINE_STEP,
@@ -232,7 +233,8 @@ async def _scratch_users_left(call) -> list[Finding]:
     if not isinstance(console_uuid, str):
         raise StateUnreadable("the console UUID, to list HMC users")
     status, listing = await call("hmc_list_users", console_uuid=console_uuid)
-    if status != "PASS":
+    rows = profile_rows(listing) if status == "PASS" else {}
+    if status != "PASS" or len(rows) != len(entries(listing)):
         raise StateUnreadable("the HMC user list")
     return [
         Finding(
@@ -240,7 +242,7 @@ async def _scratch_users_left(call) -> list[Finding]:
             detail="a users-arm scratch user is still defined (viewer role)",
             remedy=f"rmhmcusr -u {name}",
         )
-        for name in scratch_users(profile_rows(listing))
+        for name in scratch_users(rows)
     ]
 
 
@@ -921,14 +923,13 @@ def main(argv: list[str] | None = None) -> int:
     unwitnessed = sorted(set(subtasks) - _WITNESSED_SUBTASKS)
     pcie = inputs_from_document(document)
     partition = lpar_inputs_from_document(document, subtasks)
+    findings: list[Finding] = []
+    unread: list[str] = []
     try:
         users = users_witnessed(document, subtasks)
     except ValueError as error:
-        print(f"ERROR: {error}", file=sys.stderr)
-        return 2
-
-    findings: list[Finding] = []
-    unread: list[str] = []
+        users = False
+        unread.append(str(error))
     if pcie is not None or partition is not None or users:
         if not runner._bootstrap_config():
             print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
@@ -939,7 +940,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
             return 2
         except StateUnreadable as unreadable:
-            findings, unread = unreadable.findings, [str(unreadable)]
+            findings = unreadable.findings
+            unread.append(str(unreadable))
         except Exception as error:  # noqa: BLE001 - an unreadable system is not a clean one
             print(f"ERROR: could not read the managed system: {error}", file=sys.stderr)
             return 2

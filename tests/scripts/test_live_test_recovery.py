@@ -1236,6 +1236,16 @@ async def test_an_unlistable_user_table_is_not_clean():
         await recovery.check_run(call, None, None, users=True)
 
 
+@pytest.mark.asyncio
+async def test_a_user_list_it_cannot_map_is_not_clean():
+    """An entry with no UUID could hide a scratch user from the prefix scan."""
+    listing = [*_users("operator"), {"Resource": {"UserID": {"text": "x"}}}]
+    call = _caller({"hmc_get_console_info": _CONSOLE, "hmc_list_users": listing})
+
+    with pytest.raises(recovery.StateUnreadable, match="HMC user list"):
+        await recovery.check_run(call, None, None, users=True)
+
+
 def _users_document(**artifacts) -> dict:
     return {
         "run": {"subtasks": [11], "group": "users"},
@@ -1266,3 +1276,18 @@ def test_a_pre_632_document_with_an_st11_create_exits_two(tmp_path, monkeypatch)
     document = _users_document(test_user_uuid="configured-user-uuid")
 
     assert _main(tmp_path, monkeypatch, document) == (2, False)
+
+
+def test_a_pre_632_round2_document_still_runs_its_partition_checks(
+    tmp_path, monkeypatch, capsys
+):
+    """The unreadable ST11 must not hide the provisioned test partition's residue."""
+    document = _lpar_document(
+        range(16),
+        [_row(11, "hmc_create_user"), _row(14, "hmc_provision_lpar (live)")],
+        test_user_uuid="configured-user-uuid",
+    )
+
+    assert _main(tmp_path, monkeypatch, document, [_FINDING]) == (2, True)
+    output = capsys.readouterr().out
+    assert "STRANDED" in output and "predates the users arm" in output
