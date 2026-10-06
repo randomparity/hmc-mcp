@@ -263,13 +263,16 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
         raise StateUnreadable(f"could not list the backups of {inputs.vios} ({status})")
     # Containment, not equality: the catalog may render the name with a prefix or
     # suffix, and a projection that did is no reason to report the backup gone.
-    listed = any(
-        isinstance(row, dict) and inputs.backup_name in str(row.get("name", ""))
+    # The catalog lists the backup under its own name (`<name>.tar.gz` on V10R3),
+    # which is the one name `rstviosbk` and `rmviosbk` accept.
+    names = [
+        str(row.get("name"))
         for row in data
-    )
-    remove = vios_backup.rmviosbk_command(
-        inputs.system_name, inputs.vios, inputs.backup_name
-    )
+        if isinstance(row, dict) and inputs.backup_name in str(row.get("name", ""))
+    ]
+    listed = bool(names)
+    catalog = names[0] if names else inputs.backup_name
+    remove = vios_backup.rmviosbk_command(inputs.system_name, inputs.vios, catalog)
     if inputs.off_baseline:
         findings.append(
             Finding(
@@ -279,7 +282,7 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
                 f"the run could not prove {inputs.vios} back at its baseline and "
                 "kept the backup; check the VIOS through its HMC console",
                 f"rstviosbk -t viosioconfig -m {shlex.quote(inputs.system_name)} "
-                f"-p {shlex.quote(inputs.vios)} -f {shlex.quote(inputs.backup_name)} "
+                f"-p {shlex.quote(inputs.vios)} -f {shlex.quote(catalog)} "
                 f"-r, re-check the baseline, then {remove}"
                 if listed
                 else "restore the I/O configuration by hand from the run's baseline rows",
@@ -289,7 +292,7 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
         findings.append(
             Finding(
                 "VIOS backup left",
-                f"{inputs.backup_name} is still in the backup catalog of {inputs.vios}",
+                f"{catalog} is still in the backup catalog of {inputs.vios}",
                 remove,
             )
         )

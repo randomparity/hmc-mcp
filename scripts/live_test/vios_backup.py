@@ -155,6 +155,25 @@ class _Restore:
     baseline_restored: bool
 
 
+def catalog_name(
+    name: str, rows: list[tuple[str, str]] | None, raw: str | None
+) -> str | None:
+    """The backup catalog's name for the run's backup, or None when unlisted.
+
+    The HMC lists a backup made with `-f <name>` as `<name>.tar.gz` (observed on
+    V10R3), and `rstviosbk`/`rmviosbk` accept only the listed name.
+    """
+    for row_name, _ in rows or []:
+        if row_name.startswith(name):
+            return row_name
+    # The raw `lsviosbk -F --header` capture: a header line, then CSV rows.
+    for line in (raw or "").splitlines()[1:]:
+        listed = line.split(",", 1)[0]
+        if listed.startswith(name):
+            return listed
+    return None
+
+
 class _Arm:
     """One ST37 run: the calls it makes and the outcomes it accumulates."""
 
@@ -424,7 +443,9 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
     raw_after = await arm.raw_listing(target, "after")
     status, after_listing = await arm.listed(target, "")
     after_rows = _backup_rows(after_listing) if status == "PASS" else None
-    run_rows = [kind for row_name, kind in after_rows or [] if row_name == name]
+    run_rows = [
+        kind for row_name, kind in after_rows or [] if row_name.startswith(name)
+    ]
     if backup_accepted:
         state.record_verified(
             SUBTASK,
@@ -443,11 +464,12 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
         arm.record(
             "hmc_list_vios_backups (after a refused backup)", status, after_listing
         )
-    exists = bool(run_rows) or (raw_after is not None and name in raw_after)
+    listed = catalog_name(name, after_rows, raw_after)
+    exists = listed is not None
 
     restore, settled = None, True
-    if backup_accepted and exists:
-        restore, settled = await _round_trip(arm, target, baseline, name)
+    if backup_accepted and listed is not None:
+        restore, settled = await _round_trip(arm, target, baseline, listed)
     if restore is None:
         state.skip(
             SUBTASK,
@@ -468,20 +490,20 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
         )
 
     backup_cleanup = "not-run"
-    if exists and at_baseline:
-        await arm.run("rmviosbk", rmviosbk_command(arm.system, target.vios, name))
+    if listed is not None and at_baseline:
+        await arm.run("rmviosbk", rmviosbk_command(arm.system, target.vios, listed))
         # Absence is read from the source that showed presence: a parsed listing
         # that never named the backup cannot show it gone.
         if run_rows:
             status, listing = await arm.listed(target, "after rmviosbk")
             rows = _backup_rows(listing) if status == "PASS" else None
-            gone = rows is not None and all(row_name != name for row_name, _ in rows)
+            gone = rows is not None and catalog_name(name, rows, None) is None
         else:
             raw = await arm.raw_listing(target, "after rmviosbk")
             gone = raw is not None and name not in raw
         backup_cleanup = "passed" if gone else "failed"
     elif exists:
-        arm.record(KEPT_ROW, "FAIL", {"backup": name, "settled": settled})
+        arm.record(KEPT_ROW, "FAIL", {"backup": listed, "settled": settled})
     state.record_verified(
         SUBTASK,
         "hmc_backup_vios",
@@ -492,7 +514,7 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
             Assertion(
                 "backup-newly-listed",
                 before_rows is not None
-                and all(row_name != name for row_name, _ in before_rows)
+                and catalog_name(name, before_rows, None) is None
                 and bool(run_rows),
             ),
             Assertion("backup-type-viosioconfig", run_rows == ["viosioconfig"]),
@@ -512,7 +534,7 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
                 Assertion("baseline-restored", restore.baseline_restored),
             ],
             cleanup="passed" if at_baseline else "failed",
-            data={"backup": name},
+            data={"backup": listed},
         )
 
 

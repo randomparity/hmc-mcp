@@ -105,7 +105,11 @@ captured empty, so its attribute names are unverified.
    submits — a confirmed defect whose fix (`operations/vios/install.py`, a contract
    change) is outside this surface: follow-up pending (campaign d0a19b80). It stays bound to `installios`, the command its code path builds, and is
    recorded `absent`, missing `vios-install-via-lpar-selector`.
-6. **Defects** confirmed within the permitted surface (for example the `lsviosbk`
+6. **Live finding (2026-10-06, V10R3):** the HMC catalogs `mkviosbk -f <name>` as
+   `<name>.tar.gz`, and `rstviosbk`/`rmviosbk` accept only that listed name
+   (`HSCLC455` otherwise). The arm restores and removes by the listed name, and
+   `hmc_backup_vios` documents it.
+7. **Defects** confirmed within the permitted surface (for example the `lsviosbk`
    projection, if the live capture disproves it) are fixed here and the run repeated
    at the fixed head.
 

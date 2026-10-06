@@ -219,8 +219,12 @@ the HMC console, so the arm guards on it instead.
   check prints:
 
   ```sh
-  rmviosbk -t viosioconfig -m <system> -p <vios> -f hmcpctl-live-st37-<8 hex>
+  rmviosbk -t viosioconfig -m <system> -p <vios> -f hmcpctl-live-st37-<8 hex>.tar.gz
   ```
+
+  Use the name `lsviosbk` lists: the HMC catalogs a backup made with
+  `-f <name>` as `<name>.tar.gz`, and `rstviosbk` and `rmviosbk` refuse the bare
+  name with `HSCLC455`.
 
   and recreate a missing mapping with
   `viosvrcmd -m <system> -p <vios> -c "mkvdev -vdev <backing> -vadapter <vhostN> -dev <vtd>"`.

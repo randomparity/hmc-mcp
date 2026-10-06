@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import importlib.util
 import json
+import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,19 @@ OPTICAL = {
     "backing_kind": "VirtualOpticalMedia",
     "backing_name": "lp3-media",
 }
+#: The header `lsviosbk -F --header` printed on V10R3 (2026-10-06 live capture).
+LSVIOSBK_HEADER = (
+    "name,type,sys_name,mtms,vios_name,vios_id,vios_uuid,last_modified,size\n"
+)
+
+
+def _hsclc455(command: str, name: str) -> str:
+    return (
+        f"SSH command '{command} ... -f {name}' failed with exit status 1: "
+        f"HSCLC455 The backup file {name} does not exist."
+    )
+
+
 MUTATIONS = ("hmc_backup_vios", "rmvdev", "hmc_restore_vios", "mkvdev", "rmviosbk")
 
 
@@ -109,10 +123,13 @@ class FakeVios:
             if self.backup_fails:
                 return "FAIL", "mkviosbk refused"
             if not self.backup_invisible:
-                self.backups.append(kwargs["backup_name"])
+                # As observed on V10R3: the catalog names it `<name>.tar.gz`.
+                self.backups.append(kwargs["backup_name"] + ".tar.gz")
             return "PASS", ""
         if tool == "hmc_restore_vios":
             self.restored = True
+            if kwargs["backup_name"] not in self.backups:
+                return "FAIL", _hsclc455("rstviosbk", kwargs["backup_name"])
             self.mapped = self.restore_restores
             return (
                 self.restore_status,
@@ -131,12 +148,19 @@ class FakeVios:
         if cmd.startswith("lshwres"):
             return "PASS", self.serial
         if cmd.startswith("lsviosbk"):
-            return "PASS", "name,type\n" + "".join(
-                f"{b},viosioconfig\n" for b in self.backups
+            if not self.backups:
+                return "PASS", "No results were found.\n"
+            return "PASS", LSVIOSBK_HEADER + "".join(
+                f"{b},viosioconfig,{SYSTEM},SYNTH-01*SYNTH01,{VIOS},100,"
+                f"{VIOS_UUID},10/06/2026 00:00:00,7.330\n"
+                for b in self.backups
             )
         if cmd.startswith("rmviosbk"):
+            name = shlex.split(cmd)[-1]
+            if name not in self.backups:
+                return "FAIL", _hsclc455("rmviosbk", name)
             if self.rmviosbk_removes:
-                self.backups.clear()
+                self.backups.remove(name)
             return "PASS", ""
         inner = cmd.split(' -c "', 1)[1].rstrip('"')
         if inner.startswith("rmvdev"):
@@ -169,14 +193,6 @@ class FakeVios:
 
     def sea_after(self) -> str:
         return self.sea_lines
-
-
-class SuffixedListingVios(FakeVios):
-    def answer(self, tool: str, kwargs: dict[str, Any]) -> tuple[str, Any]:
-        status, data = super().answer(tool, kwargs)
-        if tool == "hmc_list_vios_backups" and status == "PASS":
-            return status, [{**row, "name": row["name"] + ".tar.gz"} for row in data]
-        return status, data
 
 
 class SeaChangingVios(FakeVios):
@@ -364,13 +380,37 @@ async def test_a_short_ssh_timeout_changes_nothing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_suffixed_listing_cannot_show_the_backup_gone(monkeypatch):
-    """Only the raw capture named the backup, so only it can show it removed."""
-    vios = SuffixedListingVios(rmviosbk_removes=False)
+async def test_restore_and_removal_use_the_name_the_catalog_lists(monkeypatch):
+    """Live, V10R3: `-f <name>` is cataloged as `<name>.tar.gz`, and rstviosbk
+    and rmviosbk refuse the bare name with HSCLC455."""
+    vios = FakeVios()
+    restored: list[str] = []
+    answer = vios.answer
+
+    def spy(tool, kwargs):
+        if tool == "hmc_restore_vios":
+            restored.append(kwargs["backup_name"])
+        return answer(tool, kwargs)
+
+    vios.answer = spy  # type: ignore[method-assign]
 
     state = await _run(monkeypatch, vios)
 
-    assert _observations(state)["vios.backup"]["cleanup"] == "failed"
+    assert restored == [state.artifacts.vios_backup_name + ".tar.gz"]
+    assert _observations(state)["vios.restore"]["result"] == "passed"
+    assert _observations(state)["vios.backup"]["cleanup"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_listing_takes_the_catalog_name_from_the_raw_capture(
+    monkeypatch,
+):
+    vios = FakeVios(listing_malformed=True)
+
+    state = await _run(monkeypatch, vios)
+
+    assert _observations(state)["vios.restore"]["result"] == "passed"
+    assert vios.backups == []
 
 
 @pytest.mark.asyncio
