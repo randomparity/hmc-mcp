@@ -95,8 +95,10 @@ ST22 teardown stay plain and never promote.
    - the repository's media as (name, size) pairs and its `RepositorySize`;
    - every VIOS storage mapping as (id, partition UUID, backing kind, backing name);
    - the vSCSI adapter rows of the VIOS and of the test partition (`lshwres -r
-     virtualio --rsubtype scsi --level lpar --filter lpar_ids=<id> -F
-     slot_num,remote_lpar_id,remote_slot_num`).
+     virtualio --rsubtype scsi --level lpar --filter lpar_ids=<vios id>` and
+     `lpar_names=<test partition>`, `-F slot_num,remote_lpar_name,remote_slot_num`,
+     the listing the recovery script reads; its builder moves into
+     `live_test/vmedia.py` so both issue the same command).
    1. `hmc_create_optical_media` (1024 MiB), then list. `media.create`:
       `create-accepted`, `media-listed`, `size-matches`, `baseline-media-kept`.
       `media.list` (the baseline read): `media-entries-named`; an empty baseline is a
@@ -146,7 +148,9 @@ ST22 teardown stay plain and never promote.
 8. **ST22 — teardown.** The boot-order guard is unchanged. Then, when
    `vmedia_vg_uuid` is set: unmount only mappings whose media is a run-owned name,
    delete only run-owned media, and delete the repository only when this run created
-   it. All rows plain.
+   it. All rows plain. The old teardown read media names from a `MediaName` key the
+   tool never returns (it returns `name`), so it never deleted anything; reading
+   `name` fixes that.
 9. **Recovery.** Run-owned names come from `vmedia_blank_name` and `vmedia_iso_name`
    only; the configured ISO name is no longer one. Repository ownership comes from
    `vmedia_repo_created` or a repository create or delete call only. A new class,
@@ -163,7 +167,8 @@ ST22 teardown stay plain and never promote.
     `vmedia_blank_name`), defaulted for documents written before them.
 12. **Catalog.** Rebind the rows; a maturity record per operation with the variant
     above; copy the live observations the run emits (ADR 0126). Regenerate the
-    runtime projection and `docs/tools/`; update `CHANGELOG.md`.
+    runtime projection and `docs/tools/`. The harness change touches no `src/` behaviour, so
+    `CHANGELOG.md` changes only if the live run finds a defect there.
 
 ## Live authorization and snapshot
 
@@ -182,8 +187,10 @@ the PR; the raw reads stay private.
 
 ## Live gaps (expected; settled by the run)
 
-Gaps are written by hand into the maturity records' notes and this table; the arm
-emits no `missing_scope` row.
+This table is the durable record of the gaps; a maturity record has no notes field,
+and the arm emits no `missing_scope` row (`missing_scope` is for a confirmed
+limitation under ADR 0132). An operation with no live observation stays
+`unevidenced`.
 
 | Case | Prerequisite |
 |---|---|

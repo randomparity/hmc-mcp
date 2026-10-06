@@ -223,6 +223,38 @@ test partition's client network, vSCSI and vFC adapters as before; the serving
 VIOS's FC-port labels as before; and no vFC group label named `hmcl-*`.
 Subtask 2 only reads. After an interrupted run (exit 2), check the same by hand.
 
+### The vmedia arm
+
+The vmedia arm verifies the media-repository, optical-media and mapping
+operations (#1347). A VIOS holds one media repository, and the arm works in it
+whoever created it, removing only what this run created:
+
+- **Repository.** Subtask 16 reads every volume group for the repository. When
+  none holds one, it creates one in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and
+  subtasks 17 and 22 delete it again. An existing repository is never resized
+  or deleted; its create and delete are then gaps that need a VIOS with none.
+- **Blank medium (subtask 19).** The test partition must read `Not Activated`
+  and the repository must have 1 GiB free. The arm reads its baselines (the
+  repository's media and size, every storage mapping on the VIOS, and the vSCSI
+  adapter rows of the VIOS and the test partition), creates
+  `hmcpctl_live_<8 hex>`, mounts it to the test partition (the HMC adds a vSCSI
+  adapter pair), tries to delete it while mounted (expected refused), unmounts
+  and deletes it, and compares each read with its baseline. The HMC media-name
+  pattern admits no hyphen, hence the underscores.
+- **ISO (subtasks 18 and 20).** Only when the file at `LIVE_TEST_ISO_PATH`
+  exists; the arm never fetches media. It uploads it as
+  `<LIVE_TEST_ISO_MEDIA_NAME stem>_<8 hex><suffix>`, checks a same-name upload is
+  refused, deletes it, then uploads it again to boot the test partition from it
+  and powers the partition off again. Without the file, both subtasks SKIP and
+  the partition is never powered on.
+- **Mappings (subtask 21)** are read on the VIOS and for the test partition.
+
+An adapter or mapping that differs from its baseline after the mount or the
+unmount, or an unmount the arm cannot confirm, is a FAIL row marked
+`MANUAL RECOVERY REQUIRED` with the command that clears it. The arm never
+removes an adapter. Subtask 22 unmounts and deletes any medium of this run's
+that is left, and nothing else.
+
 ### The vios-backup arm
 
 The vios-backup arm verifies the VIOS backup catalog, a `viosioconfig` backup
@@ -397,7 +429,7 @@ four sets of them:
 
 | Subtasks | What it reads |
 |---|---|
-| 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
+| 16–22 (vmedia) | the test partition left running, its pending boot string changed, a medium of the run's still mounted to it or still in the repository, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
@@ -451,9 +483,10 @@ in an ownership stamp this checkout cannot parse, such as one written before the
 `hmcpctl` rename, exits 2 rather than being reported clean.
 
 The vmedia classes key on the configured test partition (`LIVE_TEST_LPAR_NAME`
-as the run recorded it), not on a marker. An optical mapping of an ISO with the
-run's name, or an unmapped server adapter toward that partition, is reported
-whoever left it.
+as the run recorded it), not on a marker. A medium is the run's only when its
+artifacts name it (`vmedia_blank_name`, `vmedia_iso_name`); the configured ISO
+name alone never is. An unmapped server adapter toward that partition is
+reported whoever left it.
 
 ## If something goes wrong mid-run
 
