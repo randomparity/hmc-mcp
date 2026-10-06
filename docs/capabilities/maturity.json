@@ -1234,14 +1234,14 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st4-affinity-reads",
-          "observed_at": "2026-10-06T09:43:40Z",
+          "observed_at": "2026-10-06T13:45:39Z",
           "cleanup": "not-required",
           "assertions": [
-            "capability-unavailable-reason"
+            "capability-available-policy"
           ],
-          "tested_commit": "ffff4bb47f338751bdda365491ee13d098fece46",
-          "hmc_release": "V10R3M1060",
-          "hardware_family": "POWER9",
+          "tested_commit": "89f0911b81030b7abcec152d3d29b6dc0374077f",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
           "schema_version": "(not set)",
           "closure_fingerprint": "95279291ac3373317e07e81114e0b0404bfac7022d349f20bffd90a099facb1e"
         }
@@ -1505,14 +1505,14 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st4-affinity-reads",
-          "observed_at": "2026-10-06T09:43:32Z",
+          "observed_at": "2026-10-06T13:45:29Z",
           "cleanup": "not-required",
           "assertions": [
-            "capability-unavailable-reason"
+            "capability-available-rows"
           ],
-          "tested_commit": "ffff4bb47f338751bdda365491ee13d098fece46",
-          "hmc_release": "V10R3M1060",
-          "hardware_family": "POWER9",
+          "tested_commit": "89f0911b81030b7abcec152d3d29b6dc0374077f",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
           "schema_version": "(not set)",
           "closure_fingerprint": "95279291ac3373317e07e81114e0b0404bfac7022d349f20bffd90a099facb1e"
         }
@@ -1536,14 +1536,14 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st4-affinity-reads",
-          "observed_at": "2026-10-06T09:43:36Z",
+          "observed_at": "2026-10-06T13:45:36Z",
           "cleanup": "not-required",
           "assertions": [
-            "capability-unavailable-reason"
+            "capability-available-rows"
           ],
-          "tested_commit": "ffff4bb47f338751bdda365491ee13d098fece46",
-          "hmc_release": "V10R3M1060",
-          "hardware_family": "POWER9",
+          "tested_commit": "89f0911b81030b7abcec152d3d29b6dc0374077f",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
           "schema_version": "(not set)",
           "closure_fingerprint": "95279291ac3373317e07e81114e0b0404bfac7022d349f20bffd90a099facb1e"
         }
