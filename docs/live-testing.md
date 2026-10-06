@@ -158,7 +158,8 @@ the restore) is a FAIL row marked `MANUAL RECOVERY REQUIRED` that names the
 partition and the `chsyscfg ... -o apply` command to run.
 
 If a run stops partway, restore by hand what it may have left changed. Use
-the values in the run's baseline:
+the values in the run's baseline, `artifacts.lp3_baseline` in its results
+document, which an interrupted run still writes:
 
 - `chsyscfg -r lpar -m <system> -i "name=<lpar>,description=<original>"`
 - `chsyscfg -r lpar -m <system> -i "name=<vios>,msp=<0|1>"`
@@ -281,8 +282,10 @@ that ends on exit 2 has not been shown clean by anything — check the rest of t
 system yourself.
 
 The header names the run the document came from: its group, commit and finish
-time. An interrupted run writes no results document, so the file on disk is the
-previous run's; check an interrupted run by hand.
+time. A run that an exception or interrupt stopped still writes its results
+document, marked `"partial": true` in its `run` block. Its rows end where the
+run stopped, so a call cut off mid-flight has no row. Check an interrupted run
+by hand as well.
 
 It identifies the PCIe arms' leftovers by the run marker recorded in the results
 document. A partition sharing the fixture's name but carrying a different
@@ -302,8 +305,10 @@ Stop. The arm's cleanup refuses to mutate anything whose ownership it cannot
 confirm, so an interrupted run leaves its traces in place rather than deleting
 something it did not create. That is the safe outcome. A run that finishes,
 even with failed rows, writes its results document, and step 4 is what tells you
-what is there. A run you interrupt, or one an uncaught error ends, writes none:
-check what its arm changes by hand.
+what is there. A run you interrupt, or one an uncaught error ends, writes a
+partial document (`"partial": true` in its `run` block) that holds the baseline
+and run marker gathered before the stop. Its rows can miss the call that was in
+flight, so also check what its arm changes by hand.
 
 Never hand-delete a partition because its name looks like a fixture. Check the
 marker first.

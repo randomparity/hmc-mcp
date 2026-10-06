@@ -1511,6 +1511,7 @@ def _run_provenance(
     group: str | None,
     repo_root: Path | None,
     schema_version: str,
+    partial: bool,
 ) -> dict[str, Any]:
     """What this run was, so a matrix taken from it can be dated.
 
@@ -1526,6 +1527,10 @@ def _run_provenance(
     `schema_version` is the resolved `HMC_SCHEMA_VERSION` (`(not set)` when
     unset), the same string the run header prints, so a matrix can say which
     request environment produced it.
+
+    `partial` is true when an exception or interrupt ended the subtask loop:
+    `subtasks` then names what was selected, not what ran, and only the rows
+    recorded before the stop are present.
     """
     commit: str | None = None
     tree_clean: bool | None = None
@@ -1541,6 +1546,7 @@ def _run_provenance(
         "subtasks": list(tasks),
         "schema_version": schema_version,
         "finished": datetime.now(UTC).isoformat(),
+        "partial": partial,
     }
 
 
@@ -1746,6 +1752,24 @@ async def main(
                 _restore_artifacts_from_results(state, hmc_config, prior)
                 break
 
+    def write_results(partial: bool) -> None:
+        _write_results(
+            Path(results_path),
+            json.dumps(
+                {
+                    "run": _run_provenance(
+                        tasks, group, repo_root, schema_version, partial
+                    ),
+                    "config": asdict(state.config),
+                    "hmc": _hmc_identity(hmc_config),
+                    "artifacts": asdict(state.artifacts),
+                    "results": state.results,
+                },
+                indent=2,
+                default=str,
+            ),
+        )
+
     try:
         async with served_client() as client:
             state.schemas = await served_schemas(client)
@@ -1755,23 +1779,22 @@ async def main(
                     await fn(client, state)
                 else:
                     state.record(n, "runner", "FAIL", f"Unknown sub-task {n}")
+    except BaseException:
+        # An interrupted run is the one whose operator needs the ST0 baseline and
+        # the run marker to restore by hand, so persist what was gathered before
+        # re-raising. A failed write must not replace the run's own failure.
+        try:
+            write_results(partial=True)
+            print(f"Partial results written to {results_path}")
+        except (OSError, TypeError, ValueError) as exc:
+            print(
+                f"⚠️  Could not write partial results: {_redact_failure_text(str(exc))}"
+            )
+        raise
     finally:
         state.iso_http_server.close()
 
-    _write_results(
-        Path(results_path),
-        json.dumps(
-            {
-                "run": _run_provenance(tasks, group, repo_root, schema_version),
-                "config": asdict(state.config),
-                "hmc": _hmc_identity(hmc_config),
-                "artifacts": asdict(state.artifacts),
-                "results": state.results,
-            },
-            indent=2,
-            default=str,
-        ),
-    )
+    write_results(partial=False)
 
     if repo_root is None:
         print("not inside the hmcpctl repository — observations not written")
