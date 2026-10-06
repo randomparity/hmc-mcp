@@ -8,4 +8,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_capacity_report` | `read` | `capacity.report` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Report assigned and available memory and processors by system. |
+| `hmc_capacity_report` | `read` | `capacity.report` | `console` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Report assigned and available memory and processors by system. |

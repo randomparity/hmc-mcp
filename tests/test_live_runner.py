@@ -538,6 +538,7 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
     state = _ScriptedSriovState(
         [
             ("hmc_get_console_info", "PASS", {"UUID": "console-uuid"}),
+            ("hmc_list_resources", "PASS", []),
             ("hmc_list_systems", "PASS", {"entries": []}),
             ("hmc_get_system", "PASS", {"UUID": "system-uuid"}),
             ("hmc_list_lpars", "PASS", {"entries": "malformed"}),
@@ -549,10 +550,15 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
             ),
             ("hmc_capacity_report", "PASS", {}),
             ("hmc_find_placement", "PASS", {}),
-            ("hmc_get_system", "PASS", {}),
             ("hmc_list_resources", "PASS", {}),
             ("hmc_system_summary", "PASS", {}),
             ("hmc_lpar_summary", "PASS", {}),
+            ("hmc_list_lpar_ownership", "PASS", {}),
+            ("hmc_read_lpar_boot_order", "PASS", {}),
+            ("hmc_inspect_lpar", "PASS", {}),
+            ("hmc_inventory", "PASS", {}),
+            ("hmc_fleet_health", "PASS", {}),
+            ("hmc_plan_lpar", "PASS", {}),
         ]
     )
 
@@ -572,9 +578,12 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
         3,
     )
     assert state.artifacts.job_uuid_sample is None
-    assert state.calls[7] == (
+    assert state.calls[8] == (
         "hmc_find_placement",
-        {"desired_memory_mib": state.config.placement_memory_mib},
+        {
+            "desired_memory_mib": state.config.placement_memory_mib,
+            "desired_proc_units": 0.5,
+        },
     )
     assert all(entry["subtask"] == 1 for entry in state.results)
 
@@ -4943,6 +4952,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
 
     assert [tool for tool, _ in calls] == [
         "hmc_get_console_info",
+        "hmc_list_resources",
         "hmc_list_systems",
         "hmc_get_system",
         "hmc_list_lpars",
@@ -4950,21 +4960,511 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "hmc_list_vios",
         "hmc_capacity_report",
         "hmc_find_placement",
-        "hmc_get_system",
         "hmc_list_resources",
         "hmc_system_summary",
         "hmc_lpar_summary",
+        "hmc_list_lpar_ownership",
+        "hmc_read_lpar_boot_order",
+        "hmc_inspect_lpar",
+        "hmc_inventory",
+        "hmc_fleet_health",
+        "hmc_plan_lpar",
     ]
-    assert calls[2][1] == {"system_name_or_uuid": "example-lt-609-system"}
-    assert calls[4][1] == {"lpar_name_or_uuid": "example-lt-609-lpar"}
-    assert calls[7][1] == {"desired_memory_mib": 3072}
+    assert calls[1][1] == {"resource_type": "ManagedSystem"}
+    assert calls[3][1] == {"system_name_or_uuid": "example-lt-609-system"}
+    assert calls[5][1] == {"lpar_name_or_uuid": "example-lt-609-lpar"}
+    assert calls[8][1] == {"desired_memory_mib": 3072, "desired_proc_units": 0.5}
     assert calls[9][1] == {"resource_type": "LogicalPartition"}
+    assert calls[14][1] == {
+        "lpar_name_or_uuid": "example-lt-609-lpar",
+        "system_name_or_uuid": "example-lt-609-system",
+        "include": ["resources", "rmc", "refcodes"],
+    }
+    assert calls[15][1] == {"systems": ["example-lt-609-system"]}
+    assert calls[17][1] == {
+        "name": "example-lt-609-dry-run",
+        "adapters": {"port_vlan_id": 1},
+        "storage": {"storage_name": "hmcpctl-st1", "capacity_mib": 10240},
+        "system_name_or_uuid": "example-lt-609-system",
+    }
     assert state.artifacts.console_uuid == "console-uuid"
     assert state.artifacts.system_uuid == "system-uuid"
     assert state.artifacts.lp3_uuid == "lpar-uuid"
     assert state.artifacts.vios_uuid == "vios-uuid"
     assert state.artifacts.vios_partition_id == 7
     assert state.artifacts.job_uuid_sample is None
+
+
+_ST1_SYSTEM = "example-lt-609-system"
+_ST1_LPAR = "example-lt-609-lpar"
+_ST1_SYSTEM_UUID = "11111111-2222-3333-4444-555555555555"
+_ST1_LPAR_UUID = "66666666-7777-8888-9999-000000000000"
+_ST1_NULL_PROPERTY_500 = (
+    "HMCError: Managed-system inventory is unavailable (HTTP 500): Nested path "
+    "contains null property currentProperty=Uuid "
+    "nestedPath=VirtualPersistentMemoryVolume/Uuid/Value/Value"
+)
+
+
+def _st1_capacity_row(**overrides: object) -> SimpleNamespace:
+    """One CapacitySummary as FastMCP delivers it: a generated model, not a mapping."""
+    row = {
+        "system_uuid": _ST1_SYSTEM_UUID,
+        "system_name": _ST1_SYSTEM,
+        "total_memory_mib": 65536,
+        "assigned_memory_mib": 40960,
+        "free_memory_mib": 24576,
+        "total_proc_units": 8.0,
+        "assigned_proc_units": 5.5,
+        "free_proc_units": 2.5,
+    }
+    return SimpleNamespace(**(row | overrides))
+
+
+def _st1_inventory_system(system_id: str, capacity: str = "ok") -> SimpleNamespace:
+    sources = {
+        part: SimpleNamespace(status=status)
+        for part, status in (
+            ("capacity", capacity),
+            ("partitions", "ok"),
+            ("ownership", "ok"),
+        )
+    }
+    return SimpleNamespace(
+        id=system_id, name=_ST1_SYSTEM, sources=SimpleNamespace(**sources)
+    )
+
+
+def _st1_inspection(**statuses: str) -> SimpleNamespace:
+    status = {"uuid": _ST1_LPAR_UUID, "storage": "ok", "rmc": "ok", "refcodes": "ok"}
+    status |= statuses
+    return SimpleNamespace(
+        uuid=status["uuid"],
+        resources=SimpleNamespace(
+            storage_source=SimpleNamespace(status=status["storage"])
+        ),
+        rmc=SimpleNamespace(source=SimpleNamespace(status=status["rmc"])),
+        refcodes=SimpleNamespace(source=SimpleNamespace(status=status["refcodes"])),
+    )
+
+
+def _st1_ownership(**overrides: object) -> SimpleNamespace:
+    row = {
+        "lpar_name": _ST1_LPAR,
+        "description": "[hmcpctl owner:agent-a]",
+        "owned": True,
+        "owner": "agent-a",
+        "unparsed": False,
+    }
+    return SimpleNamespace(entries=[row | overrides])
+
+
+def _st1_plan(candidate_uuid: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        plan_digest="digest",
+        selected=SimpleNamespace(system=SimpleNamespace(uuid=candidate_uuid)),
+        blockers=[],
+        candidates=[
+            SimpleNamespace(
+                targets=SimpleNamespace(system=SimpleNamespace(uuid=candidate_uuid))
+            )
+        ],
+    )
+
+
+def _st1_responses() -> dict[str, object]:
+    """Conforming ST1 results, shaped as the served tools return them."""
+    system = {"UUID": _ST1_SYSTEM_UUID, "Resource": {"SystemName": _ST1_SYSTEM}}
+    return {
+        "hmc_get_console_info": {"UUID": "console-uuid"},
+        "hmc_list_resources": [system],
+        "hmc_list_systems": [system],
+        "hmc_get_system": {
+            "UUID": _ST1_SYSTEM_UUID,
+            "Resource": {"SystemName": _ST1_SYSTEM, "State": "operating"},
+        },
+        "hmc_get_lpar": {"UUID": _ST1_LPAR_UUID},
+        "hmc_capacity_report": [_st1_capacity_row()],
+        "hmc_find_placement": [_st1_capacity_row()],
+        "hmc_list_lpar_ownership": SimpleNamespace(
+            entries=[
+                {
+                    "lpar_name": _ST1_LPAR,
+                    "lpar_uuid": _ST1_LPAR_UUID,
+                    "description": "[hmcpctl owner:agent-a]",
+                    "owned": True,
+                    "owner": "agent-a",
+                    "unparsed": False,
+                },
+                {
+                    "lpar_name": "other",
+                    "lpar_uuid": "other-uuid",
+                    "description": None,
+                    "owned": False,
+                    "owner": None,
+                    "unparsed": False,
+                },
+            ],
+            unreadable_systems=[],
+        ),
+        "hmc_read_lpar_boot_order": {"lpar_uuid": _ST1_LPAR_UUID},
+        "hmc_inspect_lpar": SimpleNamespace(
+            uuid=_ST1_LPAR_UUID,
+            resources=SimpleNamespace(storage_source=SimpleNamespace(status="ok")),
+            rmc=SimpleNamespace(source=SimpleNamespace(status="ok")),
+            refcodes=SimpleNamespace(source=SimpleNamespace(status="ok")),
+        ),
+        "hmc_inventory": SimpleNamespace(
+            systems=[_st1_inventory_system(f"c/{_ST1_SYSTEM_UUID}")],
+            partitions=[
+                SimpleNamespace(name=_ST1_LPAR, system_id=f"c/{_ST1_SYSTEM_UUID}")
+            ],
+        ),
+        "hmc_fleet_health": {"systems": [], "vios": [], "lpars": [], "warnings": []},
+        "hmc_plan_lpar": SimpleNamespace(
+            plan_digest="digest",
+            selected=SimpleNamespace(system=SimpleNamespace(uuid=_ST1_SYSTEM_UUID)),
+            blockers=[],
+            candidates=[
+                SimpleNamespace(
+                    targets=SimpleNamespace(
+                        system=SimpleNamespace(uuid=_ST1_SYSTEM_UUID.upper())
+                    )
+                )
+            ],
+        ),
+    }
+
+
+_ST1_OPERATIONS = {
+    "system.list",
+    "capacity.report",
+    "placement.find",
+    "lpar.list_ownership",
+    "boot_order.read",
+    "lpar.inspect",
+    "inventory.logical",
+    "health.fleet",
+    "lpar.plan",
+}
+
+
+async def _run_st1(monkeypatch, overrides: dict[str, tuple[str, object]] | None = None):
+    responses = {tool: ("PASS", data) for tool, data in _st1_responses().items()}
+    responses |= overrides or {}
+
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
+        if (
+            tool == "hmc_list_resources"
+            and kwargs["resource_type"] == "LogicalPartition"
+        ):
+            return "PASS", [{"UUID": _ST1_LPAR_UUID}]
+        return responses.get(tool, ("PASS", {}))
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    await connectivity.inventory_connectivity(None, state)
+    return state, {
+        row["operation"]: row["observation"]
+        for row in state.observations
+        if row["operation"] in _ST1_OPERATIONS
+    }
+
+
+@pytest.mark.asyncio
+async def test_st1_records_each_scoped_read_as_a_passed_observation(monkeypatch):
+    state, observed = await _run_st1(monkeypatch)
+
+    assert set(observed) == _ST1_OPERATIONS
+    assert {op for op, obs in observed.items() if obs["result"] != "passed"} == set()
+    assert observed["system.list"]["assertions"] == [
+        "system-list-non-empty",
+        "boundary-system-listed",
+        "entries-carry-uuid",
+        "feed-served-directly",
+    ]
+    assert observed["lpar.plan"]["scenario"] == "st1-lpar-plan"
+    assert state.artifacts.system_uuid == _ST1_SYSTEM_UUID
+    assert not state.gaps
+
+
+@pytest.mark.parametrize(
+    ("tool", "data", "operation", "unmet"),
+    [
+        (
+            "hmc_list_systems",
+            [{"UUID": "x", "Resource": {"SystemName": "example-lt-609-system-2"}}],
+            "system.list",
+            {"boundary-system-listed", "feed-served-directly"},
+        ),
+        (
+            "hmc_capacity_report",
+            [_st1_capacity_row(assigned_memory_mib=1)],
+            "capacity.report",
+            {"capacity-figures-consistent"},
+        ),
+        (
+            "hmc_capacity_report",
+            [_st1_capacity_row(free_proc_units=9.0, assigned_proc_units=-1.0)],
+            "capacity.report",
+            {"capacity-figures-consistent"},
+        ),
+        (
+            "hmc_find_placement",
+            [_st1_capacity_row(free_memory_mib=1024)],
+            "placement.find",
+            {"candidates-fit"},
+        ),
+        (
+            "hmc_find_placement",
+            [],
+            "placement.find",
+            {"boundary-candidate-when-it-fits"},
+        ),
+        (
+            "hmc_find_placement",
+            [
+                _st1_capacity_row(system_name="b", free_memory_mib=9000),
+                _st1_capacity_row(system_name="a", free_memory_mib=5000),
+            ],
+            "placement.find",
+            {"candidates-best-fit-first", "boundary-candidate-when-it-fits"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            SimpleNamespace(
+                entries=[
+                    {
+                        "lpar_name": _ST1_LPAR,
+                        "owned": True,
+                        "owner": None,
+                        "unparsed": False,
+                    }
+                ]
+            ),
+            "lpar.list_ownership",
+            {"ownership-facts-consistent"},
+        ),
+        (
+            "hmc_read_lpar_boot_order",
+            {"lpar_uuid": "another-uuid"},
+            "boot_order.read",
+            {"boot-order-names-partition"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            SimpleNamespace(
+                uuid=_ST1_LPAR_UUID,
+                resources=SimpleNamespace(
+                    storage_source=SimpleNamespace(status="unavailable")
+                ),
+                rmc=SimpleNamespace(source=SimpleNamespace(status="ok")),
+                refcodes=SimpleNamespace(source=SimpleNamespace(status="denied")),
+            ),
+            "lpar.inspect",
+            {"resources-read", "refcodes-read"},
+        ),
+        (
+            "hmc_list_systems",
+            [{"Resource": {"SystemName": _ST1_SYSTEM}}],
+            "system.list",
+            {"entries-carry-uuid", "feed-served-directly"},
+        ),
+        (
+            "hmc_find_placement",
+            [_st1_capacity_row(free_proc_units=0.25, assigned_proc_units=7.75)],
+            "placement.find",
+            {"candidates-fit"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            _st1_ownership(lpar_name="other"),
+            "lpar.list_ownership",
+            {"test-partition-listed"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            _st1_ownership(unparsed=True),
+            "lpar.list_ownership",
+            {"ownership-facts-consistent"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            _st1_ownership(owned=False, owner=None, unparsed=True, description=None),
+            "lpar.list_ownership",
+            {"ownership-facts-consistent"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            _st1_inspection(uuid="another-uuid"),
+            "lpar.inspect",
+            {"inspection-names-partition"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            _st1_inspection(rmc="unavailable"),
+            "lpar.inspect",
+            {"rmc-read"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            _st1_inspection(refcodes="denied"),
+            "lpar.inspect",
+            {"refcodes-read"},
+        ),
+        (
+            "hmc_plan_lpar",
+            _st1_plan("99999999-0000-0000-0000-000000000000"),
+            "lpar.plan",
+            {"plan-targets-boundary-system"},
+        ),
+        (
+            "hmc_inventory",
+            SimpleNamespace(
+                systems=[_st1_inventory_system("c/s", capacity="denied")],
+                partitions=[SimpleNamespace(name=_ST1_LPAR, system_id="c/s")],
+            ),
+            "inventory.logical",
+            {"system-sources-read"},
+        ),
+        (
+            "hmc_inventory",
+            SimpleNamespace(
+                systems=[_st1_inventory_system("c/s")],
+                partitions=[SimpleNamespace(name="other", system_id="c/elsewhere")],
+            ),
+            "inventory.logical",
+            {"test-partition-listed", "partitions-belong-to-system"},
+        ),
+        (
+            "hmc_fleet_health",
+            {
+                "systems": [{"uuid": _ST1_SYSTEM_UUID}],
+                "vios": [],
+                "lpars": [],
+                "warnings": [],
+            },
+            "health.fleet",
+            {"boundary-system-flag-matches-state"},
+        ),
+        (
+            "hmc_fleet_health",
+            {"systems": [], "vios": []},
+            "health.fleet",
+            {"health-sections-present"},
+        ),
+        (
+            "hmc_plan_lpar",
+            SimpleNamespace(
+                plan_digest="digest",
+                selected=None,
+                blockers=[SimpleNamespace(code="no_candidate")],
+                candidates=[],
+            ),
+            "lpar.plan",
+            {"plan-targets-boundary-system", "plan-outcome-consistent"},
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_st1_assertions_fail_on_violating_results(
+    monkeypatch, tool, data, operation, unmet
+):
+    _, observed = await _run_st1(monkeypatch, {tool: ("PASS", data)})
+
+    observation = observed[operation]
+    assert observation["result"] == "failed"
+    held = set(observation["assertions"])
+    assert unmet.isdisjoint(held)
+    others = {op for op, obs in observed.items() if obs["result"] != "passed"}
+    assert others == {operation}
+
+
+@pytest.mark.asyncio
+async def test_st1_blocked_plan_without_a_digest_still_passes(monkeypatch):
+    blocked = SimpleNamespace(
+        plan_digest=None,
+        selected=None,
+        blockers=[SimpleNamespace(code="no_candidate")],
+        candidates=[
+            SimpleNamespace(
+                targets=SimpleNamespace(system=SimpleNamespace(uuid=_ST1_SYSTEM_UUID))
+            )
+        ],
+    )
+
+    _, observed = await _run_st1(monkeypatch, {"hmc_plan_lpar": ("PASS", blocked)})
+
+    assert observed["lpar.plan"]["result"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_st1_fallback_served_feed_reads_fail_rather_than_promote(monkeypatch):
+    """The raw feed 500s, so list, capacity, placement and health answered via ADR 0138."""
+    _, observed = await _run_st1(
+        monkeypatch, {"hmc_list_resources": ("FAIL", _failure(_ST1_NULL_PROPERTY_500))}
+    )
+
+    feed_reads = {"system.list", "capacity.report", "placement.find", "health.fleet"}
+    assert {op for op, obs in observed.items() if obs["result"] == "failed"} == (
+        feed_reads
+    )
+    assert all(
+        "feed-served-directly" not in observed[op]["assertions"] for op in feed_reads
+    )
+
+
+@pytest.mark.asyncio
+async def test_st1_declared_limitation_is_a_gap_not_an_observation(monkeypatch):
+    state, observed = await _run_st1(
+        monkeypatch,
+        {
+            "hmc_list_systems": ("FAIL", _failure(_ST1_NULL_PROPERTY_500)),
+            "hmc_capacity_report": ("FAIL", _failure(_ST1_NULL_PROPERTY_500)),
+            "hmc_find_placement": ("FAIL", _failure(_ST1_NULL_PROPERTY_500)),
+        },
+    )
+
+    assert {"system.list", "capacity.report", "placement.find"}.isdisjoint(observed)
+    assert {
+        (gap["operation"], gap["missing_scope"]["variant"]) for gap in state.gaps
+    } == {
+        ("system.list", "firmware-inventory-serialization"),
+        ("capacity.report", "firmware-inventory-serialization"),
+        ("placement.find", "firmware-inventory-serialization"),
+    }
+    rows = {row["tool"]: row["status"] for row in state.results}
+    assert rows["hmc_list_systems"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_st1_invalid_dispatch_is_never_the_declared_limitation(monkeypatch):
+    invalid = observation.CallFailure(
+        "InvalidDispatch", _ST1_NULL_PROPERTY_500, "", None, False
+    )
+
+    state, observed = await _run_st1(
+        monkeypatch, {"hmc_list_systems": ("FAIL", invalid)}
+    )
+
+    assert observed["system.list"]["result"] == "failed"
+    assert not state.gaps
+
+
+@pytest.mark.asyncio
+async def test_st1_undeclared_failure_is_a_failed_observation(monkeypatch):
+    state, observed = await _run_st1(
+        monkeypatch,
+        {
+            "hmc_list_systems": ("FAIL", _failure("HMCError: Unauthorized (HTTP 401)")),
+            "hmc_plan_lpar": ("FAIL", _failure("ToolError: plan refused")),
+        },
+    )
+
+    assert observed["system.list"]["result"] == "failed"
+    assert observed["system.list"]["assertions"] == []
+    assert observed["lpar.plan"]["result"] == "failed"
+    assert not state.gaps
 
 
 @pytest.mark.asyncio
@@ -5828,6 +6328,10 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "pre-existing-profiles-unchanged",
         },
         "st1-system-inventory": {
+            "system-list-non-empty",
+            "boundary-system-listed",
+            "entries-carry-uuid",
+            "feed-served-directly",
             "system-uuid-present",
             "system-summary-returned",
         },
@@ -5835,6 +6339,37 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "lpar-list-non-empty",
             "lpar-uuid-present",
             "lpar-summary-returned",
+            "ownership-entries-non-empty",
+            "test-partition-listed",
+            "ownership-facts-consistent",
+            "boot-order-names-partition",
+            "inspection-names-partition",
+            "resources-read",
+            "rmc-read",
+            "refcodes-read",
+        },
+        "st1-capacity": {
+            "boundary-system-reported",
+            "capacity-figures-consistent",
+            "feed-served-directly",
+            "candidates-fit",
+            "candidates-best-fit-first",
+            "boundary-candidate-when-it-fits",
+        },
+        "st1-logical-inventory": {
+            "boundary-system-listed",
+            "test-partition-listed",
+            "partitions-belong-to-system",
+            "system-sources-read",
+        },
+        "st1-fleet-health": {
+            "health-sections-present",
+            "boundary-system-flag-matches-state",
+            "feed-served-directly",
+        },
+        "st1-lpar-plan": {
+            "plan-targets-boundary-system",
+            "plan-outcome-consistent",
         },
         "st1-vios-inventory": {
             "vios-list-non-empty",

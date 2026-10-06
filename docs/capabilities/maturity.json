@@ -14,7 +14,27 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st1-hmc-list-systems",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-system-inventory",
+          "observed_at": "2026-10-06T20:33:07Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "system-list-non-empty",
+            "boundary-system-listed",
+            "entries-carry-uuid",
+            "feed-served-directly"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "71a6f8ca94dbf7ca9d590f38a5a2690630075e2cb794d5b3f80c88a9aaf119c5"
+        }
+      ]
     },
     {
       "operation": "sriov.set_mode",
@@ -593,6 +613,307 @@
           "closure_fingerprint": "c884ee4f9e641ba8bbf9f7e761e104e54e5f802528122a47a8a4b6d1066601b0"
         }
       ]
+    },
+    {
+      "operation": "capacity.report",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "all-systems",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-capacity-report",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-capacity",
+          "observed_at": "2026-10-06T20:34:59Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "boundary-system-reported",
+            "capacity-figures-consistent",
+            "feed-served-directly"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "e4aa1dd4f5fc668190643a8d4e7a4aa7f071bb2a3a3ce654f9d1c79abb992526"
+        }
+      ]
+    },
+    {
+      "operation": "placement.find",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "memory-and-units",
+            "parameters": [
+              {
+                "name": "desired_memory_mib",
+                "constraint": "MiB, positive integer"
+              },
+              {
+                "name": "desired_proc_units",
+                "constraint": "shared-processor units"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-find-placement",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-capacity",
+          "observed_at": "2026-10-06T20:35:43Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "candidates-fit",
+            "candidates-best-fit-first",
+            "boundary-candidate-when-it-fits",
+            "feed-served-directly"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "e4aa1dd4f5fc668190643a8d4e7a4aa7f071bb2a3a3ce654f9d1c79abb992526"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.list_ownership",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "system-scoped",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "all-operating-systems",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-list-lpar-ownership",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-inventory",
+          "observed_at": "2026-10-06T20:36:22Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "ownership-entries-non-empty",
+            "test-partition-listed",
+            "ownership-facts-consistent"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "899a24a9df95b7b3615b25aef594ea102e02d97168366415d9909427d0cd1997"
+        }
+      ]
+    },
+    {
+      "operation": "boot_order.read",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-partition",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-read-lpar-boot-order",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-inventory",
+          "observed_at": "2026-10-06T20:36:29Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "boot-order-names-partition"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "899a24a9df95b7b3615b25aef594ea102e02d97168366415d9909427d0cd1997"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.inspect",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "selected-sections",
+            "parameters": [
+              {
+                "name": "include",
+                "constraint": "subset of resources, rmc, profile_drift, refcodes"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-inspect-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-inventory",
+          "observed_at": "2026-10-06T20:36:43Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "inspection-names-partition",
+            "resources-read",
+            "rmc-read",
+            "refcodes-read"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "c2f1d9e5a65ced93173c4872e502777bef7361f7fbb780148ab989263bd2b815"
+        }
+      ]
+    },
+    {
+      "operation": "inventory.logical",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "selected-systems",
+            "parameters": [
+              {
+                "name": "systems",
+                "constraint": "1 to 16 SystemName or UUID selectors"
+              }
+            ]
+          },
+          {
+            "variant": "enumerated",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-inventory",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-logical-inventory",
+          "observed_at": "2026-10-06T20:36:49Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "boundary-system-listed",
+            "test-partition-listed",
+            "partitions-belong-to-system",
+            "system-sources-read"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "52727ad774832a91f1d3390813c7656cbf45cc5f2bf4bba7cbbff0eb480da8e8"
+        }
+      ]
+    },
+    {
+      "operation": "health.fleet",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "all-systems",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-fleet-health",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-fleet-health",
+          "observed_at": "2026-10-06T20:37:22Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "health-sections-present",
+            "boundary-system-flag-matches-state",
+            "feed-served-directly"
+          ],
+          "tested_commit": "a2667b36e93b70460cdba0a0b478ca3c2dcdd8f0",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "c397920302790607e92c9da12847eeb9403edd1d0f7d3b7e2d5cb5538c41036b"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.plan",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "named-system",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "placement",
+            "parameters": [
+              {
+                "name": "placement",
+                "constraint": "1 to 16 selectors, or omitted systems to enumerate"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
     },
     {
       "operation": "lpar.capture_console",
