@@ -42,6 +42,33 @@ REMOTE_FIELDS = {
         "ConnectingVirtualSlotNumber",
     ),
 }
+#: What the partition and system hold before the run; the run must leave it intact.
+PRE_EXISTING_ADAPTERS = {
+    "ClientNetworkAdapter": {
+        "0000C0A0-0000-4000-8000-000000000000": {
+            "VirtualSlotNumber": "3",
+            "PortVLANID": "1",
+        }
+    },
+    "VirtualSCSIClientAdapter": {
+        "0000C05C-0000-4000-8000-000000000000": {
+            "VirtualSlotNumber": "2",
+            "RemoteLogicalPartitionID": "1",
+            "RemoteSlotNumber": "11",
+        }
+    },
+    "VirtualFibreChannelClientAdapter": {},
+    "VirtualNICDedicated": {},
+}
+PRE_EXISTING_GROUP = "prod-group"
+
+
+def _pre_existing() -> dict[str, dict[str, dict[str, Any]]]:
+    return {
+        t: {k: dict(v) for k, v in a.items()} for t, a in PRE_EXISTING_ADAPTERS.items()
+    }
+
+
 MUTATIONS = (
     "hmc_create_virtual_network",
     "hmc_delete_virtual_network",
@@ -66,10 +93,14 @@ class FakeHMC:
     fc: list[dict[str, str]] = field(default_factory=lambda: [dict(FC_SERVER)])
     networks: dict[str, tuple[int, str]] = field(default_factory=lambda: dict(EXISTING))
     adapters: dict[str, dict[str, dict[str, Any]]] = field(
-        default_factory=lambda: {t: {} for t in network._ADAPTER_TYPES}
+        default_factory=_pre_existing
     )
     fc_labels: dict[str, str] = field(default_factory=lambda: {"fcs0": ""})
-    groups: set[str] = field(default_factory=set)
+    groups: set[str] = field(default_factory=lambda: {PRE_EXISTING_GROUP})
+    servers_change_on_add: bool = False
+    mappings_change_on_add: bool = False
+    reidentify_on_add: bool = False
+    collision_updates_in_place: bool = False
     create_status: str = "PASS"
     create_takes_effect: bool = True
     duplicate_vlan_accepted: bool = False
@@ -82,6 +113,7 @@ class FakeHMC:
     collision_accepted: bool = False
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     counter: int = 0
+    mapped: bool = True
 
     def _new_uuid(self) -> str:
         self.counter += 1
@@ -142,13 +174,28 @@ class FakeHMC:
         return "PASS", {}
 
     def _add_client(self, adapter_type, kwargs):
+        partition, slot = REMOTE_FIELDS[adapter_type]
+        if kwargs.get("slot_number") is not None and self.collision_updates_in_place:
+            existing = self.adapters["VirtualSCSIClientAdapter"]
+            for resource in existing.values():
+                if resource["VirtualSlotNumber"] == str(kwargs["slot_number"]):
+                    resource["RemoteSlotNumber"] = str(kwargs["vios_slot"])
+            return "PASS", {}
         used = {"2"} | {
             str(r.get("VirtualSlotNumber"))
             for r in self.adapters[adapter_type].values()
         }
         if str(kwargs.get("slot_number")) in used and not self.collision_accepted:
             return "FAIL", "HSCL slot in use"
-        partition, slot = REMOTE_FIELDS[adapter_type]
+        if self.servers_change_on_add:
+            self.scsi += "vios-A,1,99,server,any,any\n"
+            self.fc.append({**FC_SERVER, "slot_num": "99"})
+        if self.mappings_change_on_add:
+            self.mapped = False
+        if self.reidentify_on_add:
+            listed = self.adapters["VirtualSCSIClientAdapter"]
+            for key in list(listed):
+                listed[f"F{key[1:]}"] = listed.pop(key)
         for _ in range(2 if self.adds_twice else 1):
             self.adapters[adapter_type][self._new_uuid()] = {
                 partition: str(kwargs["vios_partition_id"]),
@@ -172,7 +219,9 @@ class FakeHMC:
         return "PASS", "deleted"
 
     def _hmc_list_storage_mappings(self, _kwargs):
-        return "PASS", [{"id": "vhost0/vtd0", "backing_name": "lv0"}]
+        return "PASS", [
+            {"id": "vhost0/vtd0", "backing_name": "lv0"}
+        ] if self.mapped else []
 
     def _hmc_list_vios_fc_port_labels(self, _kwargs):
         if self.labels_refused:
@@ -304,9 +353,19 @@ async def test_round_trips_promote_every_st9_operation_and_restore_the_baseline(
 
     assert _results(state) == dict.fromkeys(ST9_OPERATIONS, "passed")
     assert hmc.networks == EXISTING
-    assert all(not listed for listed in hmc.adapters.values())
+    assert hmc.adapters == _pre_existing()
     assert hmc.fc_labels == {"fcs0": "prod-a", "fcs1": ""}
-    assert hmc.groups == set()
+    assert hmc.groups == {PRE_EXISTING_GROUP}
+    # Nothing that existed before the run is ever a delete or remove target.
+    pre_existing = {k for listed in PRE_EXISTING_ADAPTERS.values() for k in listed}
+    deleted_adapters = {
+        k["adapter_uuid"] for t, k in hmc.calls if t == "hmc_delete_adapter"
+    }
+    assert deleted_adapters.isdisjoint(pre_existing)
+    removed_groups = {
+        k["label"] for t, k in hmc.calls if t == "hmc_remove_vios_vfc_group_label"
+    }
+    assert PRE_EXISTING_GROUP not in removed_groups
     compares = [r for r in state.results if r["tool"].startswith("network baseline")]
     assert compares and all(r["status"] == "PASS" for r in compares)
     # The existing network is never a delete target.
@@ -420,7 +479,7 @@ async def test_an_accepted_slot_collision_fails_and_is_removed(monkeypatch):
     observation = _observation(state, "adapter.add_vscsi")
     assert observation["result"] == "failed"
     assert "slot-collision-refused" not in observation["assertions"]
-    assert all(not listed for listed in hmc.adapters.values())
+    assert hmc.adapters == _pre_existing()
 
 
 @pytest.mark.asyncio
@@ -433,7 +492,7 @@ async def test_two_new_adapters_fail_the_add_and_are_both_removed(monkeypatch):
     assert observation["result"] == "failed"
     assert "adapter-added" not in observation["assertions"]
     assert observation["cleanup"] == "passed"
-    assert all(not listed for listed in hmc.adapters.values())
+    assert hmc.adapters == _pre_existing()
 
 
 @pytest.mark.asyncio
@@ -527,7 +586,7 @@ async def test_a_group_label_that_will_not_go_away_is_manual_recovery(monkeypatc
 async def test_inventory_verifies_non_empty_reads_and_never_promotes_empty_ones(
     monkeypatch,
 ):
-    hmc = FakeHMC(fc=[], groups=set())
+    hmc = FakeHMC(fc=[], groups=set(), adapters={t: {} for t in network._ADAPTER_TYPES})
     state = _state(monkeypatch, hmc, group="round2")
 
     await network.inventory_network(object(), state)
@@ -580,3 +639,65 @@ async def test_an_out_of_range_vlan_fails_the_network_read(monkeypatch):
     await network.inventory_network(object(), state)
 
     assert _results(state)["network.list_networks"] == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["servers_change_on_add", "mappings_change_on_add"])
+async def test_a_changed_vios_side_fails_and_stops_later_mutations(monkeypatch, fault):
+    hmc = FakeHMC(**{fault: True})
+
+    state = await _run(monkeypatch, hmc)
+
+    observation = _observation(state, "adapter.add_vscsi")
+    assert "vios-side-unchanged" not in observation["assertions"]
+    assert observation["cleanup"] == "failed"
+    assert "hmc_add_vfc_adapter" not in hmc.mutations()
+    assert "hmc_set_vios_fc_port_label" not in hmc.mutations()
+    assert any("server adapters" in text for text in _manual(state))
+
+
+@pytest.mark.asyncio
+async def test_an_unparsable_baseline_vlan_creates_nothing(monkeypatch):
+    hmc = FakeHMC()
+    hmc.networks["0000000F-0000-4000-8000-00000000000F"] = ("trunk", "odd")  # type: ignore[assignment]
+
+    await _run(monkeypatch, hmc)
+
+    assert "hmc_create_virtual_network" not in hmc.mutations()
+
+
+@pytest.mark.asyncio
+async def test_a_server_adapter_toward_another_partition_does_not_change_the_vios(
+    monkeypatch,
+):
+    hmc = FakeHMC(scsi=SCSI_TOWARD_LPAR + "vios-B,2,11,server,7,4\n")
+
+    state = await _run(monkeypatch, hmc)
+
+    add = next(k for t, k in hmc.calls if t == "hmc_add_vscsi_adapter")
+    assert add["vios_partition_id"] == 1
+    assert _results(state)["adapter.add_vscsi"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_a_reidentified_adapter_is_never_deleted_as_the_runs_own(monkeypatch):
+    hmc = FakeHMC(reidentify_on_add=True)
+
+    state = await _run(monkeypatch, hmc)
+
+    deleted = {k["adapter_uuid"] for t, k in hmc.calls if t == "hmc_delete_adapter"}
+    assert not any(key.startswith("F") for key in deleted)
+    assert _observation(state, "adapter.add_vscsi")["cleanup"] == "failed"
+    assert _manual(state)
+
+
+@pytest.mark.asyncio
+async def test_a_collision_that_repairs_the_existing_adapter_is_caught(monkeypatch):
+    hmc = FakeHMC(collision_updates_in_place=True, scsi=SCSI_TOWARD_LPAR + SCSI_ANY)
+
+    state = await _run(monkeypatch, hmc)
+
+    observation = _observation(state, "adapter.add_vscsi")
+    assert "slot-collision-refused" not in observation["assertions"]
+    assert observation["result"] == "failed"
+    assert _manual(state)

@@ -399,8 +399,29 @@ def _server_slot(servers: Iterable[tuple[str, ...]], lpar_id: str) -> str | None
     return None
 
 
+#: The fields that place a client adapter: its slot, VLAN and server pairing.
+_PLACEMENT_FIELDS = (
+    "VirtualSlotNumber",
+    "PortVLANID",
+    "RemoteLogicalPartitionID",
+    "RemoteSlotNumber",
+    "ConnectingPartitionID",
+    "ConnectingVirtualSlotNumber",
+)
+
+#: A partition's adapters of one type: UUID -> placement.
+Adapters = dict[str, tuple[str, ...]]
+
+
+def _placements(listed: Listing) -> Adapters:
+    return {
+        key: tuple(str(resource.get(field, "")) for field in _PLACEMENT_FIELDS)
+        for key, resource in listed.items()
+    }
+
+
 def _new(
-    after: Listing | None, baseline: frozenset[str]
+    after: Listing | None, baseline: Adapters
 ) -> list[Mapping[str, object]] | None:
     return None if after is None else [after[k] for k in after if k not in baseline]
 
@@ -516,11 +537,10 @@ class _Arm:
             self.data(f"{adapter_type}, {label}", "hmc_list_adapters", result)
         )
 
-    async def adapter_uuids(
-        self, adapter_type: str, label: str
-    ) -> frozenset[str] | None:
+    async def placements(self, adapter_type: str, label: str) -> Adapters | None:
+        """The partition's adapters of a type, each with its slot and pairing."""
         listed = await self.adapters(adapter_type, label)
-        return None if listed is None else frozenset(listed)
+        return None if listed is None else _placements(listed)
 
     async def scsi_rows(self, label: str) -> list[dict[str, str]] | None:
         text = await self.command(
@@ -638,14 +658,14 @@ class _Arm:
 
     # -- (a) VLAN and client network adapter --------------------------------
 
-    async def vlan_baseline(self) -> tuple[Networks, int, int, frozenset[str]] | None:
+    async def vlan_baseline(self) -> tuple[Networks, int, int, Adapters] | None:
         """The network set, the test VLAN and switch, and the partition's CNAs."""
         baseline = await self.networks("baseline")
         result = await self.state.call(
             self.client, "hmc_list_virtual_switches", system_name_or_uuid=self.system
         )
         switches = self.data("baseline", "hmc_list_virtual_switches", result)
-        cna = await self.adapter_uuids("ClientNetworkAdapter", "baseline")
+        cna = await self.placements("ClientNetworkAdapter", "baseline")
         if baseline is None or switches is None or cna is None:
             self.skip("hmc_create_virtual_network", "the baseline could not be read")
             return None
@@ -665,7 +685,7 @@ class _Arm:
         self.baseline("networks", lambda: self.networks("final"), baseline)
         self.baseline(
             f"{self.lpar} ClientNetworkAdapter",
-            lambda: self.adapter_uuids("ClientNetworkAdapter", "final"),
+            lambda: self.placements("ClientNetworkAdapter", "final"),
             cna,
         )
         return baseline, vlan, switch, cna
@@ -774,7 +794,7 @@ class _Arm:
         return accepted, restored
 
     async def client_network_adapter(
-        self, vlan: int, switch: int, baseline: frozenset[str]
+        self, vlan: int, switch: int, baseline: Adapters
     ) -> None:
         kind = "ClientNetworkAdapter"
         result = await self.state.call(
@@ -801,9 +821,9 @@ class _Arm:
             system_name_or_uuid=self.system,
         )
         refused = self.note("unknown UUID", "hmc_delete_adapter", result)
-        unchanged = await self.adapter_uuids(kind, "after unknown delete")
+        unchanged = await self.placements(kind, "after unknown delete")
         unknown_refused = (
-            refused == "FAIL" and after is not None and unchanged == frozenset(after)
+            refused == "FAIL" and after is not None and unchanged == _placements(after)
         )
         deleted, restored = await self.remove_new_adapters(kind, baseline)
         cleanup = "passed" if restored else "failed"
@@ -842,14 +862,23 @@ class _Arm:
             )
 
     async def remove_new_adapters(
-        self, adapter_type: str, baseline: frozenset[str]
+        self, adapter_type: str, baseline: Adapters
     ) -> tuple[bool | None, bool]:
-        """Delete every adapter of `adapter_type` the run added; confirm by re-reading."""
-        current = await self.adapter_uuids(adapter_type, "before delete")
+        """Delete every adapter of `adapter_type` the run added; confirm by re-reading.
+
+        A new UUID placed exactly where a vanished baseline adapter was is that
+        adapter re-identified, not the run's: it is left alone, and the set then
+        reads as off the baseline.
+        """
+        current = await self.placements(adapter_type, "before delete")
         if current is None:
             return False, False
+        vanished = {baseline[k] for k in baseline if k not in current}
         accepted: bool | None = None
-        for adapter_uuid in sorted(current - baseline):
+        for adapter_uuid in sorted(k for k in current if k not in baseline):
+            if current[adapter_uuid] in vanished:
+                accepted = False
+                continue
             result = await self.state.call(
                 self.client,
                 "hmc_delete_adapter",
@@ -860,17 +889,17 @@ class _Arm:
             )
             status = self.note("delete", "hmc_delete_adapter", result)
             accepted = accepted is not False and status == "PASS"
-        after = await self.adapter_uuids(adapter_type, "after delete")
+        after = await self.placements(adapter_type, "after delete")
         return accepted, after == baseline
 
     # -- (b, c) vSCSI and vFC clients ----------------------------------------
 
     async def client_baseline(
         self, adapter_type: str, boundary: _Boundary
-    ) -> tuple[frozenset[tuple[str, ...]], frozenset[str], str, str] | None:
+    ) -> tuple[frozenset[tuple[str, ...]], Adapters, str, str] | None:
         """The VIOS server side, the partition's clients, its mappings and the slot."""
         servers = await self.server_rows(adapter_type, boundary.vios_id, "baseline")
-        clients = await self.adapter_uuids(adapter_type, "baseline")
+        clients = await self.placements(adapter_type, "baseline")
         mappings = await self.mappings(boundary, "baseline")
         if servers is None or clients is None or mappings is None:
             self.skip(f"{adapter_type} round trip", "the baseline could not be read")
@@ -890,7 +919,7 @@ class _Arm:
         )
         self.baseline(
             f"{self.lpar} {adapter_type}",
-            lambda: self.adapter_uuids(adapter_type, "final"),
+            lambda: self.placements(adapter_type, "final"),
             clients,
         )
         return servers, clients, mappings, slot
@@ -926,7 +955,7 @@ class _Arm:
         return self.note(label, "hmc_add_vfc_adapter", result)
 
     async def slot_collision(
-        self, adapter_type: str, boundary: _Boundary, slot: str, clients: frozenset[str]
+        self, adapter_type: str, boundary: _Boundary, slot: str, clients: Adapters
     ) -> bool | None:
         """Whether an add on a client slot already in use is refused and changes nothing.
 
@@ -938,7 +967,7 @@ class _Arm:
         status = await self.add_client(
             "slot collision", adapter_type, boundary, slot, int(boundary.used_slot)
         )
-        after = await self.adapter_uuids(adapter_type, "after slot collision")
+        after = await self.placements(adapter_type, "after slot collision")
         return status == "FAIL" and after == clients
 
     async def client_round_trip(self, adapter_type: str, boundary: _Boundary) -> None:
