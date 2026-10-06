@@ -200,7 +200,8 @@ every change whatever the call returned, and reverses the difference:
   paired to a server slot of the serving VIOS (one open to any partition, else
   one toward the test partition), checks the pairing, and removes it. The VIOS's
   server adapters and the test partition's storage mappings must be unchanged
-  afterwards. With no such vFC slot, the vFC round trip SKIPs.
+  afterwards. With no such vFC slot, the vFC round trip SKIPs. Each vFC add
+  takes a WWPN pair from the system's pool.
 - **Labels.** On the serving VIOS's first FC port it sets
   `hmcpctl-live-<8 hex>`, tries the same on port `fcs9999` (expected refused),
   removes the label and puts back the original. It creates a vFC group label

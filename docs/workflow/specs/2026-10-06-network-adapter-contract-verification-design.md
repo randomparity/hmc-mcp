@@ -61,9 +61,10 @@ reaches the HMC.
    ST2 picks no identity ST9 relies on: ST9 re-reads everything it acts on.
 
    **ST9 — round trips.** Each scenario has its own preconditions and baseline; a
-   failure there SKIPs that scenario only (with a gap row where the cause is a
-   capability, e.g. `lslabelvios` refused on POWER9 — ADR 0105 scopes labels to
-   POWER10/11). Shared preconditions (non-promoting rows; failure SKIPs all of ST9):
+   failure there SKIPs that scenario only. Where the cause is a capability (e.g.
+   `lslabelvios` refused on POWER9 — ADR 0105 scopes labels to POWER10/11, or no vFC
+   server slot), the gap is recorded by hand from the live run into the operation's
+   `missing_scope` and the Live gaps table below; the arm emits no gap row. Shared preconditions (non-promoting rows; failure SKIPs all of ST9):
    the test partition reads `Not Activated` (`lssyscfg` through `hmc_run_command`).
    Identities come only from this run's reads, never from `artifacts` restored from
    an earlier results document.
@@ -72,10 +73,11 @@ reaches the HMC.
    re-reads its state and treats any difference from its baseline as the run's own
    change: on the test VLAN, any network UUID absent from the baseline (the VLAN was
    unused at baseline); on the test partition, any adapter UUID absent from the
-   baseline; for labels, any label differing from the baseline. Reversal targets that
-   difference, so a timed-out call, an accepted negative, or an implicitly created
-   object is reversed like an intended one. Each scenario's reversal runs in a
-   `finally`. A reversal that fails or cannot be confirmed by a re-read records
+   baseline, compared with its slot and pairing so an in-place change shows; for
+   labels, any label differing from the baseline. Reversal targets that difference,
+   so a timed-out call, an accepted negative, or an implicitly created object is
+   reversed like an intended one. A new UUID placed exactly where a vanished
+   baseline adapter was is that adapter re-identified and is never deleted. A reversal that fails or cannot be confirmed by a re-read records
    `MANUAL RECOVERY REQUIRED: <what> (<command>)` and stops ST9: no later mutation runs.
    A read failing after a change counts as the change not reversed.
 
@@ -183,8 +185,10 @@ reaches the HMC.
    adapter set (restored); catalog truth (no promotion without asserted
    postconditions).
 3. **Accepted failure classes** — a stranded test VLAN, adapter or label after a
-   failed reversal, reported as manual recovery with its command; the HMC reordering
-   listings (compared as sets).
+   failed reversal, reported as manual recovery with its command; an interrupted or
+   cancelled run, which reverses nothing further and is checked by hand per
+   `docs/live-testing.md`; each vFC client add consuming a WWPN pair from the system's
+   pool; the HMC reordering listings (compared as sets).
 4. **Covered elsewhere** — ownership and access policy: existing runtime guards;
    VLAN update and switch mutations: #664; SEA/bridge: #665; vSCSI mappings: #628;
    environment isolation: #461.

@@ -245,7 +245,8 @@ def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
             ),
             (
                 f"partition {config.lp3_name}, only while Not Activated: a client "
-                "network, a vSCSI and a vFC client adapter (each added, then removed)"
+                "network, a vSCSI and a vFC client adapter (each added, then removed; "
+                "each vFC add uses a WWPN pair from the system's pool)"
             ),
             (
                 f"the one VIOS serving {config.lp3_name}: one FC port's label (set, "
