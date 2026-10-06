@@ -589,6 +589,71 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
     assert all(entry["subtask"] == 1 for entry in state.results)
 
 
+def _console_at(version: str, release: str, service_pack: str) -> dict[str, object]:
+    return {
+        "UUID": "console-uuid",
+        "Resource": {
+            "VersionInfo": {
+                "Version": version,
+                "Release": release,
+                "ServicePackName": service_pack,
+            }
+        },
+    }
+
+
+_GATE_REFUSAL = (
+    "PlatformUpdate requires HMC 11.1.1111 or later; the connected HMC version "
+    "is below the minimum. Upgrade the HMC before retrying."
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "data", "expected"),
+    [
+        ("FAIL", _failure(_GATE_REFUSAL), "PASS"),
+        ("PASS", {"UUID": "job-uuid"}, "FAIL"),
+        (
+            "FAIL",
+            _failure("No managed system named 'hmcpctl-live-absent-system' found."),
+            "FAIL",
+        ),
+    ],
+)
+async def test_platform_update_check_passes_only_on_the_version_refusal(
+    status, data, expected
+) -> None:
+    state = _ScriptedSriovState([("hmc_update_firmware", status, data)])
+
+    await connectivity._check_platform_update_refusal(
+        object(), state, _console_at("10", "3", "1060")
+    )
+
+    (_, kwargs) = state.calls[0]
+    assert kwargs["system_name_or_uuid"] == "hmcpctl-live-absent-system"
+    [row] = state.results
+    assert (row["subtask"], row["status"]) == (1, expected)
+    assert not state.observations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "console",
+    [_console_at("11", "1", "1111"), {"UUID": "console-uuid"}, None],
+)
+async def test_platform_update_check_skips_without_a_pre_minimum_version(
+    console,
+) -> None:
+    state = _ScriptedSriovState([])
+
+    await connectivity._check_platform_update_refusal(object(), state, console)
+
+    assert state.calls == []
+    [row] = state.results
+    assert row["status"] == "SKIP"
+
+
 @pytest.mark.asyncio
 async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
     state = _ScriptedSriovState(
