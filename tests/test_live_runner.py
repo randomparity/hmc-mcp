@@ -6059,6 +6059,7 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "user-id-unchanged",
             "profile-uuid-unchanged",
             "task-role-unchanged",
+            "remote-access-unchanged",
             "scratch-profile-absent",
             "pre-existing-profiles-unchanged",
         },

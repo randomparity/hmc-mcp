@@ -191,6 +191,9 @@ global to the console, not to a managed system.
   then clears its description, and deletes it by UUID.
 - It creates nothing while any `hmcpctl-live-` user already exists: run the
   recovery check below first.
+- Keep its terminal output private. If the HMC refuses the create and echoes the
+  request, the in-process server logs that error, password included, to stderr
+  before the arm can scrub it.
 - An interrupted run can leave that one user. The recovery check names it by its
   prefix; remove it with `rmhmcusr -u <name>`.
 

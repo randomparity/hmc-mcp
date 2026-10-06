@@ -62,7 +62,7 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
    - `user.get`: `user-id-matches`, `task-role-is-viewer`, `password-not-disclosed`,
      `not-predefined`, `remote-access-disabled`.
    - `user.modify`: `description-updated`, `description-cleared`, `user-id-unchanged`,
-     `profile-uuid-unchanged`, `task-role-unchanged`.
+     `profile-uuid-unchanged`, `task-role-unchanged`, `remote-access-unchanged`.
    - `user.delete`: `scratch-profile-absent`, `pre-existing-profiles-unchanged`.
 
    A failed step after create records its row, and the lifecycle observations it fed are
@@ -138,4 +138,7 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
 - **Controls:** the password exists only in the scenario's local scope and the tool argument;
   `password-not-echoed` checks responses; results record responses, never arguments; remote
   access is disabled for the scratch user; recovery's allowlist stays read-only.
-- **Out of scope:** HMC-side audit logs of the create (owned by the HMC).
+- **Out of scope:** HMC-side audit logs of the create (owned by the HMC). Residual: if the HMC
+  refuses the create and echoes its body, the in-process FastMCP server logs the tool error,
+  password included, to the run's stderr before ST11 can scrub it; the runbook says to keep the
+  users arm's terminal output private.

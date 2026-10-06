@@ -362,3 +362,24 @@ async def test_a_scratch_user_left_with_remote_access_fails_the_read(hmc, monkey
     read = _observations(state)["user.get"]
     assert read["result"] == "failed"
     assert "remote-access-disabled" not in read["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_a_modify_that_resets_remote_access_fails_the_modify(hmc, monkeypatch):
+    """A partial POST that resets unsupplied fields must not promote user.modify."""
+    original = hmc.hmc_modify_user
+
+    def resetting(console_uuid: str, user_profile_uuid: str, description: str):
+        original(console_uuid, user_profile_uuid, description)
+        hmc.users[user_profile_uuid]["Resource"]["AllowWebRemoteAccess"] = {
+            "text": "true"
+        }
+
+    monkeypatch.setattr(hmc, "hmc_modify_user", resetting)
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    modify = _observations(state)["user.modify"]
+    assert modify["result"] == "failed"
+    assert "remote-access-unchanged" not in modify["assertions"]

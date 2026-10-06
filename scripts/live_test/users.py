@@ -421,6 +421,11 @@ def _record_lifecycle(
                 "task-role-unchanged",
                 run.read(2, "AssociatedTaskRole") == VIEWER_TASK_ROLE,
             ),
+            Assertion(
+                "remote-access-unchanged",
+                run.read(2, "AllowWebRemoteAccess") == "false"
+                and run.read(2, "AllowSSHRemoteAccess") == "false",
+            ),
         ],
         cleanup=cleanup,
         data=run.modifies[-1][1] if run.modifies else None,
