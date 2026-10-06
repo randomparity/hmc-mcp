@@ -30,8 +30,14 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
    dispatches it (pattern of `live_profiles.py`). Preflight's `users` verdict names the user it
    creates (`hmcpctl-live-<8 hex>`, viewer task role, web and SSH remote access disabled,
    deleted by UUID in the same run). `LIVE_TEST_TEST_USER_NAME` is retired: the name is minted
-   per run, so it cannot collide with or name an existing user.
-3. **ST11 steps.** Each read below is `record_verified` with cleanup `not-required`:
+   per run, so it cannot collide with or name an existing user. `from_env_file` ignores the
+   retired key (one printed line) so existing `.env` files still load. The `test_user_uuid`
+   artifact is replaced by `test_user_name` and dropped when an old document is restored.
+   Field reads use the parser's shapes, through helpers shared with recovery: a profile's UUID
+   is the entry's `UUID`, its UserID is `leaf_text` of `Resource.UserID`, and a field is
+   *empty* when it is absent, `""`, or a mapping with no `text` key.
+3. **ST11 steps.** Each read below is `record_verified` with cleanup `not-required`; the
+   tool label of each observation is the tool name alone, so the eight ids are distinct:
    - `hmc_get_console_info` → console UUID (this run's, never a restored artifact), non-promoting.
    - `user.list` (before): `profiles-listed`, `profiles-carry-uuid-and-user-id`,
      `passwords-not-disclosed` (every `UserProfilePassword` empty or absent).
@@ -41,27 +47,35 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
      `KerberosConfiguration` key) and `bind-password-not-disclosed` (`BindPassword` empty or
      absent).
 
-   Lifecycle, only when the viewer role resolved and the minted name is not already listed:
-   record `artifacts.test_user_name` **before** create, then create (viewer role, description,
-   remote access disabled, password minted in the function), list to resolve the UUID, get,
-   modify the description, get, clear the description (`""`), get, delete by UUID, list. The
+   Lifecycle, only when the before listing PASSed, the viewer role resolved, and no listed
+   UserID starts with `hmcpctl-live-` (residue: each step SKIPs naming recovery): record
+   `artifacts.test_user_name` **before** create, then create (viewer role, description,
+   remote access disabled, password minted in the function), list to resolve the UUID
+   *whatever create returned*, get, modify the description, get, clear the description
+   (`""`), get, delete by UUID, list. The UUID is a local value resolved by the minted name
+   from this run's listings — the post-create one, else the final one, then delete. The
    delete runs whenever a UUID resolved, whatever failed before it. Lifecycle observations are
-   recorded after the final list, each with cleanup `passed` when the scratch user is absent
-   and every other `(UUID, UserID)` pair equals the before listing, else `failed`:
+   recorded after the final list, each with cleanup `passed` when no `hmcpctl-live-` user
+   remains and no before-listed UUID vanished or changed UserID, else `failed`:
    - `user.create`: `create-accepted`, `scratch-profile-listed`, `password-not-echoed` (the
      password occurs in no response of the run).
    - `user.get`: `user-id-matches`, `task-role-is-viewer`, `password-not-disclosed`,
      `not-predefined`.
    - `user.modify`: `description-updated`, `description-cleared`, `user-id-unchanged`,
      `profile-uuid-unchanged`, `task-role-unchanged`.
-   - `user.delete`: `scratch-profile-absent`, `other-profiles-unchanged`.
+   - `user.delete`: `scratch-profile-absent`, `pre-existing-profiles-unchanged`.
 
    A failed step after create records its row, and the lifecycle observations it fed are
-   `failed`; nothing is masked as SKIP. The ST6 round2 listing drops the `REST000E`
-   declaration and stays non-promoting.
-4. **Recovery.** `live_test_recovery.py` witnesses subtask 11: with `artifacts.test_user_name`
-   set it lists users (`hmc_list_users` joins the read-only allowlist) and reports STRANDED
-   with `rmhmcusr -u <name>` if the name is present; with no name nothing was created.
+   `failed`; nothing is masked as SKIP. Before ST11 records anything, it replaces the minted
+   password in the data (a refused PUT may echo its body). The ST6 round2 listing drops the
+   `REST000E` declaration and stays non-promoting.
+4. **Recovery.** `live_test_recovery.py` witnesses subtask 11 by the prefix, not the document:
+   when 11 was dispatched it reads the console UUID (`hmc_get_console_info`), lists users
+   (both join the read-only allowlist), and reports STRANDED with `rmhmcusr -u <name>` for
+   every UserID starting `hmcpctl-live-` — so a hard-killed run or a later run's document
+   still finds it. `main()`'s check gate and `_run_checks` take this input. A document with a
+   non-SKIP ST11 `hmc_create_user` row but no `test_user_name` (written before this change) is
+   unreadable: exit 2.
 5. **Catalog.** `user.*` bind `rest:user-management/userprofile`; `remote_access.*` bind the
    `ldap` and `kerberos` rows; role lists keep theirs. The `userprofile` row becomes
    `supported` (its GET/PUT/POST/DELETE and modifiable fields are all reachable); other rows
@@ -84,22 +98,24 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
   stays unevidenced with the gap above.
 - Catalog observations come from one `users` run at the final `src/` closure, copied with their
   emitted result; a SKIP or non-promoting row is never copied.
-- After that run, the HMC user list equals the before listing (UUID and UserID pairs), and
-  recovery exits 0 with subtask 11 witnessed.
+- After that run, no `hmcpctl-live-` user exists, every before-listed UUID keeps its UserID,
+  and recovery exits 0 with subtask 11 witnessed.
 - No arm other than `users` dispatches `hmc_create_user`, `hmc_modify_user` or `hmc_delete_user`.
-- The minted password appears in no argv, log line, results file or observation.
+- The minted password appears in no argv, and in no printed line, results-file row or
+  observation that ST11 writes.
 - `just verify` and `uv run --no-sync prek run --all-files` pass.
 
 ## Failure model
 
 1. **Actors and deployments:** a local operator running `live_users.py` from the live-test host
-   against the designated V10R3 HMC; MCP callers of the user tools; CI, offline.
+   against the designated V10R3 HMC; MCP callers of the user tools; CI, offline. Another
+   administrator may add users during a run; the cleanup check tolerates additions.
 2. **Invariants and assets:** every existing HMC user (none may change); the operator account;
    LDAP/Kerberos settings (never written); the scratch password; `maturity.json` honesty; the
    user-tool input schemas.
 3. **Accepted failure classes:**
    - An interrupted run between create and delete leaves one viewer user with remote access
-     disabled; recovery names it and `rmhmcusr -u <name>` removes it.
+     disabled; recovery's prefix scan names it and `rmhmcusr -u <name>` removes it.
    - The HMC may reject the documented shape; the observation is `failed` and ADR 0202 is
      superseded with the capture, not worked around.
 4. **Covered elsewhere:** role lifecycle (#672), MFA/auth config (#673), password policy (#674),
