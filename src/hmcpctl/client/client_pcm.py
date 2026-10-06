@@ -9,10 +9,16 @@ from __future__ import annotations
 from typing import Any, Unpack
 from urllib.parse import urlencode
 
+from defusedxml import ElementTree as ET
+
 from ..errors import HMCError
 from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
-from .pcm_payloads import PCMPreferenceFlags, build_pcm_preferences_document
+from .pcm_payloads import (
+    PCMPreferenceFlags,
+    pcm_preferences_update,
+    reject_unsupported_preference_fields,
+)
 
 
 class PcmMixin:
@@ -37,14 +43,22 @@ class PcmMixin:
     ) -> dict[str, Any]:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
 
-        Only the flags you pass are changed; the HMC merges the rest. Returns
-        the updated preferences document (``{}`` when the response body is
-        empty).
+        Reads the current preferences and posts that document back with only
+        the flags you pass changed (#634). Returns the updated preferences
+        document (``{}`` when the response body is empty).
         """
         _require_managed_system_preferences(category)
+        reject_unsupported_preference_fields(flags.keys())
 
-        xml = build_pcm_preferences_document(**flags)
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
+        current, _ = await self.raw_get(path)
+        try:
+            xml = pcm_preferences_update(current, **flags)
+        except (ET.ParseError, ValueError) as exc:
+            raise HMCError(
+                f"GET {path} returned a preferences document hmcpctl cannot "
+                f"update ({str(exc)[:300]}); nothing was changed"
+            ) from exc
         resp_xml = await self._post_pcm(path, xml)
         return _pcm_preferences(resp_xml, path) if resp_xml else {}
 
@@ -58,8 +72,9 @@ class PcmMixin:
 
     async def get_metrics_feed(self: PcmClient, path: str) -> list[dict[str, str]]:
         """GET a PCM metrics Atom feed and return its JSON links."""
-
-        xml = await self._get(path)
+        # V10R3 answers the uom Accept on a metric feed with HTTP 406, as it does
+        # on the preferences endpoint beside it (#1202, #634).
+        xml, _ = await self.raw_get(path)
         return _metric_links(xml, path) if xml else []
 
     async def get_processed_metric_links(
@@ -170,7 +185,9 @@ class PcmMixin:
         catch HMCError and translate it (see hmc_processed_metrics).
         """
         url = link if link.startswith("http") else f"{self._rest_base_url}{link}"
-        resp = await self._request("GET", url, headers={"Accept": "application/json"})
+        # V10R3 answers `application/json` with HTTP 406; it serves the document
+        # as `application/vnd.ibm.powervm.pcm.json` for `*/*` (#634).
+        resp = await self._request("GET", url, headers={"Accept": "*/*"})
         if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
         try:

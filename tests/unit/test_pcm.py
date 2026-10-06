@@ -7,10 +7,10 @@ from defusedxml import ElementTree as ET
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.client.pcm_payloads import (
-    build_pcm_preferences_document,
     metric_links,
     newest_metric_link,
     pcm_preferences_to_dict,
+    pcm_preferences_update,
 )
 from hmcpctl.errors import HMCError
 from hmcpctl.jobs import (
@@ -106,6 +106,13 @@ def _hmc_env(monkeypatch):
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
+def _route_preferences_read(router):
+    """The GET a preferences update reads before it posts (#634)."""
+    router.get(
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
+    ).mock(return_value=live_response("rest-pcm-preferences")[1])
+
+
 def _route_metrics_feed(router, category, uuid, kind, text=PCM_FEED):
     router.get(f"/rest/api/pcm/{category}/{uuid}/{kind}").mock(
         return_value=httpx.Response(200, text=text)
@@ -154,28 +161,79 @@ def test_delete_logical_unit_job():
     assert "LogicalUnitUDID" in xml and "udid-123" in xml
 
 
-def test_pcm_preferences_document():
-    xml = build_pcm_preferences_document(
-        LongTermMonitorEnabled=True, AggregationEnabled=False
+_PCM_NS = "{http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/}"
+
+
+def test_pcm_preferences_update_echoes_the_read_document():
+    """V10R3 answers a hand-built partial document with HTTP 500 (#634).
+
+    It accepts the preference element its own GET returns, with the flag values
+    changed, so the update keeps every other element of that read.
+    """
+    read = live_fixture("rest-pcm-preferences")["body"]
+
+    xml = pcm_preferences_update(
+        read, LongTermMonitorEnabled=True, EnergyMonitorEnabled=True
     )
-    # The root the HMC itself returns for a managed system's preferences.
+
     root = ET.fromstring(xml)
-    assert root.tag == (
-        "{http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/}"
-        "ManagedSystemPcmPreference"
-    )
-    assert root.get("schemaVersion") == "V1_0"
-    assert "LongTermMonitorEnabled" in xml and ">true<" in xml
-    assert "AggregationEnabled" in xml and ">false<" in xml
-    assert "ShortTermMonitorEnabled" not in xml  # only specified flags
+    assert root.tag == f"{_PCM_NS}ManagedSystemPcmPreference"
+    assert root.findtext(f"{_PCM_NS}LongTermMonitorEnabled") == "true"
+    assert root.findtext(f"{_PCM_NS}EnergyMonitorEnabled") == "true"
+    assert root.findtext(f"{_PCM_NS}AggregationEnabled") == "false"
+    assert root.findtext(f"{_PCM_NS}SystemName") == "sys-R1"
+    assert root.find(f"{_PCM_NS}MachineTypeModelSerialNumber") is not None
+    assert root.find(f"{_PCM_NS}Metadata/{_PCM_NS}Atom/{_PCM_NS}AtomID") is not None
+    assert "<feed" not in xml and "<entry" not in xml
 
 
-def test_pcm_preferences_document_rejects_unsupported_fields_in_sorted_order():
+def test_pcm_preferences_update_rejects_unsupported_fields_in_sorted_order():
     with pytest.raises(
         ValueError,
         match="Unsupported PCM preference fields: AlphaFlag, ZetaFlag",
     ):
-        build_pcm_preferences_document(ZetaFlag=True, AlphaFlag=False)
+        pcm_preferences_update(
+            live_fixture("rest-pcm-preferences")["body"], ZetaFlag=True, AlphaFlag=False
+        )
+
+
+def test_pcm_preferences_update_refuses_a_slice_that_loses_its_namespace():
+    """A prefix declared on the feed, not the element, would post unbound XML."""
+    read = (
+        '<feed xmlns:p="urn:p"><p:ManagedSystemPcmPreference>'
+        "<LongTermMonitorEnabled>false</LongTermMonitorEnabled>"
+        "</p:ManagedSystemPcmPreference></feed>"
+    )
+    with pytest.raises(ValueError, match="not well-formed on its own"):
+        pcm_preferences_update(read, LongTermMonitorEnabled=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("read", [httpx.Response(204), httpx.Response(200, text="<x>")])
+async def test_set_pcm_preferences_unusable_read_posts_nothing(mock_hmc, read):
+    """An empty or malformed read is an HMCError naming the GET; nothing is posted."""
+    path = (
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
+    )
+    mock_hmc.get(path).mock(return_value=read)
+    post_route = mock_hmc.post(path).mock(return_value=httpx.Response(200))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"GET .*preferences.*nothing was changed"):
+            await hmc.set_pcm_preferences(
+                "ManagedSystem",
+                "00000000-0000-0000-0000-000000000001",
+                LongTermMonitorEnabled=True,
+            )
+
+    assert not post_route.called
+
+
+def test_pcm_preferences_update_refuses_a_read_without_the_flag():
+    read = "<ManagedSystemPcmPreference xmlns='urn:x'><SystemName>s</SystemName>"
+    read += "</ManagedSystemPcmPreference>"
+    with pytest.raises(ValueError, match="LongTermMonitorEnabled"):
+        pcm_preferences_update(read, LongTermMonitorEnabled=True)
 
 
 @pytest.mark.asyncio
@@ -260,6 +318,31 @@ def test_newest_metric_link_unparseable_stamp_sorts_oldest():
     assert newest_metric_link(links)["link"] == "/real.json"
 
 
+def test_newest_metric_link_skips_a_newer_sub_feed_entry():
+    """A ManagedSystem feed also lists its partitions' feeds, stamped newest (#634).
+
+    Captured on a V10R3 HMC: the aggregated feed's third entry links to
+    `.../LogicalPartition/<uuid>/AggregatedMetrics?StartTS=...`, an Atom feed,
+    with a later `updated` than either JSON document.
+    """
+    links = [
+        {
+            "link": "https://hmc.test/rest/api/pcm/AggregatedMetrics/ManagedSystem_a_b_c_300.json",
+            "updated": "2026-10-06T16:44:30.000Z",
+            "title": "",
+        },
+        {
+            "link": "https://hmc.test/rest/api/pcm/ManagedSystem/a/LogicalPartition/b"
+            "/AggregatedMetrics?StartTS=2026-10-06T14%3A49%3A26Z",
+            "updated": "2026-10-06T16:49:10.351Z",
+            "title": "",
+        },
+    ]
+
+    assert newest_metric_link(links)["link"].endswith("_300.json")
+    assert newest_metric_link(links[1:]) is None
+
+
 def test_newest_metric_link_returns_none_for_an_empty_feed():
     """An empty metric feed has no link to select."""
     assert newest_metric_link([]) is None
@@ -268,6 +351,35 @@ def test_newest_metric_link_returns_none_for_an_empty_feed():
 # ---------------------------------------------------------------------- #
 # Metrics MCP tools (split link-list vs fetch)
 # ---------------------------------------------------------------------- #
+
+
+SUB_FEED_ONLY = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <updated>2026-10-06T16:49:10.351Z</updated>
+    <link href="/rest/api/pcm/ManagedSystem/a/LogicalPartition/b/AggregatedMetrics?StartTS=x"/>
+  </entry>
+</feed>
+"""
+
+
+def test_metrics_fetch_refuses_a_feed_with_no_document(monkeypatch, mock_hmc):
+    """Entries but no `.json` document is not an aged-out sample (#634)."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(
+        mock_hmc,
+        "ManagedSystem",
+        "00000000-0000-0000-0000-000000000001",
+        "AggregatedMetrics",
+        text=SUB_FEED_ONLY,
+    )
+
+    with pytest.raises(HMCError, match="none links a .json metrics document"):
+        hmc_aggregated_metrics(
+            "ManagedSystem",
+            "00000000-0000-0000-0000-000000000001",
+            "2026-08-07T11:00:00Z",
+        )
 
 
 def test_processed_metric_links(monkeypatch, mock_hmc):
@@ -301,15 +413,18 @@ def test_processed_metrics_mode_fetch_fetches_latest(monkeypatch, mock_hmc):
         "00000000-0000-0000-0000-000000000001",
         "ProcessedMetrics",
     )
-    mock_hmc.get("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json").mock(
-        return_value=httpx.Response(200, json=METRICS_JSON)
-    )
+    document = mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
 
     result = hmc_processed_metrics(
         "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
     )
 
     assert result == METRICS_JSON
+    # V10R3 answers `application/json` with 406 and serves the document, typed
+    # `application/vnd.ibm.powervm.pcm.json`, for `*/*` (#634).
+    assert document.calls[0].request.headers["accept"] == "*/*"
 
 
 def test_processed_metrics_default_mode_is_fetch(monkeypatch, mock_hmc):
@@ -539,9 +654,38 @@ def test_get_pcm_preferences(monkeypatch, mock_hmc):
     assert "x-hmc-schema-version" not in request.headers
 
 
+@pytest.mark.parametrize(
+    ("tool", "kind"),
+    [
+        (hmc_processed_metric_links, "ProcessedMetrics"),
+        (hmc_aggregated_metric_links, "AggregatedMetrics"),
+    ],
+)
+def test_metric_feed_requests_accept_any(monkeypatch, mock_hmc, tool, kind):
+    """A metric feed GET asks for `*/*`, as the preferences GET does (#634).
+
+    V10R3 refuses the generic uom Accept on a metric feed with 406, the way it
+    refuses it on the preferences endpoint beside it (#1202).
+    """
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_SCHEMA_VERSION", "V1_0")
+    route = mock_hmc.get(
+        f"/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/{kind}"
+    ).mock(return_value=httpx.Response(200, text=PCM_FEED))
+
+    tool(
+        "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+    )
+
+    request = route.calls[0].request
+    assert request.headers["accept"] == "*/*"
+    assert "x-hmc-schema-version" not in request.headers
+
+
 def test_set_pcm_preferences_returns_updated(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences returns the updated preferences dict."""
     _hmc_env(monkeypatch)
+    _route_preferences_read(mock_hmc)
     mock_hmc.post(
         "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
     ).mock(return_value=httpx.Response(200, text=PCM_PREFS_XML))
@@ -654,6 +798,7 @@ def test_aggregated_metrics_403_actionable(monkeypatch, mock_hmc):
 def test_set_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences on HTTP 406 names the refused media type."""
     _hmc_env(monkeypatch)
+    _route_preferences_read(mock_hmc)
     mock_hmc.post(
         "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
     ).mock(return_value=_not_acceptable())
@@ -669,6 +814,7 @@ def test_set_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
 def test_set_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences on HTTP 403 raises HMCError mentioning PCM authority."""
     _hmc_env(monkeypatch)
+    _route_preferences_read(mock_hmc)
     mock_hmc.post(
         "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
     ).mock(return_value=_forbidden())

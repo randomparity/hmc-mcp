@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError, asdict
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +20,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from conftest import live_fixture
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
@@ -35,6 +36,7 @@ from hmcpctl.operations.virtualization.pcie import (
 )
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.ssh import affinity as ssh_affinity
+from hmcpctl.xmlutil import parse_feed
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
@@ -656,41 +658,396 @@ async def test_platform_update_check_skips_without_a_pre_minimum_version(
     assert row["status"] == "SKIP"
 
 
+_SYS_UUID = "00000000-0000-0000-0000-00000000000A"
+_PREFS = {
+    "EnergyMonitoringCapable": True,
+    "LongTermMonitorEnabled": True,
+    "AggregationEnabled": True,
+    "ShortTermMonitorEnabled": False,
+    "ComputeLTMEnabled": False,
+    "EnergyMonitorEnabled": True,
+}
+
+
+def _metric_links(kind: str) -> list[dict[str, str]]:
+    return [
+        {
+            "link": f"/rest/api/pcm/{kind}/ManagedSystem_{_SYS_UUID.lower()}_x_y_30.json",
+            "updated": "2026-10-06T10:00:00Z",
+            "title": kind,
+        }
+    ]
+
+
+def _metric_document() -> dict[str, object]:
+    return {
+        "systemUtil": {
+            "utilInfo": {"uuid": _SYS_UUID.lower(), "name": "sys-A"},
+            "utilSamples": [{"sampleType": "ManagedSystem"}],
+        }
+    }
+
+
+def _captured_templates() -> list[dict[str, object]]:
+    """The template library feed a V10R3 HMC returned (#1202), as the client parses it."""
+    return parse_feed(live_fixture("rest-templates-feed")["body"])
+
+
+def _st5_transcript(
+    templates: list[dict[str, object]],
+) -> list[tuple[str, str, object]]:
+    first = templates[0]["UUID"]
+    return [
+        ("hmc_get_pcm_preferences", "PASS", dict(_PREFS)),
+        ("hmc_processed_metric_links", "PASS", _metric_links("ProcessedMetrics")),
+        ("hmc_processed_metrics", "PASS", _metric_document()),
+        ("hmc_aggregated_metric_links", "PASS", _metric_links("AggregatedMetrics")),
+        ("hmc_aggregated_metrics", "PASS", _metric_document()),
+        ("hmc_list_partition_templates", "PASS", templates),
+        ("hmc_get_partition_template", "PASS", {"UUID": str(first).upper()}),
+    ]
+
+
 @pytest.mark.asyncio
-async def test_metrics_records_toggle_restore_job_and_template_paths() -> None:
+async def test_st5_records_verified_pcm_and_template_reads() -> None:
+    templates = _captured_templates()
+    state = _ScriptedSriovState(_st5_transcript(templates))
+    state.artifacts.system_uuid = _SYS_UUID
+
+    await metrics.inspect_metrics_templates(object(), state)
+
+    assert [row["result"] for row in state.results] == ["passed"] * 7
+    assert [entry["operation"] for entry in state.observations] == [
+        "pcm.get_preferences",
+        "metrics.processed_links",
+        "metrics.processed",
+        "metrics.aggregated_links",
+        "metrics.aggregated",
+        "template.list",
+        "template.get",
+    ]
+    ids = [entry["observation"]["id"] for entry in state.observations]
+    assert len(set(ids)) == len(ids)
+    assert state.calls[6][1] == {"template_uuid": templates[0]["UUID"]}
+    # A two-hour window: processed metrics are retained for about that long.
+    start = datetime.strptime(
+        state.calls[1][1]["start_ts"], "%Y-%m-%dT%H:%M:%SZ"
+    ).replace(tzinfo=UTC)
+    assert 7100 < (datetime.now(UTC) - start).total_seconds() < 7300
+
+
+@pytest.mark.asyncio
+async def test_st5_fails_reads_whose_data_names_another_system() -> None:
+    state = _ScriptedSriovState(_st5_transcript(_captured_templates()))
+    state.artifacts.system_uuid = "00000000-0000-0000-0000-0000000000ff"
+
+    await metrics.inspect_metrics_templates(object(), state)
+
+    failed = [row["tool"] for row in state.results if row["result"] == "failed"]
+    assert failed == [
+        "hmc_processed_metric_links",
+        "hmc_processed_metrics",
+        "hmc_aggregated_metric_links",
+        "hmc_aggregated_metrics",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_st5_empty_metric_feed_skips_links_and_data() -> None:
     state = _ScriptedSriovState(
         [
-            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": True}),
-            ("hmc_set_pcm_preferences", "PASS", {}),
-            ("hmc_get_pcm_preferences", "PASS", {"long_term_monitor": False}),
-            ("hmc_set_pcm_preferences", "PASS", {}),
-            ("hmc_get_job", "PASS", {}),
-            ("hmc_wait_for_job", "PASS", {}),
-            ("hmc_get_pcm_preferences", "FAIL", _failure("PCM unavailable")),
-            ("hmc_processed_metric_links", "FAIL", _failure("PCM unavailable")),
-            ("hmc_aggregated_metric_links", "FAIL", _failure("PCM unavailable")),
-            ("hmc_list_partition_templates", "FAIL", _failure("template unavailable")),
+            ("hmc_get_pcm_preferences", "PASS", dict(_PREFS)),
+            ("hmc_processed_metric_links", "PASS", []),
+            ("hmc_aggregated_metric_links", "PASS", []),
+            ("hmc_list_partition_templates", "PASS", []),
         ]
+    )
+    state.artifacts.system_uuid = _SYS_UUID
+
+    await metrics.inspect_metrics_templates(object(), state)
+
+    rows = {row["tool"]: row for row in state.results}
+    for tool in (
+        "hmc_processed_metric_links",
+        "hmc_processed_metrics",
+        "hmc_aggregated_metric_links",
+        "hmc_aggregated_metrics",
+        "hmc_get_partition_template",
+    ):
+        assert rows[tool]["status"] == "SKIP"
+    assert "AggregationEnabled" in rows["hmc_aggregated_metric_links"]["note"]
+    # An empty library is not evidence that listing works.
+    assert rows["hmc_list_partition_templates"]["result"] == "failed"
+    assert [entry["operation"] for entry in state.observations] == [
+        "pcm.get_preferences",
+        "template.list",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_st5_empty_metric_document_skips() -> None:
+    transcript = _st5_transcript(_captured_templates())
+    transcript[2] = ("hmc_processed_metrics", "PASS", {})
+    state = _ScriptedSriovState(transcript)
+    state.artifacts.system_uuid = _SYS_UUID
+
+    await metrics.inspect_metrics_templates(object(), state)
+
+    [row] = [r for r in state.results if r["tool"] == "hmc_processed_metrics"]
+    assert row["status"] == "SKIP"
+    assert "metrics.processed" not in [e["operation"] for e in state.observations]
+
+
+@pytest.mark.asyncio
+async def test_st5_reads_the_system_uuid_when_st1_did_not_run() -> None:
+    transcript = _st5_transcript(_captured_templates())
+    transcript.insert(1, ("hmc_get_system", "PASS", {"UUID": _SYS_UUID}))
+    state = _ScriptedSriovState(transcript)
+
+    await metrics.inspect_metrics_templates(object(), state)
+
+    assert state.artifacts.system_uuid == _SYS_UUID
+    assert state.results[1]["result"] == "observed"
+    assert len(state.observations) == 7
+
+
+@pytest.mark.asyncio
+async def test_pcm_declarations_match_only_authority() -> None:
+    """A 403 is a prerequisite gap; a 406 or a message naming PCM is a failure."""
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "FAIL", _failure("HMCError: no (HTTP 403)")),
+            ("hmc_processed_metric_links", "FAIL", _failure("HMCError: x (HTTP 406)")),
+            ("hmc_aggregated_metric_links", "FAIL", _failure("PCM unavailable")),
+            ("hmc_list_partition_templates", "FAIL", _failure("templates (HTTP 406)")),
+        ]
+    )
+    state.artifacts.system_uuid = _SYS_UUID
+
+    await metrics.inspect_metrics_templates(object(), state)
+
+    rows = {row["tool"]: row["status"] for row in state.results}
+    assert rows["hmc_get_pcm_preferences"] == "SKIP"
+    assert rows["hmc_processed_metric_links"] == "FAIL"
+    assert rows["hmc_aggregated_metric_links"] == "FAIL"
+    assert rows["hmc_list_partition_templates"] == "FAIL"
+    assert [
+        (gap["operation"], gap["missing_scope"]["variant"]) for gap in state.gaps
+    ] == [("pcm.get_preferences", "pcm-authority")]
+    runner._validate_declared_outcomes()
+
+
+@pytest.mark.asyncio
+async def test_st12_never_sets_pcm_preferences() -> None:
+    state = _ScriptedSriovState(
+        [("hmc_get_job", "PASS", {}), ("hmc_wait_for_job", "PASS", {})]
     )
     state.artifacts.job_uuid_sample = "job-uuid"
 
     await metrics.inspect_metrics_jobs(object(), state)
-    await metrics.inspect_metrics_templates(object(), state)
 
-    assert state.calls[1][1]["long_term_monitor"] is False
-    assert state.calls[3][1]["long_term_monitor"] is True
-    assert state.calls[5][1] == {
+    assert [tool for tool, _ in state.calls] == ["hmc_get_job", "hmc_wait_for_job"]
+    assert state.calls[1][1] == {
         "job_id": "job-uuid",
         "timeout_seconds": 10,
         "poll_interval": 2,
     }
-    assert state.artifacts.lp3_baseline.get("pcm_prefs") is None
-    assert [entry["status"] for entry in state.results if entry["subtask"] == 5] == [
-        "SKIP",
-        "SKIP",
-        "SKIP",
-        "SKIP",
+
+
+def _flags(**overrides: bool) -> dict[str, bool]:
+    return {**_PREFS, **overrides}
+
+
+#: With aggregation on, the HMC holds these on (the reference, and the 2026-10-06 run).
+_HELD = {"LongTermMonitorEnabled", "EnergyMonitorEnabled"}
+
+
+def _round_trip(
+    final: dict[str, bool], baseline: dict[str, bool] | None = None
+) -> list[tuple[str, str, object]]:
+    """Each flag toggled and read back as the HMC answers, then a restore.
+
+    A flag the baseline's aggregation holds reads back unchanged; every other
+    flag reads back flipped. `final` is the last read.
+    """
+    base = baseline or _flags()
+    held = _HELD if base["AggregationEnabled"] else set()
+    transcript: list[tuple[str, str, object]] = [
+        ("hmc_get_pcm_preferences", "PASS", base)
     ]
+    for name, _ in metrics.PCM_FLAGS:
+        after = base if name in held else {**base, name: not base[name]}
+        transcript += [
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", after),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", base),
+        ]
+    return [*transcript, ("hmc_get_pcm_preferences", "PASS", final)]
+
+
+@pytest.mark.asyncio
+async def test_st38_round_trip_restores_snapshot() -> None:
+    state = _ScriptedSriovState(_round_trip(_flags()))
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    sets = [kwargs for tool, kwargs in state.calls if tool == "hmc_set_pcm_preferences"]
+    restore = {kw: _PREFS[name] for name, kw in metrics.PCM_FLAGS}
+    for index, (name, keyword) in enumerate(metrics.PCM_FLAGS):
+        assert sets[2 * index][keyword] is (not _PREFS[name])
+        assert {k: v for k, v in sets[2 * index + 1].items() if k in restore} == restore
+    # The snapshot is a results row before the first write: an interrupted run's
+    # document still carries the values to restore.
+    assert state.results[0]["tool"] == "hmc_get_pcm_preferences (snapshot)"
+    assert state.calls[1][0] == "hmc_set_pcm_preferences"
+    [observation_entry] = state.observations
+    recorded = observation_entry["observation"]
+    assert observation_entry["operation"] == "pcm.set_preferences"
+    assert recorded["result"] == "passed"
+    assert recorded["cleanup"] == "passed"
+    assert recorded["assertions"] == [
+        "long-term-monitor-held-by-aggregation",
+        "aggregation-toggled",
+        "short-term-monitor-toggled",
+        "compute-ltm-toggled",
+        "energy-monitor-held-by-aggregation",
+        "snapshot-restored",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_st38_toggles_every_flag_when_aggregation_is_off() -> None:
+    baseline = _flags(
+        AggregationEnabled=False,
+        LongTermMonitorEnabled=False,
+        EnergyMonitorEnabled=False,
+    )
+    state = _ScriptedSriovState(_round_trip(baseline, baseline))
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    recorded = state.observations[0]["observation"]
+    assert recorded["result"] == "passed"
+    assert recorded["assertions"][:5] == [
+        "long-term-monitor-toggled",
+        "aggregation-toggled",
+        "short-term-monitor-toggled",
+        "compute-ltm-toggled",
+        "energy-monitor-toggled",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_st38_a_refused_held_toggle_fails_its_assertion() -> None:
+    """Held means accepted and unchanged; a refused request is not evidence."""
+    transcript = _round_trip(_flags())
+    transcript[1] = (
+        "hmc_set_pcm_preferences",
+        "FAIL",
+        _failure("HMCError: (HTTP 500)"),
+    )
+    state = _ScriptedSriovState(transcript)
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    recorded = state.observations[0]["observation"]
+    assert recorded["result"] == "failed"
+    assert "long-term-monitor-held-by-aggregation" not in recorded["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_st38_a_held_flag_that_flips_fails_its_assertion() -> None:
+    transcript = _round_trip(_flags())
+    # The coupling says LTM stays on while aggregation is enabled; it did not.
+    transcript[2] = (
+        "hmc_get_pcm_preferences",
+        "PASS",
+        _flags(LongTermMonitorEnabled=False),
+    )
+    state = _ScriptedSriovState(transcript)
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    recorded = state.observations[0]["observation"]
+    assert recorded["result"] == "failed"
+    assert recorded["cleanup"] == "passed"
+    assert "long-term-monitor-held-by-aggregation" not in recorded["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_st38_mismatched_final_read_fails_cleanup() -> None:
+    state = _ScriptedSriovState(_round_trip(_flags(EnergyMonitorEnabled=False)))
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("failed", "failed")
+    manual = state.results[-1]
+    assert manual["tool"] == "hmc_set_pcm_preferences (MANUAL RECOVERY REQUIRED)"
+    assert manual["status"] == "FAIL"
+    assert "EnergyMonitorEnabled=True" in manual["note"]
+    assert "EnergyMonitoringCapable" not in manual["note"]
+
+
+@pytest.mark.asyncio
+async def test_st38_stops_toggling_after_a_restore_that_did_not_hold() -> None:
+    ltm_off = _flags(LongTermMonitorEnabled=False)
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", _flags()),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", ltm_off),
+            ("hmc_set_pcm_preferences", "FAIL", _failure("HMCError: x (HTTP 400)")),
+            ("hmc_get_pcm_preferences", "PASS", ltm_off),
+            ("hmc_get_pcm_preferences", "PASS", ltm_off),
+        ]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    sets = [tool for tool, _ in state.calls if tool == "hmc_set_pcm_preferences"]
+    assert len(sets) == 2
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("failed", "failed")
+    assert state.results[-1]["tool"].endswith("(MANUAL RECOVERY REQUIRED)")
+
+
+@pytest.mark.asyncio
+async def test_st38_skips_without_a_boolean_snapshot() -> None:
+    state = _ScriptedSriovState(
+        [("hmc_get_pcm_preferences", "FAIL", _failure("HMCError: x (HTTP 403)"))]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert [tool for tool, _ in state.calls] == ["hmc_get_pcm_preferences"]
+    assert state.results[-1]["status"] == "SKIP"
+    assert not state.observations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [None, "all", "round2"])
+async def test_st38_runs_only_in_the_pcm_group(group) -> None:
+    state = _ScriptedSriovState([])
+    state.group = group
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert state.calls == []
+    assert state.results[-1]["status"] == "SKIP"
+
+
+def test_pcm_group_is_opt_in() -> None:
+    assert runner.SUBTASK_GROUPS["pcm"] == [38]
+    assert 38 not in runner.SUBTASK_GROUPS["all"]
 
 
 @pytest.mark.asyncio
@@ -2848,7 +3205,9 @@ async def test_gap_identity_rejected_before_call():
     state = runner.RunState()
     client = _ScriptedClient(result={})
     with pytest.raises(ValueError, match="operation"):
-        await state.call(client, "hmc_list_users", expected=[metrics._PCM_UNLICENSED])
+        await state.call(
+            client, "hmc_list_users", expected=[metrics._PREFERENCES_AUTHORITY]
+        )
     assert client.calls == []
 
 
@@ -2858,8 +3217,8 @@ async def test_later_invalid_declaration_stops_run_before_client(monkeypatch):
 
     monkeypatch.setattr(
         metrics,
-        "_PCM_UNLICENSED",
-        replace(metrics._PCM_UNLICENSED, operation="user.list"),
+        "_PREFERENCES_AUTHORITY",
+        replace(metrics._PREFERENCES_AUTHORITY, operation="user.list"),
     )
     monkeypatch.setattr(runner, "create_mcp", lambda *_a: pytest.fail("created client"))
     assert (
@@ -2873,13 +3232,13 @@ def test_matching_gap_is_separate_from_evidence(transient):
     from dataclasses import replace
 
     state = runner.RunState()
-    expected = replace(metrics._PCM_UNLICENSED, transient=transient)
+    expected = replace(metrics._PREFERENCES_AUTHORITY, transient=transient)
     for _ in range(2):
         state.record_with_expected(
             5,
             "hmc_get_pcm_preferences",
             "FAIL",
-            observation.classify_failure(RuntimeError("HTTP 406")),
+            observation.classify_failure(RuntimeError("HTTP 403")),
             [expected],
         )
     assert state.observations == []
@@ -2897,11 +3256,11 @@ async def test_swapped_declared_results_fail_before_client(monkeypatch, same_ope
     from types import ModuleType
 
     module = ModuleType("swapped_declarations")
-    module.A = metrics._PCM_UNLICENSED
+    module.A = metrics._PREFERENCES_AUTHORITY
     module.B = (
         replace(module.A, variant="other-pcm")
         if same_operation
-        else metrics._PROCESSED_UNLICENSED
+        else metrics._PROCESSED_LINKS_AUTHORITY
     )
     second_tool = (
         "hmc_get_pcm_preferences" if same_operation else "hmc_processed_metric_links"
@@ -2941,7 +3300,7 @@ def test_declared_results_require_one_matching_record(tail):
     )
     with pytest.raises(ValueError, match="declared|pair"):
         runner._validate_declared_function(
-            ast.parse(source).body[0], {"A": metrics._PCM_UNLICENSED}
+            ast.parse(source).body[0], {"A": metrics._PREFERENCES_AUTHORITY}
         )
 
 
@@ -2952,13 +3311,13 @@ def test_declared_calls_require_assigned_status_and_data():
     )
     with pytest.raises(ValueError, match="assigned"):
         runner._validate_declared_function(
-            ast.parse(source).body[0], {"A": metrics._PCM_UNLICENSED}
+            ast.parse(source).body[0], {"A": metrics._PREFERENCES_AUTHORITY}
         )
 
 
 @pytest.mark.asyncio
 async def test_current_gap_skips_call_without_refreshing_confirmation():
-    expected = metrics._PCM_UNLICENSED
+    expected = metrics._PREFERENCES_AUTHORITY
     state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
     client = _ScriptedClient(result={})
     status, data = await state.call(
@@ -2973,7 +3332,7 @@ async def test_current_gap_skips_call_without_refreshing_confirmation():
 
 @pytest.mark.asyncio
 async def test_invalid_dispatch_precedes_known_gap():
-    expected = metrics._PCM_UNLICENSED
+    expected = metrics._PREFERENCES_AUTHORITY
     state = runner.RunState(
         known_gaps={(expected.operation, expected.variant)},
         schemas={"hmc_get_pcm_preferences": {"properties": {}}},
@@ -2992,13 +3351,13 @@ async def test_invalid_dispatch_precedes_known_gap():
 
 def test_gap_output_can_be_copied_and_loaded_for_next_run(tmp_path):
     repo = _live_repo(tmp_path)
-    expected = metrics._PCM_UNLICENSED
+    expected = metrics._PREFERENCES_AUTHORITY
     state = runner.RunState()
     state.record_with_expected(
         5,
         "hmc_get_pcm_preferences",
         "FAIL",
-        observation.classify_failure(RuntimeError("HTTP 406")),
+        observation.classify_failure(RuntimeError("HTTP 403")),
         [expected],
     )
     destination = repo / "test-results-gaps-observations.json"
@@ -3175,10 +3534,9 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
         ("lpar._REST_MODIFY_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
         ("network._REST_CREATE_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
         (
-            "metrics._TEMPLATES_UNLICENSED",
-            "HMCError: partition templates are not available",
+            "metrics._PREFERENCES_AUTHORITY",
+            "HMCError: The connecting user does not have PCM authority (HTTP 403)",
         ),
-        ("metrics._PCM_UNLICENSED", "HMCError: PCM is not licensed"),
         (
             "provisioning._TEST_DISK_ABSENT",
             "HMCError: 0516-306 lvmo: Unable to find device",
@@ -3204,7 +3562,7 @@ def test_declared_outcomes_match_the_message_forms_the_hmc_really_renders(
 
 
 def test_a_declared_outcome_does_not_match_an_unrelated_failure():
-    assert not metrics._PCM_UNLICENSED.matches(
+    assert not metrics._PREFERENCES_AUTHORITY.matches(
         observation.classify_failure(RuntimeError("HMCError: HTTP 500 internal"))
     )
 
@@ -5211,13 +5569,14 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
     async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         calls.append((tool, kwargs))
         if tool == "hmc_get_pcm_preferences":
-            return "PASS", {"long_term_monitor": True}
+            return "PASS", {"LongTermMonitorEnabled": True}
         if tool == "hmc_processed_metric_links":
-            return "FAIL", _failure("PCM is not licensed")
+            return "FAIL", _failure("HMCError: no PCM authority (HTTP 403)")
         return "PASS", []
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
+    state.artifacts.system_uuid = "sys-uuid"
 
     await metrics.inspect_metrics_templates(None, state)
 
@@ -5231,8 +5590,7 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
         "category": "ManagedSystem",
         "resource_name_or_uuid": state.config.system_name,
     }
-    assert calls[1][1]["start_ts"] == "2026-01-01T00:00:00.000Z"
-    assert state.artifacts.lp3_baseline["pcm_prefs"] == {"long_term_monitor": True}
+    assert state.artifacts.lp3_baseline["pcm_prefs"] == {"LongTermMonitorEnabled": True}
     assert state.results[1]["status"] == "SKIP"
 
 
@@ -5289,42 +5647,6 @@ async def test_cli_escape_hatch_runs_both_bounded_commands_after_failure(monkeyp
         ("hmc_run_command", {"cmd": "lssyscfg -r sys"}),
     ]
     assert [result["status"] for result in state.results] == ["FAIL", "PASS"]
-
-
-@pytest.mark.asyncio
-async def test_metrics_jobs_restores_disabled_preference_and_forwards_job_options(
-    monkeypatch,
-):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_get_pcm_preferences":
-            return "PASS", {"long_term_monitor": False}
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.job_uuid_sample = "job-uuid"
-
-    await metrics.inspect_metrics_jobs(None, state)
-
-    assert [tool for tool, _ in calls] == [
-        "hmc_get_pcm_preferences",
-        "hmc_set_pcm_preferences",
-        "hmc_get_pcm_preferences",
-        "hmc_set_pcm_preferences",
-        "hmc_get_job",
-        "hmc_wait_for_job",
-    ]
-    set_calls = [kwargs for tool, kwargs in calls if tool == "hmc_set_pcm_preferences"]
-    assert [kwargs["long_term_monitor"] for kwargs in set_calls] == [True, False]
-    wait_call = next(kwargs for tool, kwargs in calls if tool == "hmc_wait_for_job")
-    assert wait_call == {
-        "job_id": "job-uuid",
-        "timeout_seconds": 10,
-        "poll_interval": 2,
-    }
 
 
 @pytest.mark.asyncio
@@ -6092,6 +6414,25 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "job-found",
             "job-identity-matches",
             "job-status-successful",
+        },
+        "st5-pcm-template-reads": {
+            "five-flags-boolean",
+            "links-name-system",
+            "document-names-system",
+            "samples-present",
+            "entries-are-template-summaries",
+            "template-identity-matches",
+            "read-succeeded",
+        },
+        "st38-pcm-preference-round-trip": {
+            "long-term-monitor-toggled",
+            "aggregation-toggled",
+            "short-term-monitor-toggled",
+            "compute-ltm-toggled",
+            "energy-monitor-toggled",
+            "long-term-monitor-held-by-aggregation",
+            "energy-monitor-held-by-aggregation",
+            "snapshot-restored",
         },
         "st4-profile-reads": {
             "description-is-text",

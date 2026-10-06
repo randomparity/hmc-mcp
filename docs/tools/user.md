@@ -8,8 +8,8 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_create_user` | `mutate` | `user.create` | `user` | `partial` | `failed` | `existing-runtime-guards` | Create a documented UOM UserProfile below a management console. |
+| `hmc_create_user` | `mutate` | `user.create` | `user` | `partial` | `stale (closure-changed)` | `existing-runtime-guards` | Create a documented UOM UserProfile below a management console. |
 | `hmc_delete_user` | `destructive` | `user.delete` | `user` | `implemented` | `unevidenced` | `existing-runtime-guards` | Permanently delete a UOM UserProfile identified by UUID. |
 | `hmc_get_user` | `read` | `user.get` | `user` | `implemented` | `unevidenced` | `existing-runtime-guards` | Get a UserProfile by its management-console and profile UUIDs. |
-| `hmc_list_users` | `read` | `user.list` | `console` | `implemented` | `current` | `existing-runtime-guards` | List UserProfile children of a management console. |
+| `hmc_list_users` | `read` | `user.list` | `console` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List UserProfile children of a management console. |
 | `hmc_modify_user` | `mutate` | `user.modify` | `user` | `partial` | `unevidenced` | `existing-runtime-guards` | Modify supplied fields of a UOM UserProfile identified by UUID. |

@@ -1777,6 +1777,269 @@
       "evidence": []
     },
     {
+      "operation": "pcm.get_preferences",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-get-pcm-preferences",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:02Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "five-flags-boolean"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "9f9eafaafdb2280c1b7b812120588d6e3cf1ee417db7f8fa9d5f72f9086c0d6c"
+        }
+      ]
+    },
+    {
+      "operation": "pcm.set_preferences",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "metrics.processed_links",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-processed-metric-links",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:14Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "links-name-system"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "9f9eafaafdb2280c1b7b812120588d6e3cf1ee417db7f8fa9d5f72f9086c0d6c"
+        }
+      ]
+    },
+    {
+      "operation": "metrics.processed",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-processed-metrics",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:21Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "document-names-system",
+            "samples-present"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "9f9eafaafdb2280c1b7b812120588d6e3cf1ee417db7f8fa9d5f72f9086c0d6c"
+        }
+      ]
+    },
+    {
+      "operation": "metrics.aggregated_links",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-aggregated-metric-links",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:26Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "links-name-system"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "9f9eafaafdb2280c1b7b812120588d6e3cf1ee417db7f8fa9d5f72f9086c0d6c"
+        }
+      ]
+    },
+    {
+      "operation": "metrics.aggregated",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-aggregated-metrics",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:32Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "document-names-system",
+            "samples-present"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "9f9eafaafdb2280c1b7b812120588d6e3cf1ee417db7f8fa9d5f72f9086c0d6c"
+        }
+      ]
+    },
+    {
+      "operation": "template.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "library",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-list-partition-templates",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:35Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "entries-are-template-summaries"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3b906175a69e5ebb130eedc0243d9d5baf3726c304cc6fbaf5dce7135e7bf9c5"
+        }
+      ]
+    },
+    {
+      "operation": "template.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-uuid",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st5-hmc-get-partition-template",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st5-pcm-template-reads",
+          "observed_at": "2026-10-06T17:15:39Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "template-identity-matches"
+          ],
+          "tested_commit": "cc1afe52253eb284d8c0a5fdd825126207583346",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3b906175a69e5ebb130eedc0243d9d5baf3726c304cc6fbaf5dce7135e7bf9c5"
+        }
+      ]
+    },
+    {
+      "operation": "template.deploy",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "draft-deploy",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
       "operation": "user.list",
       "implementation": {
         "state": "implemented",

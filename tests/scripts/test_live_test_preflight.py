@@ -284,6 +284,21 @@ def test_the_users_verdict_discloses_the_scratch_user(workspace, monkeypatch, ca
     assert "deleted by UUID" in output
 
 
+def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
+    workspace, monkeypatch, capsys
+):
+    """#634. PCM preferences are shared by every PCM consumer of the system."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "pcm", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "PCM collection preferences (system-wide)" in output
+    assert "all five restored to the pre-run read" in output
+
+
 def test_the_vios_backup_verdict_names_the_restore_and_its_cleanup(
     workspace, monkeypatch, capsys
 ):

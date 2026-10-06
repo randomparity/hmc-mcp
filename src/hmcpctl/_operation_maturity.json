@@ -220,6 +220,34 @@
       "observed_at": null
     },
     {
+      "operation": "metrics.aggregated",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:32Z"
+    },
+    {
+      "operation": "metrics.aggregated_links",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:26Z"
+    },
+    {
+      "operation": "metrics.processed",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:21Z"
+    },
+    {
+      "operation": "metrics.processed_links",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:14Z"
+    },
+    {
       "operation": "pcie.assign_dedicated_slot",
       "implementation": "implemented",
       "verification": "stale",
@@ -241,6 +269,20 @@
       "observed_at": "2026-10-06T13:04:04Z"
     },
     {
+      "operation": "pcm.get_preferences",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:02Z"
+    },
+    {
+      "operation": "pcm.set_preferences",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "remote_access.configure",
       "implementation": "implemented",
       "verification": "unevidenced",
@@ -250,8 +292,8 @@
     {
       "operation": "remote_access.get",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:32:20Z"
     },
     {
@@ -271,8 +313,8 @@
     {
       "operation": "resource_role.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:31:59Z"
     },
     {
@@ -334,9 +376,30 @@
     {
       "operation": "task_role.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:31:53Z"
+    },
+    {
+      "operation": "template.deploy",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "template.get",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:39Z"
+    },
+    {
+      "operation": "template.list",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:35Z"
     },
     {
       "operation": "update.console",
@@ -376,8 +439,8 @@
     {
       "operation": "user.create",
       "implementation": "partial",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:32:49Z"
     },
     {
@@ -397,8 +460,8 @@
     {
       "operation": "user.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:31:44Z"
     },
     {

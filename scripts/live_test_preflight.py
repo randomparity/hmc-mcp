@@ -230,6 +230,23 @@ def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the system-wide PCM preferences the pcm arm (#634) toggles and restores."""
+    return ArmVerdict(
+        "pcm",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                "PCM collection preferences (system-wide): each of the five flags "
+                "toggled, then all five restored to the pre-run read"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 def _users_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name the HMC user the users arm (#632) creates and deletes again."""
     return ArmVerdict(
@@ -251,6 +268,7 @@ _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
     "profiles": _profiles_verdict,
+    "pcm": _pcm_verdict,
     "vios-backup": _vios_backup_verdict,
     "users": _users_verdict,
 }
