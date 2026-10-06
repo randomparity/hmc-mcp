@@ -420,6 +420,19 @@ def _placements(listed: Listing) -> Adapters:
     }
 
 
+def _drift(baseline: Adapters, after: Adapters | None) -> str:
+    """What differs from the baseline, so a manual recovery names only the run's own."""
+    if after is None:
+        return "the adapters could not be read; compare by hand with the baseline"
+    fields = ", ".join(_PLACEMENT_FIELDS)
+    new = sorted(k for k in after if k not in baseline)
+    off = sorted(k for k in baseline if after.get(k) != baseline[k])
+    return (
+        f"remove only the new UUIDs {new}; restore each of {off} to its baseline "
+        f"placement ({fields}) {[baseline[k] for k in off]}"
+    )
+
+
 def _new(
     after: Listing | None, baseline: Adapters
 ) -> list[Mapping[str, object]] | None:
@@ -571,7 +584,8 @@ class _Arm:
             and row.get("adapter_type") == "server"
         )
 
-    async def mappings(self, boundary: _Boundary, label: str) -> str | None:
+    async def mappings(self, boundary: _Boundary, label: str) -> frozenset[str] | None:
+        """The partition's mappings on the VIOS, compared without their order."""
         result = await self.state.call(
             self.client,
             "hmc_list_storage_mappings",
@@ -582,7 +596,11 @@ class _Arm:
         data = self.data(
             f"{self.lpar} mappings, {label}", "hmc_list_storage_mappings", result
         )
-        return None if data is None else repr(data)
+        if not isinstance(data, list):
+            return None
+        return frozenset(
+            repr(sorted(m.items())) if isinstance(m, Mapping) else repr(m) for m in data
+        )
 
     async def fc_labels(self, boundary: _Boundary, label: str) -> dict[str, str] | None:
         result = await self.state.call(
@@ -825,7 +843,7 @@ class _Arm:
         unknown_refused = (
             refused == "FAIL" and after is not None and unchanged == _placements(after)
         )
-        deleted, restored = await self.remove_new_adapters(kind, baseline)
+        deleted, restored, drift = await self.remove_new_adapters(kind, baseline)
         cleanup = "passed" if restored else "failed"
         self.state.record_verified(
             SUBTASK,
@@ -856,14 +874,11 @@ class _Arm:
                 data=None,
             )
         if not restored:
-            self.manual(
-                f"a client network adapter on {self.lpar} remains",
-                f"remove the {kind} on VLAN {vlan} from partition {self.lpar}",
-            )
+            self.manual(f"{self.lpar}'s {kind} set is off its baseline", drift)
 
     async def remove_new_adapters(
         self, adapter_type: str, baseline: Adapters
-    ) -> tuple[bool | None, bool]:
+    ) -> tuple[bool | None, bool, str]:
         """Delete every adapter of `adapter_type` the run added; confirm by re-reading.
 
         A new UUID placed exactly where a vanished baseline adapter was is that
@@ -872,7 +887,7 @@ class _Arm:
         """
         current = await self.placements(adapter_type, "before delete")
         if current is None:
-            return False, False
+            return False, False, _drift(baseline, None)
         vanished = {baseline[k] for k in baseline if k not in current}
         accepted: bool | None = None
         for adapter_uuid in sorted(k for k in current if k not in baseline):
@@ -890,13 +905,13 @@ class _Arm:
             status = self.note("delete", "hmc_delete_adapter", result)
             accepted = accepted is not False and status == "PASS"
         after = await self.placements(adapter_type, "after delete")
-        return accepted, after == baseline
+        return accepted, after == baseline, _drift(baseline, after)
 
     # -- (b, c) vSCSI and vFC clients ----------------------------------------
 
     async def client_baseline(
         self, adapter_type: str, boundary: _Boundary
-    ) -> tuple[frozenset[tuple[str, ...]], Adapters, str, str] | None:
+    ) -> tuple[frozenset[tuple[str, ...]], Adapters, frozenset[str], str] | None:
         """The VIOS server side, the partition's clients, its mappings and the slot."""
         servers = await self.server_rows(adapter_type, boundary.vios_id, "baseline")
         clients = await self.placements(adapter_type, "baseline")
@@ -980,7 +995,7 @@ class _Arm:
         )
         added = await self.add_client("paired", adapter_type, boundary, slot)
         new = _new(await self.adapters(adapter_type, "after add"), clients)
-        _, restored = await self.remove_new_adapters(adapter_type, clients)
+        _, restored, drift = await self.remove_new_adapters(adapter_type, clients)
         servers_after = await self.server_rows(
             adapter_type, boundary.vios_id, "after delete"
         )
@@ -1016,11 +1031,7 @@ class _Arm:
                 data=None,
             )
         if not restored:
-            self.manual(
-                f"a {adapter_type} on {self.lpar} remains",
-                f"remove the {adapter_type} paired to {boundary.vios} slot {slot} "
-                f"from partition {self.lpar}",
-            )
+            self.manual(f"{self.lpar}'s {adapter_type} set is off its baseline", drift)
         if not vios_side:
             self.manual(
                 f"{boundary.vios}'s server adapters or {self.lpar}'s mappings changed",

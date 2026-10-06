@@ -101,6 +101,8 @@ class FakeHMC:
     mappings_change_on_add: bool = False
     reidentify_on_add: bool = False
     collision_updates_in_place: bool = False
+    collision_fails_but_applies: bool = False
+    unknown_delete_fails_but_applies: bool = False
     create_status: str = "PASS"
     create_takes_effect: bool = True
     duplicate_vlan_accepted: bool = False
@@ -186,6 +188,8 @@ class FakeHMC:
             for r in self.adapters[adapter_type].values()
         }
         if str(kwargs.get("slot_number")) in used and not self.collision_accepted:
+            if self.collision_fails_but_applies:
+                self.adapters[adapter_type][self._new_uuid()] = {partition: "1"}
             return "FAIL", "HSCL slot in use"
         if self.servers_change_on_add:
             self.scsi += "vios-A,1,99,server,any,any\n"
@@ -212,6 +216,8 @@ class FakeHMC:
     def _hmc_delete_adapter(self, kwargs):
         listed = self.adapters[kwargs["adapter_type"]]
         if kwargs["adapter_uuid"] not in listed:
+            if self.unknown_delete_fails_but_applies:
+                listed[self._new_uuid()] = {"PortVLANID": "9"}
             return "FAIL", "HTTP 404"
         if self.adapter_delete_fails:
             return "FAIL", "refused"
@@ -700,4 +706,50 @@ async def test_a_collision_that_repairs_the_existing_adapter_is_caught(monkeypat
     observation = _observation(state, "adapter.add_vscsi")
     assert "slot-collision-refused" not in observation["assertions"]
     assert observation["result"] == "failed"
-    assert _manual(state)
+    (text,) = _manual(state)
+    pre_existing = next(iter(PRE_EXISTING_ADAPTERS["VirtualSCSIClientAdapter"]))
+    # The pre-existing adapter is named only as one to restore, never to remove.
+    assert "remove only the new UUIDs []" in text
+    assert f"restore each of ['{pre_existing}']" in text
+
+
+@pytest.mark.asyncio
+async def test_a_refused_collision_that_still_applied_fails_its_assertion(monkeypatch):
+    hmc = FakeHMC(collision_fails_but_applies=True)
+
+    state = await _run(monkeypatch, hmc)
+
+    observation = _observation(state, "adapter.add_vscsi")
+    assert "slot-collision-refused" not in observation["assertions"]
+    assert hmc.adapters == _pre_existing()
+
+
+@pytest.mark.asyncio
+async def test_a_refused_unknown_delete_that_still_applied_fails_its_assertion(
+    monkeypatch,
+):
+    hmc = FakeHMC(unknown_delete_fails_but_applies=True)
+
+    state = await _run(monkeypatch, hmc)
+
+    observation = _observation(state, "adapter.delete")
+    assert "unknown-uuid-refused" not in observation["assertions"]
+    assert hmc.adapters == _pre_existing()
+
+
+@pytest.mark.asyncio
+async def test_mappings_are_compared_without_their_order(monkeypatch):
+    hmc = FakeHMC()
+    reads = iter(range(100))
+
+    def mappings(_kwargs):
+        rows = [{"id": "vhost0/vtd0"}, {"id": "vhost0/vtd1"}]
+        return "PASS", rows if next(reads) % 2 else list(reversed(rows))
+
+    hmc._hmc_list_storage_mappings = mappings  # type: ignore[method-assign]
+
+    state = await _run(monkeypatch, hmc)
+
+    assert (
+        "vios-side-unchanged" in _observation(state, "adapter.add_vscsi")["assertions"]
+    )
