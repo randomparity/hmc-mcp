@@ -590,24 +590,48 @@ async def _reapply_unconfigured(
 
     `rstprofdata -l 3` resets a not-activated partition's ``resource_config``
     from 1 to 0, even merging a backup taken moments earlier (#627, observed live).
+    A partition this cannot re-apply is a FAIL naming the command to run by hand.
+    A failed post-restore read cannot show which were unconfigured, so every
+    candidate gets that row.
     """
     config = state.config
+    system = shlex.quote(config.system_name)
     configured = {
         record["name"]: record.get("curr_profile", "")
         for record in _records(before)
         if record.get("resource_config") == "1"
         and record.get("state") == "Not Activated"
     }
-    for record in _records(after):
-        profile = configured.get(record.get("name", ""))
-        if profile and record.get("resource_config") == "0":
-            status, data = await state.call(
-                client,
-                "hmc_run_command",
-                cmd=f"chsyscfg -r lpar -m {shlex.quote(config.system_name)} -o apply "
-                f"-p {shlex.quote(record['name'])} -n {shlex.quote(profile)}",
-            )
-            state.record(10, "chsyscfg -o apply (re-apply after restore)", status, data)
+    unconfigured = [
+        record["name"]
+        for record in _records(after)
+        if record.get("name") in configured and record.get("resource_config") == "0"
+    ]
+    for name in configured if after is None else unconfigured:
+        profile = configured[name]
+        apply = (
+            f"chsyscfg -r lpar -m {system} -o apply -p {shlex.quote(name)} "
+            f"-n {shlex.quote(profile) if profile else '<profile>'}"
+        )
+        if after is None:
+            why = "the post-restore read failed, so its resource_config is unknown"
+        elif not profile:
+            why = "the restore left its resource_config at 0 and it has no curr_profile"
+        else:
+            status, data = await state.call(client, "hmc_run_command", cmd=apply)
+            if status == "PASS":
+                state.record(
+                    10, "chsyscfg -o apply (re-apply after restore)", status, data
+                )
+                continue
+            why = f"its re-apply after the restore failed: {data}"
+        state.record(
+            10,
+            "chsyscfg -o apply (re-apply after restore)",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: partition {name!r} — {why}. Confirm its "
+            f"resource_config and, if it is 0, run {apply}",
+        )
 
 
 async def _exercise_profile_backup_restore(client: Client, state: RunState) -> None:
@@ -628,16 +652,25 @@ async def _exercise_profile_backup_restore(client: Client, state: RunState) -> N
         force=True,
     )
     if status != "PASS":
+        reason = "the backup failed"
+    elif profiles_before is None or partitions_before is None:
+        reason = (
+            "a pre-restore lssyscfg read failed, so the restore could be neither "
+            "compared nor compensated"
+        )
+    else:
+        reason = ""
+    if reason:
         state.record_verified(
             10,
             "hmc_backup_lpar_profiles",
             operation="lpar_profile.backup",
             scenario="st10-profile-backup-restore",
-            assertions=[Assertion("backup-accepted", False)],
+            assertions=[Assertion("backup-accepted", status == "PASS")],
             cleanup="not-required",
             data=data,
         )
-        state.skip(10, "hmc_restore_lpar_profiles", "the backup failed; not restoring")
+        state.skip(10, "hmc_restore_lpar_profiles", f"{reason}; not restoring")
         return
     restore_status, restore_data = await state.call(
         client,
