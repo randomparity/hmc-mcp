@@ -1146,3 +1146,42 @@ async def test_a_powered_off_test_partition_reads_clean_in_either_spelling(state
     responses = _lpar_responses(hmc_get_lpar_state=state)
 
     assert await recovery.check_test_partition(_lpar_caller(responses), _ALL) == []
+
+
+# ---------------------------------------------------------------------------
+# An interrupted run is never confirmed clean (#1340)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("partial", [True, "yes", 1])
+@pytest.mark.parametrize("findings", [[], [_FINDING]])
+def test_a_partial_run_exits_two_whatever_it_found(
+    tmp_path, monkeypatch, capsys, partial, findings
+):
+    """The call in flight at the stop has no row, so its class was never checked."""
+    document = _lpar_document(range(16, 23), _VMEDIA_ROWS)
+    document["run"].update(partial=partial, finished="2026-10-01T00:00:00")
+
+    assert _main(tmp_path, monkeypatch, document, findings) == (2, True)
+    captured = capsys.readouterr()
+    assert captured.out.startswith("PARTIAL ")
+    assert "interrupted 2026-10-01T00:00:00" in captured.out
+    assert "CLEAN" not in captured.out
+    assert ("STRANDED" in captured.out) == bool(findings)
+    assert "NOT confirmed clean" in captured.err
+
+
+@pytest.mark.parametrize("partial", [False, None])
+def test_a_complete_or_older_run_is_judged_on_its_findings(
+    tmp_path, monkeypatch, capsys, partial
+):
+    """`None` stands for a document written before #1336, which has no key."""
+    document = _lpar_document(range(16, 23), _VMEDIA_ROWS)
+    if partial is not None:
+        document["run"]["partial"] = partial
+
+    assert _main(tmp_path, monkeypatch, document) == (0, True)
+    output = capsys.readouterr().out
+    assert output.startswith("recovery check for")
+    assert "PARTIAL" not in output
+    assert "CLEAN" in output

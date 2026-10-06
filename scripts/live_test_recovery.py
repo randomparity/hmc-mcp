@@ -17,7 +17,10 @@ WITNESSED, to be checked by hand (docs/live-testing.md, step 4).
 Exit 0 means every dispatched subtask was witnessed and nothing is stranded.
 Exit 1 means something is, and the output names it with the command that
 clears it. Exit 2 means some state could not be read, or the run dispatched a
-subtask this script does not witness, which is not the same as clean.
+subtask this script does not witness, which is not the same as clean. A run
+that an exception or interrupt stopped (`run.partial` present and not `false`)
+also exits 2 whatever the checks found, under a PARTIAL header: the call in
+flight at the stop has no row, so what it changed is never checked.
 
 **This never remediates.** It issues no mutating call: a remediator acting on
 a partial read strands exactly what the arm's cleanup guards exist to refuse.
@@ -779,6 +782,12 @@ async def _run_checks(
         return await check_run(_read_only_caller(client, state), pcie, partition)
 
 
+def _is_partial(document: dict[str, Any]) -> bool:
+    """Whether the run was interrupted; anything but an absent key or `false` is."""
+    run = document.get("run")
+    return isinstance(run, dict) and run.get("partial", False) is not False
+
+
 def _report(
     document: dict[str, Any],
     findings: list[Finding],
@@ -787,9 +796,12 @@ def _report(
 ) -> None:
     run = document.get("run") if isinstance(document.get("run"), dict) else {}
     artifacts = document.get("artifacts")
+    partial = _is_partial(document)
     print(
-        f"recovery check for the {run.get('group') or '(no group)'} run at "
-        f"{run.get('tested_commit') or '(no commit)'}, finished "
+        f"{'PARTIAL ' if partial else ''}recovery check for the "
+        f"{run.get('group') or '(no group)'} run at "
+        f"{run.get('tested_commit') or '(no commit)'}, "
+        f"{'interrupted' if partial else 'finished'} "
         f"{run.get('finished') or '(unknown)'}"
     )
     marker = artifacts.get("pcie_run_marker") if isinstance(artifacts, dict) else None
@@ -812,7 +824,12 @@ def _report(
             "\nThis script issues no mutating call. Run the commands above "
             "yourself, then re-run this check."
         )
-    elif not unwitnessed and not unread:
+    if partial:
+        print(
+            "PARTIAL  the run was interrupted: the call in flight has no row, so "
+            "check what its arm changes by hand (docs/live-testing.md)"
+        )
+    elif not findings and not unwitnessed and not unread:
         print("CLEAN  nothing this run dispatched was left behind")
 
 
@@ -864,7 +881,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     _report(document, findings, unwitnessed, unread)
-    if unread or unwitnessed:
+    if unread or unwitnessed or _is_partial(document):
         print("The system was NOT confirmed clean.", file=sys.stderr)
         return 2
     return 1 if findings else 0
