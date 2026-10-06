@@ -941,17 +941,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st10-profile-backup-restore",
-          "observed_at": "2026-10-06T01:05:43Z",
+          "observed_at": "2026-10-06T03:50:35Z",
           "cleanup": "not-required",
           "assertions": [
             "backup-accepted",
             "backup-file-restorable"
           ],
-          "tested_commit": "7b2d970bc81c5b7b1374821185cfdb6d24ff8723",
-          "hmc_release": "V10R3M1060",
+          "tested_commit": "23807978f7306fa7782913132835772124b240db",
+          "hmc_release": "V10R3",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "01ab28400ca640ad44e057a0e0fa985f9f3775abafb357078c78730b29f88add"
+          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
         }
       ]
     },
@@ -981,17 +981,17 @@
           "channel": "live",
           "result": "failed",
           "scenario": "st10-profile-backup-restore",
-          "observed_at": "2026-10-06T01:05:43Z",
+          "observed_at": "2026-10-06T03:50:35Z",
           "cleanup": "passed",
           "assertions": [
             "merge-current-wins-accepted",
             "profiles-unchanged-after-merge-current-wins"
           ],
-          "tested_commit": "7b2d970bc81c5b7b1374821185cfdb6d24ff8723",
-          "hmc_release": "V10R3M1060",
+          "tested_commit": "23807978f7306fa7782913132835772124b240db",
+          "hmc_release": "V10R3",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "01ab28400ca640ad44e057a0e0fa985f9f3775abafb357078c78730b29f88add"
+          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
         }
       ]
     },
@@ -1013,17 +1013,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st10-sync-round-trip",
-          "observed_at": "2026-10-06T01:04:08Z",
+          "observed_at": "2026-10-06T03:49:06Z",
           "cleanup": "passed",
           "assertions": [
             "sync-enable-read-1",
             "sync-restored-baseline"
           ],
-          "tested_commit": "7b2d970bc81c5b7b1374821185cfdb6d24ff8723",
-          "hmc_release": "V10R3M1060",
+          "tested_commit": "23807978f7306fa7782913132835772124b240db",
+          "hmc_release": "V10R3",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "01ab28400ca640ad44e057a0e0fa985f9f3775abafb357078c78730b29f88add"
+          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
         }
       ]
     },

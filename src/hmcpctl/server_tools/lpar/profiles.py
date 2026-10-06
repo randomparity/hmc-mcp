@@ -110,6 +110,12 @@ def hmc_restore_lpar_profiles(
     this explicit acknowledgement prevents an ordinary partition mutation workflow
     from invoking the system-wide restore accidentally.
 
+    WARNING: A restore_type=3 merge also resets ``resource_config`` from 1 to 0 on
+    every Not Activated partition. This was observed on a V10R3 HMC with a POWER9
+    system, even when merging a backup taken moments earlier. Restore each such
+    partition by re-applying its current profile (``curr_profile``) with
+    ``chsyscfg -r lpar -m <system> -o apply -p <lpar> -n <profile>``.
+
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         file_path: Path on the HMC filesystem where the backup file is located.
@@ -120,7 +126,8 @@ def hmc_restore_lpar_profiles(
             operator approval; emits an audit record covering every profile.
         restore_type: The HMC restore type, required with no default: 1 restores the
             backup file in full; 2 merges current and backup data, the backup winning
-            conflicts; 3 merges them, the current data winning conflicts. Type 4
+            conflicts; 3 merges them, the current data winning conflicts, and resets
+            ``resource_config`` on Not Activated partitions (see WARNING). Type 4
             (initialize, which deletes every partition) is not offered.
 
     Returns:

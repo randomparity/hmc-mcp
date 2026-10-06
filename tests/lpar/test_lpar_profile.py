@@ -315,6 +315,20 @@ def test_restore_tool_schema_requires_documented_restore_type():
     assert parameters["properties"]["restore_type"]["enum"] == [1, 2, 3]
 
 
+def test_restore_tool_description_warns_merge_unconfigures_partitions():
+    """MCP callers learn the type-3 resource_config reset and the re-apply command (#1322)."""
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    async def description():
+        async with Client(create_mcp(policy)) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            return tools["hmc_restore_lpar_profiles"].description
+
+    text = asyncio.run(description())
+    assert "resource_config" in text
+    assert "chsyscfg -r lpar -m <system> -o apply -p <lpar> -n <profile>" in text
+
+
 def test_restore_type_4_refusal_names_what_it_would_do():
     """A library caller passing 4 is told it initializes and deletes every partition."""
     run = AsyncMock()
