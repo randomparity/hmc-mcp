@@ -488,7 +488,7 @@ async def _exercise_proc_compat(client: Client, state: RunState) -> None:
 
 
 async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
-    """Enable profile sync on the not-activated partition, then restore ST0's value."""
+    """Set a sync value other than ST0's on the not-activated partition, then restore it."""
     config = state.config
     baseline = state.artifacts.lp3_baseline
     original = baseline.get("sync_curr_profile")
@@ -511,35 +511,48 @@ async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
             "profile and is a recorded live gap",
         )
         return
+    # A probe equal to the baseline reads back as a pass with nothing changed (#1323).
+    disabling = original == "1"
+    probe = "0" if disabling else "1"
     status, data = await state.call(
         client,
         "hmc_sync_lpar_profile",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
-        mode="enable",
+        mode=_SYNC_MODES[probe],
     )
-    enabled = await read_sync_state(client, state, 10)
-    restore_mode = _SYNC_MODES[original]
+    probed = await read_sync_state(client, state, 10)
+    if disabling and status != "PASS" and probed is not None and probed[0] == original:
+        # No live capture of `disable` exists: a refusal that left the baseline in
+        # place is an unproven mode, not a failed round trip, and needs no restore.
+        state.record(
+            10,
+            "hmc_sync_lpar_profile (round trip)",
+            "SKIP",
+            data,
+            "the disable probe was refused and sync_curr_profile still reads 1",
+        )
+        return
     restore_status, restore_data = await state.call(
         client,
         "hmc_sync_lpar_profile",
         system_name_or_uuid=config.system_name,
         lpar_name_or_uuid=config.lp3_name,
-        mode=restore_mode,
+        mode=_SYNC_MODES[original],
     )
     state.record(10, "hmc_sync_lpar_profile (restore)", restore_status, restore_data)
     final = await read_sync_state(client, state, 10)
     restored = final is not None and final[0] == original
+    probe_read = status == "PASS" and probed is not None and probed[0] == probe
     state.record_verified(
         10,
         "hmc_sync_lpar_profile",
         operation="lpar_profile.sync",
         scenario="st10-sync-round-trip",
         assertions=[
-            Assertion(
-                "sync-enable-read-1",
-                status == "PASS" and enabled is not None and enabled[0] == "1",
-            ),
+            Assertion("sync-disable-read-0", probe_read)
+            if disabling
+            else Assertion("sync-enable-read-1", probe_read),
             Assertion("sync-restored-baseline", restored),
         ],
         cleanup="passed" if restored else "failed",

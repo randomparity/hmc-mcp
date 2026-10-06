@@ -897,11 +897,14 @@ async def test_a_wrong_read_shape_fails_its_observation(
     assert _verified(state)[operation]["result"] == "failed"
 
 
-def _st10_answers(**overrides: object) -> dict[str, object]:
+def _st10_answers(
+    sync_reads: tuple[str, ...] = ("1,Not Activated", "0,Not Activated"),
+    **overrides: object,
+) -> dict[str, object]:
     """A not-activated test partition, one VIOS, and a default-mode profile."""
     msp = iter([True, False, True])
     profile_mode = iter(["default", "POWER9", "default"])
-    sync = iter(["1,Not Activated", "0,Not Activated"])
+    sync = iter(sync_reads)
 
     def run_command(kwargs):
         cmd = kwargs["cmd"]
@@ -1088,6 +1091,119 @@ async def test_sync_round_trip_skips_without_a_safe_baseline(
 
     assert _tool_calls(calls, "hmc_sync_lpar_profile") == []
     assert "lpar_profile.sync" not in _verified(state)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("original", "reads", "modes", "probe_assertion"),
+    [
+        (
+            "0",
+            ("1,Not Activated", "0,Not Activated"),
+            ["enable", "disable"],
+            "sync-enable-read-1",
+        ),
+        (
+            "1",
+            ("0,Not Activated", "1,Not Activated"),
+            ["disable", "enable"],
+            "sync-disable-read-0",
+        ),
+        (
+            "2",
+            ("1,Not Activated", "2,Not Activated"),
+            ["enable", "suspend"],
+            "sync-enable-read-1",
+        ),
+    ],
+)
+async def test_sync_round_trip_probes_a_value_other_than_the_baseline(
+    monkeypatch, original, reads, modes, probe_assertion
+) -> None:
+    """#1323: an `enable` probe over a baseline of 1 changes nothing and proves nothing."""
+    calls, scripted = _answer(_st10_answers(sync_reads=reads))
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline["sync_curr_profile"] = original
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_sync_lpar_profile")] == modes
+    observation = _verified(state)["lpar_profile.sync"]
+    assert observation["result"] == "passed"
+    assert observation["assertions"] == [probe_assertion, "sync-restored-baseline"]
+
+
+@pytest.mark.asyncio
+async def test_sync_probe_that_reads_back_the_baseline_fails(monkeypatch) -> None:
+    """An accepted probe with no state change behind it is never a passed observation."""
+    _calls, scripted = _answer(
+        _st10_answers(sync_reads=("1,Not Activated", "1,Not Activated"))
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline["sync_curr_profile"] = "1"
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observation = _verified(state)["lpar_profile.sync"]
+    assert observation["result"] == "failed"
+    assert observation["assertions"] == ["sync-restored-baseline"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_disable_probe_skips_without_an_observation(
+    monkeypatch,
+) -> None:
+    calls, scripted = _answer(
+        _st10_answers(
+            sync_reads=("1,Not Activated",),
+            hmc_sync_lpar_profile=("FAIL", "HSCL mode not supported"),
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline["sync_curr_profile"] = "1"
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_sync_lpar_profile")] == [
+        "disable"
+    ]
+    assert "lpar_profile.sync" not in _verified(state)
+    skip = next(
+        row for row in state.results if row["tool"].startswith("hmc_sync_lpar_profile")
+    )
+    assert skip["status"] == "SKIP"
+    assert "disable" in skip["note"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_disable_probe_that_changed_state_still_restores(
+    monkeypatch,
+) -> None:
+    """A refusal is a SKIP only while the read-back still shows the baseline."""
+    calls, scripted = _answer(
+        _st10_answers(
+            sync_reads=("0,Not Activated", "1,Not Activated"),
+            hmc_sync_lpar_profile=lambda kwargs: (
+                ("FAIL", "ssh lost") if kwargs["mode"] == "disable" else ("PASS", "")
+            ),
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline["sync_curr_profile"] = "1"
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_sync_lpar_profile")] == [
+        "disable",
+        "enable",
+    ]
+    observation = _verified(state)["lpar_profile.sync"]
+    assert observation["result"] == "failed"
+    assert observation["cleanup"] == "passed"
 
 
 @pytest.mark.asyncio
@@ -5891,7 +6007,11 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "profile-mode-changed",
             "profile-mode-restored",
         },
-        "st10-sync-round-trip": {"sync-enable-read-1", "sync-restored-baseline"},
+        "st10-sync-round-trip": {
+            "sync-enable-read-1",
+            "sync-disable-read-0",
+            "sync-restored-baseline",
+        },
         "st10-profile-backup-restore": {
             "backup-accepted",
             "backup-file-restorable",
