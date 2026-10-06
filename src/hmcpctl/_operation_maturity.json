@@ -68,37 +68,37 @@
     {
       "operation": "lpar.get_description",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:31Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:19Z"
     },
     {
       "operation": "lpar.get_memopt_score",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:50Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:41Z"
     },
     {
       "operation": "lpar.get_minimum_affinity_policy",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:43:08Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:08:58Z"
     },
     {
       "operation": "lpar.get_msp",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:33Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:21Z"
     },
     {
       "operation": "lpar.get_proc_compat",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:37Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:26Z"
     },
     {
       "operation": "lpar.get_state",
@@ -117,9 +117,9 @@
     {
       "operation": "lpar.list_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:57Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:48Z"
     },
     {
       "operation": "lpar.list_refcodes",
@@ -131,9 +131,9 @@
     {
       "operation": "lpar.plan_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:36:22Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:01:12Z"
     },
     {
       "operation": "lpar.power_off",
@@ -152,23 +152,23 @@
     {
       "operation": "lpar.set_description",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:37:23Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:02:21Z"
     },
     {
       "operation": "lpar.set_msp",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:37:54Z"
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-10-06T01:02:53Z"
     },
     {
       "operation": "lpar.set_proc_compat",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:38:33Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:03:33Z"
     },
     {
       "operation": "lpar.summary",
@@ -180,30 +180,30 @@
     {
       "operation": "lpar_profile.backup",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:40:39Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:05:43Z"
     },
     {
       "operation": "lpar_profile.restore",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:40:39Z"
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-10-06T01:05:43Z"
     },
     {
       "operation": "lpar_profile.sync",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:39:10Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:04:08Z"
     },
     {
       "operation": "memory_pool.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:39Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:27Z"
     },
     {
       "operation": "memory_pool.remove",
@@ -236,16 +236,16 @@
     {
       "operation": "resource_group.list_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:42:51Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:08:47Z"
     },
     {
       "operation": "resource_group.plan_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:43:03Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:08:54Z"
     },
     {
       "operation": "snapshot.assess_affinity",
@@ -271,16 +271,16 @@
     {
       "operation": "system.get_memopt_score",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:36:05Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:55Z"
     },
     {
       "operation": "system.get_proc_compat_modes",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:35:34Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:00:23Z"
     },
     {
       "operation": "system.list",
@@ -292,9 +292,9 @@
     {
       "operation": "system.plan_memopt_score",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-05T21:36:39Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T01:01:30Z"
     },
     {
       "operation": "system.summary",
