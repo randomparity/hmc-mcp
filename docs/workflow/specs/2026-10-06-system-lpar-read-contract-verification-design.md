@@ -91,7 +91,8 @@ because it issues those two feeds itself through `fetch_capacity_report`.
      system is in `systems` exactly when the `State` that `hmc_get_system` read is not
      `operating`) and `feed-served-directly`.
    - `hmc_plan_lpar` (`st1-lpar-plan`). It takes ST13's dry-run inputs: `config.dry_run_lpar_name`,
-     VLAN `config.provision_vlan_id`, a new disk `config.dry_run_storage_name` of
+     VLAN `config.provision_vlan_id`, a new disk named `hmcpctl-st1` (within the VIOS's 15-character
+     backing-device limit; ST13's storage name names an existing disk and has no such bound) of
      `config.provision_disk_mib`, and `config.system_name`. Assertions are
      `plan-targets-boundary-system` (a candidate's `targets.system.uuid` equals
      `artifacts.system_uuid`, ignoring case) and `plan-outcome-consistent` (`plan_digest` is

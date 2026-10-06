@@ -5566,7 +5566,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     assert calls[17][1] == {
         "name": "example-lt-609-dry-run",
         "adapters": {"port_vlan_id": 1},
-        "storage": {"storage_name": "example-lt-609-dry-disk", "capacity_mib": 10240},
+        "storage": {"storage_name": "hmcpctl-st1", "capacity_mib": 10240},
         "system_name_or_uuid": "example-lt-609-system",
     }
     assert state.artifacts.console_uuid == "console-uuid"

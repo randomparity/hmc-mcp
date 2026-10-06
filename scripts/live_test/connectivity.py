@@ -47,6 +47,10 @@ _FEED_PROBE = "hmc_list_resources (ManagedSystem feed probe)"
 # compares against the value the call actually used.
 _PLACEMENT_PROC_UNITS = 0.5
 _PROC_TOLERANCE = 1e-4
+# The plan names a new virtual disk it never creates. A fixed name keeps the request
+# within the VIOS's 15-character backing-device limit whatever the lab's ST13 storage
+# name is; that name is an existing disk's and carries no such bound.
+_PLAN_DISK_NAME = "hmcpctl-st1"
 
 # ---------------------------------------------------------------------------
 # ST1 — Connectivity & Inventory
@@ -644,7 +648,7 @@ async def _plan_lpar(client: Client, state: RunState) -> None:
         name=config.dry_run_lpar_name,
         adapters={"port_vlan_id": config.provision_vlan_id},
         storage={
-            "storage_name": config.dry_run_storage_name,
+            "storage_name": _PLAN_DISK_NAME,
             "capacity_mib": config.provision_disk_mib,
         },
         system_name_or_uuid=config.system_name,
