@@ -353,6 +353,35 @@ def test_newest_metric_link_returns_none_for_an_empty_feed():
 # ---------------------------------------------------------------------- #
 
 
+SUB_FEED_ONLY = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <updated>2026-10-06T16:49:10.351Z</updated>
+    <link href="/rest/api/pcm/ManagedSystem/a/LogicalPartition/b/AggregatedMetrics?StartTS=x"/>
+  </entry>
+</feed>
+"""
+
+
+def test_metrics_fetch_refuses_a_feed_with_no_document(monkeypatch, mock_hmc):
+    """Entries but no `.json` document is not an aged-out sample (#634)."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(
+        mock_hmc,
+        "ManagedSystem",
+        "00000000-0000-0000-0000-000000000001",
+        "AggregatedMetrics",
+        text=SUB_FEED_ONLY,
+    )
+
+    with pytest.raises(HMCError, match="none links a .json metrics document"):
+        hmc_aggregated_metrics(
+            "ManagedSystem",
+            "00000000-0000-0000-0000-000000000001",
+            "2026-08-07T11:00:00Z",
+        )
+
+
 def test_processed_metric_links(monkeypatch, mock_hmc):
     """hmc_processed_metric_links returns the parsed link list."""
     _hmc_env(monkeypatch)

@@ -246,6 +246,14 @@ async def fetch_metric_data(
         system_name_or_uuid=system_name_or_uuid,
     )
     metric_link = newest_metric_link(links)
+    if metric_link is None and links:
+        # A partition sub-feed entry is not a document (#634); an empty result
+        # here would read as an aged-out sample.
+        raise HMCError(
+            f"The {kind} metrics feed lists {len(links)} entries, but none links a "
+            ".json metrics document; report it as an hmcpctl defect, with the HMC "
+            "version."
+        )
     if metric_link is None:
         return {}
     try:
