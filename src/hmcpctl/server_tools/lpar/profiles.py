@@ -113,7 +113,7 @@ def hmc_restore_lpar_profiles(
     WARNING: A restore_type=3 merge also resets ``resource_config`` from 1 to 0 on
     every Not Activated partition. This was observed on a V10R3 HMC with a POWER9
     system, even when merging a backup taken moments earlier. Restore each such
-    partition by re-applying its profile with
+    partition by re-applying its current profile (``curr_profile``) with
     ``chsyscfg -r lpar -m <system> -o apply -p <lpar> -n <profile>``.
 
     Args:
