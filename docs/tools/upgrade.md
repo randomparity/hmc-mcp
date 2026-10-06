@@ -8,4 +8,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_vios_upgrade` | `destructive` | `upgrade.vios` | `vios` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Submit a VIOS version upgrade job. |
+| `hmc_vios_upgrade` | `destructive` | `upgrade.vios` | `vios` | `implemented` | `unevidenced` | `existing-runtime-guards` | Submit a VIOS version upgrade job. |
