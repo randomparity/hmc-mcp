@@ -231,8 +231,10 @@ async def _system_uuid(client: Client, state: RunState) -> str | None:
         client, "hmc_get_system", system_name_or_uuid=state.config.system_name
     )
     state.record(5, "hmc_get_system (ST5 system UUID)", st, data)
-    found = data.get("UUID") or data.get("uuid") if isinstance(data, dict) else None
-    if st == "PASS" and isinstance(found, str) and found:
+    if st != "PASS" or not isinstance(data, dict):
+        return None
+    found = data.get("UUID") or data.get("uuid")
+    if isinstance(found, str) and found:
         state.artifacts.system_uuid = found
         return found
     return None
