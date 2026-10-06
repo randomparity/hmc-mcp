@@ -19,8 +19,8 @@
     {
       "operation": "adapter.add_vscsi",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:20:39Z"
     },
     {
@@ -33,8 +33,8 @@
     {
       "operation": "adapter.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:18:02Z"
     },
     {
@@ -255,10 +255,38 @@
       "observed_at": null
     },
     {
+      "operation": "metrics.aggregated",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:32Z"
+    },
+    {
+      "operation": "metrics.aggregated_links",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:26Z"
+    },
+    {
+      "operation": "metrics.processed",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:21Z"
+    },
+    {
+      "operation": "metrics.processed_links",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:14Z"
+    },
+    {
       "operation": "network.create_network",
       "implementation": "implemented",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:18:48Z"
     },
     {
@@ -271,8 +299,8 @@
     {
       "operation": "network.list_bridges",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:17:24Z"
     },
     {
@@ -285,22 +313,22 @@
     {
       "operation": "network.list_networks",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:17:16Z"
     },
     {
       "operation": "network.list_sea",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:17:28Z"
     },
     {
       "operation": "network.list_switches",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:17:10Z"
     },
     {
@@ -323,6 +351,20 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:04:04Z"
+    },
+    {
+      "operation": "pcm.get_preferences",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:02Z"
+    },
+    {
+      "operation": "pcm.set_preferences",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "resource_group.list_memopt_scores",
@@ -393,6 +435,27 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T12:35:03Z"
+    },
+    {
+      "operation": "template.deploy",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "template.get",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:39Z"
+    },
+    {
+      "operation": "template.list",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T17:15:35Z"
     },
     {
       "operation": "update.console",
@@ -467,8 +530,8 @@
     {
       "operation": "vios_label.create_vfc_group",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:21:20Z"
     },
     {
@@ -495,8 +558,8 @@
     {
       "operation": "vios_label.remove_vfc_group",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:21:20Z"
     },
     {
@@ -509,8 +572,8 @@
     {
       "operation": "vios_label.update_vfc_group",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T19:21:20Z"
     }
   ]

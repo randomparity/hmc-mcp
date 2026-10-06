@@ -230,6 +230,23 @@ def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the system-wide PCM preferences the pcm arm (#634) toggles and restores."""
+    return ArmVerdict(
+        "pcm",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                "PCM collection preferences (system-wide): each of the five flags "
+                "toggled, then all five restored to the pre-run read"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name what the network arm (#629) changes, each reversed by the arm itself."""
     return ArmVerdict(
@@ -266,6 +283,7 @@ _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
     "profiles": _profiles_verdict,
+    "pcm": _pcm_verdict,
     "vios-backup": _vios_backup_verdict,
     "network": _network_verdict,
 }

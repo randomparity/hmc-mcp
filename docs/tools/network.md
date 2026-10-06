@@ -8,10 +8,10 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_create_virtual_network` | `mutate` | `network.create_network` | `managed_system` | `implemented` | `failed` | `existing-runtime-guards` | Create a Virtual Network (VLAN) on a managed system. |
+| `hmc_create_virtual_network` | `mutate` | `network.create_network` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Create a Virtual Network (VLAN) on a managed system. |
 | `hmc_delete_virtual_network` | `destructive` | `network.delete_network` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | Delete a Virtual Network from a managed system. |
 | `hmc_list_fc_ports` | `read` | `network.list_fc_ports` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI. |
-| `hmc_list_network_bridges` | `read` | `network.list_bridges` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List NetworkBridges (Shared Ethernet Adapters) on a managed system. |
-| `hmc_list_sea_adapters` | `read` | `network.list_sea` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI. |
-| `hmc_list_virtual_networks` | `read` | `network.list_networks` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List Virtual Networks (VLANs) on a managed system. |
-| `hmc_list_virtual_switches` | `read` | `network.list_switches` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List VirtualSwitches on a managed system (names, SwitchIDs, mode). |
+| `hmc_list_network_bridges` | `read` | `network.list_bridges` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List NetworkBridges (Shared Ethernet Adapters) on a managed system. |
+| `hmc_list_sea_adapters` | `read` | `network.list_sea` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI. |
+| `hmc_list_virtual_networks` | `read` | `network.list_networks` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List Virtual Networks (VLANs) on a managed system. |
+| `hmc_list_virtual_switches` | `read` | `network.list_switches` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List VirtualSwitches on a managed system (names, SwitchIDs, mode). |
