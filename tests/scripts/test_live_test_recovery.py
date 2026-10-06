@@ -17,6 +17,7 @@ import pytest
 SCRIPTS_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 import live_test_recovery as recovery  # noqa: E402
+from live_test import vmedia  # noqa: E402
 from live_test.observation import CallFailure  # noqa: E402
 
 _MARKER = "pcie-deadbeef"
@@ -625,6 +626,7 @@ _VIOS = "vios-uuid-1"
 _VIOS_ID = 2
 _VG = "vg-uuid-1"
 _ISO = "lt.iso"
+_BLANK = "hmcpctl_live_0a1b2c3d"
 _LISTING = (
     f"lshwres -r virtualio --rsubtype scsi -m {_TEST_SYSTEM} --level lpar "
     f"--filter lpar_ids={_VIOS_ID} -F slot_num,remote_lpar_name,remote_slot_num"
@@ -633,6 +635,15 @@ _LISTING = (
 
 def test_run_command_is_allowed_for_lshwres():
     recovery.guard_read_only("hmc_run_command", {"cmd": _LISTING})
+
+
+def test_the_vmedia_adapter_listings_pass_the_read_only_guard():
+    """ST19 reads both adapter listings through the command recovery admits."""
+    for attribute, value in (("lpar_ids", _VIOS_ID), ("lpar_names", _TEST_LPAR)):
+        recovery.guard_read_only(
+            "hmc_run_command",
+            {"cmd": vmedia.scsi_adapter_listing(_TEST_SYSTEM, attribute, value)},
+        )
 
 
 @pytest.mark.parametrize("character", list(";|&$`<>()") + ["\n"])
@@ -659,8 +670,12 @@ def test_every_mutating_vmedia_call_has_a_trigger():
     from hmcpctl.server import TOOL_SECURITY
 
     source = (SCRIPTS_ROOT / "live_test" / "vmedia.py").read_text(encoding="utf-8")
-    called = set(re.findall(r'state\.call\(\s*client,\s*"(hmc_\w+)"', source))
-    mutating = {tool for tool in called if TOOL_SECURITY[tool].effect != "read"}
+    # Every tool-name literal, not only `state.call(client, ...)`: ST19 calls
+    # through a helper that takes the name as its first argument.
+    named = set(re.findall(r'"(hmc_\w+)"', source)) & set(TOOL_SECURITY)
+    # The arm sends only `scsi_adapter_listing`'s lshwres through it, pinned below.
+    named.discard("hmc_run_command")
+    mutating = {tool for tool in named if TOOL_SECURITY[tool].effect != "read"}
 
     assert mutating
     assert mutating <= recovery._VMEDIA_MUTATIONS
@@ -715,12 +730,18 @@ def _inputs(document):
 
 def test_a_vmedia_document_makes_every_class_applicable():
     inputs = _inputs(
-        _lpar_document(range(16, 23), _VMEDIA_ROWS, vmedia_iso_name="uploaded.iso")
+        _lpar_document(
+            range(16, 23),
+            _VMEDIA_ROWS,
+            vmedia_iso_name="uploaded.iso",
+            vmedia_blank_name=_BLANK,
+        )
     )
 
     assert inputs.vmedia_ran and inputs.repository_owned and inputs.powered_on
     assert inputs.boot_written and inputs.boot_baseline == "/a /b"
-    assert inputs.iso_names == {_ISO, "uploaded.iso"}
+    # The configured ISO name is not the run's: an operator image may carry it.
+    assert inputs.iso_names == {"uploaded.iso", _BLANK}
     assert not inputs.provisioned
 
 
@@ -740,10 +761,23 @@ def test_a_teardown_only_run_reads_the_ownership_it_restored():
     assert not inputs.powered_on
 
 
-def test_an_upload_only_run_owns_the_repository_it_wrote_to():
-    inputs = _inputs(_lpar_document([18], [_row(18, "hmc_upload_iso (via HTTP)")]))
+def test_media_calls_do_not_make_the_repository_the_runs():
+    """The arm writes its own media into an operator's repository (#1347)."""
+    rows = [
+        _row(18, "hmc_upload_iso (http)"),
+        _row(19, "hmc_create_optical_media (blank)"),
+        _row(19, "hmc_delete_optical_media (blank)"),
+    ]
 
-    assert inputs.repository_owned
+    assert not _inputs(_lpar_document([18, 19], rows)).repository_owned
+
+
+def test_the_repository_group_falls_back_for_an_older_document():
+    newer = _inputs(_lpar_document([19], vmedia_vg_uuid="vg-uuid-2"))
+    older = _inputs(_lpar_document([19]))
+
+    assert newer.vg_uuid == "vg-uuid-2"
+    assert older.vg_uuid == _VG
 
 
 def test_a_skipped_power_on_was_never_made_and_a_failed_one_was():
@@ -804,6 +838,7 @@ _LPAR_CLEAN = {
     "hmc_run_command": f"5,{_TEST_LPAR},3\n6,other-lpar,3\n",
     "hmc_list_storage_mappings": [{"id": "vhost0/vtscsi0"}],
     "hmc_get_media_repository": None,
+    "hmc_list_optical_media": [{"name": "operator.iso", "size_mib": 1024}],
     "hmc_get_lpar_state": "not activated",
     "hmc_read_lpar_boot_order": {"pending_boot_string": "/a  /b"},
 }
@@ -830,7 +865,7 @@ def _lpar_caller(responses: dict, seen: list | None = None):
     return call
 
 
-_ALL = _inputs(_lpar_document(range(16, 23), _VMEDIA_ROWS))
+_ALL = _inputs(_lpar_document(range(16, 23), _VMEDIA_ROWS, vmedia_blank_name=_BLANK))
 
 
 @pytest.mark.asyncio
@@ -856,9 +891,14 @@ async def test_the_adapter_listing_is_the_1237_command_by_vios_id():
     ("overrides", "what", "remedy"),
     [
         (
-            {"hmc_list_optical_mappings": [_optical(_ISO)]},
+            {"hmc_list_optical_mappings": [_optical(_BLANK)]},
             "optical mapping left",
-            f"hmcpctl storage unmount-optical-media {_VIOS} {_TEST_LPAR} {_ISO}",
+            f"hmcpctl storage unmount-optical-media {_VIOS} {_TEST_LPAR} {_BLANK}",
+        ),
+        (
+            {"hmc_list_optical_media": [{"name": _BLANK, "size_mib": 1024}]},
+            "run media left",
+            f"hmcpctl storage delete-media {_VIOS} {_VG} {_BLANK}",
         ),
         (
             {"hmc_run_command": f"5,{_TEST_LPAR},3\n7,{_TEST_LPAR},4\n"},
@@ -926,6 +966,7 @@ async def test_a_class_whose_trigger_is_absent_makes_no_call():
         "hmc_run_command",
         "hmc_list_storage_mappings",
         "hmc_get_media_repository",
+        "hmc_list_optical_media",
         "hmc_get_lpar_state",
         "hmc_read_lpar_boot_order",
     ],
