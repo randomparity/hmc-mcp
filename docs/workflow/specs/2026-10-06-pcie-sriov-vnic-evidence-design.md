@@ -109,8 +109,11 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
    its Status. No decision text changes. Findings are tabled under *ADR reconciliation*.
 
 6. **Docs.** `docs/live-testing.md` (dedicated-arm section) names the read phase, its
-   scenario, and the snapshot the operator takes. Preflight's dedicated disclosure gains
-   the read phase as reads, with no new mutation.
+   scenario, and the snapshot the operator takes. Preflight is unchanged: its disclosure
+   lists mutations, and the read phase adds none.
+7. **Arm boundary.** The read phase runs only in the dedicated arm.
+   `capture_dedicated_baseline` takes `inventory=True` from the dedicated arm alone, and
+   the bare-cec arm reuses the baseline without it.
 
 ## ADR reconciliation
 

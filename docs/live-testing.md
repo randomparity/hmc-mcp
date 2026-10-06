@@ -119,6 +119,25 @@ A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent â€
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses â€”
 and that is the arm working.
 
+### The inventory reads
+
+Before it selects a slot, the dedicated arm reads the system's I/O and SR-IOV
+inventory and records each read as an observation, scenario
+`st29-pcie-inventory` (#630). It reads the slot listing twice (all slots, then
+the `eth` class), the SR-IOV adapters, and the physical and logical ports of the
+first adapter in SR-IOV mode. It also reads the vNICs of the first partition the
+system lists one for. Every read is read-only, and none of them decides what
+the arm selects or mutates. An empty listing records an `(empty)` row and no
+observation. No adapter in SR-IOV mode SKIPs the port reads. The bare-cec arm
+reuses the dedicated baseline without these reads.
+
+Before and after the run, save three read-only snapshots outside the
+repository: slot ownership (`lshwres -r io --rsubtype slot -m <system> -F
+drc_index,lpar_name`), the partition list (`lssyscfg -r lpar -m <system> -F
+name,state`), and the SR-IOV adapters and logical ports (`lshwres -r sriov
+--rsubtype adapter -m <system>` and `lshwres -r sriov --rsubtype logport -m
+<system> --level eth`). After the recovery check, all three must match.
+
 ### The io_slots scenario
 
 After its reassign, the dedicated arm answers the #912 profile grammar
@@ -363,7 +382,7 @@ Last, it unassigns the slot and deletes the partition.
 
 The SR-IOV and dedicated arms record their verified steps through the same
 observation path as the bare-cec arm. Scenarios are `st23-sriov-logical-port`,
-`st29-dedicated-pcie` and `st36-io-slots`. A run from a clean committed tree,
+`st29-dedicated-pcie`, `st29-pcie-inventory` and `st36-io-slots`. A run from a clean committed tree,
 with both `LIVE_TEST_ENV_*` keys set, writes them to
 `test-results-<arm>-observations.json`. Promote them by hand
 (`docs/capabilities/README.md`, "Recording an observation").
