@@ -1416,25 +1416,7 @@ async def _record_io_slots(
     eth_expected = {
         row.get("drc_index") for row in rows if row.get("pci_class") == _ETH_PCI_CLASS
     }
-    assertions = [
-        Assertion(
-            "slot-rows-identified",
-            bool(rows) and all(isinstance(r.get("drc_index"), str) for r in rows),
-        ),
-        Assertion(
-            "matches-dedicated-inventory",
-            listed == {item.get("drc_index") for item in dedicated_items},
-        ),
-    ]
-    if eth_expected:
-        assertions.append(
-            Assertion(
-                "class-filter-exact",
-                {row.get("drc_index") for row in eth} == eth_expected
-                and len(eth) == len(eth_expected),
-            )
-        )
-    else:
+    if not eth_expected:
         state.skip(
             29,
             "hmc_list_io_slots (eth)",
@@ -1446,7 +1428,28 @@ async def _record_io_slots(
         "hmc_list_io_slots",
         operation="io_slot.list",
         scenario=_INVENTORY_SCENARIO,
-        assertions=assertions,
+        assertions=[
+            Assertion(
+                "slot-rows-identified",
+                bool(rows) and all(isinstance(r.get("drc_index"), str) for r in rows),
+            ),
+            Assertion(
+                "matches-dedicated-inventory",
+                listed == {item.get("drc_index") for item in dedicated_items},
+            ),
+            # Without an Ethernet-class slot the filter has nothing to compare.
+            *(
+                [
+                    Assertion(
+                        "class-filter-exact",
+                        {row.get("drc_index") for row in eth} == eth_expected
+                        and len(eth) == len(eth_expected),
+                    )
+                ]
+                if eth_expected
+                else []
+            ),
+        ],
         cleanup="not-required",
         data=f"{len(rows)} slot(s)",
     )
@@ -1482,39 +1485,48 @@ async def _record_sriov_adapters(
         ),
         None,
     )
-    # A dedicated-mode adapter has no adapter ID: the HMC lists it as `null` (#1202).
-    assertions = [
-        Assertion("capability-available", True),
-        Assertion(
-            "adapter-rows-parsed",
-            all(
-                item.get("mode") in {"sriov", "dedicated"}
-                and (item.get("mode") != "dedicated" or item.get("adapter_id") is None)
-                for item in items
-            ),
-        ),
-    ]
+    selected = None
     if adapter_id is not None:
         st_one, one = await state.call(
             client,
             "hmc_list_sriov_adapters",
             system_name_or_uuid=arm.system_name,
-            adapter_id=adapter_id,
+            adapter_id=str(adapter_id),
         )
         selected = _listed_items(one) if st_one == "PASS" else None
-        assertions.append(
-            Assertion(
-                "adapter-filter-selects-one",
-                selected is not None
-                and [item.get("adapter_id") for item in selected] == [adapter_id],
-            )
-        )
     state.record_verified(
         29,
         "hmc_list_sriov_adapters",
         operation="pcie.list_sriov_adapters",
         scenario=_INVENTORY_SCENARIO,
-        assertions=assertions,
+        assertions=[
+            Assertion("capability-available", True),
+            # A dedicated-mode adapter has no ID: the HMC lists it as `null` (#1202).
+            Assertion(
+                "adapter-rows-parsed",
+                all(
+                    item.get("mode") in {"sriov", "dedicated"}
+                    and (
+                        item.get("mode") != "dedicated"
+                        or item.get("adapter_id") is None
+                    )
+                    for item in items
+                ),
+            ),
+            # Without an SR-IOV-mode adapter there is no ID to filter by.
+            *(
+                [
+                    Assertion(
+                        "adapter-filter-selects-one",
+                        selected is not None
+                        and [item.get("adapter_id") for item in selected]
+                        == [adapter_id],
+                    )
+                ]
+                if adapter_id is not None
+                else []
+            ),
+        ],
         cleanup="not-required",
         data=f"{len(items)} adapter(s); selected adapter_id={adapter_id!r}",
     )
@@ -1529,7 +1541,7 @@ async def _record_sriov_physical_ports(
         client,
         "hmc_list_sriov_physical_ports",
         system_name_or_uuid=arm.system_name,
-        adapter_id=adapter_id,
+        adapter_id=str(adapter_id),
     )
     items = _listed_items(data) if st == "PASS" else None
     if items is None:
@@ -1592,7 +1604,7 @@ async def _record_sriov_logical_ports(
         client,
         "hmc_list_sriov_logical_ports",
         system_name_or_uuid=arm.system_name,
-        adapter_id=adapter_id,
+        adapter_id=str(adapter_id),
     )
     items = _listed_items(data) if st == "PASS" else None
     if items is None:
@@ -1706,10 +1718,12 @@ async def _record_vnics(client: Client, state: RunState, arm: _DedicatedConfig) 
 
 
 async def capture_dedicated_baseline(
-    client: Client, state: RunState
+    client: Client, state: RunState, *, inventory: bool = False
 ) -> _DedicatedFixture | None:
     """Resolve configuration and select an unassigned dedicated slot.
 
+    With *inventory*, the dedicated arm's own call, the read-only inventory
+    phase (#630) runs too; the bare-cec arm reuses this baseline without it.
     Returns the fixture to create, or None when the arm must be skipped.
     """
     print("\n=== ST29: Dedicated PCIe Baseline (issue #217) ===")
@@ -1738,7 +1752,8 @@ async def capture_dedicated_baseline(
         system_name_or_uuid=arm.system_name,
     )
     state.record(29, "hmc_list_dedicated_pcie_slots (baseline)", st, data)
-    record_dedicated_listing(state, st, data)
+    if inventory:
+        record_dedicated_listing(state, st, data)
     if st != "PASS" or not isinstance(data, dict):
         state.skip(
             29,
@@ -1746,7 +1761,8 @@ async def capture_dedicated_baseline(
             "dedicated-slot inventory failed — SKIP dedicated arm",
         )
         return None
-    await record_inventory_reads(client, state, arm, data)
+    if inventory:
+        await record_inventory_reads(client, state, arm, data)
     # No `capability == "capability-unavailable"` branch: `list_dedicated_slots`
     # returns the literal "available" unconditionally, so such a branch could
     # never execute and would advertise a SKIP path that does not exist. A
@@ -2683,7 +2699,7 @@ async def exercise_dedicated_pcie_assignment(client: Client, state: RunState) ->
     print("=== Dedicated PCIe Live Test (issue #217) ===")
     print("============================")
 
-    fixture = await capture_dedicated_baseline(client, state)
+    fixture = await capture_dedicated_baseline(client, state, inventory=True)
     if fixture is None:
         print("  Dedicated baseline SKIP — halting dedicated arm")
         return
