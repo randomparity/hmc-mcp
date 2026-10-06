@@ -1542,6 +1542,53 @@ async def test_st15_leaves_a_baseline_mode_the_tool_cannot_write(monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_a_synchronized_profile_skips_the_proc_compat_round_trip(
+    monkeypatch,
+) -> None:
+    """#1333: the HMC refuses a profile change while sync_curr_profile is 1."""
+    calls, scripted = _answer(
+        _st10_answers(sync_reads=("0,Not Activated", "1,Not Activated"))
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline["sync_curr_profile"] = "1"
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    observations = _verified(state)
+    assert "lpar.set_proc_compat" not in observations
+    assert observations["lpar_profile.sync"]["result"] == "passed"
+    skip = next(
+        r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (round trip)"
+    )
+    assert skip["status"] == "SKIP"
+    assert "sync_curr_profile" in skip["note"]
+
+
+@pytest.mark.asyncio
+async def test_st15_leaves_the_mode_of_a_synchronized_profile(monkeypatch) -> None:
+    """#1333: ST10 never changes a synchronized profile, and the HMC refuses the write."""
+    calls, scripted = _answer({})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.artifacts.lp3_baseline.update(
+        description="baseline",
+        sync_curr_profile="1",
+        proc_compat={"profile": "default_profile", "profile_mode": "default"},
+    )
+
+    await runner.restore_lpar_baseline(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (restore)"
+    )
+    assert row["status"] == "SKIP"
+    assert "sync_curr_profile" in row["note"]
+
+
+@pytest.mark.asyncio
 async def test_st15_without_a_baseline_profile_mode_asks_for_a_manual_restore(
     monkeypatch,
 ) -> None:
