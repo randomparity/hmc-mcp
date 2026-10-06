@@ -242,7 +242,7 @@ class FakeHMC:
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [
             {
-                "link": "/rest/api/pcm/ManagedSystem/xxx/ProcessedMetrics/1",
+                "link": "/rest/api/pcm/ProcessedMetrics/ManagedSystem_xxx_a_b_30.json",
                 "title": "m1",
             }
         ]

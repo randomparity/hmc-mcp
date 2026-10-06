@@ -260,6 +260,31 @@ def test_newest_metric_link_unparseable_stamp_sorts_oldest():
     assert newest_metric_link(links)["link"] == "/real.json"
 
 
+def test_newest_metric_link_skips_a_newer_sub_feed_entry():
+    """A ManagedSystem feed also lists its partitions' feeds, stamped newest (#634).
+
+    Captured on a V10R3 HMC: the aggregated feed's third entry links to
+    `.../LogicalPartition/<uuid>/AggregatedMetrics?StartTS=...`, an Atom feed,
+    with a later `updated` than either JSON document.
+    """
+    links = [
+        {
+            "link": "https://hmc.test/rest/api/pcm/AggregatedMetrics/ManagedSystem_a_b_c_300.json",
+            "updated": "2026-10-06T16:44:30.000Z",
+            "title": "",
+        },
+        {
+            "link": "https://hmc.test/rest/api/pcm/ManagedSystem/a/LogicalPartition/b"
+            "/AggregatedMetrics?StartTS=2026-10-06T14%3A49%3A26Z",
+            "updated": "2026-10-06T16:49:10.351Z",
+            "title": "",
+        },
+    ]
+
+    assert newest_metric_link(links)["link"].endswith("_300.json")
+    assert newest_metric_link(links[1:]) is None
+
+
 def test_newest_metric_link_returns_none_for_an_empty_feed():
     """An empty metric feed has no link to select."""
     assert newest_metric_link([]) is None
@@ -301,15 +326,18 @@ def test_processed_metrics_mode_fetch_fetches_latest(monkeypatch, mock_hmc):
         "00000000-0000-0000-0000-000000000001",
         "ProcessedMetrics",
     )
-    mock_hmc.get("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json").mock(
-        return_value=httpx.Response(200, json=METRICS_JSON)
-    )
+    document = mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
 
     result = hmc_processed_metrics(
         "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
     )
 
     assert result == METRICS_JSON
+    # V10R3 answers `application/json` with 406 and serves the document, typed
+    # `application/vnd.ibm.powervm.pcm.json`, for `*/*` (#634).
+    assert document.calls[0].request.headers["accept"] == "*/*"
 
 
 def test_processed_metrics_default_mode_is_fetch(monkeypatch, mock_hmc):

@@ -43,6 +43,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   HMC. The metric feed request sent the generic UOM `Accept`, which the HMC refuses on PCM
   feeds as it does on the preferences endpoint (#1202); it now sends `Accept: */*` and no
   `X-HMC-Schema-Version`. The long-term-monitor feed shares that request (#634).
+- `hmc_processed_metrics`, `hmc_aggregated_metrics` and `hmcpctl metrics show --fetch` now
+  return the metrics document on a V10R3 HMC. The document request sent
+  `Accept: application/json`, which the HMC answers with HTTP 406; it now sends `*/*` and
+  receives `application/vnd.ibm.powervm.pcm.json`. The newest-document choice also skips the
+  partition sub-feed entries a managed system's feed lists, which carry a newer stamp than any
+  document and returned an Atom feed instead of JSON (#634).
 - `hmc_sync_lpar_profile` no longer claims to save the running configuration over the current
   profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
   live capture confirmed. The tool and `synchronize_lpar_profile` now take

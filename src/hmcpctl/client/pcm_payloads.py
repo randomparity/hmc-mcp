@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, TypedDict, Unpack
+from urllib.parse import urlsplit
 
 from defusedxml import ElementTree as ET
 
@@ -120,12 +121,15 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
 
 
 def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str] | None:
-    """Return the newest link, or ``None`` when the feed contains no links.
+    """Return the newest JSON document link, or ``None`` when the feed has none.
 
     The PCM feed does not guarantee entries are ordered by age, so picking the
     last row (``links[-1]``) could select a stale document. Compare each
     entry's ISO-8601 ``updated`` stamp instead; stamps that fail to parse sort
     as the earliest UTC instant so a real (even old) timestamp always wins.
+
+    A managed system's feed also lists each partition's metric feed, stamped
+    newer than the documents (V10R3, #634); only ``.json`` documents qualify.
     """
 
     def _key(link: dict[str, str]) -> datetime:
@@ -138,4 +142,7 @@ def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str] | None:
             dt = dt.replace(tzinfo=UTC)
         return dt
 
-    return max(links, key=_key, default=None)
+    documents = [
+        link for link in links if urlsplit(link.get("link", "")).path.endswith(".json")
+    ]
+    return max(documents, key=_key, default=None)
