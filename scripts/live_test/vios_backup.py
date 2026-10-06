@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import Client
 
 from hmcpctl.config import HMCConfig
+from hmcpctl.ssh.commands import build_filter
 
 from .observation import Assertion
 from .results import entries
@@ -276,7 +277,8 @@ class _Arm:
             "VIOS console adapter",
             f"lshwres -r virtualio --rsubtype serial --level lpar "
             f"-m {shlex.quote(self.system)} "
-            f"--filter {shlex.quote(f'lpar_names={name}')} -F adapter_type,supports_hmc",
+            f"--filter {shlex.quote(build_filter([('lpar_names', name)]))} "
+            "-F adapter_type,supports_hmc",
         )
         if serial is None or "server,1" not in serial.split():
             return self.refuse(f"{name} has no HMC console (virtual serial) adapter")
@@ -287,7 +289,8 @@ class _Arm:
         state = await self.run(
             f"VIOS RMC state, {label}",
             f"lssyscfg -r lpar -m {shlex.quote(self.system)} "
-            f"--filter {shlex.quote(f'lpar_names={target.vios}')} -F rmc_state",
+            f"--filter {shlex.quote(build_filter([('lpar_names', target.vios)]))} "
+            "-F rmc_state",
         )
         return state is not None and state.strip() == "active"
 
@@ -299,7 +302,8 @@ class _Arm:
     async def raw_listing(self, target: Target, label: str) -> str | None:
         return await self.run(
             f"lsviosbk raw, {label}",
-            f'lsviosbk -F --header --filter "vios_uuids={target.vios_uuid}"',
+            "lsviosbk -F --header --filter "
+            f"{shlex.quote(build_filter([('vios_uuids', target.vios_uuid)]))}",
         )
 
     async def listed(self, target: Target, label: str) -> tuple[str, Any]:
