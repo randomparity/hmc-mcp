@@ -31,7 +31,9 @@ as the last-seen `NOT_STARTED` entry after the timeout. Which reading holds need
 rejected submission; it is a gap below, not a confirmed defect.
 
 No defect is confirmed in the five job contracts, so `src/` is unchanged. The unmodelled
-`PartitionMigration` step is new PlatformUpdate scope, owned by #680.
+`PartitionMigration` step appears in no parameter table, only in samples (`:242`, `:450`);
+it is new PlatformUpdate scope, tracked by #680 through the PlatformUpdate row's disposition
+in `rows.json`.
 
 ## Changes
 
