@@ -72,8 +72,10 @@ def pcm_preferences_update(
     Atom feed) and rewrites only the named flags' text.
 
     Raises:
-        ValueError: If a flag name is unsupported, or the read carries no
-            preferences element or not exactly one element for a named flag.
+        ValueError: If a flag name is unsupported, the read carries no
+            preferences element or not exactly one element for a named flag,
+            or the element is not well-formed outside the read (a namespace
+            declared on the enclosing feed).
         ET.ParseError: If *document_xml* is malformed.
     """
     reject_unsupported_preference_fields(flags.keys())
@@ -92,6 +94,12 @@ def pcm_preferences_update(
             raise ValueError(
                 f"the PCM preferences read carries {count} {name} elements, not one"
             )
+    try:
+        ET.fromstring(element)
+    except ET.ParseError as exc:
+        raise ValueError(
+            f"the PCM preferences element is not well-formed on its own: {exc}"
+        ) from exc
     return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n{element}\n'
 
 

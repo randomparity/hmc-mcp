@@ -197,6 +197,38 @@ def test_pcm_preferences_update_rejects_unsupported_fields_in_sorted_order():
         )
 
 
+def test_pcm_preferences_update_refuses_a_slice_that_loses_its_namespace():
+    """A prefix declared on the feed, not the element, would post unbound XML."""
+    read = (
+        '<feed xmlns:p="urn:p"><p:ManagedSystemPcmPreference>'
+        "<LongTermMonitorEnabled>false</LongTermMonitorEnabled>"
+        "</p:ManagedSystemPcmPreference></feed>"
+    )
+    with pytest.raises(ValueError, match="not well-formed on its own"):
+        pcm_preferences_update(read, LongTermMonitorEnabled=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("read", [httpx.Response(204), httpx.Response(200, text="<x>")])
+async def test_set_pcm_preferences_unusable_read_posts_nothing(mock_hmc, read):
+    """An empty or malformed read is an HMCError naming the GET; nothing is posted."""
+    path = (
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
+    )
+    mock_hmc.get(path).mock(return_value=read)
+    post_route = mock_hmc.post(path).mock(return_value=httpx.Response(200))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match=r"GET .*preferences.*nothing was changed"):
+            await hmc.set_pcm_preferences(
+                "ManagedSystem",
+                "00000000-0000-0000-0000-000000000001",
+                LongTermMonitorEnabled=True,
+            )
+
+    assert not post_route.called
+
+
 def test_pcm_preferences_update_refuses_a_read_without_the_flag():
     read = "<ManagedSystemPcmPreference xmlns='urn:x'><SystemName>s</SystemName>"
     read += "</ManagedSystemPcmPreference>"

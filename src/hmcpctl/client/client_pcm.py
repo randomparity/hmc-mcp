@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import Any, Unpack
 from urllib.parse import urlencode
 
+from defusedxml import ElementTree as ET
+
 from ..errors import HMCError
 from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
@@ -50,7 +52,13 @@ class PcmMixin:
 
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
         current, _ = await self.raw_get(path)
-        xml = pcm_preferences_update(current, **flags)
+        try:
+            xml = pcm_preferences_update(current, **flags)
+        except (ET.ParseError, ValueError) as exc:
+            raise HMCError(
+                f"GET {path} returned a preferences document hmcpctl cannot "
+                f"update ({str(exc)[:300]}); nothing was changed"
+            ) from exc
         resp_xml = await self._post_pcm(path, xml)
         return _pcm_preferences(resp_xml, path) if resp_xml else {}
 
