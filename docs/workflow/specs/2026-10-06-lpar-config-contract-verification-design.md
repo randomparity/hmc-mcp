@@ -124,7 +124,7 @@ in `client/` or `documents/` is reported to the orchestrator before any edit.
 
 | Case | Prerequisite | State |
 |---|---|---|
-| DLPAR on an activated partition | a partition with an OS and an active RMC connection, if the live answer is a refusal | filled from the live answer; not promoted |
+| DLPAR on an activated partition | a partition running an operating system with an active RMC connection | refused live at SMS (2026-10-06, V10R3): `REST0126` carrying `HSCL7016` (the partition must be running), plus `HSCL295A` for processors; not promoted |
 | `lpar.set_minimum_affinity_policy` | a writable POWER11 system (the POWER11 HMC is read-only) | not run |
 | `system.modify` | an operator window for a system-wide setting change | not run |
 | `lpar.modify` assignments and their rows | the delegate operations' slice (#630) | not run here |
