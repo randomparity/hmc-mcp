@@ -24,7 +24,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   remote access disabled and deletes it by UUID in the same run; preflight names it, and
   `scripts/live_test_recovery.py` reports any `hmcpctl-live-` user left behind.
   `LIVE_TEST_TEST_USER_NAME` is retired: a `.env` that still sets it loads with a notice, and the
-  line can be deleted (#632).
+  line can be deleted (#632). Live on V10R3 the HMC refused `hmc_create_user` (REST0001: a `kb`
+  marking must be `COR`), so creation, and the get, modify and delete that follow it, remain
+  unverified; the user, role and remote-access reads are verified.
 - `HMCClient` no longer raises a logoff transport failure (`HMCTransportError`) when its
   `async with` body completed: it logs a warning naming the HMC host and noting that the HMC
   session may persist until the HMC times it out, so a completed tool call is no longer reported

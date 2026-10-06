@@ -99,6 +99,7 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
 | LDAP/Kerberos `authentication_type`, `remote_user_id` | a directory server | not run |
 | password change, policy, MFA | #674, #673 | not run |
 | a user with resource roles | a custom resource role (#672) | not run |
+| `user.get`, `user.modify`, `user.delete` live | a create body the HMC accepts: V10R3 refused it with REST0001, "Value 'CUR' is not facet-valid with respect to enumeration '[COR]'" (the listing marks `UserID` `kb="COR"`) | not reached; follow-up |
 | `verify_session_timeout` as documented minutes | the tool types it `bool` and sends `true`/`false`; the integer fix changes the shared request models outside this surface | catalogued `partial`, missing `verify-session-timeout-minutes` |
 
 ## Success

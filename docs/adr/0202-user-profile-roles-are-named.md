@@ -36,7 +36,12 @@ the HMC lists. Effects, target kinds and authorization are unchanged.
 The live users arm (issue #632) checks the decision by creating a user with the viewer task
 role and reading the association back. Its first run (V10R3 M1060, 2026-10-06) read every
 role association as a name and every `AuthenticationType` as lower case, and the HMC refused the
-create body, which then carried `Local`, with `REST0001 Failed to unmarshal input payload`. If the HMC refuses the documented shape, that run's
+create body, which then carried `Local`, with `REST0001 Failed to unmarshal input payload`.
+A second run with the lower-case value was refused with the same code and the schema message
+"Value 'CUR' is not facet-valid with respect to enumeration '[COR]'": an element the builder
+marks `kb="CUR"` must be `COR`, as the HMC's own listing marks `UserID`. Neither refusal
+concerns the role elements, so this decision stands; the create body's `kb` markings are the
+open defect (#632 follow-up), and `user.create` carries the failed observation. If the HMC refuses the documented shape, that run's
 observation is `failed` and this record is superseded by one that cites the capture.
 
 ## Consequences
