@@ -94,6 +94,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | vios-backup | `uv run --no-sync python scripts/live_vios_backup.py` | subtask 37 |
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
+| lpar-config | `uv run --no-sync python scripts/live_lpar_config.py` | subtask 39 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -104,8 +105,8 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 38, while the ids you
-can dispatch are 0 to 25, 37 and 38.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids go up to 39, while the ids you
+can dispatch are 0 to 25 and 37 to 39.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
@@ -113,7 +114,8 @@ bare-cec arm, which records its own steps as row 35. It reuses the dedicated
 arm's baseline, fixture-create and cleanup steps, so rows 29, 30 and 34 appear
 in a bare-cec run too, with their dedicated-arm wording. Subtask 37 is the
 vios-backup arm, and its rows carry its own id. Subtask 38 is the
-pcm arm's, and it SKIPs in any other selection.
+pcm arm's, and it SKIPs in any other selection. Subtask 39 is the lpar-config
+arm's, and it SKIPs in any other selection too.
 
 A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent —
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses —
@@ -397,6 +399,46 @@ Do not run the arm again until a fresh read matches the saved one. The next run
 overwrites `test-results-pcm.json` and takes the flags as it finds them as its
 snapshot.
 
+### The lpar-config arm
+
+The lpar-config arm verifies the LPAR configuration, DLPAR and boot-order
+operations (#1345) on one partition it creates and deletes. It changes no other
+partition: every mutating call names that partition's UUID.
+
+- **Before.** It reads the system's partition names, free processing units and
+  free memory (with the memory region size). It creates nothing while a
+  partition named `hmcpctl-live-lpar-*` exists: that prefix is reserved for this
+  arm, so run the recovery check first.
+- **The partition.** `hmcpctl-live-lpar-<8 hex>`, ownership-stamped with caller
+  token `lparcfg-<8 hex>` (the same hex): 1024/2048/4096 MiB, shared uncapped,
+  0.1/0.5/1.0 processing units, 1/1/2 virtual processors.
+- **While Not Activated.** One `hmc_modify_lpar` (desired and maximum memory and
+  desired units), then small, large, no-op and empty `hmc_dlpar_mem` and
+  `hmc_dlpar_proc` requests, and one memory request above the maximum whose
+  answer is recorded but never observed. It renames the partition to
+  `<name>-rn` and back, sets a two-path pending boot order, and calls
+  `hmc_clear_lpar_boot_order`, which must refuse (#1048).
+- **Activated.** It activates the partition to SMS and makes one small memory and
+  one small processor DLPAR request. These rows are never observations. The
+  partition has no operating system, so it has no RMC connection: on V10R3 the HMC
+  refused both with `HSCL7016` (the partition must be running), and the arm records
+  each as a SKIP naming that gap; any other failure there stays a FAIL. The
+  activation used the partition profile, which discarded the configuration changes
+  made while it was Not Activated (#1170). DLPAR on a running operating system is
+  therefore unverified, and `hmc_modify_lpar`'s PCIe-assignment path is not exercised:
+  its observation covers the resource path only.
+- **After.** It powers the partition off, deletes it by UUID only while its
+  description still carries the run's caller token, and compares the system
+  reads with the ones taken before (one re-read after 30 s on a difference).
+  Observations are recorded with `cleanup` `passed` only when the delete is
+  confirmed and the compare holds.
+
+A teardown that cannot confirm the delete records a FAIL row marked
+`MANUAL RECOVERY REQUIRED`. Check the partition's description for the caller
+token, then run
+`chsysstate -m <system> -r lpar -n <name> -o shutdown --immed` (when it is not
+Not Activated) and `rmsyscfg -r lpar -m <system> -n <name>`.
+
 ### The bare-cec arm
 
 The bare-cec arm is the release path end to end. It creates a partition, assigns
@@ -469,10 +511,11 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm` or `network`.
+`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm`,
+`network` or `lpar-config`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-four sets of them:
+these sets of them:
 
 | Subtasks | What it reads |
 |---|---|
@@ -480,6 +523,7 @@ four sets of them:
 | 11 (users) | any HMC user named `hmcpctl-live-*`, whichever run's document you pass |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
+| 39 (lpar-config) | any partition named `hmcpctl-live-lpar-*` on the run's system, whichever run left it |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test

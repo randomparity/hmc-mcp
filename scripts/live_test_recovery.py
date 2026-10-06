@@ -18,7 +18,8 @@ and disk mapping that run recorded: a backup still in the catalog (remedy:
 the network arm (subtask 9) by the baselines that run recorded: a network left on
 its test VLAN, a client adapter on the test partition off its baseline, an FC-port
 label off its original, and a vFC group label it named. Subtask 2 only reads, so
-there is nothing for it to leave. Every other
+there is nothing for it to leave. It witnesses the lpar-config arm (subtask 39) by
+any partition still carrying its reserved `hmcpctl-live-lpar-` prefix. Every other
 subtask the run dispatched is listed as NOT WITNESSED, to be checked by hand
 (docs/live-testing.md, step 4).
 
@@ -55,7 +56,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import network, vios_backup
+from live_test import lpar_config, network, vios_backup
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
@@ -126,6 +127,7 @@ _WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {
     vios_backup.SUBTASK,
     network.INVENTORY_SUBTASK,
     network.SUBTASK,
+    lpar_config.SUBTASK,
 }
 
 #: The vMedia calls that make the repository the run's own. Media calls are not
@@ -266,6 +268,59 @@ async def _scratch_users_left(call) -> list[Finding]:
         )
         for name in scratch_users(rows)
     ]
+
+
+@dataclass(frozen=True)
+class LparConfigInputs:
+    """The system the lpar-config arm (ST39) created its scratch partition on."""
+
+    system_name: str
+
+
+def lpar_config_inputs_from_document(
+    document: dict[str, Any], subtasks: list[int]
+) -> LparConfigInputs | None:
+    """The run's system when it dispatched ST39, else `None`.
+
+    The reserved name prefix is the identity, as the users arm's is: a run
+    interrupted before it wrote its document still has its partition found.
+    """
+    config = document.get("config")
+    system = config.get("system_name") if isinstance(config, dict) else None
+    if lpar_config.SUBTASK not in subtasks or not system:
+        return None
+    return LparConfigInputs(str(system))
+
+
+async def check_lpar_config(call, inputs: LparConfigInputs) -> list[Finding]:
+    """One finding per partition carrying the lpar-config arm's reserved prefix."""
+    system = shlex.quote(inputs.system_name)
+    status, listing = await call(
+        "hmc_run_command", cmd=f"lssyscfg -r lpar -m {system} -F name,state"
+    )
+    if status != "PASS" or not isinstance(listing, str):
+        raise StateUnreadable(f"the partitions of {inputs.system_name}")
+    states = dict(line.split(",", 1) for line in listing.splitlines() if "," in line)
+    findings = []
+    for name in lpar_config.scratch_partitions(states):
+        quoted = shlex.quote(name)
+        shutdown = (
+            ""
+            if states[name] == _NOT_ACTIVATED
+            else f"chsysstate -m {system} -r lpar -n {quoted} -o shutdown --immed; "
+        )
+        findings.append(
+            Finding(
+                what=f"partition {name}",
+                detail=(
+                    f"an lpar-config scratch partition is still defined "
+                    f"({states[name]}); its description should carry caller token "
+                    f"{lpar_config.TOKEN_PREFIX}<the name's 8 hex>"
+                ),
+                remedy=f"{shutdown}rmsyscfg -r lpar -m {system} -n {quoted}",
+            )
+        )
+    return findings
 
 
 @dataclass(frozen=True)
@@ -1173,6 +1228,7 @@ async def check_run(
     vios: VIOSBackupInputs | None = None,
     network_inputs: NetworkInputs | None = None,
     users: bool = False,
+    lpar_config_inputs: LparConfigInputs | None = None,
 ) -> list[Finding]:
     """Each arm's checks in turn, each read whatever the others found."""
     findings: list[Finding] = []
@@ -1187,6 +1243,7 @@ async def check_run(
         (check_test_partition, partition),
         (check_vios_backup, vios),
         (check_network, network_inputs),
+        (check_lpar_config, lpar_config_inputs),
     ):
         if inputs is None:
             continue
@@ -1216,6 +1273,7 @@ async def _run_checks(
     vios: VIOSBackupInputs | None = None,
     network_inputs: NetworkInputs | None = None,
     users: bool = False,
+    lpar_config_inputs: LparConfigInputs | None = None,
 ) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
     # The checks need the live run's composition, not bare ``create_mcp``:
@@ -1232,6 +1290,7 @@ async def _run_checks(
             vios,
             network_inputs,
             users,
+            lpar_config_inputs,
         )
 
 
@@ -1317,6 +1376,7 @@ def main(argv: list[str] | None = None) -> int:
     partition = lpar_inputs_from_document(document, subtasks)
     vios = vios_backup_inputs_from_document(document, subtasks)
     network_inputs = network_inputs_from_document(document, subtasks)
+    lpar_config_inputs = lpar_config_inputs_from_document(document, subtasks)
 
     findings: list[Finding] = []
     unread: list[str] = []
@@ -1326,14 +1386,17 @@ def main(argv: list[str] | None = None) -> int:
         users = False
         unread.append(str(error))
     if users or any(
-        inputs is not None for inputs in (pcie, partition, vios, network_inputs)
+        inputs is not None
+        for inputs in (pcie, partition, vios, network_inputs, lpar_config_inputs)
     ):
         if not runner._bootstrap_config():
             print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
             return 2
         try:
             findings = asyncio.run(
-                _run_checks(pcie, partition, vios, network_inputs, users)
+                _run_checks(
+                    pcie, partition, vios, network_inputs, users, lpar_config_inputs
+                )
             )
         except MutatingCallRefused as refused:
             print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)

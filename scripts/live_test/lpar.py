@@ -16,21 +16,12 @@ from .inventory import read_sync_state
 from .observation import (
     Assertion,
     CallFailure,
-    ExpectedOutcome,
     judge_create_result,
 )
 from .results import field
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
-
-_REST_MODIFY_UNSUPPORTED = ExpectedOutcome(
-    operation="lpar.modify",
-    variant="rest-resource-modification",
-    reason="HMC firmware returns HTTP 406 for REST LPAR modify (same limitation "
-    "as create — REST write path unsupported)",
-    error_codes=frozenset({"406", "not acceptable"}),
-)
 
 
 async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
@@ -89,21 +80,22 @@ async def _create_and_confirm_scratch_lpar(client: Client, state: RunState) -> N
 
 
 async def _modify_and_summarize_scratch_lpar(client: Client, state: RunState) -> None:
-    """Exercise the known REST modification path and read its resulting summary."""
+    """Exercise the REST modification path and read its resulting summary.
+
+    Recorded as is: the lpar-config arm (ST39) is where the modify contract is
+    observed, and an HTTP 406 here is a FAIL row, never a declared gap.
+    """
     config = state.config
     status, data = await state.call(
         client,
         "hmc_modify_lpar",
-        expected=[_REST_MODIFY_UNSUPPORTED],
         lpar_name_or_uuid=config.scratch_name,
         resources={
             "desired_memory": config.scratch_modify_desired_memory_mib,
             "max_memory": config.scratch_modify_max_memory_mib,
         },
     )
-    state.record_with_expected(
-        8, "hmc_modify_lpar", status, data, [_REST_MODIFY_UNSUPPORTED]
-    )
+    state.record(8, "hmc_modify_lpar", status, data)
 
     status, data = await state.call(
         client, "hmc_lpar_summary", lpar_name_or_uuid=config.scratch_name
