@@ -49,6 +49,9 @@ POLL_SECONDS = 30
 #: `rstviosbk -r` restarts the VIOS and retries inside one CLI call, which the
 #: default 300-second SSH timeout would cut off with the restore still running.
 MIN_SSH_TIMEOUT = 2400
+#: The row the arm records whenever it keeps an existing backup; the recovery check
+#: keys on it to report the VIOS off baseline rather than offer the backup's removal.
+KEPT_ROW = "backup kept: VIOS not proven at baseline"
 
 #: How the SSH transport words a command the HMC ran to completion and failed.
 _HMC_EXIT = "failed with exit status"
@@ -473,6 +476,8 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
             raw = await arm.raw_listing(target, "after rmviosbk")
             gone = raw is not None and name not in raw
         backup_cleanup = "passed" if gone else "failed"
+    elif exists:
+        arm.record(KEPT_ROW, "FAIL", {"backup": name, "settled": settled})
     state.record_verified(
         SUBTASK,
         "hmc_backup_vios",

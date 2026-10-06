@@ -214,7 +214,7 @@ the HMC console, so the arm guards on it instead.
   session), or a read failed after a change, it recreates nothing and changes
   nothing more. In those cases, and whenever the final read is off the baseline,
   it keeps the backup: it is the way back. The recovery check then reports
-  `VIOS off baseline, backup kept` (exit 1) or the kept backup. Recover the VIOS
+  `VIOS off baseline, backup kept` (exit 1), never the backup's bare removal. Recover the VIOS
   through its HMC console first, then remove the backup by hand, as the recovery
   check prints:
 

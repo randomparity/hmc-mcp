@@ -209,7 +209,7 @@ class VIOSBackupInputs:
     backup_name: str
     mapping_id: str
     backing: str
-    #: The arm's final read differed from its baseline, so it kept the backup.
+    #: The arm kept its backup because it could not prove the VIOS at baseline.
     off_baseline: bool = False
 
 
@@ -239,9 +239,7 @@ def vios_backup_inputs_from_document(
         return None
     rows = document.get("results")
     off_baseline = isinstance(rows, list) and any(
-        isinstance(row, dict)
-        and str(row.get("tool", "")).startswith("final compare")
-        and row.get("status") == "FAIL"
+        isinstance(row, dict) and row.get("tool") == vios_backup.KEPT_ROW
         for row in rows
     )
     return VIOSBackupInputs(*values, off_baseline=off_baseline)
@@ -278,8 +276,8 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
                 "VIOS off baseline, backup kept"
                 if listed
                 else "VIOS off baseline, backup gone",
-                f"the run's final read of {inputs.vios} differed from its baseline "
-                "(its 'final compare' rows); check the VIOS through its HMC console",
+                f"the run could not prove {inputs.vios} back at its baseline and "
+                "kept the backup; check the VIOS through its HMC console",
                 f"rstviosbk -t viosioconfig -m {shlex.quote(inputs.system_name)} "
                 f"-p {shlex.quote(inputs.vios)} -f {shlex.quote(inputs.backup_name)} "
                 f"-r, re-check the baseline, then {remove}"

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import importlib.util
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +15,7 @@ import pytest
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
+import live_test_recovery as recovery  # noqa: E402
 from live_test import vios_backup  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location("hmc_live_test_runner", _RUNNER_PATH)
@@ -64,6 +68,7 @@ class FakeVios:
     rmvdev_ignored: bool = False
     rest_hidden: bool = False
     vadapter_disagrees: bool = False
+    late_vadapter_disagrees: bool = False
     rmc_returns: bool = True
     serial: str = "server,1\nserver,0\n"
     reorder: bool = False
@@ -144,7 +149,8 @@ class FakeVios:
             self.mapped = True
             return "PASS", ""
         if inner.startswith("lsmap -vadapter"):
-            if not self.mapped or self.vadapter_disagrees:
+            late = self.late_vadapter_disagrees and self.restored
+            if not self.mapped or self.vadapter_disagrees or late:
                 return "PASS", "SVSA vhost0\nVTD lp3-vopt\n"
             return "PASS", "SVSA vhost0\nVTD lp3-disk\nBacking device lp3-vd1\n"
         if inner == "ioslevel":
@@ -502,3 +508,49 @@ async def test_a_vios_that_still_shows_the_vtd_is_not_restored(monkeypatch):
 
     assert _mutations(vios) == ["hmc_backup_vios", "rmvdev"]
     assert "vios.restore" not in _observations(state)
+
+
+#: Every path on which the arm keeps a backup it made (#1349 pass 4).
+KEEP_PATHS = {
+    "final-compare-fails": SeaChangingVios,
+    "late-lsmap-disagreement": lambda: FakeVios(late_vadapter_disagrees=True),
+    "unreadable-read-after-restore": lambda: FakeVios(
+        snapshot_read_fails_after_restore=True
+    ),
+    "unsettled-restore": lambda: FakeVios(restore_status="FAIL"),
+}
+
+
+@pytest.mark.parametrize("make", KEEP_PATHS.values(), ids=KEEP_PATHS.keys())
+def test_every_kept_backup_reads_as_off_baseline_in_recovery(
+    monkeypatch, tmp_path, capsys, make
+):
+    """Recovery never offers to remove the backup that is the way back."""
+    vios = make()
+    # Synchronous, because recovery's `main` runs its own event loop.
+    state = asyncio.run(_run(monkeypatch, vios))
+    assert vios.backups and "rmviosbk" not in _mutations(vios)
+    vios.snapshot_read_fails_after_restore = False  # readable again by recovery time
+    document = {
+        "run": {"subtasks": [37]},
+        "config": {"system_name": SYSTEM, "lp3_name": LPAR},
+        "artifacts": dataclasses.asdict(state.artifacts),
+        "results": state.results,
+    }
+
+    async def read_only(tool, **arguments):
+        recovery.guard_read_only(tool, arguments)
+        return vios.answer(tool, arguments)
+
+    async def checks(pcie, partition, inputs):
+        return await recovery.check_vios_backup(read_only, inputs)
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(document, default=str), encoding="utf-8")
+
+    assert recovery.main(["--results", str(path)]) == 1
+    output = capsys.readouterr().out
+    assert "VIOS off baseline, backup kept" in output
+    assert "clear with:  rmviosbk" not in output

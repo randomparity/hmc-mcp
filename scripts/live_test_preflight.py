@@ -221,7 +221,10 @@ def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
                 "that VIOS: viosioconfig restore with -r (the HMC may restart the "
                 "VIOS); requires active RMC and an HMC console adapter first"
             ),
-            "that backup: removed with rmviosbk once the mapping reads back",
+            (
+                "that backup: removed with rmviosbk only when a final read equals "
+                "the baseline; otherwise kept for the operator"
+            ),
         ),
         config.system_name,
     )

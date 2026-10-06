@@ -1349,16 +1349,20 @@ async def test_an_off_baseline_run_is_never_clean(backups, what):
     assert finding.what == what
 
 
-def test_a_failed_final_compare_row_marks_the_run_off_baseline():
+def test_the_kept_backup_row_marks_the_run_off_baseline():
     document = _vios_document()
     document["results"] = [
         {"tool": "final compare (lsmap -all -net)", "status": "FAIL"},
-        {"tool": "baseline compare (lsmap -all)", "status": "FAIL"},
+        {"tool": recovery.vios_backup.KEPT_ROW, "status": "FAIL"},
     ]
 
     inputs = recovery.vios_backup_inputs_from_document(document, [37])
 
     assert inputs is not None and inputs.off_baseline
-    clean = _vios_document()
-    clean["results"] = [{"tool": "baseline compare (lsmap -all)", "status": "FAIL"}]
-    assert not recovery.vios_backup_inputs_from_document(clean, [37]).off_baseline
+    compared_only = _vios_document()
+    compared_only["results"] = [
+        {"tool": "final compare (lsmap -all)", "status": "FAIL"}
+    ]
+    assert not recovery.vios_backup_inputs_from_document(
+        compared_only, [37]
+    ).off_baseline

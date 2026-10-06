@@ -91,8 +91,8 @@ captured empty, so its attribute names are unverified.
 
 3. **Preflight** names the arm's mutations; **recovery** witnesses subtask 37: a
    listed backup with the run's name (remedy: the `rmviosbk` command), and a missing
-   baseline mapping (remedy: the `mkvdev` command), and a run whose final read was
-   off its baseline (`VIOS off baseline, backup kept`). A failed read
+   baseline mapping (remedy: the `mkvdev` command), and a run that kept its backup,
+   keyed on the arm's one "backup kept" row (`VIOS off baseline, backup kept`). A failed read
    raises `StateUnreadable` (exit 2) as the existing witnesses do. It adds only
    `hmc_list_vios_backups` to its read-only allowlist.
 4. **Catalog**: maturity records for the five operations (below), regenerated
