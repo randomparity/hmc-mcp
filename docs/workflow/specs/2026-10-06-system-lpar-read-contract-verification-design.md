@@ -17,8 +17,12 @@ never issue, such as CoD commands for `capacity.report` and LPAR job rows for
 
 A 500 on V10R3's managed-system feed was declared as an expected limitation. It is the
 null-`VirtualPersistentMemoryVolume/Uuid` serialization failure (#784; fallback in ADR 0138).
-Recorded evidence ties that 500 to the `X-HMC-Schema-Version: V1_0` request header. Without
-the header the feed answered 200.
+Recorded evidence ties that 500 to the `X-HMC-Schema-Version: V1_0` request header (sent only
+when `HMC_SCHEMA_VERSION` is set). Without the header the feed answered 200. ADR 0138's client
+fallback hides the 500: `inventory_managed_systems` rebuilds the list from `quick/All` and
+drops unresolved systems with only a log warning. `hmc_list_systems`, `capacity.report` and
+`placement.find` then return success, and the declared 500 reaches the harness only when the
+fallback resolves nothing.
 
 ## Operations in scope
 
@@ -40,19 +44,29 @@ because it issues those two feeds itself through `fetch_capacity_report`.
 
 ## Design
 
-1. **ST1 records every in-scope read through `record_verified`.** Scenario ids and postcondition
+1. **ST1 records every in-scope read through `record_verified`.** Every list or nested result
+   is read through `results.field` (key or attribute), because FastMCP delivers a
+   dataclass result as a generated model, not a mapping. Scenario ids and postcondition
    assertions:
+   - **Feed probe.** ST1 first reads the raw feed with `hmc_list_resources(resource_type="ManagedSystem")`.
+     This is `list_uom` with no fallback. It is recorded as a non-promoting probe row.
+     `feed-served-directly` holds when the probe passed and its UUID set equals the read
+     under test's UUID set. For capacity and placement, only the probe has to pass.
+     That assertion is on all three feed reads, so a fallback-served success records
+     `failed`, never `passed`.
    - `hmc_list_systems` (`st1-system-inventory`): `system-list-non-empty`,
      `boundary-system-listed` (an entry's `SystemName` equals `config.system_name`, ignoring
-     case), `entries-carry-uuid`.
+     case), `entries-carry-uuid`, `feed-served-directly`.
    - `hmc_capacity_report` (`st1-capacity`): `boundary-system-reported`,
      `capacity-figures-consistent`. For the boundary row, `0 <= free <= total` and
      `assigned == total - free` hold for memory and for processor units (units within 1e-4).
+     Also `feed-served-directly`.
    - `hmc_find_placement` (`st1-capacity`), asking for `config.placement_memory_mib`:
      `candidates-fit` (every candidate's free memory is at least the request and its free units
-     are at least 0.5) and `candidates-best-fit-first` (free memory does not decrease from one
-     candidate to the next). An empty list passes both, so this is evidence of filtering and
-     ordering, not of capacity.
+     are at least 0.5), `candidates-best-fit-first` (free memory does not decrease from one
+     candidate to the next), `boundary-candidate-when-it-fits` (when the capacity report's
+     boundary row covers the request, the boundary system is a candidate) and
+     `feed-served-directly`.
    - `hmc_list_lpar_ownership` (`st1-lpar-inventory`, scoped to `config.system_name`):
      `ownership-entries-non-empty`, `test-partition-listed`, `ownership-facts-consistent`
      (`owned` is true exactly when `owner` is set, and `unparsed` is true only where
@@ -61,13 +75,14 @@ because it issues those two feeds itself through `fetch_capacity_report`.
      (`lpar_uuid` equals ST1's `artifacts.lp3_uuid`).
    - `hmc_inspect_lpar` (`st1-lpar-inventory`, include `resources`, `rmc`, `refcodes`):
      `inspection-names-partition` (uuid equals `artifacts.lp3_uuid`), `resources-read`,
-     `rmc-read`, `refcodes-read` (each section's `source.status` is `ok`).
+     `rmc-read`, `refcodes-read`. The first is `resources.storage_source.status`; the others are
+     `rmc.source.status` and `refcodes.source.status`. Each must be `ok`.
    - `hmc_inventory` (`st1-logical-inventory`, `systems=[config.system_name]`):
      `boundary-system-listed`, `test-partition-listed`, `partitions-belong-to-system`
      (every partition's `system_id` equals the boundary system's `id`).
-   - `hmc_fleet_health` (`st1-fleet-health`): `boundary-system-not-flagged` (the boundary
-     system is operating, so it is absent from `systems`) and `issues-name-their-system`
-     (every `vios` and `lpar` issue carries a `system_uuid`).
+   - `hmc_fleet_health` (`st1-fleet-health`): `health-sections-present` (`systems`, `vios`,
+     `lpars` and `warnings` are lists) and `boundary-system-not-flagged` (the boundary system,
+     which `hmc_get_system` read as operating, is absent from `systems`).
    - `hmc_plan_lpar` (`st1-lpar-plan`). It takes ST13's dry-run inputs: `config.dry_run_lpar_name`,
      VLAN `config.provision_vlan_id`, a new disk `config.dry_run_storage_name` of
      `config.provision_disk_mib`, and `config.system_name`. Assertions are
@@ -110,7 +125,8 @@ because it issues those two feeds itself through `fetch_capacity_report`.
   above. `lpar.get_state` and `lpar.list_refcodes` have corrected bindings.
 - `tests/test_live_runner.py` drives ST1 with scripted results. A passing script yields nine
   `passed` observations. Each assertion is shown to fail on a violating fixture. A declared
-  500 yields a gap row and no observation. An undeclared failure yields a `failed` observation.
+  500 yields a gap row and no observation. A feed-read success whose probe failed yields a
+  `failed` observation. An undeclared failure yields a `failed` observation.
 - `just verify` and `uv run --no-sync prek run --all-files` pass. `just scenario-gap` reports
   no dispatch finding for ST1.
 - The live ST1 run on V10R3 is recorded honestly as passed, failed or a confirmed gap.
@@ -123,12 +139,14 @@ because it issues those two feeds itself through `fetch_capacity_report`.
    Catalog honesty: no observation may be `passed` unless its assertions held, and a
    declared limitation may never become a pass.
 3. **Accepted failure classes.**
-   - The assertions are postconditions on what was returned. They are not proof that the HMC
-     inventory is complete. Accepted, because comparing against an independent `lssyscfg`
-     read would add a second transport for no catalog gain.
-   - `placement.find` with no candidates passes. This is stated in Design 1.
+   - Apart from `feed-served-directly`, the assertions are postconditions on what was
+     returned, not proof that the HMC inventory is complete.
+   - `placement.find` with no candidates passes when no system covers the request. This is
+     stated in Design 1.
    - A rate-limited or locked-out SSH login during `lsrefcode` fails `refcodes-read`.
      Accepted; the observation records it.
+   - The feed probe compares UUID sets only. A fallback that resolved every system is
+     still caught, because the probe itself fails on the same 500.
 4. **Covered elsewhere.** Configuration and DLPAR: #1345. Power and lifecycle: #1346. Snapshot
    capture, inspect and validate: unowned, reported as a follow-up candidate. Staleness in
    other arms: the campaign's consolidated re-record round.
