@@ -146,12 +146,16 @@ It is the only arm that runs the system-wide profile backup and type-3
 merge-restore. It backs up to `hmcpctl-live-st10`, a file in the HMC's
 `/var/hsc/profiles/<serial>/` directory. That file stays there and is
 overwritten by the next successful backup. The restore runs only when this
-run's backup succeeded.
+run's backup succeeded and both of its `lssyscfg` reads before the restore
+passed; otherwise the arm records it as skipped.
 
 The restore resets a not-activated partition's `resource_config` from 1 to 0,
 even though it merges a backup taken moments earlier, so its observation fails
 on that side effect. The arm then re-applies each such partition's current
-profile, which leaves it `Not Activated`.
+profile, which leaves it `Not Activated`. A partition it cannot re-apply (no
+current profile, a refused apply, or no `resource_config` in the read after
+the restore) is a FAIL row marked `MANUAL RECOVERY REQUIRED` that names the
+partition and the `chsyscfg ... -o apply` command to run.
 
 If a run stops partway, restore by hand what it may have left changed. Use
 the values in the run's baseline:

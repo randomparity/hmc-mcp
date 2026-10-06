@@ -1175,6 +1175,148 @@ async def test_restore_side_effect_fails_the_observation_and_is_reapplied(
     ]
 
 
+def _st10_with_system_reads(lpar_reads, prof_read=("PASS", "profile-a\n"), apply=None):
+    """ST10 answers whose full ``lssyscfg`` reads and ``-o apply`` are scripted."""
+    base = _st10_answers()
+    run_command = base["hmc_run_command"]
+    partitions = iter(lpar_reads)
+
+    def answer(kwargs):
+        cmd = kwargs["cmd"]
+        if cmd.startswith("lssyscfg -r prof "):
+            return prof_read
+        if cmd.startswith("lssyscfg -r lpar -m ") and "-F" not in cmd:
+            return next(partitions)
+        if apply is not None and " -o apply " in cmd:
+            return apply
+        return run_command(kwargs)  # type: ignore[operator]  # the scripted answer is callable
+
+    return _answer({**base, "hmc_run_command": answer})
+
+
+def _manual_recovery_rows(state) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in state.results
+        if row["tool"] == "chsyscfg -o apply (re-apply after restore)"
+        and "MANUAL RECOVERY REQUIRED" in row["note"]
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed", ["prof", "lpar"])
+async def test_a_failed_pre_restore_read_skips_the_restore(monkeypatch, failed) -> None:
+    """Without both baselines the restore can be neither compared nor compensated."""
+    lost = ("FAIL", "ssh lost")
+    calls, scripted = _st10_with_system_reads(
+        [lost if failed == "lpar" else ("PASS", _CONFIGURED + "\n")],
+        prof_read=lost if failed == "prof" else ("PASS", "profile-a\n"),
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_restore_lpar_profiles") == []
+    observations = _verified(state)
+    assert "lpar_profile.restore" not in observations
+    assert observations["lpar_profile.backup"]["assertions"] == ["backup-accepted"]
+    skip = next(
+        row for row in state.results if row["tool"] == "hmc_restore_lpar_profiles"
+    )
+    assert skip["status"] == "SKIP"
+    assert "pre-restore" in skip["note"]
+
+
+_UNCONFIGURED = _CONFIGURED.replace("config=1", "config=0")
+_NO_PROFILE = "curr_profile=default_profile", "curr_profile="
+_REFUSED = observation.CallFailure(
+    "ToolError", "HSCL partition busy", "Traceback\n" + "frame\n" * 400, None, False
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("before", "after", "apply", "profile"),
+    [
+        (
+            _CONFIGURED.replace(*_NO_PROFILE),
+            ("PASS", _UNCONFIGURED.replace(*_NO_PROFILE) + "\n"),
+            None,
+            "<profile>",
+        ),
+        (
+            _CONFIGURED,
+            ("PASS", _UNCONFIGURED + "\n"),
+            ("FAIL", _REFUSED),
+            "default_profile",
+        ),
+        (_CONFIGURED, ("FAIL", "ssh lost"), None, "default_profile"),
+        (
+            _CONFIGURED,
+            ("PASS", "name=other,resource_config=1\n"),
+            None,
+            "default_profile",
+        ),
+    ],
+    ids=["empty-curr-profile", "apply-refused", "post-read-failed", "absent-after"],
+)
+async def test_a_partition_that_cannot_be_reapplied_needs_manual_recovery(
+    monkeypatch, before, after, apply, profile
+) -> None:
+    calls, scripted = _st10_with_system_reads(
+        [("PASS", before + "\n"), after, ("PASS", before + "\n")], apply=apply
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    [row] = _manual_recovery_rows(state)
+    assert row["status"] == "FAIL"
+    assert (
+        f"partition 'lpar-name' — if its resource_config is 0, run chsyscfg -r lpar "
+        f"-m {state.config.system_name} -o apply -p lpar-name -n {profile}"
+        in row["note"]
+    )
+    assert "frame" not in row["data"]
+    applies = [
+        kwargs for tool, kwargs in calls if " -o apply " in str(kwargs.get("cmd", ""))
+    ]
+    assert len(applies) == (1 if apply is not None else 0)
+
+
+@pytest.mark.asyncio
+async def test_each_unconfigured_partition_is_reapplied_or_reported(
+    monkeypatch,
+) -> None:
+    kept = _CONFIGURED.replace("lpar-name", "kept")
+    # A dotted name is one the FAIL data's hostname redaction would mask.
+    other = _CONFIGURED.replace("lpar-name", "lp.other").replace(*_NO_PROFILE)
+    before = f"{kept}\n{_CONFIGURED}\n{other}\n"
+    after = f"{kept}\n{_UNCONFIGURED}\n{other.replace('config=1', 'config=0')}\n"
+    calls, scripted = _st10_with_system_reads(
+        [("PASS", before), ("PASS", after), ("PASS", before)]
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    applies = [
+        kwargs["cmd"]
+        for tool, kwargs in calls
+        if " -o apply " in str(kwargs.get("cmd", ""))
+    ]
+    assert applies == [
+        f"chsyscfg -r lpar -m {state.config.system_name} -o apply -p lpar-name -n default_profile"
+    ]
+    [row] = _manual_recovery_rows(state)
+    assert "partition 'lp.other'" in row["note"]
+    assert "-p lp.other -n <profile>" in row["note"]
+    assert "-F lpar_name,name)" in row["note"]
+
+
 @pytest.mark.asyncio
 async def test_a_reordered_profile_listing_is_not_a_change(monkeypatch) -> None:
     dumps = iter(["profile-a\nprofile-b\n", "profile-b\nprofile-a\n"])
