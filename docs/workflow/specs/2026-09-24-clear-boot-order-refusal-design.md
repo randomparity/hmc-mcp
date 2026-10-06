@@ -95,5 +95,6 @@ unchanged.
   still pins the arguments; live 4 observes the exit.
 - `task-test-not-applicable` 3: help and docs are prose. `just tool-docs-check` holds the
   generated page.
-- Live 4: `hmcpctl lpars clear-boot-order` on minimus, then a `?group=Advanced` read.
+- Live 4: `hmcpctl lpars clear-boot-order` on the operator's live-test host, then a
+  `?group=Advanced` read.
 - Guardrails: `just verify` and `uv run --no-sync prek run --all-files`.
