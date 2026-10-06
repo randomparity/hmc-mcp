@@ -257,6 +257,9 @@ whoever created it, removing only what this run created:
   none holds one, it creates one in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and
   subtasks 17 and 22 delete it again. An existing repository is never resized
   or deleted; its create and delete are then gaps that need a VIOS with none.
+- **Protected test partition.** When `LIVE_TEST_PROTECTED_LPAR_NAMES` lists the
+  test partition, subtasks 19 and 20 SKIP before any HMC call, naming the gap; the
+  reads and teardown still run.
 - **Blank medium (subtask 19).** The test partition must read `Not Activated`
   and the repository must have 1 GiB free. The arm reads its baselines (the
   repository's media and size, every storage mapping on the VIOS, and the vSCSI

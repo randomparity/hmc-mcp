@@ -415,27 +415,36 @@ async def test_st16_rederives_the_group_a_restored_document_named(arm):
 
 
 @pytest.mark.asyncio
-async def test_a_protected_test_partition_is_skipped_and_the_arm_continues(
-    arm, tmp_path
-):
+async def test_a_protected_test_partition_is_a_gap_and_the_arm_continues(arm, tmp_path):
+    """The operator's protected list stops ST19 and ST20 before any HMC call."""
     state, hmc = arm
     iso = tmp_path / "install.iso"
     iso.write_bytes(b"iso")
     state.config = replace(
         state.config, iso_path=str(iso), protected_lpar_names=(LPAR,)
     )
+    await _run(state, 16)
+    before = len(hmc.calls)
 
-    await _run(state, 16, 19, 20, 21, 22)
+    await _run(state, 19, 20)
 
-    tools = {t for t, _ in _mutations(hmc)}
-    assert not tools & {
-        "hmc_create_optical_media",
-        "hmc_mount_optical_media",
-        "hmc_power_on_lpar",
-        "hmc_power_off_lpar",
-    }
+    assert hmc.calls[before:] == []
+    skips = [r for r in state.results if r["subtask"] in (19, 20)]
+    assert skips and all(r["status"] == "SKIP" for r in skips)
+    assert all(
+        "protected by operator config" in r["note"] and "(gap)" in r["note"]
+        for r in skips
+    )
+    assert not {"media.create", "media.mount", "media.unmount", "media.delete"} & set(
+        _observations(state)
+    )
+
+    await _run(state, 21, 22)
+
     assert _results(state, "media.list_mappings") == ["passed"]
-    assert any("PROTECTED" in r["note"] for r in state.results if r["subtask"] == 20)
+    assert not {"hmc_mount_optical_media", "hmc_unmount_optical_media"} & {
+        t for t, _ in hmc.calls
+    }
 
 
 @pytest.mark.asyncio

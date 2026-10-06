@@ -112,8 +112,9 @@ def iso_media_name(config: LiveTestConfig) -> str:
 
 def _protected_reason(config: LiveTestConfig) -> str:
     return (
-        f"the test partition {config.lp3_name!r} is in LIVE_TEST_PROTECTED_LPAR_NAMES; "
-        "the arm never mounts to or powers a protected partition"
+        f"the test partition {config.lp3_name!r} is protected by operator config "
+        "(LIVE_TEST_PROTECTED_LPAR_NAMES); the blank-medium round trip and the boot "
+        "need an unprotected test partition (gap)"
     )
 
 

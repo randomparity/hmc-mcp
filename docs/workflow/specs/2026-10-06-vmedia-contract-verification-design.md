@@ -85,7 +85,9 @@ ST22 teardown stay plain and never promote.
    `st18-iso-upload`): `upload-accepted`, `media-listed`, `reupload-refused`, cleanup
    `passed` when the run's ISO is no longer listed.
 5. **ST19 — blank medium, mount, unmount, delete** (scenario `st19-optical-round-trip`).
-   Preconditions: `vmedia_vg_uuid`, the test partition not protected and reading
+   Preconditions: `vmedia_vg_uuid`, the test partition not protected (a protected
+   one SKIPs ST19 and ST20 before any HMC call, naming the gap; it never raises, so
+   ST21 and ST22 still run) and reading
    `Not Activated` (`hmc_get_lpar_state`; a mount on a running partition is a dynamic
    reconfiguration this arm does not exercise), and repository free space
    (`RepositorySize` minus the listed media sizes) of at least 1 GiB.
@@ -196,6 +198,7 @@ limitation under ADR 0132). An operation with no live observation stays
 |---|---|
 | `media.create_repository`, `media.delete_repository` | a VIOS with no media repository (the boundary VIOS has an operator repository); the ST17 lifecycle then needs verified assertions |
 | `media.upload_iso` | an ISO at `LIVE_TEST_ISO_PATH` on the runner host |
+| `media.create`, `media.mount`, `media.unmount`, `media.delete` (ST19) | a test partition the operator has not listed in `LIVE_TEST_PROTECTED_LPAR_NAMES`; the boundary operator config protects it |
 | ST20 boot from the virtual CD | an uploaded ISO; boot-order verification is #1345 |
 
 ## Success
@@ -244,3 +247,13 @@ limitation under ADR 0132). An operation with no live observation stays
 - Controls: `shlex.quote` on the system name; the VIOS id is an integer; the medium
   name is generated hex; the recovery script admits only read tools.
 - Out of scope: a hostile HMC.
+
+## Live result (2026-10-06, V10R3 / POWER9 boundary system)
+
+A run at `bf8974b3` stopped at ST19, before any mutation: the operator's
+`LIVE_TEST_PROTECTED_LPAR_NAMES` lists the test partition, and the belt then raised,
+losing ST21 and ST22. Preflight passed; recovery exited 2 (PARTIAL), with nothing
+stranded; the before and after snapshots matched line for line. The belt is now a
+SKIP naming the gap. Whether the operator lifts that protection for a run is the
+operator's decision; until then the round-trip operations stay `unevidenced` with
+the gap above.
