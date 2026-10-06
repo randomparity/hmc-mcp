@@ -83,6 +83,24 @@ def _scrub(data: Any, password: str) -> Any:
     return data
 
 
+def _without_secrets(data: Any) -> Any:
+    """Copy *data* with every password field's value replaced.
+
+    The disclosure assertions read the raw value; what is recorded must not
+    carry it, and the runner's redaction only sees ``name=value`` text.
+    """
+    if isinstance(data, Mapping):
+        return {
+            key: "<redacted>"
+            if key in {"UserProfilePassword", "BindPassword"} and not is_empty(value)
+            else _without_secrets(value)
+            for key, value in data.items()
+        }
+    if isinstance(data, list):
+        return [_without_secrets(item) for item in data]
+    return data
+
+
 # ---------------------------------------------------------------------------
 # ST11 — the users arm: role and remote-access reads, then one scratch user's
 # create, read, modify, clear and delete (issue #632)
@@ -117,7 +135,7 @@ async def _read_only_checks(
             ),
         ],
         cleanup="not-required",
-        data=before,
+        data=_without_secrets(before),
     )
 
     rst, roles = await state.call(
@@ -190,7 +208,7 @@ async def _read_only_checks(
             ),
         ],
         cleanup="not-required",
-        data=remote,
+        data=_without_secrets(remote),
     )
     return st, before, role_names
 
@@ -242,7 +260,7 @@ async def _lifecycle(
 
     def kept(tool: str, result: tuple[str, Any]) -> tuple[str, Any]:
         responses.append(result[1])
-        scrubbed = result[0], _scrub(result[1], password)
+        scrubbed = result[0], _scrub(_without_secrets(result[1]), password)
         if scrubbed[0] == "FAIL":
             # The verified rows below carry one step's data each; a refused step's
             # HMC error is recorded here so a failed observation can be diagnosed.

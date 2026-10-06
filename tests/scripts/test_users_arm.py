@@ -186,6 +186,22 @@ async def test_a_disclosed_password_fails_the_listing(hmc):
     listing = _observations(state)["user.list"]
     assert listing["result"] == "failed"
     assert "passwords-not-disclosed" not in listing["assertions"]
+    assert "leaked" not in json.dumps(state.results)
+
+
+@pytest.mark.asyncio
+async def test_a_disclosed_bind_password_fails_and_is_not_recorded(hmc, monkeypatch):
+    remote = copy.deepcopy(_CONSOLE_ENTRY)
+    remote["Resource"]["LdapConfiguration"]["BindPassword"] = {"text": "bind-secret"}
+    monkeypatch.setattr(hmc, "hmc_get_remote_access", lambda console_uuid: remote)
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    read = _observations(state)["remote_access.get"]
+    assert read["result"] == "failed"
+    assert "bind-password-not-disclosed" not in read["assertions"]
+    assert "bind-secret" not in json.dumps(state.results)
 
 
 @pytest.mark.asyncio
