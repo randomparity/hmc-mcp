@@ -6,7 +6,7 @@ a JSON document on exit.
 
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
-`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,vios_backup,pcm}.py` to
+`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,users,vios_backup,pcm}.py` to
 dispatch one arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
@@ -18,8 +18,8 @@ Usage:
 stops importing (AGENTS.md).
 
 With no selection every subtask runs, 0 through 38: there is none from 26 to 36,
-which are other arms' row ids, and 9, 37 and 38 SKIP outside their own `network`,
-`vios-backup` and `pcm` groups. A bare number runs that one subtask; `--group NAME`
+which are other arms' row ids, and 9, 11, 37 and 38 SKIP outside their own `network`,
+`users`, `vios-backup` and `pcm` groups. A bare number runs that one subtask; `--group NAME`
 runs one arm. Results go to `test-results-<group>.json`, or `test-results-round2.json`
 for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
@@ -98,7 +98,7 @@ from live_test.provisioning import (
     validate_provisioning_dry_run,
 )
 from live_test.storage import inventory_storage
-from live_test.users import administer_test_user, inventory_users
+from live_test.users import exercise_users, inventory_users
 from live_test.vios_backup import exercise_vios_backup
 from live_test.vmedia import (
     IsoHttpServer,
@@ -296,7 +296,6 @@ class LiveTestConfig:
     lp3_name: str = "example-lt-609-lpar"
     scratch_name: str = "example-lt-609-scratch"
     nettest_name: str = "example-lt-609-network"
-    test_user: str = "example-lt-609-user"
     vdisk_name: str = "lt609-disk"
     scratch_create_desired_memory_mib: int = 1536
     scratch_create_max_memory_mib: int = 3072
@@ -368,7 +367,6 @@ class LiveTestConfig:
         "LIVE_TEST_LPAR_NAME": "lp3_name",
         "LIVE_TEST_SCRATCH_LPAR_NAME": "scratch_name",
         "LIVE_TEST_NETWORK_TEST_LPAR_NAME": "nettest_name",
-        "LIVE_TEST_TEST_USER_NAME": "test_user",
         "LIVE_TEST_VDISK_NAME": "vdisk_name",
         "LIVE_TEST_SCRATCH_CREATE_DESIRED_MEMORY_MIB": "scratch_create_desired_memory_mib",
         "LIVE_TEST_SCRATCH_CREATE_MAX_MEMORY_MIB": "scratch_create_max_memory_mib",
@@ -422,6 +420,13 @@ class LiveTestConfig:
         "LIVE_TEST_ACCEPT_PLATFORM_DUMP": "accept_platform_dump",
     }
 
+    #: Settings a release stopped reading. A `.env` still carrying one loads, with
+    #: a notice, so retiring a setting does not stop every arm on every host.
+    #: `LIVE_TEST_TEST_USER_NAME`: the users arm mints its scratch user's name (#632).
+    _RETIRED_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"LIVE_TEST_TEST_USER_NAME"}
+    )
+
     @classmethod
     def from_env_file(cls, path: Path | None = None) -> LiveTestConfig:
         """Load required live-test identifiers from one authoritative local file."""
@@ -442,6 +447,9 @@ class LiveTestConfig:
                 continue
             if key.startswith(_ENVIRONMENT_PREFIX):
                 # Read separately by `_read_environment`; not a config field.
+                continue
+            if key in cls._RETIRED_CONFIG_KEYS:
+                print(f"{key} (line {line_number}) is retired and ignored")
                 continue
             if key not in cls._CONFIG_FIELDS and key not in cls._OPTIONAL_CONFIG_FIELDS:
                 duplicates.append(f"unknown setting {key} (line {line_number})")
@@ -602,7 +610,7 @@ class LiveTestArtifacts:
     vios_uuid: str | None = None
     vios_partition_id: int | None = None
     console_uuid: str | None = None
-    test_user_uuid: str | None = None
+    test_user_name: str | None = None
     test_vlan_id: int | None = None
     test_vswitch_id: int | None = None
     test_network_uuid: str | None = None
@@ -1001,7 +1009,7 @@ SUBTASKS = {
     8: exercise_lpar_lifecycle,
     9: mutate_virtual_networking,
     10: mutate_lpar_properties,
-    11: administer_test_user,
+    11: exercise_users,
     12: inspect_metrics_jobs,
     13: validate_provisioning_dry_run,
     14: exercise_storage_provisioning,
@@ -1194,12 +1202,14 @@ def _load_known_gaps(
 
 
 SUBTASK_GROUPS: dict[str, list[int]] = {
-    "round2": list(range(16)),
+    # ST11 creates an HMC user, so only its own arm dispatches it (#632).
+    "round2": [n for n in range(16) if n != 11],
     "vmedia": list(range(16, 23)),
     "sriov": [23],
     "dedicated": [24],
     "bare-cec": [25],
     "profiles": [0, 4, 10, 15],
+    "users": [11],
     # ST9 runs only here: its round trips need the operator's network authorization.
     "network": [2, 9],
     # Not in "all": the arm restores a VIOS's I/O configuration and needs its own
@@ -1321,7 +1331,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "scratch_uuid",
         "vios_uuid",
         "console_uuid",
-        "test_user_uuid",
+        "test_user_name",
         "test_network_uuid",
         "test_adapter_uuid",
         "nettest_uuid",
@@ -1348,6 +1358,8 @@ def _decode_saved_config(value: Any) -> LiveTestConfig:
     # valid restore source; every other field difference remains a mismatch.
     parsed.pop("dry_run_vios_slot", None)
     parsed.pop("dry_run_vios_partition_id", None)
+    # And before #632 retired the configured test-user name.
+    parsed.pop("test_user", None)
     if set(parsed) != set(expected):
         raise ValueError("results config fields do not match LiveTestConfig")
     protected = parsed["protected_lpar_names"]
@@ -1372,9 +1384,12 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
         raise TypeError("results artifacts must be a JSON object")
     expected_fields = {item.name for item in fields(LiveTestArtifacts)}
     parsed = dict(value)
-    # A results document written before `test_user_uuid` existed is still a valid
-    # restore source; every other field difference remains a mismatch.
-    parsed.setdefault("test_user_uuid", None)
+    # A results document written before #632 replaced `test_user_uuid` with
+    # `test_user_name` is still a valid restore source; the old UUID named a
+    # configured user, never this run's, so it is dropped rather than restored.
+    # Every other field difference remains a mismatch.
+    parsed.pop("test_user_uuid", None)
+    parsed.setdefault("test_user_name", None)
     # Likewise a document written before the vios-backup arm (#1349) existed.
     for name in _VIOS_BACKUP_ARTIFACTS:
         parsed.setdefault(name, None)

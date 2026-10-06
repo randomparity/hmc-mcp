@@ -3349,18 +3349,6 @@ async def test_invalid_dispatch_precedes_known_gap():
     assert state.observations == state.gaps == []
 
 
-@pytest.mark.asyncio
-async def test_cached_user_inventory_gap_does_not_skip_cleanup_discovery():
-    expected = users._HMCUSER_ENDPOINT_UNSUPPORTED
-    state = runner.RunState(known_gaps={(expected.operation, expected.variant)})
-    state.artifacts.console_uuid = "console"
-    client = _ScriptedClient(
-        result=json.dumps([{"UserID": state.config.test_user, "uuid": "user-uuid"}])
-    )
-    await users.administer_test_user(client, state)
-    assert any(tool == "hmc_delete_user" for tool, _ in client.calls)
-
-
 def test_gap_output_can_be_copied_and_loaded_for_next_run(tmp_path):
     repo = _live_repo(tmp_path)
     expected = metrics._PREFERENCES_AUTHORITY
@@ -3554,7 +3542,6 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
         ),
         ("provisioning._TEST_DISK_ABSENT", "HMCError: No Such device or address"),
         ("vmedia._ALREADY_POWERED_OFF", "HMCError: partition is Not Running"),
-        ("users._HMCUSER_UNSUPPORTED", "HMCError: REST000E unsupported"),
     ],
 )
 def test_declared_outcomes_match_the_message_forms_the_hmc_really_renders(
@@ -3893,21 +3880,44 @@ def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
     assert state.artifacts == runner.LiveTestArtifacts()
 
 
-def test_restore_artifacts_tolerates_a_results_document_without_test_user_uuid(
-    tmp_path,
-):
-    """A report written before the field existed is still a valid restore source."""
+def test_restore_drops_the_configured_test_user_from_before_632(tmp_path):
+    """A pre-#632 report still restores, and its user UUID is not carried forward.
+
+    That UUID named a configured user, never a users-arm scratch user, so no
+    later step may act on it.
+    """
     config = runner.LiveTestConfig()
     hmc_config = _live_hmc_config()
     document = _result_document(config, hmc_config)
-    del document["artifacts"]["test_user_uuid"]
+    del document["artifacts"]["test_user_name"]
+    document["artifacts"]["test_user_uuid"] = "configured-user-uuid"
+    document["config"]["test_user"] = "configured-user"
     results_path = tmp_path / "previous.json"
     results_path.write_text(json.dumps(document))
     state = runner.RunState(config=config)
 
     runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
 
-    assert state.artifacts.test_user_uuid is None
+    assert state.artifacts.test_user_name is None
+    assert not hasattr(state.artifacts, "test_user_uuid")
+
+
+def test_a_retired_setting_still_loads_with_a_notice(tmp_path, capsys):
+    """#632 retired LIVE_TEST_TEST_USER_NAME; an existing .env must not stop every arm."""
+    example = Path(__file__).parents[1] / ".env.example"
+    env = tmp_path / ".env"
+    env.write_text(example.read_text() + "LIVE_TEST_TEST_USER_NAME=someone\n")
+
+    config = runner.LiveTestConfig.from_env_file(env)
+
+    assert not hasattr(config, "test_user")
+    assert "LIVE_TEST_TEST_USER_NAME" in capsys.readouterr().out
+
+
+def test_users_group_is_opt_in():
+    """ST11 creates an HMC user, so round2 no longer dispatches it (#632)."""
+    assert 11 not in runner.SUBTASK_GROUPS["round2"]
+    assert runner.SUBTASK_GROUPS["users"] == [11]
 
 
 def test_restore_artifacts_tolerates_a_document_from_before_the_vios_backup_arm(
@@ -5584,11 +5594,11 @@ async def test_metrics_template_inventory_records_expected_limitation_and_contin
 
 
 @pytest.mark.asyncio
-async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
-    calls = []
+async def test_user_inventory_records_a_refusal_as_a_failure(monkeypatch):
+    """REST000E was the pre-ADR-0076 HmcUser refusal; on UserProfile it is a defect."""
 
-    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
-        calls.append((tool, kwargs))
+    async def scripted_call(_state, _client, tool, **kwargs):
+        assert "expected" not in kwargs
         return "FAIL", _failure("REST000E: endpoint unavailable")
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
@@ -5597,8 +5607,8 @@ async def test_user_inventory_classifies_unsupported_endpoint(monkeypatch):
 
     await users.inventory_users(None, state)
 
-    assert calls == [("hmc_list_users", {"console_uuid": "console-uuid"})]
-    assert state.results[0]["status"] == "SKIP"
+    assert [row["status"] for row in state.results] == ["FAIL"]
+    assert state.gaps == []
 
 
 @pytest.mark.asyncio
@@ -5636,80 +5646,6 @@ async def test_cli_escape_hatch_runs_both_bounded_commands_after_failure(monkeyp
         ("hmc_run_command", {"cmd": "lssyscfg -r sys"}),
     ]
     assert [result["status"] for result in state.results] == ["FAIL", "PASS"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("create_status", ["PASS", "FAIL"])
-async def test_user_administration_cleans_up_only_a_created_user(
-    monkeypatch, create_status
-):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_create_user":
-            if create_status == "PASS":
-                return "PASS", {}
-            return "FAIL", _failure("REST000E")
-        if tool == "hmc_list_users":
-            return "PASS", [{"UserID": state.config.test_user, "uuid": "profile-uuid"}]
-        return "PASS", []
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.console_uuid = "console-uuid"
-
-    await users.administer_test_user(None, state)
-
-    expected = ["hmc_create_user", "hmc_list_users"]
-    if create_status == "PASS":
-        expected.extend(["hmc_modify_user", "hmc_delete_user"])
-    expected.append("hmc_list_users")
-    assert [tool for tool, _ in calls] == expected
-    assert calls[0][1]["user_id"] == state.config.test_user
-    assert calls[0][1]["console_uuid"] == "console-uuid"
-    if create_status == "PASS":
-        assert calls[2][1]["description"].endswith("updated")
-        assert calls[3][1] == {
-            "console_uuid": "console-uuid",
-            "user_profile_uuid": "profile-uuid",
-        }
-        assert state.artifacts.test_user_uuid is None
-    else:
-        skipped = [
-            result["tool"] for result in state.results if result["status"] == "SKIP"
-        ]
-        assert skipped == ["hmc_create_user", "hmc_modify_user", "hmc_delete_user"]
-
-
-@pytest.mark.asyncio
-async def test_user_administration_skips_without_a_profile_uuid(monkeypatch):
-    """Modify and delete address the profile by UUID; without one they must not run."""
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        assert tool not in {"hmc_modify_user", "hmc_delete_user"}
-        if tool == "hmc_list_users":
-            return "PASS", [{"UserID": "someone-else", "uuid": "other-uuid"}]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.console_uuid = "console-uuid"
-
-    await users.administer_test_user(None, state)
-
-    assert state.artifacts.test_user_uuid is None
-    skipped = [
-        (result["tool"], result["note"])
-        for result in state.results
-        if result["status"] == "SKIP"
-    ]
-    assert skipped == [
-        ("hmc_modify_user", "user profile UUID not found after create"),
-        ("hmc_delete_user", "user profile UUID not found after create"),
-    ]
 
 
 @pytest.mark.asyncio
@@ -6428,6 +6364,35 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "groups-equal-baseline",
         },
         "st1-console-identity": {"console-uuid-present"},
+        "st11-user-reads": {
+            "profiles-listed",
+            "profiles-carry-uuid-and-user-id",
+            "passwords-not-disclosed",
+            "task-roles-listed",
+            "viewer-role-present",
+            "resource-role-rows-named",
+            "resource-roles-empty-branch",
+            "remote-access-group-read",
+            "bind-password-not-disclosed",
+        },
+        "st11-user-lifecycle": {
+            "create-accepted",
+            "scratch-profile-listed",
+            "password-not-echoed",
+            "user-id-matches",
+            "task-role-is-viewer",
+            "password-not-disclosed",
+            "not-predefined",
+            "remote-access-disabled",
+            "description-updated",
+            "description-cleared",
+            "user-id-unchanged",
+            "profile-uuid-unchanged",
+            "task-role-unchanged",
+            "remote-access-unchanged",
+            "scratch-profile-absent",
+            "pre-existing-profiles-unchanged",
+        },
         "st1-system-inventory": {
             "system-uuid-present",
             "system-summary-returned",

@@ -508,7 +508,9 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
     async def served_client():
         yield served
 
-    async def no_findings(call, pcie, partition, vios, network_inputs=None):
+    async def no_findings(
+        call, pcie, partition, vios, network_inputs=None, users=False
+    ):
         return []
 
     monkeypatch.setattr(recovery.runner, "served_client", served_client)
@@ -1034,8 +1036,8 @@ def _main(tmp_path, monkeypatch, document, findings=None, raises=None):
     """Run `main` over *document*; return (exit code, whether the HMC was contacted)."""
     contacted = []
 
-    async def run_checks(pcie, partition, vios, network_inputs=None):
-        contacted.append((pcie, partition))
+    async def run_checks(pcie, partition, vios, network_inputs=None, users=False):
+        contacted.append((pcie, partition, users))
         if raises is not None:
             raise raises
         return findings or []
@@ -1064,8 +1066,8 @@ def test_a_stranded_vmedia_run_exits_one(tmp_path, monkeypatch):
 
 
 def test_a_round2_run_is_not_witnessed_and_exits_two(tmp_path, monkeypatch, capsys):
-    """Its partition, user and network changes are checked by hand."""
-    document = _lpar_document(range(16))
+    """Its partition and network changes are checked by hand."""
+    document = _lpar_document(n for n in range(16) if n != 11)
 
     assert _main(tmp_path, monkeypatch, document) == (2, False)
     output = capsys.readouterr().out
@@ -1185,6 +1187,112 @@ def test_a_complete_or_older_run_is_judged_on_its_findings(
     assert output.startswith("recovery check for")
     assert "PARTIAL" not in output
     assert "CLEAN" in output
+
+
+# ---------------------------------------------------------------------------
+# The users arm (subtask 11, #632) is witnessed by its reserved prefix
+# ---------------------------------------------------------------------------
+
+_CONSOLE = {"uuid": "console-1"}
+
+
+def _users(*names: str) -> list[dict]:
+    """A `hmc_list_users` answer in the parser's shape (entry UUID, wrapped UserID)."""
+    return [
+        {"UUID": f"uuid-{index}", "Resource": {"UserID": {"text": name}}}
+        for index, name in enumerate(names)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_surviving_scratch_user_is_reported_whoever_the_document_names():
+    """A run killed before writing its document leaves an earlier run's name there."""
+    call = _caller(
+        {
+            "hmc_get_console_info": _CONSOLE,
+            "hmc_list_users": _users("operator", "hmcpctl-live-0badf00d"),
+        }
+    )
+
+    findings = await recovery.check_run(call, None, None, users=True)
+
+    assert [finding.remedy for finding in findings] == [
+        "rmhmcusr -u hmcpctl-live-0badf00d"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_no_scratch_user_means_no_finding():
+    call = _caller(
+        {"hmc_get_console_info": _CONSOLE, "hmc_list_users": _users("operator")}
+    )
+
+    assert await recovery.check_run(call, None, None, users=True) == []
+
+
+@pytest.mark.asyncio
+async def test_an_unlistable_user_table_is_not_clean():
+    call = _caller({"hmc_get_console_info": _CONSOLE})
+
+    with pytest.raises(recovery.StateUnreadable, match="HMC user list"):
+        await recovery.check_run(call, None, None, users=True)
+
+
+@pytest.mark.asyncio
+async def test_a_user_list_it_cannot_map_is_not_clean():
+    """An entry with no UUID could hide a scratch user from the prefix scan."""
+    listing = [*_users("operator"), {"Resource": {"UserID": {"text": "x"}}}]
+    call = _caller({"hmc_get_console_info": _CONSOLE, "hmc_list_users": listing})
+
+    with pytest.raises(recovery.StateUnreadable, match="HMC user list"):
+        await recovery.check_run(call, None, None, users=True)
+
+
+def _users_document(**artifacts) -> dict:
+    return {
+        "run": {"subtasks": [11], "group": "users"},
+        "config": {},
+        "artifacts": artifacts,
+        "results": [_row(11, "hmc_create_user")],
+    }
+
+
+def test_a_users_run_is_witnessed_and_its_stranded_user_exits_one(
+    tmp_path, monkeypatch
+):
+    document = _users_document(test_user_name="hmcpctl-live-0badf00d")
+    finding = recovery.Finding("HMC user x", "detail", "rmhmcusr -u x")
+
+    assert _main(tmp_path, monkeypatch, document, [finding]) == (1, True)
+
+
+def test_a_clean_users_run_exits_zero(tmp_path, monkeypatch, capsys):
+    document = _users_document(test_user_name=None)
+
+    assert _main(tmp_path, monkeypatch, document) == (0, True)
+    assert "CLEAN" in capsys.readouterr().out
+
+
+def test_a_pre_632_document_with_an_st11_create_exits_two(tmp_path, monkeypatch):
+    """Its configured user carries no prefix, so the scan cannot witness it."""
+    document = _users_document(test_user_uuid="configured-user-uuid")
+
+    assert _main(tmp_path, monkeypatch, document) == (2, False)
+
+
+def test_a_pre_632_round2_document_still_runs_its_partition_checks(
+    tmp_path, monkeypatch, capsys
+):
+    """The unreadable ST11 must not hide the provisioned test partition's residue."""
+    document = _lpar_document(
+        range(16),
+        [_row(11, "hmc_create_user"), _row(14, "hmc_provision_lpar (live)")],
+        test_user_uuid="configured-user-uuid",
+    )
+
+    assert _main(tmp_path, monkeypatch, document, [_FINDING]) == (2, True)
+    output = capsys.readouterr().out
+    assert "STRANDED" in output and "predates the users arm" in output
 
 
 # ---------------------------------------------------------------------------
@@ -1311,7 +1419,7 @@ def test_vios_backup_inputs_need_subtask_37_and_its_artifacts():
 
 
 def test_a_vios_backup_run_is_witnessed(tmp_path, monkeypatch, capsys):
-    async def checks(pcie, partition, vios, network_inputs=None):
+    async def checks(pcie, partition, vios, network_inputs=None, users=False):
         assert pcie is None and partition is None
         return await recovery.check_vios_backup(
             _caller({"hmc_list_vios_backups": [], "hmc_list_storage_mappings": []}),
@@ -1511,7 +1619,7 @@ async def test_an_unreadable_network_listing_is_not_clean(tool):
 
 
 def test_a_network_run_is_witnessed_and_can_exit_clean(tmp_path, monkeypatch, capsys):
-    async def checks(pcie, partition, vios, network_inputs=None):
+    async def checks(pcie, partition, vios, network_inputs=None, users=False):
         assert network_inputs is not None
         return await recovery.check_network(_caller(_clean_hmc()), network_inputs)
 

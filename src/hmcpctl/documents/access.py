@@ -50,46 +50,56 @@ def build_hmc_user_document(
     allow_ssh_remote_access: bool | None = None,
     remote_user_id: str | None = None,
 ) -> str:
-    """Build a documented UOM ``UserProfile`` create or update document."""
+    """Build a documented UOM ``UserProfile`` create or update document.
+
+    Children follow the documented response order, and roles are names rather
+    than links (ADR 0202): ``203-userprofile.md`` in the reference and the V10R3
+    capture carry ``AssociatedTaskRole`` and ``AssociatedResourceRole`` as text.
+    """
+    if authentication_type is not None and authentication_type not in (
+        AUTHENTICATION_TYPES
+    ):
+        raise ValueError(
+            f"Invalid authentication_type {authentication_type!r}. Must be one of: "
+            f"{', '.join(sorted(AUTHENTICATION_TYPES))}"
+        )
     parts = ["  <Metadata><Atom/></Metadata>"]
-    if user_id is not None:
-        parts.append(f'  <UserID kb="CUR" kxe="false">{user_id}</UserID>')
-    if authentication_type is not None:
-        if authentication_type not in AUTHENTICATION_TYPES:
-            raise ValueError(
-                f"Invalid authentication_type {authentication_type!r}. Must be one of: "
-                f"{', '.join(sorted(AUTHENTICATION_TYPES))}"
-            )
-        parts.append(
-            f'  <AuthenticationType kb="CUR" kxe="false">'
-            f"{authentication_type}</AuthenticationType>"
-        )
-    if password is not None:
-        parts.append(
-            f'  <UserProfilePassword kb="CUR" kxe="false">'
-            f"{password}</UserProfilePassword>"
-        )
-    if description is not None:
-        parts.append(
-            f'  <UserDescription kb="CUR" kxe="false">{description}</UserDescription>'
-        )
+    for name, value in (
+        ("UserID", user_id),
+        ("UserDescription", description),
+        # The tool keeps the reference's spelling; the HMC lists and accepts only
+        # lower case (a V10R3 create carrying `Local` failed REST0001, #632).
+        (
+            "AuthenticationType",
+            None if authentication_type is None else authentication_type.lower(),
+        ),
+        ("UserProfilePassword", password),
+        ("PasswordExpiry", password_expiry),
+    ):
+        if value is not None:
+            parts.append(f'  <{name} kb="CUR" kxe="false">{value}</{name}>')
     if associated_task_role is not None:
         if associated_task_role:
-            parts.append(f'  <AssociatedTaskRole href="{associated_task_role}"/>')
+            parts.append(
+                f'  <AssociatedTaskRole kb="CUR" kxe="false">'
+                f"{associated_task_role}</AssociatedTaskRole>"
+            )
         else:
             parts.append('  <AssociatedTaskRole kb="CUR" kxe="false"/>')
     if associated_resource_roles is not None:
         if associated_resource_roles:
-            parts.append("  <AssociatedResourceRoles>")
-            parts.extend(
-                f'    <ResourceRole href="{role}"/>'
+            roles = "".join(
+                f'<AssociatedResourceRole kb="CUR" kxe="false">{role}'
+                "</AssociatedResourceRole>"
                 for role in associated_resource_roles
             )
-            parts.append("  </AssociatedResourceRoles>")
+            parts.append(
+                '  <AssociatedResourceRoles kb="CUR" kxe="false" schemaVersion="V1_0">'
+                f"<Metadata><Atom/></Metadata>{roles}</AssociatedResourceRoles>"
+            )
         else:
             parts.append('  <AssociatedResourceRoles kb="CUR" kxe="false"/>')
     for name, value in (
-        ("PasswordExpiry", password_expiry),
         ("SessionTimeout", session_timeout),
         ("VerifySessionTimeout", verify_session_timeout),
         ("IdleSessionTimeout", idle_session_timeout),

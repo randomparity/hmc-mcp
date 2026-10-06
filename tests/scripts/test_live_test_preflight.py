@@ -270,6 +270,20 @@ def test_the_profiles_verdict_names_each_change_it_makes(
     assert "skipped when ST0 reads sync_curr_profile as 1" in output
 
 
+def test_the_users_verdict_discloses_the_scratch_user(workspace, monkeypatch, capsys):
+    """#632. The arm creates an HMC-global user; the operator sees which first."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "users", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "one user hmcpctl-live-<8 hex> with the hmcviewer task role" in output
+    assert "remote access disabled" in output
+    assert "deleted by UUID" in output
+
+
 def test_the_network_verdict_names_each_change_it_makes(workspace, monkeypatch, capsys):
     """#629. Every mutation the network arm makes, and that it touches no existing network."""
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")

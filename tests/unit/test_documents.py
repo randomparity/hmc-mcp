@@ -282,12 +282,13 @@ def test_all_partition_types_accepted():
         build_lpar_document(name="ok", partition_type=pt)
 
 
-def test_all_authentication_types_serialize_unchanged():
+def test_all_authentication_types_serialize_in_the_hmcs_lower_case():
+    """The HMC lists and accepts only lower case (#632, live 2026-10-06)."""
     for authentication_type in AUTHENTICATION_TYPES:
         xml = build_hmc_user_document(
             user_id="operator", authentication_type=authentication_type
         )
-        assert f">{authentication_type}</AuthenticationType>" in xml
+        assert f">{authentication_type.lower()}</AuthenticationType>" in xml
 
 
 def test_invalid_authentication_type_is_rejected():

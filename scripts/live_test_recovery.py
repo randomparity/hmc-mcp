@@ -8,7 +8,8 @@ Usage:
     uv run --no-sync python scripts/live_test_recovery.py --results PATH
 
 It witnesses the dedicated PCIe and bare-cec arms (subtasks 24-25) by their run
-marker, and the vMedia arm (subtasks 16-22) by what it can leave on the run's
+marker, the users arm (subtask 11) by any HMC user still carrying its reserved
+`hmcpctl-live-` prefix, and the vMedia arm (subtasks 16-22) by what it can leave on the run's
 configured test partition: a running partition, a changed pending boot string,
 an optical mapping, a VIOS vSCSI server adapter with no mapping, and the media
 repository it created. It witnesses the vios-backup arm (subtask 37) by the backup
@@ -61,6 +62,8 @@ from live_test.pcie import (
     partition_not_found,
     select_profile_io_slots,
 )
+from live_test.results import entries
+from live_test.users import profile_rows, scratch_users
 from live_test.vmedia import (
     _BOOT_BASELINE_STEP,
     _mapping_identity,
@@ -84,6 +87,8 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_list_optical_mappings",
         "hmc_list_storage_mappings",
         "hmc_get_media_repository",
+        "hmc_get_console_info",
+        "hmc_list_users",
         "hmc_list_vios_backups",
         "hmc_list_virtual_networks",
         "hmc_list_adapters",
@@ -107,7 +112,12 @@ _SHELL_METACHARACTERS = frozenset(";|&$`<>()\n")
 #: The vMedia arm (`SUBTASK_GROUPS["vmedia"]`) and the PCIe arms the marker
 #: checks cover. Any other dispatched subtask is reported as not witnessed.
 _VMEDIA_SUBTASKS = frozenset(range(16, 23))
+#: The users arm (#632). Its scratch users are found by their reserved prefix,
+#: not by the document's name, so a run killed before it wrote its document, or
+#: overwritten by a later run's, still has its user reported.
+_USERS_SUBTASK = 11
 _WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {
+    _USERS_SUBTASK,
     24,
     25,
     vios_backup.SUBTASK,
@@ -210,6 +220,50 @@ def inputs_from_document(document: Any) -> RecoveryInputs | None:
             config.get("dedicated_pcie_profile_name") or _DEFAULT_DEDICATED_PROFILE
         ),
     )
+
+
+def users_witnessed(document: dict[str, Any], subtasks: list[int]) -> bool:
+    """Whether to look for users-arm scratch users.
+
+    Raises `ValueError` for a document written before #632: its ST11 created a
+    configured user the prefix scan cannot recognise, so it cannot be witnessed.
+    """
+    if _USERS_SUBTASK not in subtasks:
+        return False
+    artifacts = document.get("artifacts")
+    if not (isinstance(artifacts, dict) and "test_user_name" in artifacts) and _calls(
+        document, {_USERS_SUBTASK}, {"hmc_create_user"}
+    ):
+        raise ValueError(
+            "this document's ST11 predates the users arm (#632) and created a "
+            "configured user the check cannot recognise; confirm by hand that "
+            "it is gone"
+        )
+    return True
+
+
+async def _scratch_users_left(call) -> list[Finding]:
+    """One finding per HMC user carrying the users arm's reserved prefix."""
+    status, console = await call("hmc_get_console_info")
+    console_uuid = (
+        console.get("uuid") or console.get("UUID")
+        if status == "PASS" and isinstance(console, dict)
+        else None
+    )
+    if not isinstance(console_uuid, str):
+        raise StateUnreadable("the console UUID, to list HMC users")
+    status, listing = await call("hmc_list_users", console_uuid=console_uuid)
+    rows = profile_rows(listing) if status == "PASS" else {}
+    if status != "PASS" or len(rows) != len(entries(listing)):
+        raise StateUnreadable("the HMC user list")
+    return [
+        Finding(
+            what=f"HMC user {name}",
+            detail="a users-arm scratch user is still defined (viewer role)",
+            remedy=f"rmhmcusr -u {name}",
+        )
+        for name in scratch_users(rows)
+    ]
 
 
 @dataclass(frozen=True)
@@ -1082,10 +1136,16 @@ async def check_run(
     partition: LparResidueInputs | None,
     vios: VIOSBackupInputs | None = None,
     network_inputs: NetworkInputs | None = None,
+    users: bool = False,
 ) -> list[Finding]:
     """Each arm's checks in turn, each read whatever the others found."""
     findings: list[Finding] = []
     unread: list[str] = []
+    if users:
+        try:
+            findings += await _scratch_users_left(call)
+        except StateUnreadable as unreadable:
+            unread.append(str(unreadable))
     for run_checks, inputs in (
         (check, pcie),
         (check_test_partition, partition),
@@ -1119,6 +1179,7 @@ async def _run_checks(
     partition: LparResidueInputs | None,
     vios: VIOSBackupInputs | None = None,
     network_inputs: NetworkInputs | None = None,
+    users: bool = False,
 ) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
     # The checks need the live run's composition, not bare ``create_mcp``:
@@ -1129,7 +1190,12 @@ async def _run_checks(
     # missed that, so a test asserts the read-only tools are registered here.
     async with runner.served_client() as client:
         return await check_run(
-            _read_only_caller(client, state), pcie, partition, vios, network_inputs
+            _read_only_caller(client, state),
+            pcie,
+            partition,
+            vios,
+            network_inputs,
+            users,
         )
 
 
@@ -1218,17 +1284,27 @@ def main(argv: list[str] | None = None) -> int:
 
     findings: list[Finding] = []
     unread: list[str] = []
-    if any(inputs is not None for inputs in (pcie, partition, vios, network_inputs)):
+    try:
+        users = users_witnessed(document, subtasks)
+    except ValueError as error:
+        users = False
+        unread.append(str(error))
+    if users or any(
+        inputs is not None for inputs in (pcie, partition, vios, network_inputs)
+    ):
         if not runner._bootstrap_config():
             print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
             return 2
         try:
-            findings = asyncio.run(_run_checks(pcie, partition, vios, network_inputs))
+            findings = asyncio.run(
+                _run_checks(pcie, partition, vios, network_inputs, users)
+            )
         except MutatingCallRefused as refused:
             print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
             return 2
         except StateUnreadable as unreadable:
-            findings, unread = unreadable.findings, [str(unreadable)]
+            findings = unreadable.findings
+            unread.append(str(unreadable))
         except Exception as error:  # noqa: BLE001 - an unreadable system is not a clean one
             print(f"ERROR: could not read the managed system: {error}", file=sys.stderr)
             return 2
