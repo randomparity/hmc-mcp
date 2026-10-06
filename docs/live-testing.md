@@ -265,7 +265,7 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 |---|---|
 | 0 | every dispatched subtask is witnessed and nothing is left behind |
 | 1 | something is stranded; the output names it and the command that clears it |
-| 2 | some state could not be read, or the run dispatched subtasks the check does not witness — **this is not clean** |
+| 2 | some state could not be read, the run dispatched subtasks the check does not witness, or the run was interrupted (`run.partial`), even when something is also stranded — **this is not clean** |
 
 Exit 2 is expected after round2, SR-IOV, profiles and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
