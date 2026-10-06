@@ -147,31 +147,31 @@ response. Automatic replay would risk duplicate or conflicting side effects.
 
 ## Amendment (2026-10-05, #1325)
 
-`HMCClient.__aexit__` no longer raises a logoff **transport** failure when the
+`HMCClient.__aexit__` no longer raises a logoff **transport** failure after the
 `async with` body exited cleanly. A `HMCTransportError` from `logoff()` there —
-a connect, read, protocol, or timeout failure before the HMC answered — is logged
-at WARNING on the `hmcpctl.client.core` logger, with a note that the HMC session
-may persist until the HMC times it out, and the context exits normally. An HMC
-rejection (`HMCError`, any status other than 200, 202, or 204) still propagates,
-as does any other exception. When the body raised, every cleanup failure is still
-attached to the body's exception as a note.
+no complete response was read, including a rejection whose body read dropped —
+is logged at WARNING with the HMC host and a note that the session may persist
+until the HMC times it out. Every other logoff failure, including an HMC
+rejection, still propagates; when the body raised, cleanup failures are still
+notes on its exception. The rule table is in the
+[design](../workflow/specs/2026-10-05-logoff-transport-failure-design.md).
 
-Nothing else here changes. `logoff()` still validates the response status and
-raises both failure kinds; it still clears the local token in every case. The
-future cache's rule that an ambiguous Logoff quarantines its key is unaffected:
-that is the cache's own cleanup contract, not the per-call context manager's.
+`logoff()` itself is unchanged: it validates the status, raises both kinds, and
+clears the local token. The future cache's quarantine of an ambiguous Logoff is
+its own contract and is unaffected.
 
-The reason: a transport drop on the Logoff `DELETE` failed a read whose response
-had already been returned (issue #1325, observed once on a V11R2 HMC). The caller
-cannot act on that error — logoff is not retried, and the local token is already
-gone — and a retried mutation could duplicate its effect. A rejection is
-different: the HMC answered that it did not close the session, which an operator
-can act on, so it keeps failing the call.
+Reason: a transport drop on the Logoff `DELETE` failed a read that had already
+succeeded (observed once on a V11R2 HMC during #627), and the caller can
+neither repair the fault nor safely retry a completed mutation. A rejection keeps
+failing the call because the HMC said the session is still open; a completed
+mutation followed by a rejected Logoff therefore still reports failure.
+
+Residual: a systematic transport drop on `DELETE` leaks one session per call, up
+to the HMC's per-user maximum, with the per-call WARNING as the only signal.
 
 Considered & rejected:
 
 - **Keep raising both kinds.** judgment: fails completed operations for a
-  cleanup fault the caller cannot repair, and invites duplicate mutations.
+  cleanup fault the caller cannot repair.
 - **Retry the Logoff once before logging.** judgment: excluded by the operator
-  for #1325; a second `DELETE` adds latency to every failing exit for a session
-  the HMC times out on its own.
+  for #1325.

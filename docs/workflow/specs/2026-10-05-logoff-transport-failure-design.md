@@ -15,7 +15,7 @@ Operator decision, campaign plan 2026-10-05: issue option 2.
 
 | Body | Logoff outcome | `__aexit__` behaviour |
 |---|---|---|
-| clean | `HMCTransportError` (connect, read, protocol, timeout) | one WARNING on the `hmcpctl.client.core` logger naming the failure and that the HMC session may persist until the HMC times it out; no exception |
+| clean | `HMCTransportError`: no complete response was read (connect, read, protocol, timeout — including a rejection whose body read dropped) | one WARNING on the `hmcpctl.client.core` logger naming the HMC host, the failure, and that the HMC session may persist until the HMC times it out; no exception |
 | clean | `HMCError` that is not `HMCTransportError` (non-2xx rejection) | raised, as today |
 | clean | any other exception, including `CancelledError` | raised, as today |
 | raised | any | unchanged: body exception is primary, cleanup failure attached as a note |
@@ -36,12 +36,14 @@ amendment narrows only what the context manager propagates.
    `HMCClient` context; library consumers of the ADR 0118 facade using `async with HMCClient`.
 2. **Invariants and assets at stake** — HMC web-session capacity (a leaked session holds a slot
    until the HMC timeout); the published error contract of `HMCClient` (ADR 0118); a completed
-   mutation must not be reported as failed in a way that invites a duplicate retry.
-3. **Accepted failure classes** — a logoff that the HMC actually did not process after a
-   transport drop leaves one session until the HMC's own timeout: accepted, bounded by the
-   HMC's configured session timeout and stated in the WARNING; logoff retry is excluded by the
-   operator (owner: none). A library consumer that relied on catching the transport error from
-   `__aexit__` no longer sees it: accepted, the change is recorded in `CHANGELOG.md`.
+   mutation must not be reported as failed because of a logoff *transport* failure.
+3. **Accepted failure classes** — a logoff the HMC did not process after a transport drop
+   leaves its session until the HMC timeout; a systematic drop leaks one per call, up to the
+   HMC's per-user maximum, with the per-call WARNING as the only signal: accepted, logoff retry
+   is excluded by the operator (owner: none). A completed mutation followed by a *rejected*
+   logoff still reports failure: accepted, operator decision (criterion 2). A library consumer
+   that caught the transport error from `__aexit__` no longer sees it: accepted, recorded in
+   `CHANGELOG.md`.
 4. **Covered elsewhere** — session reuse and cache quarantine on ambiguous logoff: ADR 0028's
    future implementation, unchanged by this amendment; log sink routing: ADR 0043.
 
