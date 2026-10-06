@@ -380,17 +380,16 @@ async def _memory_cases(client: Client, state: RunState, run: _Run) -> None:
         system_name_or_uuid=run.system,
         resources={"desired_memory": maximum + run.region},
     )
-    # Recorded, never asserted: the answer itself is what this run captures.
+    # Recorded, never asserted: the answer itself is what this run captures. The
+    # answer is the row's top-level data so the runner redacts a failure's text.
+    state.record(
+        SUBTASK, "hmc_dlpar_mem (over maximum)", "PASS", data, f"the HMC answered {st}"
+    )
     state.record(
         SUBTASK,
-        "hmc_dlpar_mem (over maximum)",
+        "hmc_dlpar_mem (over maximum read-back)",
         "PASS",
-        {
-            "status": st,
-            "call": data,
-            "before": before,
-            "after": await _values(client, state, run),
-        },
+        {"before": before, "after": await _values(client, state, run)},
     )
 
 
@@ -596,12 +595,15 @@ async def _record_activated(
     after = await _configuration(client, state, run)
     location = result_field(data, "change_location") if st == "PASS" else None
     note = _ACTIVATED_GAP_NOTE if st != "PASS" else "accepted while activated"
+    # The answer is the row's top-level data so the runner redacts a failure's text.
+    state.record(
+        SUBTASK, f"{tool} (activated)", "PASS" if st == "PASS" else "SKIP", data, note
+    )
     state.record(
         SUBTASK,
-        f"{tool} (activated)",
-        "PASS" if st == "PASS" else "SKIP",
-        {"call": data, "change_location": location, "read_back": after},
-        note,
+        f"{tool} (activated read-back)",
+        "PASS",
+        {"change_location": location, "read_back": after},
     )
 
 

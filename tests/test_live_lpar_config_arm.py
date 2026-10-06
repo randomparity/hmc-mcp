@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -370,6 +371,9 @@ async def test_activated_refusal_is_a_gap_row(monkeypatch):
     (row,) = _rows(state, "hmc_dlpar_mem (activated)")
     assert row["status"] == "SKIP"
     assert "active RMC connection" in row["note"]
+    # A failure nested inside a row's data would skip the runner's redaction.
+    assert row["data"] == "HSCL294C no RMC connection"
+    assert "Traceback" not in json.dumps(state.results, default=str)
     assert not any(
         e["operation"] == "lpar.dlpar_mem" and "activated" in str(e)
         for e in state.observations
@@ -384,7 +388,8 @@ async def test_activated_acceptance_makes_no_rmc_claim(monkeypatch):
         (row,) = _rows(state, tool)
         assert row["status"] == "PASS"
         assert "RMC" not in row["note"]
-        assert row["data"]["read_back"]["memory"]
+        (read_back,) = _rows(state, tool.replace(")", " read-back)"))
+        assert read_back["data"]["read_back"]["memory"]
     assert _results(state) == _ALL_PASSED
 
 
