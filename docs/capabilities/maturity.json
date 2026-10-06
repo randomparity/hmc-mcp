@@ -1788,7 +1788,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st2-hmc-list-virtual-switches",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st2-network-inventory",
+          "observed_at": "2026-10-06T19:17:10Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "switch-ids-integral"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1a2e4d92688e6e9c50ed3f81e3f02fa9811065bfa1f5eaec49d1ada6956b544c"
+        }
+      ]
     },
     {
       "operation": "network.list_networks",
@@ -1802,7 +1819,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st2-hmc-list-virtual-networks",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st2-network-inventory",
+          "observed_at": "2026-10-06T19:17:16Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "vlan-ids-in-range"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1a2e4d92688e6e9c50ed3f81e3f02fa9811065bfa1f5eaec49d1ada6956b544c"
+        }
+      ]
     },
     {
       "operation": "network.list_bridges",
@@ -1816,7 +1850,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st2-hmc-list-network-bridges",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st2-network-inventory",
+          "observed_at": "2026-10-06T19:17:24Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "bridge-entries-identified"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1a2e4d92688e6e9c50ed3f81e3f02fa9811065bfa1f5eaec49d1ada6956b544c"
+        }
+      ]
     },
     {
       "operation": "network.list_sea",
@@ -1834,7 +1885,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st2-hmc-list-sea-adapters",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st2-network-inventory",
+          "observed_at": "2026-10-06T19:17:28Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "eth-rows-parsed"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "46a04f636ef06b22f400b7c014b4a624737399f03ca59f0e193b64f72d9a4847"
+        }
+      ]
     },
     {
       "operation": "network.list_fc_ports",
@@ -1870,7 +1938,22 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st9-hmc-create-virtual-network",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st9-virtual-network-round-trip",
+          "observed_at": "2026-10-06T19:18:48Z",
+          "cleanup": "passed",
+          "assertions": [],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1a2e4d92688e6e9c50ed3f81e3f02fa9811065bfa1f5eaec49d1ada6956b544c"
+        }
+      ]
     },
     {
       "operation": "network.delete_network",
@@ -1910,7 +1993,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st2-hmc-list-adapters",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st2-network-inventory",
+          "observed_at": "2026-10-06T19:18:02Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "adapter-entries-identified"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "28f657e9f07369fb9391831a0be3857e44b2271b5fefce2fc9cf12da769eb8e3"
+        }
+      ]
     },
     {
       "operation": "adapter.add_network",
@@ -1938,7 +2038,28 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st9-hmc-add-vscsi-adapter",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st9-vscsi-client-adapter",
+          "observed_at": "2026-10-06T19:20:39Z",
+          "cleanup": "passed",
+          "assertions": [
+            "adapter-added",
+            "pairing-matches",
+            "slot-collision-refused",
+            "adapters-equal-baseline",
+            "vios-side-unchanged"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "28f657e9f07369fb9391831a0be3857e44b2271b5fefce2fc9cf12da769eb8e3"
+        }
+      ]
     },
     {
       "operation": "adapter.add_vfc",
@@ -2064,7 +2185,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st9-hmc-create-vios-vfc-group-label",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st9-vfc-group-label",
+          "observed_at": "2026-10-06T19:21:20Z",
+          "cleanup": "passed",
+          "assertions": [
+            "group-created",
+            "duplicate-refused"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "c077feccf7080ff1b77d62a36d39320075408fc115e9d4289ae58253a17de21e"
+        }
+      ]
     },
     {
       "operation": "vios_label.update_vfc_group",
@@ -2086,7 +2225,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st9-hmc-update-vios-vfc-group-label",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st9-vfc-group-label",
+          "observed_at": "2026-10-06T19:21:20Z",
+          "cleanup": "passed",
+          "assertions": [
+            "group-renamed"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "c077feccf7080ff1b77d62a36d39320075408fc115e9d4289ae58253a17de21e"
+        }
+      ]
     },
     {
       "operation": "vios_label.remove_vfc_group",
@@ -2100,7 +2256,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st9-hmc-remove-vios-vfc-group-label",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st9-vfc-group-label",
+          "observed_at": "2026-10-06T19:21:20Z",
+          "cleanup": "passed",
+          "assertions": [
+            "group-removed",
+            "groups-equal-baseline"
+          ],
+          "tested_commit": "d2a97c866739088ac8be03c9ba3908ff0ce35908",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "c077feccf7080ff1b77d62a36d39320075408fc115e9d4289ae58253a17de21e"
+        }
+      ]
     }
   ]
 }

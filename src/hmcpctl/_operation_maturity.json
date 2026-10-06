@@ -19,9 +19,9 @@
     {
       "operation": "adapter.add_vscsi",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:20:39Z"
     },
     {
       "operation": "adapter.delete",
@@ -33,9 +33,9 @@
     {
       "operation": "adapter.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:18:02Z"
     },
     {
       "operation": "console.info",
@@ -257,9 +257,9 @@
     {
       "operation": "network.create_network",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:18:48Z"
     },
     {
       "operation": "network.delete_network",
@@ -271,9 +271,9 @@
     {
       "operation": "network.list_bridges",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:17:24Z"
     },
     {
       "operation": "network.list_fc_ports",
@@ -285,23 +285,23 @@
     {
       "operation": "network.list_networks",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:17:16Z"
     },
     {
       "operation": "network.list_sea",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:17:28Z"
     },
     {
       "operation": "network.list_switches",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:17:10Z"
     },
     {
       "operation": "pcie.assign_dedicated_slot",
@@ -467,9 +467,9 @@
     {
       "operation": "vios_label.create_vfc_group",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:21:20Z"
     },
     {
       "operation": "vios_label.list_fc_ports",
@@ -495,9 +495,9 @@
     {
       "operation": "vios_label.remove_vfc_group",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:21:20Z"
     },
     {
       "operation": "vios_label.set_fc_port",
@@ -509,9 +509,9 @@
     {
       "operation": "vios_label.update_vfc_group",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:21:20Z"
     }
   ]
 }

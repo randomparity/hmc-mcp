@@ -173,17 +173,37 @@ reaches the HMC.
 5. **Catalog**: maturity records for the 19 operations; regenerated projection and
    `docs/tools/`.
 
+### Live result (2026-10-06, V10R3 / POWER9 boundary system, final run at d2a97c86)
+
+Preflight, the network arm and the recovery check (exit 0, CLEAN) ran around each
+run; every baseline compare matched. Two findings changed the code between runs:
+the HMC caps a VIOS group label at 16 characters (HSCLC3A4), and it refused the
+VirtualNetwork document's `NetworkName kb="CUD"` (REST0001, enumeration `[CUR]`).
+With both fixed, the create is refused with HTTP 500 "Associated VSwitch of
+VirtualNetwork cannot be null!!": `create_virtual_network` sends no
+`AssociatedSwitch` link. That is recorded as a failed `network.create_network`
+observation and left to a follow-up, as the orchestrator ruled (one re-run only).
+
+| Operation | Result |
+|---|---|
+| `network.list_switches`, `list_networks`, `list_bridges`, `list_sea`, `adapter.list` | passed |
+| `adapter.add_vscsi` | passed (collision refused with REST0126) |
+| `vios_label.create_vfc_group`, `update_vfc_group`, `remove_vfc_group` | passed (duplicate refused with HSCLC3A2) |
+| `network.create_network` | failed: AssociatedSwitch null |
+| the other eight | unevidenced (gaps below) |
+
 ### Live gaps
 
 | Case | Prerequisite |
 |---|---|
-| vFC client adapter (if the boundary VIOS has no vFC server adapter assigned to the test partition) | a vFC server adapter on the serving VIOS assigned to the test partition |
+| `network.delete_network`, `adapter.add_network`, `adapter.delete` | a working VLAN create: `create_virtual_network` must send the `AssociatedSwitch` link (follow-up) |
+| `adapter.add_vfc` | a vFC server adapter on the serving VIOS assigned to the test partition |
+| `vios_label.set_fc_port`, `remove_fc_port`, a non-empty `list_fc_ports` | an FC adapter on the serving VIOS (the boundary VIOS has none) |
+| a non-empty `network.list_fc_ports`, `vios_label.list_vfc_groups` read in ST2 | a system with vFC adapters / a group label at ST2 time |
 | vSCSI client adapter paired to a slot open to any partition | not exercised by policy |
 | group label `add-members` / `remove-members` | a second VIOS on the boundary system |
 | adapters on a running partition (DLPAR) | an activated disposable partition; excluded |
 | NPIV fabric login | a zoned fabric; excluded |
-| a non-empty listing for any ST2 read the boundary system returns empty | a system with that resource |
-| FC-port and group labels on POWER9, if `lslabelvios` is refused there | a POWER10/11 system in the mutation boundary |
 
 ## Failure model
 
