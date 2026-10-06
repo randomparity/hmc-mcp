@@ -204,9 +204,9 @@ every change whatever the call returned, and reverses the difference:
   afterwards. With no such vFC slot, the vFC round trip SKIPs. Each vFC add
   takes a WWPN pair from the system's pool.
 - **Labels.** On the serving VIOS's first FC port it sets
-  `hmcpctl-live-<8 hex>`, tries the same on port `fcs9999` (expected refused),
+  `hmcl-<8 hex>`, tries the same on port `fcs9999` (expected refused),
   removes the label and puts back the original. It creates a vFC group label
-  `hmcpctl-live-<8 hex>`, tries to create it again (expected refused), renames
+  `hmcl-<8 hex>` (the HMC caps a group label at 16 characters), tries to create it again (expected refused), renames
   it with `-r` and removes it. A label the tools cannot write back exactly, or a
   label read the HMC refuses, SKIPs that round trip.
 
@@ -217,7 +217,7 @@ A reversal that fails or cannot be confirmed is a FAIL row marked
 The recovery check witnesses subtask 9 from the baselines the run recorded:
 no network on the run's VLAN (`artifacts.test_vlan_id`), whatever its name; the
 test partition's client network, vSCSI and vFC adapters as before; the serving
-VIOS's FC-port labels as before; and no vFC group label named `hmcpctl-live-*`.
+VIOS's FC-port labels as before; and no vFC group label named `hmcl-*`.
 Subtask 2 only reads. After an interrupted run (exit 2), check the same by hand.
 
 ### The vios-backup arm
@@ -354,7 +354,7 @@ four sets of them:
 | 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
-| 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcpctl-live-*` |
+| 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
 partition. Every other dispatched subtask is printed as `NOT WITNESSED`.

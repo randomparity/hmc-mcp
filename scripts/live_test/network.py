@@ -40,6 +40,10 @@ SUBTASK = 9
 GROUP = "network"
 INVENTORY_SCENARIO = "st2-network-inventory"
 NAME_PREFIX = "hmcpctl-live-"
+#: The prefix of the run's VIOS labels. The HMC refuses a group label longer than
+#: 16 characters (HSCLC3A4, V10R3 live run 2026-10-06), and the renamed label adds
+#: "-r" to the prefix and 8 hex characters.
+LABEL_PREFIX = "hmcl-"
 #: A port name no VIOS has, for the label negative.
 ABSENT_PORT = "fcs9999"
 _READ_FAILED = Assertion("read-failed", False)
@@ -1115,7 +1119,7 @@ class _Arm:
         if found is None:
             return
         baseline, port, original = found
-        test = f"{NAME_PREFIX}{self.tag}"
+        test = f"{LABEL_PREFIX}{self.tag}"
         await self.set_port_label("test label", boundary, test, port)
         after_set = await self.fc_labels(boundary, "after set")
         label_set = after_set is not None and after_set.get(port) == test
@@ -1222,7 +1226,7 @@ class _Arm:
 
     async def group_label_round_trip(self, boundary: _Boundary) -> None:
         baseline = await self.groups("baseline")
-        name = f"{NAME_PREFIX}{self.tag}"
+        name = f"{LABEL_PREFIX}{self.tag}"
         renamed = f"{name}-r"
         if baseline is None or {name, renamed} & baseline:
             self.skip(

@@ -1483,15 +1483,11 @@ async def test_a_clean_network_run_yields_no_findings():
             "ClientNetworkAdapter off its baseline",
         ),
         (
-            {
-                "hmc_list_vios_fc_port_labels": [
-                    {**_FC_ROW, "port_label": "hmcpctl-live-x"}
-                ]
-            },
+            {"hmc_list_vios_fc_port_labels": [{**_FC_ROW, "port_label": "hmcl-x"}]},
             "FC-port label off its original",
         ),
         (
-            {"hmc_list_vios_vfc_group_labels": [{"name": "hmcpctl-live-0a1b2c3d"}]},
+            {"hmc_list_vios_vfc_group_labels": [{"name": "hmcl-0a1b2c3d"}]},
             "vFC group label left",
         ),
     ],

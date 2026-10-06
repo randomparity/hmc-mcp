@@ -256,12 +256,16 @@ class FakeHMC:
         return "PASS", [{"name": name, "resources": "vfc"} for name in self.groups]
 
     def _hmc_create_vios_vfc_group_label(self, kwargs):
+        if len(kwargs["label"]) > 16:
+            return "FAIL", "HSCLC3A4 The VIOS group label is too long"
         if kwargs["label"] in self.groups:
             return "FAIL", "HSCL label exists"
         self.groups.add(kwargs["label"])
         return "PASS", {}
 
     def _hmc_update_vios_vfc_group_label(self, kwargs):
+        if len(kwargs["new_name"]) > 16:
+            return "FAIL", "HSCLC3A4 The VIOS group label is too long"
         self.groups.discard(kwargs["label"])
         self.groups.add(kwargs["new_name"])
         return "PASS", {}
@@ -543,7 +547,7 @@ async def test_an_empty_original_label_is_restored_by_removal(monkeypatch):
     await _run(monkeypatch, hmc)
 
     sets = [k["label"] for t, k in hmc.calls if t == "hmc_set_vios_fc_port_label"]
-    assert all(label.startswith("hmcpctl-live-") for label in sets)
+    assert all(label.startswith(network.LABEL_PREFIX) for label in sets)
     assert hmc.fc_labels == {"fcs0": ""}
 
 

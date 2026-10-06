@@ -478,7 +478,7 @@ async def _network_labels(
             str(network.group_name(row))
             for row in groups
             if isinstance(row, dict)
-            and str(network.group_name(row)).startswith(network.NAME_PREFIX)
+            and str(network.group_name(row)).startswith(network.LABEL_PREFIX)
         )
         if left:
             findings.append(

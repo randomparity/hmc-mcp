@@ -134,7 +134,7 @@ reaches the HMC.
       label rows; the port is the first row; SKIP unless its `port_label` is empty or
       passes the tool's own label validation (nonblank, no control character), so it
       can be restored exactly.
-      1. `hmc_set_vios_fc_port_label(hmcpctl-live-<8 hex>)`; read back.
+      1. `hmc_set_vios_fc_port_label(hmcl-<8 hex>)`; read back.
       2. Negative: set on port `fcs9999`; read back (an accepted negative is removed).
       3. `hmc_remove_vios_fc_port_label`; read back.
       4. When the original was non-empty, set it again; read back.
@@ -142,7 +142,7 @@ reaches the HMC.
         `labels-equal-baseline`.
       - `vios_label.remove_fc_port`: `label-removed`, `labels-equal-baseline`.
    e. **vFC group label** (`st9-vfc-group-label`). Baseline: group labels; the name
-      `hmcpctl-live-<8 hex>` must be absent.
+      `hmcl-<8 hex>` (the HMC caps a group label at 16 characters, HSCLC3A4) must be absent.
       1. `hmc_create_vios_vfc_group_label(vios_names=[boundary VIOS])`; read back.
       2. Negative: the same create again; read back.
       3. `hmc_update_vios_vfc_group_label(action="rename", new_name=<name>-r)`; read back.
@@ -167,7 +167,7 @@ reaches the HMC.
    **Recovery** witnesses subtask 9 from the run's own ST9 baseline rows (orchestrator
    ruling): no network on the run's VLAN, whatever its name; the test partition's
    client adapters equal their baseline placements; the serving VIOS's FC-port labels
-   equal their originals; no `hmcpctl-live-*` vFC group label. Subtask 2 only reads.
+   equal their originals; no `hmcl-*` vFC group label. Subtask 2 only reads.
    It adds the four listing tools to its read-only allowlist; a failed read is
    `StateUnreadable` (exit 2). An interrupted run is checked by hand the same way.
 5. **Catalog**: maturity records for the 19 operations; regenerated projection and
