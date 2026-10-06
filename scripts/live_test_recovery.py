@@ -11,8 +11,8 @@ It witnesses the dedicated PCIe and bare-cec arms (subtasks 24-25) by their run
 marker, the users arm (subtask 11) by any HMC user still carrying its reserved
 `hmcpctl-live-` prefix, and the vMedia arm (subtasks 16-22) by what it can leave on the run's
 configured test partition: a running partition, a changed pending boot string,
-an optical mapping, a VIOS vSCSI server adapter with no mapping, and the media
-repository it created. It witnesses the vios-backup arm (subtask 37) by the backup
+an optical mapping, a VIOS vSCSI server adapter with no mapping, a medium it
+created, and the media repository it created. It witnesses the vios-backup arm (subtask 37) by the backup
 and disk mapping that run recorded: a backup still in the catalog (remedy:
 `rmviosbk`) and a disk mapping not put back (remedy: `mkvdev`). It witnesses
 the network arm (subtask 9) by the baselines that run recorded: a network left on
@@ -67,6 +67,8 @@ from live_test.users import profile_rows, scratch_users
 from live_test.vmedia import (
     _BOOT_BASELINE_STEP,
     _mapping_identity,
+    is_run_media_name,
+    scsi_adapter_listing,
 )
 
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
@@ -89,6 +91,7 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_get_media_repository",
         "hmc_get_console_info",
         "hmc_list_users",
+        "hmc_list_optical_media",
         "hmc_list_vios_backups",
         "hmc_list_virtual_networks",
         "hmc_list_adapters",
@@ -125,21 +128,20 @@ _WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {
     network.SUBTASK,
 }
 
-#: vMedia calls that leave a repository behind only in one this run owns: the
-#: arm skips each of them on a repository it did not create (#967).
+#: The vMedia calls that make the repository the run's own. Media calls are not
+#: among them: the arm creates and removes its own media inside a repository it
+#: did not create (#1347), and those are read by name instead.
 _REPOSITORY_TOOLS = frozenset(
-    {
-        "hmc_create_media_repository",
-        "hmc_delete_media_repository",
-        "hmc_upload_iso",
-        "hmc_delete_optical_media",
-    }
+    {"hmc_create_media_repository", "hmc_delete_media_repository"}
 )
 
 #: Every mutating call the vMedia arm makes, each covered by a class below:
 #: power-off is the arm's own end state, and mount/unmount residue is read
 #: whenever the arm ran. A test pins this against the arm's source.
 _VMEDIA_MUTATIONS = _REPOSITORY_TOOLS | {
+    "hmc_upload_iso",
+    "hmc_create_optical_media",
+    "hmc_delete_optical_media",
     "hmc_power_on_lpar",
     "hmc_power_off_lpar",
     "hmc_set_lpar_boot_order",
@@ -860,11 +862,17 @@ def lpar_inputs_from_document(
         lpar_name=str(config.get("lp3_name") or ""),
         vios_uuid=artifacts.get("vios_uuid"),
         vios_partition_id=artifacts.get("vios_partition_id"),
-        vg_uuid=artifacts.get("vg_uuid"),
+        # A document written before #1347 names the repository's group `vg_uuid`.
+        vg_uuid=artifacts.get("vmedia_vg_uuid") or artifacts.get("vg_uuid"),
+        # Only names the run created: the configured ISO name may be an operator's,
+        # and so may a name an older arm recorded.
         iso_names=frozenset(
-            str(name)
-            for name in (config.get("iso_media_name"), artifacts.get("vmedia_iso_name"))
-            if name
+            name
+            for name in (
+                artifacts.get("vmedia_iso_name"),
+                artifacts.get("vmedia_blank_name"),
+            )
+            if is_run_media_name(name, str(config.get("iso_media_name") or ""))
         ),
         vmedia_ran=bool(_VMEDIA_SUBTASKS & set(subtasks)),
         provisioned=bool(
@@ -926,14 +934,6 @@ async def _optical_mapping_left(call, inputs: LparResidueInputs) -> Finding | No
     )
 
 
-def _server_adapter_listing(system_name: str, vios_id: int) -> str:
-    """The #1237 listing, by partition id: the document records the VIOS's id."""
-    return (
-        f"lshwres -r virtualio --rsubtype scsi -m {_q(system_name)} --level lpar "
-        f"--filter lpar_ids={vios_id} -F slot_num,remote_lpar_name,remote_slot_num"
-    )
-
-
 def _adapter_slots_toward(listing: str, lpar_name: str) -> list[str]:
     """Slots of the listed server adapters whose client is *lpar_name*."""
     text = listing.strip()
@@ -965,7 +965,8 @@ async def _unmapped_server_adapters(call, inputs: LparResidueInputs) -> Finding 
             "needed to list server adapters"
         )
     status, listing = await call(
-        "hmc_run_command", cmd=_server_adapter_listing(inputs.system_name, vios_id)
+        "hmc_run_command",
+        cmd=scsi_adapter_listing(inputs.system_name, "lpar_ids", vios_id),
     )
     if status != "PASS" or not isinstance(listing, str):
         raise StateUnreadable(
@@ -1016,7 +1017,7 @@ async def _repository_left(call, inputs: LparResidueInputs) -> Finding | None:
     if not inputs.repository_owned:
         return None
     vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "the media repository")
-    vg = _required(inputs.vg_uuid, "artifacts.vg_uuid", "the media repository")
+    vg = _required(inputs.vg_uuid, "artifacts.vmedia_vg_uuid", "the media repository")
     status, data = await call(
         "hmc_get_media_repository",
         vios_name_or_uuid=vios,
@@ -1036,6 +1037,40 @@ async def _repository_left(call, inputs: LparResidueInputs) -> Finding | None:
         f"hmcpctl storage list-optical-media {where} {system}; "
         f"hmcpctl storage delete-media {where} <each ISO> {system}; "
         f"hmcpctl storage delete-media-repo {where} {system}",
+    )
+
+
+async def _run_media_left(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether a medium the run created is still in the repository."""
+    if not (inputs.vmedia_ran and inputs.iso_names):
+        return None
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "the run's media")
+    vg = _required(inputs.vg_uuid, "artifacts.vmedia_vg_uuid", "the run's media")
+    status, data = await call(
+        "hmc_list_optical_media",
+        vios_name_or_uuid=vios,
+        vg_uuid=vg,
+        system_name_or_uuid=inputs.system_name,
+    )
+    names = (
+        [entry.get("name") for entry in data if isinstance(entry, dict)]
+        if (status == "PASS" and isinstance(data, list))
+        else None
+    )
+    if names is None:
+        raise StateUnreadable(f"could not list the media in {vg} ({status})")
+    left = sorted(inputs.iso_names & set(names))
+    if not left:
+        return None
+    return Finding(
+        "run media left",
+        f"{', '.join(left)} created by the run is still in volume group {vg} on "
+        f"VIOS {vios}",
+        "; ".join(
+            f"hmcpctl storage delete-media {_q(vios)} {_q(vg)} {_q(name)} "
+            f"--system {_q(inputs.system_name)}"
+            for name in left
+        ),
     )
 
 
@@ -1103,6 +1138,7 @@ async def _boot_string_drift(call, inputs: LparResidueInputs) -> Finding | None:
 _PARTITION_CHECKS = (
     _partition_running,
     _optical_mapping_left,
+    _run_media_left,
     _unmapped_server_adapters,
     _repository_left,
     _boot_string_drift,

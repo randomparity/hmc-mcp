@@ -880,6 +880,7 @@ def test_the_scan_finds_every_known_site():
         "remove_memory_pool",
     }
     assert by_label["--filter"] == {
+        "scsi_adapter_listing",
         "list_sriov_physical_port_rows",
         "list_sriov_configured_logical_port_rows",
         "read_sriov_lpar_state",
