@@ -110,6 +110,13 @@ def iso_media_name(config: LiveTestConfig) -> str:
     return f"{name.stem}_{_run_tag()}{name.suffix}"
 
 
+def _protected_reason(config: LiveTestConfig) -> str:
+    return (
+        f"the test partition {config.lp3_name!r} is in LIVE_TEST_PROTECTED_LPAR_NAMES; "
+        "the arm never mounts to or powers a protected partition"
+    )
+
+
 def _no_iso_reason(config: LiveTestConfig) -> str:
     return (
         f"no ISO at LIVE_TEST_ISO_PATH ({config.iso_path}); the arm never fetches "
@@ -822,9 +829,9 @@ class _RoundTrip:
     async def preconditions(self) -> bool:
         config = self.config
         if config.lp3_name in config.protected_lpar_names:
-            raise ValueError(
-                f"ST19 refuses to mutate protected LPAR {config.lp3_name!r}"
-            )
+            # A SKIP, not a raise: the reads and teardown after ST19 still run.
+            self.skip(_protected_reason(config))
+            return False
         if type(self.artifacts.vios_partition_id) is not int:
             self.skip("no VIOS partition id resolved in ST16")
             return False
@@ -1518,14 +1525,12 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         reason = "lp3_uuid not set (ST16 failed to capture it)"
     elif artifacts.vmedia_iso_name in run_media_names(state):
         reason = _EARLIER_MEDIUM
+    elif config.lp3_name in config.protected_lpar_names:
+        reason = _protected_reason(config)
     if reason:
         for name in _skip_names:
             state.skip(20, name, reason)
         return
-
-    # Safety belt — never touch protected LPARs, even under ``python -O``.
-    if config.lp3_name in config.protected_lpar_names:
-        raise ValueError(f"ST20 refuses to mutate protected LPAR {config.lp3_name!r}")
 
     vios = str(artifacts.vios_uuid)
     lp3_uuid = str(artifacts.lp3_uuid)

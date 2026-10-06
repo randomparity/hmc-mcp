@@ -415,6 +415,30 @@ async def test_st16_rederives_the_group_a_restored_document_named(arm):
 
 
 @pytest.mark.asyncio
+async def test_a_protected_test_partition_is_skipped_and_the_arm_continues(
+    arm, tmp_path
+):
+    state, hmc = arm
+    iso = tmp_path / "install.iso"
+    iso.write_bytes(b"iso")
+    state.config = replace(
+        state.config, iso_path=str(iso), protected_lpar_names=(LPAR,)
+    )
+
+    await _run(state, 16, 19, 20, 21, 22)
+
+    tools = {t for t, _ in _mutations(hmc)}
+    assert not tools & {
+        "hmc_create_optical_media",
+        "hmc_mount_optical_media",
+        "hmc_power_on_lpar",
+        "hmc_power_off_lpar",
+    }
+    assert _results(state, "media.list_mappings") == ["passed"]
+    assert any("PROTECTED" in r["note"] for r in state.results if r["subtask"] == 20)
+
+
+@pytest.mark.asyncio
 async def test_st19_skips_when_the_partition_is_running(arm):
     state, hmc = arm
     hmc.lpar_state = "Running"
