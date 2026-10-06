@@ -234,6 +234,20 @@
       "observed_at": "2026-10-06T13:04:04Z"
     },
     {
+      "operation": "remote_access.configure",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "remote_access.get",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "resource_group.list_memopt_scores",
       "implementation": "implemented",
       "verification": "stale",
@@ -246,6 +260,13 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:45:36Z"
+    },
+    {
+      "operation": "resource_role.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "snapshot.assess_affinity",
@@ -302,6 +323,48 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T12:35:03Z"
+    },
+    {
+      "operation": "task_role.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.create",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.delete",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.get",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.modify",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "vios.list",

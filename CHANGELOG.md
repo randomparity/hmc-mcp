@@ -10,6 +10,17 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_create_user` and `hmc_modify_user` take `associated_task_role` as a task-role name
+  (`TaskRoleName` from `hmc_list_task_roles`) and `associated_resource_roles` as resource-role
+  names, not hrefs. The `UserProfile` document now writes them as the documented
+  `AssociatedTaskRole` and `AssociatedResourceRole` text elements, in the documented element
+  order; an href passed as before is sent as a name (ADR 0202, #632).
+- The live harness's user lifecycle moved from round2 to its own opt-in `users` arm
+  (`scripts/live_users.py`, subtask 11). It creates one `hmcpctl-live-<8 hex>` viewer user with
+  remote access disabled and deletes it by UUID in the same run; preflight names it, and
+  `scripts/live_test_recovery.py` reports any `hmcpctl-live-` user left behind.
+  `LIVE_TEST_TEST_USER_NAME` is retired: a `.env` that still sets it loads with a notice, and the
+  line can be deleted (#632).
 - `HMCClient` no longer raises a logoff transport failure (`HMCTransportError`) when its
   `async with` body completed: it logs a warning naming the HMC host and noting that the HMC
   session may persist until the HMC times it out, so a completed tool call is no longer reported
