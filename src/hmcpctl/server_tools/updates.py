@@ -45,7 +45,9 @@ def hmc_update_console_software(
     for status. console_uuid is the ManagementConsole UUID (from
     hmc_console_info).
 
-    Set wait=True to block until the job reaches a terminal state.
+    Set wait=True to block until the job reaches a terminal state. A job still
+    ``NOT_STARTED`` when the wait times out may be one the HMC rejected in parameter
+    validation: check it with hmc_get_job before submitting again.
 
     Args:
         console_uuid: Management-console UUID returned by ``hmc_console_info``.
@@ -83,7 +85,9 @@ def hmc_submit_available_hmc_ptfs_query(
     The HMC obtains the list from the IBM website. With ``wait=False``, returns
     the submitted job so callers can poll it with ``hmc_get_job``. With
     ``wait=True``, polls until the job reaches a terminal state or the timeout
-    expires; a completed job's response contains the available PTF objects.
+    expires; a completed job's response contains the available PTF objects. A job
+    still ``NOT_STARTED`` at the timeout may be one the HMC rejected in parameter
+    validation: check it with hmc_get_job before submitting again.
 
     Args:
         console_uuid: Management-console UUID returned by ``hmc_console_info``.

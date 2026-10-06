@@ -28,9 +28,10 @@ while `../016-job-status.md:24` calls it not yet initiated. `TERMINAL_JOB_STATUS
 `016` because every job shares it, and a terminal `NOT_STARTED` would end every queued wait.
 So a console update or PTF listing the HMC rejects in validation surfaces, with `wait=True`,
 as the last-seen `NOT_STARTED` entry after the timeout. Which reading holds needs a live
-rejected submission; it is a gap below, not a confirmed defect.
+rejected submission; it is a gap below, not a confirmed defect. The two tools' descriptions
+say so, and tell the caller to read the job before submitting again.
 
-No defect is confirmed in the five job contracts, so `src/` is unchanged. The unmodelled
+No defect is confirmed in the five job contracts, so no `src/` behaviour changes. The unmodelled
 `PartitionMigration` step appears in no parameter table, only in samples (`:242`, `:450`);
 it is new PlatformUpdate scope, tracked by #680 through the PlatformUpdate row's disposition
 in `rows.json`.
