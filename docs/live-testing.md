@@ -84,12 +84,13 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 
 | Arm | Command | Covers |
 |---|---|---|
-| round2 | `uv run --no-sync python scripts/live_round2.py` | subtasks 0–15 |
+| round2 | `uv run --no-sync python scripts/live_round2.py` | subtasks 0–15 except 11 |
 | vmedia | `uv run --no-sync python scripts/live_vmedia.py` | subtasks 16–22 |
 | sriov | `uv run --no-sync python scripts/live_sriov.py` | subtask 23 |
 | dedicated | `uv run --no-sync python scripts/live_dedicated.py` | subtask 24 |
 | bare-cec | `uv run --no-sync python scripts/live_bare_cec.py` | subtask 25 |
 | profiles | `uv run --no-sync python scripts/live_profiles.py` | subtasks 0, 4, 10 and 15 |
+| users | `uv run --no-sync python scripts/live_users.py` | subtask 11 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -176,6 +177,26 @@ anything else, then restore them with
 `rstprofdata -m <system> -l 1 -f hmcpctl-live-st10`. Do not run the arm
 again until the profiles are confirmed: its next backup overwrites that file.
 
+### The users arm
+
+The users arm verifies the user, task-role, resource-role and remote-access
+tools (#632). It is the only arm that creates an HMC user, and HMC users are
+global to the console, not to a managed system.
+
+- It reads the user list, the task and resource roles, and the console's
+  LDAP/Kerberos settings. It never writes remote-access settings.
+- It then creates one user named `hmcpctl-live-<8 hex>`, with the `hmcviewer`
+  task role and web and SSH remote access disabled. The password is generated
+  in the run and never printed or written. The arm reads the user, changes and
+  then clears its description, and deletes it by UUID.
+- It creates nothing while any `hmcpctl-live-` user already exists: run the
+  recovery check below first.
+- An interrupted run can leave that one user. The recovery check names it by its
+  prefix; remove it with `rmhmcusr -u <name>`.
+
+`LIVE_TEST_TEST_USER_NAME` is retired. A `.env` that still sets it loads with a
+notice; delete the line.
+
 ### The bare-cec arm
 
 The bare-cec arm is the release path end to end. It creates a partition, assigns
@@ -248,14 +269,15 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov` or `profiles`.
+`bare-cec`, `round2`, `sriov`, `profiles` or `users`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-two sets of them:
+three sets of them:
 
 | Subtasks | What it reads |
 |---|---|
 | 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
+| 11 (users) | any HMC user named `hmcpctl-live-*`, whichever run's document you pass |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
@@ -270,8 +292,7 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 Exit 2 is expected after round2, SR-IOV, profiles and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
 
-- **round2**: the scratch and network-test partitions are gone, the test user is
-  gone, no test VLAN or virtual network is left, the test partition's
+- **round2**: the scratch and network-test partitions are gone, no test VLAN or virtual network is left, the test partition's
   description and properties match the baseline, and the provisioned test
   partition and its disk exist.
 - **SR-IOV**: the test logical port is no longer assigned to the test

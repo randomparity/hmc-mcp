@@ -44,7 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, pcie
+from live_test import bare_cec, pcie, users
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -197,10 +197,28 @@ def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _users_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the HMC user the users arm (#632) creates and deletes again."""
+    return ArmVerdict(
+        "users",
+        True,
+        "configuration validated",
+        (
+            (
+                f"the HMC: one user {users.SCRATCH_PREFIX}<8 hex> with the "
+                f"{users.VIEWER_TASK_ROLE} task role, web and SSH remote access "
+                "disabled (created, modified, then deleted by UUID)"
+            ),
+            "existing users, roles and LDAP/Kerberos settings: read only",
+        ),
+    )
+
+
 _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
     "profiles": _profiles_verdict,
+    "users": _users_verdict,
 }
 
 
