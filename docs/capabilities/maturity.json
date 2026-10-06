@@ -400,16 +400,16 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:49:59Z",
+          "observed_at": "2026-10-06T12:59:53Z",
           "cleanup": "not-required",
           "assertions": [
             "state-read-returned-a-state"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "b999cea9558e86f4daac5bdfd6f216079881cdf07bb731777eb930092c647ab5"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "68d0e0a70a79bf91cb8fedae6420aec519e2054617879b44af9694cba52bfed5"
         }
       ]
     },
@@ -454,17 +454,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:49:59Z",
+          "observed_at": "2026-10-06T12:59:53Z",
           "cleanup": "not-required",
           "assertions": [
             "activation-job-successful",
             "lpar-reached-firmware"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "4470ac796dcdbdc7485b063afaf0d2719c2cf54772260713750a445dd0704d74"
         }
       ]
     },
@@ -500,18 +500,18 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:50:00Z",
+          "observed_at": "2026-10-06T12:59:55Z",
           "cleanup": "not-required",
           "assertions": [
             "job-found",
             "job-identity-matches",
             "job-status-successful"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "28b5af9901c2a4f46ee8c46dc0954c98f507c2622da2c67e50df7b83a8349f38"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "5133bbe678dbb430d1bb97069abf173fd5bbed06d8f83d44d7ee26497558cd0c"
         }
       ]
     },
@@ -538,18 +538,18 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:50:01Z",
+          "observed_at": "2026-10-06T12:59:58Z",
           "cleanup": "not-required",
           "assertions": [
             "job-found",
             "job-identity-matches",
             "job-status-successful"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "28b5af9901c2a4f46ee8c46dc0954c98f507c2622da2c67e50df7b83a8349f38"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "5133bbe678dbb430d1bb97069abf173fd5bbed06d8f83d44d7ee26497558cd0c"
         }
       ]
     },
@@ -580,17 +580,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:50:02Z",
+          "observed_at": "2026-10-06T13:00:00Z",
           "cleanup": "not-required",
           "assertions": [
             "refcodes-returned",
             "refcodes-name-the-fixture"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "a6008e3ae10ece502f6e7ed9a8a7ffe6fd8200dcca837504fadbdf855590dd5f"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "c884ee4f9e641ba8bbf9f7e761e104e54e5f802528122a47a8a4b6d1066601b0"
         }
       ]
     },
@@ -621,17 +621,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:51:01Z",
+          "observed_at": "2026-10-06T13:01:01Z",
           "cleanup": "not-required",
           "assertions": [
             "console-captured",
             "console-released"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "6f06a4606b3ab392c8fde97db058046774b199b9d0f8fde75ae8243b5e05be9f"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "1bc462eed153a58215546032a9b62217be947e2a054184b76fcc264c2eac651f"
         }
       ]
     },
@@ -675,17 +675,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:51:20Z",
+          "observed_at": "2026-10-06T13:01:26Z",
           "cleanup": "not-required",
           "assertions": [
             "power-off-job-successful",
             "lpar-not-activated"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "4470ac796dcdbdc7485b063afaf0d2719c2cf54772260713750a445dd0704d74"
         }
       ]
     },
@@ -743,17 +743,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:53:38Z",
+          "observed_at": "2026-10-06T13:04:04Z",
           "cleanup": "not-required",
           "assertions": [
             "unassign-call-succeeded",
             "profile-restored-to-baseline"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "213055828d77e05559b2217100d945bc7c890866c4c161314bb272d317ad9d15"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
         }
       ]
     },
@@ -780,18 +780,18 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:54:01Z",
+          "observed_at": "2026-10-06T13:04:43Z",
           "cleanup": "not-required",
           "assertions": [
             "list-call-succeeded",
             "fixture-slot-listed",
             "fixture-slot-unowned"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "ea0e0b387f2c9e65e4d276d7d6d1871cc313c1e216d308112c5091d847b648f3"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "72b242241e9ec2a0fbf943a1ec2015cabb3ed61b802a28309d4ad1676f9abe11"
         }
       ]
     },
@@ -822,18 +822,18 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:54:03Z",
+          "observed_at": "2026-10-06T13:04:44Z",
           "cleanup": "not-required",
           "assertions": [
             "delete-call-succeeded",
             "lpar-name-absent",
             "slot-released"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "6282944140ff724d20ed074c02967162633651400128ffff646d1b40059456b6"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "4470ac796dcdbdc7485b063afaf0d2719c2cf54772260713750a445dd0704d74"
         }
       ]
     },
@@ -864,17 +864,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:54:03Z",
+          "observed_at": "2026-10-06T13:04:44Z",
           "cleanup": "passed",
           "assertions": [
             "lpar-uuid-resolved",
             "ownership-and-baseline-confirmed"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "ea9b69d0435d441f4e58859579cb6661c138313b880a73db5591582cd3b6f593"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "0929476e4d725ce2aa8a88526700e46595ffb204e179b86c8248dfff4c74ea91"
         }
       ]
     },
@@ -909,17 +909,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st35-bare-cec",
-          "observed_at": "2026-09-30T22:54:03Z",
+          "observed_at": "2026-10-06T13:04:44Z",
           "cleanup": "passed",
           "assertions": [
             "assign-call-succeeded",
             "profile-lists-slot"
           ],
-          "tested_commit": "90c97b5f3967e87f43471f454c29389f4793187f",
-          "hmc_release": "V10R3",
+          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
-          "schema_version": "unrecorded",
-          "closure_fingerprint": "213055828d77e05559b2217100d945bc7c890866c4c161314bb272d317ad9d15"
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
         }
       ]
     },
@@ -1234,14 +1234,14 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st4-affinity-reads",
-          "observed_at": "2026-10-06T09:43:40Z",
+          "observed_at": "2026-10-06T13:45:39Z",
           "cleanup": "not-required",
           "assertions": [
-            "capability-unavailable-reason"
+            "capability-available-policy"
           ],
-          "tested_commit": "ffff4bb47f338751bdda365491ee13d098fece46",
-          "hmc_release": "V10R3M1060",
-          "hardware_family": "POWER9",
+          "tested_commit": "89f0911b81030b7abcec152d3d29b6dc0374077f",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
           "schema_version": "(not set)",
           "closure_fingerprint": "95279291ac3373317e07e81114e0b0404bfac7022d349f20bffd90a099facb1e"
         }
@@ -1505,14 +1505,14 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st4-affinity-reads",
-          "observed_at": "2026-10-06T09:43:32Z",
+          "observed_at": "2026-10-06T13:45:29Z",
           "cleanup": "not-required",
           "assertions": [
-            "capability-unavailable-reason"
+            "capability-available-rows"
           ],
-          "tested_commit": "ffff4bb47f338751bdda365491ee13d098fece46",
-          "hmc_release": "V10R3M1060",
-          "hardware_family": "POWER9",
+          "tested_commit": "89f0911b81030b7abcec152d3d29b6dc0374077f",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
           "schema_version": "(not set)",
           "closure_fingerprint": "95279291ac3373317e07e81114e0b0404bfac7022d349f20bffd90a099facb1e"
         }
@@ -1536,14 +1536,14 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st4-affinity-reads",
-          "observed_at": "2026-10-06T09:43:36Z",
+          "observed_at": "2026-10-06T13:45:36Z",
           "cleanup": "not-required",
           "assertions": [
-            "capability-unavailable-reason"
+            "capability-available-rows"
           ],
-          "tested_commit": "ffff4bb47f338751bdda365491ee13d098fece46",
-          "hmc_release": "V10R3M1060",
-          "hardware_family": "POWER9",
+          "tested_commit": "89f0911b81030b7abcec152d3d29b6dc0374077f",
+          "hmc_release": "V11R2M1120",
+          "hardware_family": "POWER11",
           "schema_version": "(not set)",
           "closure_fingerprint": "95279291ac3373317e07e81114e0b0404bfac7022d349f20bffd90a099facb1e"
         }
