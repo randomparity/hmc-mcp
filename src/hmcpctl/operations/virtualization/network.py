@@ -12,6 +12,15 @@ from ...resource_identity import resolve_system_uuid
 from ..error_translation import translate_virtual_network_create_error
 
 
+def require_vlan_id(argument: str, value: int) -> None:
+    """Refuse a VLAN id outside IEEE 802.1Q's usable 1-4094 before any HMC call."""
+    if isinstance(value, bool) or not 1 <= value <= 4094:
+        raise ValueError(
+            f"{argument} {value!r} must be a VLAN id from 1 to 4094 "
+            "(IEEE 802.1Q reserves 0 and 4095)"
+        )
+
+
 @dataclass(frozen=True)
 class VirtualNetworkResult:
     system_uuid: str
@@ -49,7 +58,9 @@ async def create_virtual_network(
         ResourceNotFoundError: If the managed-system selector cannot be resolved.
         HMCError: If the HMC rejects the create request, including invalid VLAN or
             virtual-switch selections.
+        ValueError: If ``vlan_id`` is outside 1-4094.
     """
+    require_vlan_id("vlan_id", vlan_id)
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     try:
         resource = await hmc.create_virtual_network(

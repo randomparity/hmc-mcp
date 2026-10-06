@@ -190,7 +190,7 @@ def build_virtual_network_document(
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <VirtualNetwork xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
-{assoc}  <NetworkName kb="CUD" kxe="false">{name}</NetworkName>
+{assoc}  <NetworkName kb="CUR" kxe="false">{name}</NetworkName>
   <NetworkVLANID kb="COD" kxe="false">{vlan_id}</NetworkVLANID>
   <VswitchID kb="ROR" kxe="false">{virtual_switch_id}</VswitchID>
   <TaggedNetwork kb="COD" kxe="false">{tagged_str}</TaggedNetwork>

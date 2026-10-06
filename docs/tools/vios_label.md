@@ -8,10 +8,10 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_create_vios_vfc_group_label` | `mutate` | `vios_label.create_vfc_group` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Create one vFC placement group without adding or deleting adapters. |
-| `hmc_list_vios_fc_port_labels` | `read` | `vios_label.list_fc_ports` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List FC-port labels used for migration placement without changing adapters. |
-| `hmc_list_vios_vfc_group_labels` | `read` | `vios_label.list_vfc_groups` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List vFC group labels that guide migration and remote-restart placement. |
-| `hmc_remove_vios_fc_port_label` | `destructive` | `vios_label.remove_fc_port` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove one FC-port migration label without deleting the FC adapter. |
-| `hmc_remove_vios_vfc_group_label` | `destructive` | `vios_label.remove_vfc_group` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Remove one named vFC placement group without deleting adapters. |
-| `hmc_set_vios_fc_port_label` | `mutate` | `vios_label.set_fc_port` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Set one FC-port migration label without adding or deleting adapters. |
-| `hmc_update_vios_vfc_group_label` | `mutate` | `vios_label.update_vfc_group` | `managed_system` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rename or change membership of one vFC placement group. |
+| `hmc_create_vios_vfc_group_label` | `mutate` | `vios_label.create_vfc_group` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Create one vFC placement group without adding or deleting adapters. |
+| `hmc_list_vios_fc_port_labels` | `read` | `vios_label.list_fc_ports` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | List FC-port labels used for migration placement without changing adapters. |
+| `hmc_list_vios_vfc_group_labels` | `read` | `vios_label.list_vfc_groups` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | List vFC group labels that guide migration and remote-restart placement. |
+| `hmc_remove_vios_fc_port_label` | `destructive` | `vios_label.remove_fc_port` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | Remove one FC-port migration label without deleting the FC adapter. |
+| `hmc_remove_vios_vfc_group_label` | `destructive` | `vios_label.remove_vfc_group` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Remove one named vFC placement group without deleting adapters. |
+| `hmc_set_vios_fc_port_label` | `mutate` | `vios_label.set_fc_port` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | Set one FC-port migration label without adding or deleting adapters. |
+| `hmc_update_vios_vfc_group_label` | `mutate` | `vios_label.update_vfc_group` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Rename or change membership of one vFC placement group. |

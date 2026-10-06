@@ -3553,7 +3553,6 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
     ("outcome", "message"),
     [
         ("lpar._REST_MODIFY_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
-        ("network._REST_CREATE_UNSUPPORTED", "HMCError: HTTP 406 Not Acceptable"),
         (
             "metrics._PREFERENCES_AUTHORITY",
             "HMCError: The connecting user does not have PCM authority (HTTP 403)",
@@ -6214,172 +6213,9 @@ async def test_user_administration_skips_without_a_profile_uuid(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_list_virtual_switches":
-            return "PASS", [{"Resource": {"SwitchID": "7"}}]
-        if tool == "hmc_list_virtual_networks" and len(calls) < 7:
-            return "PASS", [{"Resource": {"NetworkVLANID": "3100"}}]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-
-    await runner.inventory_network(None, state)
-    await runner.mutate_virtual_networking(None, state)
-
-    create_call = next(
-        item for item in calls if item[0] == "hmc_create_virtual_network"
-    )
-    assert state.artifacts.test_vswitch_id == 7
-    assert state.artifacts.test_vlan_id == 3101
-    assert create_call[1]["vlan_id"] == 3101
-    assert create_call[1]["virtual_switch_id"] == 7
-
-
-@pytest.mark.asyncio
-async def test_malformed_vlan_inventory_blocks_network_mutation(monkeypatch):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_list_virtual_networks":
-            return "PASS", [{"Resource": {"NetworkVLANID": "not-a-vlan"}}]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-
-    await runner.inventory_network(None, state)
-    await runner.mutate_virtual_networking(None, state)
-
-    assert state.artifacts.test_vlan_id is None
-    assert not any(tool == "hmc_create_virtual_network" for tool, _ in calls)
-    result = next(
-        item for item in state.results if item["tool"] == "hmc_list_virtual_networks"
-    )
-    assert result["status"] == "FAIL"
-    assert "not-a-vlan" in result["data"]
-
-
-@pytest.mark.asyncio
-async def test_nettest_lpar_create_captures_nested_uuid_shape(monkeypatch):
-    """ST9 accepts the nested `lpar` create-result shape ST8 uses, not just top-level (#969)."""
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        if tool == "hmc_create_lpar":
-            return "PASS", {"lpar": {"UUID": "nettest-uuid"}}
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-
-    created = await network._create_network_and_nettest_lpar(None, state, 0)
-
-    assert created is True
-    assert state.artifacts.nettest_uuid == "nettest-uuid"
-
-
-@pytest.mark.asyncio
-async def test_nettest_cleanup_deletes_by_name_when_identity_unresolved(monkeypatch):
-    """A PASS create with no identifiable UUID is still cleaned up by name, not SKIPped (#969)."""
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.test_vlan_id = 3100
-
-    await runner.mutate_virtual_networking(None, state)
-
-    assert state.artifacts.nettest_uuid is None
-    delete_call = next(item for item in calls if item[0] == "hmc_delete_lpar")
-    assert delete_call[1] == {
-        "system_name_or_uuid": state.config.system_name,
-        "lpar_name_or_uuid": state.config.nettest_name,
-    }
-    result = next(
-        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
-    )
-    assert result["status"] == "PASS"
-
-
-@pytest.mark.asyncio
-async def test_nettest_cleanup_fails_with_manual_recovery_when_delete_fails(
-    monkeypatch,
-):
-    """A PASS create that can't be cleaned up records FAIL with manual recovery, not SKIP (#969)."""
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        if tool == "hmc_create_lpar":
-            return "PASS", {}
-        if tool == "hmc_delete_lpar":
-            return "FAIL", "boom"
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.test_vlan_id = 3100
-
-    await runner.mutate_virtual_networking(None, state)
-
-    result = next(
-        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
-    )
-    assert result["status"] == "FAIL"
-    assert "MANUAL RECOVERY REQUIRED" in result["data"]
-    assert "rmsyscfg -r lpar -m" in result["data"]
-    assert state.config.nettest_name in result["data"]
-
-
-@pytest.mark.asyncio
-async def test_nettest_cleanup_manual_recovery_omits_call_failure_traceback(
-    monkeypatch,
-):
-    """The manual-recovery message shows a CallFailure's message, never its traceback."""
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        if tool == "hmc_create_lpar":
-            return "PASS", {}
-        if tool == "hmc_delete_lpar":
-            return "FAIL", observation.CallFailure(
-                "TimeoutError",
-                "TimeoutError: connection lost",
-                "Traceback (most recent call last):\n  <secret-stack-frame>\n",
-                None,
-                False,
-            )
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    state.artifacts.test_vlan_id = 3100
-
-    await runner.mutate_virtual_networking(None, state)
-
-    result = next(
-        item for item in state.results if item["tool"] == "hmc_delete_lpar (nettest)"
-    )
-    assert result["status"] == "FAIL"
-    assert "TimeoutError: connection lost" in result["data"]
-    assert "secret-stack-frame" not in result["data"]
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("workflow", "configure", "expected_tool"),
     [
-        (
-            runner.mutate_virtual_networking,
-            lambda _context: None,
-            "hmc_create_virtual_network",
-        ),
         (
             runner.validate_provisioning_dry_run,
             lambda _context: None,
@@ -7039,6 +6875,57 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "merge-current-wins-accepted",
             "profiles-unchanged-after-merge-current-wins",
             "partitions-unchanged-after-merge-current-wins",
+        },
+        "st2-network-inventory": {
+            "switch-ids-integral",
+            "vlan-ids-in-range",
+            "bridge-entries-identified",
+            "eth-rows-parsed",
+            "fc-rows-parsed",
+            "fc-port-rows-parsed",
+            "group-rows-parsed",
+            "adapter-entries-identified",
+        },
+        "st9-virtual-network-round-trip": {
+            "create-accepted",
+            "network-listed",
+            "duplicate-vlan-refused",
+            "delete-accepted",
+            "networks-equal-baseline",
+        },
+        "st9-client-network-adapter": {
+            "adapter-added",
+            "pvid-matches",
+            "delete-accepted",
+            "unknown-uuid-refused",
+            "adapters-equal-baseline",
+        },
+        "st9-vscsi-client-adapter": {
+            "adapter-added",
+            "pairing-matches",
+            "slot-collision-refused",
+            "adapters-equal-baseline",
+            "vios-side-unchanged",
+        },
+        "st9-vfc-client-adapter": {
+            "adapter-added",
+            "pairing-matches",
+            "slot-collision-refused",
+            "adapters-equal-baseline",
+            "vios-side-unchanged",
+        },
+        "st9-fc-port-label": {
+            "label-set",
+            "unknown-port-refused",
+            "labels-equal-baseline",
+            "label-removed",
+        },
+        "st9-vfc-group-label": {
+            "group-created",
+            "duplicate-refused",
+            "group-renamed",
+            "group-removed",
+            "groups-equal-baseline",
         },
         "st1-console-identity": {"console-uuid-present"},
         "st1-system-inventory": {
