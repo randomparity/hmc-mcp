@@ -282,8 +282,10 @@ def test_the_network_verdict_names_each_change_it_makes(workspace, monkeypatch, 
     assert "no existing network is changed" in output
     assert "only while Not Activated" in output
     assert "vSCSI and a vFC client adapter" in output
-    assert "FC port's label (set, removed, restored)" in output
-    assert "vFC group label (created, renamed, removed)" in output
+    assert "FC port's label (set," in output
+    assert "a duplicate refused, renamed" in output
+    assert "slot the partition's own vSCSI" in output
+    assert "fcs9999" in output
 
 
 def test_the_vios_backup_verdict_names_the_restore_and_its_cleanup(

@@ -196,8 +196,9 @@ every change whatever the call returned, and reverses the difference:
   adapter on that VLAN to the test partition, deletes an unknown adapter UUID
   (expected refused), then removes the adapter and every network on the VLAN.
   No existing network is touched.
-- **vSCSI and vFC clients.** Each adds a client adapter to the test partition
-  paired to a server slot of the serving VIOS (one open to any partition, else
+- **vSCSI and vFC clients.** Each first tries an add on the virtual slot the
+  test partition's own vSCSI client uses (expected refused), then adds a client
+  adapter to the test partition paired to a server slot of the serving VIOS (one open to any partition, else
   one toward the test partition), checks the pairing, and removes it. The VIOS's
   server adapters and the test partition's storage mappings must be unchanged
   afterwards. With no such vFC slot, the vFC round trip SKIPs. Each vFC add
