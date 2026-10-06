@@ -67,7 +67,8 @@ authority/role changes (operator).
 2. **Declarations.** The three "unlicensed" PCM declarations become module-level authority
    declarations, one per declared operation (`error_codes={"403"}`, variant `pcm-authority`,
    reason "the connecting user lacks PCM authority (HTTP 403)"). The template declaration is
-   removed: the only outcome it matched was the 406 #1202 fixed, and a recurrence must fail.
+   removed: its `406` is the media-type defect #1202 fixed, and its bare `template`/`templates`
+   tokens matched any message naming templates; a template 406 or 403 now records FAIL.
    The runner's startup validator (`_validate_declared_outcomes`) requires each
    `expected=[NAME]` to be a literal list of module-level names and each declared call to be
    recorded by `record_with_expected(5, tool, st, data, [NAME])` in the same async function;
@@ -126,7 +127,8 @@ authority/role changes (operator).
    --energy/--no-energy --yes`, and do not run the arm again until the flags match (the next
    run overwrites the document and takes the current flags as its baseline). Recovery does not
    witness ST38 (exit 2 expected). The dispatch-range sentence names 38. `CHANGELOG.md`
-   records the feed Accept fix and the arm.
+   records the feed Accept fix (processed, aggregated and LTM feeds share the method; LTM gets
+   no maturity claim here — #649) and the arm.
 
 ## Failure model
 
