@@ -227,6 +227,12 @@ If the header says **tree was dirty**, `src/` or `scripts/` had uncommitted
 changes, so the sha does not name the code that ran. Commit and re-run before
 citing it.
 
+If the matrix opens with **PARTIAL run**, an exception or interrupt stopped the
+run. The script still renders it, because the rows it recorded are attributable
+to the commit, but the selection line reads `Subtasks selected (not all ran)`
+and the time reads `Interrupted`. Cite it as an interrupted run, never as a
+complete one, and keep the PARTIAL line when you paste it.
+
 The matrix deliberately omits each row's `data` and `note` and the document's
 `hmc` block. Those carry HMC-derived text — hostnames, account names, ISO
 names, location codes — and are redacted only on FAIL rows. **Do not paste the
@@ -259,7 +265,7 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 |---|---|
 | 0 | every dispatched subtask is witnessed and nothing is left behind |
 | 1 | something is stranded; the output names it and the command that clears it |
-| 2 | some state could not be read, or the run dispatched subtasks the check does not witness — **this is not clean** |
+| 2 | some state could not be read, the run dispatched subtasks the check does not witness, or the run was interrupted (`run.partial`), even when something is also stranded — **this is not clean** |
 
 Exit 2 is expected after round2, SR-IOV, profiles and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
@@ -287,7 +293,9 @@ system yourself.
 The header names the run the document came from: its group, commit and finish
 time. A run that an exception or interrupt stopped still writes its results
 document, marked `"partial": true` in its `run` block. Its rows end where the
-run stopped, so a call cut off mid-flight has no row. Check an interrupted run
+run stopped, so a call cut off mid-flight has no row. On such a document the
+header starts with PARTIAL and says when the run was interrupted, the check
+never prints CLEAN, and it exits 2 whatever it found. Check an interrupted run
 by hand as well.
 
 It identifies the PCIe arms' leftovers by the run marker recorded in the results

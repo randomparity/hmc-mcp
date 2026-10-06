@@ -5,16 +5,16 @@
     {
       "operation": "console.info",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:54:49Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:31:29Z"
     },
     {
       "operation": "console.list_resources",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:56:21Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:34:53Z"
     },
     {
       "operation": "job.get",
@@ -61,9 +61,9 @@
     {
       "operation": "lpar.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:55:13Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:32:53Z"
     },
     {
       "operation": "lpar.get_description",
@@ -110,9 +110,9 @@
     {
       "operation": "lpar.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:55:12Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:32:50Z"
     },
     {
       "operation": "lpar.list_memopt_scores",
@@ -173,9 +173,9 @@
     {
       "operation": "lpar.summary",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:56:30Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:35:06Z"
     },
     {
       "operation": "lpar_profile.backup",
@@ -264,9 +264,9 @@
     {
       "operation": "system.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:55:08Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:32:07Z"
     },
     {
       "operation": "system.get_memopt_score",
@@ -299,16 +299,16 @@
     {
       "operation": "system.summary",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:56:28Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:35:03Z"
     },
     {
       "operation": "vios.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:55:17Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:33:01Z"
     }
   ]
 }

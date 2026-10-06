@@ -281,3 +281,41 @@ def test_a_clean_tree_adds_no_qualifier(tmp_path, capsys):
 def test_an_empty_result_set_renders_a_zero_matrix(tmp_path, capsys):
     assert evidence.main([str(_write(tmp_path, _document(results=[])))]) == 0
     assert "**TOTAL 0** · PASS 0 · FAIL 0 · SKIP 0" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# An interrupted run is marked PARTIAL, never read as a complete one (#1340)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("partial", [True, "yes", 1])
+def test_a_partial_run_is_marked_and_does_not_claim_what_ran(tmp_path, capsys, partial):
+    """A non-boolean marker fails closed: the runner only ever writes a bool."""
+    document = _document()
+    document["run"]["partial"] = partial
+
+    assert evidence.main([str(_write(tmp_path, document))]) == 0
+
+    output = capsys.readouterr().out
+    assert output.startswith("**PARTIAL run**")
+    assert "Subtasks selected (not all ran): `[24]`" in output
+    assert "Interrupted: `2026-09-21T10:00:00+00:00`" in output
+    assert "Subtasks dispatched" not in output
+    assert "Finished" not in output
+    assert "a" * 40 in output
+
+
+@pytest.mark.parametrize("partial", [False, None])
+def test_a_complete_or_older_run_renders_as_before(tmp_path, capsys, partial):
+    """`None` stands for a document written before #1336, which has no key."""
+    document = _document()
+    if partial is not None:
+        document["run"]["partial"] = partial
+
+    assert evidence.main([str(_write(tmp_path, document))]) == 0
+
+    output = capsys.readouterr().out
+    assert output.startswith("Live run on `" + "a" * 40 + "`")
+    assert "PARTIAL" not in output
+    assert "Subtasks dispatched: `[24]`" in output
+    assert "Finished: `2026-09-21T10:00:00+00:00`" in output
