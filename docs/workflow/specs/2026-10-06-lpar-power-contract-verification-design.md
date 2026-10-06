@@ -80,8 +80,10 @@ own records (#630).
    (no profile, `boot_mode=of`, `operation_type=activate`, `keylock=norm`). No
    configuration change precedes either activation, so #1345's
    profile-discards-current-configuration finding does not affect them.
-6. **Delete refused while activated.** `hmc_delete_lpar` on activated A must fail with
-   "must be 'not activated'" and leave A listed (feeds `lpar.delete`).
+6. **Delete refused while activated, console.** `hmc_delete_lpar` on activated A must
+   fail with "must be 'not activated'" and leave A listed (feeds `lpar.delete`).
+   `hmc_capture_lpar_console` (30 s, idle 30 s, as bare-cec) — observation
+   `lpar.capture_console`: `console-captured`, `console-released`.
 7. **Power off (A)** — observation `lpar.power_off`: `delayed-shutdown-not-activated`
    (`immediate=False`, `wait=True`), `immediate-shutdown-not-activated`.
 8. **Composite (A)** — observation `lpar.power`, one `request_id` per call
@@ -93,7 +95,7 @@ own records (#630).
    (repeating the stop's arguments and request id returns its `operation_id`).
    Teardown issues `continuation="abandon"` for each run request id not `terminal`.
    Partition A's call order: create cases, profile activation, running re-call, delete
-   refusal, delayed power-off, current-configuration activation, immediate power-off,
+   refusal, console, delayed power-off, current-configuration activation, immediate power-off,
    composite, delete. A step that leaves A's state unknown sends the arm to teardown.
 9. **Delete (A)** — observation `lpar.delete`: `activated-delete-refused`,
    `partition-kept`, `delete-call-succeeded`, `lpar-name-absent` (listing read twice,
@@ -134,11 +136,14 @@ own records (#630).
 13. **Gaps, recorded as SKIP rows naming the prerequisite, never as calls:**
     `lpar.dump_restart`, SR-IOV and vNIC provision arguments, graceful composite stop,
     system power.
-14. **One owning arm per observed operation.** This arm owns `lpar.create`,
-    `lpar.power_on`, `lpar.power_off` and `lpar.delete`; bare-cec's `record_verified`
-    sites for those four become plain `state.record` rows (their PCIe-fixture facts
-    stay with the `pcie.*` observations). `lpar.capture_console` stays bare-cec's
-    (`st35-bare-cec` observation, unchanged); this arm only rebinds its rows.
+14. **One owning arm per observed operation.** The reader keeps one live observation
+    per operation (`check_capability_inventory.py`), so this arm owns `lpar.create`,
+    `lpar.power_on`, `lpar.power_off`, `lpar.delete` and `lpar.capture_console`;
+    bare-cec's `record_verified` sites for those five become plain `state.record` rows
+    with the same PASS/FAIL judgement (its PCIe-fixture facts stay with the `pcie.*`
+    observations). A separate arm, not new steps in `bare_cec.py` / `provisioning.py`:
+    bare-cec skips without the dedicated-PCIe fixture, and ST13/ST14 act on the shared
+    test partition.
 15. **Recovery and preflight.** `live_test_recovery.py` witnesses subtask 41: a
     `hmcpctl-live-pwr-*` partition, an `lppwr*` volume, a mapping backed by one, or a
     VIOS server adapter whose remote partition is a run partition is stranded and prints
@@ -146,7 +151,7 @@ own records (#630).
 16. **Catalog.** Rebind the rows above; add maturity records for `lpar.power`,
     `lpar.decommission`, `provision.lpar`, `system.power_on`, `system.power_off`; copy
     each emitted observation unchanged (ADR 0126), replacing the bare-cec observation
-    for the four operations of step 14; regenerate the runtime projection and
+    for the five operations of step 14; regenerate the runtime projection and
     `docs/tools/`; `CHANGELOG.md`; `docs/live-testing.md` arm section, arm table and
     recovery table.
 
@@ -158,7 +163,8 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 | Case | Prerequisite | State |
 |---|---|---|
 | `lpar.dump_restart` | orchestrator approval to run bare-cec with `LIVE_TEST_ACCEPT_PLATFORM_DUMP=true`, whose dumprestart row would need to become a `record_verified` site; this arm builds no dump path | not run |
-| `provision.lpar` SR-IOV and vNIC arguments | operator approval to consume shared SR-IOV adapter capacity | not run |
+| `provision.lpar` SR-IOV and vNIC arguments | orchestrator-relayed operator approval to consume shared SR-IOV adapter capacity | not run |
+| `lpar.decommission` with a mapped vSCSI volume | none in this arm: it detaches first, because decommission removes only client adapters and the detach tool authorizes the mapped partition, which no longer exists afterwards; reported as a follow-up candidate | not run |
 | `lpar.power` graceful stop / restart | an OS with an active RMC connection | not run |
 | `lpar.power_on` network boot | #638 | not implemented |
 | `system.power_on`, `system.power_off` | an operator window to power the whole system | not run |
@@ -166,10 +172,13 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 ## Success
 
 - The operations in the table carry the rows shown and a maturity record each.
-- The seven operations the arm observes (`lpar.create`, `lpar.power_on`,
-  `lpar.power_off`, `lpar.delete`, `lpar.power`, `provision.lpar`, `lpar.decommission`)
-  carry one live observation each, emitted by a run at the branch's final `src/`
-  closure and copied with its emitted result; bare-cec emits none for the first four.
+- The eight operations the arm observes (`lpar.create`, `lpar.power_on`,
+  `lpar.power_off`, `lpar.delete`, `lpar.capture_console`, `lpar.power`,
+  `provision.lpar`, `lpar.decommission`) carry one live observation each, copied with its
+  emitted result; bare-cec emits none for the first five. The run is repeated when
+  anything it executed changes afterwards — the `src/hmcpctl/` closure,
+  `scripts/live_test/lpar_power.py`, or the runner, preflight and recovery hunks;
+  catalog and documentation commits after the run are exempt.
 - After the run every read of step 3 equals its pre-run read; no prefixed partition or
   volume exists (recovery exit 0 for subtask 41).
 - Unit tests over the scripted client pin: each assertion's pass and fail reading;
