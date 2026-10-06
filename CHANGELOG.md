@@ -38,6 +38,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_processed_metric_links`, `hmc_aggregated_metric_links`, `hmc_processed_metrics`,
+  `hmc_aggregated_metrics` and `hmcpctl metrics show` no longer fail with HTTP 406 on a V10R3
+  HMC. The metric feed request sent the generic UOM `Accept`, which the HMC refuses on PCM
+  feeds as it does on the preferences endpoint (#1202); it now sends `Accept: */*` and no
+  `X-HMC-Schema-Version`. The long-term-monitor feed shares that request (#634).
 - `hmc_sync_lpar_profile` no longer claims to save the running configuration over the current
   profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
   live capture confirmed. The tool and `synchronize_lpar_profile` now take
@@ -86,6 +91,12 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Added
 
+- Live verification of the PCM preference, metric and partition-template operations (#634).
+  Round2's subtask 5 asserts what those reads return, and subtask 12 no longer toggles the
+  managed system's long-term monitor flag. A new opt-in `pcm` arm, `scripts/live_pcm.py`
+  (subtask 38), toggles each of the five PCM collection flags and restores all five to the
+  read it took first; preflight lists it. The nine operations gain maturity records, and
+  their reference rows now name only the endpoints each one requests.
 - Live verification of the partition-profile, LPAR-property, memory-pool and memory-affinity
   operations (#627). It runs through a new `profiles` arm, `scripts/live_profiles.py`
   (subtasks 0, 4, 10 and 15), the only arm that runs the system-wide profile backup and

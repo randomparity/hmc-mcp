@@ -1637,6 +1637,148 @@
         ]
       },
       "evidence": []
+    },
+    {
+      "operation": "pcm.get_preferences",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "pcm.set_preferences",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "metrics.processed_links",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "metrics.processed",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "metrics.aggregated_links",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "metrics.aggregated",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "managed-system",
+            "parameters": []
+          },
+          {
+            "variant": "logical-partition",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "template.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "library",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "template.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-uuid",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "template.deploy",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "draft-deploy",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
     }
   ]
 }

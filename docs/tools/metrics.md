@@ -8,7 +8,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_aggregated_metric_links` | `read` | `metrics.aggregated_links` | `metric_resource` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List aggregated PCM metric documents available in the requested range. |
-| `hmc_aggregated_metrics` | `read` | `metrics.aggregated` | `metric_resource` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Download the newest aggregated PCM metrics JSON document. |
-| `hmc_processed_metric_links` | `read` | `metrics.processed_links` | `metric_resource` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | List processed PCM metric documents available in the requested range. |
-| `hmc_processed_metrics` | `read` | `metrics.processed` | `metric_resource` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Download the newest processed PCM metrics JSON document. |
+| `hmc_aggregated_metric_links` | `read` | `metrics.aggregated_links` | `metric_resource` | `implemented` | `unevidenced` | `existing-runtime-guards` | List aggregated PCM metric documents available in the requested range. |
+| `hmc_aggregated_metrics` | `read` | `metrics.aggregated` | `metric_resource` | `implemented` | `unevidenced` | `existing-runtime-guards` | Download the newest aggregated PCM metrics JSON document. |
+| `hmc_processed_metric_links` | `read` | `metrics.processed_links` | `metric_resource` | `implemented` | `unevidenced` | `existing-runtime-guards` | List processed PCM metric documents available in the requested range. |
+| `hmc_processed_metrics` | `read` | `metrics.processed` | `metric_resource` | `implemented` | `unevidenced` | `existing-runtime-guards` | Download the newest processed PCM metrics JSON document. |

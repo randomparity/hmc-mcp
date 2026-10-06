@@ -90,6 +90,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | dedicated | `uv run --no-sync python scripts/live_dedicated.py` | subtask 24 |
 | bare-cec | `uv run --no-sync python scripts/live_bare_cec.py` | subtask 25 |
 | profiles | `uv run --no-sync python scripts/live_profiles.py` | subtasks 0, 4, 10 and 15 |
+| pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -100,14 +101,15 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 36, while the ids you
-can dispatch stop at 25.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids 26 through 36 are not
+dispatchable on their own.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
 bare-cec arm, which records its own steps as row 35. It reuses the dedicated
 arm's baseline, fixture-create and cleanup steps, so rows 29, 30 and 34 appear
-in a bare-cec run too, with their dedicated-arm wording.
+in a bare-cec run too, with their dedicated-arm wording. Subtask 38 is the pcm
+arm's, and it SKIPs in any other selection.
 
 A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent —
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses —
@@ -175,6 +177,40 @@ If the restore itself failed or was interrupted, review the profiles before
 anything else, then restore them with
 `rstprofdata -m <system> -l 1 -f hmcpctl-live-st10`. Do not run the arm
 again until the profiles are confirmed: its next backup overwrites that file.
+
+### The pcm arm
+
+The pcm arm verifies `hmc_set_pcm_preferences` (#634). Subtask 38 changes the
+managed system's PCM collection preferences, which every PCM consumer of that
+system shares. It reads the five flags (`LongTermMonitorEnabled`,
+`AggregationEnabled`, `ShortTermMonitorEnabled`, `ComputeLTMEnabled`,
+`EnergyMonitorEnabled`) and records that read as the row
+`hmc_get_pcm_preferences (snapshot)` before its first write. Then, for each flag,
+it sets the opposite value, reads it back, and writes all five snapshot values
+again: the HMC couples the flags, and enabling aggregation enables long-term
+monitoring. It passes only when a final read equals the snapshot. A flag the HMC
+refuses to change, or changes together with another, fails its assertion.
+
+Before the run, save a read of the flags outside the repository. A hang-up writes
+no results document at all:
+
+```sh
+uv run --no-sync hmcpctl metrics prefs ManagedSystem <system> > ~/pcm-before.json
+```
+
+If the run fails or stops partway, restore the five values from that read, or
+from the snapshot row in `test-results-pcm.json`, choosing each flag's on or off
+form:
+
+```sh
+uv run --no-sync hmcpctl metrics set-prefs ManagedSystem <system> \
+  --ltm|--no-ltm --aggregation|--no-aggregation --stm|--no-stm \
+  --compute-ltm|--no-compute-ltm --energy|--no-energy --yes
+```
+
+Do not run the arm again until a fresh read matches the saved one. The next run
+overwrites `test-results-pcm.json` and takes the flags as it finds them as its
+snapshot.
 
 ### The bare-cec arm
 
@@ -248,7 +284,7 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov` or `profiles`.
+`bare-cec`, `round2`, `sriov`, `profiles` or `pcm`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
 two sets of them:
@@ -267,7 +303,7 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 | 1 | something is stranded; the output names it and the command that clears it |
 | 2 | some state could not be read, the run dispatched subtasks the check does not witness, or the run was interrupted (`run.partial`), even when something is also stranded — **this is not clean** |
 
-Exit 2 is expected after round2, SR-IOV, profiles and `all` runs: they dispatch
+Exit 2 is expected after round2, SR-IOV, profiles, pcm and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
 
 - **round2**: the scratch and network-test partitions are gone, the test user is
@@ -281,6 +317,8 @@ subtasks the check does not witness. For those, check by hand:
   (`lssyscfg -r prof -m <system>`) and the VIOS `msp` flag. It should match
   line for line as a set: the HMC reorders a partition's profiles after a
   restore. The backup file `hmcpctl-live-st10` is the one expected addition.
+- **pcm**: `hmcpctl metrics prefs ManagedSystem <system>` matches the read saved
+  before the run.
 
 The check issues no mutating call. When it reports something stranded, run the
 command it prints yourself, then run the check again.
