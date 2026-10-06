@@ -23,6 +23,13 @@ Paths are relative to `docs/refs/hmc-rest-api-p11/jobs/`. Every job is a `PUT` J
 | `upgrade.vios` | `virtualioserver-jobs/161-…:17` | `:24-37`; no `RestartVIOS`, no `IBMWebsite` (`:24`) | `stdOut` (`:43`) | matches |
 | `update.firmware` | `managedsystem-jobs/065-…:17`, JSON `PUT` (`:59-61`) | `:28-49`; HMC 11.1.1111 minimum (`:12`) | `Result` (`:335`), `COMPLETED_WITH_ERROR` (`:307`) terminal | matches; `PartitionMigration` appears only in a sample (`:242`) and is not modelled |
 
+`NOT_STARTED` conflicts: `121-…:42` and `102-…:36` call it a parameter-validation failure,
+while `../016-job-status.md:24` calls it not yet initiated. `TERMINAL_JOB_STATUSES` follows
+`016` because every job shares it, and a terminal `NOT_STARTED` would end every queued wait.
+So a console update or PTF listing the HMC rejects in validation surfaces, with `wait=True`,
+as the last-seen `NOT_STARTED` entry after the timeout. Which reading holds needs a live
+rejected submission; it is a gap below, not a confirmed defect.
+
 No defect is confirmed in the five job contracts, so `src/` is unchanged. The unmodelled
 `PartitionMigration` step is new PlatformUpdate scope, owned by #680.
 
@@ -53,8 +60,11 @@ No defect is confirmed in the five job contracts, so `src/` is unchanged. The un
    `hmc_update_firmware` only when that version parses and is below 11.1.1111; otherwise it
    records SKIP and makes no call. It passes an absent synthetic system name, so on an HMC
    past the gate the call still stops at a name lookup before any `PUT`. PASS needs a
-   failure carrying `requires HMC 11.1.1111`; any other outcome, success included, is FAIL.
-   It is never copied into `maturity.json`.
+   failure carrying both `requires HMC 11.1.1111` and `below the minimum`; any other
+   outcome, success included, is FAIL. It is never copied into `maturity.json`. Two readers
+   still count the dispatch: `just scenario-gap` lists `update.firmware` as exercised, and the
+   `scripts/live_test_evidence.py` matrix shows `hmc_update_firmware` PASS. The PR cites that
+   matrix and says the row is the refusal, not a submit.
 
 ## Failure model
 
@@ -77,10 +87,13 @@ No defect is confirmed in the five job contracts, so `src/` is unchanged. The un
 | `update.vios`, `upgrade.vios` | a disposable VIOS, images, free disks for upgrade, a window | not run |
 | `update.firmware` submit | POWER11 with HMC V11.1.1111 or later, images, a window | not run |
 | `update.firmware` on V10R3 | none | non-promoting check |
+| `NOT_STARTED` on a rejected console update or PTF listing | a live submission the HMC rejects in validation | not run |
 
 ## Success
 
 - The five operations carry exactly the rows in Changes 1 and the records in Changes 2.
 - The offline test fails if the gate moves after name resolution or the `PUT`.
-- A live ST1 run at the PR head records the firmware check as PASS, and recovery exits 0.
+- A live ST1 run at the PR head records the firmware check as PASS. Recovery, given that
+  run's results document, exits 2 listing only subtask 1 as NOT WITNESSED and nothing as
+  stranded, because ST1 dispatches no mutating call.
 - `just verify` and `uv run --no-sync prek run --all-files` pass.
