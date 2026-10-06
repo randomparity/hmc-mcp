@@ -107,6 +107,23 @@ def test_virtual_network_document():
     assert "AssociatedSwitch" in xml and "VirtualSwitch/vswitch-uuid-1" in xml
 
 
+def test_virtual_network_document_kb_matches_the_live_feed():
+    """Each element's kb is the one the V10R3 feed serves (2026-10-06 live run).
+
+    A create carrying NetworkName kb="CUD" was refused with REST0001: "Value 'CUD'
+    is not facet-valid with respect to enumeration '[CUR]'".
+    """
+    import re
+
+    served = dict(re.findall(r"<(\w+) [^>]*?kb=\"(\w+)\"", VNETWORK_FEED))
+    sent = dict(
+        re.findall(r"<(\w+) kb=\"(\w+)\"", build_virtual_network_document("n", 2, 0))
+    )
+
+    assert sent
+    assert {name: served[name] for name in sent} == sent
+
+
 def test_virtual_network_document_tagged():
     xml = build_virtual_network_document("n", 200, 3, tagged=True)
     assert "TaggedNetwork" in xml and ">true<" in xml
@@ -240,3 +257,35 @@ def test_delete_virtual_network_tool_maps_public_arguments(monkeypatch, mock_hmc
 
     assert route.called
     assert result == f"Deleted VirtualNetwork {VNETWORK_UUID} from system-name"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vlan_id", [0, 4095, 100000, -1, True])
+async def test_create_virtual_network_refuses_out_of_range_vlan_before_any_read(
+    vlan_id,
+):
+    """IEEE 802.1Q usable VLAN ids are 1-4094; anything else is refused before I/O."""
+    hmc = AsyncMock()
+
+    with pytest.raises(
+        ValueError, match=r"vlan_id .* must be a VLAN id from 1 to 4094"
+    ):
+        await create_virtual_network(hmc, "system-name", "net", vlan_id, 0)
+
+    assert hmc.mock_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vlan_id", [1, 4094])
+async def test_create_virtual_network_accepts_range_bounds(vlan_id):
+    hmc = AsyncMock()
+    hmc.create_virtual_network.return_value = {"UUID": VNETWORK_UUID}
+    with patch(
+        "hmcpctl.operations.virtualization.network.resolve_system_uuid",
+        AsyncMock(return_value=SYSTEM_UUID),
+    ):
+        await create_virtual_network(hmc, "system-name", "net", vlan_id, 0)
+
+    hmc.create_virtual_network.assert_awaited_once_with(
+        SYSTEM_UUID, "net", vlan_id, 0, tagged=False
+    )

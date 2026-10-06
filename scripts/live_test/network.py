@@ -1,243 +1,76 @@
-"""Virtual-network mutation scenarios for the live HMC test harness."""
+"""Virtual-network, client-adapter and VIOS-label scenarios for the live harness (#629).
+
+ST2 reads the virtual-network inventory, the test partition's client adapters and
+the VIOS Fibre Channel labels, and records each non-empty read through
+`record_verified`. ST9 runs only in the `network` arm. On the test partition, while
+it is Not Activated, it round-trips a test VLAN with a client network adapter, a
+vSCSI and a vFC client adapter paired to the VIOS serving the partition, and that
+VIOS's FC-port and vFC group labels.
+
+Every ST9 scenario reads its own baseline, re-reads after each mutation whatever the
+call returned, and reverses the difference from the baseline. A reversal it cannot
+confirm records a manual-recovery row and stops ST9: no later mutation runs.
+"""
 
 from __future__ import annotations
 
+import csv
+import io
+import secrets
 import shlex
+import uuid
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from .observation import CallFailure, ExpectedOutcome
+from hmcpctl.errors import HMCError
+from hmcpctl.ssh.commands import build_attribute_record, build_filter
+
+from .observation import Assertion
 from .results import entries
 from .results import resource as get_resource
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
 
-_REST_CREATE_UNSUPPORTED = ExpectedOutcome(
-    operation="network.create_network",
-    variant="rest-virtual-network-creation",
-    reason="HMC firmware returns HTTP 406 for REST VirtualNetwork create "
-    "(same PUT limitation as LPAR create)",
-    error_codes=frozenset({"406", "not acceptable"}),
+INVENTORY_SUBTASK = 2
+SUBTASK = 9
+GROUP = "network"
+INVENTORY_SCENARIO = "st2-network-inventory"
+NAME_PREFIX = "hmcpctl-live-"
+#: The prefix of the run's VIOS labels. The HMC refuses a group label longer than
+#: 16 characters (HSCLC3A4, V10R3 live run 2026-10-06), and the renamed label adds
+#: "-r" to the prefix and 8 hex characters.
+LABEL_PREFIX = "hmcl-"
+#: A port name no VIOS has, for the label negative.
+ABSENT_PORT = "fcs9999"
+_READ_FAILED = Assertion("read-failed", False)
+#: The client adapter types ST9 adds and removes on the test partition.
+ROUND_TRIP_ADAPTER_TYPES = (
+    "ClientNetworkAdapter",
+    "VirtualSCSIClientAdapter",
+    "VirtualFibreChannelClientAdapter",
 )
-
-# ---------------------------------------------------------------------------
-# ST9 — Virtual Networking Mutations
-# ---------------------------------------------------------------------------
-
-
-async def mutate_virtual_networking(client: Client, state: RunState) -> None:
-    artifacts = state.artifacts
-    print("\n=== ST9: Virtual Networking Mutations ===")
-
-    if artifacts.test_vlan_id is None:
-        _skip_network_mutation(state, "no unused VLAN ID found in ST2")
-        return
-
-    vswitch_id = (
-        artifacts.test_vswitch_id if artifacts.test_vswitch_id is not None else 0
-    )
-    nettest_created = await _create_network_and_nettest_lpar(client, state, vswitch_id)
-    await _attach_network_adapter(client, state, vswitch_id)
-    await _cleanup_network_mutation(client, state, nettest_created)
+_ADAPTER_TYPES = (
+    "ClientNetworkAdapter",
+    "VirtualSCSIClientAdapter",
+    "VirtualFibreChannelClientAdapter",
+    "VirtualNICDedicated",
+)
+_SCSI_FIELDS = "lpar_name,lpar_id,slot_num,adapter_type,remote_lpar_id,remote_slot_num"
 
 
-def _skip_network_mutation(state: RunState, reason: str) -> None:
-    for name in (
-        "hmc_create_virtual_network",
-        "hmc_create_lpar (nettest)",
-        "hmc_add_network_adapter",
-        "hmc_list_adapters (post-add)",
-        "hmc_delete_adapter",
-        "hmc_delete_virtual_network",
-        "hmc_delete_lpar (nettest)",
-    ):
-        state.skip(9, name, reason)
-
-
-async def _create_network_and_nettest_lpar(
-    client: Client, state: RunState, vswitch_id: int
-) -> bool:
-    """Create the test network and nettest LPAR; return whether the LPAR create PASSed."""
-    config = state.config
-    artifacts = state.artifacts
-
-    st, data = await state.call(
-        client,
-        "hmc_create_virtual_network",
-        expected=[_REST_CREATE_UNSUPPORTED],
-        system_name_or_uuid=config.system_name,
-        name=f"mcp-test-vlan{artifacts.test_vlan_id}",
-        vlan_id=artifacts.test_vlan_id,
-        virtual_switch_id=vswitch_id,
-        tagged=False,
-    )
-    state.record_with_expected(
-        9, "hmc_create_virtual_network", st, data, [_REST_CREATE_UNSUPPORTED]
-    )
-    if st == "PASS" and isinstance(data, dict):
-        artifacts.test_network_uuid = data.get("uuid") or data.get("UUID")
-
-    st, data = await state.call(
-        client, "hmc_list_virtual_networks", system_name_or_uuid=config.system_name
-    )
-    state.record(9, "hmc_list_virtual_networks (post-create)", st, data)
-    if st == "PASS" and not artifacts.test_network_uuid:
-        for e in entries(data):
-            resource = get_resource(e)
-            vlan = (
-                resource.get("NetworkVLANID")
-                or resource.get("VLANId")
-                or resource.get("vlan_id")
-            )
-            if str(vlan) == str(artifacts.test_vlan_id):
-                artifacts.test_network_uuid = e.get("UUID") or e.get("uuid")
-                break
-
-    # Use all_resources=1 path (no explicit resource args) — avoids HSCL0622
-    # proc-unit validation failure on this HMC firmware.
-    st, data = await state.call(
-        client,
-        "hmc_create_lpar",
-        system_name_or_uuid=config.system_name,
-        name=config.nettest_name,
-    )
-    state.record(9, "hmc_create_lpar (nettest)", st, data)
-    nettest_created = st == "PASS"
-    if nettest_created and isinstance(data, dict):
-        artifacts.nettest_uuid = data.get("uuid") or data.get("UUID")
-        if not artifacts.nettest_uuid:
-            nested = data.get("lpar")
-            if isinstance(nested, dict):
-                artifacts.nettest_uuid = nested.get("uuid") or nested.get("UUID")
-    return nettest_created
-
-
-async def _attach_network_adapter(
-    client: Client, state: RunState, vswitch_id: int
-) -> None:
-    config = state.config
-    artifacts = state.artifacts
-    if artifacts.test_network_uuid:
-        st, data = await state.call(
-            client,
-            "hmc_add_network_adapter",
-            lpar_name_or_uuid=config.nettest_name,
-            port_vlan_id=artifacts.test_vlan_id,
-            virtual_switch_id=vswitch_id,
-        )
-        state.record(9, "hmc_add_network_adapter", st, data)
-
-        st, data = await state.call(
-            client,
-            "hmc_list_adapters",
-            lpar_name_or_uuid=config.nettest_name,
-            adapter_type="ClientNetworkAdapter",
-        )
-        state.record(9, "hmc_list_adapters (post-add)", st, data)
-        if st == "PASS":
-            for e in entries(data):
-                artifacts.test_adapter_uuid = e.get("UUID") or e.get("uuid")
-                break
-    else:
-        state.skip(
-            9,
-            "hmc_add_network_adapter",
-            "virtual network not created (REST 406)",
-        )
-        state.skip(
-            9,
-            "hmc_list_adapters (post-add)",
-            "virtual network not created (REST 406)",
-        )
-
-
-async def _cleanup_network_mutation(
-    client: Client, state: RunState, nettest_created: bool
-) -> None:
-    config = state.config
-    artifacts = state.artifacts
-    if artifacts.test_adapter_uuid:
-        st, data = await state.call(
-            client,
-            "hmc_delete_adapter",
-            lpar_name_or_uuid=config.nettest_name,
-            adapter_type="ClientNetworkAdapter",
-            adapter_uuid=artifacts.test_adapter_uuid,
-        )
-        state.record(9, "hmc_delete_adapter", st, data)
-    else:
-        state.skip(9, "hmc_delete_adapter", "no adapter UUID captured")
-
-    if artifacts.test_network_uuid:
-        st, data = await state.call(
-            client,
-            "hmc_delete_virtual_network",
-            system_name_or_uuid=config.system_name,
-            network_uuid=artifacts.test_network_uuid,
-        )
-        state.record(9, "hmc_delete_virtual_network", st, data)
-        if st == "PASS":
-            artifacts.test_network_uuid = None
-    else:
-        state.skip(9, "hmc_delete_virtual_network", "no network UUID captured")
-
-    if nettest_created:
-        # The delete call already addresses the LPAR by name, so an unresolved
-        # UUID (issue #969) is not a reason to skip: attempt the delete either
-        # way, and only a failed delete needs manual recovery.
-        st, data = await state.call(
-            client,
-            "hmc_delete_lpar",
-            system_name_or_uuid=config.system_name,
-            lpar_name_or_uuid=config.nettest_name,
-        )
-        if st == "PASS":
-            state.record(9, "hmc_delete_lpar (nettest)", st, data)
-            artifacts.nettest_uuid = None
-        else:
-            # The failure rides as `data`, but only its message is ever shown:
-            # a `CallFailure`'s `traceback_text` is deliberately excluded from
-            # persisted results (see `RunState.record`), and interpolating the
-            # raw object here would leak it back in.
-            system = shlex.quote(config.system_name)
-            name = shlex.quote(config.nettest_name)
-            detail = data.message if isinstance(data, CallFailure) else data
-            state.record(
-                9,
-                "hmc_delete_lpar (nettest)",
-                "FAIL",
-                "MANUAL RECOVERY REQUIRED: partition "
-                f"{config.nettest_name!r} on {config.system_name!r} was created "
-                f"(PASS) but could not be deleted ({detail!r}); it was NOT removed. "
-                f"Run `rmsyscfg -r lpar -m {system} -n {name}` by hand.",
-            )
-    else:
-        state.skip(9, "hmc_delete_lpar (nettest)", "nettest LPAR not created")
-
-
-# ---------------------------------------------------------------------------
-# ST2 — Network Inventory
-# ---------------------------------------------------------------------------
-
-
-async def _discover_virtual_switch(client: Client, state: RunState) -> None:
-    config = state.config
-    artifacts = state.artifacts
-    st, data = await state.call(
-        client, "hmc_list_virtual_switches", system_name_or_uuid=config.system_name
-    )
-    state.record(2, "hmc_list_virtual_switches", st, data)
-    if st == "PASS":
-        for e in entries(data):
-            resource = get_resource(e)
-            sid = resource.get("SwitchID") or resource.get("switch_id")
-            if sid is not None:
-                artifacts.test_vswitch_id = int(sid)
-                break
-        if artifacts.test_vswitch_id is None:
-            artifacts.test_vswitch_id = 0
+def as_int(value: object) -> int | None:
+    """An HMC integer field's value, or None when it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value)
+    return None
 
 
 def listed_vlans(data: Any) -> tuple[set[int], list[object]]:
@@ -252,80 +85,1226 @@ def listed_vlans(data: Any) -> tuple[set[int], list[object]]:
             or resource.get("vlan_id")
         )
         if vlan is not None:
-            try:
-                vlans.add(int(vlan))
-            except (TypeError, ValueError):
+            parsed = as_int(vlan)
+            if parsed is None:
                 malformed.append(vlan)
+            else:
+                vlans.add(parsed)
     return vlans, malformed
 
 
-def _unused_vlan(data: Any, start: int, end: int) -> tuple[int | None, list[object]]:
-    used_vlans, malformed_vlans = listed_vlans(data)
-    available = None
-    if not malformed_vlans:
-        available = next(
-            (
-                candidate
-                for candidate in range(start, end + 1)
-                if candidate not in used_vlans
-            ),
-            None,
+def unused_vlan(used: set[int], start: int, end: int) -> int | None:
+    """The first VLAN id in the configured range that no network uses."""
+    return next((vlan for vlan in range(start, end + 1) if vlan not in used), None)
+
+
+def _all(rows: list[Mapping[str, object]], check: Callable[[Mapping], bool]) -> bool:
+    return bool(rows) and all(check(row) for row in rows)
+
+
+def _vlan_in_range(entry: Mapping[str, object]) -> bool:
+    vlan = as_int(get_resource(entry).get("NetworkVLANID"))
+    return vlan is not None and 1 <= vlan <= 4094
+
+
+def group_name(row: Mapping[str, object]) -> object:
+    """A vFC group label row's name: its `name` column, else its first column."""
+    if "name" in row:
+        return row["name"]
+    return next(iter(row.values()), None)
+
+
+def _switch_id(entry: Mapping[str, object]) -> bool:
+    return as_int(get_resource(entry).get("SwitchID")) is not None
+
+
+def _identified(entry: Mapping[str, object]) -> bool:
+    return bool(entry.get("UUID") or entry.get("uuid"))
+
+
+def _eth_row(row: Mapping[str, object]) -> bool:
+    return bool(row.get("lpar_name")) and as_int(row.get("port_vlan_id")) is not None
+
+
+def _fc_row(row: Mapping[str, object]) -> bool:
+    return all(row.get(key) for key in ("lpar_name", "adapter_type", "slot_num"))
+
+
+def _fc_port_label_row(row: Mapping[str, object]) -> bool:
+    return bool(row.get("name")) and bool(row.get("port_name"))
+
+
+# ---------------------------------------------------------------------------
+# ST2 — Network inventory
+# ---------------------------------------------------------------------------
+
+
+def _empty(state: RunState, tool: str, status: str, data: Any) -> bool:
+    """Record an empty listing as non-promoting: it proves no row shape."""
+    if status == "PASS" and isinstance(data, list) and not data:
+        state.record(INVENTORY_SUBTASK, f"{tool} (empty)", status, data)
+        return True
+    return False
+
+
+async def _inventory_network_resources(client: Client, state: RunState) -> None:
+    system = state.config.system_name
+    st, data = await state.call(
+        client, "hmc_list_virtual_switches", system_name_or_uuid=system
+    )
+    if not _empty(state, "hmc_list_virtual_switches", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_virtual_switches",
+            operation="network.list_switches",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[
+                Assertion("switch-ids-integral", _all(entries(data), _switch_id))
+            ]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
         )
-    return available, malformed_vlans
-
-
-async def _select_unused_vlan(client: Client, state: RunState) -> None:
-    config = state.config
-    artifacts = state.artifacts
-
     st, data = await state.call(
-        client, "hmc_list_virtual_networks", system_name_or_uuid=config.system_name
+        client, "hmc_list_virtual_networks", system_name_or_uuid=system
     )
-    if st == "PASS":
-        artifacts.test_vlan_id, malformed_vlans = _unused_vlan(
-            data, config.vlan_range_start, config.vlan_range_end
+    if not _empty(state, "hmc_list_virtual_networks", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_virtual_networks",
+            operation="network.list_networks",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[
+                Assertion("vlan-ids-in-range", _all(entries(data), _vlan_in_range))
+            ]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
         )
-        if malformed_vlans:
-            st = "FAIL"
-            data = (
-                "Virtual-network inventory contains unparsable VLAN identifiers: "
-                + ", ".join(repr(value) for value in malformed_vlans)
-            )
-    state.record(2, "hmc_list_virtual_networks", st, data)
-
-
-async def _record_network_adapters(client: Client, state: RunState) -> None:
-    config = state.config
     st, data = await state.call(
-        client, "hmc_list_network_bridges", system_name_or_uuid=config.system_name
+        client, "hmc_list_network_bridges", system_name_or_uuid=system
     )
-    state.record(2, "hmc_list_network_bridges", st, data)
+    if not _empty(state, "hmc_list_network_bridges", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_network_bridges",
+            operation="network.list_bridges",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[
+                Assertion("bridge-entries-identified", _all(entries(data), _identified))
+            ]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
+        )
 
-    st, data = await state.call(
-        client, "hmc_list_fc_ports", system_name_or_uuid=config.system_name
-    )
-    state.record(2, "hmc_list_fc_ports", st, data)
 
+async def _inventory_virtual_io(client: Client, state: RunState) -> None:
+    system = state.config.system_name
     st, data = await state.call(
-        client, "hmc_list_sea_adapters", system_name_or_uuid=config.system_name
+        client, "hmc_list_sea_adapters", system_name_or_uuid=system
     )
-    state.record(2, "hmc_list_sea_adapters", st, data)
+    if not _empty(state, "hmc_list_sea_adapters", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_sea_adapters",
+            operation="network.list_sea",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[Assertion("eth-rows-parsed", _all(entries(data), _eth_row))]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
+        )
+    st, data = await state.call(client, "hmc_list_fc_ports", system_name_or_uuid=system)
+    if not _empty(state, "hmc_list_fc_ports", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_fc_ports",
+            operation="network.list_fc_ports",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[Assertion("fc-rows-parsed", _all(entries(data), _fc_row))]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
+        )
 
+
+async def _inventory_labels(client: Client, state: RunState) -> None:
+    system = state.config.system_name
     st, data = await state.call(
-        client,
-        "hmc_list_adapters",
-        lpar_name_or_uuid=config.lp3_name,
-        adapter_type="ClientNetworkAdapter",
+        client, "hmc_list_vios_fc_port_labels", system_name_or_uuid=system
     )
-    state.record(2, "hmc_list_adapters (CNA lp3)", st, data)
+    if not _empty(state, "hmc_list_vios_fc_port_labels", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_vios_fc_port_labels",
+            operation="vios_label.list_fc_ports",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[
+                Assertion(
+                    "fc-port-rows-parsed", _all(entries(data), _fc_port_label_row)
+                )
+            ]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
+        )
+    st, data = await state.call(
+        client, "hmc_list_vios_vfc_group_labels", system_name_or_uuid=system
+    )
+    if not _empty(state, "hmc_list_vios_vfc_group_labels", st, data):
+        state.record_verified(
+            INVENTORY_SUBTASK,
+            "hmc_list_vios_vfc_group_labels",
+            operation="vios_label.list_vfc_groups",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[
+                Assertion(
+                    "group-rows-parsed",
+                    _all(entries(data), lambda row: bool(group_name(row))),
+                )
+            ]
+            if st == "PASS"
+            else [_READ_FAILED],
+            cleanup="not-required",
+            data=data,
+        )
+
+
+async def _inventory_adapters(client: Client, state: RunState) -> None:
+    listed: list[Mapping[str, object]] = []
+    readable = True
+    for adapter_type in _ADAPTER_TYPES:
+        st, data = await state.call(
+            client,
+            "hmc_list_adapters",
+            lpar_name_or_uuid=state.config.lp3_name,
+            adapter_type=adapter_type,
+            system_name_or_uuid=state.config.system_name,
+        )
+        state.record(INVENTORY_SUBTASK, f"hmc_list_adapters ({adapter_type})", st, data)
+        readable = readable and st == "PASS" and isinstance(data, list)
+        listed.extend(entries(data))
+    tool = "hmc_list_adapters (test partition, every type)"
+    if readable and not listed:
+        state.record(INVENTORY_SUBTASK, f"{tool} (empty)", "PASS", listed)
+        return
+    state.record_verified(
+        INVENTORY_SUBTASK,
+        tool,
+        operation="adapter.list",
+        scenario=INVENTORY_SCENARIO,
+        assertions=[Assertion("adapter-entries-identified", _all(listed, _identified))]
+        if readable
+        else [_READ_FAILED],
+        cleanup="not-required",
+        data=listed,
+    )
 
 
 async def inventory_network(client: Client, state: RunState) -> None:
-    artifacts = state.artifacts
     print("\n=== ST2: Network Inventory ===")
-    await _discover_virtual_switch(client, state)
-    await _select_unused_vlan(client, state)
-    print(
-        f"  Test VLAN ID: {artifacts.test_vlan_id}  VSwitch ID: {artifacts.test_vswitch_id}"
+    await _inventory_network_resources(client, state)
+    await _inventory_virtual_io(client, state)
+    await _inventory_labels(client, state)
+    await _inventory_adapters(client, state)
+
+
+# ---------------------------------------------------------------------------
+# ST9 — Round trips on the test partition and the VIOS serving it
+# ---------------------------------------------------------------------------
+
+
+class _Stop(Exception):
+    """A reversal was not confirmed: no further ST9 mutation may run."""
+
+
+@dataclass(frozen=True)
+class _Boundary:
+    """The test partition's id and the one VIOS serving it ("" when not one)."""
+
+    lpar_id: str
+    vios: str
+    vios_id: str
+    #: A virtual slot the test partition's own vSCSI client already uses ("" if none).
+    used_slot: str = ""
+
+
+#: The client adapter fields naming the VIOS partition and server slot it pairs with.
+_REMOTE_FIELDS = {
+    "VirtualSCSIClientAdapter": ("RemoteLogicalPartitionID", "RemoteSlotNumber"),
+    "VirtualFibreChannelClientAdapter": (
+        "ConnectingPartitionID",
+        "ConnectingVirtualSlotNumber",
+    ),
+}
+
+Listing = dict[str, Mapping[str, object]]
+Networks = dict[str, tuple[int, str]]
+
+
+def _uuid(entry: Mapping[str, object]) -> str | None:
+    value = entry.get("UUID") or entry.get("uuid")
+    return value if isinstance(value, str) and value else None
+
+
+def _by_uuid(data: Any) -> Listing | None:
+    """A listing keyed by UUID; None when it is not a list of identified entries."""
+    if not isinstance(data, list):
+        return None
+    keyed = {_uuid(entry): get_resource(entry) for entry in entries(data)}
+    if None in keyed or len(keyed) != len(data):
+        return None
+    return {key: value for key, value in keyed.items() if key is not None}
+
+
+def _csv_rows(text: str, fields: str) -> list[dict[str, str]] | None:
+    """`-F` output as rows; None when a line does not have the requested columns."""
+    names = fields.split(",")
+    if text.strip() == "No results were found.":
+        return []
+    rows = [row for row in csv.reader(io.StringIO(text)) if row]
+    if any(len(row) != len(names) for row in rows):
+        return None
+    return [dict(zip(names, row, strict=True)) for row in rows]
+
+
+def _plain_label(value: str) -> bool:
+    """Whether the label tools accept `value` back, so it can be restored exactly."""
+    return bool(value.strip()) and not any(
+        ord(character) < 0x20 or ord(character) == 0x7F for character in value
     )
-    await _record_network_adapters(client, state)
+
+
+def _run_networks(current: Networks | None, vlan: int, name: str) -> Networks | None:
+    """The networks this run created: on its VLAN, under its own name.
+
+    The VLAN was unused at baseline and the name carries the run's tag, so a
+    network matching both is the run's own whatever call created it. Anything
+    else on the VLAN is never deleted: the baseline compare reports it.
+    """
+    if current is None:
+        return None
+    return {
+        key: value
+        for key, value in current.items()
+        if value[0] == vlan and value[1].startswith(name)
+    }
+
+
+def _server_slot(servers: Iterable[tuple[str, ...]], lpar_id: str) -> str | None:
+    """The lowest server slot assigned to the test partition, or None.
+
+    A slot open to any partition could be serving another client, so it is never
+    used (orchestrator ruling, 2026-10-06).
+    """
+    index = {name: i for i, name in enumerate(_SCSI_FIELDS.split(","))}
+    slots = sorted(
+        (
+            row[index["slot_num"]]
+            for row in servers
+            if row[index["remote_lpar_id"]] == lpar_id
+        ),
+        key=lambda slot: as_int(slot) or 0,
+    )
+    return slots[0] if slots else None
+
+
+#: The fields that place a client adapter: its slot, VLAN and server pairing.
+_PLACEMENT_FIELDS = (
+    "VirtualSlotNumber",
+    "PortVLANID",
+    "RemoteLogicalPartitionID",
+    "RemoteSlotNumber",
+    "ConnectingPartitionID",
+    "ConnectingVirtualSlotNumber",
+)
+
+#: A partition's adapters of one type: UUID -> placement.
+Adapters = dict[str, tuple[str, ...]]
+
+
+def _placements(listed: Listing) -> Adapters:
+    return {
+        key: tuple(str(resource.get(field, "")) for field in _PLACEMENT_FIELDS)
+        for key, resource in listed.items()
+    }
+
+
+def placement_drift(baseline: Adapters, after: Adapters | None) -> str:
+    """What differs from the baseline, so a manual recovery names only the run's own."""
+    if after is None:
+        return "the adapters could not be read; compare by hand with the baseline"
+    fields = ", ".join(_PLACEMENT_FIELDS)
+    new = sorted(k for k in after if k not in baseline)
+    off = sorted(k for k in baseline if after.get(k) != baseline[k])
+    return (
+        f"remove only the new UUIDs {new}; restore each of {off} to its baseline "
+        f"placement ({fields}) {[baseline[k] for k in off]}"
+    )
+
+
+def adapter_placements(data: Any) -> Adapters | None:
+    """A `hmc_list_adapters` result as UUID -> placement; None when not a listing."""
+    listed = _by_uuid(data)
+    return None if listed is None else _placements(listed)
+
+
+def _new(
+    after: Listing | None, baseline: Adapters
+) -> list[Mapping[str, object]] | None:
+    return None if after is None else [after[k] for k in after if k not in baseline]
+
+
+def _client_assertions(
+    added: str,
+    new: list[Mapping[str, object]] | None,
+    fields: tuple[str, str],
+    pairing: tuple[str, str],
+    collision_refused: bool | None,
+    restored: bool,
+    vios_side: bool,
+) -> list[Assertion]:
+    one = new is not None and len(new) == 1
+    paired = (
+        one
+        and new is not None
+        and tuple(str(as_int(new[0].get(field))) for field in fields) == pairing
+    )
+    collision = (
+        []
+        if collision_refused is None
+        else [Assertion("slot-collision-refused", collision_refused)]
+    )
+    return [
+        Assertion("adapter-added", one and added == "PASS"),
+        Assertion("pairing-matches", paired),
+        *collision,
+        Assertion("adapters-equal-baseline", restored),
+        Assertion("vios-side-unchanged", vios_side),
+    ]
+
+
+class _Arm:
+    """One ST9 run: its calls, and the baselines it read for the final compare."""
+
+    def __init__(self, client: Client, state: RunState) -> None:
+        self.client = client
+        self.state = state
+        self.system = state.config.system_name
+        self.lpar = state.config.lp3_name
+        self.tag = secrets.token_hex(4)
+        self.baselines: dict[str, tuple[Callable[[], Any], object]] = {}
+
+    def skip(self, tool: str, reason: str) -> None:
+        self.state.skip(SUBTASK, tool, reason)
+
+    def note(self, label: str, tool: str, result: tuple[str, Any]) -> str:
+        """Record one call's row and return its status."""
+        status, data = result
+        self.state.record(SUBTASK, f"{tool} ({label})", status, data)
+        return status
+
+    def data(self, label: str, tool: str, result: tuple[str, Any]) -> Any:
+        """Record one read's row and return its data, or None when it failed."""
+        return result[1] if self.note(label, tool, result) == "PASS" else None
+
+    def manual(self, what: str, command: str) -> None:
+        self.state.record(
+            SUBTASK,
+            "network round trip",
+            "FAIL",
+            f"MANUAL RECOVERY REQUIRED: {what} ({command})",
+        )
+        raise _Stop(what)
+
+    def baseline(self, label: str, reread: Callable[[], Any], value: object) -> None:
+        self.baselines[label] = (reread, value)
+
+    async def compare_baselines(self) -> None:
+        for label, (reread, value) in self.baselines.items():
+            now = await reread()
+            same = now == value
+            self.state.record(
+                SUBTASK,
+                f"network baseline compare ({label})",
+                "PASS" if same else "FAIL",
+                None if same else {"baseline": repr(value), "now": repr(now)},
+            )
+
+    # -- reads ---------------------------------------------------------------
+
+    async def command(self, label: str, cmd: str) -> str | None:
+        result = await self.state.call(self.client, "hmc_run_command", cmd=cmd)
+        text = self.data(label, "hmc_run_command", result)
+        return text if isinstance(text, str) else None
+
+    async def networks(self, label: str) -> Networks | None:
+        """The system's virtual networks as UUID -> (VLAN, name); None if unreadable."""
+        result = await self.state.call(
+            self.client, "hmc_list_virtual_networks", system_name_or_uuid=self.system
+        )
+        keyed = _by_uuid(self.data(label, "hmc_list_virtual_networks", result))
+        if keyed is None:
+            return None
+        networks = {}
+        for key, resource in keyed.items():
+            vlan = as_int(resource.get("NetworkVLANID"))
+            if vlan is None:
+                return None
+            networks[key] = (vlan, str(resource.get("NetworkName", "")))
+        return networks
+
+    async def adapters(self, adapter_type: str, label: str) -> Listing | None:
+        result = await self.state.call(
+            self.client,
+            "hmc_list_adapters",
+            lpar_name_or_uuid=self.lpar,
+            adapter_type=adapter_type,
+            system_name_or_uuid=self.system,
+        )
+        return _by_uuid(
+            self.data(f"{adapter_type}, {label}", "hmc_list_adapters", result)
+        )
+
+    async def placements(self, adapter_type: str, label: str) -> Adapters | None:
+        """The partition's adapters of a type, each with its slot and pairing."""
+        listed = await self.adapters(adapter_type, label)
+        return None if listed is None else _placements(listed)
+
+    async def scsi_rows(self, label: str) -> list[dict[str, str]] | None:
+        text = await self.command(
+            f"vSCSI adapters, {label}",
+            f"lshwres -r virtualio --rsubtype scsi --level lpar "
+            f"-m {shlex.quote(self.system)} -F {_SCSI_FIELDS}",
+        )
+        return None if text is None else _csv_rows(text, _SCSI_FIELDS)
+
+    async def server_rows(
+        self, adapter_type: str, vios_id: str, label: str
+    ) -> frozenset[tuple[str, ...]] | None:
+        """The VIOS's server adapters of the client type's kind, as comparable rows."""
+        rows: Any
+        if adapter_type == "VirtualSCSIClientAdapter":
+            rows = await self.scsi_rows(label)
+        else:
+            result = await self.state.call(
+                self.client, "hmc_list_fc_ports", system_name_or_uuid=self.system
+            )
+            rows = self.data(f"vFC adapters, {label}", "hmc_list_fc_ports", result)
+        if not isinstance(rows, list):
+            return None
+        return frozenset(
+            tuple(str(row.get(key, "")) for key in _SCSI_FIELDS.split(","))
+            for row in rows
+            if str(row.get("lpar_id")) == vios_id
+            and row.get("adapter_type") == "server"
+        )
+
+    async def mappings(self, boundary: _Boundary, label: str) -> frozenset[str] | None:
+        """The partition's mappings on the VIOS, compared without their order."""
+        result = await self.state.call(
+            self.client,
+            "hmc_list_storage_mappings",
+            vios_name_or_uuid=boundary.vios,
+            lpar_name_or_uuid=self.lpar,
+            system_name_or_uuid=self.system,
+        )
+        data = self.data(
+            f"{self.lpar} mappings, {label}", "hmc_list_storage_mappings", result
+        )
+        if not isinstance(data, list):
+            return None
+        return frozenset(
+            repr(sorted(m.items())) if isinstance(m, Mapping) else repr(m) for m in data
+        )
+
+    async def fc_labels(self, boundary: _Boundary, label: str) -> dict[str, str] | None:
+        result = await self.state.call(
+            self.client,
+            "hmc_list_vios_fc_port_labels",
+            system_name_or_uuid=self.system,
+            vios_name=boundary.vios,
+        )
+        data = self.data(
+            f"FC-port labels, {label}", "hmc_list_vios_fc_port_labels", result
+        )
+        if not isinstance(data, list):
+            return None
+        return {
+            str(row.get("port_name")): str(row.get("port_label") or "")
+            for row in data
+            if isinstance(row, Mapping)
+        }
+
+    async def groups(self, label: str) -> frozenset[str] | None:
+        result = await self.state.call(
+            self.client,
+            "hmc_list_vios_vfc_group_labels",
+            system_name_or_uuid=self.system,
+        )
+        data = self.data(
+            f"vFC group labels, {label}", "hmc_list_vios_vfc_group_labels", result
+        )
+        if not isinstance(data, list):
+            return None
+        return frozenset(
+            str(group_name(row)) for row in data if isinstance(row, Mapping)
+        )
+
+    # -- preconditions -------------------------------------------------------
+
+    async def find_boundary(self) -> _Boundary | None:
+        """The test partition's id and its one serving VIOS; None unless Not Activated."""
+        listing = await self.command(
+            "test partition",
+            f"lssyscfg -r lpar -m {shlex.quote(self.system)} "
+            f"--filter {shlex.quote(build_filter([('lpar_names', self.lpar)]))} "
+            "-F lpar_id,state",
+        )
+        fields = (listing or "").strip().split(",")
+        if len(fields) != 2 or fields[1] != "Not Activated":
+            self.skip("network preconditions", f"{self.lpar} is not 'Not Activated'")
+            return None
+        lpar_id = fields[0]
+        rows = await self.scsi_rows("serving VIOS")
+        servers = {
+            (row["lpar_name"], row["lpar_id"])
+            for row in rows or []
+            if row["adapter_type"] == "server" and row["remote_lpar_id"] == lpar_id
+        }
+        if len(servers) != 1:
+            self.skip(
+                "network preconditions",
+                f"{self.lpar} needs exactly one VIOS with a vSCSI server adapter "
+                "toward it; only the VLAN round trip runs",
+            )
+            return _Boundary(lpar_id, "", "")
+        ((vios, vios_id),) = servers
+        used = sorted(
+            (
+                row["slot_num"]
+                for row in rows or []
+                if row["adapter_type"] == "client" and row["lpar_id"] == lpar_id
+            ),
+            key=lambda slot: as_int(slot) or 0,
+        )
+        return _Boundary(lpar_id, vios, vios_id, used[0] if used else "")
+
+    # -- (a) VLAN and client network adapter --------------------------------
+
+    async def vlan_baseline(self) -> tuple[Networks, int, int, Adapters] | None:
+        """The network set, the test VLAN and switch, and the partition's CNAs."""
+        baseline = await self.networks("baseline")
+        result = await self.state.call(
+            self.client, "hmc_list_virtual_switches", system_name_or_uuid=self.system
+        )
+        switches = self.data("baseline", "hmc_list_virtual_switches", result)
+        cna = await self.placements("ClientNetworkAdapter", "baseline")
+        if baseline is None or switches is None or cna is None:
+            self.skip("hmc_create_virtual_network", "the baseline could not be read")
+            return None
+        config = self.state.config
+        vlan = unused_vlan(
+            {vlan for vlan, _ in baseline.values()},
+            config.vlan_range_start,
+            config.vlan_range_end,
+        )
+        if vlan is None:
+            self.skip("hmc_create_virtual_network", "no unused VLAN in the range")
+            return None
+        ids = (as_int(get_resource(e).get("SwitchID")) for e in entries(switches))
+        switch = next((sid for sid in ids if sid is not None), 0)
+        self.state.artifacts.test_vlan_id = vlan
+        self.state.artifacts.test_vswitch_id = switch
+        self.baseline("networks", lambda: self.networks("final"), baseline)
+        self.baseline(
+            f"{self.lpar} ClientNetworkAdapter",
+            lambda: self.placements("ClientNetworkAdapter", "final"),
+            cna,
+        )
+        return baseline, vlan, switch, cna
+
+    async def create_network(
+        self, label: str, name: str, vlan: int, switch: int
+    ) -> str:
+        result = await self.state.call(
+            self.client,
+            "hmc_create_virtual_network",
+            system_name_or_uuid=self.system,
+            name=name,
+            vlan_id=vlan,
+            virtual_switch_id=switch,
+            tagged=False,
+        )
+        return self.note(label, "hmc_create_virtual_network", result)
+
+    async def vlan_round_trip(self) -> None:
+        found = await self.vlan_baseline()
+        if found is None:
+            return
+        baseline, vlan, switch, cna = found
+        name = f"{NAME_PREFIX}vlan{vlan}-{self.tag}"
+        created = await self.create_network("create", name, vlan, switch)
+        ours = _run_networks(await self.networks("after create"), vlan, name)
+        listed = ours is not None and [n for _, n in ours.values()] == [name]
+        duplicate_refused = False
+        if listed and ours is not None:
+            self.state.artifacts.test_network_uuid = next(iter(ours))
+            duplicate = await self.create_network(
+                "duplicate VLAN", f"{name}-dup", vlan, switch
+            )
+            again = _run_networks(await self.networks("after duplicate"), vlan, name)
+            duplicate_refused = duplicate == "FAIL" and again == ours
+            try:
+                await self.client_network_adapter(vlan, switch, cna)
+            except _Stop:
+                self.manual(
+                    f"networks named {name}* were not deleted: the adapter on "
+                    f"VLAN {vlan} was not removed first",
+                    f"remove the adapter, then delete networks {name}* on "
+                    f"{self.system}",
+                )
+        deleted, restored = await self.delete_run_networks(baseline, vlan, name)
+        self.state.record_verified(
+            SUBTASK,
+            "hmc_create_virtual_network",
+            operation="network.create_network",
+            scenario="st9-virtual-network-round-trip",
+            assertions=[
+                Assertion("create-accepted", created == "PASS"),
+                Assertion("network-listed", listed),
+                Assertion("duplicate-vlan-refused", duplicate_refused),
+            ],
+            cleanup="passed" if restored else "failed",
+            data=None,
+        )
+        if deleted is None:
+            self.skip(
+                "hmc_delete_virtual_network", "the create left no network to delete"
+            )
+        else:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_delete_virtual_network",
+                operation="network.delete_network",
+                scenario="st9-virtual-network-round-trip",
+                assertions=[
+                    Assertion("delete-accepted", deleted),
+                    Assertion("networks-equal-baseline", restored),
+                ],
+                cleanup="passed" if restored else "failed",
+                data=None,
+            )
+        if not restored:
+            self.manual(
+                f"virtual networks on test VLAN {vlan} remain",
+                f"delete every network named {name}* on {self.system}",
+            )
+
+    async def delete_run_networks(
+        self, baseline: Networks, vlan: int, name: str
+    ) -> tuple[bool | None, bool]:
+        """Delete every network the run left on its VLAN.
+
+        Returns whether every delete was accepted (None when there was nothing to
+        delete) and whether the set read back equals the baseline.
+        """
+        ours = _run_networks(await self.networks("before delete"), vlan, name)
+        if ours is None:
+            return False, False
+        accepted: bool | None = None
+        for network_uuid in ours:
+            result = await self.state.call(
+                self.client,
+                "hmc_delete_virtual_network",
+                system_name_or_uuid=self.system,
+                network_uuid=network_uuid,
+            )
+            status = self.note("delete", "hmc_delete_virtual_network", result)
+            accepted = accepted is not False and status == "PASS"
+        restored = await self.networks("after delete") == baseline
+        if restored:
+            self.state.artifacts.test_network_uuid = None
+        return accepted, restored
+
+    async def client_network_adapter(
+        self, vlan: int, switch: int, baseline: Adapters
+    ) -> None:
+        kind = "ClientNetworkAdapter"
+        result = await self.state.call(
+            self.client,
+            "hmc_add_network_adapter",
+            lpar_name_or_uuid=self.lpar,
+            port_vlan_id=vlan,
+            virtual_switch_id=switch,
+            system_name_or_uuid=self.system,
+        )
+        added = self.note("test VLAN", "hmc_add_network_adapter", result)
+        after = await self.adapters(kind, "after add")
+        new = _new(after, baseline)
+        one_added = new is not None and len(new) == 1
+        pvid = (
+            one_added and new is not None and as_int(new[0].get("PortVLANID")) == vlan
+        )
+        result = await self.state.call(
+            self.client,
+            "hmc_delete_adapter",
+            lpar_name_or_uuid=self.lpar,
+            adapter_type=kind,
+            adapter_uuid=str(uuid.uuid4()),
+            system_name_or_uuid=self.system,
+        )
+        refused = self.note("unknown UUID", "hmc_delete_adapter", result)
+        unchanged = await self.placements(kind, "after unknown delete")
+        unknown_refused = (
+            refused == "FAIL" and after is not None and unchanged == _placements(after)
+        )
+        deleted, restored, drift = await self.remove_new_adapters(kind, baseline)
+        cleanup = "passed" if restored else "failed"
+        self.state.record_verified(
+            SUBTASK,
+            "hmc_add_network_adapter",
+            operation="adapter.add_network",
+            scenario="st9-client-network-adapter",
+            assertions=[
+                Assertion("adapter-added", one_added and added == "PASS"),
+                Assertion("pvid-matches", pvid),
+            ],
+            cleanup=cleanup,
+            data=None,
+        )
+        if deleted is None:
+            self.skip("hmc_delete_adapter", "the add left no adapter to delete")
+        else:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_delete_adapter",
+                operation="adapter.delete",
+                scenario="st9-client-network-adapter",
+                assertions=[
+                    Assertion("delete-accepted", deleted),
+                    Assertion("unknown-uuid-refused", unknown_refused),
+                    Assertion("adapters-equal-baseline", restored),
+                ],
+                cleanup=cleanup,
+                data=None,
+            )
+        if not restored:
+            self.manual(f"{self.lpar}'s {kind} set is off its baseline", drift)
+
+    async def remove_new_adapters(
+        self, adapter_type: str, baseline: Adapters
+    ) -> tuple[bool | None, bool, str]:
+        """Delete every adapter of `adapter_type` the run added; confirm by re-reading.
+
+        A new UUID placed exactly where a vanished baseline adapter was is that
+        adapter re-identified, not the run's: it is left alone, and the set then
+        reads as off the baseline.
+        """
+        current = await self.placements(adapter_type, "before delete")
+        if current is None:
+            return False, False, placement_drift(baseline, None)
+        vanished = {baseline[k] for k in baseline if k not in current}
+        accepted: bool | None = None
+        for adapter_uuid in sorted(k for k in current if k not in baseline):
+            if current[adapter_uuid] in vanished:
+                accepted = False
+                continue
+            result = await self.state.call(
+                self.client,
+                "hmc_delete_adapter",
+                lpar_name_or_uuid=self.lpar,
+                adapter_type=adapter_type,
+                adapter_uuid=adapter_uuid,
+                system_name_or_uuid=self.system,
+            )
+            status = self.note("delete", "hmc_delete_adapter", result)
+            accepted = accepted is not False and status == "PASS"
+        after = await self.placements(adapter_type, "after delete")
+        return accepted, after == baseline, placement_drift(baseline, after)
+
+    # -- (b, c) vSCSI and vFC clients ----------------------------------------
+
+    async def client_baseline(
+        self, adapter_type: str, boundary: _Boundary
+    ) -> tuple[frozenset[tuple[str, ...]], Adapters, frozenset[str], str] | None:
+        """The VIOS server side, the partition's clients, its mappings and the slot."""
+        servers = await self.server_rows(adapter_type, boundary.vios_id, "baseline")
+        clients = await self.placements(adapter_type, "baseline")
+        mappings = await self.mappings(boundary, "baseline")
+        if servers is None or clients is None or mappings is None:
+            self.skip(f"{adapter_type} round trip", "the baseline could not be read")
+            return None
+        slot = _server_slot(servers, boundary.lpar_id)
+        if slot is None:
+            self.skip(
+                f"{adapter_type} round trip",
+                f"{boundary.vios} has no server slot of this kind assigned to "
+                f"{self.lpar} (gap: slots open to any partition are not used)",
+            )
+            return None
+        self.baseline(
+            f"{boundary.vios} {adapter_type} servers",
+            lambda: self.server_rows(adapter_type, boundary.vios_id, "final"),
+            servers,
+        )
+        self.baseline(
+            f"{self.lpar} {adapter_type}",
+            lambda: self.placements(adapter_type, "final"),
+            clients,
+        )
+        return servers, clients, mappings, slot
+
+    async def add_client(
+        self,
+        label: str,
+        adapter_type: str,
+        boundary: _Boundary,
+        slot: str,
+        slot_number: int | None = None,
+    ) -> str:
+        if adapter_type == "VirtualSCSIClientAdapter":
+            result = await self.state.call(
+                self.client,
+                "hmc_add_vscsi_adapter",
+                lpar_name_or_uuid=self.lpar,
+                vios_partition_id=int(boundary.vios_id),
+                vios_slot=int(slot),
+                slot_number=slot_number,
+                system_name_or_uuid=self.system,
+            )
+            return self.note(label, "hmc_add_vscsi_adapter", result)
+        result = await self.state.call(
+            self.client,
+            "hmc_add_vfc_adapter",
+            lpar_name_or_uuid=self.lpar,
+            vios_partition_id=int(boundary.vios_id),
+            vios_slot=int(slot),
+            slot_number=slot_number,
+            system_name_or_uuid=self.system,
+        )
+        return self.note(label, "hmc_add_vfc_adapter", result)
+
+    async def slot_collision(
+        self, adapter_type: str, boundary: _Boundary, slot: str, clients: Adapters
+    ) -> bool | None:
+        """Whether an add on a client slot already in use is refused and changes nothing.
+
+        None when the test partition has no client slot to collide with. Anything
+        an accepted collision added is removed by the round trip's reversal.
+        """
+        if not boundary.used_slot:
+            return None
+        status = await self.add_client(
+            "slot collision", adapter_type, boundary, slot, int(boundary.used_slot)
+        )
+        after = await self.placements(adapter_type, "after slot collision")
+        return status == "FAIL" and after == clients
+
+    async def client_round_trip(self, adapter_type: str, boundary: _Boundary) -> None:
+        found = await self.client_baseline(adapter_type, boundary)
+        if found is None:
+            return
+        servers, clients, mappings, slot = found
+        collision_refused = await self.slot_collision(
+            adapter_type, boundary, slot, clients
+        )
+        added = await self.add_client("paired", adapter_type, boundary, slot)
+        new = _new(await self.adapters(adapter_type, "after add"), clients)
+        _, restored, drift = await self.remove_new_adapters(adapter_type, clients)
+        servers_after = await self.server_rows(
+            adapter_type, boundary.vios_id, "after delete"
+        )
+        vios_side = (
+            servers_after == servers
+            and await self.mappings(boundary, "after delete") == mappings
+        )
+        cleanup = "passed" if restored and vios_side else "failed"
+        fields = _REMOTE_FIELDS[adapter_type]
+        pairing = (boundary.vios_id, slot)
+        if adapter_type == "VirtualSCSIClientAdapter":
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_add_vscsi_adapter",
+                operation="adapter.add_vscsi",
+                scenario="st9-vscsi-client-adapter",
+                assertions=_client_assertions(
+                    added, new, fields, pairing, collision_refused, restored, vios_side
+                ),
+                cleanup=cleanup,
+                data=None,
+            )
+        else:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_add_vfc_adapter",
+                operation="adapter.add_vfc",
+                scenario="st9-vfc-client-adapter",
+                assertions=_client_assertions(
+                    added, new, fields, pairing, collision_refused, restored, vios_side
+                ),
+                cleanup=cleanup,
+                data=None,
+            )
+        if not restored:
+            self.manual(f"{self.lpar}'s {adapter_type} set is off its baseline", drift)
+        if not vios_side:
+            self.manual(
+                f"{boundary.vios}'s server adapters or {self.lpar}'s mappings changed",
+                f"compare lshwres -r virtualio --level lpar on {boundary.vios} "
+                "with the baseline rows in the results document",
+            )
+
+    # -- (d) FC-port label ---------------------------------------------------
+
+    async def set_port_label(
+        self, label: str, boundary: _Boundary, value: str, port: str
+    ) -> str:
+        result = await self.state.call(
+            self.client,
+            "hmc_set_vios_fc_port_label",
+            system_name_or_uuid=self.system,
+            label=value,
+            port_name=port,
+            vios_name=boundary.vios,
+        )
+        return self.note(label, "hmc_set_vios_fc_port_label", result)
+
+    async def remove_port_label(
+        self, label: str, boundary: _Boundary, port: str
+    ) -> str:
+        result = await self.state.call(
+            self.client,
+            "hmc_remove_vios_fc_port_label",
+            system_name_or_uuid=self.system,
+            port_name=port,
+            vios_name=boundary.vios,
+        )
+        return self.note(label, "hmc_remove_vios_fc_port_label", result)
+
+    async def port_label_baseline(
+        self, boundary: _Boundary
+    ) -> tuple[dict[str, str], str, str] | None:
+        """The VIOS's FC-port labels, and the port and label the round trip uses."""
+        baseline = await self.fc_labels(boundary, "baseline")
+        if not baseline:
+            self.skip(
+                "hmc_set_vios_fc_port_label",
+                f"{boundary.vios}'s FC-port labels could not be read or list no port",
+            )
+            return None
+        port, original = next(iter(baseline.items()))
+        if original and not _plain_label(original):
+            self.skip(
+                "hmc_set_vios_fc_port_label",
+                f"{port}'s current label cannot be restored exactly",
+            )
+            return None
+        self.baseline(
+            f"{boundary.vios} FC-port labels",
+            lambda: self.fc_labels(boundary, "final"),
+            baseline,
+        )
+        return baseline, port, original
+
+    async def fc_port_label_round_trip(self, boundary: _Boundary) -> None:
+        found = await self.port_label_baseline(boundary)
+        if found is None:
+            return
+        baseline, port, original = found
+        test = f"{LABEL_PREFIX}{self.tag}"
+        await self.set_port_label("test label", boundary, test, port)
+        after_set = await self.fc_labels(boundary, "after set")
+        label_set = after_set is not None and after_set.get(port) == test
+        negative = await self.set_port_label("absent port", boundary, test, ABSENT_PORT)
+        if negative == "PASS":
+            await self.remove_port_label("absent port", boundary, ABSENT_PORT)
+        after_negative = await self.fc_labels(boundary, "after absent port")
+        refused = negative == "FAIL" and after_negative == after_set
+        removed = await self.remove_port_label("remove", boundary, port)
+        after_remove = await self.fc_labels(boundary, "after remove")
+        label_removed = (
+            removed == "PASS"
+            and after_remove is not None
+            and not after_remove.get(port)
+        )
+        if original and (after_remove or {}).get(port) != original:
+            await self.set_port_label("restore", boundary, original, port)
+        restored = await self.fc_labels(boundary, "after restore") == baseline
+        cleanup = "passed" if restored else "failed"
+        self.state.record_verified(
+            SUBTASK,
+            "hmc_set_vios_fc_port_label",
+            operation="vios_label.set_fc_port",
+            scenario="st9-fc-port-label",
+            assertions=[
+                Assertion("label-set", label_set),
+                Assertion("unknown-port-refused", refused),
+                Assertion("labels-equal-baseline", restored),
+            ],
+            cleanup=cleanup,
+            data=None,
+        )
+        self.state.record_verified(
+            SUBTASK,
+            "hmc_remove_vios_fc_port_label",
+            operation="vios_label.remove_fc_port",
+            scenario="st9-fc-port-label",
+            assertions=[
+                Assertion("label-removed", label_removed),
+                Assertion("labels-equal-baseline", restored),
+            ],
+            cleanup=cleanup,
+            data=None,
+        )
+        if not restored:
+            operation = f"-o s -l {shlex.quote(original)}" if original else "-o r"
+            try:
+                record = build_attribute_record(
+                    [
+                        ("resource", "fcport"),
+                        ("port_name", port),
+                        ("vios_names", boundary.vios),
+                    ]
+                )
+                command = (
+                    f"labelvios -m {shlex.quote(self.system)} {operation} "
+                    f"-i {shlex.quote(record)}"
+                )
+            except (HMCError, ValueError):
+                command = (
+                    f"labelvios {operation} for port {port!r} on {boundary.vios!r}"
+                )
+            self.manual(f"{boundary.vios} {port} label is not its original", command)
+
+    # -- (e) vFC group label -------------------------------------------------
+
+    async def create_group(self, label: str, boundary: _Boundary, name: str) -> str:
+        result = await self.state.call(
+            self.client,
+            "hmc_create_vios_vfc_group_label",
+            system_name_or_uuid=self.system,
+            label=name,
+            vios_names=[boundary.vios],
+        )
+        return self.note(label, "hmc_create_vios_vfc_group_label", result)
+
+    async def rename_group(self, name: str, renamed: str) -> str:
+        result = await self.state.call(
+            self.client,
+            "hmc_update_vios_vfc_group_label",
+            system_name_or_uuid=self.system,
+            label=name,
+            action="rename",
+            new_name=renamed,
+        )
+        return self.note("rename", "hmc_update_vios_vfc_group_label", result)
+
+    async def remove_run_groups(
+        self, baseline: frozenset[str], names: frozenset[str]
+    ) -> bool | None:
+        """Remove every group the run left; None when there was none to remove."""
+        current = await self.groups("before remove")
+        removed: bool | None = None
+        for label in sorted(names if current is None else (current - baseline) & names):
+            result = await self.state.call(
+                self.client,
+                "hmc_remove_vios_vfc_group_label",
+                system_name_or_uuid=self.system,
+                label=label,
+            )
+            status = self.note("remove", "hmc_remove_vios_vfc_group_label", result)
+            removed = removed is not False and status == "PASS"
+        return removed
+
+    async def group_label_round_trip(self, boundary: _Boundary) -> None:
+        baseline = await self.groups("baseline")
+        name = f"{LABEL_PREFIX}{self.tag}"
+        renamed = f"{name}-r"
+        if baseline is None or {name, renamed} & baseline:
+            self.skip(
+                "hmc_create_vios_vfc_group_label", "the group labels could not be read"
+            )
+            return
+        self.baseline("vFC group labels", lambda: self.groups("final"), baseline)
+        created = await self.create_group("create", boundary, name)
+        after_create = await self.groups("after create")
+        listed = created == "PASS" and after_create == baseline | {name}
+        duplicate = await self.create_group("duplicate", boundary, name)
+        after_duplicate = await self.groups("after duplicate")
+        duplicate_refused = duplicate == "FAIL" and after_duplicate == after_create
+        renamed_ok = False
+        if listed:
+            await self.rename_group(name, renamed)
+            renamed_ok = await self.groups("after rename") == baseline | {renamed}
+        removed = await self.remove_run_groups(baseline, frozenset({name, renamed}))
+        restored = await self.groups("after remove") == baseline
+        cleanup = "passed" if restored else "failed"
+        self.state.record_verified(
+            SUBTASK,
+            "hmc_create_vios_vfc_group_label",
+            operation="vios_label.create_vfc_group",
+            scenario="st9-vfc-group-label",
+            assertions=[
+                Assertion("group-created", listed),
+                Assertion("duplicate-refused", duplicate_refused),
+            ],
+            cleanup=cleanup,
+            data=None,
+        )
+        if listed:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_update_vios_vfc_group_label",
+                operation="vios_label.update_vfc_group",
+                scenario="st9-vfc-group-label",
+                assertions=[Assertion("group-renamed", renamed_ok)],
+                cleanup=cleanup,
+                data=None,
+            )
+        if removed is not None:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_remove_vios_vfc_group_label",
+                operation="vios_label.remove_vfc_group",
+                scenario="st9-vfc-group-label",
+                assertions=[
+                    Assertion("group-removed", removed),
+                    Assertion("groups-equal-baseline", restored),
+                ],
+                cleanup=cleanup,
+                data=None,
+            )
+        if not restored:
+            self.manual(
+                f"vFC group labels {name}* remain",
+                f"labelvios -m {shlex.quote(self.system)} -o r -l <label>",
+            )
+
+
+async def mutate_virtual_networking(client: Client, state: RunState) -> None:
+    print("\n=== ST9: Virtual network and adapter round trips ===")
+    if state.group != GROUP:
+        state.skip(SUBTASK, "network arm", "runs only in the network arm")
+        return
+    arm = _Arm(client, state)
+    boundary = await arm.find_boundary()
+    if boundary is None:
+        return
+    try:
+        await arm.vlan_round_trip()
+        if boundary.vios:
+            await arm.client_round_trip("VirtualSCSIClientAdapter", boundary)
+            await arm.client_round_trip("VirtualFibreChannelClientAdapter", boundary)
+            await arm.fc_port_label_round_trip(boundary)
+            await arm.group_label_round_trip(boundary)
+    except _Stop:
+        arm.skip("remaining round trips", "stopped after a reversal was not confirmed")
+    await arm.compare_baselines()

@@ -38,6 +38,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_create_virtual_network` and `hmc_add_network_adapter` refuse a VLAN id outside 1-4094
+  with a `ValueError` before any HMC call; they previously sent any integer to the HMC (#629).
+- `hmc_create_virtual_network` sends `NetworkName` with `kb="CUR"`, as the HMC serves it. A V10R3
+  HMC refused the previous `kb="CUD"` with HTTP 400 `REST0001` before creating anything (#629).
 - `hmc_processed_metric_links`, `hmc_aggregated_metric_links`, `hmc_processed_metrics`,
   `hmc_aggregated_metrics` and `hmcpctl metrics show` no longer fail with HTTP 406 on a V10R3
   HMC. The metric feed request sent the generic UOM `Accept`, which the HMC refuses on PCM
@@ -54,6 +58,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   "Unexpected error during unmarshalling" for every flag. They now read the preferences and post
   the HMC's own `ManagedSystemPcmPreference` element back with only the requested flags changed,
   as IBM's PCM REST walkthrough does (#634).
+
 - `hmc_sync_lpar_profile` no longer claims to save the running configuration over the current
   profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
   live capture confirmed. The tool and `synchronize_lpar_profile` now take

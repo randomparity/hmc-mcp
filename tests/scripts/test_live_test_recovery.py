@@ -508,7 +508,7 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
     async def served_client():
         yield served
 
-    async def no_findings(call, pcie, partition, vios):
+    async def no_findings(call, pcie, partition, vios, network_inputs=None):
         return []
 
     monkeypatch.setattr(recovery.runner, "served_client", served_client)
@@ -1034,7 +1034,7 @@ def _main(tmp_path, monkeypatch, document, findings=None, raises=None):
     """Run `main` over *document*; return (exit code, whether the HMC was contacted)."""
     contacted = []
 
-    async def run_checks(pcie, partition, vios):
+    async def run_checks(pcie, partition, vios, network_inputs=None):
         contacted.append((pcie, partition))
         if raises is not None:
             raise raises
@@ -1311,7 +1311,7 @@ def test_vios_backup_inputs_need_subtask_37_and_its_artifacts():
 
 
 def test_a_vios_backup_run_is_witnessed(tmp_path, monkeypatch, capsys):
-    async def checks(pcie, partition, vios):
+    async def checks(pcie, partition, vios, network_inputs=None):
         assert pcie is None and partition is None
         return await recovery.check_vios_backup(
             _caller({"hmc_list_vios_backups": [], "hmc_list_storage_mappings": []}),
@@ -1366,3 +1366,161 @@ def test_the_kept_backup_row_marks_the_run_off_baseline():
     assert not recovery.vios_backup_inputs_from_document(
         compared_only, [37]
     ).off_baseline
+
+
+# ---------------------------------------------------------------------------
+# The network arm (ST9, #629)
+# ---------------------------------------------------------------------------
+
+_LPAR_CNA = {
+    "UUID": "0000C0A0-0000-4000-8000-000000000000",
+    "Resource": {"PortVLANID": "1"},
+}
+_FC_ROW = {
+    "name": "vios-A",
+    "lpar_id": "1",
+    "port_name": "fcs0",
+    "port_label": "prod-a",
+}
+
+
+def _network_document(**artifacts):
+    rows = [
+        {"subtask": 9, "tool": "hmc_create_virtual_network (create)", "status": "PASS"},
+        {
+            "subtask": 9,
+            "tool": "hmc_list_adapters (ClientNetworkAdapter, baseline)",
+            "status": "PASS",
+            "data": [_LPAR_CNA],
+        },
+        {
+            "subtask": 9,
+            "tool": "hmc_list_vios_fc_port_labels (FC-port labels, baseline)",
+            "status": "PASS",
+            "data": [_FC_ROW],
+        },
+        {
+            "subtask": 9,
+            "tool": "hmc_list_vios_vfc_group_labels (vFC group labels, baseline)",
+            "status": "PASS",
+            "data": [{"name": "prod-group"}],
+        },
+    ]
+    return {
+        "run": {"group": "network", "subtasks": [2, 9]},
+        "config": {"system_name": "sys-one", "lp3_name": "lp-three"},
+        "artifacts": {"test_vlan_id": 3101, **artifacts},
+        "results": rows,
+    }
+
+
+def _network_inputs():
+    inputs = recovery.network_inputs_from_document(_network_document(), [2, 9])
+    assert inputs is not None
+    return inputs
+
+
+def _clean_hmc(**overrides):
+    responses = {
+        "hmc_list_virtual_networks": [
+            {"UUID": "net-1", "Resource": {"NetworkVLANID": "3100", "NetworkName": "x"}}
+        ],
+        "hmc_list_adapters": [_LPAR_CNA],
+        "hmc_list_vios_vfc_group_labels": [{"name": "prod-group"}],
+        "hmc_list_vios_fc_port_labels": [_FC_ROW],
+    }
+    responses.update(overrides)
+    return responses
+
+
+def test_network_inputs_come_from_the_runs_own_st9_rows():
+    inputs = _network_inputs()
+    assert inputs.vlan == 3101
+    assert set(inputs.adapters) == {"ClientNetworkAdapter"}
+    assert inputs.fc_labels == [_FC_ROW]
+    assert recovery.network_inputs_from_document(_network_document(), [2]) is None
+    skipped = _network_document()
+    skipped["results"] = [{"subtask": 9, "tool": "network arm", "status": "SKIP"}]
+    assert recovery.network_inputs_from_document(skipped, [9]) is None
+
+
+def test_a_vlan_never_created_is_not_witnessed_from_a_restored_artifact():
+    document = _network_document()
+    document["results"] = document["results"][1:]
+    assert recovery.network_inputs_from_document(document, [9]).vlan is None
+
+
+@pytest.mark.asyncio
+async def test_a_clean_network_run_yields_no_findings():
+    assert await recovery.check_network(_caller(_clean_hmc()), _network_inputs()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "what"),
+    [
+        (
+            {
+                "hmc_list_virtual_networks": [
+                    {
+                        "UUID": "net-9",
+                        "Resource": {
+                            "NetworkVLANID": "3101",
+                            "NetworkName": "anything",
+                        },
+                    }
+                ]
+            },
+            "network left on the test VLAN",
+        ),
+        (
+            {
+                "hmc_list_adapters": [
+                    _LPAR_CNA,
+                    {"UUID": "00000001-0000-4000-8000-000000000000", "Resource": {}},
+                ]
+            },
+            "ClientNetworkAdapter off its baseline",
+        ),
+        (
+            {"hmc_list_vios_fc_port_labels": [{**_FC_ROW, "port_label": "hmcl-x"}]},
+            "FC-port label off its original",
+        ),
+        (
+            {"hmc_list_vios_vfc_group_labels": [{"name": "hmcl-0a1b2c3d"}]},
+            "vFC group label left",
+        ),
+    ],
+)
+async def test_each_network_residue_is_a_finding(overrides, what):
+    findings = await recovery.check_network(
+        _caller(_clean_hmc(**overrides)), _network_inputs()
+    )
+    assert [finding.what for finding in findings] == [what]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool", ["hmc_list_virtual_networks", "hmc_list_vios_vfc_group_labels"]
+)
+async def test_an_unreadable_network_listing_is_not_clean(tool):
+    with pytest.raises(recovery.StateUnreadable):
+        await recovery.check_network(
+            _caller(_clean_hmc(**{tool: None})), _network_inputs()
+        )
+
+
+def test_a_network_run_is_witnessed_and_can_exit_clean(tmp_path, monkeypatch, capsys):
+    async def checks(pcie, partition, vios, network_inputs=None):
+        assert network_inputs is not None
+        return await recovery.check_network(_caller(_clean_hmc()), network_inputs)
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(_network_document()), encoding="utf-8")
+
+    assert recovery.main(["--results", str(path)]) == 0
+    output = capsys.readouterr().out
+    assert "CLEAN" in output
+    assert "NOT WITNESSED" not in output
