@@ -203,9 +203,9 @@ does not gate on them.
   baseline, line order aside. If the mapping is not back, it recreates it with
   `mkvdev` and records the restore as failed.
 - **Cleanup.** hmcpctl has no backup-removal tool (#698). Once the mapping reads
-  back, the arm removes its backup through `hmc_run_command`. When the VIOS never
-  answered after the restore, or a read failed after a change, it keeps the
-  backup. Remove it by hand once the VIOS is checked, as the recovery check
+  back, the arm removes its backup through `hmc_run_command`. When the restore
+  call timed out, the VIOS never answered after it, or a read failed after a
+  change, it keeps the backup and changes nothing more. Remove it by hand once the VIOS is checked, as the recovery check
   prints:
 
   ```sh
@@ -291,7 +291,7 @@ After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
 `bare-cec`, `round2`, `sriov`, `profiles` or `vios-backup`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-two sets of them:
+three sets of them:
 
 | Subtasks | What it reads |
 |---|---|

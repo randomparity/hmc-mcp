@@ -205,6 +205,7 @@ class VIOSBackupInputs:
     system_name: str
     lpar_name: str
     vios: str
+    vios_uuid: str
     backup_name: str
     mapping_id: str
     backing: str
@@ -227,6 +228,7 @@ def vios_backup_inputs_from_document(
         config.get("system_name"),
         config.get("lp3_name"),
         artifacts.get("vios_backup_vios"),
+        artifacts.get("vios_backup_vios_uuid"),
         artifacts.get("vios_backup_name"),
         artifacts.get("vios_backup_mapping"),
         artifacts.get("vios_backup_backing"),
@@ -246,11 +248,18 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
             f"the document's disk mapping {inputs.mapping_id!r} is not plain device names"
         )
     findings: list[Finding] = []
-    status, data = await call("hmc_list_vios_backups", vios_name_or_uuid=inputs.vios)
+    # By UUID: a bare VIOS name is resolved across every managed system.
+    status, data = await call(
+        "hmc_list_vios_backups", vios_name_or_uuid=inputs.vios_uuid
+    )
     if status != "PASS" or not isinstance(data, list):
         raise StateUnreadable(f"could not list the backups of {inputs.vios} ({status})")
+    # A prefix, not equality: the catalog may render the name with a suffix, and a
+    # projection that did is no reason to report the backup gone.
     if any(
-        isinstance(row, dict) and row.get("name") == inputs.backup_name for row in data
+        isinstance(row, dict)
+        and str(row.get("name", "")).startswith(inputs.backup_name)
+        for row in data
     ):
         findings.append(
             Finding(
@@ -263,7 +272,7 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
         )
     status, data = await call(
         "hmc_list_storage_mappings",
-        vios_name_or_uuid=inputs.vios,
+        vios_name_or_uuid=inputs.vios_uuid,
         lpar_name_or_uuid=inputs.lpar_name,
         system_name_or_uuid=inputs.system_name,
     )

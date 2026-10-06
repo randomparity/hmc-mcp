@@ -1195,6 +1195,7 @@ _VIOS_INPUTS = recovery.VIOSBackupInputs(
     system_name=_SYSTEM,
     lpar_name="sys-R1-lp3",
     vios="vios-A",
+    vios_uuid="0000000A-ABCD-4EF0-8ABC-00000000000A",
     backup_name="hmcpctl-live-st37-0a1b2c3d",
     mapping_id="vhost0/lp3-disk",
     backing="lp3-vd1",
@@ -1208,6 +1209,7 @@ def _vios_document(subtasks=(37,), **artifacts) -> dict:
         "config": {"system_name": _SYSTEM, "lp3_name": "sys-R1-lp3"},
         "artifacts": {
             "vios_backup_vios": "vios-A",
+            "vios_backup_vios_uuid": "0000000A-ABCD-4EF0-8ABC-00000000000A",
             "vios_backup_name": "hmcpctl-live-st37-0a1b2c3d",
             "vios_backup_mapping": "vhost0/lp3-disk",
             "vios_backup_backing": "lp3-vd1",
@@ -1241,6 +1243,20 @@ async def test_a_kept_backup_is_reported_with_its_rmviosbk():
     assert finding.remedy == (
         "rmviosbk -t viosioconfig -m sys-R1 -p vios-A -f hmcpctl-live-st37-0a1b2c3d"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_kept_backup_rendered_with_a_suffix_is_still_reported():
+    responses = {
+        "hmc_list_vios_backups": [
+            {"name": "hmcpctl-live-st37-0a1b2c3d.tar.gz", "type": "viosioconfig"}
+        ],
+        "hmc_list_storage_mappings": _MAPPED,
+    }
+
+    (finding,) = await recovery.check_vios_backup(_caller(responses), _VIOS_INPUTS)
+
+    assert finding.what == "VIOS backup left"
 
 
 @pytest.mark.asyncio

@@ -621,6 +621,7 @@ class LiveTestArtifacts:
     # What the vios-backup arm (ST37) is about to change, recorded before the backup so
     # `live_test_recovery.py` can find a kept backup or a missing disk mapping.
     vios_backup_vios: str | None = None
+    vios_backup_vios_uuid: str | None = None
     vios_backup_name: str | None = None
     vios_backup_mapping: str | None = None
     vios_backup_backing: str | None = None
@@ -1297,6 +1298,7 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
 
 _VIOS_BACKUP_ARTIFACTS = (
     "vios_backup_vios",
+    "vios_backup_vios_uuid",
     "vios_backup_name",
     "vios_backup_mapping",
     "vios_backup_backing",

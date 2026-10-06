@@ -53,6 +53,7 @@ class FakeVios:
     backup_invisible: bool = False
     listing_malformed: bool = False
     restore_status: str = "PASS"
+    restore_error: str = "SSH command timed out after 2400s"
     restore_restores: bool = True
     ioslevel_answers: bool = True
     snapshot_read_fails_after_restore: bool = False
@@ -102,7 +103,7 @@ class FakeVios:
             self.mapped = self.restore_restores
             return (
                 self.restore_status,
-                "" if self.restore_status == "PASS" else "timed out",
+                "" if self.restore_status == "PASS" else self.restore_error,
             )
         assert tool == "hmc_run_command", tool
         return self.command(cmd)
@@ -143,6 +144,14 @@ class FakeVios:
         return self.sea_lines
 
 
+class SuffixedListingVios(FakeVios):
+    def answer(self, tool: str, kwargs: dict[str, Any]) -> tuple[str, Any]:
+        status, data = super().answer(tool, kwargs)
+        if tool == "hmc_list_vios_backups" and status == "PASS":
+            return status, [{**row, "name": row["name"] + ".tar.gz"} for row in data]
+        return status, data
+
+
 class SeaChangingVios(FakeVios):
     def sea_after(self) -> str:
         return self.sea_lines + "ent6 ent1 Available\n"
@@ -155,6 +164,7 @@ def _state(monkeypatch, vios: FakeVios, group: str | None = "vios-backup"):
     monkeypatch.setattr(runner.RunState, "call", scripted)
     monkeypatch.setattr(vios_backup, "RESTORE_WAIT_SECONDS", 0)
     monkeypatch.setattr(vios_backup, "POLL_SECONDS", 0)
+    monkeypatch.setenv("HMC_SSH_TIMEOUT", str(vios_backup.MIN_SSH_TIMEOUT))
     config = runner.LiveTestConfig(system_name=SYSTEM, lp3_name=LPAR)
     return runner.RunState(config=config, group=group)
 
@@ -229,6 +239,7 @@ async def test_round_trip_promotes_all_three_operations(monkeypatch):
     ]
     assert vios.backups == []
     assert state.artifacts.vios_backup_mapping == "vhost0/lp3-disk"
+    assert state.artifacts.vios_backup_vios_uuid == VIOS_UUID
     assert state.artifacts.vios_backup_name.startswith("hmcpctl-live-st37-")
 
 
@@ -262,15 +273,54 @@ async def test_a_restore_that_loses_the_mapping_falls_back_to_mkvdev(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_a_timed_out_restore_call_is_judged_on_the_state_after_it(monkeypatch):
-    vios = FakeVios(restore_status="FAIL")
+async def test_a_timed_out_restore_call_is_judged_but_left_alone(monkeypatch):
+    """The HMC may still be restoring: assert what is there, change nothing."""
+    vios = FakeVios(restore_status="FAIL", restore_restores=False)
 
     state = await _run(monkeypatch, vios)
 
-    restore = _observations(state)["vios.restore"]
-    assert restore["result"] == "failed"
-    assert set(restore["assertions"]) == {"mapping-restored", "baseline-restored"}
-    assert "mkvdev" not in _mutations(vios)
+    observations = _observations(state)
+    assert observations["vios.restore"]["result"] == "failed"
+    assert _mutations(vios) == ["hmc_backup_vios", "rmvdev", "hmc_restore_vios"]
+    assert observations["vios.backup"]["cleanup"] == "not-run"
+
+
+@pytest.mark.asyncio
+async def test_a_restore_that_failed_outright_still_falls_back_and_cleans_up(
+    monkeypatch,
+):
+    vios = FakeVios(
+        restore_status="FAIL",
+        restore_restores=False,
+        restore_error="HSCL0000 restore failed",
+    )
+
+    state = await _run(monkeypatch, vios)
+
+    assert _mutations(vios)[-2:] == ["mkvdev", "rmviosbk"]
+    assert _observations(state)["vios.backup"]["cleanup"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_a_short_ssh_timeout_changes_nothing(monkeypatch):
+    vios = FakeVios()
+    state = _state(monkeypatch, vios)
+    monkeypatch.setenv("HMC_SSH_TIMEOUT", "300")
+
+    await vios_backup.exercise_vios_backup(object(), state)
+
+    assert vios.calls == []
+    assert "HMC_SSH_TIMEOUT" in state.results[0]["note"]
+
+
+@pytest.mark.asyncio
+async def test_a_suffixed_listing_cannot_show_the_backup_gone(monkeypatch):
+    """Only the raw capture named the backup, so only it can show it removed."""
+    vios = SuffixedListingVios(rmviosbk_removes=False)
+
+    state = await _run(monkeypatch, vios)
+
+    assert _observations(state)["vios.backup"]["cleanup"] == "failed"
 
 
 @pytest.mark.asyncio

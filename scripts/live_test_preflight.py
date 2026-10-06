@@ -197,18 +197,13 @@ def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
-#: `rstviosbk -r` restarts the VIOS and retries inside the one CLI call, which the
-#: default 300-second SSH timeout would cut off with the restore still running.
-VIOS_BACKUP_MIN_SSH_TIMEOUT = 2400
-
-
 def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name what the vios-backup arm (#1349) changes and removes again."""
-    if HMCConfig().ssh_timeout < VIOS_BACKUP_MIN_SSH_TIMEOUT:
+    if HMCConfig().ssh_timeout < vios_backup.MIN_SSH_TIMEOUT:
         return ArmVerdict(
             "vios-backup",
             False,
-            f"HMC_SSH_TIMEOUT must be at least {VIOS_BACKUP_MIN_SSH_TIMEOUT}: the "
+            f"HMC_SSH_TIMEOUT must be at least {vios_backup.MIN_SSH_TIMEOUT}: the "
             "restore restarts the VIOS inside one rstviosbk call",
         )
     return ArmVerdict(

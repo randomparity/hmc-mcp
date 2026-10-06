@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
+from hmcpctl.config import HMCConfig
+
 from .observation import Assertion
 from .results import entries
 from .results import resource as get_resource
@@ -43,6 +45,9 @@ BACKUP_PREFIX = "hmcpctl-live-st37-"
 #: the VIOS to answer again afterwards. Module-level so tests can shorten it.
 RESTORE_WAIT_SECONDS = 1800
 POLL_SECONDS = 30
+#: `rstviosbk -r` restarts the VIOS and retries inside one CLI call, which the
+#: default 300-second SSH timeout would cut off with the restore still running.
+MIN_SSH_TIMEOUT = 2400
 
 _DISK_KINDS = frozenset({"VirtualDisk", "PhysicalVolume"})
 #: VIOS listings compared against the baseline as sets of normalized lines.
@@ -185,6 +190,11 @@ class _Arm:
 
     async def preconditions(self) -> Target | None:
         """The arm's target, or None after recording why nothing will be changed."""
+        if HMCConfig().ssh_timeout < MIN_SSH_TIMEOUT:
+            return self.refuse(
+                f"HMC_SSH_TIMEOUT is below {MIN_SSH_TIMEOUT}: the restore restarts "
+                "the VIOS inside one rstviosbk call"
+            )
         listing = await self.run(
             "partitions",
             f"lssyscfg -r lpar -m {shlex.quote(self.system)} -F name,lpar_env,state",
@@ -338,6 +348,7 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
     name = BACKUP_PREFIX + secrets.token_hex(4)
     artifacts = state.artifacts
     artifacts.vios_backup_vios = target.vios
+    artifacts.vios_backup_vios_uuid = target.vios_uuid
     artifacts.vios_backup_name = name
     artifacts.vios_backup_mapping = target.mapping_id
     artifacts.vios_backup_backing = target.backing
@@ -391,10 +402,12 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
     # failed: the HMC may still be restoring from this backup, so it is kept.
     if exists and mapping_back and settled:
         await arm.run("rmviosbk", rmviosbk_command(arm.system, target.vios, name))
-        status, listing = await arm.listed(target, "after rmviosbk")
-        rows = _backup_rows(listing) if status == "PASS" else None
-        if rows is not None:
-            gone = all(row_name != name for row_name, _ in rows)
+        # Absence is read from the source that showed presence: a parsed listing
+        # that never named the backup cannot show it gone.
+        if run_rows:
+            status, listing = await arm.listed(target, "after rmviosbk")
+            rows = _backup_rows(listing) if status == "PASS" else None
+            gone = rows is not None and all(row_name != name for row_name, _ in rows)
         else:
             raw = await arm.raw_listing(target, "after rmviosbk")
             gone = raw is not None and name not in raw
@@ -464,14 +477,17 @@ async def _round_trip(
         f"{time.monotonic() - started:.0f}s",
     )
     accepted = status == "PASS"
+    # A transport timeout leaves `rstviosbk` running on the HMC, which may still be
+    # restarting the VIOS and restoring: assert what is there, but change nothing.
+    in_flight = status == "FAIL" and "timed out" in str(getattr(data, "message", data))
     restored = baseline_back = settled = False
     if await arm.wait_for_vios(target) is not None:
         after = await arm.snapshot(target, "after restore")
-        settled = after is not None
+        settled = after is not None and not in_flight
         if after is not None:
             restored = has_disk_mapping(after.mappings, target)
             baseline_back = arm.compare(baseline, after)
-            if not restored:
+            if not restored and settled:
                 await arm.on_vios(
                     target, mkvdev_command(target.adapter, target.backing, target.vtd)
                 )
