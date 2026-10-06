@@ -39,7 +39,11 @@ reserve nothing.
 | `lpar.list_refcodes` | `lsrefcode -r lpar` | `cli:commands/lsrefcode` (moved from `capacity.report`) |
 | `lpar.inspect`, `lpar.plan`, `inventory.logical` | delegated tool reads | none; their existing `composite_reason` is accurate and kept |
 
-A bound row's `composite_reason` is `null`. `placement.find` loses its composite reason
+A bound row's `composite_reason` is `null`. The rebinding leaves seven rows bound by no
+operation: `cli:commands/lscod`, `cli:commands/lscodpool` and `cli:commands/mkcodpool`, three
+CoD jobs (`deactivatecod`, `entercodcode`, `listcodcodeinfo`), and
+`rest:jobs/managementconsole-jobs/referencecodelogs-job`. Each keeps its `coverage-child`
+disposition (#680, #678). The other dropped rows stay bound by their other operations. `placement.find` loses its composite reason
 because it issues those two feeds itself through `fetch_capacity_report`.
 
 ## Design
@@ -52,8 +56,9 @@ because it issues those two feeds itself through `fetch_capacity_report`.
      This is `list_uom` with no fallback. It is recorded as a non-promoting probe row.
      `feed-served-directly` holds when the probe passed and its UUID set equals the read
      under test's UUID set. For capacity and placement, only the probe has to pass.
-     That assertion is on all three feed reads, so a fallback-served success records
-     `failed`, never `passed`.
+     That assertion is on all four reads that use `list_managed_systems`: list, capacity,
+     placement and fleet health. A fallback-served success therefore records `failed`, never
+     `passed`.
    - `hmc_list_systems` (`st1-system-inventory`): `system-list-non-empty`,
      `boundary-system-listed` (an entry's `SystemName` equals `config.system_name`, ignoring
      case), `entries-carry-uuid`, `feed-served-directly`.
@@ -81,8 +86,9 @@ because it issues those two feeds itself through `fetch_capacity_report`.
      `boundary-system-listed`, `test-partition-listed`, `partitions-belong-to-system`
      (every partition's `system_id` equals the boundary system's `id`).
    - `hmc_fleet_health` (`st1-fleet-health`): `health-sections-present` (`systems`, `vios`,
-     `lpars` and `warnings` are lists) and `boundary-system-not-flagged` (the boundary system,
-     which `hmc_get_system` read as operating, is absent from `systems`).
+     `lpars` and `warnings` are lists), `boundary-system-flag-matches-state` (the boundary
+     system is in `systems` exactly when the `State` that `hmc_get_system` read is not
+     `operating`) and `feed-served-directly`.
    - `hmc_plan_lpar` (`st1-lpar-plan`). It takes ST13's dry-run inputs: `config.dry_run_lpar_name`,
      VLAN `config.provision_vlan_id`, a new disk `config.dry_run_storage_name` of
      `config.provision_disk_mib`, and `config.system_name`. Assertions are
@@ -114,6 +120,7 @@ because it issues those two feeds itself through `fetch_capacity_report`.
 | Path not run | Prerequisite |
 |---|---|
 | `system.list` with a `state` filter (server-side search) | none; candidate for a later ST1 extension |
+| the feed under `X-HMC-Schema-Version: V1_0` (the declared 500) | a run with `HMC_SCHEMA_VERSION=V1_0`. The ST1 run uses the `.env` as configured; when that leaves the header unset, this row stays a gap. If the orchestrator grants a second run with the header, its outcome is reported, not catalogued, because the catalog keeps one observation per operation. |
 | fleet-wide `lpar.list_ownership`, `capacity.report` and `health.fleet` over a non-operating system | a non-operating system on the boundary HMC |
 | `lpar.plan` with `placement` enumeration and with existing storage (`hmc_get_vios_storage_detail`) | an authorization grant covering enumeration across the HMC |
 | `boot_order.read` on an activated partition (last-booted device populated) | an activated test partition; owned by #1346 |
