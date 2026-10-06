@@ -555,14 +555,11 @@ async def _read_composites(
     answered = st == "PASS"
     systems = _items(field(data, "systems")) if answered else []
     partitions = _items(field(data, "partitions")) if answered else []
-    system_id = next(
-        (
-            field(s, "id")
-            for s in systems
-            if _same(field(s, "name"), config.system_name)
-        ),
-        None,
+    boundary = next(
+        (s for s in systems if _same(field(s, "name"), config.system_name)), None
     )
+    system_id = field(boundary, "id")
+    sources = field(boundary, "sources")
     state.record_verified(
         1,
         "hmc_inventory",
@@ -579,6 +576,15 @@ async def _read_composites(
                 isinstance(system_id, str)
                 and bool(partitions)
                 and all(field(p, "system_id") == system_id for p in partitions),
+            ),
+            # A denied or failed capacity or ownership part still lists the system
+            # and its partitions, with those figures null.
+            Assertion(
+                "system-sources-read",
+                all(
+                    _source_ok(sources, part)
+                    for part in ("capacity", "partitions", "ownership")
+                ),
             ),
         ],
         cleanup="not-required",

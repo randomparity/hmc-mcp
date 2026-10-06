@@ -84,7 +84,8 @@ because it issues those two feeds itself through `fetch_capacity_report`.
      `rmc.source.status` and `refcodes.source.status`. Each must be `ok`.
    - `hmc_inventory` (`st1-logical-inventory`, `systems=[config.system_name]`):
      `boundary-system-listed`, `test-partition-listed`, `partitions-belong-to-system`
-     (every partition's `system_id` equals the boundary system's `id`).
+     (every partition's `system_id` equals the boundary system's `id`) and `system-sources-read`
+     (the boundary system's `sources.capacity`, `.partitions` and `.ownership` are `ok`).
    - `hmc_fleet_health` (`st1-fleet-health`): `health-sections-present` (`systems`, `vios`,
      `lpars` and `warnings` are lists), `boundary-system-flag-matches-state` (the boundary
      system is in `systems` exactly when the `State` that `hmc_get_system` read is not

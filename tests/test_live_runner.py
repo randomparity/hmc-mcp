@@ -5604,6 +5604,57 @@ def _st1_capacity_row(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**(row | overrides))
 
 
+def _st1_inventory_system(system_id: str, capacity: str = "ok") -> SimpleNamespace:
+    sources = {
+        part: SimpleNamespace(status=status)
+        for part, status in (
+            ("capacity", capacity),
+            ("partitions", "ok"),
+            ("ownership", "ok"),
+        )
+    }
+    return SimpleNamespace(
+        id=system_id, name=_ST1_SYSTEM, sources=SimpleNamespace(**sources)
+    )
+
+
+def _st1_inspection(**statuses: str) -> SimpleNamespace:
+    status = {"uuid": _ST1_LPAR_UUID, "storage": "ok", "rmc": "ok", "refcodes": "ok"}
+    status |= statuses
+    return SimpleNamespace(
+        uuid=status["uuid"],
+        resources=SimpleNamespace(
+            storage_source=SimpleNamespace(status=status["storage"])
+        ),
+        rmc=SimpleNamespace(source=SimpleNamespace(status=status["rmc"])),
+        refcodes=SimpleNamespace(source=SimpleNamespace(status=status["refcodes"])),
+    )
+
+
+def _st1_ownership(**overrides: object) -> SimpleNamespace:
+    row = {
+        "lpar_name": _ST1_LPAR,
+        "description": "[hmcpctl owner:agent-a]",
+        "owned": True,
+        "owner": "agent-a",
+        "unparsed": False,
+    }
+    return SimpleNamespace(entries=[row | overrides])
+
+
+def _st1_plan(candidate_uuid: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        plan_digest="digest",
+        selected=SimpleNamespace(system=SimpleNamespace(uuid=candidate_uuid)),
+        blockers=[],
+        candidates=[
+            SimpleNamespace(
+                targets=SimpleNamespace(system=SimpleNamespace(uuid=candidate_uuid))
+            )
+        ],
+    )
+
+
 def _st1_responses() -> dict[str, object]:
     """Conforming ST1 results, shaped as the served tools return them."""
     system = {"UUID": _ST1_SYSTEM_UUID, "Resource": {"SystemName": _ST1_SYSTEM}}
@@ -5647,7 +5698,7 @@ def _st1_responses() -> dict[str, object]:
             refcodes=SimpleNamespace(source=SimpleNamespace(status="ok")),
         ),
         "hmc_inventory": SimpleNamespace(
-            systems=[SimpleNamespace(id=f"c/{_ST1_SYSTEM_UUID}", name=_ST1_SYSTEM)],
+            systems=[_st1_inventory_system(f"c/{_ST1_SYSTEM_UUID}")],
             partitions=[
                 SimpleNamespace(name=_ST1_LPAR, system_id=f"c/{_ST1_SYSTEM_UUID}")
             ],
@@ -5797,9 +5848,72 @@ async def test_st1_records_each_scoped_read_as_a_passed_observation(monkeypatch)
             {"resources-read", "refcodes-read"},
         ),
         (
+            "hmc_list_systems",
+            [{"Resource": {"SystemName": _ST1_SYSTEM}}],
+            "system.list",
+            {"entries-carry-uuid", "feed-served-directly"},
+        ),
+        (
+            "hmc_find_placement",
+            [_st1_capacity_row(free_proc_units=0.25, assigned_proc_units=7.75)],
+            "placement.find",
+            {"candidates-fit"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            _st1_ownership(lpar_name="other"),
+            "lpar.list_ownership",
+            {"test-partition-listed"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            _st1_ownership(unparsed=True),
+            "lpar.list_ownership",
+            {"ownership-facts-consistent"},
+        ),
+        (
+            "hmc_list_lpar_ownership",
+            _st1_ownership(owned=False, owner=None, unparsed=True, description=None),
+            "lpar.list_ownership",
+            {"ownership-facts-consistent"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            _st1_inspection(uuid="another-uuid"),
+            "lpar.inspect",
+            {"inspection-names-partition"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            _st1_inspection(rmc="unavailable"),
+            "lpar.inspect",
+            {"rmc-read"},
+        ),
+        (
+            "hmc_inspect_lpar",
+            _st1_inspection(refcodes="denied"),
+            "lpar.inspect",
+            {"refcodes-read"},
+        ),
+        (
+            "hmc_plan_lpar",
+            _st1_plan("99999999-0000-0000-0000-000000000000"),
+            "lpar.plan",
+            {"plan-targets-boundary-system"},
+        ),
+        (
             "hmc_inventory",
             SimpleNamespace(
-                systems=[SimpleNamespace(id="c/s", name=_ST1_SYSTEM)],
+                systems=[_st1_inventory_system("c/s", capacity="denied")],
+                partitions=[SimpleNamespace(name=_ST1_LPAR, system_id="c/s")],
+            ),
+            "inventory.logical",
+            {"system-sources-read"},
+        ),
+        (
+            "hmc_inventory",
+            SimpleNamespace(
+                systems=[_st1_inventory_system("c/s")],
                 partitions=[SimpleNamespace(name="other", system_id="c/elsewhere")],
             ),
             "inventory.logical",
@@ -5904,6 +6018,20 @@ async def test_st1_declared_limitation_is_a_gap_not_an_observation(monkeypatch):
     }
     rows = {row["tool"]: row["status"] for row in state.results}
     assert rows["hmc_list_systems"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_st1_invalid_dispatch_is_never_the_declared_limitation(monkeypatch):
+    invalid = observation.CallFailure(
+        "InvalidDispatch", _ST1_NULL_PROPERTY_500, "", None, False
+    )
+
+    state, observed = await _run_st1(
+        monkeypatch, {"hmc_list_systems": ("FAIL", invalid)}
+    )
+
+    assert observed["system.list"]["result"] == "failed"
+    assert not state.gaps
 
 
 @pytest.mark.asyncio
@@ -6946,6 +7074,7 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "boundary-system-listed",
             "test-partition-listed",
             "partitions-belong-to-system",
+            "system-sources-read",
         },
         "st1-fleet-health": {
             "health-sections-present",
