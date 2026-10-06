@@ -267,6 +267,7 @@ def test_the_profiles_verdict_names_each_change_it_makes(
     assert "msp (toggled, then restored)" in output
     assert "type-3 merge-restored" in output
     assert "profile re-applied" in output
+    assert "skipped when ST0 reads sync_curr_profile as 1" in output
 
 
 def test_a_pinned_slot_predicts_the_io_slots_scenario_will_skip(
