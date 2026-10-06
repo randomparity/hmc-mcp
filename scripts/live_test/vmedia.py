@@ -1008,6 +1008,7 @@ class _RoundTrip:
         return False
 
     async def mapped(self) -> bool | None:
+        config = self.config
         st, data = self.note(
             "hmc_list_optical_mappings",
             "test partition",
@@ -1015,7 +1016,7 @@ class _RoundTrip:
                 self.client,
                 "hmc_list_optical_mappings",
                 vios_name_or_uuid=self.vios,
-                lpar_name_or_uuid=self.config.lp3_name,
+                lpar_name_or_uuid=config.lp3_name,
             ),
         )
         if st != "PASS" or not isinstance(data, list):
@@ -1092,6 +1093,7 @@ class _RoundTrip:
 
     async def mount_and_unmount(self, baseline: _Baseline) -> tuple[bool, bool]:
         """Mount, try the guarded delete, unmount; returns (mounted, delete refused)."""
+        config = self.config
         st_m, data_m = self.note(
             "hmc_mount_optical_media",
             "blank",
@@ -1100,7 +1102,7 @@ class _RoundTrip:
                 "hmc_mount_optical_media",
                 vios_name_or_uuid=self.vios,
                 media_name=self.name,
-                lpar_name_or_uuid=self.config.lp3_name,
+                lpar_name_or_uuid=config.lp3_name,
             ),
         )
         mapped = await self.mapped()
@@ -1144,7 +1146,7 @@ class _RoundTrip:
                 self.client,
                 "hmc_unmount_optical_media",
                 vios_name_or_uuid=self.vios,
-                lpar_name_or_uuid=self.config.lp3_name,
+                lpar_name_or_uuid=config.lp3_name,
                 media_name=self.name,
             ),
         )
