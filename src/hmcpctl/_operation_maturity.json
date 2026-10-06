@@ -40,50 +40,50 @@
     {
       "operation": "console.info",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:31:29Z"
     },
     {
       "operation": "console.list_resources",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:34:53Z"
     },
     {
       "operation": "job.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:59:55Z"
     },
     {
       "operation": "job.wait",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:59:58Z"
     },
     {
       "operation": "lpar.capture_console",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:01:01Z"
     },
     {
       "operation": "lpar.create",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:04:44Z"
     },
     {
       "operation": "lpar.delete",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:04:44Z"
     },
     {
@@ -96,50 +96,50 @@
     {
       "operation": "lpar.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:32:53Z"
     },
     {
       "operation": "lpar.get_description",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:18Z"
     },
     {
       "operation": "lpar.get_memopt_score",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:36Z"
     },
     {
       "operation": "lpar.get_minimum_affinity_policy",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:45:39Z"
     },
     {
       "operation": "lpar.get_msp",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:20Z"
     },
     {
       "operation": "lpar.get_proc_compat",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:24Z"
     },
     {
       "operation": "lpar.get_state",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:59:53Z"
     },
     {
@@ -152,99 +152,99 @@
     {
       "operation": "lpar.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:32:50Z"
     },
     {
       "operation": "lpar.list_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:42Z"
     },
     {
       "operation": "lpar.list_refcodes",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:00:00Z"
     },
     {
       "operation": "lpar.plan_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:43:08Z"
     },
     {
       "operation": "lpar.power_off",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:01:26Z"
     },
     {
       "operation": "lpar.power_on",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:59:53Z"
     },
     {
       "operation": "lpar.set_description",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:44:15Z"
     },
     {
       "operation": "lpar.set_msp",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "failed",
+      "reason": null,
       "observed_at": "2026-10-06T09:44:46Z"
     },
     {
       "operation": "lpar.set_proc_compat",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:45:24Z"
     },
     {
       "operation": "lpar.summary",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:35:06Z"
     },
     {
       "operation": "lpar_profile.backup",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:47:30Z"
     },
     {
       "operation": "lpar_profile.restore",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "failed",
+      "reason": null,
       "observed_at": "2026-10-06T09:47:30Z"
     },
     {
       "operation": "lpar_profile.sync",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:45:57Z"
     },
     {
       "operation": "memory_pool.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:25Z"
     },
     {
@@ -306,36 +306,36 @@
     {
       "operation": "pcie.assign_dedicated_slot",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:04:44Z"
     },
     {
       "operation": "pcie.list_dedicated_slots",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:04:43Z"
     },
     {
       "operation": "pcie.unassign_dedicated_slot",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:04:04Z"
     },
     {
       "operation": "resource_group.list_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:45:29Z"
     },
     {
       "operation": "resource_group.plan_memopt_scores",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T13:45:36Z"
     },
     {
@@ -355,22 +355,22 @@
     {
       "operation": "system.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:32:07Z"
     },
     {
       "operation": "system.get_memopt_score",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:51Z"
     },
     {
       "operation": "system.get_proc_compat_modes",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:42:21Z"
     },
     {
@@ -383,15 +383,15 @@
     {
       "operation": "system.plan_memopt_score",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T09:43:28Z"
     },
     {
       "operation": "system.summary",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:35:03Z"
     },
     {
@@ -432,8 +432,8 @@
     {
       "operation": "vios.backup",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T15:27:07Z"
     },
     {
@@ -446,22 +446,22 @@
     {
       "operation": "vios.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T12:33:01Z"
     },
     {
       "operation": "vios.list_backups",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T15:24:49Z"
     },
     {
       "operation": "vios.restore",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
+      "verification": "current",
+      "reason": null,
       "observed_at": "2026-10-06T15:27:07Z"
     },
     {

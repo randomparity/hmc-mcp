@@ -14,7 +14,6 @@ from ..documents import (
     build_vscsi_adapter_document,
 )
 from .client_contracts import AdaptersClient, AdapterType, validate_adapter_type
-from .client_network import require_vlan_id
 
 
 class AdaptersMixin:
@@ -75,7 +74,6 @@ class AdaptersMixin:
     ) -> dict[str, Any] | None:
         """Add a Virtual Ethernet client network adapter to an LPAR."""
 
-        require_vlan_id("port_vlan_id", port_vlan_id)
         xml = build_client_network_adapter_document(
             port_vlan_id, slot_number, virtual_switch_id, tagged, mac_address
         )

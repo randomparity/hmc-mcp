@@ -295,19 +295,22 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     )
 
 
-@pytest.mark.parametrize("port_vlan_id", [0, 4095])
-def test_add_network_adapter_refuses_out_of_range_pvid(
+@pytest.mark.parametrize("port_vlan_id", [0, 4095, 100000])
+def test_add_network_adapter_refuses_out_of_range_pvid_before_any_read(
     monkeypatch, mock_hmc, port_vlan_id
 ):
-    """A PVID outside 1-4094 is refused before the adapter PUT."""
+    """A PVID outside 1-4094 is refused before the partition is resolved or read."""
     _hmc_env(monkeypatch)
-    mock_change_location(mock_hmc, LPAR_UUID, "On")
+    read = mock_change_location(mock_hmc, LPAR_UUID, "On")
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     )
-    with pytest.raises(Exception, match="port_vlan_id .* from 1 to 4094"):
+    with pytest.raises(
+        Exception, match=r"port_vlan_id .* must be a VLAN id from 1 to 4094"
+    ):
         hmc_add_network_adapter(LPAR_UUID, port_vlan_id=port_vlan_id)
     assert not route.called
+    assert not read.called
 
 
 def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):

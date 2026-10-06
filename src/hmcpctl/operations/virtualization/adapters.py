@@ -11,6 +11,7 @@ from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_loc
 
 from ...client.client_contracts import AdapterType, validate_adapter_type
 from ...resource_identity import resolve_lpar_uuid
+from .network import require_vlan_id
 
 
 @dataclass(frozen=True)
@@ -56,9 +57,11 @@ async def add_network_adapter(
         ResourceNotFoundError: If a supplied LPAR or managed-system selector cannot
             be resolved.
         PermissionError: If the LPAR ownership authorization rejects the mutation.
-        ValueError: If selector scope cannot be verified.
+        ValueError: If selector scope cannot be verified, or ``port_vlan_id`` is
+            outside 1-4094.
         HMCError: If the HMC rejects the adapter request or it cannot be completed.
     """
+    require_vlan_id("port_vlan_id", port_vlan_id)
     lpar_uuid = await resolve_and_authorize_lpar_mutation(
         hmc,
         system_name_or_uuid,

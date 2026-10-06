@@ -39,7 +39,7 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 ### Fixed
 
 - `hmc_create_virtual_network` and `hmc_add_network_adapter` refuse a VLAN id outside 1-4094
-  with a `ValueError` before any write; they previously sent any integer to the HMC (#629).
+  with a `ValueError` before any HMC call; they previously sent any integer to the HMC (#629).
 
 - `hmc_sync_lpar_profile` no longer claims to save the running configuration over the current
   profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
