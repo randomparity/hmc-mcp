@@ -64,6 +64,7 @@ from live_test.pcie import (
 from live_test.vmedia import (
     _BOOT_BASELINE_STEP,
     _mapping_identity,
+    is_run_media_name,
     scsi_adapter_listing,
 )
 
@@ -809,14 +810,15 @@ def lpar_inputs_from_document(
         vios_partition_id=artifacts.get("vios_partition_id"),
         # A document written before #1347 names the repository's group `vg_uuid`.
         vg_uuid=artifacts.get("vmedia_vg_uuid") or artifacts.get("vg_uuid"),
-        # Only names the run created: the configured ISO name may be an operator's.
+        # Only names the run created: the configured ISO name may be an operator's,
+        # and so may a name an older arm recorded.
         iso_names=frozenset(
-            str(name)
+            name
             for name in (
                 artifacts.get("vmedia_iso_name"),
                 artifacts.get("vmedia_blank_name"),
             )
-            if name
+            if is_run_media_name(name, str(config.get("iso_media_name") or ""))
         ),
         vmedia_ran=bool(_VMEDIA_SUBTASKS & set(subtasks)),
         provisioned=bool(

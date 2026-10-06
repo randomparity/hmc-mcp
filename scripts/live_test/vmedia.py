@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import http.server
 import os
+import re
 import secrets
 import shlex
 import threading
@@ -83,11 +84,20 @@ _REPOSITORY_EXISTS = (
     "need a VIOS with no media repository (gap)"
 )
 _NO_REPOSITORY = "no media repository resolved in ST16"
+_EARLIER_MEDIUM = (
+    "a medium from an earlier invocation is still recorded; run subtask 22 and the "
+    "recovery check first"
+)
 
 
 def _owns_repository(state: RunState) -> bool:
     """Whether this run created the media repository in the configured volume group."""
-    return state.artifacts.vmedia_repo_created and configured_vg_uuid(state) is not None
+    vg = configured_vg_uuid(state)
+    return (
+        state.artifacts.vmedia_repo_created
+        and vg is not None
+        and state.artifacts.vmedia_vg_uuid == vg
+    )
 
 
 def _run_tag() -> str:
@@ -107,13 +117,31 @@ def _no_iso_reason(config: LiveTestConfig) -> str:
     )
 
 
+def is_run_media_name(name: object, iso_media_name: str) -> bool:
+    """Whether *name* has the shape only this arm gives the media it creates.
+
+    A restored document can name a medium the arm did not create: the arm before
+    #1347 recorded the first listed medium as its ISO. Only a tagged name is
+    ever unmounted or deleted.
+    """
+    if not isinstance(name, str):
+        return False
+    iso = PurePosixPath(iso_media_name)
+    return bool(
+        re.fullmatch(rf"{re.escape(BLANK_PREFIX)}[0-9a-f]{{8}}", name)
+        or re.fullmatch(
+            rf"{re.escape(iso.stem)}_[0-9a-f]{{8}}{re.escape(iso.suffix)}", name
+        )
+    )
+
+
 def run_media_names(state: RunState) -> set[str]:
     """The media this run created and may remove."""
     artifacts = state.artifacts
     return {
         name
         for name in (artifacts.vmedia_blank_name, artifacts.vmedia_iso_name)
-        if name
+        if is_run_media_name(name, state.config.iso_media_name)
     }
 
 
@@ -356,7 +384,12 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
             state.skip(16, name, "volume group listing failed")
         return
     holders = await _repository_holders(client, state, entries(data))
+    if holders:
+        # A repository found before this invocation's own create is never the run's,
+        # whatever a restored document recorded.
+        state.artifacts.vmedia_repo_created = False
     if holders is None:
+        state.artifacts.vmedia_repo_created = False
         state.skip(16, "hmc_create_media_repository", "a repository read failed")
     elif len(holders) > 1:
         for name in ("hmc_create_media_repository", "hmc_get_media_repository"):
@@ -627,6 +660,9 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     if not Path(config.iso_path).is_file():
         state.skip(18, label, _no_iso_reason(config))
         return
+    if state.artifacts.vmedia_iso_name:
+        state.skip(18, label, _EARLIER_MEDIUM)
+        return
     before = await _list_media(client, state, 18, "pre-upload")
     if before is None:
         state.record_verified(
@@ -665,6 +701,17 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
         refused = _refused_as_collision(st, data)
     # Whatever the upload returned, a listed run-owned ISO is removed here.
     removed = await _delete_run_media(client, state, 18, name) if listed else True
+    if after is None or not removed:
+        removed = False
+        state.record(
+            18,
+            "hmc_upload_iso (round trip)",
+            "FAIL",
+            None,
+            f"MANUAL RECOVERY REQUIRED: {name} may be in the repository "
+            f"(hmcpctl storage delete-media {shlex.quote(str(state.artifacts.vios_uuid))} "
+            f"{shlex.quote(str(state.artifacts.vmedia_vg_uuid))} {name})",
+        )
     state.record_verified(
         18,
         label,
@@ -1079,6 +1126,18 @@ class _RoundTrip:
             baseline, await self.adapters("post-unmount"), "after the unmount"
         )
         mappings_ok = after_unmount == baseline.mappings
+        if not mappings_ok:
+            changed = (
+                sorted(map(str, after_unmount ^ baseline.mappings))
+                if after_unmount is not None
+                else ["(mapping listing unreadable)"]
+            )
+            self.manual(
+                f"VIOS storage mappings differ from the baseline after the unmount: "
+                f"{', '.join(changed)}",
+                f"hmcpctl storage list-mappings {shlex.quote(self.vios)} --system "
+                f"{shlex.quote(self.config.system_name)}",
+            )
         self.state.record_verified(
             19,
             "hmc_unmount_optical_media",
@@ -1175,6 +1234,9 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
     print("\n=== ST19: Blank Medium — Create, Mount, Unmount, Delete ===")
     if not state.artifacts.vios_uuid or not state.artifacts.vmedia_vg_uuid:
         state.skip(19, "vmedia round trip", _NO_REPOSITORY)
+        return
+    if state.artifacts.vmedia_blank_name:
+        state.skip(19, "vmedia round trip", _EARLIER_MEDIUM)
         return
     try:
         await _RoundTrip(client, state).run()
@@ -1424,6 +1486,8 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         reason = _no_iso_reason(config)
     elif not artifacts.lp3_uuid:
         reason = "lp3_uuid not set (ST16 failed to capture it)"
+    elif artifacts.vmedia_iso_name:
+        reason = _EARLIER_MEDIUM
     if reason:
         for name in _skip_names:
             state.skip(20, name, reason)
@@ -1738,13 +1802,15 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
         return
 
     owned = run_media_names(state)
-    if not artifacts.vmedia_vg_uuid:
-        state.skip(22, "hmc_list_optical_media (run media cleanup)", _NO_REPOSITORY)
-    elif not owned:
+    if not owned:
         state.skip(22, "hmc_list_optical_media (run media cleanup)", "no run media")
     else:
+        # An unmount needs no volume group, so it runs even when ST16 found none.
         await _remove_run_mappings(client, state, artifacts.vios_uuid, owned)
-        await _remove_run_media(client, state, owned)
+        if artifacts.vmedia_vg_uuid:
+            await _remove_run_media(client, state, owned)
+        else:
+            state.skip(22, "hmc_list_optical_media (run media cleanup)", _NO_REPOSITORY)
 
     vg = configured_vg_uuid(state)
     if _owns_repository(state) and vg is not None:

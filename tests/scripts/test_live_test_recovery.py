@@ -733,16 +733,25 @@ def test_a_vmedia_document_makes_every_class_applicable():
         _lpar_document(
             range(16, 23),
             _VMEDIA_ROWS,
-            vmedia_iso_name="uploaded.iso",
+            vmedia_iso_name="lt_0a1b2c3d.iso",
             vmedia_blank_name=_BLANK,
         )
     )
 
     assert inputs.vmedia_ran and inputs.repository_owned and inputs.powered_on
     assert inputs.boot_written and inputs.boot_baseline == "/a /b"
-    # The configured ISO name is not the run's: an operator image may carry it.
-    assert inputs.iso_names == {"uploaded.iso", _BLANK}
+    assert inputs.iso_names == {"lt_0a1b2c3d.iso", _BLANK}
     assert not inputs.provisioned
+
+
+@pytest.mark.parametrize(
+    "name", [_ISO, "operator.iso", "hmcpctl_live_xyz", "lt_0A1B2C3D.iso"]
+)
+def test_only_a_run_tagged_medium_is_the_runs(name):
+    """The configured ISO name, or a name an older arm recorded, may be an operator's."""
+    inputs = _inputs(_lpar_document(range(16, 23), _VMEDIA_ROWS, vmedia_iso_name=name))
+
+    assert inputs.iso_names == frozenset()
 
 
 def test_a_teardown_only_run_reads_the_ownership_it_restored():

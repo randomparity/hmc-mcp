@@ -704,6 +704,106 @@ async def test_st20_restores_boot_order_and_unmounts_after_a_failed_boot(with_is
     assert hmc.snapshot() == before
 
 
+# ---------------------------------------------------------------------------
+# A restored results document never hands the arm an operator object
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_restored_untagged_medium_name_is_never_removed(arm):
+    """The arm before #1347 recorded the first listed medium as its ISO."""
+    state, hmc = arm
+    state.artifacts.vmedia_iso_name = OPERATOR_MEDIA
+    before = hmc.snapshot()
+
+    await _run(state, 16, 22)
+
+    assert _mutations(hmc) == []
+    assert hmc.snapshot() == before
+
+
+@pytest.mark.asyncio
+async def test_restored_ownership_never_claims_an_existing_repository(arm):
+    state, hmc = arm
+    hmc.repository_vg = "vg-cfg-uuid"
+    state.artifacts.vmedia_repo_created = True
+    state.artifacts.vg_uuid = "vg-cfg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+
+    await _run(state, 16, 17, 22)
+
+    assert not {"hmc_delete_media_repository", "hmc_create_media_repository"} & {
+        t for t, _ in hmc.calls
+    }
+    assert not state.artifacts.vmedia_repo_created
+
+
+@pytest.mark.asyncio
+async def test_a_restored_run_medium_blocks_a_new_one_until_teardown(arm):
+    """Overwriting the recorded name would hide the earlier medium from ST22."""
+    state, hmc = arm
+    earlier = f"{vmedia.BLANK_PREFIX}0a1b2c3d"
+    hmc.media[earlier] = 1024
+    state.artifacts.vmedia_blank_name = earlier
+
+    await _run(state, 16, 19)
+
+    assert "hmc_create_optical_media" not in {t for t, _ in hmc.calls}
+    assert state.artifacts.vmedia_blank_name == earlier
+
+    await _run(state, 22)
+
+    assert earlier not in hmc.media
+    assert state.artifacts.vmedia_blank_name is None
+
+
+@pytest.mark.asyncio
+async def test_st18_reports_an_upload_it_cannot_confirm_removed(arm, tmp_path):
+    state, hmc = arm
+    iso = tmp_path / "install.iso"
+    iso.write_bytes(b"iso")
+    state.config = replace(state.config, iso_path=str(iso))
+    await _run(state, 16)
+    original = hmc.call
+    lists = 0
+
+    async def flaky(_self, _client, tool, **kwargs):
+        nonlocal lists
+        if tool == "hmc_list_optical_media":
+            lists += 1
+            if lists == 2:
+                return "FAIL", _failure("HMCError: HTTP 500")
+        return await original(_client, tool, **kwargs)
+
+    runner.RunState.call = flaky
+    try:
+        await _run(state, 18)
+    finally:
+        runner.RunState.call = original
+
+    (upload,) = _observations(state)["media.upload_iso"]
+    assert upload["cleanup"] == "failed"
+    assert "delete-media" in str(_manual(state))
+
+
+@pytest.mark.asyncio
+async def test_a_mapping_lost_by_the_unmount_is_a_manual_row(arm, monkeypatch):
+    state, hmc = arm
+    original = hmc._unmount
+
+    def lossy(name):
+        result = original(name)
+        hmc.mappings.discard(OPERATOR_MAPPING)
+        return result
+
+    monkeypatch.setattr(hmc, "_unmount", lossy)
+    await _run(state, 16, 19)
+
+    unmount = _observations(state)["media.unmount"][0]
+    assert "mappings-equal-baseline" not in unmount["assertions"]
+    assert OPERATOR_MEDIA in str(_manual(state))
+
+
 def test_every_registered_vmedia_stage_is_covered_here():
     covered = {
         runner.vmedia_bootstrap_and_create_repo,

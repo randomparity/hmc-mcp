@@ -219,8 +219,14 @@ limitation under ADR 0132). An operation with no live observation stays
    the VIOS's server adapters; the test partition's state and boot string; catalog
    truth.
 3. **Accepted failure classes:**
-   - a failed mount can leave an unmapped server adapter (#1237); the arm's compare
-     and the recovery class report it with the `chhwres` remedy;
+   - a failed mount can leave an unmapped server adapter (#1237); ST19's compare and
+     the recovery class report it with the `chhwres` remedy. ST20's mount has no such
+     compare (its rows are #1345's); the recovery class still reports it;
+   - a restored results document can name media or ownership the arm no longer
+     holds. Only a run-tagged name (`hmcpctl_live_<8 hex>`, or the configured ISO
+     stem with `_<8 hex>`) is ever removed or reported as the run's; a repository
+     found before this invocation's own create is never the run's; and ST18, ST19
+     and ST20 refuse to start while an earlier invocation's medium is recorded;
    - each blank-medium create and delete rewrites the operator's whole VolumeGroup
      document (ADR 0171), so a lossy round trip of the operator's entries is possible;
      the (name, size) and `RepositorySize` compare reports it;
