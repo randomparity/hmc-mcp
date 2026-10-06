@@ -13,7 +13,7 @@ from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
 from .inventory import read_sync_state
-from .observation import Assertion, ExpectedOutcome, judge_create_result
+from .observation import Assertion, CallFailure, ExpectedOutcome, judge_create_result
 from .results import field
 
 if TYPE_CHECKING:
@@ -590,9 +590,8 @@ async def _reapply_unconfigured(
 
     `rstprofdata -l 3` resets a not-activated partition's ``resource_config``
     from 1 to 0, even merging a backup taken moments earlier (#627, observed live).
-    A partition this cannot re-apply is a FAIL naming the command to run by hand.
-    A failed post-restore read cannot show which were unconfigured, so every
-    candidate gets that row.
+    A partition this cannot re-apply, or whose state after the restore is
+    unknown, is a FAIL naming the command to run by hand.
     """
     config = state.config
     system = shlex.quote(config.system_name)
@@ -602,19 +601,19 @@ async def _reapply_unconfigured(
         if record.get("resource_config") == "1"
         and record.get("state") == "Not Activated"
     }
-    unconfigured = [
-        record["name"]
-        for record in _records(after)
-        if record.get("name") in configured and record.get("resource_config") == "0"
-    ]
-    for name in configured if after is None else unconfigured:
-        profile = configured[name]
+    after_config = {
+        record.get("name"): record.get("resource_config") for record in _records(after)
+    }
+    for name, profile in configured.items():
+        current = after_config.get(name)
+        if current not in (None, "0"):
+            continue
         apply = (
             f"chsyscfg -r lpar -m {system} -o apply -p {shlex.quote(name)} "
             f"-n {shlex.quote(profile) if profile else '<profile>'}"
         )
-        if after is None:
-            why = "the post-restore read failed, so its resource_config is unknown"
+        if current is None:
+            why = "the post-restore read did not report its resource_config"
         elif not profile:
             why = "the restore left its resource_config at 0 and it has no curr_profile"
         else:
@@ -624,13 +623,15 @@ async def _reapply_unconfigured(
                     10, "chsyscfg -o apply (re-apply after restore)", status, data
                 )
                 continue
-            why = f"its re-apply after the restore failed: {data}"
+            # A CallFailure's traceback must never reach the results document.
+            message = data.message if isinstance(data, CallFailure) else data
+            why = f"its re-apply after the restore failed: {message}"
         state.record(
             10,
             "chsyscfg -o apply (re-apply after restore)",
             "FAIL",
-            f"MANUAL RECOVERY REQUIRED: partition {name!r} — {why}. Confirm its "
-            f"resource_config and, if it is 0, run {apply}",
+            f"MANUAL RECOVERY REQUIRED: partition {name!r} — if its resource_config "
+            f"is 0, run {apply} ({why})",
         )
 
 

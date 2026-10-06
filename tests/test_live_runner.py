@@ -1228,32 +1228,41 @@ async def test_a_failed_pre_restore_read_skips_the_restore(monkeypatch, failed) 
     assert "pre-restore" in skip["note"]
 
 
+_UNCONFIGURED = _CONFIGURED.replace("config=1", "config=0")
+_NO_PROFILE = "curr_profile=default_profile", "curr_profile="
+_REFUSED = observation.CallFailure(
+    "ToolError", "HSCL partition busy", "Traceback\n" + "frame\n" * 400, None, False
+)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("before", "after", "apply"),
+    ("before", "after", "apply", "profile"),
     [
-        # No current profile to re-apply.
         (
-            _CONFIGURED.replace("curr_profile=default_profile", "curr_profile="),
-            (
-                "PASS",
-                "name=lpar-name,state=Not Activated,resource_config=0,curr_profile=\n",
-            ),
+            _CONFIGURED.replace(*_NO_PROFILE),
+            ("PASS", _UNCONFIGURED.replace(*_NO_PROFILE) + "\n"),
             None,
+            "<profile>",
         ),
-        # The re-apply itself was refused.
         (
             _CONFIGURED,
-            ("PASS", _CONFIGURED.replace("config=1", "config=0") + "\n"),
-            ("FAIL", "HSCL partition busy"),
+            ("PASS", _UNCONFIGURED + "\n"),
+            ("FAIL", _REFUSED),
+            "default_profile",
         ),
-        # The post-restore read failed, so no partition can be checked.
-        (_CONFIGURED, ("FAIL", "ssh lost"), None),
+        (_CONFIGURED, ("FAIL", "ssh lost"), None, "default_profile"),
+        (
+            _CONFIGURED,
+            ("PASS", "name=other,resource_config=1\n"),
+            None,
+            "default_profile",
+        ),
     ],
-    ids=["empty-curr-profile", "apply-refused", "post-read-failed"],
+    ids=["empty-curr-profile", "apply-refused", "post-read-failed", "absent-after"],
 )
 async def test_a_partition_that_cannot_be_reapplied_needs_manual_recovery(
-    monkeypatch, before, after, apply
+    monkeypatch, before, after, apply, profile
 ) -> None:
     calls, scripted = _st10_with_system_reads(
         [("PASS", before + "\n"), after, ("PASS", before + "\n")], apply=apply
@@ -1265,15 +1274,45 @@ async def test_a_partition_that_cannot_be_reapplied_needs_manual_recovery(
 
     [row] = _manual_recovery_rows(state)
     assert row["status"] == "FAIL"
-    assert "lpar-name" in row["data"]
     assert (
-        f"chsyscfg -r lpar -m {state.config.system_name} -o apply -p lpar-name -n "
-        in (row["data"])
+        f"partition 'lpar-name' — if its resource_config is 0, run chsyscfg -r lpar "
+        f"-m {state.config.system_name} -o apply -p lpar-name -n {profile} ("
+        in row["data"]
     )
+    assert "frame" not in row["data"]
     applies = [
         kwargs for tool, kwargs in calls if " -o apply " in str(kwargs.get("cmd", ""))
     ]
     assert len(applies) == (1 if apply is not None else 0)
+
+
+@pytest.mark.asyncio
+async def test_each_unconfigured_partition_is_reapplied_or_reported(
+    monkeypatch,
+) -> None:
+    kept = _CONFIGURED.replace("lpar-name", "kept")
+    other = _CONFIGURED.replace("lpar-name", "other").replace(*_NO_PROFILE)
+    before = f"{kept}\n{_CONFIGURED}\n{other}\n"
+    after = f"{kept}\n{_UNCONFIGURED}\n{other.replace('config=1', 'config=0')}\n"
+    calls, scripted = _st10_with_system_reads(
+        [("PASS", before), ("PASS", after), ("PASS", before)]
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    applies = [
+        kwargs["cmd"]
+        for tool, kwargs in calls
+        if " -o apply " in str(kwargs.get("cmd", ""))
+    ]
+    assert applies == [
+        f"chsyscfg -r lpar -m {state.config.system_name} -o apply -p lpar-name -n default_profile"
+    ]
+    [row] = _manual_recovery_rows(state)
+    assert "partition 'other'" in row["data"]
+    assert "-p other -n <profile>" in row["data"]
 
 
 @pytest.mark.asyncio
