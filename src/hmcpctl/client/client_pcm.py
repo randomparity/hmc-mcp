@@ -58,8 +58,9 @@ class PcmMixin:
 
     async def get_metrics_feed(self: PcmClient, path: str) -> list[dict[str, str]]:
         """GET a PCM metrics Atom feed and return its JSON links."""
-
-        xml = await self._get(path)
+        # V10R3 answers the uom Accept on a metric feed with HTTP 406, as it does
+        # on the preferences endpoint beside it (#1202, #634).
+        xml, _ = await self.raw_get(path)
         return _metric_links(xml, path) if xml else []
 
     async def get_processed_metric_links(

@@ -539,6 +539,34 @@ def test_get_pcm_preferences(monkeypatch, mock_hmc):
     assert "x-hmc-schema-version" not in request.headers
 
 
+@pytest.mark.parametrize(
+    ("tool", "kind"),
+    [
+        (hmc_processed_metric_links, "ProcessedMetrics"),
+        (hmc_aggregated_metric_links, "AggregatedMetrics"),
+    ],
+)
+def test_metric_feed_requests_accept_any(monkeypatch, mock_hmc, tool, kind):
+    """A metric feed GET asks for `*/*`, as the preferences GET does (#634).
+
+    V10R3 refuses the generic uom Accept on a metric feed with 406, the way it
+    refuses it on the preferences endpoint beside it (#1202).
+    """
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_SCHEMA_VERSION", "V1_0")
+    route = mock_hmc.get(
+        f"/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/{kind}"
+    ).mock(return_value=httpx.Response(200, text=PCM_FEED))
+
+    tool(
+        "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+    )
+
+    request = route.calls[0].request
+    assert request.headers["accept"] == "*/*"
+    assert "x-hmc-schema-version" not in request.headers
+
+
 def test_set_pcm_preferences_returns_updated(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences returns the updated preferences dict."""
     _hmc_env(monkeypatch)
