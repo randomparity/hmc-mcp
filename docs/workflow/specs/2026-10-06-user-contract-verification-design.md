@@ -99,6 +99,7 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
 | LDAP/Kerberos `authentication_type`, `remote_user_id` | a directory server | not run |
 | password change, policy, MFA | #674, #673 | not run |
 | a user with resource roles | a custom resource role (#672) | not run |
+| `verify_session_timeout` as documented minutes | the tool types it `bool` and sends `true`/`false`; the integer fix changes the shared request models outside this surface | catalogued `partial`, missing `verify-session-timeout-minutes` |
 
 ## Success
 

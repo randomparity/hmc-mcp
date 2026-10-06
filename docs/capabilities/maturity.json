@@ -1622,14 +1622,24 @@
     {
       "operation": "user.modify",
       "implementation": {
-        "state": "implemented",
+        "state": "partial",
         "implemented_scope": [
           {
             "variant": "by-uuid",
             "parameters": []
           }
         ],
-        "missing_scope": []
+        "missing_scope": [
+          {
+            "variant": "verify-session-timeout-minutes",
+            "parameters": [
+              {
+                "name": "verify_session_timeout",
+                "constraint": "an integer number of minutes, as documented; the tool types it bool and sends true or false"
+              }
+            ]
+          }
+        ]
       },
       "evidence": []
     },
@@ -1650,14 +1660,24 @@
     {
       "operation": "user.create",
       "implementation": {
-        "state": "implemented",
+        "state": "partial",
         "implemented_scope": [
           {
             "variant": "local-user",
             "parameters": []
           }
         ],
-        "missing_scope": []
+        "missing_scope": [
+          {
+            "variant": "verify-session-timeout-minutes",
+            "parameters": [
+              {
+                "name": "verify_session_timeout",
+                "constraint": "an integer number of minutes, as documented; the tool types it bool and sends true or false"
+              }
+            ]
+          }
+        ]
       },
       "evidence": []
     },
