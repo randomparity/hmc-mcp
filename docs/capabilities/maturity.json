@@ -1788,7 +1788,26 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st11-hmc-list-users",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:31:44Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "profiles-listed",
+            "profiles-carry-uuid-and-user-id",
+            "passwords-not-disclosed"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
     },
     {
       "operation": "task_role.list",
@@ -1802,7 +1821,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st11-hmc-list-task-roles",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:31:53Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "task-roles-listed",
+            "viewer-role-present"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
     },
     {
       "operation": "resource_role.list",
@@ -1816,7 +1853,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st11-hmc-list-resource-roles",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:31:59Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "resource-role-rows-named"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
     },
     {
       "operation": "user.get",
@@ -1892,7 +1946,24 @@
           }
         ]
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st11-hmc-create-user",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st11-user-lifecycle",
+          "observed_at": "2026-10-06T19:32:49Z",
+          "cleanup": "passed",
+          "assertions": [
+            "password-not-echoed"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
     },
     {
       "operation": "remote_access.get",
@@ -1906,7 +1977,25 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st11-hmc-get-remote-access",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:32:20Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "remote-access-group-read",
+            "bind-password-not-disclosed"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
     },
     {
       "operation": "remote_access.configure",

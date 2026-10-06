@@ -9,4 +9,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_configure_remote_access` | `mutate` | `remote_access.configure` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | Set or explicitly clear documented LDAP/Kerberos RemoteAccess fields. |
-| `hmc_get_remote_access` | `read` | `remote_access.get` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | Read the ManagementConsole RemoteAccess property group. |
+| `hmc_get_remote_access` | `read` | `remote_access.get` | `console` | `implemented` | `current` | `existing-runtime-guards` | Read the ManagementConsole RemoteAccess property group. |

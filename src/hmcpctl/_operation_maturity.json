@@ -250,9 +250,9 @@
     {
       "operation": "remote_access.get",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:32:20Z"
     },
     {
       "operation": "resource_group.list_memopt_scores",
@@ -271,9 +271,9 @@
     {
       "operation": "resource_role.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:31:59Z"
     },
     {
       "operation": "snapshot.assess_affinity",
@@ -334,9 +334,9 @@
     {
       "operation": "task_role.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:31:53Z"
     },
     {
       "operation": "update.console",
@@ -376,9 +376,9 @@
     {
       "operation": "user.create",
       "implementation": "partial",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:32:49Z"
     },
     {
       "operation": "user.delete",
@@ -397,9 +397,9 @@
     {
       "operation": "user.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T19:31:44Z"
     },
     {
       "operation": "user.modify",
