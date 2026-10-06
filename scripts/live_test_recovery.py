@@ -11,8 +11,11 @@ It witnesses the dedicated PCIe and bare-cec arms (subtasks 24-25) by their run
 marker, and the vMedia arm (subtasks 16-22) by what it can leave on the run's
 configured test partition: a running partition, a changed pending boot string,
 an optical mapping, a VIOS vSCSI server adapter with no mapping, and the media
-repository it created. Every other subtask the run dispatched is listed as NOT
-WITNESSED, to be checked by hand (docs/live-testing.md, step 4).
+repository it created. It witnesses the vios-backup arm (subtask 37) by the backup
+and disk mapping that run recorded: a backup still in the catalog (remedy:
+`rmviosbk`) and a disk mapping not put back (remedy: `mkvdev`). Every other
+subtask the run dispatched is listed as NOT WITNESSED, to be checked by hand
+(docs/live-testing.md, step 4).
 
 Exit 0 means every dispatched subtask was witnessed and nothing is stranded.
 Exit 1 means something is, and the output names it with the command that
@@ -47,6 +50,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
+from live_test import vios_backup
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
@@ -76,6 +80,7 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_list_optical_mappings",
         "hmc_list_storage_mappings",
         "hmc_get_media_repository",
+        "hmc_list_vios_backups",
     }
 )
 
@@ -94,7 +99,7 @@ _SHELL_METACHARACTERS = frozenset(";|&$`<>()\n")
 #: The vMedia arm (`SUBTASK_GROUPS["vmedia"]`) and the PCIe arms the marker
 #: checks cover. Any other dispatched subtask is reported as not witnessed.
 _VMEDIA_SUBTASKS = frozenset(range(16, 23))
-_WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {24, 25}
+_WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {24, 25, vios_backup.SUBTASK}
 
 #: vMedia calls that leave a repository behind only in one this run owns: the
 #: arm skips each of them on a repository it did not create (#967).
@@ -191,6 +196,101 @@ def inputs_from_document(document: Any) -> RecoveryInputs | None:
             config.get("dedicated_pcie_profile_name") or _DEFAULT_DEDICATED_PROFILE
         ),
     )
+
+
+@dataclass(frozen=True)
+class VIOSBackupInputs:
+    """What the vios-backup arm (ST37) recorded before its backup."""
+
+    system_name: str
+    lpar_name: str
+    vios: str
+    backup_name: str
+    mapping_id: str
+    backing: str
+
+
+def vios_backup_inputs_from_document(
+    document: Any, subtasks: list[int]
+) -> VIOSBackupInputs | None:
+    """ST37's inputs, or `None` when it did not run far enough to change anything.
+
+    The arm records them before its backup, so their absence means it stopped at
+    its preconditions or baseline, which change nothing.
+    """
+    if vios_backup.SUBTASK not in subtasks or not isinstance(document, dict):
+        return None
+    config, artifacts = document.get("config"), document.get("artifacts")
+    if not isinstance(config, dict) or not isinstance(artifacts, dict):
+        return None
+    values = (
+        config.get("system_name"),
+        config.get("lp3_name"),
+        artifacts.get("vios_backup_vios"),
+        artifacts.get("vios_backup_name"),
+        artifacts.get("vios_backup_mapping"),
+        artifacts.get("vios_backup_backing"),
+    )
+    if not all(isinstance(value, str) and value for value in values):
+        return None
+    return VIOSBackupInputs(*values)
+
+
+async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
+    """A backup ST37 kept, and a disk mapping it did not put back."""
+    parts = inputs.mapping_id.split("/")
+    if len(parts) != 2 or not all(
+        vios_backup._DEVICE_NAME.fullmatch(part) for part in [*parts, inputs.backing]
+    ):
+        raise StateUnreadable(
+            f"the document's disk mapping {inputs.mapping_id!r} is not plain device names"
+        )
+    findings: list[Finding] = []
+    status, data = await call("hmc_list_vios_backups", vios_name_or_uuid=inputs.vios)
+    if status != "PASS" or not isinstance(data, list):
+        raise StateUnreadable(f"could not list the backups of {inputs.vios} ({status})")
+    if any(
+        isinstance(row, dict) and row.get("name") == inputs.backup_name for row in data
+    ):
+        findings.append(
+            Finding(
+                "VIOS backup left",
+                f"{inputs.backup_name} is still in the backup catalog of {inputs.vios}",
+                vios_backup.rmviosbk_command(
+                    inputs.system_name, inputs.vios, inputs.backup_name
+                ),
+            )
+        )
+    status, data = await call(
+        "hmc_list_storage_mappings",
+        vios_name_or_uuid=inputs.vios,
+        lpar_name_or_uuid=inputs.lpar_name,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(data, list):
+        raise StateUnreadable(
+            f"could not list the mappings of {inputs.vios} ({status})", findings
+        )
+    if not any(
+        isinstance(row, dict)
+        and row.get("id") == inputs.mapping_id
+        and row.get("backing_name") == inputs.backing
+        for row in data
+    ):
+        adapter, vtd = parts
+        findings.append(
+            Finding(
+                "disk mapping missing",
+                f"{inputs.mapping_id} on {inputs.vios} no longer maps {inputs.backing} "
+                f"to {inputs.lpar_name}",
+                vios_backup.vios_command(
+                    inputs.system_name,
+                    inputs.vios,
+                    vios_backup.mkvdev_command(adapter, inputs.backing, vtd),
+                ),
+            )
+        )
+    return findings
 
 
 def guard_read_only(tool: str, arguments: dict[str, Any]) -> None:
@@ -740,12 +840,19 @@ async def check_test_partition(call, inputs: LparResidueInputs) -> list[Finding]
 
 
 async def check_run(
-    call, pcie: RecoveryInputs | None, partition: LparResidueInputs | None
+    call,
+    pcie: RecoveryInputs | None,
+    partition: LparResidueInputs | None,
+    vios: VIOSBackupInputs | None = None,
 ) -> list[Finding]:
-    """The PCIe checks, then the test-partition checks, each read whatever the other found."""
+    """Each arm's checks in turn, each read whatever the others found."""
     findings: list[Finding] = []
     unread: list[str] = []
-    for run_checks, inputs in ((check, pcie), (check_test_partition, partition)):
+    for run_checks, inputs in (
+        (check, pcie),
+        (check_test_partition, partition),
+        (check_vios_backup, vios),
+    ):
         if inputs is None:
             continue
         try:
@@ -769,7 +876,9 @@ def _read_only_caller(client, state: runner.RunState):
 
 
 async def _run_checks(
-    pcie: RecoveryInputs | None, partition: LparResidueInputs | None
+    pcie: RecoveryInputs | None,
+    partition: LparResidueInputs | None,
+    vios: VIOSBackupInputs | None = None,
 ) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
     # The checks need the live run's composition, not bare ``create_mcp``:
@@ -779,7 +888,7 @@ async def _run_checks(
     # clean it had never looked at. The 2026-09-21 live run showed review alone had
     # missed that, so a test asserts the read-only tools are registered here.
     async with runner.served_client() as client:
-        return await check_run(_read_only_caller(client, state), pcie, partition)
+        return await check_run(_read_only_caller(client, state), pcie, partition, vios)
 
 
 def _is_partial(document: dict[str, Any]) -> bool:
@@ -862,15 +971,16 @@ def main(argv: list[str] | None = None) -> int:
     unwitnessed = sorted(set(subtasks) - _WITNESSED_SUBTASKS)
     pcie = inputs_from_document(document)
     partition = lpar_inputs_from_document(document, subtasks)
+    vios = vios_backup_inputs_from_document(document, subtasks)
 
     findings: list[Finding] = []
     unread: list[str] = []
-    if pcie is not None or partition is not None:
+    if pcie is not None or partition is not None or vios is not None:
         if not runner._bootstrap_config():
             print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
             return 2
         try:
-            findings = asyncio.run(_run_checks(pcie, partition))
+            findings = asyncio.run(_run_checks(pcie, partition, vios))
         except MutatingCallRefused as refused:
             print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
             return 2
