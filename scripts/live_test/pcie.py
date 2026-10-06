@@ -1334,6 +1334,10 @@ def _ids(items: list[dict[str, Any]], key: str = "drc_index") -> list[str | None
     return [value if isinstance(value, str) else None for value in _values(items, key)]
 
 
+def _text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _values(items: list[dict[str, Any]], key: str) -> list[object]:
     return [item.get(key) for item in items]
 
@@ -1352,7 +1356,7 @@ def record_dedicated_listing(state: RunState, status: str, data: object) -> None
             Assertion(
                 "slot-rows-identified",
                 bool(items)
-                and all(i is not None and i.strip() for i in _ids(items))
+                and all(_text(i) for i in _ids(items))
                 and len(set(_ids(items))) == len(items),
             ),
             # An unowned slot's owner is the CLI's literal `null` until normalized (#1195).
@@ -1494,7 +1498,7 @@ async def _record_sriov_adapters(
             Assertion(
                 "adapter-rows-parsed",
                 all(
-                    item.get("mode") == "sriov"
+                    (item.get("mode") == "sriov" and _text(item.get("adapter_id")))
                     or (
                         item.get("mode") == "dedicated"
                         and item.get("adapter_id") is None

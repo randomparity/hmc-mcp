@@ -2288,6 +2288,18 @@ def _items_edit(edit: Any) -> Any:
         ),
         pytest.param(
             _replace(
+                "hmc_list_sriov_adapters",
+                _items_edit(
+                    lambda _k, items: [*items, {"adapter_id": None, "mode": "sriov"}]
+                ),
+            ),
+            None,
+            "st29-hmc-list-sriov-adapters",
+            "adapter-rows-parsed",
+            id="sriov-adapter-without-id",
+        ),
+        pytest.param(
+            _replace(
                 "hmc_list_sriov_physical_ports",
                 lambda orig: lambda k, n: orig({**k, "adapter_id": "1"}, n),
             ),
