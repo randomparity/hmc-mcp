@@ -114,7 +114,7 @@ _READ_ONLY_COMMAND_PREFIXES = ("lssyscfg ", "lshwres ")
 #: A `viosvrcmd` prefix would admit any VIOS command (`rmlv` included), so the
 #: whole shape must match, built from a closed character set.
 _VOLUME_LISTING = re.compile(
-    r"viosvrcmd -m [A-Za-z0-9_.-]+ --id [0-9]+ -c 'lsvg -lv [A-Za-z0-9_]+'"
+    r"viosvrcmd -m [A-Za-z0-9_.-]+ --id [0-9]+ -c 'lsvg -lv [A-Za-z0-9_.-]+'"
 )
 _LISTING_NAME = re.compile(r"[A-Za-z0-9_.-]+")
 

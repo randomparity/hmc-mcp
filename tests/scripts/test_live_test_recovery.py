@@ -1894,10 +1894,12 @@ async def test_a_group_name_the_guard_cannot_carry_is_unreadable_not_refused():
         )
 
 
-def test_the_guard_admits_exactly_the_volume_listing():
+@pytest.mark.parametrize("group", ["datavg", "example-lt-609-vg", "vg.2"])
+def test_the_guard_admits_exactly_the_volume_listing(group):
+    """Every name `_run_disk_left` accepts, the runner's hyphenated default included."""
     recovery.guard_read_only(
         "hmc_run_command",
-        {"cmd": storage_lifecycle.volume_listing("sys-A", 3, "datavg")},
+        {"cmd": storage_lifecycle.volume_listing("sys-A", 3, group)},
     )
 
 
