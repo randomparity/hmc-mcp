@@ -398,8 +398,17 @@ async def _run_arm(
     statuses: dict[str, Any] | None = None,
     config: dict[str, str] | None = None,
     selection_readback: Any = _SELECTION_READBACK,
+    inventory: bool = False,
 ) -> ScenarioState:
     live = LiveTestConfig(**(config if config is not None else _CONFIG))
+    if not inventory:
+        # The #630 read phase has its own tests below; the assignment tests here
+        # pin the arm's mutation path and would otherwise each script its reads.
+        async def no_reads(*_args: Any) -> None:
+            return None
+
+        monkeypatch.setattr(pcie, "record_inventory_reads", no_reads)
+        monkeypatch.setattr(pcie, "record_dedicated_listing", lambda *_args: None)
     responses = _rendering_profile_reads(
         responses, marker_holder, live.dedicated_pcie_lpar_prefix, selection_readback
     )
@@ -1979,3 +1988,534 @@ async def test_io_slots_scenario_skips_without_two_selectable_spares(
     assert row is not None and row[2] == "SKIP"
     assert not [c for c in state.commands() if _SLOT_B in c or _SLOT_C in c]
     assert not _IO_SLOTS_IDS & set(_emitted(state))
+
+
+# ---------------------------------------------------------------------------
+# Read-only inventory phase — st29-pcie-inventory (#630)
+# ---------------------------------------------------------------------------
+
+_SLOT_ETH = "21010030"
+_ARM = pcie._DedicatedConfig("sys-one", "live-", "default_profile", None)
+
+
+def _dedicated_listing(owner: str = "") -> dict[str, Any]:
+    return {
+        "capability": "available",
+        "items": [
+            {"drc_index": _DRC, "description": "x", "owner_lpar": owner},
+            {"drc_index": _SLOT_ETH, "description": "y", "owner_lpar": "vios-1"},
+        ],
+    }
+
+
+def _inventory_world() -> dict[str, Any]:
+    """Every inventory read as the served tools return it, on the JSON wire.
+
+    Decimals arrive as strings, never as `Decimal`, so a parse defect shows here.
+    """
+    io_rows = [
+        {"drc_index": _DRC, "pci_class": "0104"},
+        {"drc_index": _SLOT_ETH, "pci_class": "0200"},
+    ]
+
+    def io_slots(kwargs: dict[str, Any], _n: int) -> list[dict[str, Any]]:
+        if kwargs.get("pci_class") == "eth":
+            return [row for row in io_rows if row["pci_class"] == "0200"]
+        return io_rows
+
+    adapters = [
+        {"adapter_id": "1", "mode": "sriov", "availability": "1"},
+        {"adapter_id": None, "mode": "dedicated", "availability": "1"},
+    ]
+
+    def sriov_adapters(kwargs: dict[str, Any], _n: int) -> dict[str, Any]:
+        selected = kwargs.get("adapter_id")
+        items = [a for a in adapters if selected is None or a["adapter_id"] == selected]
+        return {"capability": "available", "items": items}
+
+    def physical_ports(kwargs: dict[str, Any], _n: int) -> Any:
+        if kwargs.get("adapter_id") is None:
+            return CallFailure(
+                "ValueError",
+                "ValueError: adapter_id is required for SR-IOV physical-port inventory",
+                "",
+                None,
+                False,
+            )
+        return {
+            "capability": "available",
+            "items": [
+                {
+                    "adapter_id": "1",
+                    "physical_port_id": "0",
+                    "minimum_capacity_granularity_percent": "2.0",
+                },
+                {
+                    "adapter_id": "1",
+                    "physical_port_id": "1",
+                    "minimum_capacity_granularity_percent": None,
+                },
+            ],
+        }
+
+    logical_ports = {
+        "capability": "available",
+        "items": [
+            {
+                "adapter_id": "1",
+                "physical_port_id": "0",
+                "availability": "1",
+                "capacity_percent": "2.0",
+                "maximum_capacity_percent": "100.0",
+            },
+            {
+                "adapter_id": "1",
+                "physical_port_id": "1",
+                "availability": "unconfigured",
+                "capacity_percent": None,
+                "maximum_capacity_percent": None,
+            },
+        ],
+    }
+    return {
+        "hmc_list_io_slots": io_slots,
+        "hmc_list_sriov_adapters": sriov_adapters,
+        "hmc_list_sriov_physical_ports": physical_ports,
+        "hmc_list_sriov_logical_ports": lambda _k, _n: logical_ports,
+        "hmc_run_command": lambda _k, _n: "lpar-v\nlpar-v\n",
+        "hmc_list_vnics": lambda kwargs, _n: [
+            {"lpar_name": kwargs["lpar_name_or_uuid"], "slot_num": "6"}
+        ],
+    }
+
+
+async def _read_inventory(
+    responses: dict[str, Any], listing: Any = None
+) -> ScenarioState:
+    state = ScenarioState(responses)
+    data = _dedicated_listing() if listing is None else listing
+    pcie.record_dedicated_listing(state, "PASS", data)
+    await pcie.record_inventory_reads(None, state, _ARM, data)
+    return state
+
+
+_INVENTORY = "st29-pcie-inventory"
+
+
+@pytest.mark.asyncio
+async def test_inventory_reads_emit_verified_observations() -> None:
+    state = await _read_inventory(_inventory_world())
+
+    assert _emitted(state) == {
+        "st29-hmc-list-dedicated-pcie-slots": (
+            "pcie.list_dedicated_slots",
+            _INVENTORY,
+            "passed",
+            "not-required",
+            ["owners-normalized", "slot-rows-identified"],
+        ),
+        "st29-hmc-list-io-slots": (
+            "io_slot.list",
+            _INVENTORY,
+            "passed",
+            "not-required",
+            [
+                "class-filter-exact",
+                "matches-dedicated-inventory",
+                "slot-rows-identified",
+            ],
+        ),
+        "st29-hmc-list-sriov-adapters": (
+            "pcie.list_sriov_adapters",
+            _INVENTORY,
+            "passed",
+            "not-required",
+            [
+                "adapter-filter-selects-one",
+                "adapter-rows-parsed",
+                "capability-available",
+            ],
+        ),
+        "st29-hmc-list-sriov-physical-ports": (
+            "pcie.list_sriov_physical_ports",
+            _INVENTORY,
+            "passed",
+            "not-required",
+            [
+                "adapter-required-refused",
+                "capability-available",
+                "granularity-positive",
+                "ports-listed",
+            ],
+        ),
+        "st29-hmc-list-sriov-logical-ports": (
+            "pcie.list_sriov_logical_ports",
+            _INVENTORY,
+            "passed",
+            "not-required",
+            [
+                "capability-available",
+                "configured-capacity-bounded",
+                "parents-are-listed-ports",
+                "ports-belong-to-adapter",
+            ],
+        ),
+        "st29-hmc-list-vnics": (
+            "vnic.list",
+            _INVENTORY,
+            "passed",
+            "not-required",
+            ["vnic-rows-parsed"],
+        ),
+    }
+    vnic_calls = [k for t, k in state.calls if t == "hmc_list_vnics"]
+    assert vnic_calls == [
+        {"system_name_or_uuid": "sys-one", "lpar_name_or_uuid": "lpar-v"}
+    ]
+    assert state.commands() == [
+        "lshwres -r virtualio --rsubtype vnic --level lpar -m sys-one -F lpar_name"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_inventory_reads_issue_no_mutating_tool() -> None:
+    state = await _read_inventory(_inventory_world())
+
+    assert set(state.tools()) == {
+        "hmc_list_io_slots",
+        "hmc_list_sriov_adapters",
+        "hmc_list_sriov_physical_ports",
+        "hmc_list_sriov_logical_ports",
+        "hmc_run_command",
+        "hmc_list_vnics",
+    }
+    assert all(cmd.startswith("lshwres ") for cmd in state.commands())
+
+
+def _replace(tool: str, fault: Any) -> Any:
+    def build() -> dict[str, Any]:
+        world = _inventory_world()
+        world[tool] = fault(world[tool])
+        return world
+
+    return build
+
+
+def _items_edit(edit: Any) -> Any:
+    """Wrap a response callable so its `items` pass through *edit*."""
+
+    def wrap(original: Any) -> Any:
+        def respond(kwargs: dict[str, Any], n: int) -> Any:
+            value = original(kwargs, n)
+            if isinstance(value, dict):
+                return {**value, "items": edit(kwargs, value["items"])}
+            return value
+
+        return respond
+
+    return wrap
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("world", "listing", "observation", "unmet"),
+    [
+        pytest.param(
+            _inventory_world,
+            _dedicated_listing(owner="null"),
+            "st29-hmc-list-dedicated-pcie-slots",
+            "owners-normalized",
+            id="owner-null",
+        ),
+        pytest.param(
+            _inventory_world,
+            {
+                "capability": "available",
+                "items": [{"drc_index": _DRC}, {"drc_index": _DRC}],
+            },
+            "st29-hmc-list-dedicated-pcie-slots",
+            "slot-rows-identified",
+            id="duplicate-drc",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_io_slots",
+                lambda orig: lambda k, n: orig(k, n)[:1],
+            ),
+            None,
+            "st29-hmc-list-io-slots",
+            "matches-dedicated-inventory",
+            id="io-slot-set-differs",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_io_slots",
+                lambda orig: (
+                    lambda k, n: (
+                        orig({}, n) if k.get("pci_class") == "eth" else orig(k, n)
+                    )
+                ),
+            ),
+            None,
+            "st29-hmc-list-io-slots",
+            "class-filter-exact",
+            id="eth-filter-unfiltered",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_adapters",
+                _items_edit(lambda _k, items: [*items, {"adapter_id": "1"}]),
+            ),
+            None,
+            "st29-hmc-list-sriov-adapters",
+            "adapter-filter-selects-one",
+            id="filter-returns-two",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_adapters",
+                _items_edit(
+                    lambda _k, items: [
+                        *items,
+                        {"adapter_id": "3", "mode": "dedicated"},
+                    ]
+                ),
+            ),
+            None,
+            "st29-hmc-list-sriov-adapters",
+            "adapter-rows-parsed",
+            id="dedicated-adapter-with-id",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_physical_ports",
+                lambda orig: lambda k, n: orig({**k, "adapter_id": "1"}, n),
+            ),
+            None,
+            "st29-hmc-list-sriov-physical-ports",
+            "adapter-required-refused",
+            id="bare-port-read-accepted",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_physical_ports",
+                _items_edit(
+                    lambda _k, items: [
+                        {**i, "minimum_capacity_granularity_percent": "0"}
+                        for i in items
+                    ]
+                ),
+            ),
+            None,
+            "st29-hmc-list-sriov-physical-ports",
+            "granularity-positive",
+            id="granularity-zero",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_physical_ports",
+                _items_edit(
+                    lambda _k, items: [
+                        {**i, "minimum_capacity_granularity_percent": None}
+                        for i in items
+                    ]
+                ),
+            ),
+            None,
+            "st29-hmc-list-sriov-physical-ports",
+            "granularity-positive",
+            id="granularity-never-carried",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_logical_ports",
+                _items_edit(lambda _k, items: [{**items[0], "physical_port_id": "7"}]),
+            ),
+            None,
+            "st29-hmc-list-sriov-logical-ports",
+            "parents-are-listed-ports",
+            id="unlisted-parent",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_logical_ports",
+                _items_edit(lambda _k, items: [{**items[0], "adapter_id": "2"}]),
+            ),
+            None,
+            "st29-hmc-list-sriov-logical-ports",
+            "ports-belong-to-adapter",
+            id="foreign-adapter",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_logical_ports",
+                _items_edit(
+                    lambda _k, items: [{**items[0], "capacity_percent": "100.5"}]
+                ),
+            ),
+            None,
+            "st29-hmc-list-sriov-logical-ports",
+            "configured-capacity-bounded",
+            id="capacity-over-maximum",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_sriov_logical_ports",
+                _items_edit(
+                    lambda _k, items: [{**items[1], "capacity_percent": "null"}]
+                ),
+            ),
+            None,
+            "st29-hmc-list-sriov-logical-ports",
+            "configured-capacity-bounded",
+            id="unconfigured-with-capacity",
+        ),
+        pytest.param(
+            _replace(
+                "hmc_list_vnics",
+                lambda _orig: (
+                    lambda k, _n: [
+                        {"lpar_name": k["lpar_name_or_uuid"], "slot_num": "null"}
+                    ]
+                ),
+            ),
+            None,
+            "st29-hmc-list-vnics",
+            "vnic-rows-parsed",
+            id="vnic-slot-unparsed",
+        ),
+    ],
+)
+async def test_each_inventory_fault_fails_its_assertion(
+    world: Any, listing: Any, observation: str, unmet: str
+) -> None:
+    state = await _read_inventory(world(), listing)
+
+    emitted = _emitted(state)[observation]
+    assert emitted[2] == "failed"
+    assert unmet not in emitted[4]
+
+
+@pytest.mark.asyncio
+async def test_failed_inventory_reads_are_failed_observations_not_skips() -> None:
+    """A read that fails, or answers in an unexpected shape, never raises or SKIPs."""
+    world = {
+        "hmc_list_io_slots": lambda _k, _n: _CONNECTION_LOST,
+        "hmc_list_sriov_adapters": lambda _k, _n: {"capability": "available"},
+        "hmc_run_command": lambda _k, _n: _CONNECTION_LOST,
+    }
+    state = await _read_inventory(world)
+
+    emitted = _emitted(state)
+    for observation in (
+        "st29-hmc-list-io-slots",
+        "st29-hmc-list-sriov-adapters",
+        "st29-hmc-list-vnics",
+    ):
+        assert emitted[observation][2:] == ("failed", "not-required", [])
+    assert "hmc_list_sriov_physical_ports" not in state.tools()
+
+
+@pytest.mark.asyncio
+async def test_failed_dedicated_listing_is_observed_before_the_arm_skips(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder)
+    responses["hmc_list_dedicated_pcie_slots"] = lambda _k, _n: _CONNECTION_LOST
+    state = await _run_arm(monkeypatch, responses, holder, inventory=True)
+
+    assert _emitted(state) == {
+        "st29-hmc-list-dedicated-pcie-slots": (
+            "pcie.list_dedicated_slots",
+            _INVENTORY,
+            "failed",
+            "not-required",
+            [],
+        )
+    }
+    row = state.row("dedicated slot inventory")
+    assert row is not None and row[2] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_empty_listings_record_no_observation() -> None:
+    """An empty listing proves no row shape: an `(empty)` row, never an observation."""
+    world = _inventory_world()
+    world["hmc_list_sriov_adapters"] = lambda _k, _n: {
+        "capability": "available",
+        "items": [],
+    }
+    world["hmc_run_command"] = lambda _k, _n: "No results were found.\n"
+    state = await _read_inventory(world)
+
+    emitted = _emitted(state)
+    assert "st29-hmc-list-sriov-adapters" not in emitted
+    assert "st29-hmc-list-vnics" not in emitted
+    assert state.row("hmc_list_sriov_adapters (empty)") is not None
+    assert state.row("hmc_list_vnics (empty)") is not None
+    assert "hmc_list_vnics" not in state.tools()
+    row = state.row("SR-IOV port inventory")
+    assert row is not None and row[2] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_no_sriov_mode_adapter_skips_the_port_reads() -> None:
+    world = _inventory_world()
+    world["hmc_list_sriov_adapters"] = lambda _k, _n: {
+        "capability": "available",
+        "items": [{"adapter_id": None, "mode": "dedicated"}],
+    }
+    world["hmc_list_io_slots"] = lambda _k, _n: [
+        {"drc_index": _DRC},
+        {"drc_index": _SLOT_ETH},
+    ]
+    state = await _read_inventory(world)
+
+    emitted = _emitted(state)
+    assert emitted["st29-hmc-list-sriov-adapters"] == (
+        "pcie.list_sriov_adapters",
+        _INVENTORY,
+        "passed",
+        "not-required",
+        ["adapter-rows-parsed", "capability-available"],
+    )
+    assert not {
+        "hmc_list_sriov_physical_ports",
+        "hmc_list_sriov_logical_ports",
+    } & set(state.tools())
+    row = state.row("SR-IOV port inventory")
+    assert row is not None and row[2] == "SKIP"
+    # No Ethernet-class slot: the filter has nothing to compare, so it is a gap.
+    assert "class-filter-exact" not in emitted["st29-hmc-list-io-slots"][4]
+    eth = state.row("hmc_list_io_slots (eth)")
+    assert eth is not None and eth[2] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_inventory_phase_runs_before_selection_and_changes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reads precede any creation, and failing every one leaves the arm intact."""
+    holder: dict[str, str] = {}
+    with_reads = await _run_arm(
+        monkeypatch, _happy_responses(holder), holder, inventory=True
+    )
+    holder2: dict[str, str] = {}
+    without = await _run_arm(monkeypatch, _happy_responses(holder2), holder2)
+
+    tools = with_reads.tools()
+    assert tools.index("hmc_list_sriov_adapters") < tools.index("hmc_create_lpar")
+    vnic_read = pcie._vnic_command("sys-one")
+    reads = {"hmc_list_io_slots", "hmc_list_sriov_adapters", "hmc_list_vnics"}
+    remaining = [
+        tool
+        for tool, kwargs in with_reads.calls
+        if tool not in reads and kwargs.get("cmd") != vnic_read
+    ]
+    assert remaining == without.tools()
+    assert with_reads.artifacts.pcie_drc_index == without.artifacts.pcie_drc_index
+    marker = re.compile(r"pcie-[0-9a-f]{8}")
+    assert [marker.sub("M", c) for c in with_reads.cleanup_commands()] == [
+        marker.sub("M", c) for c in without.cleanup_commands()
+    ]
