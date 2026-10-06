@@ -94,7 +94,8 @@ def hmc_create_user(
 ) -> dict[str, Any] | None:
     """Create a documented UOM UserProfile below a management console.
 
-    Role values are UOM role-resource hrefs returned by the role-list tools.
+    Role values are role names: ``TaskRoleName`` from ``hmc_list_task_roles``
+    and ``ResourceRoleName`` from ``hmc_list_resource_roles``.
     Returns None when the HMC returns an empty successful response.
 
     Args:
@@ -103,8 +104,9 @@ def hmc_create_user(
         password: Initial profile password.
         authentication_type: Local, LDAP, or Kerberos authentication.
         description: Optional human-readable profile description.
-        associated_task_role: TaskRole href returned by the role-list tool.
-        associated_resource_roles: ResourceRole hrefs assigned to the profile.
+        associated_task_role: TaskRoleName from ``hmc_list_task_roles``.
+        associated_resource_roles: ResourceRoleName values from
+            ``hmc_list_resource_roles``.
         password_expiry: Password-expiry interval accepted by the HMC.
         session_timeout: Session timeout value accepted by the HMC.
         verify_session_timeout: Whether the HMC verifies the session timeout.
@@ -179,9 +181,9 @@ def hmc_modify_user(
         password: Replacement password, or None to leave unchanged.
         description: Replacement description, or None to leave unchanged.
         authentication_type: Replacement authentication type.
-        associated_task_role: Replacement TaskRole href; empty clears the role.
-        associated_resource_roles: Replacement ResourceRole hrefs; an empty list
-            removes all resource roles.
+        associated_task_role: Replacement TaskRoleName; empty clears the role.
+        associated_resource_roles: Replacement ResourceRoleName values; an empty
+            list removes all resource roles.
         password_expiry: Replacement password-expiry interval.
         session_timeout: Replacement session timeout.
         verify_session_timeout: Replacement timeout-verification setting.

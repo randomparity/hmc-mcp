@@ -10,6 +10,23 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `hmc_create_user` and `hmc_modify_user` take `associated_task_role` as a task-role name
+  (`TaskRoleName` from `hmc_list_task_roles`) and `associated_resource_roles` as resource-role
+  names, not hrefs. The `UserProfile` document now writes them as the documented
+  `AssociatedTaskRole` and `AssociatedResourceRole` text elements, in the documented element
+  order, with `AuthenticationType` in the lower case the HMC lists (a V10R3 create carrying
+  `Local` was refused with `REST0001`); an href passed as before is sent as a name (ADR 0202,
+  #632). The builder is in every
+  handler's import closure, so every previously current live observation now reads `stale`
+  (`closure-changed`, ADR 0127) until its arm re-runs.
+- The live harness's user lifecycle moved from round2 to its own opt-in `users` arm
+  (`scripts/live_users.py`, subtask 11). It creates one `hmcpctl-live-<8 hex>` viewer user with
+  remote access disabled and deletes it by UUID in the same run; preflight names it, and
+  `scripts/live_test_recovery.py` reports any `hmcpctl-live-` user left behind.
+  `LIVE_TEST_TEST_USER_NAME` is retired: a `.env` that still sets it loads with a notice, and the
+  line can be deleted (#632). Live on V10R3 the HMC refused `hmc_create_user` (REST0001: a `kb`
+  marking must be `COR`), so creation, and the get, modify and delete that follow it, remain
+  unverified; the user, role and remote-access reads are verified.
 - `HMCClient` no longer raises a logoff transport failure (`HMCTransportError`) when its
   `async with` body completed: it logs a warning naming the HMC host and noting that the HMC
   session may persist until the HMC times it out, so a completed tool call is no longer reported

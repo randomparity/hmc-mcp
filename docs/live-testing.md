@@ -84,12 +84,13 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 
 | Arm | Command | Covers |
 |---|---|---|
-| round2 | `uv run --no-sync python scripts/live_round2.py` | subtasks 0–15 |
+| round2 | `uv run --no-sync python scripts/live_round2.py` | subtasks 0–15 except 11 |
 | vmedia | `uv run --no-sync python scripts/live_vmedia.py` | subtasks 16–22 |
 | sriov | `uv run --no-sync python scripts/live_sriov.py` | subtask 23 |
 | dedicated | `uv run --no-sync python scripts/live_dedicated.py` | subtask 24 |
 | bare-cec | `uv run --no-sync python scripts/live_bare_cec.py` | subtask 25 |
 | profiles | `uv run --no-sync python scripts/live_profiles.py` | subtasks 0, 4, 10 and 15 |
+| users | `uv run --no-sync python scripts/live_users.py` | subtask 11 |
 | vios-backup | `uv run --no-sync python scripts/live_vios_backup.py` | subtask 37 |
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
@@ -180,6 +181,29 @@ If the restore itself failed or was interrupted, review the profiles before
 anything else, then restore them with
 `rstprofdata -m <system> -l 1 -f hmcpctl-live-st10`. Do not run the arm
 again until the profiles are confirmed: its next backup overwrites that file.
+
+### The users arm
+
+The users arm verifies the user, task-role, resource-role and remote-access
+tools (#632). It is the only arm that creates an HMC user, and HMC users are
+global to the console, not to a managed system.
+
+- It reads the user list, the task and resource roles, and the console's
+  LDAP/Kerberos settings. It never writes remote-access settings.
+- It then creates one user named `hmcpctl-live-<8 hex>`, with the `hmcviewer`
+  task role and web and SSH remote access disabled. The password is generated
+  in the run and never printed or written. The arm reads the user, changes and
+  then clears its description, and deletes it by UUID.
+- It creates nothing while any `hmcpctl-live-` user already exists: run the
+  recovery check below first.
+- Keep its terminal output private. If the HMC refuses the create and echoes the
+  request, the in-process server logs that error, password included, to stderr
+  before the arm can scrub it.
+- An interrupted run can leave that one user. The recovery check names it by its
+  prefix; remove it with `rmhmcusr -u <name>`.
+
+`LIVE_TEST_TEST_USER_NAME` is retired. A `.env` that still sets it loads with a
+notice; delete the line.
 
 ### The network arm
 
@@ -390,7 +414,7 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov`, `profiles`, `vios-backup`, `pcm` or `network`.
+`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm` or `network`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
 four sets of them:
@@ -398,6 +422,7 @@ four sets of them:
 | Subtasks | What it reads |
 |---|---|
 | 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
+| 11 (users) | any HMC user named `hmcpctl-live-*`, whichever run's document you pass |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
@@ -414,9 +439,9 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 Exit 2 is expected after round2, SR-IOV, profiles, pcm and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
 
-- **round2**: the scratch partition is gone, the test user is gone, the test
-  partition's description and properties match the baseline, and the
-  provisioned test partition and its disk exist.
+- **round2**: the scratch partition is gone, the test partition's description
+  and properties match the baseline, and the provisioned test partition and its
+  disk exist.
 - **SR-IOV**: the test logical port is no longer assigned to the test
   partition, and its profile no longer lists it.
 - **profiles**: compare an independent `lssyscfg` read with one taken before

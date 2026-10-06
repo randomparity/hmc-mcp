@@ -367,6 +367,20 @@
       "observed_at": null
     },
     {
+      "operation": "remote_access.configure",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "remote_access.get",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:32:20Z"
+    },
+    {
       "operation": "resource_group.list_memopt_scores",
       "implementation": "implemented",
       "verification": "stale",
@@ -379,6 +393,13 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:45:36Z"
+    },
+    {
+      "operation": "resource_role.list",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:31:59Z"
     },
     {
       "operation": "snapshot.assess_affinity",
@@ -437,6 +458,13 @@
       "observed_at": "2026-10-06T12:35:03Z"
     },
     {
+      "operation": "task_role.list",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:31:53Z"
+    },
+    {
       "operation": "template.deploy",
       "implementation": "implemented",
       "verification": "unevidenced",
@@ -488,6 +516,41 @@
     {
       "operation": "upgrade.vios",
       "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.create",
+      "implementation": "partial",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:32:49Z"
+    },
+    {
+      "operation": "user.delete",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.get",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "user.list",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:31:44Z"
+    },
+    {
+      "operation": "user.modify",
+      "implementation": "partial",
       "verification": "unevidenced",
       "reason": null,
       "observed_at": null

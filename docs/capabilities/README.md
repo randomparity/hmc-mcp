@@ -127,7 +127,6 @@ timestamp or emit another confirmation. After 90 days, an environment/closure ch
 or removal of the confirmation, the runner attempts the call again. Replace a confirmed
 gap only with a fresh observed limitation; remove/revise missing scope when it is fixed.
 Stale confirmations remain valid historical records; future timestamps are invalid.
-ST11 user listings always run because their UUID discovery enables cleanup after create.
 Coarse environment labels can retain a repaired limitation for up to 90 days; remove
 its confirmation when earlier revalidation is needed. Missing environment labels disable reuse.
 
