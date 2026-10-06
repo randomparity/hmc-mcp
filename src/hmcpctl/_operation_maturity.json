@@ -19,37 +19,37 @@
     {
       "operation": "job.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:50:00Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:59:55Z"
     },
     {
       "operation": "job.wait",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:50:01Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:59:58Z"
     },
     {
       "operation": "lpar.capture_console",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:51:01Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:01:01Z"
     },
     {
       "operation": "lpar.create",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:54:03Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:04:44Z"
     },
     {
       "operation": "lpar.delete",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:54:03Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:04:44Z"
     },
     {
       "operation": "lpar.dump_restart",
@@ -103,9 +103,9 @@
     {
       "operation": "lpar.get_state",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:49:59Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:59:53Z"
     },
     {
       "operation": "lpar.list",
@@ -124,9 +124,9 @@
     {
       "operation": "lpar.list_refcodes",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:50:02Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:00:00Z"
     },
     {
       "operation": "lpar.plan_memopt_scores",
@@ -138,16 +138,16 @@
     {
       "operation": "lpar.power_off",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:51:20Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:01:26Z"
     },
     {
       "operation": "lpar.power_on",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:49:59Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T12:59:53Z"
     },
     {
       "operation": "lpar.set_description",
@@ -215,23 +215,23 @@
     {
       "operation": "pcie.assign_dedicated_slot",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:54:03Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:04:44Z"
     },
     {
       "operation": "pcie.list_dedicated_slots",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:54:01Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:04:43Z"
     },
     {
       "operation": "pcie.unassign_dedicated_slot",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-09-30T22:53:38Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T13:04:04Z"
     },
     {
       "operation": "resource_group.list_memopt_scores",
