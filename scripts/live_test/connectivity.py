@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from fastmcp import Client
@@ -65,7 +66,7 @@ def _same(value: object, expected: object) -> bool:
     )
 
 
-def _uuids(items: list[object]) -> set[str]:
+def _uuids(items: Sequence[object]) -> set[str]:
     return {
         uuid.lower() for item in items if isinstance(uuid := field(item, "UUID"), str)
     }
@@ -311,7 +312,6 @@ async def _probe_capacity_and_resources(
     client: Client, state: RunState, feed: set[str] | None
 ) -> None:
     config = state.config
-    request = config.placement_memory_mib
 
     st, data = await state.call(
         client, "hmc_capacity_report", expected=[_FIRMWARE_CAPACITY_500]
@@ -342,7 +342,33 @@ async def _probe_capacity_and_resources(
             cleanup="not-required",
             data=data,
         )
+    await _find_placement(client, state, feed, boundary)
 
+    st, data = await state.call(
+        client, "hmc_list_resources", resource_type="LogicalPartition"
+    )
+    state.record_verified(
+        1,
+        "hmc_list_resources",
+        operation="console.list_resources",
+        scenario="st1-resource-inventory",
+        assertions=[
+            Assertion(
+                "resource-list-non-empty",
+                bool(st == "PASS" and entries(data)),
+            ),
+        ],
+        cleanup="not-required",
+        data=data,
+    )
+
+
+async def _find_placement(
+    client: Client, state: RunState, feed: set[str] | None, boundary: object
+) -> None:
+    """Placement for ``placement_memory_mib``, judged against the capacity report's row."""
+    config = state.config
+    request = config.placement_memory_mib
     st, data = await state.call(
         client,
         "hmc_find_placement",
@@ -390,24 +416,6 @@ async def _probe_capacity_and_resources(
             cleanup="not-required",
             data=data,
         )
-
-    st, data = await state.call(
-        client, "hmc_list_resources", resource_type="LogicalPartition"
-    )
-    state.record_verified(
-        1,
-        "hmc_list_resources",
-        operation="console.list_resources",
-        scenario="st1-resource-inventory",
-        assertions=[
-            Assertion(
-                "resource-list-non-empty",
-                bool(st == "PASS" and entries(data)),
-            ),
-        ],
-        cleanup="not-required",
-        data=data,
-    )
 
 
 async def _record_inventory_summaries(client: Client, state: RunState) -> None:
@@ -544,13 +552,9 @@ async def _read_partition_views(client: Client, state: RunState) -> None:
     )
 
 
-async def _read_composites(
-    client: Client, state: RunState, feed: set[str] | None, system_state: object
-) -> None:
-    """Logical inventory, fleet health and an LPAR plan scoped to the boundary system."""
+async def _read_logical_inventory(client: Client, state: RunState) -> None:
+    """The logical inventory, selected to the boundary system."""
     config = state.config
-    system_uuid = state.artifacts.system_uuid
-
     st, data = await state.call(client, "hmc_inventory", systems=[config.system_name])
     answered = st == "PASS"
     systems = _items(field(data, "systems")) if answered else []
@@ -591,6 +595,12 @@ async def _read_composites(
         data=data,
     )
 
+
+async def _read_fleet_health(
+    client: Client, state: RunState, feed: set[str] | None, system_state: object
+) -> None:
+    """Fleet health, whose boundary-system flag must match the State ST1 read."""
+    system_uuid = state.artifacts.system_uuid
     st, data = await state.call(client, "hmc_fleet_health")
     answered = st == "PASS"
     flagged = any(
@@ -623,6 +633,11 @@ async def _read_composites(
         data=data,
     )
 
+
+async def _plan_lpar(client: Client, state: RunState) -> None:
+    """A plan for ST13's dry-run partition on the boundary system; it writes nothing."""
+    config = state.config
+    system_uuid = state.artifacts.system_uuid
     st, data = await state.call(
         client,
         "hmc_plan_lpar",
@@ -723,5 +738,7 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     await _probe_capacity_and_resources(client, state, feed)
     await _record_inventory_summaries(client, state)
     await _read_partition_views(client, state)
-    await _read_composites(client, state, feed, system_state)
+    await _read_logical_inventory(client, state)
+    await _read_fleet_health(client, state, feed, system_state)
+    await _plan_lpar(client, state)
     await _check_platform_update_refusal(client, state, console)
