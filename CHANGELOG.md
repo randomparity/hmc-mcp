@@ -18,8 +18,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `hmcpctl-live-lpar-` partition left behind (#1345). Live on V10R3 all six observations
   passed. ST8 no longer declares an expected HTTP 406 for `hmc_modify_lpar`: the
   read-modify-write path is accepted, so a 406 there is now a failure, not a gap. DLPAR on a
-  partition activated to SMS was refused (`HSCL7016`, the partition must be running), and
-  memory above the maximum is refused with `REST0264`.
+  partition activated to SMS was refused (`HSCL7016`, the partition must be running), so DLPAR
+  on a running operating system stays unverified; the `hmc_modify_lpar` observation covers its
+  resource path, not its PCIe assignments. Memory above the maximum is refused with
+  `REST0264`.
 - `hmc_create_user` and `hmc_modify_user` take `associated_task_role` as a task-role name
   (`TaskRoleName` from `hmc_list_task_roles`) and `associated_resource_roles` as resource-role
   names, not hrefs. The `UserProfile` document now writes them as the documented

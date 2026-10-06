@@ -71,6 +71,8 @@ class FakeHMC:
     power_off_refused: bool = False
     stale_absence: bool = False
     delete_refused: bool = False
+    activated_failure: str = "HSCL294C no RMC connection"
+    set_refused: bool = False
     rename_back_lies: bool = False
     renames: int = 0
     name: str | None = None
@@ -148,7 +150,7 @@ class FakeHMC:
         if not resources:
             return "FAIL", _failure("Nothing to change: pass at least one field")
         if self.state != "Not Activated" and self.activated_dlpar_refused:
-            return "FAIL", _failure("HSCL294C no RMC connection")
+            return "FAIL", _failure(self.activated_failure)
         for key, value in resources.items():
             self.values[key] = float(value)
         return "PASS", {"change_location": {"lives_in": "current-configuration"}}
@@ -177,6 +179,8 @@ class FakeHMC:
         return "PASS", {"pending_boot_string": self.pending}
 
     def _hmc_set_lpar_boot_order(self, kwargs):
+        if self.set_refused:
+            return "FAIL", _failure("REST0126 refused")
         self.pending = " ".join(kwargs["devices"])
         return "PASS", {}
 
@@ -371,8 +375,20 @@ async def test_activated_refusal_is_a_gap_row(monkeypatch):
     (row,) = _rows(state, "hmc_dlpar_mem (activated)")
     assert row["status"] == "SKIP"
     assert "active RMC connection" in row["note"]
+    assert "HSCL294C" in row["data"]
     # A failure nested inside a row's data would skip the runner's redaction.
     assert row["data"] == "HSCL294C no RMC connection"
+
+
+@pytest.mark.asyncio
+async def test_activated_transport_failure_is_not_the_gap(monkeypatch):
+    """Only an HMC refusal is the documented gap; a lost session stays a FAIL."""
+    hmc = FakeHMC(activated_failure="Connection reset by peer")
+    state = await _run(monkeypatch, hmc)
+
+    (row,) = _rows(state, "hmc_dlpar_mem (activated)")
+    assert row["status"] == "FAIL"
+    assert "RMC" not in row["note"]
     assert "Traceback" not in json.dumps(state.results, default=str)
     assert not any(
         e["operation"] == "lpar.dlpar_mem" and "activated" in str(e)
@@ -432,6 +448,14 @@ async def test_absence_rereads_once(monkeypatch):
     assert hmc.stale_served
     assert "old-name-absent" in _held(state, "lpar.rename")
     assert _results(state) == _ALL_PASSED
+
+
+@pytest.mark.asyncio
+async def test_clear_is_not_proven_without_a_pending_string(monkeypatch):
+    state = await _run(monkeypatch, FakeHMC(set_refused=True))
+
+    assert _results(state)["boot_order.set"] == "failed"
+    assert "pending-boot-string-unchanged" not in _held(state, "boot_order.clear")
 
 
 def test_scratch_partitions_selects_only_the_reserved_prefix():

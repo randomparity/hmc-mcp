@@ -367,8 +367,11 @@ partition: every mutating call names that partition's UUID.
   one small processor DLPAR request. These rows are never observations. The
   partition has no operating system, so it has no RMC connection: on V10R3 the HMC
   refused both with `HSCL7016` (the partition must be running), and the arm records
-  each as a SKIP naming that gap. The activation used the partition profile, which
-  discarded the configuration changes made while it was Not Activated (#1170).
+  each as a SKIP naming that gap; any other failure there stays a FAIL. The
+  activation used the partition profile, which discarded the configuration changes
+  made while it was Not Activated (#1170). DLPAR on a running operating system is
+  therefore unverified, and `hmc_modify_lpar`'s PCIe-assignment path is not exercised:
+  its observation covers the resource path only.
 - **After.** It powers the partition off, deletes it by UUID only while its
   description still carries the run's caller token, and compares the system
   reads with the ones taken before (one re-read after 30 s on a difference).

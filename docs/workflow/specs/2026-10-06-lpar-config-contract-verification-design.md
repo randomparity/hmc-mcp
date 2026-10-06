@@ -80,9 +80,11 @@ would bind commands nobody issues.
    - `boot_order.clear`: assertions `clear-refused-after-authorization` (the call fails
      with the #1048 refusal text) and `pending-boot-string-unchanged`.
    An empty request is a tool-side refusal: its assertion holds only on a FAIL whose
-   message names "Nothing to change". Every absence check (rename's old name, the
-   delete) follows `pcie.name_absent`'s rule: an HSCL8012 answer is believed only when a
-   second read after the same delay agrees (#906).
+   message names "Nothing to change". Rename's old-name check follows
+   `pcie.name_absent`'s rule (#906): HSCL8012 is believed at once, and an answer that is
+   neither HSCL8012 nor a readable description is read once more after the delay. The
+   delete is confirmed from the partition listing, read twice, so no name of this run's
+   partition (renamed or not) remains.
 6. **Activated cases (#1170).** Read the associated profile UUID from `hmc_get_lpar`
    (`AssociatedPartitionProfile`), power on to SMS with `wait=True`, poll
    `hmc_get_lpar_state` until `open firmware` or `running`; if it never gets there the

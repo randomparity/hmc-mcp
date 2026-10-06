@@ -58,9 +58,12 @@ BOOT_PATHS = [
 ]
 _CLEAR_REFUSAL = "Refusing to clear the pending boot order"
 _ACTIVATED_GAP_NOTE = (
-    "refused while activated without RMC: the gap's prerequisite is an operating "
-    "system with an active RMC connection"
+    "the HMC refused it while the partition was at firmware: the gap's prerequisite "
+    "is a running operating system with an active RMC connection"
 )
+#: An HMC refusal names its code; anything else (a dispatch defect, a lost
+#: session) is not the activated-DLPAR gap and must stay a failure.
+_HMC_REFUSAL = re.compile(r"\b(?:HSCL|REST)[0-9A-F]{4}\b")
 
 _MEMORY = ("PartitionMemoryConfiguration",)
 _SHARED = ("PartitionProcessorConfiguration", "SharedProcessorConfiguration")
@@ -555,7 +558,7 @@ async def _boot_cases(client: Client, state: RunState, run: _Run) -> None:
     run.hold(
         "boot_order.clear",
         "pending-boot-string-unchanged",
-        read and after_read and after == pending,
+        read and after_read and pending == " ".join(BOOT_PATHS) and after == pending,
     )
     run.data["hmc_clear_lpar_boot_order"] = {"pending_boot_string": after}
 
@@ -594,11 +597,13 @@ async def _record_activated(
 ) -> None:
     after = await _configuration(client, state, run)
     location = result_field(data, "change_location") if st == "PASS" else None
-    note = _ACTIVATED_GAP_NOTE if st != "PASS" else "accepted while activated"
+    refused = isinstance(data, CallFailure) and bool(_HMC_REFUSAL.search(data.message))
+    if st == "PASS":
+        status, note = "PASS", "accepted while activated"
+    else:
+        status, note = ("SKIP", _ACTIVATED_GAP_NOTE) if refused else ("FAIL", "")
     # The answer is the row's top-level data so the runner redacts a failure's text.
-    state.record(
-        SUBTASK, f"{tool} (activated)", "PASS" if st == "PASS" else "SKIP", data, note
-    )
+    state.record(SUBTASK, f"{tool} (activated)", status, data, note)
     state.record(
         SUBTASK,
         f"{tool} (activated read-back)",
