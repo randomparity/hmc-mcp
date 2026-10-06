@@ -67,7 +67,12 @@ def build_hmc_user_document(
     for name, value in (
         ("UserID", user_id),
         ("UserDescription", description),
-        ("AuthenticationType", authentication_type),
+        # The tool keeps the reference's spelling; the HMC lists and accepts only
+        # lower case (a V10R3 create carrying `Local` failed REST0001, #632).
+        (
+            "AuthenticationType",
+            None if authentication_type is None else authentication_type.lower(),
+        ),
         ("UserProfilePassword", password),
         ("PasswordExpiry", password_expiry),
     ):

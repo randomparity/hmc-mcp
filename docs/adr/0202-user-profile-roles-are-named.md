@@ -29,11 +29,14 @@ The documented element order also differs from the builder's: `UserDescription` 
 (`TaskRoleName` from `hmc_list_task_roles`) and `associated_resource_roles` as resource-role
 names (`ResourceRoleName` from `hmc_list_resource_roles`). The builder writes them as the
 documented text elements and emits every element in the documented response order. An empty
-string or empty list still clears the association. Effects, target kinds and authorization are
-unchanged.
+string or empty list still clears the association. `AuthenticationType` keeps the reference's
+spelling at the tool (`Local`, `LDAP`, `Kerberos`) and goes on the wire in lower case, the form
+the HMC lists. Effects, target kinds and authorization are unchanged.
 
 The live users arm (issue #632) checks the decision by creating a user with the viewer task
-role and reading the association back. If the HMC refuses the documented shape, that run's
+role and reading the association back. Its first run (V10R3 M1060, 2026-10-06) read every
+role association as a name and every `AuthenticationType` as lower case, and the HMC refused the
+create body, which then carried `Local`, with `REST0001 Failed to unmarshal input payload`. If the HMC refuses the documented shape, that run's
 observation is `failed` and this record is superseded by one that cites the capture.
 
 ## Consequences

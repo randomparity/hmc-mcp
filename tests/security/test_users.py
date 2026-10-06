@@ -105,6 +105,22 @@ def test_user_profile_builder_follows_the_documented_shape() -> None:
     ) in xml
 
 
+@pytest.mark.parametrize(
+    ("requested", "wire"),
+    [("Local", "local"), ("LDAP", "ldap"), ("Kerberos", "kerberos")],
+)
+def test_user_profile_builder_sends_the_hmcs_lowercase_authentication_type(
+    requested, wire
+) -> None:
+    """V10R3 lists every profile's AuthenticationType in lower case, and refused a
+    create carrying ``Local`` with REST0001 (2026-10-06 users arm, #632)."""
+    xml = build_hmc_user_document(authentication_type=requested)
+
+    assert (
+        f'<AuthenticationType kb="CUR" kxe="false">{wire}</AuthenticationType>' in xml
+    )
+
+
 def test_user_profile_builder_rejects_unknown_authentication_type() -> None:
     with pytest.raises(ValueError, match="authentication_type"):
         build_hmc_user_document(authentication_type="radius")

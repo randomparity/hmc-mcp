@@ -14,7 +14,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   (`TaskRoleName` from `hmc_list_task_roles`) and `associated_resource_roles` as resource-role
   names, not hrefs. The `UserProfile` document now writes them as the documented
   `AssociatedTaskRole` and `AssociatedResourceRole` text elements, in the documented element
-  order; an href passed as before is sent as a name (ADR 0202, #632). The builder is in every
+  order, with `AuthenticationType` in the lower case the HMC lists (a V10R3 create carrying
+  `Local` was refused with `REST0001`); an href passed as before is sent as a name (ADR 0202,
+  #632). The builder is in every
   handler's import closure, so every previously current live observation now reads `stale`
   (`closure-changed`, ADR 0127) until its arm re-runs.
 - The live harness's user lifecycle moved from round2 to its own opt-in `users` arm
