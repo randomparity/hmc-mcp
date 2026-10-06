@@ -1158,7 +1158,12 @@ async def test_a_refused_disable_probe_skips_without_an_observation(
     calls, scripted = _answer(
         _st10_answers(
             sync_reads=("1,Not Activated",),
-            hmc_sync_lpar_profile=("FAIL", "HSCL mode not supported"),
+            hmc_sync_lpar_profile=(
+                "FAIL",
+                observation.CallFailure(
+                    "ToolError", "HSCL refused on hmc.example.test", "", None, False
+                ),
+            ),
         )
     )
     monkeypatch.setattr(runner.RunState, "call", scripted)
@@ -1176,6 +1181,8 @@ async def test_a_refused_disable_probe_skips_without_an_observation(
     )
     assert skip["status"] == "SKIP"
     assert "disable" in skip["note"]
+    assert "sync_curr_profile=<0|1|2>" in skip["note"]
+    assert skip["data"] == "HSCL refused on <REDACTED-HOST>"
 
 
 @pytest.mark.asyncio
@@ -1187,7 +1194,7 @@ async def test_a_refused_disable_probe_that_changed_state_still_restores(
         _st10_answers(
             sync_reads=("0,Not Activated", "1,Not Activated"),
             hmc_sync_lpar_profile=lambda kwargs: (
-                ("FAIL", "ssh lost") if kwargs["mode"] == "disable" else ("PASS", "")
+                ("FAIL", _REFUSED) if kwargs["mode"] == "disable" else ("PASS", "")
             ),
         )
     )
@@ -1204,6 +1211,27 @@ async def test_a_refused_disable_probe_that_changed_state_still_restores(
     observation = _verified(state)["lpar_profile.sync"]
     assert observation["result"] == "failed"
     assert observation["cleanup"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_a_harness_defect_in_the_disable_probe_is_not_a_skip(monkeypatch) -> None:
+    """An `InvalidDispatch` never reached the HMC, so it fails rather than skips."""
+    defect = observation.CallFailure("InvalidDispatch", "bad mode", "", None, False)
+    _calls, scripted = _answer(
+        _st10_answers(
+            sync_reads=("1,Not Activated", "1,Not Activated"),
+            hmc_sync_lpar_profile=lambda kwargs: (
+                ("FAIL", defect) if kwargs["mode"] == "disable" else ("PASS", "")
+            ),
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline["sync_curr_profile"] = "1"
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _verified(state)["lpar_profile.sync"]["result"] == "failed"
 
 
 @pytest.mark.asyncio

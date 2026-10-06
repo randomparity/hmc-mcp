@@ -13,7 +13,12 @@ from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
 from .inventory import read_sync_state
-from .observation import Assertion, ExpectedOutcome, judge_create_result
+from .observation import (
+    Assertion,
+    CallFailure,
+    ExpectedOutcome,
+    judge_create_result,
+)
 from .results import field
 
 if TYPE_CHECKING:
@@ -522,7 +527,8 @@ async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
         mode=_SYNC_MODES[probe],
     )
     probed = await read_sync_state(client, state, 10)
-    if disabling and status != "PASS" and probed is not None and probed[0] == original:
+    refused = isinstance(data, CallFailure) and data.exception_type != "InvalidDispatch"
+    if disabling and refused and probed is not None and probed[0] == original:
         # No live capture of `disable` exists: a refusal that left the baseline in
         # place is an unproven mode, not a failed round trip, and needs no restore.
         state.record(
@@ -530,7 +536,8 @@ async def _exercise_sync_round_trip(client: Client, state: RunState) -> None:
             "hmc_sync_lpar_profile (round trip)",
             "SKIP",
             data,
-            "the disable probe was refused and sync_curr_profile still reads 1",
+            "the disable probe was refused and sync_curr_profile still reads 1; "
+            f"if a later read shows 0, restore by hand: {manual}",
         )
         return
     restore_status, restore_data = await state.call(
