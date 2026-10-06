@@ -45,9 +45,9 @@ from .client_templates import TemplatesMixin
 from .client_updates import UpdatesMixin
 from .client_users import UsersMixin
 
-# Media-type fragments used by the HMC API.
 _logger = logging.getLogger(__name__)
 
+# Media-type fragments used by the HMC API.
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
