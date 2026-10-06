@@ -1314,7 +1314,7 @@ async def test_each_unconfigured_partition_is_reapplied_or_reported(
     [row] = _manual_recovery_rows(state)
     assert "partition 'lp.other'" in row["note"]
     assert "-p lp.other -n <profile>" in row["note"]
-    assert "--filter lpar_names=lp.other -F name" in row["note"]
+    assert "-F lpar_name,name)" in row["note"]
 
 
 @pytest.mark.asyncio

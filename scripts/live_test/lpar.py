@@ -617,10 +617,7 @@ async def _reapply_unconfigured(
             detail = "the post-restore read did not report its resource_config"
         elif not profile:
             detail = "the restore left its resource_config at 0; it has no curr_profile"
-            apply += (
-                f" (list its profiles: lssyscfg -r prof -m {system} "
-                f"--filter {shlex.quote(f'lpar_names={name}')} -F name)"
-            )
+            apply += f" (list profiles: lssyscfg -r prof -m {system} -F lpar_name,name)"
         else:
             status, detail = await state.call(client, "hmc_run_command", cmd=apply)
             if status == "PASS":
