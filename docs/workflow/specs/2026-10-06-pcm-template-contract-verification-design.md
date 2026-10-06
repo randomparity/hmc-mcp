@@ -58,12 +58,17 @@ authority/role changes (operator).
 
 ## Design
 
-1. **Feed Accept (defect fix).** `PcmMixin.get_metrics_feed` fetches through
+1. **PCM request fixes (defects).** `PcmMixin.get_metrics_feed` fetches through
    `raw_get(path)` (`Accept: */*`, no schema-version header), exactly as
-   `get_pcm_preferences` does. One client method covers the processed, aggregated and LTM
-   feeds. `fetch_json` keeps `Accept: application/json`, which no capture contradicts; the live
-   data fetch is the check. A unit test asserting the feed request's Accept is `*/*` fails
-   first.
+   `get_pcm_preferences` does; one client method covers the processed, aggregated and LTM
+   feeds. The live run then found two more defects behind the data fetch, fixed the same way:
+   `fetch_json` sent `Accept: application/json` (406; `*/*` serves
+   `application/vnd.ibm.powervm.pcm.json`), and `newest_metric_link` chose a partition
+   sub-feed entry, stamped newer than any document, so it now considers only `.json` links.
+   ST38 then found every `set_pcm_preferences` POST answered with HTTP 500 ("Unexpected error
+   during unmarshalling"): the update now reads the preferences and posts the HMC's own
+   `ManagedSystemPcmPreference` element back with only the requested flags changed, as IBM's
+   PCM REST walkthrough does. Each fix has a unit test that failed first.
 2. **Declarations.** The three "unlicensed" PCM declarations become module-level authority
    declarations, one per declared operation (`error_codes={"403"}`, variant `pcm-authority`,
    reason "the connecting user lacks PCM authority (HTTP 403)"). The template declaration is
