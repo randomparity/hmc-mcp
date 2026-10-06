@@ -736,6 +736,34 @@ async def test_restored_ownership_never_claims_an_existing_repository(arm):
         t for t, _ in hmc.calls
     }
     assert not state.artifacts.vmedia_repo_created
+    assert "no longer treated as owned" in str(_manual(state))
+
+
+@pytest.mark.asyncio
+async def test_a_failed_upload_does_not_block_the_boot_in_the_same_run(arm, tmp_path):
+    state, hmc = arm
+    iso = tmp_path / "install.iso"
+    iso.write_bytes(b"iso")
+    state.config = replace(state.config, iso_path=str(iso))
+    original = hmc.call
+    uploads = 0
+
+    async def first_upload_fails(_self, _client, tool, **kwargs):
+        nonlocal uploads
+        if tool == "hmc_upload_iso":
+            uploads += 1
+            if uploads == 1:
+                return "FAIL", _failure("HMCError: HTTP 500")
+        return await original(_client, tool, **kwargs)
+
+    runner.RunState.call = first_upload_fails
+    try:
+        await _run(state, 16, 18, 20, 22)
+    finally:
+        runner.RunState.call = original
+
+    assert "hmc_power_on_lpar" in {t for t, _ in hmc.calls}
+    assert hmc.media == {OPERATOR_MEDIA: 2048}
 
 
 @pytest.mark.asyncio

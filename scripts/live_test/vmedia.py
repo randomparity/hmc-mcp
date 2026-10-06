@@ -129,8 +129,11 @@ def is_run_media_name(name: object, iso_media_name: str) -> bool:
     iso = PurePosixPath(iso_media_name)
     return bool(
         re.fullmatch(rf"{re.escape(BLANK_PREFIX)}[0-9a-f]{{8}}", name)
-        or re.fullmatch(
-            rf"{re.escape(iso.stem)}_[0-9a-f]{{8}}{re.escape(iso.suffix)}", name
+        or (
+            iso.stem
+            and re.fullmatch(
+                rf"{re.escape(iso.stem)}_[0-9a-f]{{8}}{re.escape(iso.suffix)}", name
+            )
         )
     )
 
@@ -312,6 +315,27 @@ async def _repository_holders(
     return holders
 
 
+def _drop_restored_ownership(
+    state: RunState, holders: list[tuple[str, object]]
+) -> None:
+    """Never claim an existing repository; say so when a document had claimed it."""
+    artifacts = state.artifacts
+    if artifacts.vmedia_repo_created:
+        groups = ", ".join(uuid for uuid, _ in holders)
+        state.record(
+            16,
+            "hmc_get_media_repository (restored ownership)",
+            "FAIL",
+            None,
+            "MANUAL RECOVERY REQUIRED: a restored document recorded the repository "
+            f"as this arm's; it is no longer treated as owned. If an earlier run "
+            f"created it, delete it by hand (hmcpctl storage delete-media-repo "
+            f"{shlex.quote(str(artifacts.vios_uuid))} <group: {groups}> --system "
+            f"{shlex.quote(state.config.system_name)})",
+        )
+    artifacts.vmedia_repo_created = False
+
+
 def _record_repository_read(state: RunState, data: object) -> None:
     name, size = repository_fields(data)
     state.record_verified(
@@ -387,7 +411,7 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
     if holders:
         # A repository found before this invocation's own create is never the run's,
         # whatever a restored document recorded.
-        state.artifacts.vmedia_repo_created = False
+        _drop_restored_ownership(state, holders)
     if holders is None:
         state.artifacts.vmedia_repo_created = False
         state.skip(16, "hmc_create_media_repository", "a repository read failed")
@@ -660,7 +684,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     if not Path(config.iso_path).is_file():
         state.skip(18, label, _no_iso_reason(config))
         return
-    if state.artifacts.vmedia_iso_name:
+    if state.artifacts.vmedia_iso_name in run_media_names(state):
         state.skip(18, label, _EARLIER_MEDIUM)
         return
     before = await _list_media(client, state, 18, "pre-upload")
@@ -701,6 +725,8 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
         refused = _refused_as_collision(st, data)
     # Whatever the upload returned, a listed run-owned ISO is removed here.
     removed = await _delete_run_media(client, state, 18, name) if listed else True
+    if not listed and after is not None:
+        _forget_run_media(state, name)
     if after is None or not removed:
         removed = False
         state.record(
@@ -710,7 +736,8 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
             None,
             f"MANUAL RECOVERY REQUIRED: {name} may be in the repository "
             f"(hmcpctl storage delete-media {shlex.quote(str(state.artifacts.vios_uuid))} "
-            f"{shlex.quote(str(state.artifacts.vmedia_vg_uuid))} {name})",
+            f"{shlex.quote(str(state.artifacts.vmedia_vg_uuid))} {shlex.quote(name)} "
+            f"--system {shlex.quote(config.system_name)})",
         )
     state.record_verified(
         18,
@@ -1055,7 +1082,8 @@ class _RoundTrip:
             if after is None:
                 self.manual(
                     f"cannot confirm whether {self.name} was created",
-                    f"hmcpctl storage list-optical-media {self.vios} {self.vg}",
+                    f"hmcpctl storage list-optical-media {shlex.quote(self.vios)} "
+                    f"{shlex.quote(self.vg)}",
                 )
             else:
                 self.artifacts.vmedia_blank_name = None
@@ -1235,7 +1263,7 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
     if not state.artifacts.vios_uuid or not state.artifacts.vmedia_vg_uuid:
         state.skip(19, "vmedia round trip", _NO_REPOSITORY)
         return
-    if state.artifacts.vmedia_blank_name:
+    if state.artifacts.vmedia_blank_name in run_media_names(state):
         state.skip(19, "vmedia round trip", _EARLIER_MEDIUM)
         return
     try:
@@ -1486,7 +1514,7 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         reason = _no_iso_reason(config)
     elif not artifacts.lp3_uuid:
         reason = "lp3_uuid not set (ST16 failed to capture it)"
-    elif artifacts.vmedia_iso_name:
+    elif artifacts.vmedia_iso_name in run_media_names(state):
         reason = _EARLIER_MEDIUM
     if reason:
         for name in _skip_names:
@@ -1802,6 +1830,10 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
         return
 
     owned = run_media_names(state)
+    for name in (artifacts.vmedia_blank_name, artifacts.vmedia_iso_name):
+        if name and name not in owned:
+            # Not a name this arm generates (an older arm recorded it): never removed.
+            _forget_run_media(state, name)
     if not owned:
         state.skip(22, "hmc_list_optical_media (run media cleanup)", "no run media")
     else:
