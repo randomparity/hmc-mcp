@@ -44,7 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, pcie, users, vios_backup, vmedia
+from live_test import bare_cec, pcie, storage_lifecycle, users, vios_backup, vmedia
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -326,6 +326,28 @@ def _vmedia_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _storage_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name what the storage arm (#1348) changes, each removed by the arm itself."""
+    volume = f"{storage_lifecycle.DISK_PREFIX}<8 hex>"
+    return ArmVerdict(
+        "storage",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                f"in volume group {config.vdisk_volume_group_name}, one 1 GiB logical "
+                f"volume {volume} at a time, created twice: once mapped to "
+                f"{config.lp3_name} only while Not Activated (the HMC adds a vSCSI "
+                "adapter pair), a delete while mapped expected refused, detached and "
+                "deleted; then created and mapped by attach-disk, detached and deleted"
+            ),
+            "no other logical volume, mapping, adapter or volume group is changed",
+        ),
+        config.system_name,
+    )
+
+
 _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
@@ -335,6 +357,7 @@ _ARM_VERDICTS = {
     "network": _network_verdict,
     "users": _users_verdict,
     "vmedia": _vmedia_verdict,
+    "storage": _storage_verdict,
 }
 
 

@@ -318,6 +318,22 @@ def test_the_vmedia_verdict_names_each_change_it_makes(workspace, monkeypatch, c
     assert "no other medium or mapping is unmounted or deleted" in output
 
 
+def test_the_storage_verdict_names_each_change_it_makes(workspace, monkeypatch, capsys):
+    """#1348. One run-named volume at a time, mapped only while Not Activated."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "storage", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "one 1 GiB logical volume hpctl<8 hex> at a time" in output
+    assert "only while Not Activated" in output
+    assert "a delete while mapped expected refused" in output
+    assert "attach-disk" in output
+    assert "no other logical volume, mapping, adapter or volume group" in output
+
+
 def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
     workspace, monkeypatch, capsys
 ):

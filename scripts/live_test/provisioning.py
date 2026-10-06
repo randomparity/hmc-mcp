@@ -24,13 +24,6 @@ _TEST_DISK_ABSENT = ExpectedOutcome(
         {"does not exist", "not found", "No such", "0516-306", "0516-404"}
     ),
 )
-_VOLUME_GROUP_POST_UNSUPPORTED = ExpectedOutcome(
-    operation="storage.create_disk",
-    variant="rest-volume-group-post",
-    reason="REST VolumeGroup POST not supported on this HMC firmware — "
-    "pre-existing test disk must be recreated manually on the VIOS",
-    error_codes=frozenset({"406", "not acceptable"}),
-)
 
 # ---------------------------------------------------------------------------
 # ST13 — Provision Dry Run
@@ -136,22 +129,17 @@ async def _recreate_test_disk(
         [_TEST_DISK_ABSENT],
     )
 
+    # No refusal is declared expected: ST40 re-checked the create live, so a
+    # refused create is a failure, not a known gap (#1348).
     status, data = await state.call(
         client,
         "hmc_create_virtual_disk",
-        expected=[_VOLUME_GROUP_POST_UNSUPPORTED],
         vios_name_or_uuid=vios_uuid,
         vg_uuid=vg_uuid,
         disk_name=config.vdisk_name,
         capacity_mib=vdisk_size_mib,
     )
-    state.record_with_expected(
-        14,
-        "hmc_create_virtual_disk (test disk)",
-        status,
-        data,
-        [_VOLUME_GROUP_POST_UNSUPPORTED],
-    )
+    state.record(14, "hmc_create_virtual_disk (test disk)", status, data)
 
     status, data = await state.call(
         client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid

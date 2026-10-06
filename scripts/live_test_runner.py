@@ -17,10 +17,10 @@ Usage:
 `--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
 stops importing (AGENTS.md).
 
-With no selection every subtask runs, 0 through 38: there is none from 26 to 36,
-which are other arms' row ids, and 9, 11, 37 and 38 SKIP outside their own `network`,
-`users`, `vios-backup` and `pcm` groups. A bare number runs that one subtask; `--group NAME`
-runs one arm. Results go to `test-results-<group>.json`, or `test-results-round2.json`
+With no selection every registered subtask runs, 0 through 40: there is none from
+26 to 36, which are other arms' row ids, and 9, 11, 37, 38 and 40 SKIP outside their
+own `network`, `users`, `vios-backup`, `pcm` and `storage` groups. A bare number runs
+that one subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`, or `test-results-round2.json`
 for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
 
@@ -98,6 +98,7 @@ from live_test.provisioning import (
     validate_provisioning_dry_run,
 )
 from live_test.storage import inventory_storage
+from live_test.storage_lifecycle import exercise_disk_lifecycle
 from live_test.users import exercise_users, inventory_users
 from live_test.vios_backup import exercise_vios_backup
 from live_test.vmedia import (
@@ -628,6 +629,9 @@ class LiveTestArtifacts:
     # and the blank medium the vmedia arm (ST19) creates in it (#1347).
     vmedia_vg_uuid: str | None = None
     vmedia_blank_name: str | None = None
+    # The logical volume the storage arm (ST40) is about to create, recorded before
+    # the create so a lost response is still tracked (#1348).
+    storage_disk_name: str | None = None
     # What the dedicated PCIe arm created, so `live_test_recovery.py` can check
     # teardown from outside the run that attempted it. The marker is per-run
     # random, so nothing outside the document can reconstruct these.
@@ -1030,6 +1034,7 @@ SUBTASKS = {
     25: exercise_bare_cec,
     37: exercise_vios_backup,
     38: exercise_pcm_preferences,
+    40: exercise_disk_lifecycle,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
 
@@ -1222,6 +1227,8 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     # Not in "all": the arm changes the managed system's PCM collection preferences,
     # which every PCM consumer of the system shares (docs/live-testing.md).
     "pcm": [38],
+    # ST40 mutates the VIOS's storage, so only its own arm dispatches it (#1348).
+    "storage": [0, 3, 40],
     "all": list(range(26)),
 }
 
@@ -1345,6 +1352,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "vdisk_vg_name",
         "vmedia_iso_name",
         "vmedia_mapping_uuid",
+        "storage_disk_name",
         *_VIOS_BACKUP_ARTIFACTS,
         *_VMEDIA_REPOSITORY_ARTIFACTS,
     }
