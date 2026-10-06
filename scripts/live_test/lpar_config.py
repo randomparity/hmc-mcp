@@ -116,17 +116,10 @@ class _Run:
     def hold(self, operation: str, assertion: str, value: bool) -> None:
         self.held[f"{operation}:{assertion}"] = value
 
-    def assertions(self, operation: str, *ids: str) -> list[Assertion]:
-        return [Assertion(i, self.held.get(f"{operation}:{i}", False)) for i in ids]
-
 
 def scratch_partitions(names: Iterable[str]) -> list[str]:
     """The partition names only this arm may have created."""
     return sorted(name for name in names if name.startswith(NAME_PREFIX))
-
-
-def _quoted(run: _Run) -> tuple[str, str]:
-    return shlex.quote(run.system), shlex.quote(run.name)
 
 
 # ---------------------------------------------------------------------------
@@ -761,7 +754,7 @@ async def _teardown(client: Client, state: RunState, run: _Run) -> None:
     why = await _delete(client, state, run)
     if why is None:
         return
-    system, name = _quoted(run)
+    system, name = shlex.quote(run.system), shlex.quote(run.name)
     state.record(
         SUBTASK,
         "scratch partition teardown",
