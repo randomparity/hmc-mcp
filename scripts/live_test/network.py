@@ -43,6 +43,12 @@ NAME_PREFIX = "hmcpctl-live-"
 #: A port name no VIOS has, for the label negative.
 ABSENT_PORT = "fcs9999"
 _READ_FAILED = Assertion("read-failed", False)
+#: The client adapter types ST9 adds and removes on the test partition.
+ROUND_TRIP_ADAPTER_TYPES = (
+    "ClientNetworkAdapter",
+    "VirtualSCSIClientAdapter",
+    "VirtualFibreChannelClientAdapter",
+)
 _ADAPTER_TYPES = (
     "ClientNetworkAdapter",
     "VirtualSCSIClientAdapter",
@@ -97,7 +103,7 @@ def _vlan_in_range(entry: Mapping[str, object]) -> bool:
     return vlan is not None and 1 <= vlan <= 4094
 
 
-def _group_name(row: Mapping[str, object]) -> object:
+def group_name(row: Mapping[str, object]) -> object:
     """A vFC group label row's name: its `name` column, else its first column."""
     if "name" in row:
         return row["name"]
@@ -257,7 +263,7 @@ async def _inventory_labels(client: Client, state: RunState) -> None:
             assertions=[
                 Assertion(
                     "group-rows-parsed",
-                    _all(entries(data), lambda row: bool(_group_name(row))),
+                    _all(entries(data), lambda row: bool(group_name(row))),
                 )
             ]
             if st == "PASS"
@@ -389,20 +395,21 @@ def _run_networks(current: Networks | None, vlan: int, name: str) -> Networks | 
 
 
 def _server_slot(servers: Iterable[tuple[str, ...]], lpar_id: str) -> str | None:
-    """A server slot to pair with: one open to any partition, else one toward ours."""
+    """The lowest server slot assigned to the test partition, or None.
+
+    A slot open to any partition could be serving another client, so it is never
+    used (orchestrator ruling, 2026-10-06).
+    """
     index = {name: i for i, name in enumerate(_SCSI_FIELDS.split(","))}
-    for wanted in ("any", lpar_id):
-        slots = sorted(
-            (
-                row[index["slot_num"]]
-                for row in servers
-                if row[index["remote_lpar_id"]] == wanted
-            ),
-            key=lambda slot: as_int(slot) or 0,
-        )
-        if slots:
-            return slots[0]
-    return None
+    slots = sorted(
+        (
+            row[index["slot_num"]]
+            for row in servers
+            if row[index["remote_lpar_id"]] == lpar_id
+        ),
+        key=lambda slot: as_int(slot) or 0,
+    )
+    return slots[0] if slots else None
 
 
 #: The fields that place a client adapter: its slot, VLAN and server pairing.
@@ -426,7 +433,7 @@ def _placements(listed: Listing) -> Adapters:
     }
 
 
-def _drift(baseline: Adapters, after: Adapters | None) -> str:
+def placement_drift(baseline: Adapters, after: Adapters | None) -> str:
     """What differs from the baseline, so a manual recovery names only the run's own."""
     if after is None:
         return "the adapters could not be read; compare by hand with the baseline"
@@ -437,6 +444,12 @@ def _drift(baseline: Adapters, after: Adapters | None) -> str:
         f"remove only the new UUIDs {new}; restore each of {off} to its baseline "
         f"placement ({fields}) {[baseline[k] for k in off]}"
     )
+
+
+def adapter_placements(data: Any) -> Adapters | None:
+    """A `hmc_list_adapters` result as UUID -> placement; None when not a listing."""
+    listed = _by_uuid(data)
+    return None if listed is None else _placements(listed)
 
 
 def _new(
@@ -638,7 +651,7 @@ class _Arm:
         if not isinstance(data, list):
             return None
         return frozenset(
-            str(_group_name(row)) for row in data if isinstance(row, Mapping)
+            str(group_name(row)) for row in data if isinstance(row, Mapping)
         )
 
     # -- preconditions -------------------------------------------------------
@@ -893,7 +906,7 @@ class _Arm:
         """
         current = await self.placements(adapter_type, "before delete")
         if current is None:
-            return False, False, _drift(baseline, None)
+            return False, False, placement_drift(baseline, None)
         vanished = {baseline[k] for k in baseline if k not in current}
         accepted: bool | None = None
         for adapter_uuid in sorted(k for k in current if k not in baseline):
@@ -911,7 +924,7 @@ class _Arm:
             status = self.note("delete", "hmc_delete_adapter", result)
             accepted = accepted is not False and status == "PASS"
         after = await self.placements(adapter_type, "after delete")
-        return accepted, after == baseline, _drift(baseline, after)
+        return accepted, after == baseline, placement_drift(baseline, after)
 
     # -- (b, c) vSCSI and vFC clients ----------------------------------------
 
@@ -929,8 +942,8 @@ class _Arm:
         if slot is None:
             self.skip(
                 f"{adapter_type} round trip",
-                f"{boundary.vios} has no server slot of this kind toward "
-                f"{self.lpar} or any partition",
+                f"{boundary.vios} has no server slot of this kind assigned to "
+                f"{self.lpar} (gap: slots open to any partition are not used)",
             )
             return None
         self.baseline(

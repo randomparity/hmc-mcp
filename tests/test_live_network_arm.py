@@ -453,13 +453,23 @@ async def test_a_failed_network_delete_records_manual_recovery_and_stops(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_vscsi_prefers_a_server_slot_open_to_any_partition(monkeypatch):
+async def test_a_slot_open_to_any_partition_is_never_used(monkeypatch):
     hmc = FakeHMC(scsi=SCSI_TOWARD_LPAR + SCSI_ANY)
 
     await _run(monkeypatch, hmc)
 
-    add = next(k for t, k in hmc.calls if t == "hmc_add_vscsi_adapter")
-    assert (add["vios_partition_id"], add["vios_slot"]) == (1, 12)
+    adds = [k for t, k in hmc.calls if t == "hmc_add_vscsi_adapter"]
+    assert adds and all(k["vios_slot"] == 11 for k in adds)
+
+
+@pytest.mark.asyncio
+async def test_a_vfc_slot_open_to_any_partition_skips_the_vfc_round_trip(monkeypatch):
+    hmc = FakeHMC(fc=[{**FC_SERVER, "remote_lpar_id": "any"}])
+
+    state = await _run(monkeypatch, hmc)
+
+    assert "hmc_add_vfc_adapter" not in hmc.mutations()
+    assert "adapter.add_vfc" not in _results(state)
 
 
 @pytest.mark.asyncio
@@ -699,7 +709,10 @@ async def test_a_reidentified_adapter_is_never_deleted_as_the_runs_own(monkeypat
 
 @pytest.mark.asyncio
 async def test_a_collision_that_repairs_the_existing_adapter_is_caught(monkeypatch):
-    hmc = FakeHMC(collision_updates_in_place=True, scsi=SCSI_TOWARD_LPAR + SCSI_ANY)
+    hmc = FakeHMC(
+        collision_updates_in_place=True,
+        scsi=SCSI_TOWARD_LPAR + "vios-A,1,10,server,3,5\n",
+    )
 
     state = await _run(monkeypatch, hmc)
 
