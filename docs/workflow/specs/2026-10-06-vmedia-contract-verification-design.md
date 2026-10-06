@@ -187,7 +187,7 @@ VIOS and test-partition vSCSI adapter rows, and the test partition's state and p
 boot string. The two reads are compared line for line and the result is reported in
 the PR; the raw reads stay private.
 
-## Live gaps (expected; settled by the run)
+## Live gaps
 
 This table is the durable record of the gaps; a maturity record has no notes field,
 and the arm emits no `missing_scope` row (`missing_scope` is for a confirmed
@@ -198,7 +198,8 @@ limitation under ADR 0132). An operation with no live observation stays
 |---|---|
 | `media.create_repository`, `media.delete_repository` | a VIOS with no media repository (the boundary VIOS has an operator repository); the ST17 lifecycle then needs verified assertions |
 | `media.upload_iso` | an ISO at `LIVE_TEST_ISO_PATH` on the runner host |
-| `media.create`, `media.mount`, `media.unmount`, `media.delete` (ST19) | a test partition the operator has not listed in `LIVE_TEST_PROTECTED_LPAR_NAMES`; the boundary operator config protects it |
+| `media.mount`, `media.unmount`, `media.delete` (ST19) | a blank-medium create the HMC accepts: V10R3 refused `create_optical_media`'s VolumeGroup document with REST0001 (follow-up) |
+| a non-empty `media.list_mappings` | an optical mapping with a medium loaded: the boundary partition's virtual optical device holds none, so the HMC reports it with no optical backing |
 | ST20 boot from the virtual CD | an uploaded ISO; boot-order verification is #1345 |
 
 ## Success
@@ -250,10 +251,29 @@ limitation under ADR 0132). An operation with no live observation stays
 
 ## Live result (2026-10-06, V10R3 / POWER9 boundary system)
 
-A run at `bf8974b3` stopped at ST19, before any mutation: the operator's
-`LIVE_TEST_PROTECTED_LPAR_NAMES` lists the test partition, and the belt then raised,
-losing ST21 and ST22. Preflight passed; recovery exited 2 (PARTIAL), with nothing
-stranded; the before and after snapshots matched line for line. The belt is now a
-SKIP naming the gap. Whether the operator lifts that protection for a run is the
-operator's decision; until then the round-trip operations stay `unevidenced` with
-the gap above.
+**First run, at `bf8974b3`.** It stopped at ST19 before any mutation, because the
+operator's `LIVE_TEST_PROTECTED_LPAR_NAMES` listed the test partition and the belt
+then raised. The belt is now a SKIP that names the gap. The operator corrected the
+configuration to protect the VIOS instead.
+
+**Final run, at `b5a410c7`.** Preflight passed and the run completed: 45 rows
+(20 PASS, 23 SKIP, 2 FAIL) and four observations.
+
+The before snapshot showed the repository at 10240 MB with 9988 MB free, and the
+test partition `Not Activated`.
+
+ST19's `create_optical_media` was refused with HTTP 400 `REST0001 Failed to
+unmarshal input payload`, and no medium appeared. That is recorded as a failed
+`media.create` observation, and the round trip stopped there, so nothing was
+mounted. In ST21, `storage.list_mappings` passed. Its `optical-backing-agrees`
+assertion compared two empty sets, though: the operator's virtual optical device
+holds no medium, so neither listing reports an optical backing.
+
+Recovery exited 0 (CLEAN). The before and after read-only snapshots matched line
+for line, and no adapter residue was left.
+
+| Operation | Result |
+|---|---|
+| `media.get_repository`, `media.list`, `storage.list_mappings` | passed |
+| `media.create` | failed: REST0001 on the VolumeGroup POST |
+| the other seven | unevidenced (gaps below) |

@@ -292,9 +292,9 @@
     {
       "operation": "media.create",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T22:20:22Z"
     },
     {
       "operation": "media.create_repository",
@@ -320,16 +320,16 @@
     {
       "operation": "media.get_repository",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T22:19:55Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T22:20:08Z"
     },
     {
       "operation": "media.list_mappings",
@@ -544,9 +544,9 @@
     {
       "operation": "storage.list_mappings",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T22:20:42Z"
     },
     {
       "operation": "system.get",
