@@ -34,14 +34,15 @@ Task 1 confirms each row against the code before writing it; a request the code 
 not issue is not bound. Delegates of `provision.lpar`'s assignment step
 (`pcie.assign_dedicated_slot`, `sriov.assign_logical_port`, `vnic.add`) keep their
 own records (#630).
-
 ## Design
 
 1. **Arm `lpar-power`, subtask 41** (orchestrator-assigned). `SUBTASKS[41]`
    dispatches `exercise_lpar_power` in a new `scripts/live_test/lpar_power.py`;
-   `SUBTASK_GROUPS["lpar-power"] = [41]`, not in `all`; the subtask SKIPs unless
-   `state.group == "lpar-power"`. Wrapper `scripts/live_lpar_power.py`, tested by
-   `tests/scripts/test_live_lpar_power.py`; arm behaviour in
+   `SUBTASK_GROUPS["lpar-power"] = [41]`, not in `all`. The subtask SKIPs unless
+   `state.group == "lpar-power"` and `HMC_AUTHORIZE_POWER_OPERATIONS` is on
+   (`bare_cec._power_operations_authorized`), so the power evidence covers the ADR 0092
+   ownership-guarded path, as bare-cec's does. Wrapper `scripts/live_lpar_power.py`,
+   tested by `tests/scripts/test_live_lpar_power.py`; arm behaviour in
    `tests/test_live_lpar_power_arm.py` over a scripted client. Rows are numbered 41,
    scenario `st41-lpar-power`.
 2. **Run-owned names.** Prefix `hmcpctl-live-pwr-` (reserved; recovery reports any
@@ -49,47 +50,51 @@ own records (#630).
    provision partition P `…-<hex>-p`, caller token `lparpwr-<hex>`, logical volume
    `lppwr<hex>` (13 characters). The arm creates nothing while any prefixed partition
    or `lppwr`-prefixed volume exists. Every mutating call names a run partition by
-   UUID once it has one; create, provision and decommission name the system.
-3. **Baseline.** Before any write: `lssyscfg -r lpar -F name`, available processing
-   units and memory (the #1345 reads, reused from `lpar_config._read_pools`), VIOS
-   storage mappings, the configured volume group's volume names. After teardown the
-   same reads are compared (one 30 s re-read on a difference) and recorded as
-   `system baseline compare`. A failed baseline read SKIPs the arm.
-4. **Create (A)** — observation `lpar.create`:
-   `units-over-vcpus-refused` (desired 1.5 units, 1 virtual processor: refused with
-   "virtual processor uses at most 1.0"), `memory-over-configurable-refused` (desired
-   memory 64 TiB: refused naming "configurable memory"), `refused-creates-left-nothing`
-   (neither name listed), `resources-read-back` (memory min/desired/max and shared
-   units/virtual processors read from `hmc_get_lpar` equal the request),
-   `ownership-stamped` (the description's caller token is the run's),
-   `duplicate-name-refused` (a second create of A's name fails with "already exists"
-   and A's UUID is unchanged). Resources as #1345's `RESOURCES`.
+   UUID once it has one, the run volume, or a mapping backed by it; create, provision
+   and decommission name the system.
+3. **Baseline.** Before any write, recorded as `system baseline`:
+   `lssyscfg -r lpar -F name,state`; available processing units and memory (the #1345
+   reads); `lshwres -r io --rsubtype slot -F drc_index,lpar_name`; the VIOS's mappings
+   (`hmc_list_storage_mappings`); its vSCSI server adapters
+   (`lshwres -r virtualio --rsubtype scsi --level lpar --filter lpar_names=<vios>
+   -F slot_num,remote_lpar_name,remote_slot_num`, the read `_ADAPTER_SIDE_EFFECT` in
+   `client/client_storage.py` names); the configured group's volume names. When no VIOS
+   qualifies (step 10) the VIOS reads are omitted. After teardown the same reads are
+   compared (one 30 s re-read on a difference) as `system baseline compare`. A failed
+   baseline read SKIPs the arm. The operator's private before/after snapshot (dispatch)
+   covers the same set.
+4. **Create (A)** — observation `lpar.create`. Three cases are hmcpctl's own pre-request
+   guards, observed live (no HMC request is issued): `units-over-vcpus-refused`
+   (desired 1.5 units, 1 virtual processor: "virtual processor uses at most 1.0"),
+   `memory-over-configurable-refused` (desired 64 TiB: "configurable memory", read from
+   the live `ConfigurableSystemMemory`), `duplicate-name-refused` (a second create of A's
+   name: "already exists", A's UUID unchanged). HMC-side: `resources-read-back` (memory
+   min/desired/max, shared units and virtual processors read from `hmc_get_lpar` equal
+   the request), `ownership-stamped` (the description's caller token is the run's).
+   Resources as #1345's `RESOURCES`.
 5. **Power on (A)** — observation `lpar.power_on`: `profile-activation-reached-firmware`
    (profile UUID from `AssociatedPartitionProfile`, `boot_mode=sms`, `wait=True`; job
    successful and state `open firmware` or `running`), `running-reported-without-job`
    (a second call with `boot_mode=of`: `already_running` true, `job` null, message names
    the unapplied boot mode, state unchanged), `current-configuration-reached-firmware`
-   (after step 7's power-off: no profile, `boot_mode=of`, `operation_type=activate`,
-   `keylock=norm`). No configuration change precedes either activation, so #1345's
+   (no profile, `boot_mode=of`, `operation_type=activate`, `keylock=norm`). No
+   configuration change precedes either activation, so #1345's
    profile-discards-current-configuration finding does not affect them.
-6. **Delete refused while activated, console.** `hmc_delete_lpar` on running A must
-   fail with "must be 'not activated'" and leave A listed (feeds `lpar.delete`).
-   `hmc_capture_lpar_console` (30 s, idle 30 s) — observation `lpar.capture_console`:
-   `console-captured`, `console-released`.
+6. **Delete refused while activated.** `hmc_delete_lpar` on activated A must fail with
+   "must be 'not activated'" and leave A listed (feeds `lpar.delete`).
 7. **Power off (A)** — observation `lpar.power_off`: `delayed-shutdown-not-activated`
-   (`immediate=False`, `wait=True`), `immediate-shutdown-not-activated` (after step 5's
-   third activation).
+   (`immediate=False`, `wait=True`), `immediate-shutdown-not-activated`.
 8. **Composite (A)** — observation `lpar.power`, one `request_id` per call
    (`lparpwr-<hex>-<n>`), `wait_seconds=600`, then `hmc_operation_status` until
-   `terminal` (bounded 10 polls, 30 s): `start-completed-activated`,
-   `restart-immediate-completed-activated`, `stop-immediate-completed-not-activated`,
-   `repeat-stop-already-in-state` (a new request id: `already_in_state` true, `job_id`
-   null), `same-request-replays` (repeating the stop's arguments and request id returns
-   its `operation_id`). Graceful stop needs RMC: a gap.
+   `terminal` or `paused` (bounded 10 polls, 30 s; `paused` fails the assertion):
+   `start-completed-activated`, `restart-immediate-completed-activated`,
+   `stop-immediate-completed-not-activated`, `repeat-stop-already-in-state` (a new
+   request id: `already_in_state` true, `job_id` null), `same-request-replays`
+   (repeating the stop's arguments and request id returns its `operation_id`).
+   Teardown issues `continuation="abandon"` for each run request id not `terminal`.
    Partition A's call order: create cases, profile activation, running re-call, delete
-   refusal, console, delayed power-off, current-configuration activation, immediate
-   power-off, composite, delete. A failed step that leaves A's state unknown skips the
-   remaining A steps to teardown.
+   refusal, delayed power-off, current-configuration activation, immediate power-off,
+   composite, delete. A step that leaves A's state unknown sends the arm to teardown.
 9. **Delete (A)** — observation `lpar.delete`: `activated-delete-refused`,
    `partition-kept`, `delete-call-succeeded`, `lpar-name-absent` (listing read twice,
    #1345 `_gone` rule).
@@ -98,41 +103,51 @@ own records (#630).
     1 GiB free; `LIVE_TEST_PROVISION_VLAN_ID` has a virtual network. The arm creates the
     1 GiB volume (`hmc_create_virtual_disk`, a plain row: #1348 owns its record), then
     `hmc_provision_lpar` with P's name, the run token, `VirtualDisk`, the VLAN, small
-    resources and `power_on=True`. PCIe argument: included only when the dedicated
-    arm's four `LIVE_TEST_DEDICATED_PCIE_*` keys are set, its system is this system,
-    and a fresh read shows the DRC index unowned (`lshwres -r io --rsubtype slot`) and
-    named by no profile (`lssyscfg -r prof -F lpar_name,io_slots`); otherwise a SKIP row
-    naming the gap. Observation `provision.lpar`: `workflow-completed` (every step `ok`),
-    `ownership-stamped`, `network-adapter-on-vlan`, `storage-mapping-listed` (a VIOS
-    mapping backed by the volume names P's UUID), `partition-activated` (state polled to
-    an activated state), and `pcie-slot-owned` only when the argument was sent.
+    resources and `power_on=True`. PCIe argument: sent when `pcie._dedicated_config`
+    resolves and names this system, using its DRC index or else the first slot
+    `hmc_list_dedicated_pcie_slots` shows unowned (`pcie._slot_unowned`) that no profile
+    lists (`pcie._profile_lists_slot` over `profile_io_slot_rows_command`); otherwise a
+    SKIP row naming the gap. Observation `provision.lpar`: `workflow-completed` (every
+    step `ok`), `ownership-stamped`, `network-adapter-on-vlan`, `storage-mapping-listed`
+    (a VIOS mapping backed by the volume names P's UUID), `partition-activated` (state
+    polled to an activated state), and `pcie-slot-owned` only when the argument was sent.
+    A provision that returns no UUID, or raises, adopts P by name and run token
+    (`lpar_config._adopt_by_name` shape) for teardown.
 11. **Decommission (P)** — observation `lpar.decommission`: `dry-run-inventoried`
     (`dry_run=True`: `resource_deleted` false, every step `dry_run`, blast radius lists
     the network and vSCSI client adapters and the volume's mapping),
     `dry-run-changed-nothing` (state and adapter list unchanged). Then the arm detaches
-    the VIOS mapping (`hmc_detach_storage_mapping`, a plain row) so the real call never
-    orphans a VIOS mapping, and runs `immediate=True`: `resource-deleted`,
-    `workflow-completed`, `lpar-name-absent`. The volume is then deleted
+    the VIOS mapping (`hmc_detach_storage_mapping`, a plain row) because a mapping whose
+    client is deleted can no longer be detached through the tool. Only when the mapping
+    then reads absent does the real call run (`immediate=True`): `resource-deleted`,
+    `workflow-completed`, `lpar-name-absent`; otherwise teardown. The volume is deleted
     (`hmc_delete_virtual_disk`, plain row) once no mapping is backed by it.
-12. **Teardown.** Each run partition not confirmed deleted is powered off and deleted by
-    UUID only while its description carries the run token (#1345 `_delete` shape); a
-    mapping or volume still listed is detached or deleted when it is the run's.
-    Anything left records one `MANUAL RECOVERY REQUIRED` row naming the commands.
-    Observations are recorded after teardown at literal `record_verified` sites,
-    cleanup `passed` only when every run object is confirmed gone and the baseline
-    compare holds.
-13. **Gaps, recorded as SKIP rows and in the table below, never as calls:**
+12. **Teardown, in this order:** abandon open composite operations; detach any mapping
+    backed by the run volume while its client partition still exists; power off and
+    delete each run partition not confirmed deleted, by UUID only while its description
+    carries the run token (#1345 `_delete` shape, adopting by name when the UUID is
+    unknown); delete the run volume once no mapping is backed by it. Anything left
+    records one `MANUAL RECOVERY REQUIRED` row naming the commands (for a mapping:
+    `rmvdev -vtd <device>` on the VIOS before `rmlv`). Observations are recorded after
+    teardown at literal `record_verified` sites, cleanup `passed` only when every run
+    object is confirmed gone and the baseline compare holds.
+13. **Gaps, recorded as SKIP rows naming the prerequisite, never as calls:**
     `lpar.dump_restart`, SR-IOV and vNIC provision arguments, graceful composite stop,
     system power.
-14. **Recovery and preflight.** `live_test_recovery.py` witnesses subtask 41: a
-    `hmcpctl-live-pwr-*` partition or an `lppwr*` volume (or a mapping backed by one) is
-    stranded and prints the shutdown, `rmsyscfg` and volume-removal commands. Preflight
-    lists the arm's mutations.
-15. **Catalog.** Rebind the rows above; add maturity records for `lpar.power`,
+14. **One owning arm per observed operation.** This arm owns `lpar.create`,
+    `lpar.power_on`, `lpar.power_off` and `lpar.delete`; bare-cec's `record_verified`
+    sites for those four become plain `state.record` rows (their PCIe-fixture facts
+    stay with the `pcie.*` observations). `lpar.capture_console` stays bare-cec's
+    (`st35-bare-cec` observation, unchanged); this arm only rebinds its rows.
+15. **Recovery and preflight.** `live_test_recovery.py` witnesses subtask 41: a
+    `hmcpctl-live-pwr-*` partition, an `lppwr*` volume, a mapping backed by one, or a
+    VIOS server adapter whose remote partition is a run partition is stranded and prints
+    its commands. Preflight lists the arm's mutations.
+16. **Catalog.** Rebind the rows above; add maturity records for `lpar.power`,
     `lpar.decommission`, `provision.lpar`, `system.power_on`, `system.power_off`; copy
     each emitted observation unchanged (ADR 0126), replacing the bare-cec observation
-    where one exists (one observation per operation); regenerate the runtime projection
-    and `docs/tools/`; `CHANGELOG.md`; `docs/live-testing.md` arm section, arm table and
+    for the four operations of step 14; regenerate the runtime projection and
+    `docs/tools/`; `CHANGELOG.md`; `docs/live-testing.md` arm section, arm table and
     recovery table.
 
 Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one in
@@ -142,7 +157,7 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 
 | Case | Prerequisite | State |
 |---|---|---|
-| `lpar.dump_restart` | a partition with an OS that takes a dump, and operator approval of the platform dump | not run |
+| `lpar.dump_restart` | orchestrator approval to run bare-cec with `LIVE_TEST_ACCEPT_PLATFORM_DUMP=true`, whose dumprestart row would need to become a `record_verified` site; this arm builds no dump path | not run |
 | `provision.lpar` SR-IOV and vNIC arguments | operator approval to consume shared SR-IOV adapter capacity | not run |
 | `lpar.power` graceful stop / restart | an OS with an active RMC connection | not run |
 | `lpar.power_on` network boot | #638 | not implemented |
@@ -151,14 +166,19 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 ## Success
 
 - The operations in the table carry the rows shown and a maturity record each.
-- The eight operations the arm observes carry one live observation each, emitted by a
-  run at the branch's final `src/` closure and copied with its emitted result.
-- After the run: the partition-name set, available units and memory, VIOS mappings
-  and the volume group's volume names equal the pre-run reads; no prefixed partition
-  or volume exists (recovery exit 0 for subtask 41).
+- The seven operations the arm observes (`lpar.create`, `lpar.power_on`,
+  `lpar.power_off`, `lpar.delete`, `lpar.power`, `provision.lpar`, `lpar.decommission`)
+  carry one live observation each, emitted by a run at the branch's final `src/`
+  closure and copied with its emitted result; bare-cec emits none for the first four.
+- After the run every read of step 3 equals its pre-run read; no prefixed partition or
+  volume exists (recovery exit 0 for subtask 41).
 - Unit tests over the scripted client pin: each assertion's pass and fail reading;
-  every mutating call naming a run partition (UUID once known) or run volume; the
-  PCIe gate's three refusals; teardown's token check and recovery rows.
+  every mutating call naming a run partition (UUID once known), the run volume or its
+  mapping; the PCIe gate (no config or no eligible slot: gap row and no `assignments`;
+  an eligible slot: `dedicated` sent); the gap SKIP rows of step 13 with no dump or
+  system-power call; teardown order (detach before partition delete) on a provision
+  that fails after its storage step; adoption when provision returns no UUID; recovery
+  rows.
 - `just verify` and `uv run --no-sync prek run --all-files` pass.
 
 ## Failure model
@@ -180,8 +200,8 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
      one re-read, fails the compare; the run is re-run, never patched;
    - the volume-group read-modify-write (#936) and an unpaired server adapter after a
      failed map (#1237) are #1348's classes; this arm's compare reports them;
-   - a VIOS server adapter left by the detach shows as a mapping-compare FAIL and a
-     manual recovery row; the arm never removes VIOS adapters.
+   - a VIOS server adapter left by the detach shows in step 3's server-adapter compare
+     as a FAIL and a manual recovery row; the arm never removes VIOS adapters.
 4. **Covered elsewhere:** configuration and DLPAR (#1345); dedicated-slot operations
    (#630); storage operation records (#1348); network boot (#638); migration and remote
    restart (#631); authorization semantics (ADR 0092, 0189).
