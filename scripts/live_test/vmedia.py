@@ -1,21 +1,40 @@
-"""Virtual-media scenarios and their local HTTP fixture."""
+"""Virtual-media scenarios and their local HTTP fixture (ST16-22, #1347).
+
+ST16 finds the VIOS's one media repository, whoever created it, and creates one
+only when the VIOS has none. ST18 uploads the configured ISO when it exists, and
+ST19 round-trips a blank medium through create, mount, unmount and delete. Every
+observation of a media or mapping operation is recorded through `record_verified`.
+
+The arm removes only media this run created: each name carries a per-run tag and
+is stored in the run's artifacts before the call that creates it. It never
+removes an adapter: any adapter or mapping a round trip leaves different from its
+baseline is a manual-recovery row.
+"""
 
 from __future__ import annotations
 
 import functools
 import http.server
 import os
+import re
+import secrets
+import shlex
 import threading
-from pathlib import Path
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from fastmcp import Client
 
+from hmcpctl.client.client_storage import storage_mapping_id
 from hmcpctl.config import env_var_value
 from hmcpctl.documents import join_boot_device_paths
+from hmcpctl.ssh.commands import HMC_NO_RESULTS, build_filter
 
-from .observation import ExpectedOutcome
+from .observation import Assertion, CallFailure, ExpectedOutcome
 from .results import entries
 from .results import resource as get_resource
 from .storage import configured_vg_uuid, resolve_configured_volume_group
@@ -46,14 +65,185 @@ if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
 
 
+REPOSITORY_SCENARIO = "st16-repository-read"
+UPLOAD_SCENARIO = "st18-iso-upload"
+ROUND_TRIP_SCENARIO = "st19-optical-round-trip"
+MAPPINGS_SCENARIO = "st21-mapping-inventory"
+#: The HMC media-name pattern is ``[A-Za-z0-9_.]``, so the prefix has no hyphen.
+BLANK_PREFIX = "hmcpctl_live_"
+BLANK_SIZE_MIB = 1024
+_READ_FAILED = Assertion("read-failed", False)
+_NOT_ACTIVATED = "not activated"
+
 _NOT_OWNED = (
-    "no repository recorded as created by the live test in the configured group"
+    "the run did not create the repository; the repository lifecycle needs a VIOS "
+    "with no media repository (gap)"
+)
+_REPOSITORY_EXISTS = (
+    "a media repository already exists and a VIOS holds one; create and delete "
+    "need a VIOS with no media repository (gap)"
+)
+_NO_REPOSITORY = "no media repository resolved in ST16"
+_EARLIER_MEDIUM = (
+    "a medium from an earlier invocation is still recorded; run subtask 22 and the "
+    "recovery check first"
 )
 
 
 def _owns_repository(state: RunState) -> bool:
     """Whether this run created the media repository in the configured volume group."""
-    return state.artifacts.vmedia_repo_created and configured_vg_uuid(state) is not None
+    vg = configured_vg_uuid(state)
+    return (
+        state.artifacts.vmedia_repo_created
+        and vg is not None
+        and state.artifacts.vmedia_vg_uuid == vg
+    )
+
+
+def _run_tag() -> str:
+    return secrets.token_hex(4)
+
+
+def iso_media_name(config: LiveTestConfig) -> str:
+    """The configured ISO name with a per-run tag before its suffix."""
+    name = PurePosixPath(config.iso_media_name)
+    return f"{name.stem}_{_run_tag()}{name.suffix}"
+
+
+def _protected_reason(config: LiveTestConfig) -> str:
+    return (
+        f"the test partition {config.lp3_name!r} is protected by operator config "
+        "(LIVE_TEST_PROTECTED_LPAR_NAMES); the blank-medium round trip and the boot "
+        "need an unprotected test partition (gap)"
+    )
+
+
+def _no_iso_reason(config: LiveTestConfig) -> str:
+    return (
+        f"no ISO at LIVE_TEST_ISO_PATH ({config.iso_path}); the arm never fetches "
+        "media (gap)"
+    )
+
+
+def is_run_media_name(name: object, iso_media_name: str) -> bool:
+    """Whether *name* has the shape only this arm gives the media it creates.
+
+    A restored document can name a medium the arm did not create: the arm before
+    #1347 recorded the first listed medium as its ISO. Only a tagged name is
+    ever unmounted or deleted.
+    """
+    if not isinstance(name, str):
+        return False
+    iso = PurePosixPath(iso_media_name)
+    return bool(
+        re.fullmatch(rf"{re.escape(BLANK_PREFIX)}[0-9a-f]{{8}}", name)
+        or (
+            iso.stem
+            and re.fullmatch(
+                rf"{re.escape(iso.stem)}_[0-9a-f]{{8}}{re.escape(iso.suffix)}", name
+            )
+        )
+    )
+
+
+def run_media_names(state: RunState) -> set[str]:
+    """The media this run created and may remove."""
+    artifacts = state.artifacts
+    return {
+        name
+        for name in (artifacts.vmedia_blank_name, artifacts.vmedia_iso_name)
+        if is_run_media_name(name, state.config.iso_media_name)
+    }
+
+
+def repository_fields(data: object) -> tuple[str | None, Decimal | None]:
+    """The repository's name and size in GiB from a ``hmc_get_media_repository`` entry."""
+    group = get_resource(data) if isinstance(data, Mapping) else {}
+    repositories = group.get("MediaRepositories")
+    repository = (
+        repositories.get("VirtualMediaRepository")
+        if isinstance(repositories, Mapping)
+        else None
+    )
+    if not isinstance(repository, Mapping):
+        return None, None
+    name = repository.get("RepositoryName")
+    try:
+        size = Decimal(str(repository.get("RepositorySize")))
+    except InvalidOperation:
+        size = None
+    return (name if isinstance(name, str) and name else None), (
+        size if size is not None and size.is_finite() else None
+    )
+
+
+def media_sizes(data: object) -> dict[str, Any] | None:
+    """``hmc_list_optical_media`` as name to size in MiB; None when an entry has no name."""
+    if not isinstance(data, list):
+        return None
+    sizes: dict[str, Any] = {}
+    for entry in data:
+        name = entry.get("name") if isinstance(entry, Mapping) else None
+        if not isinstance(name, str) or not name:
+            return None
+        sizes[name] = entry.get("size_mib")
+    return sizes
+
+
+def _mapping_row(entry: object) -> tuple[object, ...] | None:
+    if not isinstance(entry, Mapping):
+        return None
+    return tuple(
+        entry.get(key) for key in ("id", "lpar_uuid", "backing_kind", "backing_name")
+    )
+
+
+def storage_rows(data: object) -> frozenset[tuple[object, ...]] | None:
+    """``hmc_list_storage_mappings`` as comparable rows; None when malformed."""
+    if not isinstance(data, list):
+        return None
+    rows = [_mapping_row(entry) for entry in data]
+    if None in rows:
+        return None
+    return frozenset(row for row in rows if row is not None)
+
+
+def _mapping_identity(mapping: object) -> tuple[str, str] | None:
+    """Read the LPAR and media name that address one optical mapping.
+
+    ``hmc_unmount_optical_media`` resolves a mapping from the pair, so an entry
+    missing either half cannot be unmounted and is skipped rather than guessed at.
+    """
+    if not isinstance(mapping, dict):
+        return None
+    storage = mapping.get("Storage")
+    optical = storage.get("VirtualOpticalMedia") if isinstance(storage, dict) else None
+    media_name = optical.get("MediaName") if isinstance(optical, dict) else None
+    partition = mapping.get("AssociatedLogicalPartition")
+    href = partition.get("href") if isinstance(partition, dict) else None
+    lpar = urlparse(href).path.rsplit("/", 1)[-1] if isinstance(href, str) else None
+    if not isinstance(media_name, str) or not media_name or not lpar:
+        return None
+    return lpar, media_name
+
+
+def scsi_adapter_listing(system_name: str, attribute: str, value: object) -> str:
+    """The vSCSI adapter rows of the partitions the one filter pair selects (#1237)."""
+    return (
+        f"lshwres -r virtualio --rsubtype scsi -m {shlex.quote(system_name)} "
+        f"--level lpar --filter {shlex.quote(build_filter([(attribute, value)]))} "
+        "-F slot_num,remote_lpar_name,remote_slot_num"
+    )
+
+
+def adapter_rows(listing: object) -> frozenset[str] | None:
+    """An adapter listing as a set of lines; None when it is not text."""
+    if not isinstance(listing, str):
+        return None
+    text = listing.strip()
+    if text == HMC_NO_RESULTS:
+        return frozenset()
+    return frozenset(line.strip() for line in text.splitlines() if line.strip())
 
 
 async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> bool:
@@ -100,22 +290,84 @@ async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> boo
     return True
 
 
-async def _select_vmedia_volume_group(
-    client: Client, state: RunState, repo_size_mib: int
-) -> bool:
-    """Select the configured volume group when it has space for the repository."""
-    dependents = ("hmc_create_media_repository", "hmc_get_media_repository")
-    st, data = await state.call(
-        client, "hmc_list_volume_groups", vios_name_or_uuid=state.artifacts.vios_uuid
+async def _repository_holders(
+    client: Client, state: RunState, groups: list[Mapping[str, object]]
+) -> list[tuple[str, object]] | None:
+    """Every listed volume group holding a repository; None when a read failed."""
+    holders: list[tuple[str, object]] = []
+    for group in groups:
+        uuid, name = group.get("uuid"), group.get("name")
+        if not isinstance(uuid, str) or not uuid:
+            continue
+        st, data = await state.call(
+            client,
+            "hmc_get_media_repository",
+            vios_name_or_uuid=state.artifacts.vios_uuid,
+            vg_uuid=uuid,
+        )
+        if st != "PASS":
+            state.record_verified(
+                16,
+                f"hmc_get_media_repository ({name})",
+                operation="media.get_repository",
+                scenario=REPOSITORY_SCENARIO,
+                assertions=[_READ_FAILED],
+                cleanup="not-required",
+                data=data,
+            )
+            return None
+        if data:
+            holders.append((uuid, data))
+        else:
+            state.record(16, f"hmc_get_media_repository ({name}, none)", st, data)
+    return holders
+
+
+def _drop_restored_ownership(
+    state: RunState, holders: list[tuple[str, object]]
+) -> None:
+    """Never claim an existing repository; say so when a document had claimed it."""
+    artifacts = state.artifacts
+    if artifacts.vmedia_repo_created:
+        groups = ", ".join(uuid for uuid, _ in holders)
+        state.record(
+            16,
+            "hmc_get_media_repository (restored ownership)",
+            "FAIL",
+            None,
+            "MANUAL RECOVERY REQUIRED: a restored document recorded the repository "
+            f"as this arm's; it is no longer treated as owned. If an earlier run "
+            f"created it, delete it by hand (hmcpctl storage delete-media-repo "
+            f"{shlex.quote(str(artifacts.vios_uuid))} <group: {groups}> --system "
+            f"{shlex.quote(state.config.system_name)})",
+        )
+    artifacts.vmedia_repo_created = False
+
+
+def _record_repository_read(state: RunState, data: object) -> None:
+    name, size = repository_fields(data)
+    state.record_verified(
+        16,
+        "hmc_get_media_repository",
+        operation="media.get_repository",
+        scenario=REPOSITORY_SCENARIO,
+        assertions=[
+            Assertion("repository-named", name is not None),
+            Assertion("repository-size-positive", size is not None and size > 0),
+        ],
+        cleanup="not-required",
+        data=data,
     )
-    state.record(16, "hmc_list_volume_groups", st, data)
-    if st != "PASS":
-        for name in dependents:
-            state.skip(16, name, "volume group listing failed")
-        return False
+
+
+async def _create_vmedia_repository(
+    client: Client, state: RunState, data: object, repo_size_mib: int
+) -> None:
+    """Create the repository in the configured group, which must have the space."""
+    dependents = ("hmc_create_media_repository", "hmc_get_media_repository")
     group = resolve_configured_volume_group(state, 16, data, dependents)
     if group is None:
-        return False
+        return
     free_mib = group.free_space_mib
     print(f"  VG UUID: {group.uuid}  free space: {free_mib} MiB")
     if free_mib is not None and free_mib < repo_size_mib:
@@ -125,70 +377,64 @@ async def _select_vmedia_volume_group(
                 name,
                 f"insufficient free space: {free_mib} MiB < {repo_size_mib} MiB",
             )
-        return False
-    return True
-
-
-async def _create_and_confirm_vmedia_repository(
-    client: Client, state: RunState, repo_size_mib: int
-) -> None:
-    """Create the ST16 repository and confirm that the HMC reports it."""
-    artifacts = state.artifacts
-
-    # Create is idempotent for an existing repository of equal size, so a PASS
-    # alone would claim a repository this run did not create (issue #967).
-    st, data = await state.call(
-        client,
-        "hmc_get_media_repository",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-    )
-    state.record(16, "hmc_get_media_repository (pre-existing)", st, data)
-    if st != "PASS" or data:
-        reason = (
-            "a repository already exists; this invocation did not create it"
-            if st == "PASS"
-            else "cannot confirm that no repository exists"
-        )
-        for name in ("hmc_create_media_repository", "hmc_get_media_repository"):
-            state.skip(16, name, reason)
         return
-
-    # Step 4 — Create repository
-    st, data = await state.call(
+    artifacts = state.artifacts
+    st, created = await state.call(
         client,
         "hmc_create_media_repository",
         vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
+        vg_uuid=group.uuid,
         size_mib=repo_size_mib,
     )
-    state.record(16, "hmc_create_media_repository", st, data)
-    if st != "PASS":
-        state.skip(16, "hmc_get_media_repository", "repository creation failed")
-        return
-    artifacts.vmedia_repo_created = True
-
-    # Step 5 — Confirm repository exists
-    st, data = await state.call(
+    state.record(16, "hmc_create_media_repository", st, created)
+    st, read = await state.call(
         client,
         "hmc_get_media_repository",
         vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
+        vg_uuid=group.uuid,
     )
-    state.record(16, "hmc_get_media_repository", st, data)
-    if st == "PASS" and data:
+    state.record(16, "hmc_get_media_repository (post-create)", st, read)
+    if st == "PASS" and read:
+        # Owned once it reads back, whatever the create call returned.
+        artifacts.vmedia_repo_created = True
+        artifacts.vmedia_vg_uuid = group.uuid
         print("  ✅ Repository created — vmedia_repo_created=True")
 
 
 async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> None:
-    print("\n=== ST16: VG Free-Space Check + Repository Create ===")
-    repo_size_mib = state.config.vmedia_repository_size_mib
-
+    print("\n=== ST16: Media Repository Discovery (create only when absent) ===")
     if not await _discover_vmedia_prerequisites(client, state):
         return
-    if not await _select_vmedia_volume_group(client, state, repo_size_mib):
+    # Re-derived every run: a restored document's group may no longer hold it.
+    state.artifacts.vmedia_vg_uuid = None
+    st, data = await state.call(
+        client, "hmc_list_volume_groups", vios_name_or_uuid=state.artifacts.vios_uuid
+    )
+    state.record(16, "hmc_list_volume_groups", st, data)
+    if st != "PASS":
+        for name in ("hmc_create_media_repository", "hmc_get_media_repository"):
+            state.skip(16, name, "volume group listing failed")
         return
-    await _create_and_confirm_vmedia_repository(client, state, repo_size_mib)
+    holders = await _repository_holders(client, state, entries(data))
+    if holders:
+        # A repository found before this invocation's own create is never the run's,
+        # whatever a restored document recorded.
+        _drop_restored_ownership(state, holders)
+    if holders is None:
+        state.artifacts.vmedia_repo_created = False
+        state.skip(16, "hmc_create_media_repository", "a repository read failed")
+    elif len(holders) > 1:
+        for name in ("hmc_create_media_repository", "hmc_get_media_repository"):
+            state.skip(16, name, f"{len(holders)} groups report a repository")
+    elif holders:
+        uuid, repository = holders[0]
+        _record_repository_read(state, repository)
+        state.artifacts.vmedia_vg_uuid = uuid
+        state.skip(16, "hmc_create_media_repository", _REPOSITORY_EXISTS)
+    else:
+        await _create_vmedia_repository(
+            client, state, data, state.config.vmedia_repository_size_mib
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +461,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
         return
 
     vios = artifacts.vios_uuid
-    vg = artifacts.vg_uuid
+    vg = configured_vg_uuid(state)
 
     # Step 2 — Delete the ST16 main repository
     st, data = await state.call(
@@ -285,6 +531,7 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
         artifacts.vmedia_repo_created = True
     else:
         artifacts.vmedia_repo_created = False
+        artifacts.vmedia_vg_uuid = None
         print("  ⚠  Failed to restore main repository — ST18–ST22 may be skipped")
 
 
@@ -355,334 +602,684 @@ def _allow_iso_host(config: LiveTestConfig) -> None:
     print(f"  ℹ  {name}={os.environ[name]}")
 
 
-def _prepare_iso_upload(state: RunState, skip_names: list[str]) -> bool:
-    """Validate ST18 prerequisites and start its invocation-owned HTTP server."""
+async def _list_media(
+    client: Client, state: RunState, subtask: int, label: str
+) -> dict[str, Any] | None:
+    """List the repository's media, recording the row; None when unreadable."""
+    st, data = await state.call(
+        client,
+        "hmc_list_optical_media",
+        vios_name_or_uuid=state.artifacts.vios_uuid,
+        vg_uuid=state.artifacts.vmedia_vg_uuid,
+    )
+    state.record(subtask, f"hmc_list_optical_media ({label})", st, data)
+    return media_sizes(data) if st == "PASS" else None
+
+
+def _start_iso_server(state: RunState, subtask: int) -> str | None:
+    """Serve the ISO for this invocation; the failure text when it cannot bind."""
     config = state.config
-    if not _owns_repository(state):
-        for name in skip_names:
-            state.skip(18, name, _NOT_OWNED)
-        return False
-
-    if not Path(config.iso_path).is_file():
-        state.record(
-            18,
-            "iso_file_check",
-            "FAIL",
-            f"ISO not found: {config.iso_path}",
-        )
-        for name in skip_names:
-            state.skip(18, name, f"ISO file missing: {config.iso_path}")
-        return False
-
-    state.record(18, "iso_file_check", "PASS", f"ISO found: {config.iso_path}")
-
     try:
         state.iso_http_server.start(config)
     except OSError as exc:
         state.record(
-            18,
+            subtask,
             "iso_http_server",
             "FAIL",
             str(exc),
             f"HTTP server could not bind to port {config.iso_http_port}",
         )
-        for name in skip_names:
-            state.skip(18, name, f"no HTTP server on port {config.iso_http_port}")
-        return False
-
-    state.record(18, "iso_http_server", "PASS", f"serving {config.iso_url}")
-    return True
+        return f"no HTTP server on port {config.iso_http_port}"
+    return None
 
 
-async def _upload_and_discover_iso(client: Client, state: RunState) -> None:
-    """Upload the ST18 ISO and capture the media name returned by the HMC."""
-    config = state.config
-    artifacts = state.artifacts
-    print(f"  ⏳ Uploading ISO via HTTP ({config.iso_url}) — may take several minutes…")
+async def _upload_iso(
+    client: Client, state: RunState, subtask: int, label: str, name: str
+) -> tuple[str, Any]:
+    """Upload the configured ISO as *name*, tracked as run-owned before the call."""
+    state.artifacts.vmedia_iso_name = name
+    print(f"  ⏳ Uploading ISO via HTTP ({state.config.iso_url}) — may take minutes…")
     st, data = await state.call(
         client,
         "hmc_upload_iso",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-        media_name=config.iso_media_name,
-        iso_source=config.iso_url,
+        vios_name_or_uuid=state.artifacts.vios_uuid,
+        vg_uuid=state.artifacts.vmedia_vg_uuid,
+        media_name=name,
+        iso_source=state.config.iso_url,
     )
-    state.record(18, "hmc_upload_iso (http)", st, data)
-
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_media",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-    )
-    state.record(18, "hmc_list_optical_media (post-upload)", st, data)
-    if st != "PASS":
-        return
-    for entry in entries(data) if isinstance(data, list) else []:
-        name = get_resource(entry).get("MediaName") or entry.get("MediaName")
-        if name:
-            artifacts.vmedia_iso_name = name
-            break
-    if not artifacts.vmedia_iso_name and isinstance(data, list) and data:
-        artifacts.vmedia_iso_name = data[0].get("MediaName") or config.iso_media_name
+    state.record(subtask, f"hmc_upload_iso ({label})", st, data)
+    return st, data
 
 
-async def _verify_iso_reupload_refused(client: Client, state: RunState) -> None:
-    """Re-upload under the same name and verify the repository refuses it.
-
-    ``upload_iso`` has never returned a ``status: "existing"`` dedup hit; its only
-    duplicate handling is the name-collision guard
-    (``_refuse_existing_media``, src/hmcpctl/operations/storage/resources.py),
-    which raises before any download. A same-name re-upload therefore needs no
-    second multi-GiB transfer either way, so checking the guard tests real
-    behaviour cheaply (#1053). A successful upload here means the guard did not
-    fire, which is the failure.
-    """
-    config = state.config
-    artifacts = state.artifacts
-    print(
-        f"  ⏳ Re-uploading {config.iso_media_name} — expect the name collision to be refused…"
-    )
-    st, data = await state.call(
-        client,
-        "hmc_upload_iso",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-        media_name=config.iso_media_name,
-        iso_source=config.iso_url,
-        expected=[_MEDIA_NAME_COLLISION],
-    )
-    if st == "PASS":
-        state.record(
-            18,
-            "hmc_upload_iso (same-name reupload)",
-            "FAIL",
-            data,
-            "collision guard did not fire — upload succeeded for a name already in the repository",
-        )
-    else:
-        state.record_with_expected(
-            18, "hmc_upload_iso (same-name reupload)", st, data, [_MEDIA_NAME_COLLISION]
-        )
-
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_media",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-    )
-    state.record(18, "hmc_list_optical_media (post-reupload)", st, data)
-
-
-async def _reset_iso_for_mount_scenario(client: Client, state: RunState) -> None:
-    """Delete the ST18 media, confirm absence, then re-upload it for ST19."""
-    config = state.config
-    artifacts = state.artifacts
+async def _delete_run_media(
+    client: Client, state: RunState, subtask: int, name: str
+) -> bool:
+    """Delete one run-owned medium; True when a listing then shows it absent."""
     st, data = await state.call(
         client,
         "hmc_delete_optical_media",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-        media_name=config.iso_media_name,
+        vios_name_or_uuid=state.artifacts.vios_uuid,
+        vg_uuid=state.artifacts.vmedia_vg_uuid,
+        media_name=name,
     )
-    state.record(18, "hmc_delete_optical_media", st, data)
-    if st == "PASS":
-        artifacts.vmedia_iso_name = None
+    state.record(subtask, f"hmc_delete_optical_media ({name})", st, data)
+    listed = await _list_media(client, state, subtask, f"after deleting {name}")
+    absent = listed is not None and name not in listed
+    if absent:
+        artifacts = state.artifacts
+        if artifacts.vmedia_blank_name == name:
+            artifacts.vmedia_blank_name = None
+        if artifacts.vmedia_iso_name == name:
+            artifacts.vmedia_iso_name = None
+    return absent
 
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_media",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-    )
-    state.record(18, "hmc_list_optical_media (confirm empty)", st, data)
 
-    print("  ⏳ Re-uploading ISO for ST19 (may take several minutes)…")
-    st, data = await state.call(
-        client,
-        "hmc_upload_iso",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-        media_name=config.iso_media_name,
-        iso_source=config.iso_url,
+def _refused_as_collision(st: str, data: object) -> bool:
+    return (
+        st == "FAIL"
+        and isinstance(data, CallFailure)
+        and _MEDIA_NAME_COLLISION.matches(data)
     )
-    state.record(18, "hmc_upload_iso (re-upload for ST19)", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        artifacts.vmedia_iso_name = data.get("media_name") or config.iso_media_name
-    print(f"  vmedia_iso_name: {artifacts.vmedia_iso_name}")
 
 
 async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     print("\n=== ST18: ISO Upload via HTTP ===")
-    skip_names = [
-        "hmc_upload_iso (http)",
-        "hmc_list_optical_media (post-upload)",
-        "hmc_upload_iso (same-name reupload)",
-        "hmc_list_optical_media (post-reupload)",
-        "hmc_delete_optical_media",
-        "hmc_list_optical_media (confirm empty)",
-        "hmc_upload_iso (re-upload for ST19)",
-    ]
-    if not _prepare_iso_upload(state, skip_names):
+    config = state.config
+    label = "hmc_upload_iso (round trip)"
+    if not state.artifacts.vios_uuid or not state.artifacts.vmedia_vg_uuid:
+        state.skip(18, label, _NO_REPOSITORY)
+        return
+    if not Path(config.iso_path).is_file():
+        state.skip(18, label, _no_iso_reason(config))
+        return
+    if state.artifacts.vmedia_iso_name in run_media_names(state):
+        state.skip(18, label, _EARLIER_MEDIUM)
+        return
+    before = await _list_media(client, state, 18, "pre-upload")
+    if before is None:
+        state.record_verified(
+            18,
+            "hmc_list_optical_media",
+            operation="media.list",
+            scenario=UPLOAD_SCENARIO,
+            assertions=[_READ_FAILED],
+            cleanup="not-required",
+            data=None,
+        )
+        return
+    name = iso_media_name(config)
+    if name in before:
+        state.skip(18, label, f"{name} is already in the repository; never touched")
+        return
+    problem = _start_iso_server(state, 18)
+    if problem:
+        state.skip(18, label, problem)
         return
 
-    await _upload_and_discover_iso(client, state)
-
-    await _verify_iso_reupload_refused(client, state)
-    await _reset_iso_for_mount_scenario(client, state)
-
-
-# ---------------------------------------------------------------------------
-# ST19 — Mount / Unmount + Safe-Delete Validation
-# ---------------------------------------------------------------------------
-
-
-async def _mount_vmedia_and_confirm(client: Client, state: RunState) -> None:
-    """Mount the ST19 ISO and verify that its mapping is visible."""
-    config = state.config
-    artifacts = state.artifacts
-    vios = artifacts.vios_uuid
-    st, data = await state.call(
-        client,
-        "hmc_mount_optical_media",
-        vios_name_or_uuid=vios,
-        media_name=artifacts.vmedia_iso_name,
-        lpar_name_or_uuid=config.lp3_name,
-    )
-    state.record(19, "hmc_mount_optical_media", st, data)
-    if st == "PASS" and isinstance(data, dict):
-        artifacts.vmedia_mapping_uuid = (
-            data.get("ElementID")
-            or data.get("UUID")
-            or data.get("uuid")
-            or data.get("mapping_uuid")
-        )
-        # Dig into Resource wrapper if present
-        if not artifacts.vmedia_mapping_uuid:
-            resource = data.get("Resource") or {}
-            artifacts.vmedia_mapping_uuid = resource.get("ElementID") or resource.get(
-                "UUID"
-            )
-    print(f"  mapping_uuid: {artifacts.vmedia_mapping_uuid}")
-
-    # Step 3 — Confirm mapping visible in list
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_mappings",
-        vios_name_or_uuid=vios,
-        lpar_name_or_uuid=config.lp3_name,
-    )
-    state.record(19, "hmc_list_optical_mappings (confirm mounted)", st, data)
-
-
-async def _verify_mounted_media_delete_is_blocked(
-    client: Client, state: RunState
-) -> None:
-    """Exercise and record the safe-delete guard while the ISO is mounted."""
-    artifacts = state.artifacts
-    st_del, data_del = await state.call(
-        client,
-        "hmc_delete_optical_media",
-        vios_name_or_uuid=artifacts.vios_uuid,
-        vg_uuid=artifacts.vg_uuid,
-        media_name=artifacts.vmedia_iso_name,
-    )
-    rejection_text = str(data_del).lower()
-    if st_del == "FAIL" and any(
-        s in rejection_text for s in ["mapped", "in use", "mapping", "mount"]
-    ):
-        state.record(
-            19,
-            "hmc_delete_optical_media (blocked — expected)",
-            "PASS",
-            data_del,
-            "safe-delete guard fired correctly",
-        )
-    else:
-        state.record(
-            19,
-            "hmc_delete_optical_media (blocked — expected)",
-            st_del,
-            data_del,
-            f"expected rejection, got st={st_del}",
-        )
-
-
-async def _unmount_and_delete_vmedia(client: Client, state: RunState) -> None:
-    """Unmount the ST19 ISO, delete it, and confirm the repository is empty."""
-    config = state.config
-    artifacts = state.artifacts
-    vios = artifacts.vios_uuid
-    vg = artifacts.vg_uuid
-    # The tool resolves the mapping from the LPAR and media name, so the captured
-    # mapping UUID is only the marker that a mount happened.
-    if artifacts.vmedia_mapping_uuid and artifacts.vmedia_iso_name:
+    uploaded, _ = await _upload_iso(client, state, 18, "http", name)
+    after = await _list_media(client, state, 18, "post-upload")
+    listed = after is not None and name in after
+    refused = False
+    if listed:
         st, data = await state.call(
             client,
-            "hmc_unmount_optical_media",
-            vios_name_or_uuid=vios,
-            lpar_name_or_uuid=config.lp3_name,
-            media_name=artifacts.vmedia_iso_name,
+            "hmc_upload_iso",
+            vios_name_or_uuid=state.artifacts.vios_uuid,
+            vg_uuid=state.artifacts.vmedia_vg_uuid,
+            media_name=name,
+            iso_source=config.iso_url,
         )
-        state.record(19, "hmc_unmount_optical_media", st, data)
-        if st == "PASS":
-            artifacts.vmedia_mapping_uuid = None
-    else:
-        state.skip(19, "hmc_unmount_optical_media", "no mounted media captured")
-
-    # Step 6 — Confirm mapping gone
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_mappings",
-        vios_name_or_uuid=vios,
-        lpar_name_or_uuid=config.lp3_name,
+        state.record(18, "hmc_upload_iso (same-name reupload)", st, data)
+        refused = _refused_as_collision(st, data)
+    # Whatever the upload returned, a listed run-owned ISO is removed here.
+    removed = await _delete_run_media(client, state, 18, name) if listed else True
+    if not listed and after is not None:
+        _forget_run_media(state, name)
+    if after is None or not removed:
+        removed = False
+        state.record(
+            18,
+            "hmc_upload_iso (round trip)",
+            "FAIL",
+            None,
+            f"MANUAL RECOVERY REQUIRED: {name} may be in the repository "
+            f"(hmcpctl storage delete-media {shlex.quote(str(state.artifacts.vios_uuid))} "
+            f"{shlex.quote(str(state.artifacts.vmedia_vg_uuid))} {shlex.quote(name)} "
+            f"--system {shlex.quote(config.system_name)})",
+        )
+    state.record_verified(
+        18,
+        label,
+        operation="media.upload_iso",
+        scenario=UPLOAD_SCENARIO,
+        assertions=[
+            Assertion("upload-accepted", uploaded == "PASS"),
+            Assertion("media-listed", listed),
+            Assertion("reupload-refused", refused),
+        ],
+        cleanup="passed" if removed else "failed",
+        data={"media_name": name},
     )
-    state.record(19, "hmc_list_optical_mappings (confirm unmounted)", st, data)
 
-    # Step 7 — Delete media (now unmounted, safe-delete allows it)
-    st, data = await state.call(
-        client,
-        "hmc_delete_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
-        media_name=artifacts.vmedia_iso_name,
-    )
-    state.record(19, "hmc_delete_optical_media (post-unmount)", st, data)
-    if st == "PASS":
-        artifacts.vmedia_iso_name = None
 
-    # Step 8 — Confirm empty
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
-    )
-    state.record(19, "hmc_list_optical_media (confirm empty)", st, data)
+# ---------------------------------------------------------------------------
+# ST19 — Blank Medium: Create, Mount, Unmount, Delete
+# ---------------------------------------------------------------------------
+
+
+class _Stop(Exception):
+    """A round-trip step left state the scenario must not build on."""
+
+
+@dataclass(frozen=True)
+class _Baseline:
+    media: dict[str, Any]
+    repository_size: Decimal | None
+    mappings: frozenset[tuple[object, ...]]
+    adapters: tuple[frozenset[str], frozenset[str]]
+
+
+def _create_assertions(
+    accepted: bool, listed: bool, size_ok: bool, kept: bool
+) -> list[Assertion]:
+    return [
+        Assertion("create-accepted", accepted),
+        Assertion("media-listed", listed),
+        Assertion("size-matches", size_ok),
+        Assertion("baseline-media-kept", kept),
+    ]
+
+
+def _mount_assertions(accepted: bool, listed: bool, kept: bool) -> list[Assertion]:
+    return [
+        Assertion("mount-accepted", accepted),
+        Assertion("mapping-listed", listed),
+        Assertion("baseline-mappings-kept", kept),
+    ]
+
+
+class _RoundTrip:
+    """ST19's blank-medium round trip against the VIOS's one repository."""
+
+    def __init__(self, client: Client, state: RunState) -> None:
+        self.client = client
+        self.state = state
+        self.config = state.config
+        self.artifacts = state.artifacts
+        self.vios = str(state.artifacts.vios_uuid)
+        self.vg = str(state.artifacts.vmedia_vg_uuid)
+        self.name = f"{BLANK_PREFIX}{_run_tag()}"
+
+    def note(self, tool: str, label: str, result: tuple[str, Any]) -> tuple[str, Any]:
+        """Record one call's row and hand its result back."""
+        self.state.record(19, f"{tool} ({label})", *result)
+        return result
+
+    def skip(self, reason: str) -> None:
+        self.state.skip(19, "vmedia round trip", reason)
+
+    def manual(self, what: str, command: str, data: object = None) -> None:
+        self.state.record(
+            19,
+            "vmedia round trip",
+            "FAIL",
+            data,
+            f"MANUAL RECOVERY REQUIRED: {what} ({command})",
+        )
+
+    async def preconditions(self) -> bool:
+        config = self.config
+        if config.lp3_name in config.protected_lpar_names:
+            # A SKIP, not a raise: the reads and teardown after ST19 still run.
+            self.skip(_protected_reason(config))
+            return False
+        if type(self.artifacts.vios_partition_id) is not int:
+            self.skip("no VIOS partition id resolved in ST16")
+            return False
+        st, lpar_state = self.note(
+            "hmc_get_lpar_state",
+            "precondition",
+            await self.state.call(
+                self.client,
+                "hmc_get_lpar_state",
+                system_name_or_uuid=config.system_name,
+                lpar_name_or_uuid=config.lp3_name,
+            ),
+        )
+        if st != "PASS" or not isinstance(lpar_state, str):
+            self.skip("cannot read the test partition's state")
+            return False
+        if lpar_state.strip().lower() != _NOT_ACTIVATED:
+            self.skip(
+                f"the test partition is {lpar_state!r}; a mount on a running "
+                "partition is a dynamic reconfiguration this arm does not exercise"
+            )
+            return False
+        return True
+
+    async def adapters(
+        self, label: str
+    ) -> tuple[frozenset[str], frozenset[str]] | None:
+        system = self.config.system_name
+        rows = []
+        for attribute, value in (
+            ("lpar_ids", self.artifacts.vios_partition_id),
+            ("lpar_names", self.config.lp3_name),
+        ):
+            st, listing = self.note(
+                "hmc_run_command",
+                f"{label} adapters {attribute}",
+                await self.state.call(
+                    self.client,
+                    "hmc_run_command",
+                    cmd=scsi_adapter_listing(system, attribute, value),
+                ),
+            )
+            parsed = adapter_rows(listing) if st == "PASS" else None
+            if parsed is None:
+                return None
+            rows.append(parsed)
+        return rows[0], rows[1]
+
+    async def mappings(self, label: str) -> frozenset[tuple[object, ...]] | None:
+        st, data = self.note(
+            "hmc_list_storage_mappings",
+            label,
+            await self.state.call(
+                self.client, "hmc_list_storage_mappings", vios_name_or_uuid=self.vios
+            ),
+        )
+        return storage_rows(data) if st == "PASS" else None
+
+    async def repository_size(self, label: str) -> tuple[str, Any, Decimal | None]:
+        st, data = self.note(
+            "hmc_get_media_repository",
+            label,
+            await self.state.call(
+                self.client,
+                "hmc_get_media_repository",
+                vios_name_or_uuid=self.vios,
+                vg_uuid=self.vg,
+            ),
+        )
+        return st, data, repository_fields(data)[1] if st == "PASS" else None
+
+    async def media(self, label: str) -> tuple[str, Any, dict[str, Any] | None]:
+        st, data = self.note(
+            "hmc_list_optical_media",
+            label,
+            await self.state.call(
+                self.client,
+                "hmc_list_optical_media",
+                vios_name_or_uuid=self.vios,
+                vg_uuid=self.vg,
+            ),
+        )
+        return st, data, media_sizes(data) if st == "PASS" else None
+
+    async def baseline(self) -> _Baseline | None:
+        st, data, size = await self.repository_size("baseline")
+        if st != "PASS" or size is None:
+            self.state.record_verified(
+                19,
+                "hmc_get_media_repository",
+                operation="media.get_repository",
+                scenario=ROUND_TRIP_SCENARIO,
+                assertions=[_READ_FAILED],
+                cleanup="not-required",
+                data=data,
+            )
+            return None
+        st, data, media = await self.media("baseline")
+        if st != "PASS" or not isinstance(data, list):
+            self.state.record_verified(
+                19,
+                "hmc_list_optical_media",
+                operation="media.list",
+                scenario=ROUND_TRIP_SCENARIO,
+                assertions=[_READ_FAILED],
+                cleanup="not-required",
+                data=data,
+            )
+            return None
+        if not data:
+            # An empty listing proves no entry shape.
+            self.state.record(19, "hmc_list_optical_media (empty)", st, data)
+        else:
+            self.state.record_verified(
+                19,
+                "hmc_list_optical_media",
+                operation="media.list",
+                scenario=ROUND_TRIP_SCENARIO,
+                assertions=[Assertion("media-entries-named", media is not None)],
+                cleanup="not-required",
+                data=data,
+            )
+        if media is None:
+            self.skip("a listed medium has no name, so no baseline can be compared")
+            return None
+        mappings = await self.mappings("baseline")
+        if mappings is None:
+            self.state.record_verified(
+                19,
+                "hmc_list_storage_mappings",
+                operation="storage.list_mappings",
+                scenario=ROUND_TRIP_SCENARIO,
+                assertions=[_READ_FAILED],
+                cleanup="not-required",
+                data=None,
+            )
+            return None
+        adapters = await self.adapters("baseline")
+        if adapters is None:
+            self.skip("cannot read the vSCSI adapter listings")
+            return None
+        return _Baseline(media, size, mappings, adapters)
+
+    def has_room(self, baseline: _Baseline) -> bool:
+        sizes = list(baseline.media.values())
+        if baseline.repository_size is None or any(
+            not isinstance(size, int | float) for size in sizes
+        ):
+            self.skip(
+                "a media size is unknown, so the repository's free space is (gap)"
+            )
+            return False
+        free = baseline.repository_size * 1024 - sum(Decimal(str(s)) for s in sizes)
+        if free < BLANK_SIZE_MIB:
+            self.skip(f"{free} MiB free in the repository < {BLANK_SIZE_MIB} MiB (gap)")
+            return False
+        return True
+
+    def adapter_drift(
+        self,
+        baseline: _Baseline,
+        now: tuple[frozenset[str], frozenset[str]] | None,
+        when: str,
+    ) -> bool:
+        """Report adapters that differ from the baseline; True when they match."""
+        if now == baseline.adapters:
+            return True
+        system = shlex.quote(self.config.system_name)
+        added = (
+            sorted(now[0] - baseline.adapters[0])
+            + sorted(now[1] - baseline.adapters[1])
+            if now is not None
+            else ["(adapter listing unreadable)"]
+        )
+        self.manual(
+            f"vSCSI adapters differ from the baseline {when}: {', '.join(added)}",
+            f"lshwres -r virtualio --rsubtype scsi -m {system} --level lpar; remove "
+            f"each adapter the run added with chhwres -r virtualio --rsubtype scsi -m "
+            f"{system} -o r --id <partition id> -s <slot>",
+        )
+        return False
+
+    async def mapped(self) -> bool | None:
+        config = self.config
+        st, data = self.note(
+            "hmc_list_optical_mappings",
+            "test partition",
+            await self.state.call(
+                self.client,
+                "hmc_list_optical_mappings",
+                vios_name_or_uuid=self.vios,
+                lpar_name_or_uuid=config.lp3_name,
+            ),
+        )
+        if st != "PASS" or not isinstance(data, list):
+            return None
+        return any(
+            (identity := _mapping_identity(entry)) is not None
+            and identity[1] == self.name
+            for entry in data
+        )
+
+    async def run(self) -> None:
+        if not await self.preconditions():
+            return
+        baseline = await self.baseline()
+        if baseline is None or not self.has_room(baseline):
+            return
+        created = await self.create(baseline)
+        if created is None:
+            return
+        try:
+            mounted, refused = await self.mount_and_unmount(baseline)
+        except _Stop:
+            self.record_create(created, restored=False)
+            raise
+        await self.delete(baseline, created, mounted, refused)
+
+    def record_create(self, created: tuple[bool, ...], *, restored: bool) -> None:
+        self.state.record_verified(
+            19,
+            "hmc_create_optical_media",
+            operation="media.create",
+            scenario=ROUND_TRIP_SCENARIO,
+            assertions=_create_assertions(*created),
+            cleanup="passed" if restored else "failed",
+            data={"media_name": self.name},
+        )
+
+    async def create(self, baseline: _Baseline) -> tuple[bool, ...] | None:
+        self.artifacts.vmedia_blank_name = self.name
+        st_c, _ = self.note(
+            "hmc_create_optical_media",
+            "blank",
+            await self.state.call(
+                self.client,
+                "hmc_create_optical_media",
+                vios_name_or_uuid=self.vios,
+                vg_uuid=self.vg,
+                media_name=self.name,
+                size_mib=BLANK_SIZE_MIB,
+            ),
+        )
+        _, _, after = await self.media("post-create")
+        listed = after is not None and self.name in after
+        created = (
+            st_c == "PASS",
+            listed,
+            after is not None and after.get(self.name) == BLANK_SIZE_MIB,
+            after is not None
+            and all(after.get(n) == s for n, s in baseline.media.items()),
+        )
+        if not listed:
+            # Nothing listed to remove: restored exactly when the listing is readable.
+            self.record_create(created, restored=after is not None)
+            if after is None:
+                self.manual(
+                    f"cannot confirm whether {self.name} was created",
+                    f"hmcpctl storage list-optical-media {shlex.quote(self.vios)} "
+                    f"{shlex.quote(self.vg)}",
+                )
+            else:
+                self.artifacts.vmedia_blank_name = None
+            return None
+        return created
+
+    async def mount_and_unmount(self, baseline: _Baseline) -> tuple[bool, bool]:
+        """Mount, try the guarded delete, unmount; returns (mounted, delete refused)."""
+        config = self.config
+        st_m, data_m = self.note(
+            "hmc_mount_optical_media",
+            "blank",
+            await self.state.call(
+                self.client,
+                "hmc_mount_optical_media",
+                vios_name_or_uuid=self.vios,
+                media_name=self.name,
+                lpar_name_or_uuid=config.lp3_name,
+            ),
+        )
+        mapped = await self.mapped()
+        after_mount = await self.mappings("post-mount")
+        mounted = (
+            st_m == "PASS",
+            mapped is True,
+            after_mount is not None and baseline.mappings <= after_mount,
+        )
+        if mapped is not True:
+            restored = self.adapter_drift(
+                baseline, await self.adapters("post-mount"), "after a failed mount"
+            )
+            self.record_mount(mounted, restored, data_m)
+            if mapped is None:
+                self.manual(
+                    f"cannot confirm whether {self.name} is mounted",
+                    self.unmount_command(),
+                )
+                raise _Stop("mount state unknown")
+            return False, False
+
+        st_d, _ = self.note(
+            "hmc_delete_optical_media",
+            "while mounted",
+            await self.state.call(
+                self.client,
+                "hmc_delete_optical_media",
+                vios_name_or_uuid=self.vios,
+                vg_uuid=self.vg,
+                media_name=self.name,
+            ),
+        )
+        _, _, still = await self.media("after the guarded delete")
+        refused = st_d == "FAIL" and still is not None and self.name in still
+
+        st_u, data_u = self.note(
+            "hmc_unmount_optical_media",
+            "blank",
+            await self.state.call(
+                self.client,
+                "hmc_unmount_optical_media",
+                vios_name_or_uuid=self.vios,
+                lpar_name_or_uuid=config.lp3_name,
+                media_name=self.name,
+            ),
+        )
+        still_mapped = await self.mapped()
+        after_unmount = await self.mappings("post-unmount")
+        adapters_ok = self.adapter_drift(
+            baseline, await self.adapters("post-unmount"), "after the unmount"
+        )
+        mappings_ok = after_unmount == baseline.mappings
+        if not mappings_ok:
+            changed = (
+                sorted(map(str, after_unmount ^ baseline.mappings))
+                if after_unmount is not None
+                else ["(mapping listing unreadable)"]
+            )
+            self.manual(
+                f"VIOS storage mappings differ from the baseline after the unmount: "
+                f"{', '.join(changed)}",
+                f"hmcpctl storage list-mappings {shlex.quote(self.vios)} --system "
+                f"{shlex.quote(self.config.system_name)}",
+            )
+        self.state.record_verified(
+            19,
+            "hmc_unmount_optical_media",
+            operation="media.unmount",
+            scenario=ROUND_TRIP_SCENARIO,
+            assertions=[
+                Assertion("unmount-accepted", st_u == "PASS"),
+                Assertion("mapping-absent", still_mapped is False),
+                Assertion("mappings-equal-baseline", mappings_ok),
+                Assertion("adapters-equal-baseline", adapters_ok),
+            ],
+            cleanup="not-required",
+            data=data_u,
+        )
+        self.record_mount(
+            mounted,
+            still_mapped is False and mappings_ok and adapters_ok,
+            data_m,
+        )
+        if still_mapped is not False:
+            self.manual(f"{self.name} may still be mounted", self.unmount_command())
+            raise _Stop("unmount not confirmed")
+        return True, refused
+
+    def unmount_command(self) -> str:
+        return (
+            f"hmcpctl storage unmount-optical-media {shlex.quote(self.vios)} "
+            f"{shlex.quote(self.config.lp3_name)} {self.name} --system "
+            f"{shlex.quote(self.config.system_name)}"
+        )
+
+    def record_mount(
+        self, mounted: tuple[bool, bool, bool], restored: bool, data: object
+    ) -> None:
+        self.state.record_verified(
+            19,
+            "hmc_mount_optical_media",
+            operation="media.mount",
+            scenario=ROUND_TRIP_SCENARIO,
+            assertions=_mount_assertions(*mounted),
+            cleanup="passed" if restored else "failed",
+            data=data,
+        )
+
+    async def delete(
+        self,
+        baseline: _Baseline,
+        created: tuple[bool, ...],
+        mounted: bool,
+        refused: bool,
+    ) -> None:
+        st_d, data_d = self.note(
+            "hmc_delete_optical_media",
+            "blank",
+            await self.state.call(
+                self.client,
+                "hmc_delete_optical_media",
+                vios_name_or_uuid=self.vios,
+                vg_uuid=self.vg,
+                media_name=self.name,
+            ),
+        )
+        _, _, after = await self.media("post-delete")
+        _, _, size = await self.repository_size("post-delete")
+        absent = after is not None and self.name not in after
+        equal = after == baseline.media and size == baseline.repository_size
+        if absent:
+            self.artifacts.vmedia_blank_name = None
+        self.state.record_verified(
+            19,
+            "hmc_delete_optical_media",
+            operation="media.delete",
+            scenario=ROUND_TRIP_SCENARIO,
+            assertions=[
+                # Only a mounted medium can show the guard refusing.
+                *([Assertion("refused-while-mounted", refused)] if mounted else []),
+                Assertion("delete-accepted", st_d == "PASS"),
+                Assertion("media-absent", absent),
+                Assertion("media-equal-baseline", equal),
+            ],
+            cleanup="not-required",
+            data=data_d,
+        )
+        self.record_create(created, restored=equal)
+        if not absent:
+            self.manual(
+                f"{self.name} is still in the repository",
+                f"hmcpctl storage delete-media {shlex.quote(self.vios)} "
+                f"{shlex.quote(self.vg)} {self.name}",
+            )
 
 
 async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
-    artifacts = state.artifacts
-    print("\n=== ST19: Mount / Unmount + Safe-Delete Validation ===")
-    skip_names = [
-        "hmc_mount_optical_media",
-        "hmc_list_optical_mappings (confirm mounted)",
-        "hmc_delete_optical_media (blocked — expected)",
-        "hmc_unmount_optical_media",
-        "hmc_list_optical_mappings (confirm unmounted)",
-        "hmc_delete_optical_media (post-unmount)",
-        "hmc_list_optical_media (confirm empty)",
-    ]
-    if not artifacts.vmedia_iso_name or not _owns_repository(state):
-        for name in skip_names:
-            state.skip(
-                19, name, f"vmedia_iso_name not set (ST18 failed) or {_NOT_OWNED}"
-            )
+    print("\n=== ST19: Blank Medium — Create, Mount, Unmount, Delete ===")
+    if not state.artifacts.vios_uuid or not state.artifacts.vmedia_vg_uuid:
+        state.skip(19, "vmedia round trip", _NO_REPOSITORY)
         return
-
-    await _mount_vmedia_and_confirm(client, state)
-    await _verify_mounted_media_delete_is_blocked(client, state)
-    await _unmount_and_delete_vmedia(client, state)
+    if state.artifacts.vmedia_blank_name in run_media_names(state):
+        state.skip(19, "vmedia round trip", _EARLIER_MEDIUM)
+        return
+    try:
+        await _RoundTrip(client, state).run()
+    except _Stop as stop:
+        print(f"  ⚠  ST19 stopped: {stop}")
 
 
 # ---------------------------------------------------------------------------
@@ -694,37 +1291,28 @@ async def _prepare_boot_media(
     client: Client,
     state: RunState,
     vios_uuid: str,
-    vg_uuid: str,
     remaining_steps: list[str],
 ) -> bool:
     """Upload and mount the boot ISO after placing the test LPAR offline."""
     config = state.config
     artifacts = state.artifacts
-    print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
-    try:
-        state.iso_http_server.start(config)
-    except OSError as exc:
+    problem = _start_iso_server(state, 20)
+    if problem:
         for name in remaining_steps:
-            state.skip(
-                20, name, f"no HTTP server on port {config.iso_http_port}: {exc}"
-            )
+            state.skip(20, name, problem)
+        return False
+    before = await _list_media(client, state, 20, "pre-upload")
+    name = iso_media_name(config)
+    if before is None or name in before:
+        for step in remaining_steps:
+            state.skip(20, step, "cannot confirm the ISO name is free")
         return False
 
-    status, data = await state.call(
-        client,
-        "hmc_upload_iso",
-        vios_name_or_uuid=vios_uuid,
-        vg_uuid=vg_uuid,
-        media_name=config.iso_media_name,
-        iso_source=config.iso_url,
-    )
-    state.record(20, "hmc_upload_iso (re-upload for boot test)", status, data)
+    status, _ = await _upload_iso(client, state, 20, "re-upload for boot test", name)
     if status != "PASS":
-        for name in remaining_steps[1:]:
-            state.skip(20, name, "ISO re-upload failed")
+        for step in remaining_steps[1:]:
+            state.skip(20, step, "ISO re-upload failed")
         return False
-    if isinstance(data, dict):
-        artifacts.vmedia_iso_name = data.get("media_name") or config.iso_media_name
 
     status, data = await state.call(
         client,
@@ -742,13 +1330,13 @@ async def _prepare_boot_media(
         client,
         "hmc_mount_optical_media",
         vios_name_or_uuid=vios_uuid,
-        media_name=artifacts.vmedia_iso_name,
+        media_name=name,
         lpar_name_or_uuid=config.lp3_name,
     )
     state.record(20, "hmc_mount_optical_media (boot test)", status, data)
     if status != "PASS":
-        for name in remaining_steps[3:]:
-            state.skip(20, name, "mount failed")
+        for step in remaining_steps[3:]:
+            state.skip(20, step, "mount failed")
         return False
     if isinstance(data, dict):
         resource = data.get("Resource") or {}
@@ -929,34 +1517,49 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         "hmc_read_lpar_boot_order (verify restore)",
     ]
 
-    if not _owns_repository(state):
+    reason = None
+    if not artifacts.vios_uuid or not artifacts.vmedia_vg_uuid:
+        reason = _NO_REPOSITORY
+    elif not Path(config.iso_path).is_file():
+        reason = _no_iso_reason(config)
+    elif not artifacts.lp3_uuid:
+        reason = "lp3_uuid not set (ST16 failed to capture it)"
+    elif artifacts.vmedia_iso_name in run_media_names(state):
+        reason = _EARLIER_MEDIUM
+    elif config.lp3_name in config.protected_lpar_names:
+        reason = _protected_reason(config)
+    if reason:
         for name in _skip_names:
-            state.skip(20, name, _NOT_OWNED)
+            state.skip(20, name, reason)
         return
 
-    # Safety belt — never touch protected LPARs, even under ``python -O``.
-    if config.lp3_name in config.protected_lpar_names:
-        raise ValueError(f"ST20 refuses to mutate protected LPAR {config.lp3_name!r}")
-
-    vios = artifacts.vios_uuid
-    vg = artifacts.vg_uuid
-    lp3_uuid = artifacts.lp3_uuid
-
-    if not lp3_uuid:
-        for name in _skip_names:
-            state.skip(20, name, "lp3_uuid not set (ST16 failed to capture it)")
+    vios = str(artifacts.vios_uuid)
+    lp3_uuid = str(artifacts.lp3_uuid)
+    if not await _prepare_boot_media(client, state, vios, _skip_names):
         return
-
-    if not await _prepare_boot_media(client, state, str(vios), str(vg), _skip_names):
-        return
-    await _configure_boot_order(client, state, str(lp3_uuid))
+    await _configure_boot_order(client, state, lp3_uuid)
     await _run_boot_probe(client, state)
-    await _restore_boot_configuration(client, state, str(vios), str(lp3_uuid))
+    await _restore_boot_configuration(client, state, vios, lp3_uuid)
 
 
 # ---------------------------------------------------------------------------
 # ST21 — List Storage Mappings Cross-Validation
 # ---------------------------------------------------------------------------
+
+
+def _optical_ids(data: list[Any]) -> list[str | None]:
+    return [
+        storage_mapping_id(entry) if isinstance(entry, Mapping) else None
+        for entry in data
+    ]
+
+
+def _same_lpar(left: object, right: object) -> bool:
+    return (
+        isinstance(left, str)
+        and isinstance(right, str)
+        and left.casefold() == right.casefold()
+    )
 
 
 async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> None:
@@ -965,50 +1568,145 @@ async def vmedia_mapping_crossvalidation(client: Client, state: RunState) -> Non
     print("\n=== ST21: List Storage Mappings Cross-Validation ===")
 
     if not artifacts.vios_uuid:
-        for name in [
-            "hmc_list_storage_mappings (all)",
-            "hmc_list_optical_mappings (all)",
-            "hmc_list_storage_mappings (lp3)",
-            "hmc_list_optical_mappings (lp3)",
-        ]:
+        for name in ["hmc_list_storage_mappings", "hmc_list_optical_mappings"]:
             state.skip(21, name, "no VIOS UUID in context")
         return
 
-    vios = artifacts.vios_uuid
+    vios, lp3 = artifacts.vios_uuid, config.lp3_name
+    reads = {
+        ("hmc_list_storage_mappings", "all"): await state.call(
+            client, "hmc_list_storage_mappings", vios_name_or_uuid=vios
+        ),
+        ("hmc_list_storage_mappings", "lp3"): await state.call(
+            client,
+            "hmc_list_storage_mappings",
+            vios_name_or_uuid=vios,
+            lpar_name_or_uuid=lp3,
+        ),
+        ("hmc_list_optical_mappings", "all"): await state.call(
+            client, "hmc_list_optical_mappings", vios_name_or_uuid=vios
+        ),
+        ("hmc_list_optical_mappings", "lp3"): await state.call(
+            client,
+            "hmc_list_optical_mappings",
+            vios_name_or_uuid=vios,
+            lpar_name_or_uuid=lp3,
+        ),
+    }
+    for (tool, scope), (st, data) in reads.items():
+        state.record(21, f"{tool} ({scope})", st, data)
 
-    st, data = await state.call(
-        client,
+    _verify_storage_mappings(state, reads)
+    _verify_optical_mappings(state, reads)
+
+
+def _scope_rows(
+    state: RunState, tool: str, reads: dict[tuple[str, str], tuple[str, Any]]
+) -> tuple[list[Any], list[Any]] | None:
+    """Both scopes of *tool*; None after recording an empty listing.
+
+    A failed read returns two empty lists, which the caller records as not
+    holding: an empty listing proves no row shape and makes the subset check
+    vacuous, so only a successful read can be empty.
+    """
+    (st_all, every), (st_lp3, scoped) = reads[tool, "all"], reads[tool, "lp3"]
+    if st_all != "PASS" or st_lp3 != "PASS":
+        return [], []
+    if not isinstance(every, list) or not isinstance(scoped, list):
+        return [], []
+    if not every or not scoped:
+        state.record(21, f"{tool} (empty)", "PASS", {"all": every, "lp3": scoped})
+        return None
+    return every, scoped
+
+
+def _verify_storage_mappings(
+    state: RunState, reads: dict[tuple[str, str], tuple[str, Any]]
+) -> None:
+    rows = _scope_rows(state, "hmc_list_storage_mappings", reads)
+    if rows is None:
+        return
+    every, scoped = rows
+    ids = [e.get("id") if isinstance(e, Mapping) else None for e in every]
+    lp3 = state.artifacts.lp3_uuid
+    _, optical = reads["hmc_list_optical_mappings", "all"]
+    optical_ids = _optical_ids(optical) if isinstance(optical, list) else [None]
+    backed = sorted(
+        str(e.get("id"))
+        for e in every
+        if isinstance(e, Mapping) and e.get("backing_kind") == "VirtualOpticalMedia"
+    )
+    state.record_verified(
+        21,
         "hmc_list_storage_mappings",
-        vios_name_or_uuid=vios,
+        operation="storage.list_mappings",
+        scenario=MAPPINGS_SCENARIO,
+        assertions=[
+            Assertion(
+                "mapping-ids-identified",
+                all(isinstance(i, str) and i.count("/") == 1 for i in ids),
+            ),
+            Assertion(
+                "lpar-scope-subset",
+                all(
+                    isinstance(e, Mapping)
+                    and e.get("id") in ids
+                    and _same_lpar(e.get("lpar_uuid"), lp3)
+                    for e in scoped
+                ),
+            ),
+            Assertion(
+                "optical-backing-agrees",
+                None not in optical_ids and sorted(map(str, optical_ids)) == backed,
+            ),
+        ]
+        if every
+        else [_READ_FAILED],
+        cleanup="not-required",
+        data=every,
     )
-    state.record(21, "hmc_list_storage_mappings (all)", st, data)
 
-    st, data = await state.call(
-        client,
+
+def _verify_optical_mappings(
+    state: RunState, reads: dict[tuple[str, str], tuple[str, Any]]
+) -> None:
+    rows = _scope_rows(state, "hmc_list_optical_mappings", reads)
+    if rows is None:
+        return
+    every, scoped = rows
+    ids = _optical_ids(every)
+    lp3 = state.artifacts.lp3_uuid
+    state.record_verified(
+        21,
         "hmc_list_optical_mappings",
-        vios_name_or_uuid=vios,
+        operation="media.list_mappings",
+        scenario=MAPPINGS_SCENARIO,
+        assertions=[
+            Assertion(
+                "optical-entries-named",
+                None not in ids
+                and all(_mapping_identity(entry) is not None for entry in every),
+            ),
+            Assertion(
+                "lpar-scope-subset",
+                all(
+                    (identity := _mapping_identity(entry)) is not None
+                    and _same_lpar(identity[0], lp3)
+                    and (mapping_id := storage_mapping_id(entry)) is not None
+                    and mapping_id in ids
+                    for entry in scoped
+                ),
+            ),
+        ]
+        if every
+        else [_READ_FAILED],
+        cleanup="not-required",
+        data=every,
     )
-    state.record(21, "hmc_list_optical_mappings (all)", st, data)
-
-    st, data = await state.call(
-        client,
-        "hmc_list_storage_mappings",
-        vios_name_or_uuid=vios,
-        lpar_name_or_uuid=config.lp3_name,
-    )
-    state.record(21, "hmc_list_storage_mappings (lp3)", st, data)
-
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_mappings",
-        vios_name_or_uuid=vios,
-        lpar_name_or_uuid=config.lp3_name,
-    )
-    state.record(21, "hmc_list_optical_mappings (lp3)", st, data)
 
 
 # ---------------------------------------------------------------------------
-# ST22 — Teardown: Unmount Orphans → Delete ISO → Delete Repository
+# ST22 — Teardown: Unmount Run Media → Delete Run Media → Delete Own Repository
 # ---------------------------------------------------------------------------
 
 
@@ -1041,82 +1739,57 @@ async def _restore_teardown_boot_order(client: Client, state: RunState) -> None:
         )
 
 
-def _mapping_identity(mapping: object) -> tuple[str, str] | None:
-    """Read the LPAR and media name that address one optical mapping.
-
-    ``hmc_unmount_optical_media`` resolves a mapping from the pair, so an entry
-    missing either half cannot be unmounted and is skipped rather than guessed at.
-    """
-    if not isinstance(mapping, dict):
-        return None
-    storage = mapping.get("Storage")
-    optical = storage.get("VirtualOpticalMedia") if isinstance(storage, dict) else None
-    media_name = optical.get("MediaName") if isinstance(optical, dict) else None
-    partition = mapping.get("AssociatedLogicalPartition")
-    href = partition.get("href") if isinstance(partition, dict) else None
-    lpar = urlparse(href).path.rsplit("/", 1)[-1] if isinstance(href, str) else None
-    if not isinstance(media_name, str) or not media_name or not lpar:
-        return None
-    return lpar, media_name
-
-
-async def _remove_orphan_mappings(client: Client, state: RunState, vios: str) -> None:
-    """Unmount every optical mapping left behind by earlier vMedia stages."""
+async def _remove_run_mappings(
+    client: Client, state: RunState, vios: str, owned: set[str]
+) -> None:
+    """Unmount every optical mapping whose medium this run created; nothing else."""
     st, data = await state.call(
         client,
         "hmc_list_optical_mappings",
         vios_name_or_uuid=vios,
     )
-    state.record(22, "hmc_list_optical_mappings (orphan cleanup)", st, data)
-    if st == "PASS":
-        mappings = data if isinstance(data, list) else []
-        if not mappings:
-            state.skip(22, "hmc_unmount_optical_media (orphan)", "no orphan mappings")
-        for mapping in mappings:
-            identity = _mapping_identity(mapping)
-            if identity is None:
-                continue
-            lpar, media_name = identity
-            st_u, data_u = await state.call(
-                client,
-                "hmc_unmount_optical_media",
-                vios_name_or_uuid=vios,
-                lpar_name_or_uuid=lpar,
-                media_name=media_name,
-            )
-            state.record(
-                22,
-                f"hmc_unmount_optical_media (orphan {media_name})",
-                st_u,
-                data_u,
-            )
-
-
-async def _remove_optical_media(
-    client: Client, state: RunState, vios: str, vg: str
-) -> None:
-    """Delete all optical media from the repository this run created."""
-    st, data = await state.call(
-        client,
-        "hmc_list_optical_media",
-        vios_name_or_uuid=vios,
-        vg_uuid=vg,
-    )
-    state.record(22, "hmc_list_optical_media (media cleanup)", st, data)
+    state.record(22, "hmc_list_optical_mappings (run media cleanup)", st, data)
     if st != "PASS":
         return
-    for entry in data if isinstance(data, list) else []:
-        media_name = entry.get("MediaName") or get_resource(entry).get("MediaName")
-        if not media_name:
-            continue
-        st_d, data_d = await state.call(
+    identities = [
+        _mapping_identity(m) for m in (data if isinstance(data, list) else [])
+    ]
+    targets = [i for i in identities if i is not None and i[1] in owned]
+    if not targets:
+        state.skip(22, "hmc_unmount_optical_media (run media)", "no run media mounted")
+    for lpar, media_name in targets:
+        st_u, data_u = await state.call(
             client,
-            "hmc_delete_optical_media",
+            "hmc_unmount_optical_media",
             vios_name_or_uuid=vios,
-            vg_uuid=vg,
+            lpar_name_or_uuid=lpar,
             media_name=media_name,
         )
-        state.record(22, f"hmc_delete_optical_media ({media_name})", st_d, data_d)
+        state.record(
+            22, f"hmc_unmount_optical_media (run media {media_name})", st_u, data_u
+        )
+        if st_u == "PASS" and media_name == state.artifacts.vmedia_iso_name:
+            state.artifacts.vmedia_mapping_uuid = None
+
+
+async def _remove_run_media(client: Client, state: RunState, owned: set[str]) -> None:
+    """Delete every medium this run created that the repository still lists."""
+    listed = await _list_media(client, state, 22, "run media cleanup")
+    if listed is None:
+        return
+    for name in sorted(owned):
+        if name in listed:
+            await _delete_run_media(client, state, 22, name)
+        else:
+            _forget_run_media(state, name)
+
+
+def _forget_run_media(state: RunState, name: str) -> None:
+    artifacts = state.artifacts
+    if artifacts.vmedia_blank_name == name:
+        artifacts.vmedia_blank_name = None
+    if artifacts.vmedia_iso_name == name:
+        artifacts.vmedia_iso_name = None
 
 
 async def _remove_repository(
@@ -1149,35 +1822,41 @@ async def _remove_repository(
 
 
 async def vmedia_teardown(client: Client, state: RunState) -> None:
-    """Restore boot state and remove every vMedia artifact in phase order."""
+    """Restore boot state and remove what this run created, in phase order."""
     artifacts = state.artifacts
-    print("\n=== ST22: Teardown: Unmount Orphans → Delete ISO → Delete Repository ===")
+    print("\n=== ST22: Teardown: Unmount Run Media → Delete Run Media → Repository ===")
 
     await _restore_teardown_boot_order(client, state)
     if not artifacts.vios_uuid:
         for name in [
-            "hmc_list_optical_mappings (orphan cleanup)",
-            "hmc_list_optical_media (media cleanup)",
+            "hmc_list_optical_mappings (run media cleanup)",
+            "hmc_list_optical_media (run media cleanup)",
             "hmc_delete_media_repository",
-            "hmc_get_media_repository (confirm gone)",
             "hmc_list_volume_groups (final audit)",
         ]:
             state.skip(22, name, "no VIOS UUID in context")
         return
 
-    vg = configured_vg_uuid(state)
-    if not artifacts.vmedia_repo_created or vg is None:
-        for name in [
-            "hmc_list_optical_mappings (orphan cleanup)",
-            "hmc_list_optical_media (media cleanup)",
-            "hmc_delete_media_repository",
-            "hmc_get_media_repository (confirm gone)",
-        ]:
-            state.skip(22, name, _NOT_OWNED)
+    owned = run_media_names(state)
+    for name in (artifacts.vmedia_blank_name, artifacts.vmedia_iso_name):
+        if name and name not in owned:
+            # Not a name this arm generates (an older arm recorded it): never removed.
+            _forget_run_media(state, name)
+    if not owned:
+        state.skip(22, "hmc_list_optical_media (run media cleanup)", "no run media")
     else:
-        await _remove_orphan_mappings(client, state, artifacts.vios_uuid)
-        await _remove_optical_media(client, state, artifacts.vios_uuid, vg)
+        # An unmount needs no volume group, so it runs even when ST16 found none.
+        await _remove_run_mappings(client, state, artifacts.vios_uuid, owned)
+        if artifacts.vmedia_vg_uuid:
+            await _remove_run_media(client, state, owned)
+        else:
+            state.skip(22, "hmc_list_optical_media (run media cleanup)", _NO_REPOSITORY)
+
+    vg = configured_vg_uuid(state)
+    if _owns_repository(state) and vg is not None:
         await _remove_repository(client, state, artifacts.vios_uuid, vg)
+    else:
+        state.skip(22, "hmc_delete_media_repository", _NOT_OWNED)
 
     st, data = await state.call(
         client, "hmc_list_volume_groups", vios_name_or_uuid=artifacts.vios_uuid

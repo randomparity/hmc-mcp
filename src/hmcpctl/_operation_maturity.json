@@ -339,6 +339,76 @@
       "observed_at": "2026-10-06T09:45:57Z"
     },
     {
+      "operation": "media.create",
+      "implementation": "implemented",
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-10-06T22:20:22Z"
+    },
+    {
+      "operation": "media.create_repository",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "media.delete",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "media.delete_repository",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "media.get_repository",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:19:55Z"
+    },
+    {
+      "operation": "media.list",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:20:08Z"
+    },
+    {
+      "operation": "media.list_mappings",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "media.mount",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "media.unmount",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "media.upload_iso",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "memory_pool.list",
       "implementation": "implemented",
       "verification": "stale",
@@ -519,6 +589,13 @@
       "verification": "unevidenced",
       "reason": null,
       "observed_at": null
+    },
+    {
+      "operation": "storage.list_mappings",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-06T22:20:42Z"
     },
     {
       "operation": "system.get",

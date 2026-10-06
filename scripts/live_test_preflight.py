@@ -44,7 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, lpar_config, pcie, users, vios_backup
+from live_test import bare_cec, lpar_config, pcie, users, vios_backup, vmedia
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -318,6 +318,36 @@ def _users_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _vmedia_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name what the vmedia arm (#1347) changes, each removed by the arm itself."""
+    return ArmVerdict(
+        "vmedia",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                "the VIOS's media repository: created, and deleted again, only when "
+                "the VIOS has none; an existing one is never resized or deleted"
+            ),
+            (
+                f"in that repository, one blank 1 GiB medium {vmedia.BLANK_PREFIX}"
+                f"<8 hex>: created, mounted to {config.lp3_name} only while Not "
+                "Activated (the HMC adds a vSCSI adapter pair), a delete while "
+                "mounted expected refused, unmounted, deleted"
+            ),
+            (
+                f"the ISO at {config.iso_path}, only when that file exists: uploaded "
+                "under a per-run name and deleted; then mounted for a boot test that "
+                f"powers {config.lp3_name} on and off and restores its pending boot "
+                "order"
+            ),
+            "no other medium or mapping is unmounted or deleted",
+        ),
+        config.system_name,
+    )
+
+
 _ARM_VERDICTS = {
     "dedicated": _dedicated_verdict,
     "bare-cec": _bare_cec_verdict,
@@ -327,6 +357,7 @@ _ARM_VERDICTS = {
     "network": _network_verdict,
     "users": _users_verdict,
     "lpar-config": _lpar_config_verdict,
+    "vmedia": _vmedia_verdict,
 }
 
 

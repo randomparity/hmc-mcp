@@ -1,6 +1,8 @@
 """Run the vmedia arm of the live integration suite against a real HMC.
 
-Covers subtasks 16-22: virtual-media repository lifecycle, ISO upload, mount/unmount and boot verification.
+Covers subtasks 16-22: the VIOS's media repository (created only when it has
+none), a blank medium's create/mount/unmount/delete round trip, and, when the
+configured ISO exists, its upload and a boot from it.
 
 Usage:
     uv run --no-sync python scripts/live_vmedia.py

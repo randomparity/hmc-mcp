@@ -625,6 +625,10 @@ class LiveTestArtifacts:
     vmedia_iso_name: str | None = None
     vmedia_mapping_uuid: str | None = None
     vmedia_orig_boot_order: list[str] = field(default_factory=list)
+    # The volume group holding the VIOS's one media repository, whoever created it,
+    # and the blank medium the vmedia arm (ST19) creates in it (#1347).
+    vmedia_vg_uuid: str | None = None
+    vmedia_blank_name: str | None = None
     # What the dedicated PCIe arm created, so `live_test_recovery.py` can check
     # teardown from outside the run that attempted it. The marker is per-run
     # random, so nothing outside the document can reconstruct these.
@@ -1329,6 +1333,7 @@ _VIOS_BACKUP_ARTIFACTS = (
     "vios_backup_mapping",
     "vios_backup_backing",
 )
+_VMEDIA_REPOSITORY_ARTIFACTS = ("vmedia_vg_uuid", "vmedia_blank_name")
 _ARTIFACT_NULLABLE_STRINGS = frozenset(
     {
         "system_uuid",
@@ -1346,6 +1351,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "vmedia_iso_name",
         "vmedia_mapping_uuid",
         *_VIOS_BACKUP_ARTIFACTS,
+        *_VMEDIA_REPOSITORY_ARTIFACTS,
     }
 )
 _ARTIFACT_NULLABLE_INTS = frozenset(
@@ -1395,8 +1401,9 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
     # Every other field difference remains a mismatch.
     parsed.pop("test_user_uuid", None)
     parsed.setdefault("test_user_name", None)
-    # Likewise a document written before the vios-backup arm (#1349) existed.
-    for name in _VIOS_BACKUP_ARTIFACTS:
+    # Likewise a document written before the vios-backup arm (#1349) existed, or
+    # before the vmedia arm tracked its repository and medium (#1347).
+    for name in (*_VIOS_BACKUP_ARTIFACTS, *_VMEDIA_REPOSITORY_ARTIFACTS):
         parsed.setdefault(name, None)
     if set(parsed) != expected_fields:
         raise ValueError("results artifact fields do not match LiveTestArtifacts")

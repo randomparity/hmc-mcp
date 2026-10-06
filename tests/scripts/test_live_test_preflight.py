@@ -302,6 +302,22 @@ def test_the_network_verdict_names_each_change_it_makes(workspace, monkeypatch, 
     assert "fcs9999" in output
 
 
+def test_the_vmedia_verdict_names_each_change_it_makes(workspace, monkeypatch, capsys):
+    """#1347. The arm works inside an existing repository and removes only its own media."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "vmedia", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "only when the VIOS has none" in output
+    assert "hmcpctl_live_<8 hex>" in output
+    assert "only while Not Activated" in output
+    assert "only when that file exists" in output
+    assert "no other medium or mapping is unmounted or deleted" in output
+
+
 def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
     workspace, monkeypatch, capsys
 ):

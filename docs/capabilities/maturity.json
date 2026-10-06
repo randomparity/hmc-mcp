@@ -3096,6 +3096,231 @@
       "evidence": []
     },
     {
+      "operation": "media.get_repository",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-volume-group",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st16-hmc-get-media-repository",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st16-repository-read",
+          "observed_at": "2026-10-06T22:19:55Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "repository-named",
+            "repository-size-positive"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "media.create_repository",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "whole-gib-size",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.delete_repository",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "empty-repository",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-volume-group",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st19-hmc-list-optical-media",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st19-optical-round-trip",
+          "observed_at": "2026-10-06T22:20:08Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "media-entries-named"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "media.create",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "blank-whole-gib",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st19-hmc-create-optical-media",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st19-optical-round-trip",
+          "observed_at": "2026-10-06T22:20:22Z",
+          "cleanup": "passed",
+          "assertions": [
+            "baseline-media-kept"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
+      "operation": "media.delete",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "unmapped-media",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.upload_iso",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "allowlisted-http-url",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.mount",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "hmc-created-adapter-pair",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.unmount",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-lpar-and-media-name",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "media.list_mappings",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "vios-wide-or-lpar-scoped",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "storage.list_mappings",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "vios-wide-or-lpar-scoped",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st21-hmc-list-storage-mappings",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st21-mapping-inventory",
+          "observed_at": "2026-10-06T22:20:42Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "mapping-ids-identified",
+            "lpar-scope-subset",
+            "optical-backing-agrees"
+          ],
+          "tested_commit": "b5a410c706b322a588c36300978728664d467b36",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
+    },
+    {
       "operation": "lpar.modify",
       "implementation": {
         "state": "implemented",

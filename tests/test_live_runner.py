@@ -86,10 +86,6 @@ sys.modules[_SPEC.name] = runner
 _SPEC.loader.exec_module(runner)
 
 
-_BOOT_DISK = "/vdevice/v-scsi@30000003/disk@8100000000000000"
-_BOOT_LAN = "/vdevice/l-lan@30000002:speed=auto,duplex=auto,192.0.2.10,,192.0.2.1"
-
-
 class _FakeClient:
     def __init__(self, _server):
         pass
@@ -133,16 +129,6 @@ class _ScriptedClient:
 def _failure(text: str) -> observation.CallFailure:
     """The shape `RunState.call` really returns on failure, for a scripted stub."""
     return observation.classify_failure(RuntimeError(text))
-
-
-def _optical_mapping(media_name: str, lpar: str = "lp3-uuid") -> dict:
-    """One `hmc_list_optical_mappings` entry, shaped as the client really returns it."""
-    return {
-        "Storage": {"VirtualOpticalMedia": {"MediaName": media_name}},
-        "AssociatedLogicalPartition": {
-            "href": f"/rest/api/uom/LogicalPartition/{lpar}"
-        },
-    }
 
 
 class _ScriptedSriovState(runner.RunState):
@@ -2175,87 +2161,6 @@ class TestDescriptionBaselineRestore:
 
 
 @pytest.mark.asyncio
-async def test_vmedia_mount_requires_iso_and_preserves_safe_delete_boundary() -> None:
-    missing = _ScriptedSriovState([])
-    await vmedia.vmedia_mount_unmount(object(), missing)
-    assert missing.calls == []
-    assert {entry["status"] for entry in missing.results} == {"SKIP"}
-
-    state = _ScriptedSriovState(
-        [
-            ("hmc_mount_optical_media", "PASS", {"ElementID": "mapping-uuid"}),
-            ("hmc_list_optical_mappings", "PASS", []),
-            ("hmc_delete_optical_media", "FAIL", _failure("media is mapped")),
-            ("hmc_unmount_optical_media", "PASS", {}),
-            ("hmc_list_optical_mappings", "PASS", []),
-            ("hmc_delete_optical_media", "PASS", {}),
-            ("hmc_list_optical_media", "PASS", []),
-        ]
-    )
-    state.artifacts.vios_uuid = "vios-uuid"
-    state.artifacts.vg_uuid = "vg-uuid"
-    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
-    state.artifacts.vmedia_repo_created = True
-    state.artifacts.vmedia_iso_name = "boot.iso"
-
-    await vmedia.vmedia_mount_unmount(object(), state)
-
-    assert state.artifacts.vmedia_mapping_uuid is None
-    assert state.artifacts.vmedia_iso_name is None
-    assert state.calls[3] == (
-        "hmc_unmount_optical_media",
-        {
-            "vios_name_or_uuid": "vios-uuid",
-            "lpar_name_or_uuid": state.config.lp3_name,
-            "media_name": "boot.iso",
-        },
-    )
-    assert any(
-        entry["tool"] == "hmc_delete_optical_media (blocked — expected)"
-        and entry["status"] == "PASS"
-        for entry in state.results
-    )
-
-
-@pytest.mark.asyncio
-async def test_vmedia_teardown_restores_boot_and_removes_artifacts_in_order() -> None:
-    state = _ScriptedSriovState(
-        [
-            ("hmc_set_lpar_boot_order", "PASS", {}),
-            ("hmc_list_optical_mappings", "PASS", [_optical_mapping("orphan.iso")]),
-            ("hmc_unmount_optical_media", "PASS", {}),
-            ("hmc_list_optical_media", "PASS", [{"MediaName": "orphan.iso"}]),
-            ("hmc_delete_optical_media", "PASS", {}),
-            ("hmc_delete_media_repository", "PASS", {}),
-            ("hmc_get_media_repository", "PASS", {}),
-            ("hmc_list_volume_groups", "PASS", []),
-        ]
-    )
-    state.artifacts.vios_uuid = "vios-uuid"
-    state.artifacts.vg_uuid = "vg-uuid"
-    state.artifacts.lp3_uuid = "lp3-uuid"
-    state.artifacts.vmedia_orig_boot_order = [_BOOT_DISK, _BOOT_LAN]
-    state.artifacts.vmedia_repo_created = True
-    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
-
-    await vmedia.vmedia_teardown(object(), state)
-
-    assert state.artifacts.vmedia_orig_boot_order == []
-    assert not state.artifacts.vmedia_repo_created
-    assert [tool for tool, _ in state.calls] == [
-        "hmc_set_lpar_boot_order",
-        "hmc_list_optical_mappings",
-        "hmc_unmount_optical_media",
-        "hmc_list_optical_media",
-        "hmc_delete_optical_media",
-        "hmc_delete_media_repository",
-        "hmc_get_media_repository",
-        "hmc_list_volume_groups",
-    ]
-    assert state.calls[0][1]["devices"] == [_BOOT_DISK, _BOOT_LAN]
-
-
-@pytest.mark.asyncio
 async def test_sriov_orchestrator_runs_phases_in_order_and_cleans_up() -> None:
     """A successful round trip invokes every phase and always reaches cleanup."""
     calls: list[str] = []
@@ -3956,6 +3861,33 @@ def test_restore_artifacts_tolerates_a_document_from_before_the_vios_backup_arm(
     assert state.artifacts.vios_backup_name is None
 
 
+def test_restore_artifacts_tolerates_a_document_from_before_the_vmedia_artifacts(
+    tmp_path,
+):
+    """A report written before #1347 tracked the repository group still restores."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    for name in runner._VMEDIA_REPOSITORY_ARTIFACTS:
+        del document["artifacts"][name]
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts.vmedia_vg_uuid is None
+    assert state.artifacts.vmedia_blank_name is None
+
+
+def test_decode_artifacts_refuses_a_non_string_vmedia_field():
+    artifacts = asdict(runner.LiveTestArtifacts())
+    artifacts["vmedia_blank_name"] = 3
+
+    with pytest.raises(TypeError, match="vmedia_blank_name"):
+        runner._decode_artifacts(artifacts)
+
+
 def test_decode_artifacts_refuses_a_non_string_vios_backup_field():
     artifacts = asdict(runner.LiveTestArtifacts())
     artifacts["vios_backup_mapping"] = 3
@@ -4825,530 +4757,6 @@ def test_every_live_workflow_dispatch_has_exactly_client_and_tool_arguments():
                 invalid.append(f"{Path(module.__file__).name}:{node.lineno}")
 
     assert invalid == []
-
-
-def _configure_vmedia_artifacts(state, values):
-    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
-    for name, value in values.items():
-        setattr(state.artifacts, name, value)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("workflow", "artifacts", "expected_tools"),
-    [
-        (
-            runner.vmedia_bootstrap_and_create_repo,
-            {},
-            [
-                "hmc_list_vios",
-                "hmc_get_lpar",
-                "hmc_list_volume_groups",
-                "hmc_get_media_repository",
-                "hmc_create_media_repository",
-                "hmc_get_media_repository",
-            ],
-        ),
-        (
-            runner.vmedia_short_repo_lifecycle,
-            {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
-            [
-                "hmc_delete_media_repository",
-                "hmc_create_media_repository",
-                "hmc_get_media_repository",
-                "hmc_list_optical_media",
-                "hmc_delete_media_repository",
-                "hmc_get_media_repository",
-                "hmc_create_media_repository",
-            ],
-        ),
-        (
-            runner.vmedia_upload_iso,
-            {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
-            [
-                "hmc_upload_iso",
-                "hmc_list_optical_media",
-                "hmc_upload_iso",
-                "hmc_list_optical_media",
-                "hmc_delete_optical_media",
-                "hmc_list_optical_media",
-                "hmc_upload_iso",
-            ],
-        ),
-        (
-            runner.vmedia_mount_unmount,
-            {
-                "vmedia_repo_created": True,
-                "vmedia_iso_name": "test.iso",
-                "vios_uuid": "vios",
-                "vg_uuid": "vg",
-            },
-            [
-                "hmc_mount_optical_media",
-                "hmc_list_optical_mappings",
-                "hmc_delete_optical_media",
-                "hmc_unmount_optical_media",
-                "hmc_list_optical_mappings",
-                "hmc_delete_optical_media",
-                "hmc_list_optical_media",
-            ],
-        ),
-        (
-            runner.vmedia_boot_verification,
-            {
-                "vmedia_repo_created": True,
-                "vios_uuid": "vios",
-                "vg_uuid": "vg",
-                "lp3_uuid": "lp3",
-            },
-            [
-                "hmc_upload_iso",
-                "hmc_power_off_lpar",
-                "hmc_mount_optical_media",
-                "hmc_read_lpar_boot_order",
-                "hmc_set_lpar_boot_order",
-                "hmc_power_on_lpar",
-                "hmc_lpar_summary",
-                "hmc_power_off_lpar",
-                "hmc_unmount_optical_media",
-                "hmc_set_lpar_boot_order",
-                "hmc_read_lpar_boot_order",
-            ],
-        ),
-        (
-            runner.vmedia_mapping_crossvalidation,
-            {"vios_uuid": "vios"},
-            [
-                "hmc_list_storage_mappings",
-                "hmc_list_optical_mappings",
-                "hmc_list_storage_mappings",
-                "hmc_list_optical_mappings",
-            ],
-        ),
-        (
-            runner.vmedia_teardown,
-            {
-                "vmedia_repo_created": True,
-                "vios_uuid": "vios",
-                "vg_uuid": "vg",
-                "lp3_uuid": "lp3",
-                "vmedia_orig_boot_order": [_BOOT_DISK],
-            },
-            [
-                "hmc_set_lpar_boot_order",
-                "hmc_list_optical_mappings",
-                "hmc_unmount_optical_media",
-                "hmc_list_optical_media",
-                "hmc_delete_optical_media",
-                "hmc_delete_media_repository",
-                "hmc_get_media_repository",
-                "hmc_list_volume_groups",
-            ],
-        ),
-    ],
-)
-async def test_vmedia_workflows_execute_their_behavioral_contracts(
-    monkeypatch, workflow, artifacts, expected_tools
-):
-    calls = []
-    counts = {}
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        counts[tool] = counts.get(tool, 0) + 1
-        if tool == "hmc_list_vios":
-            return "PASS", SimpleNamespace(
-                entries=[{"UUID": "vios", "Resource": {"PartitionID": "2"}}],
-                unreadable_systems=[],
-            )
-        if tool == "hmc_get_lpar":
-            return "PASS", {"uuid": "lp3"}
-        if tool == "hmc_list_volume_groups":
-            return "PASS", [
-                {"uuid": "other", "name": "rootvg", "free_space_gib": 900},
-                {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 8},
-            ]
-        if tool == "hmc_get_media_repository":
-            first_st16_probe = (
-                workflow is runner.vmedia_bootstrap_and_create_repo
-                and counts[tool] == 1
-            )
-            return "PASS", None if first_st16_probe else {"UUID": "repo"}
-        if tool == "hmc_list_optical_media":
-            return "PASS", [{"MediaName": "test.iso"}]
-        if tool == "hmc_upload_iso":
-            if workflow is runner.vmedia_upload_iso and counts[tool] == 2:
-                # ST18's same-name re-upload check: the collision guard refuses it,
-                # as it does for real (src/hmcpctl/operations/storage/resources.py
-                # `_refuse_existing_media`).
-                return "FAIL", observation.CallFailure(
-                    exception_type="FileExistsError",
-                    message=(
-                        "FileExistsError: Media name 'test.iso' already exists in "
-                        "repository. Use a different name or delete the existing "
-                        "media first."
-                    ),
-                    traceback_text="",
-                    http_status=None,
-                    denied=False,
-                )
-            return "PASS", {"status": "uploaded", "media_name": "test.iso"}
-        if tool == "hmc_mount_optical_media":
-            return "PASS", {"mapping_uuid": "mapping"}
-        if (
-            tool == "hmc_delete_optical_media"
-            and workflow is runner.vmedia_mount_unmount
-            and counts[tool] == 1
-        ):
-            return "FAIL", "media is mapped"
-        if tool == "hmc_read_lpar_boot_order":
-            return "PASS", {
-                "pending_boot_string": f"{_BOOT_DISK} {_BOOT_LAN}",
-                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
-            }
-        if tool == "hmc_list_optical_mappings" and workflow is runner.vmedia_teardown:
-            return "PASS", [_optical_mapping("test.iso")]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    monkeypatch.setattr(vmedia.Path, "is_file", lambda _path: True)
-    state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
-    _configure_vmedia_artifacts(state, artifacts)
-
-    await workflow(None, state)
-
-    assert [tool for tool, _ in calls] == expected_tools
-    assert {kwargs["vg_uuid"] for _, kwargs in calls if "vg_uuid" in kwargs} <= {"vg"}
-    assert not [result for result in state.results if result["status"] == "FAIL"]
-
-
-@pytest.mark.asyncio
-async def test_vmedia_dedup_step_skips_when_reupload_is_refused(monkeypatch):
-    """ST18 records SKIP, not PASS, when the name-collision guard refuses the re-upload.
-
-    ``upload_iso`` has never returned a ``status: "existing"`` dedup hit (#1053); the
-    guard refusing a same-name re-upload is the real behaviour this step checks.
-    """
-
-    async def scripted_call(_state, _client, tool, **_kwargs):
-        if tool == "hmc_upload_iso":
-            return "FAIL", observation.CallFailure(
-                exception_type="FileExistsError",
-                message=(
-                    "FileExistsError: Media name 'test.iso' already exists in "
-                    "repository. Use a different name or delete the existing "
-                    "media first."
-                ),
-                traceback_text="",
-                http_status=None,
-                denied=False,
-            )
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "vg_uuid": "vg"})
-
-    await vmedia._verify_iso_reupload_refused(None, state)
-
-    row = next(
-        r for r in state.results if r["tool"] == "hmc_upload_iso (same-name reupload)"
-    )
-    assert row["status"] == "SKIP"
-
-
-@pytest.mark.asyncio
-async def test_vmedia_dedup_step_fails_when_reupload_is_not_refused(monkeypatch):
-    """ST18 records FAIL when a same-name re-upload succeeds instead of being refused."""
-
-    async def scripted_call(_state, _client, tool, **_kwargs):
-        if tool == "hmc_upload_iso":
-            return "PASS", {"status": "uploaded", "media_name": "test.iso"}
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "vg_uuid": "vg"})
-
-    await vmedia._verify_iso_reupload_refused(None, state)
-
-    row = next(
-        r for r in state.results if r["tool"] == "hmc_upload_iso (same-name reupload)"
-    )
-    assert row["status"] == "FAIL"
-    assert "collision guard did not fire" in row["note"]
-
-
-@pytest.mark.asyncio
-async def test_vmedia_repository_skips_when_configured_group_too_small(monkeypatch):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append(tool)
-        if tool == "hmc_list_volume_groups":
-            return "PASS", [
-                {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 5}
-            ]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "lp3_uuid": "lp3"})
-
-    await runner.vmedia_bootstrap_and_create_repo(None, state)
-
-    assert "hmc_create_media_repository" not in calls
-    skips = [r for r in state.results if r["status"] == "SKIP"]
-    assert {r["tool"] for r in skips} == {
-        "hmc_create_media_repository",
-        "hmc_get_media_repository",
-    }
-    assert all("5120 MiB < 6144 MiB" in str(r) for r in skips)
-
-
-@pytest.mark.asyncio
-async def test_vmedia_does_not_claim_a_pre_existing_repository(monkeypatch):
-    """An existing repository is left alone: create is idempotent for an equal size."""
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append(tool)
-        if tool == "hmc_list_volume_groups":
-            return "PASS", [
-                {"uuid": "vg", "name": "example-lt-609-vg", "free_space_gib": 64}
-            ]
-        if tool == "hmc_get_media_repository":
-            return "PASS", {"RepositoryName": "VMLibrary", "RepositorySize": "6144"}
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    _configure_vmedia_artifacts(state, {"vios_uuid": "vios", "lp3_uuid": "lp3"})
-
-    await runner.vmedia_bootstrap_and_create_repo(None, state)
-    await runner.vmedia_teardown(None, state)
-
-    assert not state.artifacts.vmedia_repo_created
-    assert "hmc_create_media_repository" not in calls
-    assert "hmc_delete_media_repository" not in calls
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("workflow", "artifacts"),
-    [
-        (
-            runner.vmedia_teardown,
-            {"vmedia_repo_created": False, "vios_uuid": "vios", "vg_uuid": "vg"},
-        ),
-        (
-            runner.vmedia_short_repo_lifecycle,
-            {
-                "vmedia_repo_created": True,
-                "vios_uuid": "vios",
-                "vg_uuid": "first-listed-vg",
-                "vdisk_vg_name": "",
-            },
-        ),
-        (
-            runner.vmedia_teardown,
-            {
-                "vmedia_repo_created": True,
-                "vios_uuid": "vios",
-                "vg_uuid": "first-listed-vg",
-                "vdisk_vg_name": "",
-            },
-        ),
-    ],
-)
-async def test_vmedia_writes_nothing_in_a_repository_it_does_not_own(
-    monkeypatch, workflow, artifacts
-):
-    """Teardown and ST17 leave alone what this run did not create in the configured group."""
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append(tool)
-        if tool == "hmc_list_optical_mappings":
-            return "PASS", [_optical_mapping("other.iso")]
-        if tool == "hmc_list_optical_media":
-            return "PASS", [{"MediaName": "other.iso"}]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    _configure_vmedia_artifacts(state, artifacts)
-
-    await workflow(None, state)
-
-    assert calls in ([], ["hmc_list_volume_groups"])
-
-
-def test_vmedia_behavioral_inventory_covers_every_registered_stage():
-    covered = {
-        runner.vmedia_bootstrap_and_create_repo,
-        runner.vmedia_short_repo_lifecycle,
-        runner.vmedia_upload_iso,
-        runner.vmedia_mount_unmount,
-        runner.vmedia_boot_verification,
-        runner.vmedia_mapping_crossvalidation,
-        runner.vmedia_teardown,
-    }
-
-    assert {
-        runner.SUBTASKS[number] for number in runner.SUBTASK_GROUPS["vmedia"]
-    } == covered
-
-
-@pytest.mark.parametrize(
-    ("reported", "sets", "skip_reason"),
-    [
-        (
-            {
-                "pending_boot_string": _BOOT_LAN,
-                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
-            },
-            [[_BOOT_DISK, _BOOT_LAN], [_BOOT_LAN]],
-            None,
-        ),
-        (
-            {
-                "pending_boot_string": None,
-                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
-            },
-            [],
-            "REST0126",
-        ),
-        ({"pending_boot_string": None, "boot_device_list": None}, [], "REST0126"),
-        (
-            {"pending_boot_string": _BOOT_LAN, "boot_device_list": None},
-            [],
-            "no boot device list",
-        ),
-        (
-            {"pending_boot_string": "cd disk", "boot_device_list": _BOOT_DISK},
-            [],
-            "cannot be restored",
-        ),
-    ],
-)
-@pytest.mark.asyncio
-async def test_vmedia_boot_order_writes_only_what_it_can_restore(
-    monkeypatch, reported, sets, skip_reason
-):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_upload_iso":
-            return "PASS", {"media_name": "test.iso"}
-        if tool == "hmc_mount_optical_media":
-            return "PASS", {"mapping_uuid": "mapping"}
-        if tool == "hmc_read_lpar_boot_order":
-            return "PASS", reported
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
-    _configure_vmedia_artifacts(
-        state,
-        {
-            "vmedia_repo_created": True,
-            "vios_uuid": "vios",
-            "vg_uuid": "vg",
-            "lp3_uuid": "lp3",
-        },
-    )
-
-    await runner.vmedia_boot_verification(None, state)
-
-    assert [
-        kwargs["devices"] for tool, kwargs in calls if tool == "hmc_set_lpar_boot_order"
-    ] == sets
-    assert "hmc_clear_lpar_boot_order" not in [tool for tool, _ in calls]
-    skipped = [
-        entry
-        for entry in state.results
-        if entry["tool"] == "hmc_set_lpar_boot_order (boot device list)"
-        and entry["status"] == "SKIP"
-    ]
-    if skip_reason is None:
-        assert skipped == []
-        assert state.artifacts.vmedia_orig_boot_order == []
-    else:
-        assert len(skipped) == 1 and skip_reason in str(skipped[0])
-
-
-@pytest.mark.asyncio
-async def test_vmedia_boot_failure_still_restores_boot_order_and_unmounts(monkeypatch):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_upload_iso":
-            return "PASS", {"media_name": "test.iso"}
-        if tool == "hmc_mount_optical_media":
-            return "PASS", {"mapping_uuid": "mapping"}
-        if tool == "hmc_read_lpar_boot_order":
-            return "PASS", {
-                "pending_boot_string": f"{_BOOT_DISK} {_BOOT_LAN}",
-                "boot_device_list": f"{_BOOT_DISK} {_BOOT_LAN}",
-            }
-        if tool == "hmc_power_on_lpar":
-            return "FAIL", "boot job failed"
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    monkeypatch.setattr(state.iso_http_server, "start", lambda _context: None)
-    _configure_vmedia_artifacts(
-        state,
-        {
-            "vmedia_repo_created": True,
-            "vios_uuid": "vios",
-            "vg_uuid": "vg",
-            "lp3_uuid": "lp3",
-        },
-    )
-
-    await runner.vmedia_boot_verification(None, state)
-
-    tools = [tool for tool, _ in calls]
-    assert "hmc_unmount_optical_media" in tools
-    assert tools.count("hmc_set_lpar_boot_order") == 2
-    assert state.artifacts.vmedia_mapping_uuid is None
-    assert state.artifacts.vmedia_orig_boot_order == []
-
-
-@pytest.mark.asyncio
-async def test_vmedia_teardown_continues_after_orphan_unmount_failure(monkeypatch):
-    calls = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        calls.append((tool, kwargs))
-        if tool == "hmc_list_optical_mappings":
-            return "PASS", [{"UUID": "mapping"}]
-        if tool == "hmc_unmount_optical_media":
-            return "FAIL", "unmount failed"
-        if tool == "hmc_list_optical_media":
-            return "PASS", [{"MediaName": "test.iso"}]
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
-    _configure_vmedia_artifacts(
-        state,
-        {"vmedia_repo_created": True, "vios_uuid": "vios", "vg_uuid": "vg"},
-    )
-
-    await runner.vmedia_teardown(None, state)
-
-    tools = [tool for tool, _ in calls]
-    assert "hmc_delete_optical_media" in tools
-    assert "hmc_delete_media_repository" in tools
-    assert "hmc_list_volume_groups" in tools
 
 
 @pytest.mark.asyncio
@@ -6753,6 +6161,32 @@ def test_scenarios_declare_their_expected_assertion_ids():
     concludes a postcondition was checked that nothing checks any more.
     """
     assert _recorded_scenarios() == {
+        "st16-repository-read": {"repository-named", "repository-size-positive"},
+        "st18-iso-upload": {"upload-accepted", "media-listed", "reupload-refused"},
+        "st19-optical-round-trip": {
+            "media-entries-named",
+            "create-accepted",
+            "media-listed",
+            "size-matches",
+            "baseline-media-kept",
+            "mount-accepted",
+            "mapping-listed",
+            "baseline-mappings-kept",
+            "unmount-accepted",
+            "mapping-absent",
+            "mappings-equal-baseline",
+            "adapters-equal-baseline",
+            "refused-while-mounted",
+            "delete-accepted",
+            "media-absent",
+            "media-equal-baseline",
+        },
+        "st21-mapping-inventory": {
+            "mapping-ids-identified",
+            "lpar-scope-subset",
+            "optical-backing-agrees",
+            "optical-entries-named",
+        },
         "st12-job-inspection": {
             "job-found",
             "job-identity-matches",
