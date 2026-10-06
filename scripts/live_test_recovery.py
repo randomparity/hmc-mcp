@@ -782,7 +782,7 @@ async def _run_checks(
         return await check_run(_read_only_caller(client, state), pcie, partition)
 
 
-def is_partial(document: dict[str, Any]) -> bool:
+def _is_partial(document: dict[str, Any]) -> bool:
     """Whether the run was interrupted; anything but an absent key or `false` is."""
     run = document.get("run")
     return isinstance(run, dict) and run.get("partial", False) is not False
@@ -796,7 +796,7 @@ def _report(
 ) -> None:
     run = document.get("run") if isinstance(document.get("run"), dict) else {}
     artifacts = document.get("artifacts")
-    partial = is_partial(document)
+    partial = _is_partial(document)
     print(
         f"{'PARTIAL ' if partial else ''}recovery check for the "
         f"{run.get('group') or '(no group)'} run at "
@@ -881,7 +881,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     _report(document, findings, unwitnessed, unread)
-    if unread or unwitnessed or is_partial(document):
+    if unread or unwitnessed or _is_partial(document):
         print("The system was NOT confirmed clean.", file=sys.stderr)
         return 2
     return 1 if findings else 0
