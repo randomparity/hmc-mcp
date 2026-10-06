@@ -388,6 +388,11 @@ def _record_lifecycle(
                 "password-not-disclosed", run.read_empty(0, "UserProfilePassword")
             ),
             Assertion("not-predefined", run.read(0, "IsPredefinedUser") == "false"),
+            Assertion(
+                "remote-access-disabled",
+                run.read(0, "AllowWebRemoteAccess") == "false"
+                and run.read(0, "AllowSSHRemoteAccess") == "false",
+            ),
         ],
         cleanup=cleanup,
         data=run.reads[0][1] if run.reads else None,

@@ -60,7 +60,7 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
    - `user.create`: `create-accepted`, `scratch-profile-listed`, `password-not-echoed` (the
      password occurs in no response of the run).
    - `user.get`: `user-id-matches`, `task-role-is-viewer`, `password-not-disclosed`,
-     `not-predefined`.
+     `not-predefined`, `remote-access-disabled`.
    - `user.modify`: `description-updated`, `description-cleared`, `user-id-unchanged`,
      `profile-uuid-unchanged`, `task-role-unchanged`.
    - `user.delete`: `scratch-profile-absent`, `pre-existing-profiles-unchanged`.
@@ -133,7 +133,7 @@ element order the documented `UserProfile` shape does not have (ADR 0202).
 ### Threat model
 
 - **Boundaries:** the scenario mints a credential and sends it to the HMC (added); recovery
-  gains one read-only tool (widened).
+  gains two read-only tools, `hmc_get_console_info` and `hmc_list_users` (widened).
 - **Actors:** the operator (trusted); anyone reading results files, logs or public evidence.
 - **Controls:** the password exists only in the scenario's local scope and the tool argument;
   `password-not-echoed` checks responses; results record responses, never arguments; remote

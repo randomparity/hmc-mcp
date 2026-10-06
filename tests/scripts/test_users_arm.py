@@ -76,6 +76,12 @@ class FakeHmc:
             user_id,
             AssociatedTaskRole={"text": fields["associated_task_role"]},
             UserDescription={"text": fields["description"]},
+            AllowWebRemoteAccess={
+                "text": str(fields["allow_web_remote_access"]).lower()
+            },
+            AllowSSHRemoteAccess={
+                "text": str(fields["allow_ssh_remote_access"]).lower()
+            },
         )
 
     def hmc_get_user(self, console_uuid: str, user_profile_uuid: str) -> dict:
@@ -336,3 +342,23 @@ async def test_a_refused_delete_records_the_hmc_error(hmc):
     assert [row["status"] for row in refused] == ["FAIL"]
     assert "hmc_delete_user refused" in json.dumps(refused)
     assert _observations(state)["user.delete"]["result"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_a_scratch_user_left_with_remote_access_fails_the_read(hmc, monkeypatch):
+    """An HMC that ignored the disabled flags must not yield a passed observation."""
+    original = hmc.hmc_create_user
+
+    def ignoring_flags(console_uuid: str, user_id: str, **fields):
+        original(console_uuid, user_id, **fields)
+        resource = hmc.users["uuid-new"]["Resource"]
+        resource["AllowSSHRemoteAccess"] = {"text": "true"}
+
+    monkeypatch.setattr(hmc, "hmc_create_user", ignoring_flags)
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    read = _observations(state)["user.get"]
+    assert read["result"] == "failed"
+    assert "remote-access-disabled" not in read["assertions"]

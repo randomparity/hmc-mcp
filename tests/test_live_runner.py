@@ -6053,6 +6053,7 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "task-role-is-viewer",
             "password-not-disclosed",
             "not-predefined",
+            "remote-access-disabled",
             "description-updated",
             "description-cleared",
             "user-id-unchanged",
