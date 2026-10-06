@@ -96,8 +96,7 @@ captured empty, so its attribute names are unverified.
    feed, which never lists a VIOS (#1202), refuses a VIOS name, then requires
    `PartitionType == "Virtual IO Server"`. No target can pass both, so it never
    submits — a confirmed defect whose fix (`operations/vios/install.py`, a contract
-   change) is outside this surface and is routed to the orchestrator for an owning
-   issue. It stays bound to `installios`, the command its code path builds, and is
+   change) is outside this surface: follow-up pending (campaign d0a19b80). It stays bound to `installios`, the command its code path builds, and is
    recorded `absent`, missing `vios-install-via-lpar-selector`.
 6. **Defects** confirmed within the permitted surface (for example the `lsviosbk`
    projection, if the live capture disproves it) are fixed here and the run repeated
