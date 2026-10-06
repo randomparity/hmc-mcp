@@ -240,3 +240,25 @@ def test_delete_virtual_network_tool_maps_public_arguments(monkeypatch, mock_hmc
 
     assert route.called
     assert result == f"Deleted VirtualNetwork {VNETWORK_UUID} from system-name"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vlan_id", [0, 4095, -1, True])
+async def test_create_virtual_network_refuses_out_of_range_vlan(mock_hmc, vlan_id):
+    """IEEE 802.1Q usable VLAN ids are 1-4094; anything else is refused before the PUT."""
+    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork")
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="vlan_id .* from 1 to 4094"):
+            await hmc.create_virtual_network(SYSTEM_UUID, "net", vlan_id, 0)
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vlan_id", [1, 4094])
+async def test_create_virtual_network_accepts_range_bounds(mock_hmc, vlan_id):
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork"
+    ).mock(return_value=httpx.Response(201, text=VNETWORK_ENTRY))
+    async with HMCClient(make_config()) as hmc:
+        await hmc.create_virtual_network(SYSTEM_UUID, "net", vlan_id, 0)
+    assert f">{vlan_id}<" in route.calls.last.request.content.decode()

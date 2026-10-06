@@ -8,5 +8,5 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_list_memory_pools` | `read` | `memory_pool.list` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List shared memory pools and their assigned LPARs. |
+| `hmc_list_memory_pools` | `read` | `memory_pool.list` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List shared memory pools and their assigned LPARs. |
 | `hmc_remove_memory_pool` | `destructive` | `memory_pool.remove` | `managed_system` | `partial` | `unevidenced` | `existing-runtime-guards` | Remove an empty shared memory pool after server-side validation. |

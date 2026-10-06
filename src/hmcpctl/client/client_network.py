@@ -13,6 +13,12 @@ from .client_contracts import NetworkClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 
 
+def require_vlan_id(argument: str, value: int) -> None:
+    """Refuse a VLAN id outside IEEE 802.1Q's usable 1-4094 before any write."""
+    if isinstance(value, bool) or not 1 <= value <= 4094:
+        raise ValueError(f"{argument} {value!r} must be a VLAN id from 1 to 4094")
+
+
 class NetworkMixin:
     # Virtual Network management (children of ManagedSystem)
     async def list_virtual_switches(
@@ -58,6 +64,7 @@ class NetworkMixin:
         """
 
         _reject_non_uuid_path_argument("system_uuid", system_uuid)
+        require_vlan_id("vlan_id", vlan_id)
         switch_link = None
         if switch_uuid:
             switch_link = (
