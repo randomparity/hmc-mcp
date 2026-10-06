@@ -1199,7 +1199,7 @@ def _manual_recovery_rows(state) -> list[dict[str, Any]]:
         row
         for row in state.results
         if row["tool"] == "chsyscfg -o apply (re-apply after restore)"
-        and "MANUAL RECOVERY REQUIRED" in str(row["data"])
+        and "MANUAL RECOVERY REQUIRED" in row["note"]
     ]
 
 
@@ -1276,8 +1276,8 @@ async def test_a_partition_that_cannot_be_reapplied_needs_manual_recovery(
     assert row["status"] == "FAIL"
     assert (
         f"partition 'lpar-name' — if its resource_config is 0, run chsyscfg -r lpar "
-        f"-m {state.config.system_name} -o apply -p lpar-name -n {profile} ("
-        in row["data"]
+        f"-m {state.config.system_name} -o apply -p lpar-name -n {profile}"
+        in row["note"]
     )
     assert "frame" not in row["data"]
     applies = [
@@ -1291,7 +1291,8 @@ async def test_each_unconfigured_partition_is_reapplied_or_reported(
     monkeypatch,
 ) -> None:
     kept = _CONFIGURED.replace("lpar-name", "kept")
-    other = _CONFIGURED.replace("lpar-name", "other").replace(*_NO_PROFILE)
+    # A dotted name is one the FAIL data's hostname redaction would mask.
+    other = _CONFIGURED.replace("lpar-name", "lp.other").replace(*_NO_PROFILE)
     before = f"{kept}\n{_CONFIGURED}\n{other}\n"
     after = f"{kept}\n{_UNCONFIGURED}\n{other.replace('config=1', 'config=0')}\n"
     calls, scripted = _st10_with_system_reads(
@@ -1311,8 +1312,9 @@ async def test_each_unconfigured_partition_is_reapplied_or_reported(
         f"chsyscfg -r lpar -m {state.config.system_name} -o apply -p lpar-name -n default_profile"
     ]
     [row] = _manual_recovery_rows(state)
-    assert "partition 'other'" in row["data"]
-    assert "-p other -n <profile>" in row["data"]
+    assert "partition 'lp.other'" in row["note"]
+    assert "-p lp.other -n <profile>" in row["note"]
+    assert "--filter lpar_names=lp.other -F name" in row["note"]
 
 
 @pytest.mark.asyncio

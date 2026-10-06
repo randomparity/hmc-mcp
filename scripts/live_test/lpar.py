@@ -13,7 +13,7 @@ from hmcpctl.ssh.commands import build_filter
 from hmcpctl.ssh.lpar import validate_lpar_description
 
 from .inventory import read_sync_state
-from .observation import Assertion, CallFailure, ExpectedOutcome, judge_create_result
+from .observation import Assertion, ExpectedOutcome, judge_create_result
 from .results import field
 
 if TYPE_CHECKING:
@@ -612,26 +612,31 @@ async def _reapply_unconfigured(
             f"chsyscfg -r lpar -m {system} -o apply -p {shlex.quote(name)} "
             f"-n {shlex.quote(profile) if profile else '<profile>'}"
         )
+        detail: object
         if current is None:
-            why = "the post-restore read did not report its resource_config"
+            detail = "the post-restore read did not report its resource_config"
         elif not profile:
-            why = "the restore left its resource_config at 0 and it has no curr_profile"
+            detail = "the restore left its resource_config at 0; it has no curr_profile"
+            apply += (
+                f" (list its profiles: lssyscfg -r prof -m {system} "
+                f"--filter {shlex.quote(f'lpar_names={name}')} -F name)"
+            )
         else:
-            status, data = await state.call(client, "hmc_run_command", cmd=apply)
+            status, detail = await state.call(client, "hmc_run_command", cmd=apply)
             if status == "PASS":
                 state.record(
-                    10, "chsyscfg -o apply (re-apply after restore)", status, data
+                    10, "chsyscfg -o apply (re-apply after restore)", status, detail
                 )
                 continue
-            # A CallFailure's traceback must never reach the results document.
-            message = data.message if isinstance(data, CallFailure) else data
-            why = f"its re-apply after the restore failed: {message}"
+        # The instruction rides in the note, which is never redacted: the FAIL
+        # data's hostname redaction would mask a dotted partition or profile name.
         state.record(
             10,
             "chsyscfg -o apply (re-apply after restore)",
             "FAIL",
+            detail,
             f"MANUAL RECOVERY REQUIRED: partition {name!r} — if its resource_config "
-            f"is 0, run {apply} ({why})",
+            f"is 0, run {apply}",
         )
 
 
