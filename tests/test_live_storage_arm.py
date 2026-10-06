@@ -334,6 +334,19 @@ async def test_a_protected_test_partition_is_a_gap(arm):
 
 
 @pytest.mark.asyncio
+async def test_a_group_name_the_vios_shell_could_split_is_refused(arm):
+    state, hmc = arm
+    state.config = replace(state.config, vdisk_volume_group_name="datavg; rmlv x")
+
+    await _run(state, 0, 40)
+
+    assert _mutations(hmc) == []
+    assert not any("lsvg -lv" in str(kwargs) for _, kwargs in hmc.calls)
+    with pytest.raises(ValueError):
+        storage_lifecycle.volume_listing(SYSTEM, VIOS_ID, "datavg; rmlv x")
+
+
+@pytest.mark.asyncio
 async def test_a_running_test_partition_is_not_mapped(arm):
     state, hmc = arm
     hmc.lpar_state = "Running"

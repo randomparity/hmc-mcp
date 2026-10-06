@@ -40,6 +40,9 @@ ATTACH_SCENARIO = "st40-attach-disk"
 DISK_PREFIX = "hpctl"
 DISK_SIZE_MIB = 1024
 _RUN_DISK = re.compile(rf"{DISK_PREFIX}[0-9a-f]{{8}}")
+#: The names a VIOS-side listing may carry: `viosvrcmd` hands its `-c` string to
+#: the VIOS shell, so a name is admitted only from a closed character set.
+LISTING_NAME = re.compile(r"[A-Za-z0-9_.-]+")
 _NOT_ACTIVATED = "not activated"
 #: The refusal `operations.storage.resources.delete_virtual_disk` raises for a
 #: mapped disk, before any write.
@@ -57,6 +60,8 @@ def is_run_disk_name(name: object) -> bool:
 
 def volume_listing(system_name: str, vios_id: int, group: str) -> str:
     """The ``lsvg -lv`` read of one volume group; recovery admits exactly this shape."""
+    if not LISTING_NAME.fullmatch(group):
+        raise ValueError(f"volume-group name {group!r} is not a plain VIOS name")
     return vios_command(system_name, vios_id, f"lsvg -lv {group}")
 
 
@@ -676,6 +681,12 @@ async def _preconditions(client: Client, state: RunState) -> int | None:
         return None
     if config.lp3_name in config.protected_lpar_names:
         skip(_protected_reason(config))
+        return None
+    if not LISTING_NAME.fullmatch(config.vdisk_volume_group_name):
+        skip(
+            "LIVE_TEST_VDISK_VOLUME_GROUP_NAME is not a plain VIOS name "
+            "(letters, digits, '_', '.', '-')"
+        )
         return None
     st, lpar_state = await state.call(
         client,

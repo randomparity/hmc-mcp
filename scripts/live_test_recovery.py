@@ -116,7 +116,6 @@ _READ_ONLY_COMMAND_PREFIXES = ("lssyscfg ", "lshwres ")
 _VOLUME_LISTING = re.compile(
     r"viosvrcmd -m [A-Za-z0-9_.-]+ --id [0-9]+ -c 'lsvg -lv [A-Za-z0-9_.-]+'"
 )
-_LISTING_NAME = re.compile(r"[A-Za-z0-9_.-]+")
 
 #: A command built from a results document must not be able to chain a second
 #: one behind an admitted prefix.
@@ -1190,7 +1189,8 @@ async def _run_disk_left(call, inputs: LparResidueInputs) -> Finding | None:
     vios_id = inputs.vios_partition_id
     group = inputs.volume_group
     if type(vios_id) is not int or not all(
-        _LISTING_NAME.fullmatch(name) for name in (inputs.system_name, group)
+        storage_lifecycle.LISTING_NAME.fullmatch(name)
+        for name in (inputs.system_name, group)
     ):
         raise StateUnreadable(
             "the document records no integer artifacts.vios_partition_id, or a "
