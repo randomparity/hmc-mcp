@@ -9,5 +9,5 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_deploy_partition_template` | `mutate` | `template.deploy` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | Deploy a partition from a *draft* partition template. |
-| `hmc_get_partition_template` | `read` | `template.get` | `template` | `implemented` | `unevidenced` | `existing-runtime-guards` | Get one partition template by UUID. |
-| `hmc_list_partition_templates` | `read` | `template.list` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | List all partition templates in the HMC template library. |
+| `hmc_get_partition_template` | `read` | `template.get` | `template` | `implemented` | `current` | `existing-runtime-guards` | Get one partition template by UUID. |
+| `hmc_list_partition_templates` | `read` | `template.list` | `console` | `implemented` | `current` | `existing-runtime-guards` | List all partition templates in the HMC template library. |

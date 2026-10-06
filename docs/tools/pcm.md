@@ -8,5 +8,5 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_get_pcm_preferences` | `read` | `pcm.get_preferences` | `metric_resource` | `implemented` | `unevidenced` | `existing-runtime-guards` | Get managed-system PCM monitoring preferences. |
-| `hmc_set_pcm_preferences` | `mutate` | `pcm.set_preferences` | `metric_resource` | `implemented` | `unevidenced` | `existing-runtime-guards` | Enable/disable managed-system PCM data collection. |
+| `hmc_get_pcm_preferences` | `read` | `pcm.get_preferences` | `metric_resource` | `implemented` | `current` | `existing-runtime-guards` | Get managed-system PCM monitoring preferences. |
+| `hmc_set_pcm_preferences` | `mutate` | `pcm.set_preferences` | `metric_resource` | `implemented` | `failed` | `existing-runtime-guards` | Enable/disable managed-system PCM data collection. |

@@ -222,30 +222,30 @@
     {
       "operation": "metrics.aggregated",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:32Z"
     },
     {
       "operation": "metrics.aggregated_links",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:26Z"
     },
     {
       "operation": "metrics.processed",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:21Z"
     },
     {
       "operation": "metrics.processed_links",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:14Z"
     },
     {
       "operation": "pcie.assign_dedicated_slot",
@@ -271,16 +271,16 @@
     {
       "operation": "pcm.get_preferences",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:02Z"
     },
     {
       "operation": "pcm.set_preferences",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:18:16Z"
     },
     {
       "operation": "resource_group.list_memopt_scores",
@@ -362,16 +362,16 @@
     {
       "operation": "template.get",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:39Z"
     },
     {
       "operation": "template.list",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-06T17:15:35Z"
     },
     {
       "operation": "update.console",
