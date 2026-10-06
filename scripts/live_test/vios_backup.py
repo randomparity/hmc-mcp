@@ -340,11 +340,25 @@ class _Arm:
                 return None
             await asyncio.sleep(POLL_SECONDS)
 
-    def compare(self, baseline: Snapshot, after: Snapshot) -> bool:
+    async def vadapter_shows(self, target: Target) -> bool | None:
+        """Whether the VIOS's own `lsmap -vadapter` lists the disk VTD and backing.
+
+        The VIOS-side view, checked beside the REST feed, which can lag a change
+        made with `viosvrcmd`. None when the adapter could not be read.
+        """
+        text = await self.on_vios(target, f"lsmap -vadapter {target.adapter}")
+        if text is None:
+            return None
+        words = text.split()
+        return target.vtd in words and target.backing in words
+
+    def compare(
+        self, baseline: Snapshot, after: Snapshot, label: str = "baseline compare"
+    ) -> bool:
         """Record each source's difference from the baseline; True when none differ."""
         same = after.mappings == baseline.mappings
         self.record(
-            "baseline compare (REST mappings)",
+            f"{label} (REST mappings)",
             "PASS" if same else "FAIL",
             {
                 "missing": sorted(map(str, baseline.mappings - after.mappings)),
@@ -357,7 +371,7 @@ class _Arm:
             diff = "\n".join(
                 difflib.unified_diff(before.splitlines(), now.splitlines(), lineterm="")
             )
-            self.record(f"baseline compare ({cmd})", "PASS" if equal else "FAIL", diff)
+            self.record(f"{label} ({cmd})", "PASS" if equal else "FAIL", diff)
             same = same and equal
         return same
 
@@ -374,6 +388,9 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
     baseline = await arm.snapshot(target, "baseline")
     if baseline is None or not has_disk_mapping(baseline.mappings, target):
         arm.refuse("the baseline could not be read")
+        return
+    if await arm.vadapter_shows(target) is not True:
+        arm.refuse("the VIOS's own lsmap does not show the mapping the REST feed does")
         return
     name = BACKUP_PREFIX + secrets.token_hex(4)
     artifacts = state.artifacts
@@ -401,18 +418,24 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
     status, after_listing = await arm.listed(target, "")
     after_rows = _backup_rows(after_listing) if status == "PASS" else None
     run_rows = [kind for row_name, kind in after_rows or [] if row_name == name]
-    state.record_verified(
-        SUBTASK,
-        "hmc_list_vios_backups",
-        operation="vios.list_backups",
-        scenario=SCENARIO,
-        assertions=[
-            Assertion("listing-parsed", after_rows is not None),
-            Assertion("listing-names-run-backup", run_rows == ["viosioconfig"]),
-        ],
-        cleanup="not-required",
-        data=after_listing,
-    )
+    if backup_accepted:
+        state.record_verified(
+            SUBTASK,
+            "hmc_list_vios_backups",
+            operation="vios.list_backups",
+            scenario=SCENARIO,
+            assertions=[
+                Assertion("listing-parsed", after_rows is not None),
+                Assertion("listing-names-run-backup", run_rows == ["viosioconfig"]),
+            ],
+            cleanup="not-required",
+            data=after_listing,
+        )
+    else:
+        # Without a backup the listing has nothing of this run's to show.
+        arm.record(
+            "hmc_list_vios_backups (after a refused backup)", status, after_listing
+        )
     exists = bool(run_rows) or (raw_after is not None and name in raw_after)
 
     restore, settled = None, True
@@ -424,13 +447,21 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
             "hmc_restore_vios (viosioconfig)",
             "not attempted: the backup was not confirmed or the delta did not complete",
         )
-    final = await arm.mappings(target, "final")
-    mapping_back = final is not None and has_disk_mapping(final, target)
+    # The backup goes only when the VIOS is back at its baseline. Unsettled means
+    # the VIOS never answered after the restore or a read after a change failed:
+    # the HMC may still be restoring from this backup. Off baseline means it is the
+    # operator's way back. Either way it is kept, and recovery reports it.
+    at_baseline = False
+    if settled:
+        final = await arm.snapshot(target, "final")
+        at_baseline = (
+            final is not None
+            and arm.compare(baseline, final, "final compare")
+            and await arm.vadapter_shows(target) is True
+        )
 
     backup_cleanup = "not-run"
-    # Unsettled means the VIOS never answered after the restore or the read after it
-    # failed: the HMC may still be restoring from this backup, so it is kept.
-    if exists and mapping_back and settled:
+    if exists and at_baseline:
         await arm.run("rmviosbk", rmviosbk_command(arm.system, target.vios, name))
         # Absence is read from the source that showed presence: a parsed listing
         # that never named the backup cannot show it gone.
@@ -471,7 +502,7 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
                 Assertion("mapping-restored", restore.mapping_restored),
                 Assertion("baseline-restored", restore.baseline_restored),
             ],
-            cleanup="passed" if mapping_back else "failed",
+            cleanup="passed" if at_baseline else "failed",
             data={"backup": name},
         )
 
@@ -486,9 +517,10 @@ async def _round_trip(
     """
     await arm.on_vios(target, f"rmvdev -vtd {target.vtd}")
     removed = await arm.mappings(target, "after rmvdev")
-    adapter = await arm.on_vios(target, f"lsmap -vadapter {target.adapter}")
-    if removed is None or has_disk_mapping(removed, target) or adapter is None:
-        return None, removed is not None
+    # The adapter must remain and both views must agree the VTD is gone.
+    shown = await arm.vadapter_shows(target)
+    if removed is None or has_disk_mapping(removed, target) or shown is not False:
+        return None, removed is not None and shown is not None
 
     started = time.monotonic()
     status, data = await arm.state.call(

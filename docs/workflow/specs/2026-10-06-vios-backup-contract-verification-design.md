@@ -48,8 +48,9 @@ captured empty, so its attribute names are unverified.
       observation.
    5. *Delta*, only when the backup call passed and the raw after-capture names the
       backup (the parsed listing is asserted, not gated on: its projection is unverified):
-      `viosvrcmd ... rmvdev -vtd <vtd>`; assert the disk mapping is gone and the server
-      adapter remains (`lsmap -vadapter vhostN` succeeds).
+      `viosvrcmd ... rmvdev -vtd <vtd>`; the REST feed and the VIOS's own
+      `lsmap -vadapter vhostN` must both show the VTD gone and the adapter kept (the
+      baseline requires both to show it present).
    6. *Restore*: `hmc_restore_vios(-t viosioconfig, restart_if_required=True)`, timed.
       With `-r` the HMC restarts the VIOS and retries inside the command, so the run
       sets `HMC_SSH_TIMEOUT=2400` (runbook, preflight). Whatever the call returns,
@@ -66,10 +67,13 @@ captured empty, so its attribute names are unverified.
    8. *Fallback*: when step 7 read the mapping list and it lacks the mapping,
       `mkvdev -vdev <backing> -vadapter vhostN -dev <vtd>`, then re-read; the restore
       observation stays failed.
-   9. *Cleanup*: when the final read shows the mapping back (restored or recreated),
+   9. *Cleanup*: only when the VIOS settled and a final read equals the baseline
+      (REST mapping set, the four normalized listings, `lsmap -vadapter`),
       `rmviosbk -t viosioconfig -m <sys> -p <vios> -f <name>` through
       `hmc_run_command`, then confirm absence (parsed listing, else the raw capture).
-      Otherwise the backup is kept for the operator and recovery reports it.
+      Otherwise the backup is kept, cleanup is `not-run`, the restore is failed, and
+      recovery reports `VIOS off baseline, backup kept` (exit 1; operator ruling
+      2026-10-06).
 
    A read that fails after a mutation counts as an assertion not holding and permits
    no further mutation; it never reads as "absent".
@@ -78,16 +82,17 @@ captured empty, so its attribute names are unverified.
 
    | Operation | Assertions | Cleanup |
    |---|---|---|
-   | `vios.list_backups` | `listing-parsed`, `listing-names-run-backup` (parsed row with the run's name, type `viosioconfig`) | not-required |
+   | `vios.list_backups` | `listing-parsed`, `listing-names-run-backup` (parsed row with the run's name, type `viosioconfig`); recorded only after an accepted backup, else a non-promoting row | not-required |
    | `vios.backup` | `backup-accepted`, `backup-newly-listed`, `backup-type-viosioconfig` | rmviosbk confirmed absent → passed; kept (step 9) → not-run; else failed |
-   | `vios.restore` | `restore-accepted`, `mapping-restored`, `baseline-restored` | final mapping equals baseline → passed, else failed |
+   | `vios.restore` | `restore-accepted`, `mapping-restored`, `baseline-restored` | final read equals the baseline → passed, else failed |
 
    A tool-call failure records the assertion as not holding; it never becomes a SKIP.
    The restore's outcome is judged on steps 6–7, never on the call alone.
 
 3. **Preflight** names the arm's mutations; **recovery** witnesses subtask 37: a
    listed backup with the run's name (remedy: the `rmviosbk` command), and a missing
-   baseline mapping (remedy: the `mkvdev` command). A failed read
+   baseline mapping (remedy: the `mkvdev` command), and a run whose final read was
+   off its baseline (`VIOS off baseline, backup kept`). A failed read
    raises `StateUnreadable` (exit 2) as the existing witnesses do. It adds only
    `hmc_list_vios_backups` to its read-only allowlist.
 4. **Catalog**: maturity records for the five operations (below), regenerated

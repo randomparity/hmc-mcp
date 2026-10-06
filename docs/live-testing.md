@@ -205,14 +205,18 @@ the HMC console, so the arm guards on it instead.
   `lsmap -all -net`, `lsmap -all -npiv` and `lsdev -virtual` listings equal the
   baseline, line order aside. If the mapping is not back, it recreates it with
   `mkvdev` and records the restore as failed.
-- **Cleanup.** hmcpctl has no backup-removal tool (#698). Once the mapping reads
-  back, the arm removes its backup through `hmc_run_command`. After the restore it
-  waits, up to 2400 s, for RMC to read `active` and the VIOS to answer
-  `ioslevel`. When that never happens, the restore call ended without an exit
-  status from the HMC (a timeout or a dropped session), or a read failed after a
-  change, it keeps the backup, recreates nothing, and changes nothing more.
-  Recover the VIOS through its HMC console first. Remove it by hand once the VIOS is checked, as the recovery check
-  prints:
+- **Cleanup.** hmcpctl has no backup-removal tool (#698). The arm removes its
+  backup through `hmc_run_command` only when a final read equals the baseline:
+  the REST mapping set, the four listings, and the VIOS's own
+  `lsmap -vadapter`. After the restore it waits, up to 2400 s, for RMC to read
+  `active` and the VIOS to answer `ioslevel`. When that never happens, the
+  restore call ended without an exit status from the HMC (a timeout or a dropped
+  session), or a read failed after a change, it recreates nothing and changes
+  nothing more. In those cases, and whenever the final read is off the baseline,
+  it keeps the backup: it is the way back. The recovery check then reports
+  `VIOS off baseline, backup kept` (exit 1) or the kept backup. Recover the VIOS
+  through its HMC console first, then remove the backup by hand, as the recovery
+  check prints:
 
   ```sh
   rmviosbk -t viosioconfig -m <system> -p <vios> -f hmcpctl-live-st37-<8 hex>
@@ -303,7 +307,7 @@ three sets of them:
 |---|---|
 | 16–22 (vmedia) | the test partition left running, its pending boot string changed, the run's ISO still mounted to it, a VIOS vSCSI server adapter toward it with no mapping, and the media repository the run created |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
-| 37 (vios-backup) | the run's backup still in the VIOS catalog, and the test partition's disk mapping missing |
+| 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
 partition. Every other dispatched subtask is printed as `NOT WITNESSED`.

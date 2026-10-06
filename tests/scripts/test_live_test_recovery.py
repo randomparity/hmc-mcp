@@ -1327,3 +1327,38 @@ def test_a_vios_backup_run_is_witnessed(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "disk mapping missing" in output
     assert "NOT WITNESSED" not in output
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backups", "what"),
+    [
+        (
+            [{"name": "hmcpctl-live-st37-0a1b2c3d", "type": "viosioconfig"}],
+            "VIOS off baseline, backup kept",
+        ),
+        ([], "VIOS off baseline, backup gone"),
+    ],
+)
+async def test_an_off_baseline_run_is_never_clean(backups, what):
+    inputs = recovery.VIOSBackupInputs(**{**vars(_VIOS_INPUTS), "off_baseline": True})
+    responses = {"hmc_list_vios_backups": backups, "hmc_list_storage_mappings": _MAPPED}
+
+    (finding,) = await recovery.check_vios_backup(_caller(responses), inputs)
+
+    assert finding.what == what
+
+
+def test_a_failed_final_compare_row_marks_the_run_off_baseline():
+    document = _vios_document()
+    document["results"] = [
+        {"tool": "final compare (lsmap -all -net)", "status": "FAIL"},
+        {"tool": "baseline compare (lsmap -all)", "status": "FAIL"},
+    ]
+
+    inputs = recovery.vios_backup_inputs_from_document(document, [37])
+
+    assert inputs is not None and inputs.off_baseline
+    clean = _vios_document()
+    clean["results"] = [{"tool": "baseline compare (lsmap -all)", "status": "FAIL"}]
+    assert not recovery.vios_backup_inputs_from_document(clean, [37]).off_baseline

@@ -209,6 +209,8 @@ class VIOSBackupInputs:
     backup_name: str
     mapping_id: str
     backing: str
+    #: The arm's final read differed from its baseline, so it kept the backup.
+    off_baseline: bool = False
 
 
 def vios_backup_inputs_from_document(
@@ -235,7 +237,14 @@ def vios_backup_inputs_from_document(
     )
     if not all(isinstance(value, str) and value for value in values):
         return None
-    return VIOSBackupInputs(*values)
+    rows = document.get("results")
+    off_baseline = isinstance(rows, list) and any(
+        isinstance(row, dict)
+        and str(row.get("tool", "")).startswith("final compare")
+        and row.get("status") == "FAIL"
+        for row in rows
+    )
+    return VIOSBackupInputs(*values, off_baseline=off_baseline)
 
 
 async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
@@ -256,17 +265,34 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
         raise StateUnreadable(f"could not list the backups of {inputs.vios} ({status})")
     # Containment, not equality: the catalog may render the name with a prefix or
     # suffix, and a projection that did is no reason to report the backup gone.
-    if any(
+    listed = any(
         isinstance(row, dict) and inputs.backup_name in str(row.get("name", ""))
         for row in data
-    ):
+    )
+    remove = vios_backup.rmviosbk_command(
+        inputs.system_name, inputs.vios, inputs.backup_name
+    )
+    if inputs.off_baseline:
+        findings.append(
+            Finding(
+                "VIOS off baseline, backup kept"
+                if listed
+                else "VIOS off baseline, backup gone",
+                f"the run's final read of {inputs.vios} differed from its baseline "
+                "(its 'final compare' rows); check the VIOS through its HMC console",
+                f"rstviosbk -t viosioconfig -m {shlex.quote(inputs.system_name)} "
+                f"-p {shlex.quote(inputs.vios)} -f {shlex.quote(inputs.backup_name)} "
+                f"-r, re-check the baseline, then {remove}"
+                if listed
+                else "restore the I/O configuration by hand from the run's baseline rows",
+            )
+        )
+    elif listed:
         findings.append(
             Finding(
                 "VIOS backup left",
                 f"{inputs.backup_name} is still in the backup catalog of {inputs.vios}",
-                vios_backup.rmviosbk_command(
-                    inputs.system_name, inputs.vios, inputs.backup_name
-                ),
+                remove,
             )
         )
     status, data = await call(

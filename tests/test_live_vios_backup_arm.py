@@ -60,6 +60,10 @@ class FakeVios:
     rmviosbk_removes: bool = True
     sea_lines: str = "ent5 ent0 Available\n"
     rmc_before: str = "active\n"
+    rest_lags: bool = False
+    rmvdev_ignored: bool = False
+    rest_hidden: bool = False
+    vadapter_disagrees: bool = False
     rmc_returns: bool = True
     serial: str = "server,1\nserver,0\n"
     reorder: bool = False
@@ -67,7 +71,8 @@ class FakeVios:
     restored: bool = False
 
     def mappings(self, lpar: str | None) -> list[dict[str, Any]]:
-        found = [OPTICAL, DISK] if self.mapped else [OPTICAL]
+        shown = (self.mapped or self.rest_lags) and not self.rest_hidden
+        found = [OPTICAL, DISK] if shown else [OPTICAL]
         if self.reorder and self.restored:
             found = list(reversed(found))
         return list(found)
@@ -130,11 +135,18 @@ class FakeVios:
             return "PASS", ""
         inner = cmd.split(' -c "', 1)[1].rstrip('"')
         if inner.startswith("rmvdev"):
+            if self.rmvdev_ignored:
+                self.rest_hidden = True
+                return "PASS", ""
             self.mapped = False
             return "PASS", ""
         if inner.startswith("mkvdev"):
             self.mapped = True
             return "PASS", ""
+        if inner.startswith("lsmap -vadapter"):
+            if not self.mapped or self.vadapter_disagrees:
+                return "PASS", "SVSA vhost0\nVTD lp3-vopt\n"
+            return "PASS", "SVSA vhost0\nVTD lp3-disk\nBacking device lp3-vd1\n"
         if inner == "ioslevel":
             return (
                 ("PASS", "3.1.4.10") if self.ioslevel_answers else ("FAIL", "RMC down")
@@ -389,6 +401,8 @@ async def test_a_failed_backup_changes_nothing_else(monkeypatch):
     observations = _observations(state)
     assert observations["vios.backup"]["result"] == "failed"
     assert "vios.restore" not in observations
+    # The listing had nothing of this run's to show, so it promotes nothing.
+    assert "vios.list_backups" not in observations
 
 
 @pytest.mark.asyncio
@@ -421,6 +435,13 @@ async def test_a_changed_sea_listing_fails_the_baseline(monkeypatch):
     assert restore["result"] == "failed"
     assert "baseline-restored" not in restore["assertions"]
     assert "mapping-restored" in restore["assertions"]
+    # Off baseline, the backup is the way back: it is kept, not removed.
+    assert "rmviosbk" not in _mutations(vios)
+    assert _observations(state)["vios.backup"]["cleanup"] == "not-run"
+    assert any(
+        row["tool"].startswith("final compare") and row["status"] == "FAIL"
+        for row in state.results
+    )
 
 
 @pytest.mark.asyncio
@@ -446,3 +467,38 @@ async def test_rmc_that_never_returns_after_the_restore_stops_every_change(
     assert _observations(state)["vios.restore"]["result"] == "failed"
     assert _observations(state)["vios.backup"]["cleanup"] == "not-run"
     assert not any("ioslevel" in call for call in vios.calls)
+
+
+@pytest.mark.asyncio
+async def test_a_rest_feed_that_still_lists_the_removed_vtd_stops_the_restore(
+    monkeypatch,
+):
+    """The VIOS says the VTD is gone; the lagging REST feed does not agree yet."""
+    vios = FakeVios(rest_lags=True)
+
+    state = await _run(monkeypatch, vios)
+
+    assert _mutations(vios) == ["hmc_backup_vios", "rmvdev"]
+    assert "vios.restore" not in _observations(state)
+    assert _observations(state)["vios.backup"]["cleanup"] == "not-run"
+
+
+@pytest.mark.asyncio
+async def test_a_vios_lsmap_that_disagrees_with_rest_changes_nothing(monkeypatch):
+    vios = FakeVios(vadapter_disagrees=True)
+
+    state = await _run(monkeypatch, vios)
+
+    assert _mutations(vios) == []
+    assert state.observations == []
+
+
+@pytest.mark.asyncio
+async def test_a_vios_that_still_shows_the_vtd_is_not_restored(monkeypatch):
+    """REST reports the VTD gone; the VIOS's own lsmap still lists it."""
+    vios = FakeVios(rmvdev_ignored=True)
+
+    state = await _run(monkeypatch, vios)
+
+    assert _mutations(vios) == ["hmc_backup_vios", "rmvdev"]
+    assert "vios.restore" not in _observations(state)
