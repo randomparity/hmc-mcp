@@ -31,8 +31,8 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
         user_id="a&b",
         authentication_type="Local",
         password="<&",
-        associated_task_role="https://h/TaskRole/1?x=1&y=2",
-        associated_resource_roles=["https://h/ResourceRole/2"],
+        associated_task_role="role&1",
+        associated_resource_roles=["role<2"],
         password_expiry=30,
         verify_session_timeout=True,
         idle_session_timeout=15,
@@ -43,6 +43,7 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
     assert "UserProfile" in xml
     assert "HmcUser" not in xml
     assert "a&amp;b" in xml and "&lt;&amp;" in xml
+    assert ">role&amp;1<" in xml and ">role&lt;2<" in xml
     assert "AssociatedTaskRole" in xml and "AssociatedResourceRoles" in xml
     assert ">30</PasswordExpiry>" in xml
     assert ">true</VerifySessionTimeout>" in xml
@@ -50,6 +51,74 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
     assert ">60</UserInactivity>" in xml
     assert ">1</MinimumPasswordAge>" in xml
     assert ">false</AllowSSHRemoteAccess>" in xml
+
+
+def test_user_profile_builder_follows_the_documented_shape() -> None:
+    """ADR 0202: roles are names, and children follow the documented order."""
+    from xml.etree import ElementTree as ET
+
+    xml = build_hmc_user_document(
+        user_id="u",
+        authentication_type="Local",
+        password="p",
+        description="d",
+        associated_task_role="hmcviewer",
+        associated_resource_roles=["AllSystemResources"],
+        password_expiry=30,
+        session_timeout=1,
+        verify_session_timeout=True,
+        idle_session_timeout=2,
+        user_inactivity=3,
+        minimum_password_age=4,
+        allow_web_remote_access=False,
+        allow_ssh_remote_access=False,
+        remote_user_id="r",
+    )
+    children = [child.tag.rsplit("}", 1)[-1] for child in ET.fromstring(xml)]
+    assert children == [
+        "Metadata",
+        "UserID",
+        "UserDescription",
+        "AuthenticationType",
+        "UserProfilePassword",
+        "PasswordExpiry",
+        "AssociatedTaskRole",
+        "AssociatedResourceRoles",
+        "SessionTimeout",
+        "VerifySessionTimeout",
+        "IdleSessionTimeout",
+        "UserInactivity",
+        "MinimumPasswordAge",
+        "AllowWebRemoteAccess",
+        "AllowSSHRemoteAccess",
+        "RemoteUserID",
+    ]
+    assert "href=" not in xml
+    assert (
+        '<AssociatedTaskRole kb="CUR" kxe="false">hmcviewer</AssociatedTaskRole>' in xml
+    )
+    assert (
+        '<AssociatedResourceRoles kb="CUR" kxe="false" schemaVersion="V1_0">'
+        "<Metadata><Atom/></Metadata>"
+        '<AssociatedResourceRole kb="CUR" kxe="false">AllSystemResources'
+        "</AssociatedResourceRole></AssociatedResourceRoles>"
+    ) in xml
+
+
+@pytest.mark.parametrize(
+    ("requested", "wire"),
+    [("Local", "local"), ("LDAP", "ldap"), ("Kerberos", "kerberos")],
+)
+def test_user_profile_builder_sends_the_hmcs_lowercase_authentication_type(
+    requested, wire
+) -> None:
+    """V10R3 lists every profile's AuthenticationType in lower case, and refused a
+    create carrying ``Local`` with REST0001 (2026-10-06 users arm, #632)."""
+    xml = build_hmc_user_document(authentication_type=requested)
+
+    assert (
+        f'<AuthenticationType kb="CUR" kxe="false">{wire}</AuthenticationType>' in xml
+    )
 
 
 def test_user_profile_builder_rejects_unknown_authentication_type() -> None:

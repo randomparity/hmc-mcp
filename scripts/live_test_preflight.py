@@ -44,7 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, pcie, vios_backup, vmedia
+from live_test import bare_cec, pcie, users, vios_backup, vmedia
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -279,6 +279,23 @@ def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _users_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the HMC user the users arm (#632) creates and deletes again."""
+    return ArmVerdict(
+        "users",
+        True,
+        "configuration validated",
+        (
+            (
+                f"the HMC: one user {users.SCRATCH_PREFIX}<8 hex> with the "
+                f"{users.VIEWER_TASK_ROLE} task role, web and SSH remote access "
+                "disabled (created, modified, then deleted by UUID)"
+            ),
+            "existing users, roles and LDAP/Kerberos settings: read only",
+        ),
+    )
+
+
 def _vmedia_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name what the vmedia arm (#1347) changes, each removed by the arm itself."""
     return ArmVerdict(
@@ -316,6 +333,7 @@ _ARM_VERDICTS = {
     "pcm": _pcm_verdict,
     "vios-backup": _vios_backup_verdict,
     "network": _network_verdict,
+    "users": _users_verdict,
     "vmedia": _vmedia_verdict,
 }
 

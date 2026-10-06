@@ -2540,6 +2540,241 @@
       ]
     },
     {
+      "operation": "user.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "uom-feed",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st11-hmc-list-users",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:31:44Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "profiles-listed",
+            "profiles-carry-uuid-and-user-id",
+            "passwords-not-disclosed"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
+    },
+    {
+      "operation": "task_role.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "uom-feed",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st11-hmc-list-task-roles",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:31:53Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "task-roles-listed",
+            "viewer-role-present"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
+    },
+    {
+      "operation": "resource_role.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "uom-feed",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st11-hmc-list-resource-roles",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:31:59Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "resource-role-rows-named"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
+    },
+    {
+      "operation": "user.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-uuid",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "user.modify",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "by-uuid",
+            "parameters": []
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "verify-session-timeout-minutes",
+            "parameters": [
+              {
+                "name": "verify_session_timeout",
+                "constraint": "an integer number of minutes, as documented; the tool types it bool and sends true or false"
+              }
+            ]
+          }
+        ]
+      },
+      "evidence": []
+    },
+    {
+      "operation": "user.delete",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "by-uuid",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "user.create",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "local-user",
+            "parameters": []
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "verify-session-timeout-minutes",
+            "parameters": [
+              {
+                "name": "verify_session_timeout",
+                "constraint": "an integer number of minutes, as documented; the tool types it bool and sends true or false"
+              }
+            ]
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "st11-hmc-create-user",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st11-user-lifecycle",
+          "observed_at": "2026-10-06T19:32:49Z",
+          "cleanup": "passed",
+          "assertions": [
+            "password-not-echoed"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
+    },
+    {
+      "operation": "remote_access.get",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "remote-access-group",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st11-hmc-get-remote-access",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st11-user-reads",
+          "observed_at": "2026-10-06T19:32:20Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "remote-access-group-read",
+            "bind-password-not-disclosed"
+          ],
+          "tested_commit": "c1aee35f91232ec4e52947cf61af9c2ed61b8ad5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "2118f52b6943b1ae6009c4cd59cae8c748a5169f0b7bd8dbaae8b5fc46c50e53"
+        }
+      ]
+    },
+    {
+      "operation": "remote_access.configure",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "remote-access-merge",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
       "operation": "media.get_repository",
       "implementation": {
         "state": "implemented",

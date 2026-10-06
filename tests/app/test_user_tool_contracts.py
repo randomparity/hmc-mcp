@@ -180,3 +180,23 @@ def test_remote_access_tool_preserves_value_and_clear_semantics(
     )
     context.__aexit__.assert_awaited_once()
     assert result == {"Resource": {"LdapEnabled": False}}
+
+
+@pytest.mark.parametrize(
+    "tool_name, expected",
+    [
+        ("hmc_list_users", ("console", "console_uuid")),
+        ("hmc_create_user", ("user", "user_id")),
+        ("hmc_get_user", ("user", "user_profile_uuid")),
+        ("hmc_modify_user", ("user", "user_profile_uuid")),
+        ("hmc_delete_user", ("user", "user_profile_uuid")),
+    ],
+)
+def test_user_tools_name_their_targets(tool_name, expected) -> None:
+    """Each user tool's ADR 0039 grant target is the identity it acts on (#632)."""
+    from hmcpctl.server import TOOL_SECURITY
+
+    built = {
+        (target.kind, target.argument) for target in TOOL_SECURITY[tool_name].targets
+    }
+    assert expected in built
