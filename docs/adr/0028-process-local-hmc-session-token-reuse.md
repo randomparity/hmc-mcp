@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Amended 2026-10-05 by #1325 — see *Amendment* below; the decision
+recorded here stands.
 
 ## Context
 
@@ -143,3 +144,34 @@ without evidence that cross-process reuse is required.
 **Automatically replay every request after reauthentication.** A mutating
 request might have taken effect even if the client receives a 401 or loses the
 response. Automatic replay would risk duplicate or conflicting side effects.
+
+## Amendment (2026-10-05, #1325)
+
+`HMCClient.__aexit__` no longer raises a logoff **transport** failure when the
+`async with` body exited cleanly. A `HMCTransportError` from `logoff()` there —
+a connect, read, protocol, or timeout failure before the HMC answered — is logged
+at WARNING on the `hmcpctl.client.core` logger, with a note that the HMC session
+may persist until the HMC times it out, and the context exits normally. An HMC
+rejection (`HMCError`, any status other than 200, 202, or 204) still propagates,
+as does any other exception. When the body raised, every cleanup failure is still
+attached to the body's exception as a note.
+
+Nothing else here changes. `logoff()` still validates the response status and
+raises both failure kinds; it still clears the local token in every case. The
+future cache's rule that an ambiguous Logoff quarantines its key is unaffected:
+that is the cache's own cleanup contract, not the per-call context manager's.
+
+The reason: a transport drop on the Logoff `DELETE` failed a read whose response
+had already been returned (issue #1325, observed once on a V11R2 HMC). The caller
+cannot act on that error — logoff is not retried, and the local token is already
+gone — and a retried mutation could duplicate its effect. A rejection is
+different: the HMC answered that it did not close the session, which an operator
+can act on, so it keeps failing the call.
+
+Considered & rejected:
+
+- **Keep raising both kinds.** judgment: fails completed operations for a
+  cleanup fault the caller cannot repair, and invites duplicate mutations.
+- **Retry the Logoff once before logging.** judgment: excluded by the operator
+  for #1325; a second `DELETE` adds latency to every failing exit for a session
+  the HMC times out on its own.
