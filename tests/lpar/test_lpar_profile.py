@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,13 +12,14 @@ from fastmcp import Client
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.operations.lpar.configuration import synchronize_lpar_profile
 from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.server_tools.lpar.profiles import (
     hmc_backup_lpar_profiles,
     hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile,
 )
-from hmcpctl.ssh.profiles import restore_lpar_profiles
+from hmcpctl.ssh.profiles import restore_lpar_profiles, sync_lpar_profile
 
 SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "managed_sys1"
@@ -233,6 +235,70 @@ def test_sync_lpar_profile_returns_cli_output(monkeypatch, mock_hmc):
         result = hmc_sync_lpar_profile(SYSTEM_UUID, LPAR_UUID)
 
     assert result == RAW_OUTPUT
+
+
+@pytest.mark.parametrize(
+    ("mode", "value"), [("enable", 1), ("disable", 0), ("suspend", 2)]
+)
+def test_sync_mode_renders_setting_value(monkeypatch, mock_hmc, mode, value):
+    """Each mode writes the matching sync_curr_profile setting value (ADR 0201)."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock("")
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
+        hmc_sync_lpar_profile(SYSTEM_UUID, LPAR_UUID, mode=mode)
+
+    expected_cmd = (
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
+        f"-i name={LPAR_NAME},sync_curr_profile={value}"
+    )
+    conn_mock.run.assert_awaited_with(expected_cmd, check=True, timeout=300.0)
+
+
+# Deliberately outside ProfileSyncMode; typed Any so the call type-checks.
+_BAD_MODE: Any = "on"
+
+
+def test_sync_rejects_unknown_mode():
+    """An unknown mode is refused before any SSH connection is opened."""
+    with (
+        patch("hmcpctl.ssh.profiles.run_hmc_command", new=AsyncMock()) as run,
+        pytest.raises(ValueError, match="enable, disable or suspend"),
+    ):
+        asyncio.run(sync_lpar_profile(make_config(), SYSTEM_NAME, LPAR_NAME, _BAD_MODE))
+
+    run.assert_not_awaited()
+
+
+def test_synchronize_refuses_an_unknown_mode_before_any_hmc_call():
+    """The operation validates the mode before resolving or authorizing anything."""
+    hmc = MagicMock(side_effect=AssertionError("the HMC was contacted"))
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.configuration.resolve_and_authorize_lpar_names",
+            new=AsyncMock(side_effect=AssertionError("names were resolved")),
+        ),
+        pytest.raises(ValueError, match="enable, disable or suspend"),
+    ):
+        asyncio.run(
+            synchronize_lpar_profile(hmc, SYSTEM_NAME, LPAR_NAME, mode=_BAD_MODE)
+        )
+
+
+def test_sync_tool_schema_offers_only_the_three_modes():
+    """MCP callers see the three documented modes with enable as the default."""
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    async def schema():
+        async with Client(create_mcp(policy)) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            return tools["hmc_sync_lpar_profile"].input_schema
+
+    mode = asyncio.run(schema())["properties"]["mode"]
+    assert mode["enum"] == ["enable", "disable", "suspend"]
+    assert mode["default"] == "enable"
 
 
 def test_restore_tool_schema_requires_documented_restore_type():

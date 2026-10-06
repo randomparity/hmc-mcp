@@ -6,7 +6,7 @@ a JSON document on exit.
 
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
-`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec}.py` to dispatch one arm,
+`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles}.py` to dispatch one arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
@@ -762,6 +762,8 @@ class RunState:
     known_gaps: set[tuple[str, str]] = field(default_factory=set)
     schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
+    # The `--group` this run was dispatched with; a system-wide step gates on it.
+    group: str | None = None
 
     async def call(
         self,
@@ -1175,6 +1177,7 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     "sriov": [23],
     "dedicated": [24],
     "bare-cec": [25],
+    "profiles": [0, 4, 10, 15],
     "all": list(range(26)),
 }
 
@@ -1707,7 +1710,7 @@ async def main(
     except (OSError, ValueError) as exc:
         print(f"❌ {_redact_failure_text(str(exc))}")
         return 1
-    state = RunState(config=config, known_gaps=known_gaps)
+    state = RunState(config=config, known_gaps=known_gaps, group=group)
     hmc_config = hmc_config or HMCConfig()
     print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"

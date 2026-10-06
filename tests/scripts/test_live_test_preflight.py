@@ -253,6 +253,22 @@ def test_the_dedicated_verdict_names_system_prefix_and_slot(
     assert "RUNNABLE" in output
 
 
+def test_the_profiles_verdict_names_each_change_it_makes(
+    workspace, monkeypatch, capsys
+):
+    """#627. The arm restores each change, but the operator approves the list first."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "profiles", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "msp (toggled, then restored)" in output
+    assert "type-3 merge-restored" in output
+    assert "profile re-applied" in output
+
+
 def test_a_pinned_slot_predicts_the_io_slots_scenario_will_skip(
     workspace, monkeypatch, capsys
 ):

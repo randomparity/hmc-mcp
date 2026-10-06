@@ -89,6 +89,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | sriov | `uv run --no-sync python scripts/live_sriov.py` | subtask 23 |
 | dedicated | `uv run --no-sync python scripts/live_dedicated.py` | subtask 24 |
 | bare-cec | `uv run --no-sync python scripts/live_bare_cec.py` | subtask 25 |
+| profiles | `uv run --no-sync python scripts/live_profiles.py` | subtasks 0, 4, 10 and 15 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -128,6 +129,44 @@ and expects the profile to read `none`.
 - A failed step ends the scenario. The arm then removes the slots it added, and
   its cleanup deletes the fixture only when the profile is back at the baseline.
   Otherwise it prints a manual-recovery row, as for any other drift.
+
+### The profiles arm
+
+The profiles arm verifies the partition-property, profile, memory-pool and
+affinity operations (#627). Subtask 10 changes each property it tests and
+restores the value it read just before:
+
+- the test partition's description;
+- the first VIOS's `msp` flag;
+- the processor compatibility mode of the test partition's default profile;
+- its `sync_curr_profile` setting, which it touches only while the partition is
+  `Not Activated`.
+
+It is the only arm that runs the system-wide profile backup and type-3
+merge-restore. It backs up to `hmcpctl-live-st10`, a file in the HMC's
+`/var/hsc/profiles/<serial>/` directory. That file stays there and is
+overwritten by the next successful backup. The restore runs only when this
+run's backup succeeded.
+
+The restore resets a not-activated partition's `resource_config` from 1 to 0,
+even though it merges a backup taken moments earlier, so its observation fails
+on that side effect. The arm then re-applies each such partition's current
+profile, which leaves it `Not Activated`.
+
+If a run stops partway, restore by hand what it may have left changed. Use
+the values in the run's baseline:
+
+- `chsyscfg -r lpar -m <system> -i "name=<lpar>,description=<original>"`
+- `chsyscfg -r lpar -m <system> -i "name=<vios>,msp=<0|1>"`
+- `chsyscfg -r prof -m <system> -i "name=<profile>,lpar_name=<lpar>,lpar_proc_compat_mode=<mode>"`
+- `chsyscfg -r lpar -m <system> -i "name=<lpar>,sync_curr_profile=<0|1|2>"`
+- `chsyscfg -r lpar -m <system> -o apply -p <lpar> -n <profile>`, for a
+  not-activated partition whose `resource_config` the restore left at 0
+
+If the restore itself failed or was interrupted, review the profiles before
+anything else, then restore them with
+`rstprofdata -m <system> -l 1 -f hmcpctl-live-st10`. Do not run the arm
+again until the profiles are confirmed: its next backup overwrites that file.
 
 ### The bare-cec arm
 
@@ -195,7 +234,7 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2` or `sriov`.
+`bare-cec`, `round2`, `sriov` or `profiles`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
 two sets of them:
@@ -214,8 +253,8 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 | 1 | something is stranded; the output names it and the command that clears it |
 | 2 | some state could not be read, or the run dispatched subtasks the check does not witness — **this is not clean** |
 
-Exit 2 is expected after round2, SR-IOV and `all` runs: they dispatch subtasks
-the check does not witness. For those, check by hand:
+Exit 2 is expected after round2, SR-IOV, profiles and `all` runs: they dispatch
+subtasks the check does not witness. For those, check by hand:
 
 - **round2**: the scratch and network-test partitions are gone, the test user is
   gone, no test VLAN or virtual network is left, the test partition's
@@ -223,6 +262,11 @@ the check does not witness. For those, check by hand:
   partition and its disk exist.
 - **SR-IOV**: the test logical port is no longer assigned to the test
   partition, and its profile no longer lists it.
+- **profiles**: compare an independent `lssyscfg` read with one taken before
+  the run. That read covers the test partition, every profile on the system
+  (`lssyscfg -r prof -m <system>`) and the VIOS `msp` flag. It should match
+  line for line as a set: the HMC reorders a partition's profiles after a
+  restore. The backup file `hmcpctl-live-st10` is the one expected addition.
 
 The check issues no mutating call. When it reports something stranded, run the
 command it prints yourself, then run the check again.

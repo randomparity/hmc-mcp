@@ -156,6 +156,38 @@ async def _capture_lpar_cli_dump(client: Client, state: RunState) -> None:
         artifacts.lp3_baseline["lssyscfg"] = data
 
 
+async def read_sync_state(
+    client: Client, state: RunState, subtask: int
+) -> tuple[str, str] | None:
+    """Read the test partition's ``sync_curr_profile`` value and partition state.
+
+    Returns ``None`` when the read fails or does not print exactly two fields.
+    """
+    config = state.config
+    st, data = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=f"lssyscfg -r lpar -m {shlex.quote(config.system_name)}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', config.lp3_name)]))}"
+        " -F sync_curr_profile,state",
+    )
+    state.record(subtask, "hmc_run_command lssyscfg sync_curr_profile", st, data)
+    if st != "PASS" or not isinstance(data, str):
+        return None
+    parts = data.strip().split(",")
+    if len(parts) != 2:
+        return None
+    return parts[0], parts[1]
+
+
+async def _capture_sync_state(client: Client, state: RunState) -> None:
+    # 10. Profile-sync setting and partition state, restored by ST10 (ADR 0201)
+    sync_state = await read_sync_state(client, state, 0)
+    if sync_state is not None:
+        baseline = state.artifacts.lp3_baseline
+        baseline["sync_curr_profile"], baseline["state"] = sync_state
+
+
 def _print_baseline_summary(state: RunState) -> None:
     artifacts = state.artifacts
     print(f"  lp3 UUID: {artifacts.lp3_uuid}")
@@ -172,4 +204,5 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
     await _capture_adapter_topology(client, state)
     await _capture_vios_identity(client, state)
     await _capture_lpar_cli_dump(client, state)
+    await _capture_sync_state(client, state)
     _print_baseline_summary(state)

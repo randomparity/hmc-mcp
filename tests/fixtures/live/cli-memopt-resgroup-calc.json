@@ -1,0 +1,7 @@
+{
+  "capture": "2026-10-05-v11r2-p11-9824/q627-ro#2",
+  "command": "lsmemopt -m sys-2 -r resgroup -o calcscore --gid all -F resource_group_name,resource_group_id,curr_score,predicted_score,requested_lpar_names,requested_lpar_ids,protected_lpar_names,protected_lpar_ids --header",
+  "exit_status": 0,
+  "stdout": "resource_group_name,resource_group_id,curr_score,predicted_score,requested_lpar_names,requested_lpar_ids,protected_lpar_names,protected_lpar_ids\nlabel-1,0,100,100,,none,,none\n",
+  "stderr": ""
+}

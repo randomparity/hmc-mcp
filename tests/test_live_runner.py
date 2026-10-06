@@ -16,6 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -507,6 +508,7 @@ async def test_profile_inventory_records_all_selector_scoped_probes() -> None:
         "hmc_get_lpar_msp",
         "hmc_get_proc_compat_modes",
         "hmc_get_lpar_proc_compat",
+        "hmc_list_memory_pools",
         "hmc_list_vnics",
         "hmc_get_lpar_memopt_score",
         "hmc_list_lpar_memopt_scores",
@@ -526,6 +528,7 @@ async def test_profile_inventory_records_all_selector_scoped_probes() -> None:
     for tool, kwargs in state.calls:
         if tool in {
             "hmc_get_proc_compat_modes",
+            "hmc_list_memory_pools",
             "hmc_list_lpar_memopt_scores",
             "hmc_get_system_memopt_score",
             "hmc_plan_lpar_memopt_scores",
@@ -743,32 +746,532 @@ async def test_scratch_create_with_failed_apply_step_is_not_recorded_pass() -> N
     assert state.artifacts.scratch_uuid == "scratch-uuid"
 
 
+def _answer(answers: dict[str, object]):
+    """A scripted RunState.call: a tool's answer, or a callable of its kwargs."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def scripted_call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        answer = answers.get(tool, ("PASS", {}))
+        return answer(kwargs) if callable(answer) else answer
+
+    return calls, scripted_call
+
+
+def _verified(state) -> dict[str, dict[str, Any]]:
+    return {entry["operation"]: entry["observation"] for entry in state.observations}
+
+
+def _held(observation: dict[str, Any]) -> set[str]:
+    return set(observation["assertions"])
+
+
+def test_profiles_group_selects_only_property_subtasks() -> None:
+    """The profiles arm never selects lifecycle, networking, users or storage."""
+    assert runner.SUBTASK_GROUPS["profiles"] == [0, 4, 10, 15]
+
+
 @pytest.mark.asyncio
-async def test_lpar_property_mutation_refuses_non_vios_and_restores_baseline() -> None:
-    state = _ScriptedSriovState(
+async def test_main_records_the_dispatched_group(monkeypatch, tmp_path) -> None:
+    _isolated_environ(monkeypatch)
+    _isolate_runner(monkeypatch)
+    seen: list[str | None] = []
+
+    async def capture(_client, state):
+        seen.append(state.group)
+
+    monkeypatch.setitem(runner.SUBTASKS, 998, capture)
+    monkeypatch.setitem(runner.SUBTASK_GROUPS, "profiles", [998])
+
+    await runner.main(
+        results_path=str(tmp_path / "results.json"),
+        group="profiles",
+        config=runner.LiveTestConfig(),
+    )
+
+    assert seen == ["profiles"]
+
+
+_ST4_ANSWERS: dict[str, object] = {
+    "hmc_get_lpar_description": ("PASS", "[hmcpctl owner:a created:2026-10-01]\n"),
+    "hmc_get_lpar_msp": ("PASS", False),
+    "hmc_get_proc_compat_modes": ("PASS", ["default", "POWER9", "POWER9_base"]),
+    "hmc_get_lpar_proc_compat": (
+        "PASS",
+        {"curr": "POWER9_base", "profile_mode": "default"},
+    ),
+    "hmc_list_memory_pools": ("PASS", []),
+    "hmc_get_lpar_memopt_score": (
+        "PASS",
+        {"lpar_name": "lpar-name", "curr_lpar_score": "100"},
+    ),
+    "hmc_list_lpar_memopt_scores": (
+        "PASS",
+        [{"lpar_name": "lpar-name", "curr_lpar_score": "100"}],
+    ),
+    "hmc_get_system_memopt_score": ("PASS", {"curr_sys_score": "86"}),
+    "hmc_plan_lpar_memopt_scores": (
+        "PASS",
+        [{"predicted_lpar_score": "100", "prediction_guaranteed": False}],
+    ),
+    "hmc_plan_system_memopt_score": (
+        "PASS",
+        {"predicted_sys_score": "86", "prediction_guaranteed": False},
+    ),
+    "hmc_list_resource_group_memopt_scores": (
+        "PASS",
+        {"capability": "capability-unavailable", "unavailable_reason": "needs V11R1"},
+    ),
+    "hmc_plan_resource_group_memopt_scores": (
+        "PASS",
+        {"capability": "available", "items": [{"predicted_score": "100"}]},
+    ),
+    "hmc_get_minimum_affinity_policy": (
+        "PASS",
+        SimpleNamespace(
+            capability="available",
+            min_affinity_score=0,
+            min_affinity_score_action="none",
+            unavailable_reason=None,
+        ),
+    ),
+}
+
+
+@pytest.mark.asyncio
+async def test_profile_inventory_promotes_reads_with_assertions(monkeypatch) -> None:
+    _calls, scripted = _answer(_ST4_ANSWERS)
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.config = dataclasses.replace(state.config, lp3_name="lpar-name")
+
+    await profiles.inventory_lpar_profiles(None, state)
+
+    observations = _verified(state)
+    assert len(observations) == 13
+    assert {o["result"] for o in observations.values()} == {"passed"}
+    assert _held(observations["memory_pool.list"]) == {"memory-pools-empty-branch"}
+    assert _held(observations["resource_group.list_memopt_scores"]) == {
+        "capability-unavailable-reason"
+    }
+    assert _held(observations["resource_group.plan_memopt_scores"]) == {
+        "capability-available-rows"
+    }
+    assert _held(observations["lpar.get_minimum_affinity_policy"]) == {
+        "capability-available-policy"
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "answer", "operation"),
+    [
+        (
+            "hmc_get_lpar_memopt_score",
+            ("PASS", {"lpar_name": "lpar-name", "curr_lpar_score": "101"}),
+            "lpar.get_memopt_score",
+        ),
+        ("hmc_get_lpar_msp", ("FAIL", "ssh lost"), "lpar.get_msp"),
+        (
+            "hmc_list_memory_pools",
+            ("PASS", [{"size": "4096"}]),
+            "memory_pool.list",
+        ),
+        (
+            "hmc_list_resource_group_memopt_scores",
+            ("PASS", {"capability": "capability-unavailable"}),
+            "resource_group.list_memopt_scores",
+        ),
+    ],
+)
+async def test_a_wrong_read_shape_fails_its_observation(
+    monkeypatch, tool, answer, operation
+) -> None:
+    _calls, scripted = _answer({**_ST4_ANSWERS, tool: answer})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.config = dataclasses.replace(state.config, lp3_name="lpar-name")
+
+    await profiles.inventory_lpar_profiles(None, state)
+
+    assert _verified(state)[operation]["result"] == "failed"
+
+
+def _st10_answers(**overrides: object) -> dict[str, object]:
+    """A not-activated test partition, one VIOS, and a default-mode profile."""
+    msp = iter([True, False, True])
+    profile_mode = iter(["default", "POWER9", "default"])
+    sync = iter(["1,Not Activated", "0,Not Activated"])
+
+    def run_command(kwargs):
+        cmd = kwargs["cmd"]
+        if "-F name,lpar_env" in cmd:
+            return "PASS", "lpar-name,aixlinux\nvios-b,vioserver\nvios-a,vioserver\n"
+        if "sync_curr_profile" in cmd:
+            return "PASS", next(sync) + "\n"
+        return "PASS", "name=default_profile,lpar_name=lpar-name\n"
+
+    answers: dict[str, object] = {
+        "hmc_get_lpar_description": ("PASS", "baseline\n"),
+        "hmc_run_command": run_command,
+        "hmc_set_lpar_msp": lambda kwargs: (
+            ("FAIL", "lpar_env='aixlinux', not vioserver")
+            if kwargs["lpar_name_or_uuid"] == "lpar-name"
+            else ("PASS", "")
+        ),
+        "hmc_get_lpar_msp": lambda _kwargs: ("PASS", next(msp)),
+        "hmc_get_proc_compat_modes": ("PASS", ["default", "POWER9", "POWER9_base"]),
+        "hmc_get_lpar_proc_compat": lambda _kwargs: (
+            "PASS",
+            {"profile": "default_profile", "profile_mode": next(profile_mode)},
+        ),
+        "hmc_remove_memory_pool": (
+            "FAIL",
+            "Cannot remove memory pool — no pool with that name exists",
+        ),
+    }
+    answers.update(overrides)
+    return answers
+
+
+def _st10_state(group: str | None = "profiles"):
+    state = runner.RunState(group=group)
+    state.config = dataclasses.replace(state.config, lp3_name="lpar-name")
+    state.artifacts.lp3_baseline.update(
+        description="baseline", sync_curr_profile="0", state="Not Activated"
+    )
+    return state
+
+
+def _tool_calls(calls, tool: str) -> list[dict[str, object]]:
+    return [kwargs for name, kwargs in calls if name == tool]
+
+
+@pytest.mark.asyncio
+async def test_st10_round_trips_pass_and_restore_each_value(monkeypatch) -> None:
+    calls, scripted = _answer(_st10_answers())
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observations = _verified(state)
+    for operation in (
+        "lpar.set_msp",
+        "lpar.set_proc_compat",
+        "lpar_profile.sync",
+        "lpar_profile.backup",
+        "lpar_profile.restore",
+    ):
+        assert observations[operation]["result"] == "passed", operation
+    msp = _tool_calls(calls, "hmc_set_lpar_msp")
+    # The non-VIOS refusal, then the first VIOS by name toggled and restored.
+    assert [(m["lpar_name_or_uuid"], m["enabled"]) for m in msp] == [
+        ("lpar-name", True),
+        ("vios-a", False),
+        ("vios-a", True),
+    ]
+    assert all("ownership_override" not in m for m in msp)
+    # POWER9_base is the CLI's spelling, which the tool schema refuses (#1319).
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_set_lpar_proc_compat")] == [
+        "POWER9",
+        "default",
+    ]
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_sync_lpar_profile")] == [
+        "enable",
+        "disable",
+    ]
+    restore = _tool_calls(calls, "hmc_restore_lpar_profiles")
+    assert restore == [
+        {
+            "system_name_or_uuid": state.config.system_name,
+            "file_path": "hmcpctl-live-st10",
+            "restore_type": 3,
+            "system_wide_restore_approved": True,
+            "ownership_override": True,
+        }
+    ]
+    assert _tool_calls(calls, "hmc_backup_lpar_profiles")[0]["force"] is True
+    refusal = next(
+        row for row in state.results if row["tool"].startswith("hmc_remove_memory_pool")
+    )
+    assert refusal["status"] == "PASS"
+    assert "memory_pool.remove" not in observations
+
+
+@pytest.mark.asyncio
+async def test_description_round_trip_fails_when_the_restore_reads_back_wrong(
+    monkeypatch,
+) -> None:
+    reads = iter(
         [
-            ("hmc_set_lpar_description", "PASS", {}),
-            ("hmc_get_lpar_description", "PASS", {}),
-            ("hmc_set_lpar_description", "PASS", {}),
-            ("hmc_run_command", "PASS", "aixlinux\n"),
-            ("hmc_set_lpar_msp", "FAIL", "only valid for a VIOS"),
-            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
-            ("hmc_get_lpar_proc_compat", "PASS", {"desired": "default"}),
-            ("hmc_sync_lpar_profile", "PASS", {}),
-            ("hmc_backup_lpar_profiles", "PASS", {}),
+            "[hmcpctl owner:a created:2026-10-01] MCP live-test probe R2 safe to clear\n",
+            "something else\n",
         ]
     )
-    state.artifacts.lp3_baseline["description"] = "original description"
+    _calls, scripted = _answer(
+        _st10_answers(
+            hmc_get_lpar_description=lambda _kwargs: (
+                "PASS",
+                next(reads),
+            )
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
 
-    await lpar.mutate_lpar_properties(object(), state)
+    await lpar.mutate_lpar_properties(None, state)
 
-    assert "hmc_set_lpar_msp (toggle/verify/restore)" in [
-        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    observation = _verified(state)["lpar.set_description"]
+    assert observation["result"] == "failed"
+    assert observation["cleanup"] == "failed"
+    assert observation["assertions"] == ["probe-description-read-back"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_msp_toggle_that_changed_nothing_is_a_clean_failure(
+    monkeypatch,
+) -> None:
+    """#1318: both writes refused; the read-back still shows the original value."""
+    _calls, scripted = _answer(
+        _st10_answers(
+            hmc_set_lpar_msp=("FAIL", "No LPAR named 'vios-a' found."),
+            hmc_get_lpar_msp=("PASS", True),
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observation = _verified(state)["lpar.set_msp"]
+    assert observation["result"] == "failed"
+    assert observation["assertions"] == ["vios-msp-restored"]
+    assert observation["cleanup"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_msp_pre_read_failure_skips_the_toggle(monkeypatch) -> None:
+    calls, scripted = _answer(_st10_answers(hmc_get_lpar_msp=("FAIL", "ssh lost")))
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    vios_sets = [
+        m
+        for m in _tool_calls(calls, "hmc_set_lpar_msp")
+        if m["lpar_name_or_uuid"] != "lpar-name"
     ]
-    assert "hmc_set_lpar_proc_compat" in [
-        entry["tool"] for entry in state.results if entry["status"] == "SKIP"
+    assert vios_sets == []
+    assert "lpar.set_msp" not in _verified(state)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "baseline",
+    [
+        {"sync_curr_profile": None},
+        {"sync_curr_profile": "7"},
+        {"state": "Running"},
+    ],
+)
+async def test_sync_round_trip_skips_without_a_safe_baseline(
+    monkeypatch, baseline
+) -> None:
+    calls, scripted = _answer(_st10_answers())
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+    state.artifacts.lp3_baseline.update(baseline)
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_sync_lpar_profile") == []
+    assert "lpar_profile.sync" not in _verified(state)
+
+
+@pytest.mark.asyncio
+async def test_backup_failure_skips_the_restore(monkeypatch) -> None:
+    calls, scripted = _answer(
+        _st10_answers(hmc_backup_lpar_profiles=("FAIL", "HSCL disk full"))
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_restore_lpar_profiles") == []
+    assert _verified(state)["lpar_profile.backup"]["result"] == "failed"
+    assert "lpar_profile.restore" not in _verified(state)
+
+
+@pytest.mark.asyncio
+async def test_changed_profiles_fail_the_restore_observation(monkeypatch) -> None:
+    dumps = iter(["profile-a\n", "profile-a\nprofile-b\n"])
+    base = _st10_answers()
+    run_command = base["hmc_run_command"]
+
+    def answer(kwargs):
+        if kwargs["cmd"].startswith("lssyscfg -r prof "):
+            return "PASS", next(dumps)
+        return run_command(kwargs)  # type: ignore[operator]  # the scripted answer is callable
+
+    _calls, scripted = _answer({**base, "hmc_run_command": answer})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observation = _verified(state)["lpar_profile.restore"]
+    assert observation["result"] == "failed"
+    assert (
+        "profiles-unchanged-after-merge-current-wins" not in observation["assertions"]
+    )
+
+
+_CONFIGURED = (
+    "name=lpar-name,state=Not Activated,resource_config=1,curr_profile=default_profile"
+)
+
+
+@pytest.mark.asyncio
+async def test_restore_side_effect_fails_the_observation_and_is_reapplied(
+    monkeypatch,
+) -> None:
+    """rstprofdata -l 3 unconfigures a not-activated partition (#627, observed live)."""
+    partitions = iter(
+        [_CONFIGURED, _CONFIGURED.replace("config=1", "config=0"), _CONFIGURED]
+    )
+    base = _st10_answers()
+    run_command = base["hmc_run_command"]
+
+    def answer(kwargs):
+        if (
+            kwargs["cmd"].startswith("lssyscfg -r lpar -m ")
+            and "-F" not in kwargs["cmd"]
+        ):
+            return "PASS", next(partitions) + "\n"
+        return run_command(kwargs)  # type: ignore[operator]  # the scripted answer is callable
+
+    calls, scripted = _answer({**base, "hmc_run_command": answer})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    observation = _verified(state)["lpar_profile.restore"]
+    assert observation["result"] == "failed"
+    assert (
+        "partitions-unchanged-after-merge-current-wins" not in observation["assertions"]
+    )
+    assert observation["cleanup"] == "passed"
+    applies = [
+        kwargs["cmd"]
+        for tool, kwargs in calls
+        if tool == "hmc_run_command" and " -o apply " in kwargs["cmd"]
     ]
-    assert state.calls[-1][1]["force"] is True
+    assert applies == [
+        f"chsyscfg -r lpar -m {state.config.system_name} -o apply -p lpar-name -n default_profile"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_reordered_profile_listing_is_not_a_change(monkeypatch) -> None:
+    dumps = iter(["profile-a\nprofile-b\n", "profile-b\nprofile-a\n"])
+    base = _st10_answers()
+    run_command = base["hmc_run_command"]
+
+    def answer(kwargs):
+        if kwargs["cmd"].startswith("lssyscfg -r prof "):
+            return "PASS", next(dumps)
+        return run_command(kwargs)  # type: ignore[operator]  # the scripted answer is callable
+
+    _calls, scripted = _answer({**base, "hmc_run_command": answer})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _verified(state)["lpar_profile.restore"]["result"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_proc_compat_round_trip_skips_an_original_the_tool_cannot_write(
+    monkeypatch,
+) -> None:
+    calls, scripted = _answer(
+        _st10_answers(
+            hmc_get_lpar_proc_compat=(
+                "PASS",
+                {"profile": "default_profile", "profile_mode": "POWER9_base"},
+            )
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    assert "lpar.set_proc_compat" not in _verified(state)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", ["round2", "all", None])
+async def test_other_arms_never_restore_profiles(monkeypatch, group) -> None:
+    calls, scripted = _answer(_st10_answers())
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state(group)
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_backup_lpar_profiles") == []
+    assert _tool_calls(calls, "hmc_restore_lpar_profiles") == []
+    # Only the profiles arm touches the VIOS, the profile mode or the sync setting.
+    assert [m["lpar_name_or_uuid"] for m in _tool_calls(calls, "hmc_set_lpar_msp")] == [
+        "lpar-name"
+    ]
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    assert _tool_calls(calls, "hmc_sync_lpar_profile") == []
+
+
+@pytest.mark.asyncio
+async def test_st15_leaves_a_baseline_mode_the_tool_cannot_write(monkeypatch) -> None:
+    """#1319: ST10 never changes a POWER9_base profile, so ST15 has nothing to restore."""
+    calls, scripted = _answer({})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.artifacts.lp3_baseline.update(
+        description="baseline",
+        proc_compat={"profile": "default_profile", "profile_mode": "POWER9_base"},
+    )
+
+    await runner.restore_lpar_baseline(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (restore)"
+    )
+    assert row["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_st15_without_a_baseline_profile_mode_asks_for_a_manual_restore(
+    monkeypatch,
+) -> None:
+    calls, scripted = _answer({})
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.artifacts.lp3_baseline["description"] = "baseline"
+
+    await runner.restore_lpar_baseline(None, state)
+
+    assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (restore)"
+    )
+    assert row["status"] == "FAIL"
+    assert "MANUAL RECOVERY REQUIRED" in row["data"]
 
 
 class TestDescriptionBaselineRestore:
@@ -789,14 +1292,16 @@ class TestDescriptionBaselineRestore:
                 ("hmc_get_lpar_msp", "PASS", {}),
                 ("hmc_get_lpar_proc_compat", "PASS", {}),
                 ("hmc_set_lpar_description", "PASS", {}),
+                ("hmc_get_lpar_description", "PASS", self._STAMP + terminator),
             ]
         )
 
         await inventory._capture_lpar_properties(object(), state)
-        await lpar._restore_description(object(), state, 10)
+        restored = await lpar._restore_description(object(), state, 10)
 
         assert state.artifacts.lp3_baseline["description"] == self._STAMP
-        assert state.calls[-1] == (
+        assert restored is True
+        assert state.calls[-2] == (
             "hmc_set_lpar_description",
             {
                 "system_name_or_uuid": state.config.system_name,
@@ -2846,13 +3351,14 @@ async def test_baseline_capture_runs_cohesive_phases_in_order(monkeypatch):
     monkeypatch.setattr(inventory, "_capture_adapter_topology", phase("adapters"))
     monkeypatch.setattr(inventory, "_capture_vios_identity", phase("vios"))
     monkeypatch.setattr(inventory, "_capture_lpar_cli_dump", phase("cli"))
+    monkeypatch.setattr(inventory, "_capture_sync_state", phase("sync"))
     monkeypatch.setattr(
         inventory, "_print_baseline_summary", lambda _state: events.append("summary")
     )
 
     await inventory.capture_lpar_baseline(object(), object())
 
-    assert events == ["properties", "adapters", "vios", "cli", "summary"]
+    assert events == ["properties", "adapters", "vios", "cli", "sync", "summary"]
 
 
 @pytest.mark.asyncio
@@ -4926,12 +5432,14 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
             return "PASS", "aixlinux"
         if tool == "hmc_set_lpar_msp":
             return "FAIL", "only valid for a VIOS partition"
+        if tool == "hmc_get_proc_compat_modes":
+            return "PASS", ["default", "POWER9", "POWER10"]
         if tool == "hmc_get_lpar_proc_compat":
-            return "PASS", {"desired": "POWER10"}
+            return "PASS", {"profile": "default_profile", "profile_mode": "default"}
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
-    state = runner.RunState()
+    state = runner.RunState(group="profiles")
     state.artifacts.lp3_baseline["description"] = "original description"
 
     await runner.mutate_lpar_properties(None, state)
@@ -4945,10 +5453,12 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
         "MCP live-test probe R2 safe to clear",
         "original description",
     ]
-    proc_set = next(
-        kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_proc_compat"
-    )
-    assert proc_set["mode"] == "POWER10"
+    proc_sets = [
+        (kwargs["mode"], kwargs["profile_name"])
+        for tool, kwargs in calls
+        if tool == "hmc_set_lpar_proc_compat"
+    ]
+    assert proc_sets == [("POWER10", "default_profile"), ("default", "default_profile")]
 
 
 @pytest.mark.asyncio
@@ -4957,13 +5467,15 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
 
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
-        if tool == "hmc_get_lpar_proc_compat":
-            return "PASS", {"curr": "POWER9"}
         return "PASS", {}
 
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.artifacts.lp3_baseline["description"] = "baseline"
+    state.artifacts.lp3_baseline["proc_compat"] = {
+        "profile": "default_profile",
+        "profile_mode": "POWER9",
+    }
 
     await runner.restore_lpar_baseline(None, state)
 
@@ -4979,6 +5491,7 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
         ]
         == "POWER9"
     )
+    assert "hmc_sync_lpar_profile" not in [tool for tool, _ in calls]
     assert [tool for tool, _ in calls][-2:] == [
         "hmc_run_command",
         "hmc_lpar_summary",
@@ -5205,6 +5718,44 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "job-found",
             "job-identity-matches",
             "job-status-successful",
+        },
+        "st4-profile-reads": {
+            "description-is-text",
+            "msp-is-bool",
+            "modes-include-default",
+            "current-mode-supported",
+            "profile-mode-supported",
+            "memory-pools-empty-branch",
+            "memory-pool-rows-named",
+        },
+        "st4-affinity-reads": {
+            "score-names-partition",
+            "score-in-range",
+            "partition-listed",
+            "scores-in-range",
+            "predictions-in-range",
+            "prediction-in-range",
+            "prediction-not-guaranteed",
+            "capability-available-rows",
+            "capability-available-policy",
+            "capability-unavailable-reason",
+        },
+        "st10-description-round-trip": {
+            "probe-description-read-back",
+            "baseline-description-restored",
+        },
+        "st10-msp-round-trip": {"vios-msp-toggled", "vios-msp-restored"},
+        "st10-proc-compat-round-trip": {
+            "profile-mode-changed",
+            "profile-mode-restored",
+        },
+        "st10-sync-round-trip": {"sync-enable-read-1", "sync-restored-baseline"},
+        "st10-profile-backup-restore": {
+            "backup-accepted",
+            "backup-file-restorable",
+            "merge-current-wins-accepted",
+            "profiles-unchanged-after-merge-current-wins",
+            "partitions-unchanged-after-merge-current-wins",
         },
         "st1-console-identity": {"console-uuid-present"},
         "st1-system-inventory": {

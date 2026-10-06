@@ -901,7 +901,7 @@ def test_the_scan_finds_every_known_site():
         "list_vios_fc_port_labels",
         "list_vios_vfc_group_labels",
         "_capture_lpar_cli_dump",
-        "_lpar_environment",
+        "read_sync_state",
         "restore_lpar_baseline",
     }
 

@@ -23,3 +23,10 @@ def resource(entry: Mapping[str, object]) -> Mapping[str, object]:
     """Return a nested Resource mapping, or retain the outer mapping."""
     nested = entry.get("Resource")
     return nested if isinstance(nested, Mapping) else entry
+
+
+def field(data: object, name: str) -> object:
+    """Read *name* from a mapping result or a generated dataclass model."""
+    if isinstance(data, Mapping):
+        return data.get(name)
+    return getattr(data, name, None)
