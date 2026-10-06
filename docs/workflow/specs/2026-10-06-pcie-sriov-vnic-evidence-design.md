@@ -15,8 +15,11 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
 ## Scope
 
 1. **Row binding.** Each operation names exactly the CLI commands its handler issues.
-   Shared plumbing is not bound, as in PR #1320. Shared plumbing here means selector
-   resolution and the envelope reads, `lshmc -V` and `lssyscfg -r sys -F type_model`.
+   Shared plumbing is not bound, as in PR #1320. Shared plumbing here means three things:
+   - selector resolution;
+   - the ADR 0011 ownership read in `resolve_and_authorize_lpar_names`, which is
+     `lssyscfg -r lpar … -F description`;
+   - the envelope reads, `lshmc -V` and `lssyscfg -r sys -F type_model`.
 
    | Operation | Rows |
    |---|---|
@@ -27,24 +30,34 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
    | `pcie.assign_dedicated_slot`, `pcie.unassign_dedicated_slot` | `cli:commands/chsyscfg`, `cli:commands/lssyscfg` (profile write, LPAR-state and `io_slots` readback) |
    | `sriov.assign_logical_port` | `cli:commands/chhwres`, `cli:commands/lshwres`, `cli:commands/lssyscfg` |
    | `sriov.unassign_logical_port` | `cli:commands/chsyscfg`, `cli:commands/lssyscfg` |
-   | `vnic.add`, `vnic.remove` | `cli:commands/chhwres`, `cli:commands/lshwres`, `cli:commands/lssyscfg` |
+   | `vnic.add` | `cli:commands/chhwres`, `cli:commands/lshwres`, `cli:commands/lssyscfg` (VIOS identity read) |
+   | `vnic.remove` | `cli:commands/chhwres`, `cli:commands/lshwres` |
 
    `io_slot.list` loses its `composite_reason`: it issues one command.
 
 2. **Read-only inventory phase in the dedicated arm.** This is subtask 24, scenario
    `st29-pcie-inventory`. It runs after ST29's environment admission and dedicated-slot
    listing, before slot selection, and before anything is created. It issues reads only.
-   A failed read records its assertion as not holding. It never SKIPs the arm, and it never
-   changes what the arm selects or mutates. An empty listing proves no row shape. It records a
-   non-promoting `<tool> (empty)` row and a gap, never an observation. Every observation uses
-   `record_verified` with cleanup `not-required`.
+
+   - **Failures.** A failed read records its assertion as not holding. The dedicated listing's
+     observation is recorded before the arm's existing SKIP on a failed listing, so that
+     failure is recorded too.
+   - **No gating.** The phase never SKIPs the arm, and it never changes what the arm
+     selects or mutates.
+   - **Empty listings.** An empty listing proves no row shape. It records a non-promoting
+     `<tool> (empty)` row and a gap, never an observation.
+   - **Total evaluation.** Assertion evaluation never raises. A value of an unexpected
+     type or form makes its assertion not hold.
+   - **Wire form.** Scripted test data uses the JSON wire form the served tools return:
+     decimals arrive as strings or numbers, never as `Decimal`.
+   - **Recording.** Every observation uses `record_verified` with cleanup `not-required`.
 
    | Operation | Call | Assertions |
    |---|---|---|
-   | `pcie.list_dedicated_slots` | the existing ST29 baseline listing | `capability-available`, `slot-rows-identified` (≥ 1 item, each with a non-blank, unique `drc_index`), `owners-normalized` (no `owner_lpar` is the literal `null`) |
-   | `io_slot.list` | `hmc_list_io_slots` (`all`, then `eth`) | `slot-rows-identified` (≥ 1 row, each with a `drc_index`), `matches-dedicated-inventory` (the `drc_index` set equals the dedicated listing's), `class-filter-narrows` (`eth` rows are a subset, each `pci_class` `0200`) |
-   | `pcie.list_sriov_adapters` | unfiltered, then `adapter_id=<A>` | `capability-available`, `adapter-rows-parsed` (each `mode` is `sriov` or `dedicated`, and each `dedicated` row has a null `adapter_id`), `adapter-filter-selects-one` (exactly adapter A) |
-   | `pcie.list_sriov_physical_ports` | `adapter_id=<A>`, then without one | `capability-available`, `ports-belong-to-adapter`, `port-state-normalized` (`up` or `down`), `granularity-positive` (each minimum granularity a decimal > 0), `adapter-required-refused` (the call without `adapter_id` fails) |
+   | `pcie.list_dedicated_slots` | the existing ST29 baseline listing | `slot-rows-identified` (≥ 1 item, each with a non-blank, unique `drc_index`), `owners-normalized` (no `owner_lpar` is the literal `null`) |
+   | `io_slot.list` | `hmc_list_io_slots` (`all`, then `eth`) | `slot-rows-identified` (≥ 1 row, each with a `drc_index`), `matches-dedicated-inventory` (the `drc_index` set equals the dedicated listing's), `class-filter-exact` (the `eth` rows' `drc_index` set equals the `all` rows whose `pci_class` is `0200`; asserted only when that subset is non-empty, otherwise a gap) |
+   | `pcie.list_sriov_adapters` | unfiltered, then `adapter_id=<A>` | `capability-available`, `adapter-rows-parsed` (each `mode` is `sriov` or `dedicated`, and each `dedicated` row has a null `adapter_id`), `adapter-filter-selects-one` (exactly adapter A; asserted only when A exists) |
+   | `pcie.list_sriov_physical_ports` | `adapter_id=<A>`, then without one | `capability-available`, `ports-listed` (≥ 1 port), `granularity-positive` (at least one port carries a minimum granularity, and every one carried is a decimal > 0; `null` is allowed, because `eth_capacity_granularity` admits it), `adapter-required-refused` (the call without `adapter_id` fails) |
    | `pcie.list_sriov_logical_ports` | `adapter_id=<A>` | `capability-available`, `ports-belong-to-adapter`, `parents-are-listed-ports` (each `physical_port_id` is a port the previous read listed), `configured-capacity-bounded` (each configured port has 0 < capacity ≤ maximum ≤ 100, and each `unconfigured` port has no capacity) |
    | `vnic.list` | `hmc_list_vnics` on partition V | `vnic-rows-parsed` (≥ 1 row, each naming partition V and a `slot_num`) |
 
@@ -55,10 +68,12 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
    line, `vnic.list` records the empty row and a gap.
 
    `sriov.set_mode` stays out of the phase unless the orchestrator grants it (see
-   Ambiguities). If granted, it adds `current-mode-confirmed` (a call with adapter A's current
-   mode returns the "already in" answer), `other-mode-refused` (the other mode fails) and
-   `adapter-mode-unchanged` (re-read adapter A's mode equals the first read). The observation's
-   variant is `current-mode-confirmation`. It is never recorded as a transition.
+   Ambiguities). If granted, the live phase makes one call, with adapter A's current mode. It
+   asserts `current-mode-confirmed` (the call returns the "already in" answer) and
+   `adapter-mode-unchanged` (a re-read of adapter A's mode equals the first read). The
+   observation's variant is `current-mode-confirmation`. It is never recorded as a
+   transition. A request for the other mode is never sent live, since it is a transition
+   request to a mutating tool. Its refusal is pinned by unit tests only.
 
 3. **One live observation per operation.** The catalog keeps one
    (`docs/capabilities/README.md`). When a run yields several for one operation, the record
@@ -79,12 +94,15 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
    | `pcie.list_sriov_physical_ports`, `pcie.list_sriov_logical_ports` | `adapter-scoped` | — |
    | `sriov.set_mode` | `current-mode-confirmation` (unchanged) | `adapter-mode-transition` (unchanged; #667) |
    | `sriov.assign_logical_port` | `dynamic-assign` (Not Activated, or Running with active RMC) | — |
-   | `sriov.unassign_logical_port` | `not-activated-profile-unassign` | `running-dynamic-unassign` (ADR 0056: no capture) |
+   | `sriov.unassign_logical_port` | `not-activated-profile-unassign` | `running-dynamic-unassign` (ADR 0056: no capture), `multi-record-profile-unassign` (ADR 0056: refused) |
    | `vnic.list` | `lpar-scoped` | — |
    | `vnic.add` | `single-sriov-backing` | `failover-backing` (ADR 0057; #669) |
-   | `vnic.remove` | `by-slot` | — |
+   | `vnic.remove` | `by-slot` | `multi-backing-or-degraded-remove` (ADR 0057: refused before mutation) |
+   | `pcie.assign_dedicated_slot`, `pcie.unassign_dedicated_slot` | `profile-io-slot`, now also constrained to a `Not Activated` LPAR | `required-or-pooled-slot` (ADR 0166: refused) |
+   | `pcie.list_dedicated_slots` | unchanged | — |
 
-   The dedicated-slot records keep their scopes.
+   Each missing scope is a refusal the handler makes before any write. It is not a
+   confirmed HMC limitation, so it carries no `confirmation` (ADR 0132).
 
 5. **ADR reconciliation.** Each record's recorded evidence was checked against the code at
    this branch. Where a Status statement is no longer true, a dated evidence note is added to
@@ -99,7 +117,7 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
 | ADR | Claim checked | Code at branch | Action |
 |---|---|---|---|
 | 0053 | Identities, decimal percentages, no `--force`, `chhwres -r io` sealed | Holds (`ssh/sriov.py`, `ssh/profiles.py`; no `chhwres -r io` in `src/`) | none |
-| 0054 | "Until a version-labelled fixture admits an exact read projection, SR-IOV operations return capability unavailable without issuing a command" | The condition was met by ADR 0056 and widened by ADR 0183. The reads now populate on admitted pairs. | Status evidence note |
+| 0054 | Decision: "Until a version-labelled fixture admits an exact read projection, SR-IOV operations return capability unavailable without issuing a command" | ADR 0056 met the condition, and ADR 0183 widened it. The reads now populate on admitted pairs; elsewhere they still report unavailable, after the envelope reads. The clause is a Decision sentence. No record marks 0054 as partially superseded. | none; recorded as a follow-up candidate (a supersession banner is a decision-status change) |
 | 0055 | Status: "Issue #882 owns that selection and the envelope check" | #882 landed as ADR 0166 | Status evidence note |
 | 0056 | Read levels, mutation cells, set-mode reads only, no `--force` | Holds. Physical-port levels per 0113/0183. Running assign requires active RMC (`_require_sriov_assignment_capacity_and_state`). Unassign is Not Activated profile-only. | none |
 | 0057 | `-p` add grammar, `-p … -s` remove, ensure-one, ADR 0056 envelope | Holds (`ssh/vnic.py`, `operations/virtualization/vnic.py`). No harness has exercised add/remove. | none (gap recorded in catalog) |
@@ -107,7 +125,7 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
 | 0113 | Adapter-ID validation, `1`/`0` → `up`/`down` | Holds (`validate_adapter_id`, `list_sriov_physical_ports`) | none |
 | 0163 | Arm design; Status already corrected via 0165/0166 | Holds | none |
 | 0165 | Admitted readback form | The arm and the operations issue exactly that form (`profile_io_slot_rows_command`). The arm no longer issues the `--filter` single-field read this record names as unadmitted. | evidence note in 0166, which carries the claim |
-| 0166 | Status: "No live run has exercised this change". Consequences: the arm's own read "stays the `--filter` single-field form"; maturity "stays `unrecorded`" until the live window exercises assign, unassign and an `is_required=1` element | Bare-cec ST35, the dedicated arm ST31 and #912's ST36 have exercised all three. ST36 removes an `is_required=1` element with the raw `//0` grammar. The read is the admitted form. | Status evidence note, updated from this run |
+| 0166 | Status: "No live run has exercised this change". Consequences: the arm's own read "stays the `--filter` single-field form"; maturity "stays `unrecorded`" until the live window exercises assign, unassign and an `is_required=1` element | The read is now the admitted form. The catalog's dedicated records rest only on ST35 (bare-cec), which has no `is_required=1` step. Only the dedicated arm's ST36 (#912) observes one, and the catalog holds no ST36 observation. | A Status evidence note, written only from this run. If ST36 runs and `required-slot-removed-by-zero-suffix` holds, the note records the precondition as met by that run. If ST36 SKIPs, the note says only that the read form changed, and the `is_required=1` observation stays a named gap. The ST35-only promotion is then reported to the orchestrator as a follow-up candidate. |
 | 0183 | Per-pair read envelope; mutations keep the 0056 envelope | Holds (`_SRIOV_READ_ENVELOPE`, `require_admitted_environment`) | none |
 
 ## Live procedure
@@ -134,6 +152,8 @@ assignment of slots that no partition owns and no profile lists.
 | a non-empty `vnic.list` | a partition with a vNIC at run time |
 | SR-IOV port reads | an adapter in SR-IOV mode at run time |
 | `sriov.set_mode` current-mode confirmation | orchestrator grant (Ambiguities), else none |
+| `io_slot.list` class filter (`eth`) | a slot of PCI class `0200` on the system |
+| an `is_required=1` element removed by `//0` (ADR 0166) | ST36's two further free slots, if this run's ST36 SKIPs |
 
 ## Failure model
 
