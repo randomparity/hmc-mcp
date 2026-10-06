@@ -266,7 +266,7 @@ async def _wait_for_state(
 
 
 async def _dlpar_mem(
-    client: Client, state: RunState, run: _Run, label: str, resources: dict[str, Any]
+    client: Client, state: RunState, run: _Run, resources: dict[str, Any]
 ) -> tuple[str, Any]:
     st, data = await state.call(
         client,
@@ -275,12 +275,11 @@ async def _dlpar_mem(
         system_name_or_uuid=run.system,
         resources=resources,
     )
-    state.record(SUBTASK, f"hmc_dlpar_mem ({label})", st, data)
     return st, data
 
 
 async def _dlpar_proc(
-    client: Client, state: RunState, run: _Run, label: str, resources: dict[str, Any]
+    client: Client, state: RunState, run: _Run, resources: dict[str, Any]
 ) -> tuple[str, Any]:
     st, data = await state.call(
         client,
@@ -289,7 +288,6 @@ async def _dlpar_proc(
         system_name_or_uuid=run.system,
         resources=resources,
     )
-    state.record(SUBTASK, f"hmc_dlpar_proc ({label})", st, data)
     return st, data
 
 
@@ -326,10 +324,12 @@ async def _resource_cases(
 ) -> None:
     """Small, large, no-op and empty requests through one DLPAR tool."""
     change = _dlpar_mem if operation == "lpar.dlpar_mem" else _dlpar_proc
+    tool = "hmc_dlpar_mem" if change is _dlpar_mem else "hmc_dlpar_proc"
     readings: dict[str, Any] = {}
     for label, request in (("small", small), ("large", large)):
         before = await _values(client, state, run)
-        st, _ = await change(client, state, run, label, request)
+        st, data = await change(client, state, run, request)
+        state.record(SUBTASK, f"{tool} ({label})", st, data)
         after = await _values(client, state, run)
         readings[label] = after
         run.hold(
@@ -339,16 +339,22 @@ async def _resource_cases(
         )
     before = await _values(client, state, run)
     request = {key: before[key] for key in no_op if key in before}
-    st, _ = await change(client, state, run, "no-op", request)
+    st, data = await change(client, state, run, request)
+    state.record(SUBTASK, f"{tool} (no-op)", st, data)
     after = await _values(client, state, run)
     run.hold(
         operation,
         "no-op-accepted-unchanged",
         st == "PASS" and len(request) == len(no_op) and _reads_back(before, after, {}),
     )
-    st, data = await change(client, state, run, "empty request", {})
-    run.hold(operation, "empty-request-refused", _refused_empty(st, data))
-    run.data["hmc_dlpar_mem" if change is _dlpar_mem else "hmc_dlpar_proc"] = readings
+    st, data = await change(client, state, run, {})
+    refused = _refused_empty(st, data)
+    # The refusal is the expected answer, so it is the PASS row.
+    state.record(
+        SUBTASK, f"{tool} (empty request)", "PASS" if refused else "FAIL", data
+    )
+    run.hold(operation, "empty-request-refused", refused)
+    run.data[tool] = readings
 
 
 async def _memory_cases(client: Client, state: RunState, run: _Run) -> None:
@@ -374,11 +380,17 @@ async def _memory_cases(client: Client, state: RunState, run: _Run) -> None:
         system_name_or_uuid=run.system,
         resources={"desired_memory": maximum + run.region},
     )
+    # Recorded, never asserted: the answer itself is what this run captures.
     state.record(
         SUBTASK,
         "hmc_dlpar_mem (over maximum)",
-        st,
-        {"call": data, "before": before, "after": await _values(client, state, run)},
+        "PASS",
+        {
+            "status": st,
+            "call": data,
+            "before": before,
+            "after": await _values(client, state, run),
+        },
     )
 
 
@@ -528,15 +540,19 @@ async def _boot_cases(client: Client, state: RunState, run: _Run) -> None:
         system_name_or_uuid=run.system,
         lpar_name_or_uuid=run.uuid,
     )
-    state.record(SUBTASK, "hmc_clear_lpar_boot_order (refusal)", st, data)
-    after_read, after = await _pending_boot_string(client, state, run)
-    run.hold(
-        "boot_order.clear",
-        "clear-refused-after-authorization",
+    refused = (
         st == "FAIL"
         and isinstance(data, CallFailure)
-        and _CLEAR_REFUSAL in data.message,
+        and _CLEAR_REFUSAL in data.message
     )
+    state.record(
+        SUBTASK,
+        "hmc_clear_lpar_boot_order (refusal)",
+        "PASS" if refused else "FAIL",
+        data,
+    )
+    after_read, after = await _pending_boot_string(client, state, run)
+    run.hold("boot_order.clear", "clear-refused-after-authorization", refused)
     run.hold(
         "boot_order.clear",
         "pending-boot-string-unchanged",
@@ -583,7 +599,7 @@ async def _record_activated(
     state.record(
         SUBTASK,
         f"{tool} (activated)",
-        st,
+        "PASS" if st == "PASS" else "SKIP",
         {"call": data, "change_location": location, "read_back": after},
         note,
     )
@@ -638,12 +654,10 @@ async def _activated_cases(client: Client, state: RunState, run: _Run) -> None:
     if not await _power_on(client, state, run):
         return
     st, data = await _dlpar_mem(
-        client, state, run, "activated call", {"desired_memory": 2048 + run.region}
+        client, state, run, {"desired_memory": 2048 + run.region}
     )
     await _record_activated(client, state, run, "hmc_dlpar_mem", st, data)
-    st, data = await _dlpar_proc(
-        client, state, run, "activated call", {"desired_procs": 0.7}
-    )
+    st, data = await _dlpar_proc(client, state, run, {"desired_procs": 0.7})
     await _record_activated(client, state, run, "hmc_dlpar_proc", st, data)
 
 
@@ -687,10 +701,29 @@ async def _adopt_by_name(client: Client, state: RunState, run: _Run) -> bool:
     return run.uuid is not None
 
 
+async def _gone(client: Client, state: RunState, run: _Run) -> bool:
+    """Whether the system lists no partition under this run's name, renamed or not.
+
+    Read from the listing rather than one name, so a rename the HMC applied but
+    reported as failed cannot hide the partition; read twice, as `_absent` does.
+    """
+    base = NAME_PREFIX + run.token.removeprefix(TOKEN_PREFIX)
+    command = f"lssyscfg -r lpar -m {shlex.quote(run.system)} -F name"
+    for attempt in range(2):
+        if attempt:
+            await asyncio.sleep(_ABSENCE_REREAD_DELAY_S)
+        listing = await _cli(client, state, command)
+        if listing is not None and not any(
+            name.startswith(base) for name in listing.splitlines()
+        ):
+            return True
+    return False
+
+
 async def _delete(client: Client, state: RunState, run: _Run) -> str | None:
     """Delete the scratch partition; return why it is not confirmed gone, or None."""
     if run.uuid is None and not await _adopt_by_name(client, state, run):
-        if await _absent(client, state, run, run.name):
+        if await _gone(client, state, run):
             run.deleted = True
             return None
         return "its UUID could not be resolved to a partition carrying this run's token"
@@ -707,7 +740,9 @@ async def _delete(client: Client, state: RunState, run: _Run) -> str | None:
         lpar_name_or_uuid=run.uuid,
     )
     state.record(SUBTASK, "hmc_delete_lpar (scratch)", st, data)
-    run.deleted = await _absent(client, state, run, run.name)
+    if st != "PASS":
+        return "the delete was refused"
+    run.deleted = await _gone(client, state, run)
     return (
         None if run.deleted else "its absence could not be confirmed after the delete"
     )

@@ -1376,7 +1376,19 @@ def test_lpar_config_run_is_witnessed(tmp_path, monkeypatch, capsys):
         "results": [],
     }
 
-    assert _main(tmp_path, monkeypatch, document) == (0, True)
+    seen = []
+
+    async def run_checks(pcie, partition, vios, network_inputs, users, lpar_config):
+        seen.append(lpar_config)
+        return []
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", run_checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    assert recovery.main(["--results", str(path)]) == 0
+    assert seen == [recovery.LparConfigInputs(_SYSTEM)]
     assert "CLEAN" in capsys.readouterr().out
 
 

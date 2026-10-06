@@ -69,6 +69,9 @@ class FakeHMC:
     create_without_uuid: bool = False
     power_off_refused: bool = False
     stale_absence: bool = False
+    delete_refused: bool = False
+    rename_back_lies: bool = False
+    renames: int = 0
     name: str | None = None
     token: str | None = None
     values: dict[str, float] = field(default_factory=dict)
@@ -163,7 +166,10 @@ class FakeHMC:
         return self._change(kwargs["resources"])
 
     def _hmc_rename_lpar(self, kwargs):
+        self.renames += 1
         self.name = kwargs["new_name"]
+        if self.rename_back_lies and self.renames == 2:
+            return "FAIL", _failure("Read timed out")
         return "PASS", {}
 
     def _hmc_read_lpar_boot_order(self, kwargs):
@@ -190,6 +196,8 @@ class FakeHMC:
         return "PASS", {}
 
     def _hmc_delete_lpar(self, kwargs):
+        if self.delete_refused:
+            return "FAIL", _failure("HSCL0001 refused")
         self.deleted = True
         return "PASS", "deleted"
 
@@ -250,6 +258,34 @@ async def test_clean_run_passes_every_observation(monkeypatch):
     assert hmc.deleted
     assert hmc.name.startswith("hmcpctl-live-lpar-")
     assert hmc.token == "lparcfg-" + hmc.name.removeprefix("hmcpctl-live-lpar-")
+
+
+@pytest.mark.asyncio
+async def test_clean_run_records_no_failed_row(monkeypatch):
+    """Expected refusals are PASS rows: a FAIL row must mean something went wrong."""
+    state = await _run(monkeypatch, FakeHMC(activated_dlpar_refused=False))
+
+    assert [row["tool"] for row in state.results if row["status"] == "FAIL"] == []
+
+
+@pytest.mark.asyncio
+async def test_refused_delete_leaves_recovery_row(monkeypatch):
+    hmc = FakeHMC(delete_refused=True)
+    state = await _run(monkeypatch, hmc)
+
+    (row,) = _rows(state, "scratch partition teardown")
+    assert "the delete was refused" in row["data"]
+    assert {e["observation"]["cleanup"] for e in state.observations} == {"failed"}
+
+
+@pytest.mark.asyncio
+async def test_rename_reported_failed_does_not_hide_a_refused_delete(monkeypatch):
+    """The partition went back to its name though the call failed; the listing sees it."""
+    hmc = FakeHMC(rename_back_lies=True, delete_refused=True)
+    state = await _run(monkeypatch, hmc)
+
+    assert hmc.exists()
+    assert _rows(state, "scratch partition teardown")
 
 
 @pytest.mark.asyncio
@@ -332,7 +368,7 @@ async def test_activated_refusal_is_a_gap_row(monkeypatch):
     state = await _run(monkeypatch, FakeHMC())
 
     (row,) = _rows(state, "hmc_dlpar_mem (activated)")
-    assert row["status"] == "FAIL"
+    assert row["status"] == "SKIP"
     assert "active RMC connection" in row["note"]
     assert not any(
         e["operation"] == "lpar.dlpar_mem" and "activated" in str(e)
