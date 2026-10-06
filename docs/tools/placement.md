@@ -8,4 +8,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_find_placement` | `read` | `placement.find` | `console` | `unrecorded` | `unrecorded` | `existing-runtime-guards` | Rank systems able to host an LPAR with the requested capacity. |
+| `hmc_find_placement` | `read` | `placement.find` | `console` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Rank systems able to host an LPAR with the requested capacity. |

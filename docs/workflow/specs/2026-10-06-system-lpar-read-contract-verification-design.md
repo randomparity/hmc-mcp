@@ -121,6 +121,7 @@ because it issues those two feeds itself through `fetch_capacity_report`.
 
 | Path not run | Prerequisite |
 |---|---|
+| `lpar.plan` live observation | the campaign's consolidated re-record round. The 2026-10-06 run at `a2667b36` was refused at input validation, because ST1 named the planned disk after the lab's 17-character ST13 storage name and the VIOS allows 15. That was a harness defect, fixed in `82cd83d6`. No observation is catalogued from that run. |
 | `system.list` with a `state` filter (server-side search) | none; candidate for a later ST1 extension |
 | the feed under `X-HMC-Schema-Version: V1_0` (the declared 500) | a run with `HMC_SCHEMA_VERSION=V1_0`. The ST1 run uses the `.env` as configured; when that leaves the header unset, this row stays a gap. If the orchestrator grants a second run with the header, its outcome is reported, not catalogued, because the catalog keeps one observation per operation. |
 | fleet-wide `lpar.list_ownership`, `capacity.report` and `health.fleet` over a non-operating system | a non-operating system on the boundary HMC |
