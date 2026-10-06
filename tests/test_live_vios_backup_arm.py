@@ -59,6 +59,9 @@ class FakeVios:
     snapshot_read_fails_after_restore: bool = False
     rmviosbk_removes: bool = True
     sea_lines: str = "ent5 ent0 Available\n"
+    rmc_before: str = "active\n"
+    rmc_returns: bool = True
+    serial: str = "server,1\nserver,0\n"
     reorder: bool = False
     calls: list[str] = field(default_factory=list)
     restored: bool = False
@@ -109,8 +112,14 @@ class FakeVios:
         return self.command(cmd)
 
     def command(self, cmd: str) -> tuple[str, Any]:
+        if cmd.startswith("lssyscfg") and cmd.endswith("-F rmc_state"):
+            if self.restored and not self.rmc_returns:
+                return "PASS", "inactive\n"
+            return "PASS", self.rmc_before
         if cmd.startswith("lssyscfg"):
             return "PASS", self.partitions
+        if cmd.startswith("lshwres"):
+            return "PASS", self.serial
         if cmd.startswith("lsviosbk"):
             return "PASS", "name,type\n" + "".join(
                 f"{b},viosioconfig\n" for b in self.backups
@@ -201,12 +210,21 @@ async def test_other_groups_skip_without_any_call(monkeypatch):
 @pytest.mark.parametrize(
     "fault",
     [
+        {"rmc_before": "inactive\n"},
+        {"serial": "server,0\n"},
         {"partitions": f"{LPAR},aixlinux,Running\n{VIOS},vioserver,Running\n"},
         {"partitions": f"{LPAR},aixlinux,Not Activated\nother,aixlinux,Running\n"},
         {"vioses": (VIOS, "vios-B")},
         {"mapped": False},
     ],
-    ids=["activated", "second-client", "two-vioses", "no-disk-mapping"],
+    ids=[
+        "rmc-inactive",
+        "no-console",
+        "activated",
+        "second-client",
+        "two-vioses",
+        "no-disk-mapping",
+    ],
 )
 async def test_a_failed_precondition_changes_nothing(monkeypatch, fault):
     vios = FakeVios(**fault)
@@ -413,3 +431,18 @@ async def test_a_backup_nothing_lists_is_not_restored(monkeypatch):
 
     assert _mutations(vios) == ["hmc_backup_vios"]
     assert "vios.restore" not in _observations(state)
+
+
+@pytest.mark.asyncio
+async def test_rmc_that_never_returns_after_the_restore_stops_every_change(
+    monkeypatch,
+):
+    """Operator ruling: no mkvdev and no rmviosbk until RMC is back."""
+    vios = FakeVios(restore_restores=False, rmc_returns=False)
+
+    state = await _run(monkeypatch, vios)
+
+    assert _mutations(vios) == ["hmc_backup_vios", "rmvdev", "hmc_restore_vios"]
+    assert _observations(state)["vios.restore"]["result"] == "failed"
+    assert _observations(state)["vios.backup"]["cleanup"] == "not-run"
+    assert not any("ioslevel" in call for call in vios.calls)

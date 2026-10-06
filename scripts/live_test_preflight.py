@@ -217,7 +217,10 @@ def _vios_backup_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
                 f"{vios_backup.BACKUP_PREFIX}<8 hex>"
             ),
             f"that VIOS: {config.lp3_name}'s disk VTD removed (the backing device kept)",
-            "that VIOS: viosioconfig restore with -r (the HMC may restart the VIOS)",
+            (
+                "that VIOS: viosioconfig restore with -r (the HMC may restart the "
+                "VIOS); requires active RMC and an HMC console adapter first"
+            ),
             "that backup: removed with rmviosbk once the mapping reads back",
         ),
         config.system_name,

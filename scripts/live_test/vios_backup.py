@@ -42,8 +42,9 @@ GROUP = "vios-backup"
 SCENARIO = "st37-vios-io-backup-restore"
 BACKUP_PREFIX = "hmcpctl-live-st37-"
 #: With `-r` the HMC restarts the VIOS inside `rstviosbk`; this bounds the wait for
-#: the VIOS to answer again afterwards. Module-level so tests can shorten it.
-RESTORE_WAIT_SECONDS = 1800
+#: its RMC connection and `ioslevel` to answer again afterwards, the same bound as
+#: the SSH timeout the arm requires. Module-level so tests can shorten it.
+RESTORE_WAIT_SECONDS = 2400
 POLL_SECONDS = 30
 #: `rstviosbk -r` restarts the VIOS and retries inside one CLI call, which the
 #: default 300-second SSH timeout would cut off with the restore still running.
@@ -264,7 +265,28 @@ class _Arm:
         # Recorded, not gated: the operator rules on a management interface on the
         # SEA before the run (docs/live-testing.md).
         await self.on_vios(target, "lstcpip -interfaces")
+        # The VIOS's management IP can sit on the SEA a restore rewrites, so the
+        # operator's way back is the HMC console: require it, and RMC, up front.
+        if not await self.rmc_active(target, "before backup"):
+            return self.refuse(f"RMC is not active on {name}")
+        serial = await self.run(
+            "VIOS console adapter",
+            f"lshwres -r virtualio --rsubtype serial --level lpar "
+            f"-m {shlex.quote(self.system)} "
+            f"--filter {shlex.quote(f'lpar_names={name}')} -F adapter_type,supports_hmc",
+        )
+        if serial is None or "server,1" not in serial.split():
+            return self.refuse(f"{name} has no HMC console (virtual serial) adapter")
         return target
+
+    async def rmc_active(self, target: Target, label: str) -> bool:
+        """Whether the HMC reports the VIOS's RMC connection active."""
+        state = await self.run(
+            f"VIOS RMC state, {label}",
+            f"lssyscfg -r lpar -m {shlex.quote(self.system)} "
+            f"--filter {shlex.quote(f'lpar_names={target.vios}')} -F rmc_state",
+        )
+        return state is not None and state.strip() == "active"
 
     def refuse(self, reason: str) -> None:
         self.state.skip(
@@ -286,13 +308,19 @@ class _Arm:
         return status, data
 
     async def wait_for_vios(self, target: Target) -> float | None:
-        """Seconds until the VIOS answers `ioslevel`, or None past the bound."""
+        """Seconds until RMC is active and the VIOS answers `ioslevel`, or None.
+
+        None means the bound passed first: the operator recovers through the HMC
+        console, and the arm changes nothing more.
+        """
         started = time.monotonic()
         command = vios_command(self.system, target.vios, "ioslevel")
         while True:
-            status, data = await self.state.call(
-                self.client, "hmc_run_command", cmd=command
-            )
+            status, data = "FAIL", "RMC not active"
+            if await self.rmc_active(target, "after restore"):
+                status, data = await self.state.call(
+                    self.client, "hmc_run_command", cmd=command
+                )
             elapsed = time.monotonic() - started
             if status == "PASS":
                 self.record(

@@ -187,11 +187,14 @@ when dispatched as its own group; `all` and a bare run skip it.
 Before it, an operator confirms with read-only commands where that VIOS's
 management IP address sits relative to its Shared Ethernet Adapter, and rules on
 whether to go ahead when it is on the SEA. The arm records the interfaces but
-does not gate on them.
+does not gate on them. Because a restore can rewrite that SEA, the way back is
+the HMC console, so the arm guards on it instead.
 
 - **Preconditions.** The test partition is `Not Activated`, it is the only
   non-VIOS partition on the system, and exactly one VIOS holds exactly one disk
-  mapping toward it. Otherwise the arm SKIPs and changes nothing.
+  mapping toward it. That VIOS's RMC state reads `active`, and it has a virtual
+  serial server adapter the HMC can open a console on. Otherwise the arm SKIPs
+  and changes nothing.
 - **What it changes.** It backs up the VIOS's I/O configuration to
   `hmcpctl-live-st37-<8 hex>`, removes the test partition's disk VTD (the backing
   logical volume stays), and restores the backup with `-r`, which lets the HMC
@@ -203,10 +206,12 @@ does not gate on them.
   baseline, line order aside. If the mapping is not back, it recreates it with
   `mkvdev` and records the restore as failed.
 - **Cleanup.** hmcpctl has no backup-removal tool (#698). Once the mapping reads
-  back, the arm removes its backup through `hmc_run_command`. When the restore
-  call ended without an exit status from the HMC (a timeout or a dropped
-  session), the VIOS never answered after it, or a read failed after a change,
-  it keeps the backup and changes nothing more. Remove it by hand once the VIOS is checked, as the recovery check
+  back, the arm removes its backup through `hmc_run_command`. After the restore it
+  waits, up to 2400 s, for RMC to read `active` and the VIOS to answer
+  `ioslevel`. When that never happens, the restore call ended without an exit
+  status from the HMC (a timeout or a dropped session), or a read failed after a
+  change, it keeps the backup, recreates nothing, and changes nothing more.
+  Recover the VIOS through its HMC console first. Remove it by hand once the VIOS is checked, as the recovery check
   prints:
 
   ```sh

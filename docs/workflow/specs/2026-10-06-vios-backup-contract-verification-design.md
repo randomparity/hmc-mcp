@@ -32,8 +32,10 @@ captured empty, so its attribute names are unverified.
       the test partition (`LIVE_TEST_LPAR_NAME`) is `Not Activated`; it is the only
       non-VIOS partition on `LIVE_TEST_SYSTEM_NAME`; exactly one VIOS holds disk
       (`VirtualDisk`/`PhysicalVolume`) mappings toward it, and exactly one such
-      mapping. The VIOS's management-interface-vs-SEA placement is recorded, not gated
-      (the operator rules on it before the run; runbook step).
+      mapping; the VIOS's RMC is `active` and it has an HMC-capable virtual serial
+      server adapter. Its management-interface-vs-SEA placement is recorded, not
+      gated: the operator ruled (2026-10-06) to proceed guarded by the console and
+      RMC checks.
    2. *Baseline*: the VIOS's full REST mapping list, and via `viosvrcmd` the text of
       `lsmap -all`, `lsmap -all -net`, `lsmap -all -npiv`, `lsdev -virtual`.
       The mapping identity (`vhostN/<vtd>`, backing name) and the backup name go into
@@ -51,8 +53,8 @@ captured empty, so its attribute names are unverified.
    6. *Restore*: `hmc_restore_vios(-t viosioconfig, restart_if_required=True)`, timed.
       With `-r` the HMC restarts the VIOS and retries inside the command, so the run
       sets `HMC_SSH_TIMEOUT=2400` (runbook, preflight). Whatever the call returns,
-      the arm then waits, bounded at 30 min (poll 30 s), until `viosvrcmd ... ioslevel`
-      answers. If it never answers, or the call ended without an HMC exit status
+      the arm then waits, bounded at 2400 s (poll 30 s), until RMC reads `active`
+      and `viosvrcmd ... ioslevel` answers. If it never answers, or the call ended without an HMC exit status
       (a timeout or dropped session; the HMC may still be restoring), the outcome is unknown: assertions are still read, but no further
       mutation runs, and recovery names both remedies. The arm itself refuses to
       start below that timeout.
