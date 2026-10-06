@@ -40,10 +40,10 @@ reserve nothing.
 | `lpar.inspect`, `lpar.plan`, `inventory.logical` | delegated tool reads | none; their existing `composite_reason` is accurate and kept |
 
 A bound row's `composite_reason` is `null`. The rebinding leaves seven rows bound by no
-operation: `cli:commands/lscod`, `cli:commands/lscodpool` and `cli:commands/mkcodpool`, three
-CoD jobs (`deactivatecod`, `entercodcode`, `listcodcodeinfo`), and
-`rest:jobs/managementconsole-jobs/referencecodelogs-job`. Each keeps its `coverage-child`
-disposition (#680, #678). The other dropped rows stay bound by their other operations. `placement.find` loses its composite reason
+operation: `cli:commands/lscod` (#695), `cli:commands/lscodpool` and `cli:commands/mkcodpool`
+(#640), the `listcodcodeinfo`, `listcodresources` and `manageelasticcod` ManagedSystem jobs
+(#680), and `rest:jobs/managementconsole-jobs/referencecodelogs-job` (#678). Each keeps its
+`coverage-child` disposition. The other dropped rows stay bound by their other operations. `placement.find` loses its composite reason
 because it issues those two feeds itself through `fetch_capacity_report`.
 
 ## Design
