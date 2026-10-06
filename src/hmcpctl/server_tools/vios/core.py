@@ -335,7 +335,9 @@ def hmc_backup_vios(
     Args:
         system_name_or_uuid: Managed system name or UUID. UUIDs resolve to MTMS.
         vios_name_or_uuid: VIOS partition name or UUID.
-        backup_name: Name for the new backup catalog entry.
+        backup_name: Name for the new backup catalog entry. The HMC lists the
+            entry as ``<backup_name>.tar.gz`` (observed on V10R3), and
+            hmc_restore_vios takes that listed name, not this one.
         backup_type: Backup kind: vios, viosioconfig, or ssp.
         profile: Optional TOML profile name; uses environment defaults when omitted.
 

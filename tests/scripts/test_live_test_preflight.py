@@ -285,6 +285,37 @@ def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
     assert "all five restored to the pre-run read" in output
 
 
+def test_the_vios_backup_verdict_names_the_restore_and_its_cleanup(
+    workspace, monkeypatch, capsys
+):
+    """#1349. The restart and the rmviosbk are what the operator approves."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+    monkeypatch.setenv("HMC_SSH_TIMEOUT", "2400")
+
+    assert preflight.main(["--group", "vios-backup", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "disk VTD removed" in output
+    assert "restore with -r" in output
+    assert "rmviosbk" in output
+
+
+def test_the_vios_backup_verdict_refuses_the_default_ssh_timeout(
+    workspace, monkeypatch, capsys
+):
+    """A 300 s timeout would cut the restore off while the VIOS restarts."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+    monkeypatch.delenv("HMC_SSH_TIMEOUT", raising=False)
+
+    preflight.main(["--group", "vios-backup", "--skip-hardware"])
+
+    output = capsys.readouterr().out
+    assert "vios-backup SKIP     HMC_SSH_TIMEOUT must be at least 2400" in output
+
+
 def test_a_pinned_slot_predicts_the_io_slots_scenario_will_skip(
     workspace, monkeypatch, capsys
 ):

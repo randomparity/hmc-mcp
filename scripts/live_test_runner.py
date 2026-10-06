@@ -6,8 +6,8 @@ a JSON document on exit.
 
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
-`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,pcm}.py` to dispatch one
-arm,
+`scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,vios_backup,pcm}.py` to
+dispatch one arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
@@ -17,11 +17,11 @@ Usage:
 `--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
 stops importing (AGENTS.md).
 
-With no selection every subtask runs, 0 through 38: there is none from 26 to 37,
-which are other arms' row ids, and 38 SKIPs outside its own `pcm` group. A bare
-number runs that one subtask; `--group NAME` runs one arm. Results go to
-`test-results-<group>.json`, or `test-results-round2.json` for a bare or
-whole-suite run, unless
+With no selection every subtask runs, 0 through 38: there is none from 26 to 36,
+which are other arms' row ids, and 37 and 38 SKIP outside their own `vios-backup`
+and `pcm` groups. A bare number runs that one subtask; `--group NAME` runs one arm.
+Results go to `test-results-<group>.json`, or `test-results-round2.json` for a bare
+or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
 
 Pre-run requirement: HMC credentials, from the environment, a `config.toml`
@@ -99,6 +99,7 @@ from live_test.provisioning import (
 )
 from live_test.storage import inventory_storage
 from live_test.users import administer_test_user, inventory_users
+from live_test.vios_backup import exercise_vios_backup
 from live_test.vmedia import (
     IsoHttpServer,
     vmedia_boot_verification,
@@ -622,6 +623,13 @@ class LiveTestArtifacts:
     pcie_fixture_lpar: str | None = None
     pcie_drc_index: str | None = None
     pcie_baseline_io_slots: str | None = None
+    # What the vios-backup arm (ST37) is about to change, recorded before the backup so
+    # `live_test_recovery.py` can find a kept backup or a missing disk mapping.
+    vios_backup_vios: str | None = None
+    vios_backup_vios_uuid: str | None = None
+    vios_backup_name: str | None = None
+    vios_backup_mapping: str | None = None
+    vios_backup_backing: str | None = None
 
 
 #: Stand-in for an argument whose value is not knowable without running the
@@ -1008,6 +1016,7 @@ SUBTASKS = {
     23: exercise_sriov_assignment,
     24: exercise_dedicated_pcie_assignment,
     25: exercise_bare_cec,
+    37: exercise_vios_backup,
     38: exercise_pcm_preferences,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
@@ -1191,6 +1200,9 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     "dedicated": [24],
     "bare-cec": [25],
     "profiles": [0, 4, 10, 15],
+    # Not in "all": the arm restores a VIOS's I/O configuration and needs its own
+    # operator authorization (docs/live-testing.md).
+    "vios-backup": [37],
     # Not in "all": the arm changes the managed system's PCM collection preferences,
     # which every PCM consumer of the system shares (docs/live-testing.md).
     "pcm": [38],
@@ -1293,6 +1305,13 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
     )
 
 
+_VIOS_BACKUP_ARTIFACTS = (
+    "vios_backup_vios",
+    "vios_backup_vios_uuid",
+    "vios_backup_name",
+    "vios_backup_mapping",
+    "vios_backup_backing",
+)
 _ARTIFACT_NULLABLE_STRINGS = frozenset(
     {
         "system_uuid",
@@ -1309,6 +1328,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "vdisk_vg_name",
         "vmedia_iso_name",
         "vmedia_mapping_uuid",
+        *_VIOS_BACKUP_ARTIFACTS,
     }
 )
 _ARTIFACT_NULLABLE_INTS = frozenset(
@@ -1353,6 +1373,9 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
     # A results document written before `test_user_uuid` existed is still a valid
     # restore source; every other field difference remains a mismatch.
     parsed.setdefault("test_user_uuid", None)
+    # Likewise a document written before the vios-backup arm (#1349) existed.
+    for name in _VIOS_BACKUP_ARTIFACTS:
+        parsed.setdefault(name, None)
     if set(parsed) != expected_fields:
         raise ValueError("results artifact fields do not match LiveTestArtifacts")
     for name in _ARTIFACT_NULLABLE_STRINGS:
