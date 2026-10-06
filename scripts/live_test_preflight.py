@@ -179,8 +179,12 @@ def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
         (
             f"managed system {config.system_name}",
             (
-                f"partition {config.lp3_name}: description, default-profile processor "
-                "compatibility mode and sync_curr_profile (each restored)"
+                f"partition {config.lp3_name}: description and sync_curr_profile "
+                "(each restored)"
+            ),
+            (
+                f"partition {config.lp3_name}: default-profile processor compatibility "
+                "mode (restored; skipped when ST0 reads sync_curr_profile as 1)"
             ),
             "the first VIOS by name: msp (toggled, then restored)",
             (
