@@ -14,7 +14,11 @@ configured test partition: a running partition, a changed pending boot string,
 an optical mapping, a VIOS vSCSI server adapter with no mapping, and the media
 repository it created. It witnesses the vios-backup arm (subtask 37) by the backup
 and disk mapping that run recorded: a backup still in the catalog (remedy:
-`rmviosbk`) and a disk mapping not put back (remedy: `mkvdev`). Every other
+`rmviosbk`) and a disk mapping not put back (remedy: `mkvdev`). It witnesses
+the network arm (subtask 9) by the baselines that run recorded: a network left on
+its test VLAN, a client adapter on the test partition off its baseline, an FC-port
+label off its original, and a vFC group label it named. Subtask 2 only reads, so
+there is nothing for it to leave. Every other
 subtask the run dispatched is listed as NOT WITNESSED, to be checked by hand
 (docs/live-testing.md, step 4).
 
@@ -51,7 +55,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import vios_backup
+from live_test import network, vios_backup
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
@@ -86,6 +90,10 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_get_console_info",
         "hmc_list_users",
         "hmc_list_vios_backups",
+        "hmc_list_virtual_networks",
+        "hmc_list_adapters",
+        "hmc_list_vios_fc_port_labels",
+        "hmc_list_vios_vfc_group_labels",
     }
 )
 
@@ -108,7 +116,14 @@ _VMEDIA_SUBTASKS = frozenset(range(16, 23))
 #: not by the document's name, so a run killed before it wrote its document, or
 #: overwritten by a later run's, still has its user reported.
 _USERS_SUBTASK = 11
-_WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {_USERS_SUBTASK, 24, 25, vios_backup.SUBTASK}
+_WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {
+    _USERS_SUBTASK,
+    24,
+    25,
+    vios_backup.SUBTASK,
+    network.INVENTORY_SUBTASK,
+    network.SUBTASK,
+}
 
 #: vMedia calls that leave a repository behind only in one this run owns: the
 #: arm skips each of them on a repository it did not create (#967).
@@ -378,6 +393,194 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
                 ),
             )
         )
+    return findings
+
+
+@dataclass(frozen=True)
+class NetworkInputs:
+    """What the network arm (ST9) read before changing anything."""
+
+    system_name: str
+    lpar_name: str
+    #: The run's test VLAN, when its VLAN round trip reached the create.
+    vlan: int | None
+    #: Adapter type -> its baseline listing on the test partition.
+    adapters: dict[str, Any]
+    #: The serving VIOS's FC-port label rows, when that round trip read them.
+    fc_labels: list[Any] | None
+    #: Whether the vFC group-label round trip read its baseline.
+    groups_read: bool = False
+
+
+def _baseline_row(rows: list[Any], tool: str) -> Any:
+    """The data of the ST9 row recording *tool* (``<tool> (<label>)``), or None."""
+    for row in rows:
+        if (
+            isinstance(row, dict)
+            and row.get("subtask") == network.SUBTASK
+            and row.get("tool") == tool
+            and row.get("status") == "PASS"
+        ):
+            return row.get("data")
+    return None
+
+
+def network_inputs_from_document(
+    document: Any, subtasks: list[int]
+) -> NetworkInputs | None:
+    """ST9's baselines, or `None` when it changed nothing (it SKIPped or never ran)."""
+    if network.SUBTASK not in subtasks or not isinstance(document, dict):
+        return None
+    config, artifacts = document.get("config"), document.get("artifacts")
+    rows = document.get("results")
+    if not (
+        isinstance(config, dict)
+        and isinstance(artifacts, dict)
+        and isinstance(rows, list)
+    ):
+        return None
+    adapters = {
+        kind: data
+        for kind in network.ROUND_TRIP_ADAPTER_TYPES
+        if (data := _baseline_row(rows, f"hmc_list_adapters ({kind}, baseline)"))
+        is not None
+    }
+    # Any create row, whatever its status: a refused create can still have applied.
+    created = any(
+        isinstance(row, dict)
+        and row.get("subtask") == network.SUBTASK
+        and row.get("tool") == "hmc_create_virtual_network (create)"
+        for row in rows
+    )
+    fc_labels = _baseline_row(
+        rows, "hmc_list_vios_fc_port_labels (FC-port labels, baseline)"
+    )
+    vlan = artifacts.get("test_vlan_id") if created else None
+    groups_read = (
+        _baseline_row(
+            rows, "hmc_list_vios_vfc_group_labels (vFC group labels, baseline)"
+        )
+        is not None
+    )
+    if not adapters and vlan is None and fc_labels is None and not groups_read:
+        return None
+    return NetworkInputs(
+        str(config.get("system_name")),
+        str(config.get("lp3_name")),
+        vlan if isinstance(vlan, int) else None,
+        adapters,
+        fc_labels if isinstance(fc_labels, list) else None,
+        groups_read,
+    )
+
+
+async def check_network(call, inputs: NetworkInputs) -> list[Finding]:
+    """A network on the test VLAN, adapters and labels off ST9's baselines."""
+    findings: list[Finding] = []
+    system = inputs.system_name
+    status, data = await call("hmc_list_virtual_networks", system_name_or_uuid=system)
+    if status != "PASS" or not isinstance(data, list):
+        raise StateUnreadable(f"could not list the virtual networks ({status})")
+    if inputs.vlan is not None:
+        for entry in data:
+            resource = entry.get("Resource", entry) if isinstance(entry, dict) else {}
+            if network.as_int(resource.get("NetworkVLANID")) == inputs.vlan:
+                findings.append(
+                    Finding(
+                        "network left on the test VLAN",
+                        f"{resource.get('NetworkName')!r} ({entry.get('UUID')}) is on "
+                        f"VLAN {inputs.vlan}, which was unused before the run",
+                        "hmc_delete_virtual_network with that network_uuid, after "
+                        "confirming it is the run's (its name starts "
+                        f"{network.NAME_PREFIX})",
+                    )
+                )
+    for kind, baseline in inputs.adapters.items():
+        before = network.adapter_placements(baseline)
+        status, data = await call(
+            "hmc_list_adapters",
+            lpar_name_or_uuid=inputs.lpar_name,
+            adapter_type=kind,
+            system_name_or_uuid=system,
+        )
+        now = network.adapter_placements(data) if status == "PASS" else None
+        if before is None or now is None:
+            raise StateUnreadable(
+                f"could not compare {inputs.lpar_name}'s {kind} adapters", findings
+            )
+        if now != before:
+            findings.append(
+                Finding(
+                    f"{kind} off its baseline",
+                    f"{inputs.lpar_name}'s {kind} adapters differ from the run's baseline",
+                    network.placement_drift(before, now),
+                )
+            )
+    findings += await _network_labels(call, inputs, findings)
+    return findings
+
+
+async def _network_labels(
+    call, inputs: NetworkInputs, found: list[Finding]
+) -> list[Finding]:
+    findings: list[Finding] = []
+    status, groups = await call(
+        "hmc_list_vios_vfc_group_labels", system_name_or_uuid=inputs.system_name
+    )
+    if status == "PASS" and isinstance(groups, list):
+        left = sorted(
+            str(network.group_name(row))
+            for row in groups
+            if isinstance(row, dict)
+            and str(network.group_name(row)).startswith(network.LABEL_PREFIX)
+        )
+        if left:
+            findings.append(
+                Finding(
+                    "vFC group label left",
+                    f"{left} carry the run's prefix",
+                    f"labelvios -m {shlex.quote(inputs.system_name)} -o r -l <label>",
+                )
+            )
+    elif inputs.groups_read:
+        raise StateUnreadable("could not list the vFC group labels", found + findings)
+    if inputs.fc_labels is None:
+        return findings
+    before = {
+        (str(row.get("name")), str(row.get("port_name"))): str(
+            row.get("port_label") or ""
+        )
+        for row in inputs.fc_labels
+        if isinstance(row, dict)
+    }
+    for vios in sorted({name for name, _ in before}):
+        status, rows = await call(
+            "hmc_list_vios_fc_port_labels",
+            system_name_or_uuid=inputs.system_name,
+            vios_name=vios,
+        )
+        if status != "PASS" or not isinstance(rows, list):
+            raise StateUnreadable(
+                f"could not list {vios}'s FC-port labels", found + findings
+            )
+        now = {
+            (str(row.get("name")), str(row.get("port_name"))): str(
+                row.get("port_label") or ""
+            )
+            for row in rows
+            if isinstance(row, dict)
+        }
+        for key, label in before.items():
+            if key[0] == vios and now.get(key) != label:
+                findings.append(
+                    Finding(
+                        "FC-port label off its original",
+                        f"{vios} {key[1]} reads {now.get(key)!r}, was {label!r}",
+                        "hmc_set_vios_fc_port_label with the original label"
+                        if label
+                        else "hmc_remove_vios_fc_port_label",
+                    )
+                )
     return findings
 
 
@@ -932,6 +1135,7 @@ async def check_run(
     pcie: RecoveryInputs | None,
     partition: LparResidueInputs | None,
     vios: VIOSBackupInputs | None = None,
+    network_inputs: NetworkInputs | None = None,
     users: bool = False,
 ) -> list[Finding]:
     """Each arm's checks in turn, each read whatever the others found."""
@@ -946,6 +1150,7 @@ async def check_run(
         (check, pcie),
         (check_test_partition, partition),
         (check_vios_backup, vios),
+        (check_network, network_inputs),
     ):
         if inputs is None:
             continue
@@ -973,6 +1178,7 @@ async def _run_checks(
     pcie: RecoveryInputs | None,
     partition: LparResidueInputs | None,
     vios: VIOSBackupInputs | None = None,
+    network_inputs: NetworkInputs | None = None,
     users: bool = False,
 ) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
@@ -984,7 +1190,12 @@ async def _run_checks(
     # missed that, so a test asserts the read-only tools are registered here.
     async with runner.served_client() as client:
         return await check_run(
-            _read_only_caller(client, state), pcie, partition, vios, users
+            _read_only_caller(client, state),
+            pcie,
+            partition,
+            vios,
+            network_inputs,
+            users,
         )
 
 
@@ -1069,6 +1280,7 @@ def main(argv: list[str] | None = None) -> int:
     pcie = inputs_from_document(document)
     partition = lpar_inputs_from_document(document, subtasks)
     vios = vios_backup_inputs_from_document(document, subtasks)
+    network_inputs = network_inputs_from_document(document, subtasks)
 
     findings: list[Finding] = []
     unread: list[str] = []
@@ -1077,12 +1289,16 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         users = False
         unread.append(str(error))
-    if pcie is not None or partition is not None or vios is not None or users:
+    if users or any(
+        inputs is not None for inputs in (pcie, partition, vios, network_inputs)
+    ):
         if not runner._bootstrap_config():
             print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
             return 2
         try:
-            findings = asyncio.run(_run_checks(pcie, partition, vios, users))
+            findings = asyncio.run(
+                _run_checks(pcie, partition, vios, network_inputs, users)
+            )
         except MutatingCallRefused as refused:
             print(f"ERROR: refused a mutating call: {refused}", file=sys.stderr)
             return 2

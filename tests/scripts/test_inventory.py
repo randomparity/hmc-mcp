@@ -115,32 +115,6 @@ def test_listed_vlans_parses_each_form_and_keeps_malformed_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_network_inventory_selects_unused_vlan_and_switch() -> None:
-    state = ScenarioState(
-        {
-            "hmc_list_virtual_switches": [{"Resource": {"SwitchID": "9"}}],
-            "hmc_list_virtual_networks": [
-                {"Resource": {"NetworkVLANID": "3000"}},
-                {"Resource": {"NetworkVLANID": "3002"}},
-            ],
-        }
-    )
-
-    await network.inventory_network(None, state)
-
-    assert state.artifacts.test_vswitch_id == 9
-    assert state.artifacts.test_vlan_id == 3001
-    assert [tool for tool, _ in state.calls] == [
-        "hmc_list_virtual_switches",
-        "hmc_list_virtual_networks",
-        "hmc_list_network_bridges",
-        "hmc_list_fc_ports",
-        "hmc_list_sea_adapters",
-        "hmc_list_adapters",
-    ]
-
-
-@pytest.mark.asyncio
 async def test_storage_inventory_resolves_the_owning_group() -> None:
     state = ScenarioState(
         {

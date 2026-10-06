@@ -3,6 +3,41 @@
   "runtime_eligibility": "existing-runtime-guards",
   "operations": [
     {
+      "operation": "adapter.add_network",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "adapter.add_vfc",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "adapter.add_vscsi",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:20:39Z"
+    },
+    {
+      "operation": "adapter.delete",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "adapter.list",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:18:02Z"
+    },
+    {
       "operation": "console.info",
       "implementation": "implemented",
       "verification": "stale",
@@ -246,6 +281,55 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T17:15:14Z"
+    },
+    {
+      "operation": "network.create_network",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:18:48Z"
+    },
+    {
+      "operation": "network.delete_network",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "network.list_bridges",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:17:24Z"
+    },
+    {
+      "operation": "network.list_fc_ports",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "network.list_networks",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:17:16Z"
+    },
+    {
+      "operation": "network.list_sea",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:17:28Z"
+    },
+    {
+      "operation": "network.list_switches",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:17:10Z"
     },
     {
       "operation": "pcie.assign_dedicated_slot",
@@ -505,6 +589,55 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T15:27:07Z"
+    },
+    {
+      "operation": "vios_label.create_vfc_group",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:21:20Z"
+    },
+    {
+      "operation": "vios_label.list_fc_ports",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vios_label.list_vfc_groups",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vios_label.remove_fc_port",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vios_label.remove_vfc_group",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:21:20Z"
+    },
+    {
+      "operation": "vios_label.set_fc_port",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vios_label.update_vfc_group",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-06T19:21:20Z"
     }
   ]
 }

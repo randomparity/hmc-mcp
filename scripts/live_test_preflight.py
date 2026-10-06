@@ -247,6 +247,38 @@ def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name what the network arm (#629) changes, each reversed by the arm itself."""
+    return ArmVerdict(
+        "network",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                "one virtual network on the first unused VLAN in "
+                f"{config.vlan_range_start}-{config.vlan_range_end} (created, a "
+                "duplicate attempted, then deleted); no existing network is changed"
+            ),
+            (
+                f"partition {config.lp3_name}, only while Not Activated: a client "
+                "network, a vSCSI and a vFC client adapter (each added, then removed; "
+                "each vFC add uses a WWPN pair from the system's pool); each vSCSI "
+                "and vFC add is first tried on the slot the partition's own vSCSI "
+                "client uses, and an unknown adapter UUID is deleted (both expected "
+                "refused; anything accepted is reversed or reported)"
+            ),
+            (
+                f"the one VIOS serving {config.lp3_name}: one FC port's label (set, "
+                "removed, restored; a set on absent port fcs9999 expected refused) "
+                "and a vFC group label (created, a duplicate refused, renamed, "
+                "removed)"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 def _users_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name the HMC user the users arm (#632) creates and deletes again."""
     return ArmVerdict(
@@ -270,6 +302,7 @@ _ARM_VERDICTS = {
     "profiles": _profiles_verdict,
     "pcm": _pcm_verdict,
     "vios-backup": _vios_backup_verdict,
+    "network": _network_verdict,
     "users": _users_verdict,
 }
 

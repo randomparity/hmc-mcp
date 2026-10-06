@@ -93,6 +93,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | users | `uv run --no-sync python scripts/live_users.py` | subtask 11 |
 | vios-backup | `uv run --no-sync python scripts/live_vios_backup.py` | subtask 37 |
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
+| network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -203,6 +204,48 @@ global to the console, not to a managed system.
 
 `LIVE_TEST_TEST_USER_NAME` is retired. A `.env` that still sets it loads with a
 notice; delete the line.
+
+### The network arm
+
+The network arm verifies the virtual-network, client-adapter and VIOS-label
+operations (#629). Subtask 2 only reads. Subtask 9 runs only in this arm; round2
+and `all` skip it. Each round trip reads its own baseline first, re-reads after
+every change whatever the call returned, and reverses the difference:
+
+- **Preconditions.** The test partition must read `Not Activated`, or nothing is
+  changed. The adapter and label round trips also need exactly one VIOS with a
+  vSCSI server adapter toward the test partition (the serving VIOS); otherwise
+  only the VLAN round trip runs.
+- **VLAN.** It creates `hmcpctl-live-vlan<id>-<8 hex>` on the first VLAN in
+  `LIVE_TEST_VLAN_RANGE_START`–`END` that no network uses, tries a second network
+  on the same VLAN (expected refused; deleted if not), adds a client network
+  adapter on that VLAN to the test partition, deletes an unknown adapter UUID
+  (expected refused), then removes the adapter and the run's own networks. Any
+  other network on that VLAN is reported, never deleted.
+- **vSCSI and vFC clients.** Each first tries an add on the virtual slot the
+  test partition's own vSCSI client uses (expected refused), then adds a client
+  adapter to the test partition paired to the lowest server slot of the serving
+  VIOS assigned to the test partition (a slot open to any partition is never
+  used), checks the pairing, and removes it. The VIOS's
+  server adapters and the test partition's storage mappings must be unchanged
+  afterwards. With no such slot, that round trip SKIPs. Each vFC add
+  takes a WWPN pair from the system's pool.
+- **Labels.** On the serving VIOS's first FC port it sets
+  `hmcl-<8 hex>`, tries the same on port `fcs9999` (expected refused),
+  removes the label and puts back the original. It creates a vFC group label
+  `hmcl-<8 hex>` (the HMC caps a group label at 16 characters), tries to create it again (expected refused), renames
+  it with `-r` and removes it. A label the tools cannot write back exactly, or a
+  label read the HMC refuses, SKIPs that round trip.
+
+A reversal that fails or cannot be confirmed is a FAIL row marked
+`MANUAL RECOVERY REQUIRED`, and nothing after it runs. The arm ends with one
+`network baseline compare` row per baseline it read.
+
+The recovery check witnesses subtask 9 from the baselines the run recorded:
+no network on the run's VLAN (`artifacts.test_vlan_id`), whatever its name; the
+test partition's client network, vSCSI and vFC adapters as before; the serving
+VIOS's FC-port labels as before; and no vFC group label named `hmcl-*`.
+Subtask 2 only reads. After an interrupted run (exit 2), check the same by hand.
 
 ### The vios-backup arm
 
@@ -371,10 +414,10 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 ```
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
-`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup` or `pcm`.
+`bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm` or `network`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
-three sets of them:
+four sets of them:
 
 | Subtasks | What it reads |
 |---|---|
@@ -382,6 +425,7 @@ three sets of them:
 | 11 (users) | any HMC user named `hmcpctl-live-*`, whichever run's document you pass |
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
+| 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test
 partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
@@ -395,9 +439,9 @@ partition. Every other dispatched subtask is printed as `NOT WITNESSED`.
 Exit 2 is expected after round2, SR-IOV, profiles, pcm and `all` runs: they dispatch
 subtasks the check does not witness. For those, check by hand:
 
-- **round2**: the scratch and network-test partitions are gone, no test VLAN or virtual network is left, the test partition's
-  description and properties match the baseline, and the provisioned test
-  partition and its disk exist.
+- **round2**: the scratch partition is gone, the test partition's description
+  and properties match the baseline, and the provisioned test partition and its
+  disk exist.
 - **SR-IOV**: the test logical port is no longer assigned to the test
   partition, and its profile no longer lists it.
 - **profiles**: compare an independent `lssyscfg` read with one taken before
