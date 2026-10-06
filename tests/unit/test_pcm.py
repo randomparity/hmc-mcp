@@ -7,10 +7,10 @@ from defusedxml import ElementTree as ET
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.client.pcm_payloads import (
-    build_pcm_preferences_document,
     metric_links,
     newest_metric_link,
     pcm_preferences_to_dict,
+    pcm_preferences_update,
 )
 from hmcpctl.errors import HMCError
 from hmcpctl.jobs import (
@@ -106,6 +106,13 @@ def _hmc_env(monkeypatch):
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
+def _route_preferences_read(router):
+    """The GET a preferences update reads before it posts (#634)."""
+    router.get(
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
+    ).mock(return_value=live_response("rest-pcm-preferences")[1])
+
+
 def _route_metrics_feed(router, category, uuid, kind, text=PCM_FEED):
     router.get(f"/rest/api/pcm/{category}/{uuid}/{kind}").mock(
         return_value=httpx.Response(200, text=text)
@@ -154,28 +161,47 @@ def test_delete_logical_unit_job():
     assert "LogicalUnitUDID" in xml and "udid-123" in xml
 
 
-def test_pcm_preferences_document():
-    xml = build_pcm_preferences_document(
-        LongTermMonitorEnabled=True, AggregationEnabled=False
+_PCM_NS = "{http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/}"
+
+
+def test_pcm_preferences_update_echoes_the_read_document():
+    """V10R3 answers a hand-built partial document with HTTP 500 (#634).
+
+    It accepts the preference element its own GET returns, with the flag values
+    changed, so the update keeps every other element of that read.
+    """
+    read = live_fixture("rest-pcm-preferences")["body"]
+
+    xml = pcm_preferences_update(
+        read, LongTermMonitorEnabled=True, EnergyMonitorEnabled=True
     )
-    # The root the HMC itself returns for a managed system's preferences.
+
     root = ET.fromstring(xml)
-    assert root.tag == (
-        "{http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/}"
-        "ManagedSystemPcmPreference"
-    )
-    assert root.get("schemaVersion") == "V1_0"
-    assert "LongTermMonitorEnabled" in xml and ">true<" in xml
-    assert "AggregationEnabled" in xml and ">false<" in xml
-    assert "ShortTermMonitorEnabled" not in xml  # only specified flags
+    assert root.tag == f"{_PCM_NS}ManagedSystemPcmPreference"
+    assert root.findtext(f"{_PCM_NS}LongTermMonitorEnabled") == "true"
+    assert root.findtext(f"{_PCM_NS}EnergyMonitorEnabled") == "true"
+    assert root.findtext(f"{_PCM_NS}AggregationEnabled") == "false"
+    assert root.findtext(f"{_PCM_NS}SystemName") == "sys-R1"
+    assert root.find(f"{_PCM_NS}MachineTypeModelSerialNumber") is not None
+    assert root.find(f"{_PCM_NS}Metadata/{_PCM_NS}Atom/{_PCM_NS}AtomID") is not None
+    assert "<feed" not in xml and "<entry" not in xml
 
 
-def test_pcm_preferences_document_rejects_unsupported_fields_in_sorted_order():
+def test_pcm_preferences_update_rejects_unsupported_fields_in_sorted_order():
     with pytest.raises(
         ValueError,
         match="Unsupported PCM preference fields: AlphaFlag, ZetaFlag",
     ):
-        build_pcm_preferences_document(ZetaFlag=True, AlphaFlag=False)
+        pcm_preferences_update(
+            live_fixture("rest-pcm-preferences")["body"], ZetaFlag=True, AlphaFlag=False
+        )
+
+
+def test_pcm_preferences_update_refuses_a_read_without_the_flag():
+    read = "<ManagedSystemPcmPreference xmlns='urn:x'><SystemName>s</SystemName>"
+    read += "</ManagedSystemPcmPreference>"
+    with pytest.raises(ValueError, match="LongTermMonitorEnabled"):
+        pcm_preferences_update(read, LongTermMonitorEnabled=True)
 
 
 @pytest.mark.asyncio
@@ -598,6 +624,7 @@ def test_metric_feed_requests_accept_any(monkeypatch, mock_hmc, tool, kind):
 def test_set_pcm_preferences_returns_updated(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences returns the updated preferences dict."""
     _hmc_env(monkeypatch)
+    _route_preferences_read(mock_hmc)
     mock_hmc.post(
         "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
     ).mock(return_value=httpx.Response(200, text=PCM_PREFS_XML))
@@ -710,6 +737,7 @@ def test_aggregated_metrics_403_actionable(monkeypatch, mock_hmc):
 def test_set_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences on HTTP 406 names the refused media type."""
     _hmc_env(monkeypatch)
+    _route_preferences_read(mock_hmc)
     mock_hmc.post(
         "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
     ).mock(return_value=_not_acceptable())
@@ -725,6 +753,7 @@ def test_set_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
 def test_set_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
     """hmc_set_pcm_preferences on HTTP 403 raises HMCError mentioning PCM authority."""
     _hmc_env(monkeypatch)
+    _route_preferences_read(mock_hmc)
     mock_hmc.post(
         "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences"
     ).mock(return_value=_forbidden())

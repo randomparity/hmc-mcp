@@ -12,7 +12,11 @@ from urllib.parse import urlencode
 from ..errors import HMCError
 from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
-from .pcm_payloads import PCMPreferenceFlags, build_pcm_preferences_document
+from .pcm_payloads import (
+    PCMPreferenceFlags,
+    pcm_preferences_update,
+    reject_unsupported_preference_fields,
+)
 
 
 class PcmMixin:
@@ -37,14 +41,16 @@ class PcmMixin:
     ) -> dict[str, Any]:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
 
-        Only the flags you pass are changed; the HMC merges the rest. Returns
-        the updated preferences document (``{}`` when the response body is
-        empty).
+        Reads the current preferences and posts that document back with only
+        the flags you pass changed (#634). Returns the updated preferences
+        document (``{}`` when the response body is empty).
         """
         _require_managed_system_preferences(category)
+        reject_unsupported_preference_fields(flags.keys())
 
-        xml = build_pcm_preferences_document(**flags)
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
+        current, _ = await self.raw_get(path)
+        xml = pcm_preferences_update(current, **flags)
         resp_xml = await self._post_pcm(path, xml)
         return _pcm_preferences(resp_xml, path) if resp_xml else {}
 

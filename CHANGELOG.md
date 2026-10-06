@@ -49,6 +49,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   receives `application/vnd.ibm.powervm.pcm.json`. The newest-document choice also skips the
   partition sub-feed entries a managed system's feed lists, which carry a newer stamp than any
   document and returned an Atom feed instead of JSON (#634).
+- `hmc_set_pcm_preferences` and `hmcpctl metrics set-prefs` no longer send a hand-built
+  document carrying only the changed flags, which a V10R3 HMC rejected with HTTP 500
+  "Unexpected error during unmarshalling" for every flag. They now read the preferences and post
+  the HMC's own `ManagedSystemPcmPreference` element back with only the requested flags changed,
+  as IBM's PCM REST walkthrough does (#634).
 - `hmc_sync_lpar_profile` no longer claims to save the running configuration over the current
   profile. Its command sets the partition's persistent `sync_curr_profile` setting, which a
   live capture confirmed. The tool and `synchronize_lpar_profile` now take
