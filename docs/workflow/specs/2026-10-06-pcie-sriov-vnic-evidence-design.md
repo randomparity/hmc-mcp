@@ -131,6 +131,16 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
 | 0166 | Status: "No live run has exercised this change". Consequences: the arm's own read "stays the `--filter` single-field form"; maturity "stays `unrecorded`" until the live window exercises assign, unassign and an `is_required=1` element | The read is now the admitted form. The catalog's dedicated records rest only on ST35 (bare-cec), which has no `is_required=1` step. Only the dedicated arm's ST36 (#912) observes one, and the catalog holds no ST36 observation. | A Status evidence note, written only from this run. If ST36 runs and `required-slot-removed-by-zero-suffix` holds, the note records the precondition as met by that run. If ST36 SKIPs, the note says only that the read form changed, and the `is_required=1` observation stays a named gap. The ST35-only promotion is then reported to the orchestrator as a follow-up candidate. |
 | 0183 | Per-pair read envelope; mutations keep the 0056 envelope | Holds (`_SRIOV_READ_ENVELOPE`, `require_admitted_environment`) | none |
 
+## #217 artifacts
+
+Issue #217 (closed) carries two kinds of live result. The first is the SR-IOV arm's round trip
+on V10R3 on 2026-09-01: a dynamic assign and a profile unassign. The second is the dedicated
+arm's matrices from 2026-09-21 and 2026-09-22, the later one rendered at `801d4fa7`. Both
+predate the format 4 observation shape and the closure fingerprint, and both ran on commits
+whose `src/` has since changed. They are therefore cited here as provenance for the
+SR-IOV gaps (an earlier run exercised the cells; nothing current does), and none of them is
+copied into the catalog as an observation. This issue does not repeat #217's exercise.
+
 ## Live procedure
 
 Run the procedure on the V10R3 / POWER9 mutation-boundary system, at this branch's final
@@ -141,7 +151,11 @@ snapshots outside the repository: I/O slot ownership (`lshwres -r io --rsubtype 
 drc_index,lpar_name`), the partition list (`lssyscfg -r lpar -F name,state`), and the SR-IOV
 adapter and logical-port inventory. After recovery, all three must match. The run's only
 mutations are the existing dedicated-arm ones: a run-stamped scratch partition, plus
-assignment of slots that no partition owns and no profile lists.
+assignment of slots that no partition owns and no profile lists. The snapshot commands are in
+`docs/live-testing.md` ("The inventory reads"). The public evidence is the matrix that
+`scripts/live_test_evidence.py` renders, which is stamped with its commit and filtered. The
+catalog takes only the closed-shape observation records. The results document itself is
+never published.
 
 ## Live gaps
 
