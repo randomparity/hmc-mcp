@@ -67,6 +67,7 @@ class FakeHMC:
     map_fails_leaving_adapter: bool = False
     guarded_delete_allowed: bool = False
     guarded_delete_ignored: bool = False
+    guarded_delete_errors: bool = False
     detach_fails: bool = False
     detach_leaves_adapter: bool = False
     attach_map_fails: bool = False
@@ -110,11 +111,15 @@ class FakeHMC:
 
     def _delete(self, name: str) -> tuple[str, Any]:
         mapped = any(row[3] == name for row in self.mappings)
+        if mapped and self.guarded_delete_errors:
+            return "FAIL", _failure("HMCError: POST failed (HTTP 500)")
         if mapped and self.guarded_delete_ignored:
             return "PASS", {}
         if mapped and not self.guarded_delete_allowed:
             return "FAIL", _failure(
-                f"HMCError: Cannot delete virtual disk {name!r}: it is mapped"
+                f"HMCError: Cannot delete virtual disk {name!r}: it is mapped to "
+                "LPAR 'sys-A-lp3'. Use detach_storage_mapping first to remove the "
+                "mapping."
             )
         if name not in self.volumes:
             return "FAIL", _failure("HMCError: HTTP 404")
@@ -442,6 +447,8 @@ async def test_a_guarded_delete_that_goes_through_stops_the_scenario(arm):
     assert any("was not refused" in r["note"] for r in _manual(state))
     assert "hmc_detach_storage_mapping" not in _mutations(hmc)
     observations = _observations(state)
+    (delete,) = observations["storage.delete_disk"]
+    assert delete["result"] == "failed" and delete["cleanup"] == "failed"
     assert observations["storage.map"][0]["cleanup"] == "failed"
     assert observations["storage.create_disk"][0]["cleanup"] == "failed"
 
@@ -456,6 +463,17 @@ async def test_a_guarded_delete_accepted_without_effect_is_not_a_refusal(arm):
     (delete,) = _observations(state)["storage.delete_disk"]
     assert delete["result"] == "failed"
     assert "refused-while-mapped" not in delete["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_only_the_guards_own_refusal_counts_as_refused(arm):
+    """An HMC error while the volume is mapped would hide a guard that missed it."""
+    state, hmc = arm
+    hmc.guarded_delete_errors = True
+
+    await _run(state, 0, 40)
+
+    assert "refused-while-mapped" not in _held(state, "storage.delete_disk")
 
 
 @pytest.mark.asyncio

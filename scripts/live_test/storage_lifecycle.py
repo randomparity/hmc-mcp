@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from .observation import Assertion
+from .observation import Assertion, CallFailure
 from .results import field
 from .storage import resolve_configured_volume_group, vios_command
 from .vmedia import adapter_rows, scsi_adapter_listing, storage_rows
@@ -41,6 +41,9 @@ DISK_PREFIX = "hpctl"
 DISK_SIZE_MIB = 1024
 _RUN_DISK = re.compile(rf"{DISK_PREFIX}[0-9a-f]{{8}}")
 _NOT_ACTIVATED = "not activated"
+#: The refusal `operations.storage.resources.delete_virtual_disk` raises for a
+#: mapped disk, before any write.
+_GUARD_REFUSAL = "Use detach_storage_mapping first"
 
 
 class _Stop(Exception):
@@ -468,7 +471,7 @@ class _Lifecycle(_Scenario):
 
     async def guarded_delete(self) -> bool:
         """The delete hmcpctl must refuse while the volume is mapped."""
-        st, _ = self.note(
+        st, data = self.note(
             "hmc_delete_virtual_disk",
             "while mapped",
             await self.state.call(
@@ -481,13 +484,28 @@ class _Lifecycle(_Scenario):
         )
         still = await self.volumes("after the guarded delete")
         if still is None or self.name not in still:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_delete_virtual_disk",
+                operation="storage.delete_disk",
+                scenario=LIFECYCLE_SCENARIO,
+                assertions=[Assertion("refused-while-mapped", False)],
+                cleanup="failed",
+                data=data,
+            )
             self.manual(
                 f"the guarded delete of {self.name} was not refused; its mapping "
                 "may now name a missing volume",
                 self.detach_command(),
             )
             raise _Stop("guarded delete went through")
-        return st == "FAIL"
+        # Only hmcpctl's own guard counts: any other failure (the HMC refusing the
+        # VolumeGroup write, a failed mapping read) would hide a guard that missed.
+        return (
+            st == "FAIL"
+            and isinstance(data, CallFailure)
+            and _GUARD_REFUSAL in data.message
+        )
 
     async def detach_and_check(self, baseline: _Baseline, mapping_id: object) -> bool:
         """Detach and record it; True when mappings and adapters equal the baseline."""
