@@ -254,11 +254,10 @@ async def check_vios_backup(call, inputs: VIOSBackupInputs) -> list[Finding]:
     )
     if status != "PASS" or not isinstance(data, list):
         raise StateUnreadable(f"could not list the backups of {inputs.vios} ({status})")
-    # A prefix, not equality: the catalog may render the name with a suffix, and a
-    # projection that did is no reason to report the backup gone.
+    # Containment, not equality: the catalog may render the name with a prefix or
+    # suffix, and a projection that did is no reason to report the backup gone.
     if any(
-        isinstance(row, dict)
-        and str(row.get("name", "")).startswith(inputs.backup_name)
+        isinstance(row, dict) and inputs.backup_name in str(row.get("name", ""))
         for row in data
     ):
         findings.append(

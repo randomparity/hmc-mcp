@@ -204,8 +204,9 @@ does not gate on them.
   `mkvdev` and records the restore as failed.
 - **Cleanup.** hmcpctl has no backup-removal tool (#698). Once the mapping reads
   back, the arm removes its backup through `hmc_run_command`. When the restore
-  call timed out, the VIOS never answered after it, or a read failed after a
-  change, it keeps the backup and changes nothing more. Remove it by hand once the VIOS is checked, as the recovery check
+  call ended without an exit status from the HMC (a timeout or a dropped
+  session), the VIOS never answered after it, or a read failed after a change,
+  it keeps the backup and changes nothing more. Remove it by hand once the VIOS is checked, as the recovery check
   prints:
 
   ```sh

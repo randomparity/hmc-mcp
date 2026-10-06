@@ -52,8 +52,8 @@ captured empty, so its attribute names are unverified.
       With `-r` the HMC restarts the VIOS and retries inside the command, so the run
       sets `HMC_SSH_TIMEOUT=2400` (runbook, preflight). Whatever the call returns,
       the arm then waits, bounded at 30 min (poll 30 s), until `viosvrcmd ... ioslevel`
-      answers. If it never answers, or the call timed out (the HMC may still be
-      restoring), the outcome is unknown: assertions are still read, but no further
+      answers. If it never answers, or the call ended without an HMC exit status
+      (a timeout or dropped session; the HMC may still be restoring), the outcome is unknown: assertions are still read, but no further
       mutation runs, and recovery names both remedies. The arm itself refuses to
       start below that timeout.
    7. *Assert*: `mapping-restored` — the mapping list has the baseline mapping id with

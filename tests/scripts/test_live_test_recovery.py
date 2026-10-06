@@ -1246,11 +1246,13 @@ async def test_a_kept_backup_is_reported_with_its_rmviosbk():
 
 
 @pytest.mark.asyncio
-async def test_a_kept_backup_rendered_with_a_suffix_is_still_reported():
+@pytest.mark.parametrize(
+    "rendered",
+    ["hmcpctl-live-st37-0a1b2c3d.tar.gz", "vios-A/hmcpctl-live-st37-0a1b2c3d"],
+)
+async def test_a_kept_backup_rendered_differently_is_still_reported(rendered):
     responses = {
-        "hmc_list_vios_backups": [
-            {"name": "hmcpctl-live-st37-0a1b2c3d.tar.gz", "type": "viosioconfig"}
-        ],
+        "hmc_list_vios_backups": [{"name": rendered, "type": "viosioconfig"}],
         "hmc_list_storage_mappings": _MAPPED,
     }
 

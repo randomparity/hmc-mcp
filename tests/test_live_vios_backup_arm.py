@@ -292,13 +292,27 @@ async def test_a_restore_that_failed_outright_still_falls_back_and_cleans_up(
     vios = FakeVios(
         restore_status="FAIL",
         restore_restores=False,
-        restore_error="HSCL0000 restore failed",
+        restore_error="SSH command 'rstviosbk' failed with exit status 1: HSCL0000",
     )
 
     state = await _run(monkeypatch, vios)
 
     assert _mutations(vios)[-2:] == ["mkvdev", "rmviosbk"]
     assert _observations(state)["vios.backup"]["cleanup"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_session_during_the_restore_is_left_alone(monkeypatch):
+    vios = FakeVios(
+        restore_status="FAIL",
+        restore_restores=False,
+        restore_error="SSH command failed: Connection lost",
+    )
+
+    state = await _run(monkeypatch, vios)
+
+    assert _mutations(vios) == ["hmc_backup_vios", "rmvdev", "hmc_restore_vios"]
+    assert _observations(state)["vios.backup"]["cleanup"] == "not-run"
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,8 @@ POLL_SECONDS = 30
 #: default 300-second SSH timeout would cut off with the restore still running.
 MIN_SSH_TIMEOUT = 2400
 
+#: How the SSH transport words a command the HMC ran to completion and failed.
+_HMC_EXIT = "failed with exit status"
 _DISK_KINDS = frozenset({"VirtualDisk", "PhysicalVolume"})
 #: VIOS listings compared against the baseline as sets of normalized lines.
 _LISTINGS = ("lsmap -all", "lsmap -all -net", "lsmap -all -npiv", "lsdev -virtual")
@@ -477,9 +479,11 @@ async def _round_trip(
         f"{time.monotonic() - started:.0f}s",
     )
     accepted = status == "PASS"
-    # A transport timeout leaves `rstviosbk` running on the HMC, which may still be
-    # restarting the VIOS and restoring: assert what is there, but change nothing.
-    in_flight = status == "FAIL" and "timed out" in str(getattr(data, "message", data))
+    # Only a passed call or an exit status the HMC reported ends `rstviosbk`. A
+    # timeout or a dropped session may leave it running, still restarting the VIOS
+    # and restoring: assert what is there, but change nothing.
+    ended = status == "PASS" or _HMC_EXIT in str(getattr(data, "message", data))
+    in_flight = not ended
     restored = baseline_back = settled = False
     if await arm.wait_for_vios(target) is not None:
         after = await arm.snapshot(target, "after restore")
