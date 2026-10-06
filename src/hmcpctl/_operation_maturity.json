@@ -80,6 +80,13 @@
       "observed_at": "2026-10-06T20:36:49Z"
     },
     {
+      "operation": "io_slot.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "job.get",
       "implementation": "implemented",
       "verification": "stale",
@@ -382,7 +389,7 @@
     },
     {
       "operation": "pcie.assign_dedicated_slot",
-      "implementation": "implemented",
+      "implementation": "partial",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:04:44Z"
@@ -395,8 +402,29 @@
       "observed_at": "2026-10-06T13:04:43Z"
     },
     {
-      "operation": "pcie.unassign_dedicated_slot",
+      "operation": "pcie.list_sriov_adapters",
       "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "pcie.list_sriov_logical_ports",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "pcie.list_sriov_physical_ports",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "pcie.unassign_dedicated_slot",
+      "implementation": "partial",
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T13:04:04Z"
@@ -465,7 +493,21 @@
       "observed_at": null
     },
     {
+      "operation": "sriov.assign_logical_port",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "sriov.set_mode",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "sriov.unassign_logical_port",
       "implementation": "partial",
       "verification": "unevidenced",
       "reason": null,
@@ -694,6 +736,27 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T19:21:20Z"
+    },
+    {
+      "operation": "vnic.add",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vnic.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vnic.remove",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     }
   ]
 }
