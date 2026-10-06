@@ -6062,12 +6062,14 @@ def test_scenarios_declare_their_expected_assertion_ids():
         "st9-vscsi-client-adapter": {
             "adapter-added",
             "pairing-matches",
+            "slot-collision-refused",
             "adapters-equal-baseline",
             "vios-side-unchanged",
         },
         "st9-vfc-client-adapter": {
             "adapter-added",
             "pairing-matches",
+            "slot-collision-refused",
             "adapters-equal-baseline",
             "vios-side-unchanged",
         },

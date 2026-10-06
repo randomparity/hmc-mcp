@@ -79,6 +79,7 @@ class FakeHMC:
     labels_refused: bool = False
     group_remove_fails: bool = False
     adds_twice: bool = False
+    collision_accepted: bool = False
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     counter: int = 0
 
@@ -141,6 +142,12 @@ class FakeHMC:
         return "PASS", {}
 
     def _add_client(self, adapter_type, kwargs):
+        used = {"2"} | {
+            str(r.get("VirtualSlotNumber"))
+            for r in self.adapters[adapter_type].values()
+        }
+        if str(kwargs.get("slot_number")) in used and not self.collision_accepted:
+            return "FAIL", "HSCL slot in use"
         partition, slot = REMOTE_FIELDS[adapter_type]
         for _ in range(2 if self.adds_twice else 1):
             self.adapters[adapter_type][self._new_uuid()] = {
@@ -388,6 +395,32 @@ async def test_vscsi_prefers_a_server_slot_open_to_any_partition(monkeypatch):
 
     add = next(k for t, k in hmc.calls if t == "hmc_add_vscsi_adapter")
     assert (add["vios_partition_id"], add["vios_slot"]) == (1, 12)
+
+
+@pytest.mark.asyncio
+async def test_a_client_slot_collision_is_refused_and_asserted(monkeypatch):
+    hmc = FakeHMC()
+
+    state = await _run(monkeypatch, hmc)
+
+    for operation in ("adapter.add_vscsi", "adapter.add_vfc"):
+        assert "slot-collision-refused" in _observation(state, operation)["assertions"]
+    collisions = [
+        k for t, k in hmc.calls if t == "hmc_add_vscsi_adapter" and k["slot_number"]
+    ]
+    assert [k["slot_number"] for k in collisions] == [2]
+
+
+@pytest.mark.asyncio
+async def test_an_accepted_slot_collision_fails_and_is_removed(monkeypatch):
+    hmc = FakeHMC(collision_accepted=True)
+
+    state = await _run(monkeypatch, hmc)
+
+    observation = _observation(state, "adapter.add_vscsi")
+    assert observation["result"] == "failed"
+    assert "slot-collision-refused" not in observation["assertions"]
+    assert all(not listed for listed in hmc.adapters.values())
 
 
 @pytest.mark.asyncio

@@ -321,6 +321,8 @@ class _Boundary:
     lpar_id: str
     vios: str
     vios_id: str
+    #: A virtual slot the test partition's own vSCSI client already uses ("" if none).
+    used_slot: str = ""
 
 
 #: The client adapter fields naming the VIOS partition and server slot it pairs with.
@@ -408,6 +410,7 @@ def _client_assertions(
     new: list[Mapping[str, object]] | None,
     fields: tuple[str, str],
     pairing: tuple[str, str],
+    collision_refused: bool | None,
     restored: bool,
     vios_side: bool,
 ) -> list[Assertion]:
@@ -417,9 +420,15 @@ def _client_assertions(
         and new is not None
         and tuple(str(as_int(new[0].get(field))) for field in fields) == pairing
     )
+    collision = (
+        []
+        if collision_refused is None
+        else [Assertion("slot-collision-refused", collision_refused)]
+    )
     return [
         Assertion("adapter-added", one and added == "PASS"),
         Assertion("pairing-matches", paired),
+        *collision,
         Assertion("adapters-equal-baseline", restored),
         Assertion("vios-side-unchanged", vios_side),
     ]
@@ -617,7 +626,15 @@ class _Arm:
             )
             return _Boundary(lpar_id, "", "")
         ((vios, vios_id),) = servers
-        return _Boundary(lpar_id, vios, vios_id)
+        used = sorted(
+            (
+                row["slot_num"]
+                for row in rows or []
+                if row["adapter_type"] == "client" and row["lpar_id"] == lpar_id
+            ),
+            key=lambda slot: as_int(slot) or 0,
+        )
+        return _Boundary(lpar_id, vios, vios_id, used[0] if used else "")
 
     # -- (a) VLAN and client network adapter --------------------------------
 
@@ -879,7 +896,12 @@ class _Arm:
         return servers, clients, mappings, slot
 
     async def add_client(
-        self, adapter_type: str, boundary: _Boundary, slot: str
+        self,
+        label: str,
+        adapter_type: str,
+        boundary: _Boundary,
+        slot: str,
+        slot_number: int | None = None,
     ) -> str:
         if adapter_type == "VirtualSCSIClientAdapter":
             result = await self.state.call(
@@ -888,25 +910,46 @@ class _Arm:
                 lpar_name_or_uuid=self.lpar,
                 vios_partition_id=int(boundary.vios_id),
                 vios_slot=int(slot),
+                slot_number=slot_number,
                 system_name_or_uuid=self.system,
             )
-            return self.note("paired", "hmc_add_vscsi_adapter", result)
+            return self.note(label, "hmc_add_vscsi_adapter", result)
         result = await self.state.call(
             self.client,
             "hmc_add_vfc_adapter",
             lpar_name_or_uuid=self.lpar,
             vios_partition_id=int(boundary.vios_id),
             vios_slot=int(slot),
+            slot_number=slot_number,
             system_name_or_uuid=self.system,
         )
-        return self.note("paired", "hmc_add_vfc_adapter", result)
+        return self.note(label, "hmc_add_vfc_adapter", result)
+
+    async def slot_collision(
+        self, adapter_type: str, boundary: _Boundary, slot: str, clients: frozenset[str]
+    ) -> bool | None:
+        """Whether an add on a client slot already in use is refused and changes nothing.
+
+        None when the test partition has no client slot to collide with. Anything
+        an accepted collision added is removed by the round trip's reversal.
+        """
+        if not boundary.used_slot:
+            return None
+        status = await self.add_client(
+            "slot collision", adapter_type, boundary, slot, int(boundary.used_slot)
+        )
+        after = await self.adapter_uuids(adapter_type, "after slot collision")
+        return status == "FAIL" and after == clients
 
     async def client_round_trip(self, adapter_type: str, boundary: _Boundary) -> None:
         found = await self.client_baseline(adapter_type, boundary)
         if found is None:
             return
         servers, clients, mappings, slot = found
-        added = await self.add_client(adapter_type, boundary, slot)
+        collision_refused = await self.slot_collision(
+            adapter_type, boundary, slot, clients
+        )
+        added = await self.add_client("paired", adapter_type, boundary, slot)
         new = _new(await self.adapters(adapter_type, "after add"), clients)
         _, restored = await self.remove_new_adapters(adapter_type, clients)
         servers_after = await self.server_rows(
@@ -926,7 +969,7 @@ class _Arm:
                 operation="adapter.add_vscsi",
                 scenario="st9-vscsi-client-adapter",
                 assertions=_client_assertions(
-                    added, new, fields, pairing, restored, vios_side
+                    added, new, fields, pairing, collision_refused, restored, vios_side
                 ),
                 cleanup=cleanup,
                 data=None,
@@ -938,7 +981,7 @@ class _Arm:
                 operation="adapter.add_vfc",
                 scenario="st9-vfc-client-adapter",
                 assertions=_client_assertions(
-                    added, new, fields, pairing, restored, vios_side
+                    added, new, fields, pairing, collision_refused, restored, vios_side
                 ),
                 cleanup=cleanup,
                 data=None,

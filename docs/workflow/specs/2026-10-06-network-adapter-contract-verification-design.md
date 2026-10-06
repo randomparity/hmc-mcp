@@ -106,17 +106,21 @@ reaches the HMC.
       adapter whose `remote_lpar_id` is the test partition's id (exactly one, else SKIP);
       its slot is preferred with `remote_lpar_id` `any`, else that slot. Also the test
       partition's storage mappings on that VIOS and its `VirtualSCSIClientAdapter` UUIDs.
+      Negative (collision): the same add with `slot_number` set to the virtual slot
+      the test partition's own vSCSI client already uses; read back (anything an
+      accepted collision added is reversed with the rest). Then
       `hmc_add_vscsi_adapter(vios_partition_id, vios_slot)`, read back, delete, read
       back; then the VIOS's scsi server rows and the mappings must equal the baseline.
       - `adapter.add_vscsi`: `adapter-added`, `pairing-matches`
         (`RemoteLogicalPartitionID`, `RemoteSlotNumber` equal the request),
+        `slot-collision-refused` (when the partition has a client slot),
         `adapters-equal-baseline`, `vios-side-unchanged`.
    c. **vFC client** (`st9-vfc-client-adapter`). Baseline: the boundary VIOS's vFC
       server rows from `hmc_list_fc_ports`; eligible only with `remote_lpar_id` equal
       to the test partition's id or `any`; none → SKIP and the gap below. Same steps as
       (b). `adapter.add_vfc`: `adapter-added`, `pairing-matches`
       (`ConnectingPartitionID`, `ConnectingVirtualSlotNumber`),
-      `adapters-equal-baseline`, `vios-side-unchanged`.
+      `slot-collision-refused`, `adapters-equal-baseline`, `vios-side-unchanged`.
    d. **FC-port label** (`st9-fc-port-label`). Baseline: the boundary VIOS's FC-port
       label rows; the port is the first row; SKIP unless its `port_label` is empty or
       passes the tool's own label validation (nonblank, no control character), so it
