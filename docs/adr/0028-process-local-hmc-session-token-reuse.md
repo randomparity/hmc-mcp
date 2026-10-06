@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Amended 2026-10-05 by #1325 — see *Amendment* below; the decision
+recorded here stands.
 
 ## Context
 
@@ -143,3 +144,34 @@ without evidence that cross-process reuse is required.
 **Automatically replay every request after reauthentication.** A mutating
 request might have taken effect even if the client receives a 401 or loses the
 response. Automatic replay would risk duplicate or conflicting side effects.
+
+## Amendment (2026-10-05, #1325)
+
+`HMCClient.__aexit__` no longer raises a logoff **transport** failure after the
+`async with` body exited cleanly. A `HMCTransportError` from `logoff()` there —
+no complete response was read, including a rejection whose body read dropped —
+is logged at WARNING with the HMC host and a note that the session may persist
+until the HMC times it out. Every other logoff failure, including an HMC
+rejection, still propagates; when the body raised, cleanup failures are still
+notes on its exception. The rule table is in the
+[design](../workflow/specs/2026-10-05-logoff-transport-failure-design.md).
+
+`logoff()` itself is unchanged: it validates the status, raises both kinds, and
+clears the local token. The future cache's quarantine of an ambiguous Logoff is
+its own contract and is unaffected.
+
+Reason: a transport drop on the Logoff `DELETE` failed a read that had already
+succeeded (observed once on a V11R2 HMC during #627), and the caller can
+neither repair the fault nor safely retry a completed mutation. A rejection keeps
+failing the call because the HMC said the session is still open; a completed
+mutation followed by a rejected Logoff therefore still reports failure.
+
+Residual: a systematic transport drop on `DELETE` leaks one session per call, up
+to the HMC's per-user maximum, with the per-call WARNING as the only signal.
+
+Considered & rejected:
+
+- **Keep raising both kinds.** judgment: fails completed operations for a
+  cleanup fault the caller cannot repair.
+- **Retry the Logoff once before logging.** judgment: excluded by the operator
+  for #1325.

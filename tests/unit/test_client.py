@@ -323,6 +323,8 @@ async def test_logoff_transport_failure_is_distinct_and_clears_state(mock_hmc):
         (ValueError("operation failed"), None, None, ValueError),
         (None, RuntimeError("logoff failed"), None, RuntimeError),
         (None, None, OSError("close failed"), OSError),
+        (None, HMCTransportError("logoff dropped"), None, None),
+        (None, HMCTransportError("logoff dropped"), OSError("close failed"), OSError),
         (
             ValueError("operation failed"),
             RuntimeError("logoff failed"),
@@ -358,6 +360,84 @@ async def test_context_exit_preserves_primary_error_and_always_closes(
 
     client.logoff.assert_awaited_once()
     client._http.aclose.assert_awaited_once()
+
+
+def _logoff_warnings(caplog):
+    return [
+        record
+        for record in caplog.records
+        if record.name == "hmcpctl.client.core" and record.levelno == logging.WARNING
+    ]
+
+
+@pytest.mark.asyncio
+async def test_context_exit_logs_logoff_transport_failure_after_clean_body(
+    mock_hmc, caplog
+):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        side_effect=httpx.RemoteProtocolError(
+            "Server disconnected without sending a response."
+        )
+    )
+    client = HMCClient(make_config())
+
+    with caplog.at_level(logging.WARNING, logger="hmcpctl.client.core"):
+        async with client:
+            pass
+
+    [record] = _logoff_warnings(caplog)
+    message = record.getMessage()
+    assert "hmc.test" in message
+    assert "may persist" in message
+    assert "Server disconnected" in message
+    assert client._http.is_closed
+    assert not client.is_logged_on
+
+
+@pytest.mark.asyncio
+async def test_context_exit_raises_logoff_rejection_after_clean_body(mock_hmc, caplog):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        return_value=httpx.Response(500, text="<Message>nope</Message>")
+    )
+    client = HMCClient(make_config())
+
+    with (
+        caplog.at_level(logging.WARNING, logger="hmcpctl.client.core"),
+        pytest.raises(HMCError) as raised,
+    ):
+        async with client:
+            pass
+
+    assert not isinstance(raised.value, HMCTransportError)
+    assert raised.value.status_code == 500
+    assert _logoff_warnings(caplog) == []
+    assert client._http.is_closed
+
+
+@pytest.mark.asyncio
+async def test_context_exit_notes_logoff_transport_failure_when_body_raised(
+    mock_hmc, caplog
+):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    client = HMCClient(make_config())
+    body_error = ValueError("operation failed")
+
+    with (
+        caplog.at_level(logging.WARNING, logger="hmcpctl.client.core"),
+        pytest.raises(ValueError) as raised,
+    ):
+        async with client:
+            raise body_error
+
+    assert raised.value is body_error
+    assert any(
+        "HMC session cleanup also failed" in note and "HMCTransportError" in note
+        for note in raised.value.__notes__
+    )
+    assert _logoff_warnings(caplog) == []
+    assert client._http.is_closed
 
 
 @pytest.mark.asyncio

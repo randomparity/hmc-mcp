@@ -10,6 +10,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- `HMCClient` no longer raises a logoff transport failure (`HMCTransportError`) when its
+  `async with` body completed: it logs a warning naming the HMC host and noting that the HMC
+  session may persist until the HMC times it out, so a completed tool call is no longer reported
+  as failed. An HMC rejection of the logoff (`HMCError`) still raises, and a body that raised
+  still carries every cleanup failure as a note (ADR 0028 amendment, #1325).
 - `hmc_power_off_lpar`, `hmcpctl lpars power-off`, `power_lpar`, `submit_power_off` and
   `jobs.power_off_lpar_job` refuse `operation=shutdown` with `restart=true` and
   `immediate=false` before any job is built. On the HMC that combination is a dump restart,
