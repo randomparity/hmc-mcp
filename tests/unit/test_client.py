@@ -1599,6 +1599,10 @@ async def test_get_pcm_preferences(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_set_pcm_preferences(mock_hmc):
+    """The update reads the document first and posts it back changed (#634)."""
+    read = mock_hmc.get("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
+        return_value=live_response("rest-pcm-preferences")[1]
+    )
     route = mock_hmc.post("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
         return_value=httpx.Response(200, text=PCM_PREFS_XML)
     )
@@ -1606,8 +1610,13 @@ async def test_set_pcm_preferences(mock_hmc):
         prefs = await hmc.set_pcm_preferences(
             "ManagedSystem", "sys-uuid", LongTermMonitorEnabled=True
         )
-    body = route.calls.last.request.content.decode()
-    assert "LongTermMonitorEnabled" in body and ">true<" in body
+    assert read.calls[0].request.headers["accept"] == "*/*"
+    request = route.calls.last.request
+    assert request.headers["content-type"] == "application/xml"
+    body = request.content.decode()
+    assert "<SystemName" in body
+    assert ">true</LongTermMonitorEnabled>" in body
+    assert ">false</AggregationEnabled>" in body
     assert prefs["LongTermMonitorEnabled"] is True
     assert prefs["AggregationEnabled"] is False
 

@@ -15,8 +15,11 @@ ProcessedMetrics, AggregatedMetrics.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any, TypedDict, Unpack
+from urllib.parse import urlsplit
 
 from defusedxml import ElementTree as ET
 
@@ -44,30 +47,60 @@ class PCMPreferenceFlags(TypedDict, total=False):
     EnergyMonitorEnabled: bool
 
 
-def build_pcm_preferences_document(**flags: Unpack[PCMPreferenceFlags]) -> str:
-    """Build a PCM preferences XML document.
-
-    The root is the ``ManagedSystemPcmPreference`` element a V10R3 HMC returns
-    for a managed system's preferences (#1202). Only the flags you pass are
-    included; omitted flags are left unchanged on the HMC (it merges). Flags use the exact HMC field names, e.g.
-    LongTermMonitorEnabled=True, AggregationEnabled=True.
-    """
-    unsupported = sorted(set(flags) - set(PREFERENCE_FIELDS))
+def reject_unsupported_preference_fields(names: Iterable[str]) -> None:
+    """Refuse a flag name the preferences document does not carry, before any I/O."""
+    unsupported = sorted(set(names) - set(PREFERENCE_FIELDS))
     if unsupported:
         raise ValueError(f"Unsupported PCM preference fields: {', '.join(unsupported)}")
 
-    lines = []
-    for name in PREFERENCE_FIELDS:
-        if name in flags:
-            val = "true" if flags[name] else "false"
-            lines.append(f'  <{name} kb="CUD" kxe="false">{val}</{name}>')
-    body = "\n".join(lines)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ManagedSystemPcmPreference xmlns="{PCM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
-{body}
-</ManagedSystemPcmPreference>
-"""
+
+_PREFERENCE_ELEMENT = re.compile(
+    r"<(?:(\w+):)?ManagedSystemPcmPreference\b.*?</(?:\1:)?ManagedSystemPcmPreference>",
+    re.DOTALL,
+)
+
+
+def pcm_preferences_update(
+    document_xml: str, **flags: Unpack[PCMPreferenceFlags]
+) -> str:
+    """Return the preferences element from a read, with the given flags changed.
+
+    V10R3 answers a hand-built document carrying only the changed flags with
+    HTTP 500 "Unexpected error during unmarshalling" (#634). IBM's PCM REST
+    walkthrough posts the whole ``ManagedSystemPcmPreference`` element the GET
+    returns, so this keeps every element of *document_xml* (the GET body, an
+    Atom feed) and rewrites only the named flags' text.
+
+    Raises:
+        ValueError: If a flag name is unsupported, the read carries no
+            preferences element or not exactly one element for a named flag,
+            or the element is not well-formed outside the read (a namespace
+            declared on the enclosing feed).
+        ET.ParseError: If *document_xml* is malformed.
+    """
+    reject_unsupported_preference_fields(flags.keys())
+    ET.fromstring(document_xml)  # refuse a malformed read before editing its text
+    found = _PREFERENCE_ELEMENT.search(document_xml)
+    if found is None:
+        raise ValueError("the PCM preferences read has no ManagedSystemPcmPreference")
+    element = found.group(0)
+    for name, value in flags.items():
+        element, count = re.subn(
+            rf"(<{name}\b[^>]*>)\s*(?:true|false)\s*(</{name}>)",
+            rf"\g<1>{'true' if value else 'false'}\g<2>",
+            element,
+        )
+        if count != 1:
+            raise ValueError(
+                f"the PCM preferences read carries {count} {name} elements, not one"
+            )
+    try:
+        ET.fromstring(element)
+    except ET.ParseError as exc:
+        raise ValueError(
+            f"the PCM preferences element is not well-formed on its own: {exc}"
+        ) from exc
+    return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n{element}\n'
 
 
 def pcm_preferences_to_dict(xml: str) -> dict[str, Any]:
@@ -120,12 +153,15 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
 
 
 def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str] | None:
-    """Return the newest link, or ``None`` when the feed contains no links.
+    """Return the newest JSON document link, or ``None`` when the feed has none.
 
     The PCM feed does not guarantee entries are ordered by age, so picking the
     last row (``links[-1]``) could select a stale document. Compare each
     entry's ISO-8601 ``updated`` stamp instead; stamps that fail to parse sort
     as the earliest UTC instant so a real (even old) timestamp always wins.
+
+    A managed system's feed also lists each partition's metric feed, stamped
+    newer than the documents (V10R3, #634); only ``.json`` documents qualify.
     """
 
     def _key(link: dict[str, str]) -> datetime:
@@ -138,4 +174,7 @@ def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str] | None:
             dt = dt.replace(tzinfo=UTC)
         return dt
 
-    return max(links, key=_key, default=None)
+    documents = [
+        link for link in links if urlsplit(link.get("link", "")).path.endswith(".json")
+    ]
+    return max(documents, key=_key, default=None)
