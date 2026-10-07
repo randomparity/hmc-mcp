@@ -49,7 +49,7 @@ def build_hmc_user_document(
     associated_resource_roles: list[str] | None = None,
     password_expiry: int | None = None,
     session_timeout: int | None = None,
-    verify_session_timeout: bool | None = None,
+    verify_session_timeout: int | None = None,
     idle_session_timeout: int | None = None,
     user_inactivity: int | None = None,
     minimum_password_age: int | None = None,
