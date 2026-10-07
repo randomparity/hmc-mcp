@@ -20,13 +20,13 @@ shared plumbing and are not bound, as in PR #1320 and PR #1366.
 
 | Operation | Rows bound (issued requests) |
 |---|---|
-| `lpar.create` | `rest:managed-system/logical-partition` (PUT); fallback `cli:commands/mksyscfg`, `cli:commands/chsyscfg` (apply, ownership stamp), `cli:commands/lssyscfg` (CLI name) |
+| `lpar.create` | `rest:managed-system/logical-partition` (PUT), `rest:managed-system` (configurable-memory read); fallback `cli:commands/mksyscfg`, `cli:commands/chsyscfg` (apply, ownership stamp) |
 | `lpar.delete` | `rest:managed-system/logical-partition` (quick-property GET, DELETE) |
-| `lpar.decommission` | `rest:managed-system/logical-partition` (GET, DELETE), `rest:managed-system/virtual-i-o-server` (mapping inventory), `rest:managed-system/logical-partition/client-network-adapter`, `…/virtual-scsi-client-adapter`, `…/virtual-fiber-channel-client-adapter`, `…/virtual-nic-dedicated` (adapter list and DELETE), `rest:jobs/logicalpartition-jobs/poweroff_logicalpartition-job` |
-| `provision.lpar` | `lpar.create`'s rows, `…/client-network-adapter` (PUT), `rest:managed-system/virtual-i-o-server` (mapping POST), `rest:jobs/logicalpartition-jobs/poweron_logicalpartition-job`; `composite_reason` cleared |
-| `lpar.power_on` | `rest:jobs/logicalpartition-jobs/poweron_logicalpartition-job`, `rest:managed-system/logical-partition-profile` (profile feed) |
+| `lpar.decommission` | `rest:managed-system/logical-partition` (GET, DELETE), `rest:managed-system/virtual-i-o-server` (mapping inventory), `…/client-network-adapter`, `…/virtual-scsi-client-adapter`, `…/virtual-fiber-channel-client-adapter`, `…/virtual-nic-dedicated` (adapter list and DELETE), `rest:jobs/logicalpartition-jobs/poweroff_logicalpartition-job` |
+| `provision.lpar` | `lpar.create`'s rows, `…/client-network-adapter` (PUT), `rest:managed-system/virtual-i-o-server` (mapping POST), `rest:virtual-network-management/virtual-network` and `rest:virtual-storage-management/volume-group` (its prevalidation reads), `rest:jobs/logicalpartition-jobs/poweron_logicalpartition-job`; `composite_reason` cleared |
+| `lpar.power_on` | `rest:jobs/logicalpartition-jobs/poweron_logicalpartition-job`, `rest:managed-system/logical-partition` (state read), `rest:managed-system/logical-partition-profile` and the three client-adapter feeds (profile containment and adapter warnings) |
 | `lpar.power_off`, `lpar.dump_restart` | `rest:jobs/logicalpartition-jobs/poweroff_logicalpartition-job` |
-| `lpar.capture_console` | `cli:commands/mkvterm`, `cli:commands/rmvterm`, `cli:commands/lssyscfg` |
+| `lpar.capture_console` | `cli:commands/mkvterm`, `cli:commands/rmvterm` |
 | `system.power_on` / `system.power_off` | `rest:jobs/managedsystem-jobs/poweron_managedsystem-job` / `…/poweroff_managedsystem-job` |
 | `lpar.power` | composite (ADR 0189, 0199); unchanged, no rows |
 

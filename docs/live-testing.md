@@ -95,6 +95,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
 | lpar-config | `uv run --no-sync python scripts/live_lpar_config.py` | subtask 39 |
+| lpar-power | `uv run --no-sync python scripts/live_lpar_power.py` | subtask 41 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
 managed system, and a concurrent run makes the recovery check in step 4
@@ -105,8 +106,8 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 39, while the ids you
-can dispatch are 0 to 25 and 37 to 39.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids go up to 41, while the ids you
+can dispatch are 0 to 25, 37 to 39 and 41.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
@@ -115,7 +116,8 @@ arm's baseline, fixture-create and cleanup steps, so rows 29, 30 and 34 appear
 in a bare-cec run too, with their dedicated-arm wording. Subtask 37 is the
 vios-backup arm, and its rows carry its own id. Subtask 38 is the
 pcm arm's, and it SKIPs in any other selection. Subtask 39 is the lpar-config
-arm's, and it SKIPs in any other selection too.
+arm's, and it SKIPs in any other selection too, as does subtask 41, the lpar-power
+arm's.
 
 A SKIP is a result, not a failure. An arm SKIPs when a precondition is absent —
 an out-of-envelope system, no unassigned slot, a capability the HMC refuses —
@@ -419,6 +421,55 @@ token, then run
 `chsysstate -m <system> -r lpar -n <name> -o shutdown --immed` (when it is not
 Not Activated) and `rmsyscfg -r lpar -m <system> -n <name>`.
 
+### The lpar-power arm
+
+The lpar-power arm verifies the LPAR power and lifecycle operations (#1346) on
+partitions it creates and deletes, and one VIOS logical volume it creates and
+deletes. It changes no other partition, volume or mapping: every mutating call
+names a run partition (by UUID once it has one), the run's volume, or a mapping
+backed by it. It SKIPs unless `HMC_AUTHORIZE_POWER_OPERATIONS=true`, so its power
+evidence covers the ownership-guarded path, as bare-cec's does.
+
+- **Before.** It reads partition names and states, free processing units and
+  memory, I/O slot owners, and, on the one VIOS holding
+  `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, its storage mappings, its vSCSI server
+  adapters and the group's volume names. It creates nothing while a
+  `hmcpctl-live-pwr-*` partition or an `lppwr*` volume exists: both prefixes are
+  reserved for this arm.
+- **Partition A** (`hmcpctl-live-pwr-<8 hex>`, caller token `lparpwr-<8 hex>`,
+  the lpar-config arm's resources). Two creates hmcpctl refuses before any HMC
+  request (processing units above the virtual processors; memory above the
+  system's configurable memory) and a duplicate-name create, then: activation to
+  SMS through the partition profile, a second PowerOn while activated (it must
+  report `already_running` and submit nothing), a delete while activated (refused),
+  a 30 s console capture, a delayed power-off, activation of the current
+  configuration to Open Firmware with an explicit operation type and keylock, an
+  immediate power-off, `hmc_power_lpar` start, immediate restart, immediate stop,
+  a repeated stop (already in state) and a replayed request id, and the delete.
+- **Partition P** (`…-p`). Only when exactly one VIOS lists the configured group
+  with 1 GiB free and `LIVE_TEST_PROVISION_VLAN_ID` has a virtual network. It
+  creates the 1 GiB volume `lppwr<8 hex>`, provisions P on it (virtual Ethernet on
+  the VLAN, vSCSI mapping, PowerOn), and adds a dedicated slot only when the
+  dedicated arm is configured for this system and a slot is unowned and listed by
+  no profile. It then runs a decommission dry run, detaches the mapping (a mapping
+  whose partition is gone can no longer be detached through the tool), runs the
+  real decommission, and deletes the volume.
+- **Not run, recorded as SKIP rows naming what they need:** `hmc_dump_restart_lpar`,
+  provision's SR-IOV and vNIC arguments, a graceful `hmc_power_lpar` stop or
+  restart, and whole-system power.
+- **After.** Teardown abandons any `hmc_power_lpar` operation left open, detaches a
+  run mapping while its partition exists, powers off and deletes each run
+  partition only while it carries the run's caller token, then deletes the volume.
+  The before reads are compared (one re-read after 30 s on a difference).
+  Observations carry `cleanup` `passed` only when every run object is gone and the
+  compare holds.
+
+A teardown that cannot finish records a FAIL row marked `MANUAL RECOVERY
+REQUIRED` naming the commands: for a partition, `chsysstate … -o shutdown --immed`
+and `rmsyscfg`; for a mapping, `rmvdev -vtd <device>` on the VIOS before the volume's
+`rmlv`. The arm never removes a VIOS adapter: a server adapter left after the detach
+fails the compare.
+
 ### The bare-cec arm
 
 The bare-cec arm is the release path end to end. It creates a partition, assigns
@@ -435,6 +486,8 @@ Last, it unassigns the slot and deletes the partition.
   the partition and takes a platform dump. Unset or `false` skips that one step.
 - Run it on its own. In an `all` run the dedicated arm runs first, and bare-cec
   SKIPs rather than record a second fixture over the one the recovery check reads.
+- Its create, PowerOn, console, PowerOff and delete steps are judged rows, not
+  observations: the lpar-power arm owns those operations' evidence (#1346).
 
 ### Observations
 
@@ -492,7 +545,7 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
 `bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm`,
-`network` or `lpar-config`.
+`network`, `lpar-config` or `lpar-power`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
 these sets of them:
@@ -504,6 +557,7 @@ these sets of them:
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 39 (lpar-config) | any partition named `hmcpctl-live-lpar-*` on the run's system, whichever run left it |
+| 41 (lpar-power) | any partition named `hmcpctl-live-pwr-*`, any VIOS mapping backed by an `lppwr*` volume, and any VIOS vSCSI adapter serving a `hmcpctl-live-pwr-*` partition; an unmapped `lppwr*` volume is reported only by the arm's own teardown row |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test

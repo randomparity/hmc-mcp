@@ -10,6 +10,21 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- The live harness gained an opt-in `lpar-power` arm (`scripts/live_lpar_power.py`, subtask
+  41). It creates `hmcpctl-live-pwr-<8 hex>` partitions and verifies `hmc_create_lpar`'s
+  refusals, `hmc_power_on_lpar` (profile and current-configuration activation, and a
+  running partition reported without a job), `hmc_power_off_lpar` (delayed and immediate),
+  `hmc_power_lpar`, `hmc_capture_lpar_console` and `hmc_delete_lpar` (refused while
+  activated), then `hmc_provision_lpar` on a run-owned 1 GiB VIOS volume and
+  `hmc_decommission_lpar`; preflight names it and `scripts/live_test_recovery.py` reports any
+  `hmcpctl-live-pwr-` partition, `lppwr` volume mapping or adapter serving one (#1346). The
+  bare-cec arm now records its create, PowerOn, console, PowerOff and delete steps as rows,
+  so each of those operations has one observing arm. The power and lifecycle operations'
+  capability rows now name the requests the code issues, and `lpar.power`,
+  `lpar.decommission`, `provision.lpar`, `system.power_on` and `system.power_off` carry
+  maturity records. `lpar.dump_restart`, provision's SR-IOV and vNIC arguments, a graceful
+  `hmc_power_lpar` stop and whole-system power stay unverified, each recorded with what it
+  needs.
 - The live harness gained an opt-in `lpar-config` arm (`scripts/live_lpar_config.py`, subtask
   39). It creates one `hmcpctl-live-lpar-<8 hex>` partition, verifies `hmc_modify_lpar`,
   `hmc_rename_lpar`, `hmc_dlpar_mem`, `hmc_dlpar_proc`, `hmc_set_lpar_boot_order` and the
