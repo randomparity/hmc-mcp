@@ -107,13 +107,16 @@ def power_on_lpar_job(
     rather than refused. An omitted ``keylock`` sends no parameter, leaving the
     keylock position to the HMC. A call passing none of the four emits the
     document this builder has always emitted.
+
+    ``operation_type`` is validated but never sent: ``activate``, its only
+    value, is the job's default, and a V10R3 HMC refuses the ``OperationType``
+    parameter with "Parameter 'OperationType' is not allowed for this Job."
+    (#1392, ADR 0161). Stating it emits the document omitting it emits.
     """
     validate_power_on_activation(bootmode, operation_type, keylock)
     parameters = {"force": "false", "novsi": "true", "bootmode": bootmode}
     if profile_uuid:
         parameters["LogicalPartitionProfile"] = profile_uuid
-    if operation_type:
-        parameters["OperationType"] = operation_type
     if keylock:
         parameters["keylock"] = keylock
     return build_job_request("PowerOn", "LogicalPartition", parameters)

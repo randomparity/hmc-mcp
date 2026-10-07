@@ -1211,26 +1211,31 @@ def test_a_run_mapping_without_an_id_is_never_read_as_detached(schemas):
 
 
 def test_a_refused_current_configuration_activation_does_not_stop_the_sequence(schemas):
-    """V10R3 answered FAILED_TO_START and left the partition Not Activated (#1346)."""
+    """V10R3 answered FAILED_TO_START and left the partition Not Activated (#1346).
+
+    The arm activates once with the current configuration and then goes on by
+    profile; it no longer retries without `operation_type`, which is never sent
+    on the wire (#1392).
+    """
     world = World()
     real = world._hmc_power_on_lpar
     failed = {"UUID": "4713", "Resource": {"Status": "FAILED_TO_START"}}
 
     def refuses(kwargs: dict[str, Any]) -> Any:
-        if kwargs.get("operation_type"):
+        if kwargs.get("keylock"):
             return _power_on(False, failed, None)
         return real(kwargs)
 
     world.overrides["hmc_power_on_lpar"] = refuses
     state = _run(schemas, world)
 
-    (retry,) = [
-        k
-        for k in world.calls_to("hmc_power_on_lpar")
-        if k.get("keylock") and not k.get("operation_type")
-    ]
-    assert retry["boot_mode"] == "of"
-    assert _rows(state, "hmc_power_on_lpar (current configuration, no operation type)")
+    (current,) = [k for k in world.calls_to("hmc_power_on_lpar") if k.get("keylock")]
+    assert current["boot_mode"] == "of"
+    assert current["operation_type"] == "activate"
+    assert not _rows(
+        state, "hmc_power_on_lpar (current configuration, no operation type)"
+    )
+    assert _rows(state, "hmc_power_on_lpar (profile, to continue)")
     assert "current-configuration-reached-firmware" not in _held(state, "lpar.power_on")
     assert "immediate-shutdown-not-activated" in _held(state, "lpar.power_off")
     assert _results(state)["lpar.power"] == "passed"

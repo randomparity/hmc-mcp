@@ -322,7 +322,7 @@
       "implementation": "partial",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T02:44:34Z"
+      "observed_at": "2026-10-07T20:32:48Z"
     },
     {
       "operation": "lpar.rename",
@@ -390,8 +390,8 @@
     {
       "operation": "media.create",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:09:27Z"
     },
     {
@@ -404,8 +404,8 @@
     {
       "operation": "media.delete",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:09:27Z"
     },
     {
@@ -418,15 +418,15 @@
     {
       "operation": "media.get_repository",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:07:08Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:07:19Z"
     },
     {
@@ -439,15 +439,15 @@
     {
       "operation": "media.mount",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:09:08Z"
     },
     {
       "operation": "media.unmount",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:09:08Z"
     },
     {
@@ -719,8 +719,8 @@
     {
       "operation": "storage.list_mappings",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T22:09:50Z"
     },
     {
