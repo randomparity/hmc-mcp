@@ -5090,6 +5090,22 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
     assert state.artifacts.job_uuid_sample is None
 
 
+@pytest.mark.asyncio
+async def test_discover_vios_refuses_a_partition_id_neither_str_nor_int(monkeypatch):
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
+        return "PASS", {
+            "entries": [{"UUID": "vios-uuid", "Resource": {"PartitionID": 7.0}}]
+        }
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+
+    with pytest.raises(TypeError, match="PartitionID of type float"):
+        await connectivity._discover_vios(None, state)
+
+    assert state.artifacts.vios_uuid is None
+
+
 _ST1_SYSTEM = "example-lt-609-system"
 _ST1_LPAR = "example-lt-609-lpar"
 _ST1_SYSTEM_UUID = "11111111-2222-3333-4444-555555555555"
