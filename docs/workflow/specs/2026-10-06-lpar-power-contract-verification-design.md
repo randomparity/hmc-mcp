@@ -187,6 +187,9 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 | `lpar.power` graceful stop / restart | an OS with an active RMC connection | not run |
 | `lpar.power_on` network boot | #638 | not implemented |
 | `system.power_on`, `system.power_off` | an operator window to power the whole system | not run |
+| `lpar.power_on` with `operation_type` | an HMC release that accepts the `OperationType` PowerOn parameter | refused live (2026-10-07, V10R3): `FAILED_TO_START`, "Parameter 'OperationType' is not allowed for this Job."; the request without it reached Open Firmware; observation failed |
+| `provision.lpar` dedicated slot live after PowerOn | a decision on how provision activates when assignments are present (profile activation discards current-configuration changes, #1345) | observed live: the slot is in the profile, not owned by the running partition; observation failed |
+| `hmc_detach_storage_mapping` answer when the VIOS reads RMC active | an explanation of `HSCL2957` on a detach that takes effect | observed live twice: error answer, mapping removed |
 
 ## Success
 

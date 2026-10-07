@@ -24,7 +24,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   `lpar.decommission`, `provision.lpar`, `system.power_on` and `system.power_off` carry
   maturity records. `lpar.dump_restart`, provision's SR-IOV and vNIC arguments, a graceful
   `hmc_power_lpar` stop and whole-system power stay unverified, each recorded with what it
-  needs.
+  needs. Live on V10R3 six of the arm's eight observations passed. `lpar.power_on`
+  failed because the HMC refuses the `OperationType` PowerOn parameter
+  (`INVALID_PARAMETER`; the request without it activates), and `provision.lpar` failed
+  because a dedicated slot it assigns lands in the profile while its PowerOn activates the
+  current configuration, so the running partition lacks the slot.
 - The live harness gained an opt-in `lpar-config` arm (`scripts/live_lpar_config.py`, subtask
   39). It creates one `hmcpctl-live-lpar-<8 hex>` partition, verifies `hmc_modify_lpar`,
   `hmc_rename_lpar`, `hmc_dlpar_mem`, `hmc_dlpar_proc`, `hmc_set_lpar_boot_order` and the
