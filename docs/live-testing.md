@@ -459,7 +459,8 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   restart, and whole-system power.
 - **After.** Teardown abandons any `hmc_power_lpar` operation left open, detaches a
   run mapping while its partition exists, powers off and deletes each run
-  partition only while it carries the run's caller token, then deletes the volume.
+  partition only while it carries the run's caller token (the provisioned one is
+  kept while its mapping could not be detached), then deletes the volume.
   The before reads are compared (one re-read after 30 s on a difference).
   Observations carry `cleanup` `passed` only when every run object is gone and the
   compare holds.

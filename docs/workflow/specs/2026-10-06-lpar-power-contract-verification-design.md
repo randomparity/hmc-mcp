@@ -128,7 +128,9 @@ own records (#630).
     backed by the run volume while its client partition still exists; power off and
     delete each run partition not confirmed deleted, by UUID only while its description
     carries the run token (#1345 `_delete` shape, adopting by name when the UUID is
-    unknown); delete the run volume once no mapping is backed by it. Anything left
+    unknown), except that P is kept while a mapping backed by the run volume could not
+    be detached (the tool could not reach that mapping once P is gone); delete the run
+    volume once no mapping is backed by it. Anything left
     records one `MANUAL RECOVERY REQUIRED` row naming the commands (for a mapping:
     `rmvdev -vtd <device>` on the VIOS before `rmlv`). Observations are recorded after
     teardown at literal `record_verified` sites, cleanup `passed` only when every run
@@ -141,7 +143,9 @@ own records (#630).
     `lpar.power_on`, `lpar.power_off`, `lpar.delete` and `lpar.capture_console`;
     bare-cec's `record_verified` sites for those five become plain `state.record` rows
     with the same PASS/FAIL judgement (its PCIe-fixture facts stay with the `pcie.*`
-    observations). The dedicated arm (`pcie.py`, #630) still emits `lpar.create` and
+    observations, except bare-cec's "no profile lists the released slot" half of
+    `slot-released`, which no remaining observation asserts; the dedicated arm's
+    `fixture-slot-unowned` keeps the ownership half). The dedicated arm (`pcie.py`, #630) still emits `lpar.create` and
     `lpar.delete` observations for its fixture; demoting them needs an edit to #630's file
     and is reported to the orchestrator, so until then the copier keeps whichever
     observation it copies last. A separate arm, not new steps in `bare_cec.py` / `provisioning.py`:

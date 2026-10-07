@@ -18,7 +18,7 @@ import re
 import shlex
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
@@ -26,6 +26,7 @@ from fastmcp import Client
 from hmcpctl.jobs import SUCCESSFUL_JOB_STATUSES, job_outcome
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 from hmcpctl.ssh.commands import HMC_NO_RESULTS
+from hmcpctl.ssh.lpar import DEFAULT_PROFILE_NAME
 from hmcpctl.ssh.profiles import (
     parse_profile_io_slot_rows,
     profile_io_slot_rows_command,
@@ -364,12 +365,23 @@ async def _gone(client: Client, state: RunState, run: Run, name: str) -> bool:
     return False
 
 
+def _plain(value: object) -> Any:
+    """A served typed result as plain data.
+
+    FastMCP hands a tool whose output schema has properties back as a generated
+    dataclass, nested ones included, never as a dict.
+    """
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    return value
+
+
 def _items(data: object, name: str) -> list[Mapping[str, Any]]:
     """The mapping entries of list field *name* of a tool result."""
     value = result_field(data, name)
     if not isinstance(value, list):
         return []
-    return [item for item in value if isinstance(item, Mapping)]
+    return [item for item in map(_plain, value) if isinstance(item, Mapping)]
 
 
 def _all_steps(data: object, status: str) -> bool:
@@ -460,7 +472,7 @@ async def _create_cases(client: Client, state: RunState, run: Run) -> bool:
         ),
     )
     st, data = await _create(client, state, run, run.a_name, RESOURCES)
-    record_status, note = judge_create_result(st, data)
+    record_status, note = judge_create_result(st, _plain(data))
     state.record(SUBTASK, "hmc_create_lpar (partition A)", record_status, data, note)
     run.data[op] = data
     created = result_field(data, "lpar") if st == "PASS" else None
@@ -681,7 +693,8 @@ async def _operation(
         wait_seconds=600,
     )
     state.record(SUBTASK, f"hmc_power_lpar ({request_id})", st, data)
-    record = data if st == "PASS" and isinstance(data, Mapping) else None
+    record = _plain(data) if st == "PASS" else None
+    record = record if isinstance(record, Mapping) else None
     for _ in range(_OPERATION_POLLS):
         if record is None or record.get("state") in {"terminal", "paused"}:
             break
@@ -880,7 +893,8 @@ async def _eligible_slot(client: Client, state: RunState, run: Run) -> Any:
     if st != "PASS" or st_profiles != "PASS" or not eligible:
         state.skip(SUBTASK, label, "gap: no slot is unowned and listed by no profile")
         return None
-    return {"profile_name": arm.profile_name, "drc_index": eligible[0]}
+    # The profile the provision creates, not the dedicated arm's fixture profile.
+    return {"profile_name": DEFAULT_PROFILE_NAME, "drc_index": eligible[0]}
 
 
 async def _create_volume(client: Client, state: RunState, run: Run) -> bool:
@@ -923,7 +937,7 @@ async def _provision(client: Client, state: RunState, run: Run) -> bool:
         power_on=True,
         assignments={"dedicated": [slot] if slot else []},
     )
-    record_status, note = judge_create_result(st, data)
+    record_status, note = judge_create_result(st, _plain(data))
     state.record(SUBTASK, "hmc_provision_lpar", record_status, data, note)
     run.data["provision.lpar"] = data
     found = result_field(data, "lpar_uuid") if st == "PASS" else None
@@ -1015,7 +1029,7 @@ async def _detach(client: Client, state: RunState, run: Run) -> bool:
 
 
 def _dry_run_inventoried(data: object, run: Run) -> bool:
-    radius = result_field(data, "blast_radius")
+    radius = _plain(result_field(data, "blast_radius"))
     radius = radius if isinstance(radius, Mapping) else {}
     adapters = {item.get("type") for item in radius.get("adapters") or ()}
     backed = {
@@ -1207,6 +1221,17 @@ async def _teardown(client: Client, state: RunState, run: Run) -> None:
     removed = listing is not None and detached
     system = shlex.quote(run.system)
     for name in sorted(names):
+        if name == run.p_name and not detached:
+            # Deleting P would leave a mapping the detach tool can no longer reach.
+            removed = False
+            _manual(
+                state,
+                "run partition teardown",
+                f"partition {name!r} was kept: a mapping backed by volume "
+                f"{run.volume!r} could not be detached. Detach it with "
+                "hmc_detach_storage_mapping, then delete the partition and the volume.",
+            )
+            continue
         why = await _remove(client, state, run, name)
         if why:
             removed = False

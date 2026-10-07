@@ -17,7 +17,9 @@ import pytest
 SCRIPTS_ROOT = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 import live_test_runner as runner  # noqa: E402
+from fastmcp.utilities.json_schema_type import json_schema_to_type  # noqa: E402
 from live_test import lpar_config, lpar_power, pcie  # noqa: E402
+from pydantic import TypeAdapter  # noqa: E402
 
 from hmcpctl.errors import HMCError  # noqa: E402
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command  # noqa: E402
@@ -49,6 +51,37 @@ MUTATIONS = frozenset(
     }
 )
 _JOB = {"UUID": "4711", "Resource": {"Status": "COMPLETED_OK", "Results": {}}}
+_NOT_MEASURED = {
+    "measured": False,
+    "status": "skipped",
+    "reason": "x",
+    "assessment": None,
+}
+
+
+def _created(uuid: str | None) -> dict[str, Any]:
+    """A complete `hmc_create_lpar` result."""
+    return {
+        "resource_created": True,
+        "workflow_completed": True,
+        "lpar": {"UUID": uuid} if uuid else None,
+        "ownership_stamped": True,
+        "steps": [],
+        "warnings": [],
+    }
+
+
+def _power_on(already: bool, job: Any, message: str | None) -> dict[str, Any]:
+    """A complete `hmc_power_on_lpar` result."""
+    return {
+        "already_running": already,
+        "job": job,
+        "message": message,
+        "affinity_assessment": _NOT_MEASURED,
+        "warnings": [],
+    }
+
+
 _MEMORY = ("MinimumMemory", "DesiredMemory", "MaximumMemory")
 _SHARED = ("DesiredProcessingUnits", "MaximumProcessingUnits")
 _SHARED += ("DesiredVirtualProcessors", "MaximumVirtualProcessors")
@@ -152,7 +185,7 @@ class World:
         if kwargs["name"] in self.partitions:
             return ValueError(f"An LPAR named {kwargs['name']!r} already exists")
         uuid = self._new(kwargs["name"], kwargs.get("caller_token"), resources)
-        return {"lpar": {"UUID": uuid}, "steps": []}
+        return _created(uuid)
 
     def _resource(self, entry: dict[str, Any]) -> dict[str, Any]:
         r = entry["resources"]
@@ -189,23 +222,15 @@ class World:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
         assert entry is not None
         if entry["state"] != "Not Activated":
-            return {
-                "already_running": True,
-                "job": None,
-                "message": "LPAR x is already active (Open Firmware). No PowerOn job "
-                "was submitted. The requested boot mode was not applied; power the "
+            return _power_on(
+                True,
+                None,
+                "LPAR x is already active (Open Firmware). No PowerOn job was "
+                "submitted. The requested boot mode was not applied; power the "
                 "partition off first.",
-                "affinity_assessment": {"status": "skipped"},
-                "warnings": [],
-            }
+            )
         entry["state"] = "Open Firmware"
-        return {
-            "already_running": False,
-            "job": _JOB,
-            "message": None,
-            "affinity_assessment": {"status": "skipped"},
-            "warnings": [],
-        }
+        return _power_on(False, _JOB, None)
 
     def _hmc_power_off_lpar(self, kwargs: dict[str, Any]) -> Any:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
@@ -247,6 +272,17 @@ class World:
         record = {
             "operation_id": f"{len(self.operations):032x}",
             "request_id": request_id,
+            "tool": "hmc_power_lpar",
+            "connection": "<default>",
+            "system_uuid": None,
+            "partition_uuid": entry["uuid"],
+            "phase": "done",
+            "effects": [],
+            "events": [],
+            "events_truncated": False,
+            "next_actions": [],
+            "created_at": "2026-10-06T00:00:00Z",
+            "updated_at": "2026-10-06T00:00:00Z",
             "state": "paused" if self.composite_pauses else "terminal",
             "outcome": None if self.composite_pauses else "completed",
             "result": {
@@ -261,7 +297,12 @@ class World:
 
     def _hmc_operation_status(self, kwargs: dict[str, Any]) -> Any:
         found = self.operations.get(kwargs["request_id"])
-        return {"operations": [found] if found else [], "truncated": False}
+        return {
+            "operations": [found] if found else [],
+            "limit": 50,
+            "truncated": False,
+            "next_cursor": None,
+        }
 
     # -- storage and provisioning -------------------------------------------
 
@@ -346,6 +387,13 @@ class World:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
         assert entry is not None
         radius = {
+            "lpar_uuid": entry["uuid"],
+            "lpar_name": self.name_of(entry),
+            "partition_id": 9,
+            "state": entry["state"].lower(),
+            "owner": None,
+            "unresolved_storage_mapping_count": 0,
+            "unavailable_storage_source_count": 0,
             "adapters": [
                 {"type": "ClientNetworkAdapter", "uuid": "net-1"},
                 {"type": "VirtualSCSIClientAdapter", "uuid": "scsi-1"},
@@ -367,6 +415,8 @@ class World:
                 "resource_deleted": False,
                 "workflow_completed": False,
                 "dry_run": True,
+                "lpar_uuid": entry["uuid"],
+                "warnings": [],
                 "steps": steps,
                 "blast_radius": radius,
             }
@@ -377,19 +427,33 @@ class World:
             "resource_deleted": True,
             "workflow_completed": True,
             "dry_run": False,
+            "lpar_uuid": entry["uuid"],
+            "warnings": [],
             "steps": [{"step": "delete_lpar", "status": "ok"}],
             "blast_radius": radius,
         }
 
 
 class FakeClient:
-    def __init__(self, world: World) -> None:
+    """Answers from the World, typed the way FastMCP types a served result.
+
+    A tool whose output schema has properties comes back as a generated dataclass,
+    never a dict, so the arm is judged against what the live client hands it.
+    """
+
+    def __init__(self, world: World, output_schemas: dict[str, Any]) -> None:
         self.world = world
+        self.output_schemas = output_schemas
 
     async def call_tool(self, tool: str, kwargs: dict[str, Any]) -> Any:
         value = self.world.respond(tool, kwargs)
         if isinstance(value, Exception):
             raise value
+        schema = self.output_schemas.get(tool)
+        if schema:
+            if schema.get("x-fastmcp-wrap-result"):
+                schema = schema.get("properties", {}).get("result", schema)
+            value = TypeAdapter(json_schema_to_type(schema)).validate_python(value)
         return SimpleNamespace(data=value)
 
 
@@ -400,6 +464,17 @@ def schemas() -> dict[str, dict[str, Any]]:
     async def served() -> dict[str, dict[str, Any]]:
         async with runner.served_client() as client:
             return await runner.served_schemas(client)
+
+    return asyncio.run(served())
+
+
+@pytest.fixture(scope="module")
+def output_schemas() -> dict[str, Any]:
+    """The output schemas the live runner's server really serves."""
+
+    async def served() -> dict[str, Any]:
+        async with runner.served_client() as client:
+            return {tool.name: tool.output_schema for tool in await client.list_tools()}
 
     return asyncio.run(served())
 
@@ -417,6 +492,14 @@ def _no_waiting(monkeypatch):
     monkeypatch.setattr(lpar_power, "_power_operations_authorized", lambda: True)
 
 
+_OUTPUTS: dict[str, Any] = {}
+
+
+@pytest.fixture(autouse=True)
+def _typed_outputs(output_schemas):
+    _OUTPUTS.update(output_schemas)
+
+
 def _run(schemas, world: World, group: str = "lpar-power", **config: Any):
     state = runner.RunState(
         config=runner.LiveTestConfig(
@@ -428,7 +511,7 @@ def _run(schemas, world: World, group: str = "lpar-power", **config: Any):
         group=group,
     )
     state.schemas = schemas
-    asyncio.run(lpar_power.exercise_lpar_power(FakeClient(world), state))
+    asyncio.run(lpar_power.exercise_lpar_power(FakeClient(world, _OUTPUTS), state))
     return state
 
 
@@ -563,7 +646,7 @@ def test_a_create_guard_that_lets_a_request_through_fails_its_assertion(schemas)
     real = world._hmc_create_lpar
     world.overrides["hmc_create_lpar"] = lambda k: (
         world._new(k["name"] + "-leak", k["caller_token"], k["resources"])
-        and {"lpar": {}, "steps": []}
+        and _created(None)
         if k["resources"]["desired_memory"] > 1_000_000
         else real(k)
     )
@@ -577,7 +660,7 @@ def test_a_duplicate_create_that_succeeds_fails_its_assertion(schemas):
     world = World()
     real = world._hmc_create_lpar
     world.overrides["hmc_create_lpar"] = lambda k: (
-        {"lpar": {"UUID": world.partitions[k["name"]]["uuid"]}, "steps": []}
+        _created(world.partitions[k["name"]]["uuid"])
         if k["name"] in world.partitions
         else real(k)
     )
@@ -590,13 +673,7 @@ def test_a_power_on_of_a_running_partition_that_submits_fails(schemas):
     world = World()
     real = world._hmc_power_on_lpar
     world.overrides["hmc_power_on_lpar"] = lambda k: (
-        {
-            "already_running": False,
-            "job": _JOB,
-            "message": None,
-            "affinity_assessment": {"status": "skipped"},
-            "warnings": [],
-        }
+        _power_on(False, _JOB, None)
         if world.by_selector(k["lpar_name_or_uuid"])["state"] != "Not Activated"
         else real(k)
     )
@@ -744,6 +821,11 @@ def test_a_mapping_that_survives_the_detach_skips_the_real_decommission(schemas)
     assert real == []
     assert _rows(state, "run volume mapping teardown")
     assert world.volumes > {"hd5", "lv_op"}
+    # P is kept so the tool can still detach its mapping on a retry.
+    assert [name for name in world.partitions if name.endswith("-p")]
+    assert any(
+        "was kept" in row["data"] for row in _rows(state, "run partition teardown")
+    )
 
 
 def test_teardown_detaches_a_run_mapping_before_deleting_its_partition(schemas):
@@ -856,9 +938,7 @@ def _units_accepted(w: World) -> None:
         w,
         "hmc_create_lpar",
         lambda k, real: (
-            {"lpar": {}, "steps": []}
-            if k["resources"]["desired_procs"] > 1
-            else real(k)
+            _created(None) if k["resources"]["desired_procs"] > 1 else real(k)
         ),
     )
 
@@ -1016,9 +1096,12 @@ def _dry_run_powers_off(w: World) -> None:
 
 def _decommission_keeps_partition(w: World) -> None:
     def change(k, real):
-        if k["dry_run"]:
-            return real(k)
-        return {"resource_deleted": True, "workflow_completed": True, "steps": []}
+        entry = w.by_selector(k["lpar_name_or_uuid"])
+        name = w.name_of(entry) if entry else None
+        answer = real(k)
+        if name and not k["dry_run"]:
+            w.partitions[name] = entry
+        return answer
 
     _wrap(w, "hmc_decommission_lpar", change)
 
