@@ -44,7 +44,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import bare_cec, lpar_config, pcie, users, vios_backup, vmedia
+from live_test import (
+    bare_cec,
+    lpar_config,
+    lpar_power,
+    pcie,
+    users,
+    vios_backup,
+    vmedia,
+)
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.config import HMCConfig, env_var_value
@@ -269,6 +277,39 @@ def _lpar_config_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     )
 
 
+def _lpar_power_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
+    """Name the partitions and the VIOS volume the lpar-power arm (#1346) creates."""
+    return ArmVerdict(
+        "lpar-power",
+        True,
+        "configuration validated",
+        (
+            f"managed system {config.system_name}",
+            (
+                f"partitions {lpar_power.NAME_PREFIX}<8 hex>[-x|-p] (created; "
+                "activated to SMS and Open Firmware, powered off and restarted, "
+                "including through hmc_power_lpar; then deleted or decommissioned)"
+            ),
+            (
+                f"one {lpar_power.VOLUME_MIB} MiB volume {lpar_power.VOLUME_PREFIX}"
+                f"<8 hex> in volume group {config.vdisk_volume_group_name} on the "
+                "VIOS holding it, mapped to the provisioned partition, detached and "
+                "deleted"
+            ),
+            (
+                "a dedicated PCIe slot only when the dedicated arm is configured "
+                "for this system and the slot is unowned and listed by no profile"
+            ),
+            (
+                "no other partition, volume or mapping: partition names and states, "
+                "free processing units and memory, slot owners, VIOS mappings and "
+                "server adapters are compared with the pre-run read"
+            ),
+        ),
+        config.system_name,
+    )
+
+
 def _network_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name what the network arm (#629) changes, each reversed by the arm itself."""
     return ArmVerdict(
@@ -357,6 +398,7 @@ _ARM_VERDICTS = {
     "network": _network_verdict,
     "users": _users_verdict,
     "lpar-config": _lpar_config_verdict,
+    "lpar-power": _lpar_power_verdict,
     "vmedia": _vmedia_verdict,
 }
 

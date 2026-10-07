@@ -517,6 +517,7 @@ async def test_the_checks_run_through_the_live_runs_served_client(monkeypatch):
         network_inputs=None,
         users=False,
         lpar_config_inputs=None,
+        lpar_power_inputs=None,
     ):
         return []
 
@@ -1093,7 +1094,13 @@ def _main(tmp_path, monkeypatch, document, findings=None, raises=None):
     contacted = []
 
     async def run_checks(
-        pcie, partition, vios, network_inputs=None, users=False, lpar_config=None
+        pcie,
+        partition,
+        vios,
+        network_inputs=None,
+        users=False,
+        lpar_config=None,
+        lpar_power=None,
     ):
         contacted.append((pcie, partition, users, lpar_config))
         if raises is not None:
@@ -1428,7 +1435,9 @@ def test_lpar_config_run_is_witnessed(tmp_path, monkeypatch, capsys):
 
     seen = []
 
-    async def run_checks(pcie, partition, vios, network_inputs, users, lpar_config):
+    async def run_checks(
+        pcie, partition, vios, network_inputs, users, lpar_config, lpar_power=None
+    ):
         seen.append(lpar_config)
         return []
 
@@ -1439,6 +1448,109 @@ def test_lpar_config_run_is_witnessed(tmp_path, monkeypatch, capsys):
 
     assert recovery.main(["--results", str(path)]) == 0
     assert seen == [recovery.LparConfigInputs(_SYSTEM)]
+    assert "CLEAN" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# The lpar-power arm (ST41, #1346)
+# ---------------------------------------------------------------------------
+
+_LPAR_POWER = recovery.LparPowerInputs(_SYSTEM)
+
+
+def _lpar_power_caller(
+    partitions: str | None, mappings: list | None, adapters: str = "", seen=None
+):
+    async def call(tool: str, **arguments):
+        recovery.guard_read_only(tool, arguments)
+        if seen is not None:
+            seen.append((tool, arguments.get("cmd")))
+        if tool == "hmc_list_storage_mappings":
+            return ("PASS", mappings) if mappings is not None else ("FAIL", None)
+        if "virtualio" in arguments["cmd"]:
+            return "PASS", adapters
+        return ("PASS", partitions) if partitions is not None else ("FAIL", None)
+
+    return call
+
+
+@pytest.mark.asyncio
+async def test_lpar_power_residue_is_reported_with_its_commands():
+    listing = (
+        "lpar-A,Running,aixlinux\n"
+        "vios-A,Running,vioserver\n"
+        "hmcpctl-live-pwr-0a1b2c3d-p,Open Firmware,aixlinux\n"
+    )
+    mappings = [
+        {"id": "vhost0/vtscsi0", "backing_name": "lv_op"},
+        {"id": "vhost3/vtscsi3", "backing_name": "lppwr0a1b2c3d"},
+    ]
+    adapters = "2,lpar-A\n5,hmcpctl-live-pwr-0a1b2c3d-p\n"
+
+    findings = await recovery.check_run(
+        _lpar_power_caller(listing, mappings, adapters),
+        None,
+        None,
+        lpar_power_inputs=_LPAR_POWER,
+    )
+
+    assert [f.what for f in findings] == [
+        "partition hmcpctl-live-pwr-0a1b2c3d-p",
+        "mapping vhost3/vtscsi3 on VIOS vios-A",
+        "vSCSI server adapter 5 on VIOS vios-A",
+    ]
+    assert findings[0].remedy.startswith(
+        f"chsysstate -m {_SYSTEM} -r lpar -n hmcpctl-live-pwr-0a1b2c3d-p -o shutdown"
+    )
+    assert 'rmvdev -vtd vtscsi3"' in findings[1].remedy
+    assert findings[2].remedy == (
+        f"chhwres -r virtualio --rsubtype scsi -m {_SYSTEM} -o r -p vios-A -s 5"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lpar_power_clean_system_has_no_finding():
+    call = _lpar_power_caller(
+        "lpar-A,Running,aixlinux\nvios-A,Running,vioserver\n",
+        [{"id": "vhost0/vtscsi0", "backing_name": "lv_op"}],
+        "2,lpar-A\n",
+    )
+
+    assert (
+        await recovery.check_run(call, None, None, lpar_power_inputs=_LPAR_POWER) == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_lpar_power_unreadable_mappings_are_not_clean():
+    call = _lpar_power_caller("vios-A,Running,vioserver\n", None)
+
+    with pytest.raises(recovery.StateUnreadable, match="storage mappings"):
+        await recovery.check_run(call, None, None, lpar_power_inputs=_LPAR_POWER)
+
+
+def test_lpar_power_run_is_witnessed(tmp_path, monkeypatch, capsys):
+    document = {
+        "run": {"subtasks": [41], "group": "lpar-power"},
+        "config": {"system_name": _SYSTEM},
+        "artifacts": {},
+        "results": [],
+    }
+    seen = []
+
+    async def run_checks(
+        pcie, partition, vios, network_inputs, users, lpar_config, lpar_power=None
+    ):
+        seen.append(lpar_power)
+        return []
+
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    monkeypatch.setattr(recovery, "_run_checks", run_checks)
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    assert recovery.main(["--results", str(path)]) == 0
+    assert seen == [_LPAR_POWER]
     assert "CLEAN" in capsys.readouterr().out
 
 
@@ -1567,7 +1679,13 @@ def test_vios_backup_inputs_need_subtask_37_and_its_artifacts():
 
 def test_a_vios_backup_run_is_witnessed(tmp_path, monkeypatch, capsys):
     async def checks(
-        pcie, partition, vios, network_inputs=None, users=False, lpar_config=None
+        pcie,
+        partition,
+        vios,
+        network_inputs=None,
+        users=False,
+        lpar_config=None,
+        lpar_power=None,
     ):
         assert pcie is None and partition is None
         return await recovery.check_vios_backup(
@@ -1769,7 +1887,13 @@ async def test_an_unreadable_network_listing_is_not_clean(tool):
 
 def test_a_network_run_is_witnessed_and_can_exit_clean(tmp_path, monkeypatch, capsys):
     async def checks(
-        pcie, partition, vios, network_inputs=None, users=False, lpar_config=None
+        pcie,
+        partition,
+        vios,
+        network_inputs=None,
+        users=False,
+        lpar_config=None,
+        lpar_power=None,
     ):
         assert network_inputs is not None
         return await recovery.check_network(_caller(_clean_hmc()), network_inputs)
