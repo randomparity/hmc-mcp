@@ -230,6 +230,10 @@ global to the console, not to a managed system.
 `LIVE_TEST_TEST_USER_NAME` is retired. A `.env` that still sets it loads with a
 notice; delete the line.
 
+`LIVE_TEST_NETWORK_TEST_LPAR_NAME` is retired too: subtask 9 no longer uses a
+network-test partition (#1361). A `.env` that still sets it loads with a notice;
+delete the line.
+
 ### The network arm
 
 The network arm verifies the virtual-network, client-adapter and VIOS-label

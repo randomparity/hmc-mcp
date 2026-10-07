@@ -3911,16 +3911,40 @@ def test_restore_drops_the_configured_test_user_from_before_632(tmp_path):
     assert not hasattr(state.artifacts, "test_user_uuid")
 
 
-def test_a_retired_setting_still_loads_with_a_notice(tmp_path, capsys):
-    """#632 retired LIVE_TEST_TEST_USER_NAME; an existing .env must not stop every arm."""
+def test_restore_drops_the_network_test_partition_from_before_1377(tmp_path):
+    """A report written while the runner still carried the #1361-retired partition restores."""
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    document = _result_document(config, hmc_config)
+    document["config"]["nettest_name"] = "lpar-A"
+    document["artifacts"]["nettest_uuid"] = "nettest-uuid"
+    document["artifacts"]["system_uuid"] = "system-uuid"
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(json.dumps(document))
+    state = runner.RunState(config=config)
+
+    runner._restore_artifacts_from_results(state, hmc_config, str(results_path))
+
+    assert state.artifacts == runner.LiveTestArtifacts(system_uuid="system-uuid")
+
+
+@pytest.mark.parametrize(
+    ("key", "field"),
+    [
+        ("LIVE_TEST_TEST_USER_NAME", "test_user"),  # #632
+        ("LIVE_TEST_NETWORK_TEST_LPAR_NAME", "nettest_name"),  # #1377
+    ],
+)
+def test_a_retired_setting_still_loads_with_a_notice(tmp_path, capsys, key, field):
+    """A retired setting in an existing .env must not stop every arm."""
     example = Path(__file__).parents[1] / ".env.example"
     env = tmp_path / ".env"
-    env.write_text(example.read_text() + "LIVE_TEST_TEST_USER_NAME=someone\n")
+    env.write_text(example.read_text() + f"{key}=someone\n")
 
     config = runner.LiveTestConfig.from_env_file(env)
 
-    assert not hasattr(config, "test_user")
-    assert "LIVE_TEST_TEST_USER_NAME" in capsys.readouterr().out
+    assert not hasattr(config, field)
+    assert key in capsys.readouterr().out
 
 
 def test_users_group_is_opt_in():
