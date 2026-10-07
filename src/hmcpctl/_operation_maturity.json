@@ -397,8 +397,8 @@
     {
       "operation": "media.create",
       "implementation": "implemented",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:36:39Z"
     },
     {
@@ -425,36 +425,36 @@
     {
       "operation": "media.get_repository",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:34:16Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:34:30Z"
     },
     {
       "operation": "media.list_mappings",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:37:00Z"
     },
     {
       "operation": "media.mount",
       "implementation": "implemented",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.unmount",
       "implementation": "implemented",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:36:39Z"
     },
     {
@@ -726,8 +726,8 @@
     {
       "operation": "storage.list_mappings",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T16:37:00Z"
     },
     {
