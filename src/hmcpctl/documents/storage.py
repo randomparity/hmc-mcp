@@ -183,8 +183,8 @@ def build_virtual_network_document(
     assoc = ""
     if switch_link:
         assoc = (
-            f'  <AssociatedSwitch xmlns="{ATOM_NS}" rel="related" '
-            f'href="{switch_link}"/>\n'
+            f'  <AssociatedSwitch kb="COD" kxe="false" href="{switch_link}" '
+            'rel="related"/>\n'
         )
     tagged_str = "true" if tagged else "false"
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
