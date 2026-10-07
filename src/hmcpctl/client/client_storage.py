@@ -1100,7 +1100,14 @@ class StorageMixin:
                 ),
                 None,
             )
-            opt_media = ET.Element(opt_media_tag, attrib={"schemaVersion": "V1_0"})
+            opt_media = ET.Element(
+                opt_media_tag,
+                attrib={"kb": "CUD", "kxe": "false", "schemaVersion": "V1_0"},
+            )
+            ET.SubElement(
+                ET.SubElement(opt_media, f"{{{_UOM_NS}}}Metadata"),
+                f"{{{_UOM_NS}}}Atom",
+            )
             if repo_name_idx is not None:
                 vmlib.insert(repo_name_idx, opt_media)
             else:
@@ -1110,13 +1117,18 @@ class StorageMixin:
         vom = ET.SubElement(opt_media, vom_tag, attrib={"schemaVersion": "V1_0"})
         meta = ET.SubElement(vom, f"{{{_UOM_NS}}}Metadata")
         ET.SubElement(meta, f"{{{_UOM_NS}}}Atom")
-        n = ET.SubElement(vom, f"{{{_UOM_NS}}}MediaName")
-        n.text = media_name
-        # The HMC XSD names this field Size, not MediaSize, and measures it in GiB.
-        s = ET.SubElement(vom, f"{{{_UOM_NS}}}Size")
-        s.text = str(size_gib)
-        t = ET.SubElement(vom, f"{{{_UOM_NS}}}MountType")
-        t.text = "rw"
+        # The captured V10R3 child order and attributes (#1385), less the server-set
+        # MediaUDID that the capture places between MediaName and MountType.
+        # The HMC XSD names the size field Size, not MediaSize, and measures it in GiB.
+        for tag, kb, text in (
+            ("MediaName", "CUR", media_name),
+            ("MountType", "CUD", "rw"),
+            ("Size", "CUR", str(size_gib)),
+        ):
+            child = ET.SubElement(
+                vom, f"{{{_UOM_NS}}}{tag}", attrib={"kb": kb, "kxe": "false"}
+            )
+            child.text = text
 
         return await self._post_vg_xml(
             vios_uuid, vg_uuid, vg_elem, etag=_required_etag(etag)
