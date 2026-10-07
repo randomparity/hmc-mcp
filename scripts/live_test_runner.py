@@ -7,7 +7,7 @@ a JSON document on exit.
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
 `scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,users,vios_backup,pcm,
-lpar_config}.py` to dispatch one arm,
+lpar_config,lpar_power}.py` to dispatch one arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
@@ -17,9 +17,10 @@ Usage:
 `--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
 stops importing (AGENTS.md).
 
-With no selection every subtask runs, 0 through 39: there is none from 26 to 36,
-which are other arms' row ids, and 9, 11, 37, 38 and 39 SKIP outside their own
-`network`, `users`, `vios-backup`, `pcm` and `lpar-config` groups. A bare number
+With no selection every subtask runs, 0 through 41: there is none from 26 to 36
+or 40, which are other arms' row ids, and 9, 11, 37, 38, 39 and 41 SKIP outside
+their own `network`, `users`, `vios-backup`, `pcm`, `lpar-config` and `lpar-power`
+groups. A bare number
 runs that one subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`, or `test-results-round2.json`
 for a bare or whole-suite run, unless
 `--results-file` names another path. That path must be git-ignored.
@@ -77,6 +78,7 @@ from live_test.lpar import (
     restore_lpar_baseline,
 )
 from live_test.lpar_config import exercise_lpar_config
+from live_test.lpar_power import exercise_lpar_power
 from live_test.metrics import (
     exercise_pcm_preferences,
     inspect_metrics_jobs,
@@ -1032,6 +1034,7 @@ SUBTASKS = {
     37: exercise_vios_backup,
     38: exercise_pcm_preferences,
     39: exercise_lpar_config,
+    41: exercise_lpar_power,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
 
@@ -1227,6 +1230,9 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     # Not in "all": the arm creates, resizes, activates and deletes its own
     # partition (#1345).
     "lpar-config": [39],
+    # Not in "all": the arm creates, powers, provisions and deletes its own
+    # partitions and a VIOS volume (#1346).
+    "lpar-power": [41],
     "all": list(range(26)),
 }
 

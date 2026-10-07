@@ -1,0 +1,834 @@
+"""The lpar-power live arm (ST41, #1346) against a scripted HMC.
+
+The arm runs against the production `RunState` with only the MCP client replaced,
+so a dispatch the served tool schemas would reject fails here as `InvalidDispatch`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+SCRIPTS_ROOT = Path(__file__).parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS_ROOT))
+import live_test_runner as runner  # noqa: E402
+from live_test import lpar_config, lpar_power, pcie  # noqa: E402
+
+from hmcpctl.errors import HMCError  # noqa: E402
+from hmcpctl.ssh.profiles import profile_io_slot_rows_command  # noqa: E402
+
+SYSTEM = "sys-A"
+OTHER = "lpar-A"
+OTHER_UUID = "0A1B2C3D-0000-4000-8000-0000000000A1"
+VIOS_UUID = "0A1B2C3D-0000-4000-8000-0000000000B1"
+VG_UUID = "0A1B2C3D-0000-4000-8000-0000000000C1"
+PROFILE_UUID = "0A1B2C3D-0000-4000-8000-0000000000F1"
+GROUP = "datavg"
+DRC = "21010020"
+VLAN = 7
+MUTATIONS = frozenset(
+    {
+        "hmc_create_lpar",
+        "hmc_power_on_lpar",
+        "hmc_power_off_lpar",
+        "hmc_delete_lpar",
+        "hmc_power_lpar",
+        "hmc_provision_lpar",
+        "hmc_decommission_lpar",
+        "hmc_create_virtual_disk",
+        "hmc_delete_virtual_disk",
+        "hmc_detach_storage_mapping",
+        "hmc_dump_restart_lpar",
+        "hmc_power_on_system",
+        "hmc_power_off_system",
+    }
+)
+_JOB = {"UUID": "4711", "Resource": {"Status": "COMPLETED_OK", "Results": {}}}
+_MEMORY = ("MinimumMemory", "DesiredMemory", "MaximumMemory")
+_SHARED = ("DesiredProcessingUnits", "MaximumProcessingUnits")
+_SHARED += ("DesiredVirtualProcessors", "MaximumVirtualProcessors")
+
+
+class World:
+    """One managed system: OTHER, a VIOS with one group, one slot, run partitions."""
+
+    def __init__(self) -> None:
+        self.partitions: dict[str, dict[str, Any]] = {}
+        self.volumes = {"hd5", "lv_op"}
+        self.mappings = [
+            {
+                "id": "vhost0/vtscsi0",
+                "lpar_uuid": OTHER_UUID,
+                "backing_kind": "VirtualDisk",
+                "backing_name": "lv_op",
+            }
+        ]
+        self.adapters = {"2,lpar-A,3"}
+        self.slot_owner = "null"
+        self.operations: dict[str, dict[str, Any]] = {}
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.overrides: dict[str, Any] = {}
+        self.composite_pauses = False
+        self.detach_keeps_adapter = False
+        self.provision_fails_after_storage = False
+        self.provision_without_uuid = False
+        self.refusals_create = False
+
+    # -- views ---------------------------------------------------------------
+
+    def tools(self) -> list[str]:
+        return [tool for tool, _ in self.calls]
+
+    def calls_to(self, tool: str) -> list[dict[str, Any]]:
+        return [kwargs for name, kwargs in self.calls if name == tool]
+
+    def by_selector(self, selector: object) -> dict[str, Any] | None:
+        for name, entry in self.partitions.items():
+            if selector in {name, entry["uuid"]}:
+                return entry
+        return None
+
+    def name_of(self, entry: dict[str, Any]) -> str:
+        return next(n for n, e in self.partitions.items() if e is entry)
+
+    # -- dispatch ------------------------------------------------------------
+
+    def respond(self, tool: str, kwargs: dict[str, Any]) -> Any:
+        self.calls.append((tool, kwargs))
+        override = self.overrides.get(tool)
+        if override is not None:
+            return override(kwargs)
+        return getattr(self, "_" + tool)(kwargs)
+
+    def _new(self, name: str, token: str | None, resources: dict[str, Any]) -> str:
+        uuid = f"0A1B2C3D-0000-4000-8000-{len(self.partitions) + 1:012d}"
+        self.partitions[name] = {
+            "uuid": uuid,
+            "state": "Not Activated",
+            "token": token,
+            "resources": resources,
+        }
+        return uuid
+
+    # -- CLI -----------------------------------------------------------------
+
+    def _hmc_run_command(self, kwargs: dict[str, Any]) -> Any:
+        cmd = kwargs["cmd"]
+        if cmd == profile_io_slot_rows_command(SYSTEM):
+            return "lpar_name,name,io_slots\n" + f"{OTHER},default_profile,none\n"
+        if cmd.startswith("lssyscfg -r lpar") and cmd.endswith("name,state"):
+            rows = [f"{OTHER},Running"]
+            rows += [f"{n},{e['state']}" for n, e in self.partitions.items()]
+            return "\n".join(rows) + "\n"
+        if cmd.startswith("lssyscfg -r lpar"):
+            return "\n".join([OTHER, *self.partitions]) + "\n"
+        if "-r proc" in cmd:
+            return "8.0\n"
+        if "-r mem" in cmd:
+            return "100000,256\n"
+        if "--rsubtype slot" in cmd:
+            return f"{DRC},{self.slot_owner}\n"
+        if "virtualio" in cmd:
+            return "\n".join(sorted(self.adapters)) + "\n"
+        if cmd.startswith("viosvrcmd") and f"lsvg -lv {GROUP}" in cmd:
+            rows = [f"{GROUP}:", "LV NAME TYPE LPs PPs PVs LV STATE MOUNT POINT"]
+            rows += [f"{v} jfs2 1 1 1 open/syncd N/A" for v in sorted(self.volumes)]
+            return "\n".join(rows) + "\n"
+        return HMCError(f"unexpected command {cmd!r}")
+
+    # -- partitions ----------------------------------------------------------
+
+    def _hmc_create_lpar(self, kwargs: dict[str, Any]) -> Any:
+        resources = kwargs["resources"]
+        if resources.get("desired_memory", 0) > 1_000_000:
+            return ValueError("desired_memory exceeds the configurable memory")
+        if resources.get("desired_procs", 0) > resources.get("desired_vcpus", 1):
+            return ValueError("a virtual processor uses at most 1.0 processing unit")
+        if kwargs["name"] in self.partitions:
+            return ValueError(f"An LPAR named {kwargs['name']!r} already exists")
+        uuid = self._new(kwargs["name"], kwargs.get("caller_token"), resources)
+        return {"lpar": {"UUID": uuid}, "steps": []}
+
+    def _resource(self, entry: dict[str, Any]) -> dict[str, Any]:
+        r = entry["resources"]
+        keys = ("min_memory", "desired_memory", "max_memory")
+        memory = dict(zip(_MEMORY, (str(r[k]) for k in keys), strict=True))
+        keys = ("desired_procs", "max_procs", "desired_vcpus", "max_vcpus")
+        shared = dict(zip(_SHARED, (str(r[k]) for k in keys), strict=True))
+        return {
+            "PartitionMemoryConfiguration": memory,
+            "PartitionProcessorConfiguration": {"SharedProcessorConfiguration": shared},
+            "AssociatedPartitionProfile": {
+                "href": f"https://hmc.example.test/rest/api/uom/x/{PROFILE_UUID}"
+            },
+        }
+
+    def _hmc_get_lpar(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        if entry is None:
+            return HMCError("LPAR not found")
+        return {"UUID": entry["uuid"], "Resource": self._resource(entry)}
+
+    def _hmc_get_lpar_description(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        if entry is None:
+            return HMCError("HSCL8012 The partition was not found")
+        token = entry["token"]
+        return f"[hmcpctl owner:agent created:2026-10-06] [caller {token}]"
+
+    def _hmc_get_lpar_state(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        return entry["state"].lower() if entry else HMCError("LPAR not found")
+
+    def _hmc_power_on_lpar(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        assert entry is not None
+        if entry["state"] != "Not Activated":
+            return {
+                "already_running": True,
+                "job": None,
+                "message": "LPAR x is already active (Open Firmware). No PowerOn job "
+                "was submitted. The requested boot mode was not applied; power the "
+                "partition off first.",
+                "affinity_assessment": {"status": "skipped"},
+                "warnings": [],
+            }
+        entry["state"] = "Open Firmware"
+        return {
+            "already_running": False,
+            "job": _JOB,
+            "message": None,
+            "affinity_assessment": {"status": "skipped"},
+            "warnings": [],
+        }
+
+    def _hmc_power_off_lpar(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        assert entry is not None
+        entry["state"] = "Not Activated"
+        return _JOB
+
+    def _hmc_delete_lpar(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        if entry is None:
+            return HMCError("LPAR not found")
+        if entry["state"] != "Not Activated":
+            return HMCError(
+                "Cannot delete LPAR x — current state is 'open firmware'; it must be "
+                "'not activated' to delete.",
+                status_code=409,
+            )
+        del self.partitions[self.name_of(entry)]
+        return f"Deleted LPAR {entry['uuid']}"
+
+    def _hmc_capture_lpar_console(self, kwargs: dict[str, Any]) -> Any:
+        return {"stop_reason": "duration", "released": True, "bytes_captured": 3}
+
+    # -- composite -----------------------------------------------------------
+
+    def _hmc_power_lpar(self, kwargs: dict[str, Any]) -> Any:
+        request_id = kwargs["request_id"]
+        if kwargs.get("continuation") == "abandon":
+            self.operations[request_id]["state"] = "terminal"
+            return self.operations[request_id]
+        if request_id in self.operations:
+            return self.operations[request_id]
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        assert entry is not None
+        action = kwargs["action"]
+        wanted = "Not Activated" if action == "stop" else "Running"
+        already = (entry["state"] == "Not Activated") == (action == "stop")
+        entry["state"] = wanted
+        record = {
+            "operation_id": f"{len(self.operations):032x}",
+            "request_id": request_id,
+            "state": "paused" if self.composite_pauses else "terminal",
+            "outcome": None if self.composite_pauses else "completed",
+            "result": {
+                "already_in_state": already,
+                "observed_state": wanted.lower(),
+                "job_id": None if already else "4711",
+            },
+            "warnings": [],
+        }
+        self.operations[request_id] = record
+        return record
+
+    def _hmc_operation_status(self, kwargs: dict[str, Any]) -> Any:
+        found = self.operations.get(kwargs["request_id"])
+        return {"operations": [found] if found else [], "truncated": False}
+
+    # -- storage and provisioning -------------------------------------------
+
+    def _hmc_list_vios(self, kwargs: dict[str, Any]) -> Any:
+        return {
+            "entries": [
+                {"UUID": VIOS_UUID, "Resource": {"PartitionID": "1"}},
+            ],
+            "unreadable_systems": [],
+        }
+
+    def _hmc_list_volume_groups(self, kwargs: dict[str, Any]) -> Any:
+        return [{"uuid": VG_UUID, "name": GROUP, "free_space_gib": 50.0}]
+
+    def _hmc_list_virtual_networks(self, kwargs: dict[str, Any]) -> Any:
+        return [{"Resource": {"NetworkVLANID": str(VLAN)}}]
+
+    def _hmc_list_storage_mappings(self, kwargs: dict[str, Any]) -> Any:
+        return [dict(item) for item in self.mappings]
+
+    def _hmc_create_virtual_disk(self, kwargs: dict[str, Any]) -> Any:
+        self.volumes.add(kwargs["disk_name"])
+        return {"disk_name": kwargs["disk_name"]}
+
+    def _hmc_delete_virtual_disk(self, kwargs: dict[str, Any]) -> Any:
+        if any(m["backing_name"] == kwargs["disk_name"] for m in self.mappings):
+            return ValueError("the disk is mapped")
+        self.volumes.discard(kwargs["disk_name"])
+        return {"deleted": kwargs["disk_name"]}
+
+    def _hmc_detach_storage_mapping(self, kwargs: dict[str, Any]) -> Any:
+        (mapping,) = [m for m in self.mappings if m["id"] == kwargs["mapping_id"]]
+        if not any(e["uuid"] == mapping["lpar_uuid"] for e in self.partitions.values()):
+            return ValueError("could not resolve the mapped LPAR")
+        self.mappings.remove(mapping)
+        if not self.detach_keeps_adapter:
+            self.adapters.discard("3,run,2")
+        return {"mapping_id": kwargs["mapping_id"]}
+
+    def _hmc_list_dedicated_pcie_slots(self, kwargs: dict[str, Any]) -> Any:
+        return {"items": [{"drc_index": DRC, "owner_lpar": self.slot_owner}]}
+
+    def _hmc_provision_lpar(self, kwargs: dict[str, Any]) -> Any:
+        uuid = self._new(kwargs["name"], kwargs["caller_token"], kwargs["resources"])
+        self.mappings.append(
+            {
+                "id": "vhost1/vtscsi1",
+                "lpar_uuid": uuid,
+                "backing_kind": "VirtualDisk",
+                "backing_name": kwargs["storage"]["storage_name"],
+            }
+        )
+        self.adapters.add("3,run,2")
+        steps = [
+            {"step": "create", "status": "ok"},
+            {"step": "storage", "status": "ok"},
+        ]
+        if self.provision_fails_after_storage:
+            steps.append({"step": "power_on", "status": "error", "result": "x"})
+        else:
+            self.partitions[kwargs["name"]]["state"] = "Open Firmware"
+            steps.append({"step": "power_on", "status": "ok"})
+        if kwargs["assignments"]["dedicated"]:
+            self.slot_owner = kwargs["name"]
+        return {
+            "resource_created": True,
+            "workflow_completed": not self.provision_fails_after_storage,
+            "lpar_uuid": None if self.provision_without_uuid else uuid,
+            "dry_run": False,
+            "ownership_stamped": True,
+            "steps": steps,
+            "warnings": [],
+        }
+
+    def _hmc_list_adapters(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        if entry is None:
+            return []
+        return [{"UUID": "net-1", "Resource": {"PortVLANID": str(VLAN)}}]
+
+    def _hmc_decommission_lpar(self, kwargs: dict[str, Any]) -> Any:
+        entry = self.by_selector(kwargs["lpar_name_or_uuid"])
+        assert entry is not None
+        radius = {
+            "adapters": [
+                {"type": "ClientNetworkAdapter", "uuid": "net-1"},
+                {"type": "VirtualSCSIClientAdapter", "uuid": "scsi-1"},
+            ],
+            "storage_mappings": [
+                {
+                    "vios_uuid": VIOS_UUID,
+                    "type": "VirtualSCSIMapping",
+                    "uuid": "m",
+                    "backing_device": m["backing_name"],
+                }
+                for m in self.mappings
+                if m["lpar_uuid"] == entry["uuid"]
+            ],
+        }
+        if kwargs.get("dry_run"):
+            steps = [{"step": n, "status": "dry_run"} for n in ("power_off", "delete")]
+            return {
+                "resource_deleted": False,
+                "workflow_completed": False,
+                "dry_run": True,
+                "steps": steps,
+                "blast_radius": radius,
+            }
+        del self.partitions[self.name_of(entry)]
+        if self.slot_owner != "null":
+            self.slot_owner = "null"
+        return {
+            "resource_deleted": True,
+            "workflow_completed": True,
+            "dry_run": False,
+            "steps": [{"step": "delete_lpar", "status": "ok"}],
+            "blast_radius": radius,
+        }
+
+
+class FakeClient:
+    def __init__(self, world: World) -> None:
+        self.world = world
+
+    async def call_tool(self, tool: str, kwargs: dict[str, Any]) -> Any:
+        value = self.world.respond(tool, kwargs)
+        if isinstance(value, Exception):
+            raise value
+        return SimpleNamespace(data=value)
+
+
+@pytest.fixture(scope="module")
+def schemas() -> dict[str, dict[str, Any]]:
+    """The input schemas the live runner's server really serves."""
+
+    async def served() -> dict[str, dict[str, Any]]:
+        async with runner.served_client() as client:
+            return await runner.served_schemas(client)
+
+    return asyncio.run(served())
+
+
+@pytest.fixture(autouse=True)
+def _no_waiting(monkeypatch):
+    for module, name in (
+        (lpar_power, "_STATE_POLL_DELAY_S"),
+        (lpar_power, "_OPERATION_POLL_DELAY_S"),
+        (lpar_power, "_COMPARE_REREAD_DELAY_S"),
+        (pcie, "_ABSENCE_REREAD_DELAY_S"),
+    ):
+        monkeypatch.setattr(module, name, 0)
+    monkeypatch.setattr(lpar_power, "_STATE_POLL_ATTEMPTS", 2)
+    monkeypatch.setattr(lpar_power, "_power_operations_authorized", lambda: True)
+
+
+def _run(schemas, world: World, group: str = "lpar-power", **config: Any):
+    state = runner.RunState(
+        config=runner.LiveTestConfig(
+            system_name=SYSTEM,
+            vdisk_volume_group_name=GROUP,
+            provision_vlan_id=VLAN,
+            **config,
+        ),
+        group=group,
+    )
+    state.schemas = schemas
+    asyncio.run(lpar_power.exercise_lpar_power(FakeClient(world), state))
+    return state
+
+
+def _results(state) -> dict[str, str]:
+    return {e["operation"]: e["observation"]["result"] for e in state.observations}
+
+
+def _held(state, operation: str) -> list[str]:
+    (entry,) = [e for e in state.observations if e["operation"] == operation]
+    return entry["observation"]["assertions"]
+
+
+def _rows(state, tool: str) -> list[dict[str, Any]]:
+    return [row for row in state.results if row["tool"] == tool]
+
+
+_OBSERVED = {
+    "lpar.create",
+    "lpar.power_on",
+    "lpar.capture_console",
+    "lpar.power_off",
+    "lpar.power",
+    "lpar.delete",
+    "provision.lpar",
+    "lpar.decommission",
+}
+_PCIE = {
+    "dedicated_pcie_system_name": SYSTEM,
+    "dedicated_pcie_lpar_prefix": "live-",
+}
+
+
+def test_clean_run_passes_every_observation_and_leaves_the_baseline(schemas):
+    world = World()
+    state = _run(schemas, world)
+
+    assert [row["tool"] for row in state.results if row["status"] == "FAIL"] == []
+    assert set(_results(state)) == _OBSERVED
+    assert set(_results(state).values()) == {"passed"}
+    assert {e["observation"]["cleanup"] for e in state.observations} == {"passed"}
+    assert world.partitions == {}
+    assert world.volumes == {"hd5", "lv_op"}
+    assert _rows(state, "system baseline compare")[0]["status"] == "PASS"
+
+
+def test_names_and_token_share_the_run_suffix(schemas):
+    world = World()
+    _run(schemas, world)
+
+    (create, *_) = [k for k in world.calls_to("hmc_create_lpar")]
+    name = world.calls_to("hmc_provision_lpar")[0]["name"]
+    suffix = name.removeprefix(lpar_power.NAME_PREFIX).removesuffix("-p")
+    assert create["caller_token"] == lpar_power.TOKEN_PREFIX + suffix
+    disk = world.calls_to("hmc_create_virtual_disk")[0]["disk_name"]
+    assert disk == lpar_power.VOLUME_PREFIX + suffix and len(disk) <= 15
+
+
+def test_every_mutation_names_a_run_object(schemas):
+    world = World()
+    _run(schemas, world)
+
+    run_uuids = {e for e in _uuids_created(world)}
+    for tool, kwargs in world.calls:
+        if tool not in MUTATIONS or tool in {"hmc_create_lpar", "hmc_provision_lpar"}:
+            continue
+        if tool in {"hmc_create_virtual_disk", "hmc_delete_virtual_disk"}:
+            assert kwargs["disk_name"].startswith(lpar_power.VOLUME_PREFIX)
+        elif tool == "hmc_detach_storage_mapping":
+            assert kwargs["mapping_id"] == "vhost1/vtscsi1"
+        elif tool == "hmc_power_lpar" and "continuation" in kwargs:
+            assert kwargs["request_id"].startswith(lpar_power.TOKEN_PREFIX)
+        else:
+            assert kwargs["lpar_name_or_uuid"] in run_uuids, (tool, kwargs)
+    assert all(
+        k["name"].startswith(lpar_power.NAME_PREFIX)
+        for k in world.calls_to("hmc_create_lpar")
+        + world.calls_to("hmc_provision_lpar")
+    )
+
+
+def _uuids_created(world: World) -> set[str]:
+    return {
+        f"0A1B2C3D-0000-4000-8000-{n:012d}"
+        for n in range(1, 1 + len(world.calls_to("hmc_create_lpar")) + 1)
+    }
+
+
+def test_outside_its_group_it_calls_nothing(schemas):
+    world = World()
+    state = _run(schemas, world, group="round2")
+
+    assert world.calls == []
+    assert state.observations == []
+
+
+def test_without_the_power_guard_it_calls_nothing(schemas, monkeypatch):
+    monkeypatch.setattr(lpar_power, "_power_operations_authorized", lambda: False)
+    world = World()
+    state = _run(schemas, world)
+
+    assert world.calls == []
+    assert "HMC_AUTHORIZE_POWER_OPERATIONS" in _rows(state, "lpar-power arm")[0]["note"]
+
+
+def test_a_stranded_run_partition_stops_the_arm_before_any_write(schemas):
+    world = World()
+    world.partitions["hmcpctl-live-pwr-00000000"] = {
+        "uuid": "x",
+        "state": "Not Activated",
+        "token": None,
+        "resources": {},
+    }
+    state = _run(schemas, world)
+
+    assert not set(world.tools()) & MUTATIONS
+    assert "already exist" in _rows(state, "lpar-power arm")[0]["note"]
+
+
+def test_gap_rows_name_their_prerequisite_and_make_no_call(schemas):
+    world = World()
+    state = _run(schemas, world)
+
+    for tool, _ in lpar_power.GAPS:
+        (row,) = _rows(state, tool)
+        assert row["status"] == "SKIP" and row["note"].startswith("gap: needs")
+    assert not {"hmc_dump_restart_lpar", "hmc_power_on_system"} & set(world.tools())
+    assert "hmc_power_off_system" not in world.tools()
+
+
+def test_a_create_guard_that_lets_a_request_through_fails_its_assertion(schemas):
+    world = World()
+    real = world._hmc_create_lpar
+    world.overrides["hmc_create_lpar"] = lambda k: (
+        world._new(k["name"] + "-leak", k["caller_token"], k["resources"])
+        and {"lpar": {}, "steps": []}
+        if k["resources"]["desired_memory"] > 1_000_000
+        else real(k)
+    )
+    state = _run(schemas, world)
+
+    assert "memory-over-configurable-refused" not in _held(state, "lpar.create")
+    assert _results(state)["lpar.create"] == "failed"
+
+
+def test_a_duplicate_create_that_succeeds_fails_its_assertion(schemas):
+    world = World()
+    real = world._hmc_create_lpar
+    world.overrides["hmc_create_lpar"] = lambda k: (
+        {"lpar": {"UUID": world.partitions[k["name"]]["uuid"]}, "steps": []}
+        if k["name"] in world.partitions
+        else real(k)
+    )
+    state = _run(schemas, world)
+
+    assert "duplicate-name-refused" not in _held(state, "lpar.create")
+
+
+def test_a_power_on_of_a_running_partition_that_submits_fails(schemas):
+    world = World()
+    real = world._hmc_power_on_lpar
+    world.overrides["hmc_power_on_lpar"] = lambda k: (
+        {
+            "already_running": False,
+            "job": _JOB,
+            "message": None,
+            "affinity_assessment": {"status": "skipped"},
+            "warnings": [],
+        }
+        if world.by_selector(k["lpar_name_or_uuid"])["state"] != "Not Activated"
+        else real(k)
+    )
+    state = _run(schemas, world)
+
+    assert "running-reported-without-job" not in _held(state, "lpar.power_on")
+
+
+def test_an_activated_delete_that_is_accepted_fails(schemas):
+    world = World()
+    real = world._hmc_delete_lpar
+
+    def accepts(kwargs: dict[str, Any]) -> Any:
+        entry = world.by_selector(kwargs["lpar_name_or_uuid"])
+        if entry is not None:
+            entry["state"] = "Not Activated"
+        return real(kwargs)
+
+    world.overrides["hmc_delete_lpar"] = accepts
+    state = _run(schemas, world)
+
+    assert "activated-delete-refused" not in _held(state, "lpar.delete")
+
+
+def test_a_paused_composite_fails_and_is_abandoned_in_teardown(schemas):
+    world = World()
+    world.composite_pauses = True
+    state = _run(schemas, world)
+
+    assert _results(state)["lpar.power"] == "failed"
+    abandoned = [k for k in world.calls_to("hmc_power_lpar") if "continuation" in k]
+    assert {k["request_id"] for k in abandoned} == set(world.operations)
+
+
+def test_a_repeat_stop_that_submits_fails_its_assertion(schemas):
+    world = World()
+    real = world._hmc_power_lpar
+
+    def submits(kwargs: dict[str, Any]) -> Any:
+        record = real(kwargs)
+        if kwargs["request_id"].endswith("-4"):
+            record["result"]["already_in_state"] = False
+        return record
+
+    world.overrides["hmc_power_lpar"] = submits
+    state = _run(schemas, world)
+
+    assert "repeat-stop-already-in-state" not in _held(state, "lpar.power")
+
+
+def test_without_a_vios_provision_is_skipped_with_its_reason(schemas):
+    world = World()
+    world.overrides["hmc_list_volume_groups"] = lambda _k: []
+    state = _run(schemas, world)
+
+    assert "hmc_provision_lpar" not in world.tools()
+    (row,) = _rows(state, "hmc_provision_lpar / hmc_decommission_lpar")
+    assert "exactly one is needed" in row["note"]
+    assert "provision.lpar" not in _results(state)
+
+
+def test_without_the_vlan_provision_is_skipped(schemas):
+    world = World()
+    world.overrides["hmc_list_virtual_networks"] = lambda _k: []
+    state = _run(schemas, world)
+
+    assert "hmc_create_virtual_disk" not in world.tools()
+    assert (
+        "no virtual network"
+        in _rows(state, "hmc_provision_lpar / hmc_decommission_lpar")[0]["note"]
+    )
+
+
+def test_no_pcie_configuration_sends_no_dedicated_slot(schemas):
+    world = World()
+    state = _run(schemas, world)
+
+    (call,) = world.calls_to("hmc_provision_lpar")
+    assert call["assignments"] == {"dedicated": []}
+    (row,) = _rows(state, "hmc_provision_lpar (dedicated PCIe argument)")
+    assert row["status"] == "SKIP"
+    assert "pcie-slot-owned" not in _held(state, "provision.lpar")
+
+
+def test_an_eligible_slot_is_sent_and_its_ownership_asserted(schemas):
+    world = World()
+    state = _run(schemas, world, **_PCIE)
+
+    (call,) = world.calls_to("hmc_provision_lpar")
+    assert call["assignments"]["dedicated"] == [
+        {"profile_name": "default_profile", "drc_index": DRC}
+    ]
+    assert "pcie-slot-owned" in _held(state, "provision.lpar")
+    assert world.slot_owner == "null"
+
+
+def _listed_by_a_profile(world: World) -> None:
+    def answer(kwargs: dict[str, Any]) -> Any:
+        if kwargs["cmd"] == profile_io_slot_rows_command(SYSTEM):
+            return f'lpar_name,name,io_slots\n{OTHER},default_profile,"{DRC}/none/0"\n'
+        return World._hmc_run_command(world, kwargs)
+
+    world.overrides["hmc_run_command"] = answer
+
+
+@pytest.mark.parametrize(
+    ("change", "system"),
+    [
+        (lambda w: setattr(w, "slot_owner", OTHER), SYSTEM),
+        (_listed_by_a_profile, SYSTEM),
+        (lambda w: None, "sys-B"),
+    ],
+    ids=["owned", "listed-by-a-profile", "configured-for-another-system"],
+)
+def test_an_ineligible_slot_is_never_sent(schemas, change, system):
+    world = World()
+    change(world)
+    _run(schemas, world, **{**_PCIE, "dedicated_pcie_system_name": system})
+
+    (call,) = world.calls_to("hmc_provision_lpar")
+    assert call["assignments"] == {"dedicated": []}
+
+
+def test_the_mapping_is_detached_before_the_real_decommission(schemas):
+    world = World()
+    _run(schemas, world)
+
+    tools = world.tools()
+    detach = tools.index("hmc_detach_storage_mapping")
+    real = [
+        i
+        for i, (tool, k) in enumerate(world.calls)
+        if tool == "hmc_decommission_lpar" and not k.get("dry_run")
+    ]
+    assert real and detach < real[0]
+    assert tools.index("hmc_delete_virtual_disk") > real[0]
+
+
+def test_a_mapping_that_survives_the_detach_skips_the_real_decommission(schemas):
+    world = World()
+    world.overrides["hmc_detach_storage_mapping"] = lambda _k: HMCError("busy")
+    state = _run(schemas, world)
+
+    real = [k for k in world.calls_to("hmc_decommission_lpar") if not k.get("dry_run")]
+    assert real == []
+    assert _rows(state, "run volume mapping teardown")
+    assert world.volumes > {"hd5", "lv_op"}
+
+
+def test_teardown_detaches_a_run_mapping_before_deleting_its_partition(schemas):
+    """A detach refused once leaves P mapped; teardown detaches before the delete."""
+    world = World()
+    world.provision_fails_after_storage = True
+    real = world._hmc_detach_storage_mapping
+    refusals = iter([HMCError("busy")])
+    world.overrides["hmc_detach_storage_mapping"] = lambda k: (
+        next(refusals, None) or real(k)
+    )
+    state = _run(schemas, world)
+
+    tools = world.tools()
+    last = {tool: len(tools) - 1 - tools[::-1].index(tool) for tool in set(tools)}
+    assert last["hmc_detach_storage_mapping"] < last["hmc_delete_lpar"]
+    assert world.partitions == {}
+    assert world.volumes == {"hd5", "lv_op"}
+    assert _results(state)["provision.lpar"] == "failed"
+
+
+def test_provision_without_a_uuid_adopts_the_partition_by_token(schemas):
+    world = World()
+    world.provision_without_uuid = True
+    state = _run(schemas, world)
+
+    assert world.partitions == {}
+    assert _results(state)["lpar.decommission"] == "passed"
+
+
+def test_a_server_adapter_left_by_the_detach_fails_the_compare(schemas):
+    world = World()
+    world.detach_keeps_adapter = True
+    state = _run(schemas, world)
+
+    assert _rows(state, "system baseline compare")[0]["status"] == "FAIL"
+    assert {e["observation"]["cleanup"] for e in state.observations} == {"failed"}
+
+
+def test_a_changed_partition_state_fails_the_compare(schemas):
+    world = World()
+    real = world._hmc_run_command
+    reads = []
+
+    def drifts(kwargs: dict[str, Any]) -> Any:
+        text = real(kwargs)
+        if kwargs["cmd"].endswith("name,state"):
+            reads.append(text)
+            if world.calls_to("hmc_decommission_lpar"):
+                return text.replace(f"{OTHER},Running", f"{OTHER},Not Activated")
+        return text
+
+    world.overrides["hmc_run_command"] = drifts
+    state = _run(schemas, world)
+
+    assert _rows(state, "system baseline compare")[0]["status"] == "FAIL"
+
+
+def test_a_partition_that_will_not_delete_leaves_recovery_commands(schemas):
+    world = World()
+    real = world._hmc_delete_lpar
+    world.overrides["hmc_delete_lpar"] = lambda k: (
+        HMCError("HSCL0001 refused")
+        if world.by_selector(k["lpar_name_or_uuid"])
+        and world.by_selector(k["lpar_name_or_uuid"])["state"] == "Not Activated"
+        else real(k)
+    )
+    state = _run(schemas, world)
+
+    (row, *_) = _rows(state, "run partition teardown")
+    assert "rmsyscfg" in row["data"] and "MANUAL RECOVERY REQUIRED" in row["data"]
+
+
+def test_scratch_name_helpers_match_only_the_reserved_prefixes():
+    assert lpar_power.scratch_partitions(["hmcpctl-live-pwr-1", "lpar-A"]) == [
+        "hmcpctl-live-pwr-1"
+    ]
+    assert lpar_power.scratch_volumes(["lppwrabc", "lv_op"]) == ["lppwrabc"]
+    assert lpar_config.NAME_PREFIX != lpar_power.NAME_PREFIX
+
+
+def test_volume_names_drop_the_lsvg_group_and_header_lines():
+    text = (
+        "datavg:\nLV NAME  TYPE  LPs  PPs  PVs  LV STATE  MOUNT POINT\n"
+        "lv_op  jfs2  1  1  1  open/syncd  N/A\n"
+    )
+    assert lpar_power._volume_names(text) == {"lv_op"}
+    assert lpar_power._volume_names(None) is None
