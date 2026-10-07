@@ -450,6 +450,9 @@ async def _lpar_power_vios_residue(
             remedy=(
                 f"viosvrcmd -m {system} -p {shlex.quote(vios)} -c "
                 f'"rmvdev -vtd {str(entry.get("id")).rpartition("/")[2]}"'
+                if entry.get("id")
+                else f"viosvrcmd -m {system} -p {shlex.quote(vios)} -c 'lsmap -all' "
+                "to find its virtual target device, then rmvdev -vtd <device>"
             ),
         )
         for entry in mappings

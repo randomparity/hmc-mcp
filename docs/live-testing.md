@@ -457,9 +457,11 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   `hmcpctl-live-pwr-*` partition or an `lppwr*` volume exists: both prefixes are
   reserved for this arm.
 - **Partition A** (`hmcpctl-live-pwr-<8 hex>`, caller token `lparpwr-<8 hex>`,
-  the lpar-config arm's resources). Two creates hmcpctl refuses before any HMC
-  request (processing units above the virtual processors; memory above the
-  system's configurable memory) and a duplicate-name create, then: activation to
+  the lpar-config arm's resources). Two creates hmcpctl refuses after its own
+  reads and before any HMC write (processing units above the virtual processors;
+  memory above the system's configurable memory; a create the guard lets through
+  is a FAIL and is removed by the teardown's prefix sweep) and a duplicate-name
+  create, then: activation to
   SMS through the partition profile, a second PowerOn while activated (it must
   report `already_running` and submit nothing), a delete while activated (refused),
   a 30 s console capture, a delayed power-off, activation of the current
@@ -483,7 +485,9 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   kept while its mapping could not be detached), then deletes the volume.
   The before reads are compared (one re-read after 30 s on a difference).
   Observations carry `cleanup` `passed` only when every run object is gone and the
-  compare holds.
+  compare holds. A sequence that stops early (a power step that does not settle)
+  still records each operation it entered, failed, with the assertions it never
+  reached absent: re-run rather than copy those observations.
 
 A teardown that cannot finish records a FAIL row marked `MANUAL RECOVERY
 REQUIRED` naming the commands: for a partition, `chsysstate … -o shutdown --immed`

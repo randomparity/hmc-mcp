@@ -1189,3 +1189,20 @@ def test_an_otherwise_empty_volume_group_still_cleans_up(schemas):
     assert world.volumes == set()
     assert not _rows(state, "run volume teardown")
     assert {e["observation"]["cleanup"] for e in state.observations} == {"passed"}
+
+
+def test_a_run_mapping_without_an_id_is_never_read_as_detached(schemas):
+    world = World()
+
+    def provision(k, real):
+        answer = real(k)
+        world.mappings[-1]["id"] = None
+        return answer
+
+    _wrap(world, "hmc_provision_lpar", provision)
+    state = _run(schemas, world)
+
+    real = [k for k in world.calls_to("hmc_decommission_lpar") if not k["dry_run"]]
+    assert real == []
+    assert [name for name in world.partitions if name.endswith("-p")]
+    assert _rows(state, "run volume mapping teardown")

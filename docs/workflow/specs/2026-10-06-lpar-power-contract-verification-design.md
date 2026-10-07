@@ -71,7 +71,8 @@ own records (#630).
    baseline read SKIPs the arm. The operator's private before/after snapshot (dispatch)
    covers the same set.
 4. **Create (A)** — observation `lpar.create`. Three cases are hmcpctl's own pre-request
-   guards, observed live (reads only; no HMC write is issued): `units-over-vcpus-refused`
+   guards, observed live (after hmcpctl's own reads, before any HMC write; one the guard
+   lets through is a FAIL and the teardown's prefix sweep removes the partition): `units-over-vcpus-refused`
    (desired 1.5 units, 1 virtual processor: "virtual processor uses at most 1.0"),
    `memory-over-configurable-refused` (desired 64 TiB: "configurable memory", read from
    the live `ConfigurableSystemMemory`), `duplicate-name-refused` (a second create of A's

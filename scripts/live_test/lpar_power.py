@@ -1023,7 +1023,9 @@ async def _detach(client: Client, state: RunState, run: Run) -> bool:
         )
         state.record(SUBTASK, f"hmc_detach_storage_mapping ({mapping_id})", st, data)
     left = await _mappings(client, state, run)
-    return left is not None and not _run_mapping_ids(left, run)
+    # Decided on the backing, not the id: a mapping the HMC reports without one
+    # cannot be detached through the tool and still holds the volume.
+    return left is not None and not any(backing == run.volume for *_, backing in left)
 
 
 def _dry_run_inventoried(data: object, run: Run) -> bool:
