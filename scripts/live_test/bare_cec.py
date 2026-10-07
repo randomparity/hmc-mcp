@@ -48,7 +48,7 @@ from hmcpctl.ssh.transport import HMCCLIError
 
 from . import pcie
 from .metrics import _as_outcome
-from .observation import Assertion, CallFailure, ExpectedOutcome
+from .observation import CLEANUP, Assertion, CallFailure, ExpectedOutcome
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -145,6 +145,8 @@ def _record_held(
     The lpar-power arm (subtask 41) owns these operations' observations, and the
     catalog keeps one per operation, so this arm's would overwrite it (#1346).
     """
+    if cleanup not in CLEANUP:
+        raise ValueError(f"cleanup disposition is not a known value: {cleanup!r}")
     unmet = [item.id for item in assertions if not item.holds]
     if cleanup == "failed":
         unmet.append("cleanup failed")

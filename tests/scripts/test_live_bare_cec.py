@@ -22,6 +22,7 @@ sys.path.insert(0, str(SCRIPTS_ROOT))
 import live_bare_cec as wrapper  # noqa: E402
 import live_test_runner as runner  # noqa: E402
 from live_test import bare_cec, pcie  # noqa: E402
+from live_test.observation import Assertion  # noqa: E402
 
 from hmcpctl.errors import HMCError  # noqa: E402
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command  # noqa: E402
@@ -844,3 +845,19 @@ def test_wrapper_rejects_an_unknown_option_before_any_run(monkeypatch):
         wrapper.main(["--results-file", "x.json"])
 
     assert exit_info.value.code != 0
+
+
+def test_record_held_refuses_an_unknown_cleanup_value():
+    recorded: list[Any] = []
+    state: Any = SimpleNamespace(record=lambda *args: recorded.append(args))
+
+    with pytest.raises(ValueError, match="cleanup disposition is not a known value"):
+        bare_cec._record_held(
+            state,
+            "hmc_delete_lpar (judged)",
+            assertions=[Assertion("delete-call-succeeded", True)],
+            cleanup="fialed",
+            data="",
+        )
+
+    assert recorded == []
