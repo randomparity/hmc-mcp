@@ -103,8 +103,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 - `hmc_create_vios_vfc_group_label` and `hmc_update_vios_vfc_group_label` refuse a vFC group
   label or rename `new_name` longer than 16 characters before any HMC call; the tool
-  descriptions and the `hmcpctl vios` create-label and `--new-name` help now state the limit
-  (#1412).
+  descriptions and the help for `hmcpctl vios create-vfc-group-label` LABEL and
+  `update-vfc-group-label --new-name` now state the limit (#1380, #1412).
 - `hmc_power_on_lpar`, `hmcpctl lpars power-on --operation-type` and the operations below them
   still accept `operation_type="activate"` but no longer send the `OperationType` PowerOn
   parameter, which a V10R3 HMC refuses with "Parameter 'OperationType' is not allowed for this
