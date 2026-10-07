@@ -78,7 +78,13 @@ from hmcpctl.ssh.profiles import (
 )
 from hmcpctl.ssh.transport import HMCCLIError
 
-from .observation import CLEANUP, Assertion, CallFailure, judge_create_result
+from .observation import (
+    CLEANUP,
+    Assertion,
+    CallFailure,
+    judge_create_result,
+    plain_data,
+)
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -1973,6 +1979,7 @@ async def _probe_create_time_assignment(
     )
     if st == "PASS":
         fixture.probe_created = True
+        data = plain_data(data)
         if isinstance(data, dict) and isinstance(data.get("lpar"), dict):
             fixture.probe_lpar_uuid = data["lpar"].get("UUID") or data["lpar"].get(
                 "uuid"
