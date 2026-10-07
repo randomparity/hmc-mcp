@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
 #: Every value an observation's ``cleanup`` disposition may take. This ``not-run``
@@ -127,7 +127,12 @@ def judge_create_result(status: str, data: Any) -> tuple[str, str]:
     This never overrides a non-"PASS" call status, and it does not speak to
     whether the partition was actually created — a caller that tracks that
     separately keeps using the original ``status`` for its own control flow.
+
+    A served typed result arrives as a generated dataclass, nested steps
+    included, so it is read as the plain data it carries (#1369).
     """
+    if is_dataclass(data) and not isinstance(data, type):
+        data = asdict(data)
     if status != "PASS" or not isinstance(data, dict):
         return status, ""
     steps = data.get("steps")
