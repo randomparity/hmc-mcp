@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hmcpctl.errors import HMCError
 from hmcpctl.operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,
@@ -37,6 +38,9 @@ async def test_create_user_builds_document_from_typed_request() -> None:
     assert result == {"Resource": {"UserID": "alice"}}
 
 
+_PROFILE = {"UUID": "profile-1", "Resource": {"UserID": "alice"}}
+
+
 @pytest.mark.asyncio
 async def test_create_user_sends_verify_session_timeout_as_minutes() -> None:
     hmc = AsyncMock()
@@ -54,6 +58,47 @@ async def test_create_user_sends_verify_session_timeout_as_minutes() -> None:
         '<VerifySessionTimeout ksv="V1_17_0" kb="CUD" kxe="false">15'
         "</VerifySessionTimeout>" in document
     )
+
+
+@pytest.mark.asyncio
+async def test_modify_user_sends_the_profiles_read_only_user_id() -> None:
+    """V10R3 refused a modify without UserID: REST0344, "UserID is missing or
+    invalid" (#1381). The tool takes no user_id, so it is read from the profile."""
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {
+        "UUID": "profile-1",
+        "Resource": {"UserID": {"@attrs": {"kb": "COR"}, "text": "alice"}},
+    }
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(verify_session_timeout=0)
+    )
+
+    hmc.get_hmc_user.assert_awaited_once_with("console-1", "profile-1")
+    document = hmc.modify_hmc_user.await_args.args[2]
+    assert '<UserID ksv="V1_17_0" kb="COR" kxe="false">alice</UserID>' in document
+    assert (
+        '<VerifySessionTimeout ksv="V1_17_0" kb="CUD" kxe="false">0'
+        "</VerifySessionTimeout>" in document
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "profile",
+    [None, {"UUID": "profile-1", "Resource": {}}, {"Resource": {"UserID": ""}}],
+    ids=["profile-missing", "user-id-missing", "user-id-empty"],
+)
+async def test_modify_user_refuses_before_posting_without_a_user_id(
+    profile: object,
+) -> None:
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = profile
+
+    with pytest.raises(HMCError, match="profile-1.*UserID"):
+        await modify_user(hmc, "console-1", "profile-1", ModifyUserPatch())
+
+    hmc.modify_hmc_user.assert_not_awaited()
 
 
 @pytest.mark.parametrize("value", [True, False, -1])
@@ -80,6 +125,7 @@ def test_verify_session_timeout_must_be_non_negative_minutes(
 @pytest.mark.asyncio
 async def test_modify_user_preserves_explicit_clear_values() -> None:
     hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
     hmc.modify_hmc_user.return_value = None
     patch = ModifyUserPatch(
         description="",

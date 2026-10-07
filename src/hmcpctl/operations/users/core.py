@@ -11,6 +11,8 @@ from ...documents import (
     AuthenticationType,
     build_hmc_user_document,
 )
+from ...errors import HMCError
+from ...xmlutil import leaf_text
 
 
 def _require_timeout_minutes(value: int | None) -> None:
@@ -89,6 +91,17 @@ async def modify_user(
     user_profile_uuid: str,
     patch: ModifyUserPatch,
 ) -> dict[str, Any] | None:
-    """Apply the supplied fields to an HMC user profile."""
-    document = build_hmc_user_document(**asdict(patch))
+    """Apply the supplied fields to an HMC user profile.
+
+    The HMC refuses a modify without the profile's read-only ``UserID`` (REST0344
+    on V10R3, #1381), so it is read from the profile and sent unchanged.
+    """
+    profile = await hmc.get_hmc_user(console_uuid, user_profile_uuid)
+    user_id = leaf_text(((profile or {}).get("Resource") or {}).get("UserID"))
+    if not isinstance(user_id, str) or not user_id:
+        raise HMCError(
+            f"User profile {user_profile_uuid!r} returned no UserID, which the HMC "
+            "requires to modify it; confirm the UUID with hmc_list_users"
+        )
+    document = build_hmc_user_document(user_id=user_id, **asdict(patch))
     return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, document)
