@@ -318,7 +318,8 @@ async def power_on_lpar(
     are passed through to the PowerOn job document; their defaults leave it
     unchanged. Activating against ``partition_profile_uuid`` discards
     current-configuration changes the profile lacks (memory, processor and
-    adapter changes) unless CurrentProfileSync was On when they were made.
+    adapter changes), unless it is the partition's current profile and
+    CurrentProfileSync was On when they were made.
     """
     system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if affinity_assessment is not None:

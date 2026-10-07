@@ -403,9 +403,10 @@ def hmc_power_on_lpar(
             This is not the profile argument above, which selects a configured HMC
             connection. Activating a profile discards current-configuration
             changes the profile lacks: memory and processor changes from
-            hmc_modify_lpar, hmc_dlpar_mem or hmc_dlpar_proc, and adapter changes,
-            unless CurrentProfileSync was On when they were made. When omitted the
-            partition activates against its current configuration.
+            hmc_modify_lpar, hmc_dlpar_mem or hmc_dlpar_proc, and adapter changes.
+            CurrentProfileSync On copies a change into the partition's current
+            profile only, so it survives activating that profile and no other.
+            When omitted the partition activates against its current configuration.
         operation_type: PowerOn operation type; activate states the default
             explicitly. Omit it to send no OperationType parameter.
         keylock: Keylock position to activate with — manual or norm (normal), the
