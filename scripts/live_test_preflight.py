@@ -189,8 +189,8 @@ def _profiles_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
             f"managed system {config.system_name}",
             f"partition {config.lp3_name}: description (restored)",
             (
-                f"partition {config.lp3_name}: sync_curr_profile (restored; only while "
-                "Not Activated with a valid ST0 value)"
+                f"partition {config.lp3_name}: sync_curr_profile (restored; only when "
+                "ST0 reads it as 0, 1 or 2 and the partition as Not Activated)"
             ),
             (
                 f"partition {config.lp3_name}: default-profile processor compatibility "

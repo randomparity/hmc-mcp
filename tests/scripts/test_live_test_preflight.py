@@ -282,8 +282,8 @@ def test_the_profiles_verdict_states_when_sync_curr_profile_changes(
     output = capsys.readouterr().out
     assert "description (restored)" in output
     assert (
-        "sync_curr_profile (restored; only while Not Activated with a valid ST0 value)"
-        in output
+        "sync_curr_profile (restored; only when ST0 reads it as 0, 1 or 2 "
+        "and the partition as Not Activated)" in output
     )
     assert "(each restored)" not in output
 
