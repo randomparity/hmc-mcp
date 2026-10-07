@@ -1455,18 +1455,24 @@ def test_lpar_config_run_is_witnessed(tmp_path, monkeypatch, capsys):
 # The lpar-power arm (ST41, #1346)
 # ---------------------------------------------------------------------------
 
-_LPAR_POWER = recovery.LparPowerInputs(_SYSTEM)
+_LPAR_POWER = recovery.LparPowerInputs(_SYSTEM, "datavg")
+_LSVG = f"viosvrcmd -m {_SYSTEM} --id 2 -c 'lsvg -lv datavg'"
 
 
 def _lpar_power_caller(
-    partitions: str | None, mappings: list | None, adapters: str = "", seen=None
+    partitions: str | None,
+    mappings: list | None,
+    adapters: str = "",
+    volumes: str = "datavg:\nLV NAME TYPE LPs PPs PVs LV STATE MOUNT POINT\n",
 ):
     async def call(tool: str, **arguments):
         recovery.guard_read_only(tool, arguments)
-        if seen is not None:
-            seen.append((tool, arguments.get("cmd")))
         if tool == "hmc_list_storage_mappings":
             return ("PASS", mappings) if mappings is not None else ("FAIL", None)
+        if tool == "hmc_list_volume_groups":
+            return "PASS", [{"name": "datavg", "uuid": "vg"}]
+        if arguments["cmd"] == _LSVG:
+            return "PASS", volumes
         if "virtualio" in arguments["cmd"]:
             return "PASS", adapters
         return ("PASS", partitions) if partitions is not None else ("FAIL", None)
@@ -1477,18 +1483,22 @@ def _lpar_power_caller(
 @pytest.mark.asyncio
 async def test_lpar_power_residue_is_reported_with_its_commands():
     listing = (
-        "lpar-A,Running,aixlinux\n"
-        "vios-A,Running,vioserver\n"
-        "hmcpctl-live-pwr-0a1b2c3d-p,Open Firmware,aixlinux\n"
+        "lpar-A,Running,aixlinux,1\n"
+        "vios-A,Running,vioserver,2\n"
+        "hmcpctl-live-pwr-0a1b2c3d-p,Open Firmware,aixlinux,9\n"
     )
     mappings = [
         {"id": "vhost0/vtscsi0", "backing_name": "lv_op"},
         {"id": "vhost3/vtscsi3", "backing_name": "lppwr0a1b2c3d"},
     ]
     adapters = "2,lpar-A,3\n5,hmcpctl-live-pwr-0a1b2c3d-p,2\n"
+    volumes = (
+        "datavg:\nLV NAME TYPE LPs PPs PVs LV STATE MOUNT POINT\n"
+        "lv_op jfs2 1 1 1 open/syncd N/A\nlppwr0a1b2c3d jfs2 1 1 1 open/syncd N/A\n"
+    )
 
     findings = await recovery.check_run(
-        _lpar_power_caller(listing, mappings, adapters),
+        _lpar_power_caller(listing, mappings, adapters, volumes),
         None,
         None,
         lpar_power_inputs=_LPAR_POWER,
@@ -1498,6 +1508,7 @@ async def test_lpar_power_residue_is_reported_with_its_commands():
         "partition hmcpctl-live-pwr-0a1b2c3d-p",
         "mapping vhost3/vtscsi3 on VIOS vios-A",
         "vSCSI server adapter 5 on VIOS vios-A",
+        "volume lppwr0a1b2c3d on VIOS vios-A",
     ]
     assert findings[0].remedy.startswith(
         f"chsysstate -m {_SYSTEM} -r lpar -n hmcpctl-live-pwr-0a1b2c3d-p -o shutdown"
@@ -1506,12 +1517,16 @@ async def test_lpar_power_residue_is_reported_with_its_commands():
     assert findings[2].remedy == (
         f"chhwres -r virtualio --rsubtype scsi -m {_SYSTEM} -o r -p vios-A -s 5"
     )
+    assert (
+        findings[3].remedy
+        == f'viosvrcmd -m {_SYSTEM} --id 2 -c "rmlv -f lppwr0a1b2c3d"'
+    )
 
 
 @pytest.mark.asyncio
 async def test_lpar_power_clean_system_has_no_finding():
     call = _lpar_power_caller(
-        "lpar-A,Running,aixlinux\nvios-A,Running,vioserver\n",
+        "lpar-A,Running,aixlinux,1\nvios-A,Running,vioserver,2\n",
         [{"id": "vhost0/vtscsi0", "backing_name": "lv_op"}],
         "2,lpar-A,3\n",
     )
@@ -1523,10 +1538,20 @@ async def test_lpar_power_clean_system_has_no_finding():
 
 @pytest.mark.asyncio
 async def test_lpar_power_unreadable_mappings_are_not_clean():
-    call = _lpar_power_caller("vios-A,Running,vioserver\n", None)
+    call = _lpar_power_caller("vios-A,Running,vioserver,2\n", None)
 
     with pytest.raises(recovery.StateUnreadable, match="storage mappings"):
         await recovery.check_run(call, None, None, lpar_power_inputs=_LPAR_POWER)
+
+
+def test_the_guard_admits_only_the_exact_volume_listing():
+    recovery.guard_read_only("hmc_run_command", {"cmd": _LSVG})
+    for refused in (
+        f"viosvrcmd -m {_SYSTEM} --id 2 -c 'rmlv -f lppwr0a1b2c3d'",
+        f"viosvrcmd -m {_SYSTEM} --id 2 -c 'lsvg -lv datavg; rmlv x'",
+    ):
+        with pytest.raises(recovery.MutatingCallRefused):
+            recovery.guard_read_only("hmc_run_command", {"cmd": refused})
 
 
 def test_lpar_power_run_is_witnessed(tmp_path, monkeypatch, capsys):
@@ -1550,7 +1575,7 @@ def test_lpar_power_run_is_witnessed(tmp_path, monkeypatch, capsys):
     path.write_text(json.dumps(document), encoding="utf-8")
 
     assert recovery.main(["--results", str(path)]) == 0
-    assert seen == [_LPAR_POWER]
+    assert seen == [recovery.LparPowerInputs(_SYSTEM)]
     assert "CLEAN" in capsys.readouterr().out
 
 

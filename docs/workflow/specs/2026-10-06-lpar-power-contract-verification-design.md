@@ -2,6 +2,13 @@
 
 Issue #1346 (split from #626, epic #620). Pattern: #627 / PR #1320, #1345 / PR #1366.
 
+Design denominator: re-banded from M (250 changed lines) to L (1000) by the campaign
+orchestrator on 2026-10-06. The M band came from triage before design; the implemented
+arm, which drives two partitions, a VIOS volume and a durable composite operation with a
+teardown for each partial failure, follows the 981-line `lpar_config.py` precedent and
+lands near 1,500 lines of arm code and 1,200 of arm tests. The frozen scope requires that
+work; nothing was added to fit or cut to meet the earlier number.
+
 ## Problem
 
 The power and lifecycle operations below carry a bulk `operations.json` assignment
@@ -154,9 +161,9 @@ own records (#630).
 15. **Recovery and preflight.** `live_test_recovery.py` witnesses subtask 41: a
     `hmcpctl-live-pwr-*` partition, a mapping backed by an `lppwr*` volume, or a VIOS
     server adapter whose remote partition is a run partition is stranded and prints its
-    commands. An unmapped `lppwr*` volume is not read there (recovery admits no VIOS
-    command); the arm's teardown row and the next run's stranded-volume SKIP report it,
-    and the manual check is `viosvrcmd -m <system> --id <vios id> -c 'lsvg -lv <group>'`.
+    commands, as is an `lppwr*` volume left in the configured group: recovery admits
+    exactly one VIOS command shape, `viosvrcmd -m <system> --id <vios id> -c 'lsvg -lv
+    <group>'`, on the VIOS whose volume-group listing names the group.
     A server adapter the run added and left gets its own manual-recovery row from the
     arm's compare. Preflight lists the arm's mutations.
 16. **Catalog.** Rebind the rows above; add maturity records for `lpar.power`,
@@ -215,9 +222,8 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
      submission.
 3. **Accepted failure classes:**
    - an interrupted run leaves A, P, the volume or its mapping; cost bounded to one small
-     partition and 1 GiB; recovery names the partitions, mappings and adapters by prefix
-     with the commands, and an unmapped volume is found by the next run's stranded-volume
-     SKIP or the manual `lsvg -lv` check;
+     partition and 1 GiB; recovery names the partitions, mappings, adapters and volumes
+     by prefix with the commands;
    - a concurrent change by another operator, or pool accounting that lags by more than
      one re-read, fails the compare; the run is re-run, never patched;
    - the volume-group read-modify-write (#936) and an unpaired server adapter after a

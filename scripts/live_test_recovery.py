@@ -21,7 +21,8 @@ label off its original, and a vFC group label it named. Subtask 2 only reads, so
 there is nothing for it to leave. It witnesses the lpar-config arm (subtask 39) by
 any partition still carrying its reserved `hmcpctl-live-lpar-` prefix, and the
 lpar-power arm (subtask 41) by a `hmcpctl-live-pwr-` partition, a VIOS mapping backed
-by an `lppwr` volume, or a VIOS vSCSI adapter serving a `hmcpctl-live-pwr-` partition. Every other
+by an `lppwr` volume, an `lppwr` volume left in the configured volume group, or a VIOS
+vSCSI adapter serving a `hmcpctl-live-pwr-` partition. Every other
 subtask the run dispatched is listed as NOT WITNESSED, to be checked by hand
 (docs/live-testing.md, step 4).
 
@@ -48,6 +49,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import shlex
 import sys
 from collections.abc import Set as AbstractSet
@@ -91,6 +93,7 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_read_lpar_boot_order",
         "hmc_list_optical_mappings",
         "hmc_list_storage_mappings",
+        "hmc_list_volume_groups",
         "hmc_get_media_repository",
         "hmc_get_console_info",
         "hmc_list_users",
@@ -110,6 +113,13 @@ _NOT_ACTIVATED = "Not Activated"
 #: `hmc_run_command` is read-only only for the commands given. `lssyscfg` and
 #: `lshwres` list; `chsyscfg` would mutate, and shares the tool.
 _READ_ONLY_COMMAND_PREFIXES = ("lssyscfg ", "lshwres ")
+
+#: The one VIOS command admitted: a volume group's `lsvg -lv` listing. A `viosvrcmd`
+#: prefix would admit any VIOS command (`rmlv` included), so the whole shape must
+#: match, built from a closed character set.
+_VOLUME_LISTING = re.compile(
+    r"viosvrcmd -m [A-Za-z0-9_.-]+ --id [0-9]+ -c 'lsvg -lv [A-Za-z0-9_.-]+'"
+)
 
 #: A command built from a results document must not be able to chain a second
 #: one behind an admitted prefix.
@@ -331,6 +341,7 @@ class LparPowerInputs:
     """The system the lpar-power arm (ST41) created its partitions and volume on."""
 
     system_name: str
+    volume_group: str = ""
 
 
 def lpar_power_inputs_from_document(
@@ -341,7 +352,8 @@ def lpar_power_inputs_from_document(
     system = config.get("system_name") if isinstance(config, dict) else None
     if lpar_power.SUBTASK not in subtasks or not system:
         return None
-    return LparPowerInputs(str(system))
+    group = config.get("vdisk_volume_group_name") if isinstance(config, dict) else ""
+    return LparPowerInputs(str(system), str(group or ""))
 
 
 async def _cli_rows(call, command: str, what: str) -> list[list[str]]:
@@ -354,20 +366,16 @@ async def _cli_rows(call, command: str, what: str) -> list[list[str]]:
 
 
 async def check_lpar_power(call, inputs: LparPowerInputs) -> list[Finding]:
-    """Run partitions, mappings backed by a run volume, adapters serving a run partition.
-
-    A run volume nothing maps is not read here: the only listing of a VIOS's
-    volumes is a VIOS command, which this script does not issue. The arm's own
-    teardown row names such a volume.
-    """
+    """Run partitions, and on each VIOS run volumes, mappings backed by one, and
+    adapters serving a run partition."""
     system = shlex.quote(inputs.system_name)
     rows = await _cli_rows(
         call,
-        f"lssyscfg -r lpar -m {system} -F name,state,lpar_env",
+        f"lssyscfg -r lpar -m {system} -F name,state,lpar_env,lpar_id",
         f"the partitions of {inputs.system_name}",
     )
     findings = []
-    for name, state, _ in (row for row in rows if len(row) == 3):
+    for name, state, _, _ in (row for row in rows if len(row) == 4):
         if not lpar_power.scratch_partitions([name]):
             continue
         quoted = shlex.quote(name)
@@ -383,9 +391,45 @@ async def check_lpar_power(call, inputs: LparPowerInputs) -> list[Finding]:
                 remedy=f"{shutdown}rmsyscfg -r lpar -m {system} -n {quoted}",
             )
         )
-    for vios in (row[0] for row in rows if len(row) == 3 and row[2] == "vioserver"):
-        findings += await _lpar_power_vios_residue(call, inputs, vios)
+    for vios, _, env, vios_id in (row for row in rows if len(row) == 4):
+        if env == "vioserver":
+            findings += await _lpar_power_vios_residue(call, inputs, vios)
+            findings += await _lpar_power_volumes_left(call, inputs, vios, vios_id)
     return findings
+
+
+async def _lpar_power_volumes_left(
+    call, inputs: LparPowerInputs, vios: str, vios_id: str
+) -> list[Finding]:
+    """Run volumes still in the configured group, on the VIOS that lists the group."""
+    status, groups = await call(
+        "hmc_list_volume_groups",
+        vios_name_or_uuid=vios,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(groups, list):
+        raise StateUnreadable(f"the volume groups of VIOS {vios}")
+    group = inputs.volume_group
+    if not any(isinstance(g, dict) and g.get("name") == group for g in groups):
+        return []
+    command = f"viosvrcmd -m {inputs.system_name} --id {vios_id} -c 'lsvg -lv {group}'"
+    if not _VOLUME_LISTING.fullmatch(command):
+        raise StateUnreadable(
+            f"the volumes of {group!r} (a name outside the read shape)"
+        )
+    status, listing = await call("hmc_run_command", cmd=command)
+    names = lpar_power._volume_names(listing) if status == "PASS" else None
+    if names is None:
+        raise StateUnreadable(f"the volumes of {group!r} on VIOS {vios}")
+    system = shlex.quote(inputs.system_name)
+    return [
+        Finding(
+            what=f"volume {name} on VIOS {vios}",
+            detail=f"an lpar-power volume is still in volume group {group}",
+            remedy=f'viosvrcmd -m {system} --id {vios_id} -c "rmlv -f {name}"',
+        )
+        for name in lpar_power.scratch_volumes(names)
+    ]
 
 
 async def _lpar_power_vios_residue(
@@ -757,6 +801,8 @@ def guard_read_only(tool: str, arguments: dict[str, Any]) -> None:
     if tool != "hmc_run_command":
         return
     command = str(arguments.get("cmd", "")).strip()
+    if _VOLUME_LISTING.fullmatch(command):
+        return
     if not command.startswith(_READ_ONLY_COMMAND_PREFIXES):
         raise MutatingCallRefused(
             "hmc_run_command is read-only only for lssyscfg and lshwres; "
