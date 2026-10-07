@@ -28,9 +28,10 @@ async def test_create_user_builds_document_from_typed_request() -> None:
     result = await create_user(hmc, "console-1", request)
 
     document = hmc.create_hmc_user.await_args.args[1]
-    assert '<UserID kb="COR" kxe="false">alice</UserID>' in document
+    assert '<UserID ksv="V1_17_0" kb="COR" kxe="false">alice</UserID>' in document
     assert (
-        '<UserDescription kb="CUD" kxe="false">operator</UserDescription>' in document
+        '<UserDescription ksv="V1_17_0" kb="CUD" kxe="false">operator</UserDescription>'
+        in document
     )
     assert result == {"Resource": {"UserID": "alice"}}
 
@@ -48,10 +49,13 @@ async def test_modify_user_preserves_explicit_clear_values() -> None:
     result = await modify_user(hmc, "console-1", "profile-1", patch)
 
     document = hmc.modify_hmc_user.await_args.args[2]
-    assert '<UserDescription kb="CUD" kxe="false"></UserDescription>' in document
-    assert '<AssociatedResourceRoles kb="CUD" kxe="false"/>' in document
     assert (
-        '<AllowSSHRemoteAccess kb="CUD" kxe="false">false</AllowSSHRemoteAccess>'
+        '<UserDescription ksv="V1_17_0" kb="CUD" kxe="false"></UserDescription>'
+        in document
+    )
+    assert '<AssociatedResourceRoles ksv="V1_17_0" kb="CUD" kxe="false"/>' in document
+    assert (
+        '<AllowSSHRemoteAccess ksv="V1_17_0" kb="CUD" kxe="false">false</AllowSSHRemoteAccess>'
         in document
     )
     assert result is None

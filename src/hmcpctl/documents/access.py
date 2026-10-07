@@ -32,6 +32,13 @@ def build_logon_request_document(user: str, password: str) -> str:
 # UOM UserProfile and ManagementConsole RemoteAccess documents
 
 
+# Every UserProfile element carries the facets the V10R3 capture lists: UserID is
+# create-only (COR) and the rest modifiable (CUD), and each names its schema level.
+# A create missing ksv, or carrying any other kb, fails REST0001 (#1375).
+_USER_ID_ATTRS = 'ksv="V1_17_0" kb="COR" kxe="false"'
+_MODIFIABLE_ATTRS = 'ksv="V1_17_0" kb="CUD" kxe="false"'
+
+
 @escapes_string_arguments
 def build_hmc_user_document(
     user_id: str | None = None,
@@ -63,11 +70,9 @@ def build_hmc_user_document(
             f"Invalid authentication_type {authentication_type!r}. Must be one of: "
             f"{', '.join(sorted(AUTHENTICATION_TYPES))}"
         )
-    # The V10R3 capture marks UserID create-only (COR) and every modifiable element
-    # CUD; a create carrying any other value fails REST0001 (#1375).
     parts = ["  <Metadata><Atom/></Metadata>"]
     if user_id is not None:
-        parts.append(f'  <UserID kb="COR" kxe="false">{user_id}</UserID>')
+        parts.append(f"  <UserID {_USER_ID_ATTRS}>{user_id}</UserID>")
     for name, value in (
         ("UserDescription", description),
         # The tool keeps the reference's spelling; the HMC lists and accepts only
@@ -80,28 +85,28 @@ def build_hmc_user_document(
         ("PasswordExpiry", password_expiry),
     ):
         if value is not None:
-            parts.append(f'  <{name} kb="CUD" kxe="false">{value}</{name}>')
+            parts.append(f"  <{name} {_MODIFIABLE_ATTRS}>{value}</{name}>")
     if associated_task_role is not None:
         if associated_task_role:
             parts.append(
-                f'  <AssociatedTaskRole kb="CUD" kxe="false">'
+                f"  <AssociatedTaskRole {_MODIFIABLE_ATTRS}>"
                 f"{associated_task_role}</AssociatedTaskRole>"
             )
         else:
-            parts.append('  <AssociatedTaskRole kb="CUD" kxe="false"/>')
+            parts.append(f"  <AssociatedTaskRole {_MODIFIABLE_ATTRS}/>")
     if associated_resource_roles is not None:
         if associated_resource_roles:
             roles = "".join(
-                f'<AssociatedResourceRole kb="CUD" kxe="false">{role}'
+                f"<AssociatedResourceRole {_MODIFIABLE_ATTRS}>{role}"
                 "</AssociatedResourceRole>"
                 for role in associated_resource_roles
             )
             parts.append(
-                '  <AssociatedResourceRoles kb="CUD" kxe="false" schemaVersion="V1_0">'
+                f'  <AssociatedResourceRoles {_MODIFIABLE_ATTRS} schemaVersion="V1_0">'
                 f"<Metadata><Atom/></Metadata>{roles}</AssociatedResourceRoles>"
             )
         else:
-            parts.append('  <AssociatedResourceRoles kb="CUD" kxe="false"/>')
+            parts.append(f"  <AssociatedResourceRoles {_MODIFIABLE_ATTRS}/>")
     for name, value in (
         ("SessionTimeout", session_timeout),
         ("VerifySessionTimeout", verify_session_timeout),
@@ -114,7 +119,7 @@ def build_hmc_user_document(
     ):
         if value is not None:
             rendered = str(value).lower() if isinstance(value, bool) else value
-            parts.append(f'  <{name} kb="CUD" kxe="false">{rendered}</{name}>')
+            parts.append(f"  <{name} {_MODIFIABLE_ATTRS}>{rendered}</{name}>")
     return document_envelope("UserProfile", "\n".join(parts), UOM_NS)
 
 
