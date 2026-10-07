@@ -531,7 +531,10 @@ Live on V10R3 (2026-10-07, POWER9) six of its eight observations passed:
 - `lpar.power_on` current-configuration activation: the PowerOn job ended
   `FAILED_TO_START` with "Parameter 'OperationType' is not allowed for this Job."
   (`INVALID_PARAMETER`). The same request without `operation_type` reached Open
-  Firmware, so `OperationType` alone is the refused input. That retry is a plain row.
+  Firmware, so `OperationType` alone was the refused input. Since #1392 the tool
+  accepts `operation_type="activate"` and sends no `OperationType`, so the arm
+  activates once, with no retry row, and this observation stays failed until a
+  re-run records it.
 - `provision.lpar` with the dedicated-slot argument: the slot is written into the new
   partition's profile, but the provision's PowerOn activates the current
   configuration, so the running partition does not own the slot.
