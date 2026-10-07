@@ -136,7 +136,7 @@ def hmc_create_vios_vfc_group_label(
 
     Args:
         system_name_or_uuid: Managed-system name or UUID.
-        label: New vFC group label.
+        label: New vFC group label, at most 16 characters.
         vios_names: Non-empty VIOS name list; mutually exclusive with ``vios_ids``.
         vios_ids: Non-empty VIOS ID list; mutually exclusive with ``vios_names``.
         profile: TOML profile name, or the environment-default HMC when omitted.
@@ -173,7 +173,7 @@ def hmc_update_vios_vfc_group_label(
         system_name_or_uuid: Managed-system name or UUID.
         label: Existing vFC group label.
         action: Rename, add-members, or remove-members operation.
-        new_name: Replacement label required only for rename.
+        new_name: Replacement label, required only for rename; at most 16 characters.
         vios_names: VIOS names required for a name-based membership change.
         vios_ids: VIOS IDs required for an ID-based membership change.
         profile: TOML profile name, or the environment-default HMC when omitted.
