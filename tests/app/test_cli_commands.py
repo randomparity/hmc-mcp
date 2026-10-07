@@ -1139,6 +1139,16 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     assert "ClientNetworkAdapter in virtual slot not reported" in result.stdout
 
 
+def test_lpars_power_on_partition_profile_help_states_the_discard():
+    """#1384: activating a profile discards current-configuration changes it lacks."""
+    result = RUNNER.invoke(cli.app, ["lpars", "power-on", "--help"])
+
+    assert result.exit_code == 0
+    # Single words only: Rich wraps the help column at the runner's terminal width.
+    assert "discards" in result.stdout
+    assert "CurrentProfileSync" in result.stdout
+
+
 @pytest.mark.parametrize("flags", [["--boot-mode", "bogus"], ["--keylock", "normal"]])
 def test_lpars_power_on_rejects_an_unknown_activation_value(fake_hmc, flags):
     """Typer refuses a non-member before the command body runs, so no job is sent."""
