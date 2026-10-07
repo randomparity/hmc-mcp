@@ -40,8 +40,8 @@
     {
       "operation": "boot_order.clear",
       "implementation": "partial",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:17:41Z"
     },
     {
@@ -54,8 +54,8 @@
     {
       "operation": "boot_order.set",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:17:41Z"
     },
     {
@@ -82,8 +82,8 @@
     {
       "operation": "cluster.get_pool",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:35:48Z"
     },
     {
@@ -131,8 +131,8 @@
     {
       "operation": "io_slot.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:27:22Z"
     },
     {
@@ -152,43 +152,43 @@
     {
       "operation": "lpar.capture_console",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.create",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.decommission",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.delete",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.dlpar_mem",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:17:41Z"
     },
     {
       "operation": "lpar.dlpar_proc",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:17:41Z"
     },
     {
@@ -292,8 +292,8 @@
     {
       "operation": "lpar.modify",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:17:41Z"
     },
     {
@@ -313,29 +313,29 @@
     {
       "operation": "lpar.power",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.power_off",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.power_on",
       "implementation": "partial",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.rename",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:17:41Z"
     },
     {
@@ -397,8 +397,8 @@
     {
       "operation": "media.create",
       "implementation": "implemented",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:20:22Z"
     },
     {
@@ -425,15 +425,15 @@
     {
       "operation": "media.get_repository",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:19:55Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:20:08Z"
     },
     {
@@ -558,43 +558,43 @@
     {
       "operation": "pcie.assign_dedicated_slot",
       "implementation": "partial",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:32:46Z"
     },
     {
       "operation": "pcie.list_dedicated_slots",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:27:19Z"
     },
     {
       "operation": "pcie.list_sriov_adapters",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:27:39Z"
     },
     {
       "operation": "pcie.list_sriov_logical_ports",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:28:10Z"
     },
     {
       "operation": "pcie.list_sriov_physical_ports",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:27:56Z"
     },
     {
       "operation": "pcie.unassign_dedicated_slot",
       "implementation": "partial",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:31:52Z"
     },
     {
@@ -621,8 +621,8 @@
     {
       "operation": "provision.lpar",
       "implementation": "implemented",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T02:44:34Z"
     },
     {
@@ -691,15 +691,15 @@
     {
       "operation": "storage.attach_disk",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:39:57Z"
     },
     {
       "operation": "storage.create_disk",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:37:57Z"
     },
     {
@@ -712,36 +712,36 @@
     {
       "operation": "storage.delete_disk",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:37:57Z"
     },
     {
       "operation": "storage.detach_mapping",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:37:38Z"
     },
     {
       "operation": "storage.list_mappings",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-06T22:20:42Z"
     },
     {
       "operation": "storage.list_volume_groups",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:35:37Z"
     },
     {
       "operation": "storage.map",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T00:37:38Z"
     },
     {

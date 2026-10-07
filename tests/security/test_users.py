@@ -2,7 +2,7 @@
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.documents import build_hmc_user_document
@@ -95,14 +95,55 @@ def test_user_profile_builder_follows_the_documented_shape() -> None:
     ]
     assert "href=" not in xml
     assert (
-        '<AssociatedTaskRole kb="CUR" kxe="false">hmcviewer</AssociatedTaskRole>' in xml
+        '<AssociatedTaskRole kb="CUD" kxe="false">hmcviewer</AssociatedTaskRole>' in xml
     )
     assert (
-        '<AssociatedResourceRoles kb="CUR" kxe="false" schemaVersion="V1_0">'
+        '<AssociatedResourceRoles kb="CUD" kxe="false" schemaVersion="V1_0">'
         "<Metadata><Atom/></Metadata>"
-        '<AssociatedResourceRole kb="CUR" kxe="false">AllSystemResources'
+        '<AssociatedResourceRole kb="CUD" kxe="false">AllSystemResources'
         "</AssociatedResourceRole></AssociatedResourceRoles>"
     ) in xml
+
+
+def test_user_profile_builder_marks_each_element_as_the_hmc_lists_it() -> None:
+    """V10R3 refused a create marking UserID ``kb="CUR"`` with REST0001, enumeration
+    ``[COR]`` (#1375); the HMC names only the first refused facet, so every element
+    is pinned to the captured profile."""
+    from xml.etree import ElementTree as ET
+
+    def kb_by_tag(xml: str) -> dict[str, str]:
+        return {
+            element.tag.rsplit("}", 1)[-1]: element.attrib["kb"]
+            for element in ET.fromstring(xml).iter()
+            if "kb" in element.attrib
+        }
+
+    captured = kb_by_tag(live_fixture("rest-user-profile")["body"])
+    built = kb_by_tag(
+        build_hmc_user_document(
+            user_id="u",
+            authentication_type="Local",
+            password="p",
+            description="d",
+            associated_task_role="hmcviewer",
+            associated_resource_roles=["AllSystemResources"],
+            password_expiry=30,
+            session_timeout=1,
+            verify_session_timeout=True,
+            idle_session_timeout=2,
+            user_inactivity=3,
+            minimum_password_age=4,
+            allow_web_remote_access=False,
+            allow_ssh_remote_access=False,
+            remote_user_id="r",
+        )
+    )
+
+    # The capture has no RemoteUserID (a local user); the reference lists it as
+    # Modifiable, which every captured modifiable element marks CUD.
+    assert built.pop("RemoteUserID") == "CUD"
+    assert built == {tag: captured[tag] for tag in built}
+    assert len(built) == 15
 
 
 @pytest.mark.parametrize(
@@ -117,7 +158,7 @@ def test_user_profile_builder_sends_the_hmcs_lowercase_authentication_type(
     xml = build_hmc_user_document(authentication_type=requested)
 
     assert (
-        f'<AuthenticationType kb="CUR" kxe="false">{wire}</AuthenticationType>' in xml
+        f'<AuthenticationType kb="CUD" kxe="false">{wire}</AuthenticationType>' in xml
     )
 
 
@@ -133,8 +174,8 @@ def test_user_profile_builder_distinguishes_omitted_and_cleared_roles() -> None:
     )
     assert "AssociatedTaskRole" not in omitted
     assert "AssociatedResourceRoles" not in omitted
-    assert '<AssociatedTaskRole kb="CUR" kxe="false"/>' in cleared
-    assert '<AssociatedResourceRoles kb="CUR" kxe="false"/>' in cleared
+    assert '<AssociatedTaskRole kb="CUD" kxe="false"/>' in cleared
+    assert '<AssociatedResourceRoles kb="CUD" kxe="false"/>' in cleared
 
 
 @pytest.mark.asyncio
