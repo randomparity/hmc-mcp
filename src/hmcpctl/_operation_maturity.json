@@ -5,8 +5,8 @@
     {
       "operation": "adapter.add_network",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T21:33:28Z"
     },
     {
@@ -26,8 +26,8 @@
     {
       "operation": "adapter.delete",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T21:33:28Z"
     },
     {
@@ -322,7 +322,7 @@
       "implementation": "partial",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T02:44:34Z"
+      "observed_at": "2026-10-07T20:32:48Z"
     },
     {
       "operation": "lpar.rename",

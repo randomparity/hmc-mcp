@@ -130,3 +130,16 @@ removed it, because the V10R3 `KeylockPosition` enumeration has no such value).
 already-running path; the parameter is optional on every surface and omitted from the document
 when unset, so a call passing none emits today's document byte for byte. Admitting
 `OperationType=changeKeylock` stays outside this decision.
+
+## Amendment (#1392): `activate` is accepted and never sent
+
+A V10R3 HMC refuses the parameter itself: a current-configuration PowerOn carrying
+`OperationType=activate` ended `FAILED_TO_START` with "Parameter 'OperationType' is not
+allowed for this Job." (`INVALID_PARAMETER`), and the same request without it reached Open
+Firmware (`docs/live-testing.md`, lpar-power arm). `activate` is the job's default, so
+`power_on_lpar_job` still validates `operation_type` but never emits `OperationType`; stating
+`activate` produces the document omitting it produces. The argument stays on all four surfaces
+and the vocabulary stays `activate` alone, so the decision above stands. Whether V10R3 accepts
+`OperationType` with any other value, or beside `LogicalPartitionProfile`, is untested; #868
+needs a live read of the PowerOn job's schema before it widens the `Literal` and puts the
+parameter back on the wire.

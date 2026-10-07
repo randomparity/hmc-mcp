@@ -356,7 +356,8 @@ def test_power_on_lpar_tool_forwards_activation_parameters(monkeypatch, mock_hmc
     assert '<ParameterValue kb="CUR" kxe="false">sms</ParameterValue>' in body
     assert ">LogicalPartitionProfile</ParameterName>" in body
     assert PARTITION_PROFILE_UUID in body
-    assert ">OperationType</ParameterName>" in body
+    # #1392: activate is accepted and never sent; V10R3 refuses OperationType.
+    assert ">OperationType</ParameterName>" not in body
     assert ">keylock</ParameterName>" in body
     assert '<ParameterValue kb="CUR" kxe="false">manual</ParameterValue>' in body
 
