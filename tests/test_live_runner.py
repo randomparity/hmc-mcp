@@ -23,6 +23,8 @@ import pytest
 from conftest import live_fixture
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.utilities.json_schema_type import json_schema_to_type
+from pydantic import TypeAdapter
 
 from hmcpctl.authorization import target_scope
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
@@ -3412,6 +3414,82 @@ def test_judge_create_result_reads_steps_not_call_status(
 ):
     """A failed step or workflow_completed=False downgrades PASS to FAIL (#997)."""
     result_status, note = observation.judge_create_result(status, data)
+    assert result_status == expected_status
+    if note_contains is None:
+        assert note == ""
+    else:
+        assert note_contains in note
+
+
+async def _served_result(tool: str, payload: dict[str, Any]) -> Any:
+    """*payload* typed the way the live client hands back *tool*'s served result."""
+    async with runner.served_client() as client:
+        (schema,) = [
+            t.output_schema for t in await client.list_tools() if t.name == tool
+        ]
+    if schema.get("x-fastmcp-wrap-result"):
+        schema = schema["properties"]["result"]
+    return TypeAdapter(json_schema_to_type(schema)).validate_python(payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool,payload,expected_status,note_contains",
+    [
+        (
+            "hmc_create_lpar",
+            {
+                "resource_created": True,
+                "workflow_completed": True,
+                "lpar": {"UUID": "u"},
+                "ownership_stamped": True,
+                "steps": [
+                    {"step": "create", "status": "ok"},
+                    {"step": "apply_profile", "status": "error", "result": "boom"},
+                ],
+                "warnings": [],
+            },
+            "FAIL",
+            "apply_profile failed: boom",
+        ),
+        (
+            "hmc_provision_lpar",
+            {
+                "resource_created": True,
+                "workflow_completed": False,
+                "lpar_uuid": "u",
+                "dry_run": False,
+                "ownership_stamped": True,
+                "steps": [{"step": "create", "status": "ok"}],
+                "warnings": [],
+            },
+            "FAIL",
+            "workflow_completed is false",
+        ),
+        (
+            "hmc_create_lpar",
+            {
+                "resource_created": True,
+                "workflow_completed": True,
+                "lpar": {"UUID": "u"},
+                "ownership_stamped": True,
+                "steps": [{"step": "create", "status": "ok"}],
+                "warnings": [],
+            },
+            "PASS",
+            None,
+        ),
+    ],
+)
+async def test_judge_create_result_reads_a_served_dataclass_result(
+    tool, payload, expected_status, note_contains
+):
+    """A served typed result is a generated dataclass, judged like a dict (#1369)."""
+    data = await _served_result(tool, payload)
+    assert dataclasses.is_dataclass(data)
+
+    result_status, note = observation.judge_create_result("PASS", data)
+
     assert result_status == expected_status
     if note_contains is None:
         assert note == ""
