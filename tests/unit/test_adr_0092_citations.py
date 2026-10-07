@@ -136,7 +136,6 @@ _NON_LPAR_MUTATORS = frozenset(
         "power_on_lpar",
         "set_sriov_adapter_mode",
         "install_vios",
-        "install_vios_by_lpar_selector",
     }
 )
 _GUARDED_DELEGATES = {
