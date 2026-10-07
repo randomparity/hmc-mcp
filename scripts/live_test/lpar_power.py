@@ -470,7 +470,7 @@ async def _create_cases(client: Client, state: RunState, run: Run) -> bool:
         ),
     )
     st, data = await _create(client, state, run, run.a_name, RESOURCES)
-    record_status, note = judge_create_result(st, _plain(data))
+    record_status, note = judge_create_result(st, data)
     state.record(SUBTASK, "hmc_create_lpar (partition A)", record_status, data, note)
     run.data[op] = data
     created = result_field(data, "lpar") if st == "PASS" else None
@@ -982,7 +982,7 @@ async def _provision(client: Client, state: RunState, run: Run) -> bool:
         power_on=True,
         assignments={"dedicated": [slot] if slot else []},
     )
-    record_status, note = judge_create_result(st, _plain(data))
+    record_status, note = judge_create_result(st, data)
     state.record(SUBTASK, "hmc_provision_lpar", record_status, data, note)
     run.data["provision.lpar"] = data
     found = result_field(data, "lpar_uuid") if st == "PASS" else None
