@@ -635,9 +635,9 @@
     {
       "operation": "remote_access.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:32:20Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:45:48Z"
     },
     {
       "operation": "resource_group.list_memopt_scores",
@@ -656,9 +656,9 @@
     {
       "operation": "resource_role.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:31:59Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:45:30Z"
     },
     {
       "operation": "snapshot.assess_affinity",
@@ -810,9 +810,9 @@
     {
       "operation": "task_role.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:31:53Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:45:25Z"
     },
     {
       "operation": "template.deploy",
@@ -873,37 +873,37 @@
     {
       "operation": "user.create",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:32:49Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:47:23Z"
     },
     {
       "operation": "user.delete",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T11:47:23Z"
     },
     {
       "operation": "user.get",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T11:47:23Z"
     },
     {
       "operation": "user.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:31:44Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:45:16Z"
     },
     {
       "operation": "user.modify",
       "implementation": "partial",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T11:47:23Z"
     },
     {
       "operation": "vios.backup",
