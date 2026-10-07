@@ -270,6 +270,24 @@ def test_the_profiles_verdict_names_each_change_it_makes(
     assert "skipped when ST0 reads sync_curr_profile as 1" in output
 
 
+def test_the_profiles_verdict_states_when_sync_curr_profile_changes(
+    workspace, monkeypatch, capsys
+):
+    """#1376. The sync round trip skips an activated partition or an invalid ST0 value."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "profiles", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "description (restored)" in output
+    assert (
+        "sync_curr_profile (restored; only when ST0 reads it as 0, 1 or 2 "
+        "and the partition as Not Activated)" in output
+    )
+    assert "(each restored)" not in output
+
+
 def test_the_users_verdict_discloses_the_scratch_user(workspace, monkeypatch, capsys):
     """#632. The arm creates an HMC-global user; the operator sees which first."""
     (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
