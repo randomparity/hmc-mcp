@@ -8,7 +8,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_add_network_adapter` | `mutate` | `adapter.add_network` | `lpar` | `implemented` | `unevidenced` | `existing-runtime-guards` | Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC. |
+| `hmc_add_network_adapter` | `mutate` | `adapter.add_network` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC. |
 | `hmc_add_vfc_adapter` | `mutate` | `adapter.add_vfc` | `lpar` | `implemented` | `unevidenced` | `existing-runtime-guards` | Add an NPIV virtual Fibre Channel client adapter to an LPAR. |
 | `hmc_add_vscsi_adapter` | `mutate` | `adapter.add_vscsi` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Add a virtual SCSI client adapter paired to a VIOS server slot. |
 | `hmc_delete_adapter` | `destructive` | `adapter.delete` | `lpar` | `implemented` | `unevidenced` | `existing-runtime-guards` | Remove an adapter by UUID, detaching its network or storage path. |
