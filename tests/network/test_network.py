@@ -116,6 +116,22 @@ async def test_create_virtual_network_refuses_an_unknown_switch_id_before_the_pu
     hmc.create_virtual_network.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_create_virtual_network_matches_a_switch_id_carrying_attributes():
+    """A leaf with a kept attribute parses as a mapping; its text still matches."""
+    hmc = AsyncMock()
+    hmc.list_virtual_switches.return_value = [
+        {"UUID": SWITCH_1_UUID, "Resource": {"SwitchID": {"@attrs": {}, "text": "1"}}}
+    ]
+    with patch(
+        "hmcpctl.operations.virtualization.network.resolve_system_uuid",
+        AsyncMock(return_value=SYSTEM_UUID),
+    ):
+        await create_virtual_network(hmc, "system-name", "net", 100, 1)
+
+    assert hmc.create_virtual_network.await_args.kwargs["switch_uuid"] == SWITCH_1_UUID
+
+
 def test_virtual_network_document():
     xml = build_virtual_network_document(
         "VLAN100-ETHERNET0",

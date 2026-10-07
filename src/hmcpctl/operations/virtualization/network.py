@@ -9,6 +9,7 @@ from hmcpctl.client.core import HMCClient
 
 from ...errors import HMCError
 from ...resource_identity import ResourceNotFoundError, resolve_system_uuid
+from ...xmlutil import leaf_text
 from ..error_translation import translate_virtual_network_create_error
 
 
@@ -49,15 +50,16 @@ async def _switch_uuid(hmc: HMCClient, system_uuid: str, switch_id: int) -> str:
     V10R3 refuses a VirtualNetwork create without its AssociatedSwitch link (#1374).
     """
     switches = await hmc.list_virtual_switches(system_uuid)
-    for switch in switches:
-        if switch["Resource"].get("SwitchID") == str(switch_id):
+    ids = [leaf_text(switch["Resource"].get("SwitchID")) for switch in switches]
+    for switch, found in zip(switches, ids, strict=True):
+        if found == str(switch_id):
             return switch["UUID"]
-    known = ", ".join(str(s["Resource"].get("SwitchID")) for s in switches) or "none"
+    known = ", ".join(str(found) for found in ids) or "none"
     raise ResourceNotFoundError(
         "VirtualSwitch",
         str(switch_id),
-        f"no VirtualSwitch has SwitchID {switch_id} (SwitchIDs on this system: "
-        f"{known}); choose one from hmc_list_virtual_switches",
+        f"no VirtualSwitch has SwitchID {switch_id} "
+        f"(SwitchIDs on this system: {known})",
     )
 
 
