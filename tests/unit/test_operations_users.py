@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import AsyncMock
 
 import pytest
 
+from hmcpctl.errors import HMCError
 from hmcpctl.operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,
@@ -36,9 +38,163 @@ async def test_create_user_builds_document_from_typed_request() -> None:
     assert result == {"Resource": {"UserID": "alice"}}
 
 
+_PROFILE = {
+    "UUID": "profile-1",
+    "Resource": {"UserID": "alice", "AuthenticationType": "local"},
+}
+
+
+@pytest.mark.asyncio
+async def test_create_user_sends_verify_session_timeout_as_minutes() -> None:
+    hmc = AsyncMock()
+    request = CreateUserRequest(
+        user_id="alice",
+        password="secret",  # pragma: allowlist secret -- synthetic fixture
+        authentication_type="Local",
+        verify_session_timeout=15,
+    )
+
+    await create_user(hmc, "console-1", request)
+
+    document = hmc.create_hmc_user.await_args.args[1]
+    assert (
+        '<VerifySessionTimeout ksv="V1_17_0" kb="CUD" kxe="false">15'
+        "</VerifySessionTimeout>" in document
+    )
+
+
+@pytest.mark.asyncio
+async def test_modify_user_sends_the_profiles_read_only_user_id() -> None:
+    """V10R3 refused a modify without UserID: REST0344, "UserID is missing or
+    invalid" (#1381). The tool takes no user_id, so it is read from the profile."""
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {
+        "UUID": "profile-1",
+        "Resource": {
+            "UserID": {"@attrs": {"kb": "COR"}, "text": "alice"},
+            "AuthenticationType": {"@attrs": {"kb": "CUD"}, "text": "ldap"},
+        },
+    }
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(verify_session_timeout=0)
+    )
+
+    hmc.get_hmc_user.assert_awaited_once_with("console-1", "profile-1")
+    document = hmc.modify_hmc_user.await_args.args[2]
+    assert '<UserID ksv="V1_17_0" kb="COR" kxe="false">alice</UserID>' in document
+    assert (
+        '<AuthenticationType ksv="V1_17_0" kb="CUD" kxe="false">ldap'
+        "</AuthenticationType>" in document
+    )
+    assert (
+        '<VerifySessionTimeout ksv="V1_17_0" kb="CUD" kxe="false">0'
+        "</VerifySessionTimeout>" in document
+    )
+
+
+@pytest.mark.asyncio
+async def test_modify_user_sends_a_supplied_authentication_type_over_the_profiles():
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(authentication_type="Kerberos")
+    )
+
+    document = hmc.modify_hmc_user.await_args.args[2]
+    assert ">kerberos</AuthenticationType>" in document
+    assert ">local</AuthenticationType>" not in document
+
+
+@pytest.mark.asyncio
+async def test_modify_user_needs_no_profile_authentication_type_when_supplied():
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {"Resource": {"UserID": "alice"}}
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(authentication_type="Local")
+    )
+
+    assert ">local</AuthenticationType>" in hmc.modify_hmc_user.await_args.args[2]
+
+
+@pytest.mark.asyncio
+async def test_modify_user_resends_an_upper_case_profile_authentication_type():
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {
+        "Resource": {"UserID": "alice", "AuthenticationType": "LDAP"}
+    }
+
+    await modify_user(hmc, "console-1", "profile-1", ModifyUserPatch())
+
+    assert ">ldap</AuthenticationType>" in hmc.modify_hmc_user.await_args.args[2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        (None, "returned no UserID"),
+        (
+            {"UUID": "profile-1", "Resource": {"AuthenticationType": "local"}},
+            "returned no UserID",
+        ),
+        (
+            {"Resource": {"UserID": "", "AuthenticationType": "local"}},
+            "returned no UserID",
+        ),
+        ({"Resource": {"UserID": "alice"}}, "returned no AuthenticationType"),
+        (
+            {"Resource": {"UserID": "alice", "AuthenticationType": "radius"}},
+            "AuthenticationType 'radius'.*cannot resend",
+        ),
+    ],
+    ids=[
+        "profile-missing",
+        "user-id-missing",
+        "user-id-empty",
+        "authentication-type-missing",
+        "authentication-type-unknown",
+    ],
+)
+async def test_modify_user_refuses_before_posting_without_required_fields(
+    profile: object, message: str
+) -> None:
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = profile
+
+    with pytest.raises(HMCError, match=f"profile-1.*{message}"):
+        await modify_user(hmc, "console-1", "profile-1", ModifyUserPatch())
+
+    hmc.modify_hmc_user.assert_not_awaited()
+
+
+@pytest.mark.parametrize("value", [True, False, -1])
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda value: CreateUserRequest(
+            user_id="alice",
+            password="secret",  # pragma: allowlist secret -- synthetic fixture
+            authentication_type="Local",
+            verify_session_timeout=value,
+        ),
+        lambda value: ModifyUserPatch(verify_session_timeout=value),
+    ],
+    ids=["create", "modify"],
+)
+def test_verify_session_timeout_must_be_non_negative_minutes(
+    build: Callable[[object], object], value: object
+) -> None:
+    with pytest.raises(ValueError, match="verify_session_timeout .*minutes"):
+        build(value)
+
+
 @pytest.mark.asyncio
 async def test_modify_user_preserves_explicit_clear_values() -> None:
     hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
     hmc.modify_hmc_user.return_value = None
     patch = ModifyUserPatch(
         description="",

@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
+from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmcpctl.cli_commands.legacy_policy import compile_legacy_policy
+from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.server_tools.users import core as server_users
 
 
@@ -49,7 +55,7 @@ def test_create_user_tool_forwards_identifiers_and_optional_fields() -> None:
             associated_resource_roles=resource_roles,
             password_expiry=30,
             session_timeout=60,
-            verify_session_timeout=False,
+            verify_session_timeout=15,
             idle_session_timeout=15,
             user_inactivity=90,
             minimum_password_age=2,
@@ -72,7 +78,7 @@ def test_create_user_tool_forwards_identifiers_and_optional_fields() -> None:
             associated_resource_roles=resource_roles,
             password_expiry=30,
             session_timeout=60,
-            verify_session_timeout=False,
+            verify_session_timeout=15,
             idle_session_timeout=15,
             user_inactivity=90,
             minimum_password_age=2,
@@ -104,7 +110,7 @@ def test_modify_user_tool_preserves_explicit_clear_values() -> None:
             associated_resource_roles=[],
             password_expiry=0,
             session_timeout=0,
-            verify_session_timeout=False,
+            verify_session_timeout=0,
             idle_session_timeout=0,
             user_inactivity=0,
             minimum_password_age=0,
@@ -125,7 +131,7 @@ def test_modify_user_tool_preserves_explicit_clear_values() -> None:
             associated_resource_roles=[],
             password_expiry=0,
             session_timeout=0,
-            verify_session_timeout=False,
+            verify_session_timeout=0,
             idle_session_timeout=0,
             user_inactivity=0,
             minimum_password_age=0,
@@ -200,3 +206,33 @@ def test_user_tools_name_their_targets(tool_name, expected) -> None:
         (target.kind, target.argument) for target in TOOL_SECURITY[tool_name].targets
     }
     assert expected in built
+
+
+_TIMEOUT_CALLS = {
+    "hmc_create_user": {"console_uuid": "c", "user_id": "u", "password": "p"},
+    "hmc_modify_user": {"console_uuid": "c", "user_profile_uuid": "u"},
+}
+
+
+@pytest.mark.parametrize("tool", sorted(_TIMEOUT_CALLS))
+@pytest.mark.parametrize("value", [True, False, -1])
+def test_verify_session_timeout_is_refused_at_the_mcp_boundary(tool, value) -> None:
+    """FastMCP validates in lax mode, so JSON ``true`` would reach the HMC as 1
+    minute; a boolean or negative value is refused before a client opens (#1381)."""
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    async def call() -> dict:
+        async with Client(create_mcp(policy)) as client:
+            tools = {item.name: item for item in await client.list_tools()}
+            with pytest.raises(ToolError, match="verify_session_timeout"):
+                await client.call_tool(
+                    tool, {**_TIMEOUT_CALLS[tool], "verify_session_timeout": value}
+                )
+            return tools[tool].input_schema["properties"]["verify_session_timeout"]
+
+    with patch(
+        "hmcpctl._app.client_from_env", side_effect=AssertionError("client opened")
+    ):
+        schema = asyncio.run(call())
+
+    assert {"type": "integer", "minimum": 0} in schema["anyOf"]

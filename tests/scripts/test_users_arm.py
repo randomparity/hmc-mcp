@@ -82,18 +82,25 @@ class FakeHmc:
             AllowSSHRemoteAccess={
                 "text": str(fields["allow_ssh_remote_access"]).lower()
             },
+            VerifySessionTimeout={"text": str(fields["verify_session_timeout"])},
         )
 
     def hmc_get_user(self, console_uuid: str, user_profile_uuid: str) -> dict:
         return copy.deepcopy(self.users[user_profile_uuid])
 
     def hmc_modify_user(
-        self, console_uuid: str, user_profile_uuid: str, description: str
+        self,
+        console_uuid: str,
+        user_profile_uuid: str,
+        description: str,
+        verify_session_timeout: int | None = None,
     ) -> None:
         resource = self.users[user_profile_uuid]["Resource"]
         resource["UserDescription"] = (
             {"text": description} if description else {"ksv": "V1_17_0"}
         )
+        if verify_session_timeout is not None:
+            resource["VerifySessionTimeout"] = {"text": str(verify_session_timeout)}
 
     def hmc_delete_user(self, console_uuid: str, user_profile_uuid: str) -> str:
         del self.users[user_profile_uuid]
@@ -154,13 +161,15 @@ async def test_the_lifecycle_records_verified_postconditions(hmc):
     assert create["associated_task_role"] == "hmcviewer"
     assert create["allow_web_remote_access"] is False
     assert create["allow_ssh_remote_access"] is False
+    assert create["verify_session_timeout"] == 15
     assert hmc.calls[12][1] == {
         "console_uuid": CONSOLE,
         "user_profile_uuid": "uuid-new",
     }
-    assert [
-        call[1]["description"] for call in hmc.calls if call[0] == "hmc_modify_user"
-    ][1] == ""
+    modifies = [call[1] for call in hmc.calls if call[0] == "hmc_modify_user"]
+    assert modifies[0]["verify_session_timeout"] == 5
+    assert modifies[1]["description"] == ""
+    assert modifies[1]["verify_session_timeout"] is None
     observed = _observations(state)
     assert sorted(observed) == sorted(
         [
@@ -369,8 +378,8 @@ async def test_a_modify_that_resets_remote_access_fails_the_modify(hmc, monkeypa
     """A partial POST that resets unsupplied fields must not promote user.modify."""
     original = hmc.hmc_modify_user
 
-    def resetting(console_uuid: str, user_profile_uuid: str, description: str):
-        original(console_uuid, user_profile_uuid, description)
+    def resetting(console_uuid: str, user_profile_uuid: str, **changes: Any):
+        original(console_uuid, user_profile_uuid, **changes)
         hmc.users[user_profile_uuid]["Resource"]["AllowWebRemoteAccess"] = {
             "text": "true"
         }
@@ -400,3 +409,36 @@ async def test_a_refused_create_records_no_observation_for_steps_never_called(hm
     skipped = {row["tool"] for row in state.results if row["status"] == "SKIP"}
     assert skipped == {"hmc_get_user", "hmc_modify_user", "hmc_delete_user"}
     assert "hmc_delete_user" not in [tool for tool, _ in hmc.calls]
+
+
+@pytest.mark.asyncio
+async def test_an_ignored_verify_session_timeout_fails_create_and_modify(
+    hmc, monkeypatch
+):
+    """The minutes sent must read back: an HMC that keeps its default (the V10R3
+    capture reads 0) promotes neither user.create nor user.modify (#1381)."""
+    create, modify = hmc.hmc_create_user, hmc.hmc_modify_user
+
+    def keeping_default(tool, *args: Any, **kwargs: Any) -> None:
+        tool(*args, **kwargs)
+        for user in hmc.users.values():
+            user["Resource"]["VerifySessionTimeout"] = {"text": "0"}
+
+    monkeypatch.setattr(
+        hmc, "hmc_create_user", lambda *a, **k: keeping_default(create, *a, **k)
+    )
+    monkeypatch.setattr(
+        hmc, "hmc_modify_user", lambda *a, **k: keeping_default(modify, *a, **k)
+    )
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    observed = _observations(state)
+    assert observed["user.create"]["result"] == "failed"
+    assert (
+        "verify-session-timeout-read-back" not in observed["user.create"]["assertions"]
+    )
+    assert observed["user.modify"]["result"] == "failed"
+    assert "verify-session-timeout-updated" not in observed["user.modify"]["assertions"]
+    assert observed["user.get"]["result"] == "passed"
