@@ -86,6 +86,11 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Fixed
 
+- `hmc_power_on_lpar`, `hmcpctl lpars power-on --operation-type` and the operations below them
+  still accept `operation_type="activate"` but no longer send the `OperationType` PowerOn
+  parameter, which a V10R3 HMC refuses with "Parameter 'OperationType' is not allowed for this
+  Job." (`INVALID_PARAMETER`). `activate` is the job's default, so stating it now activates
+  exactly as omitting it does (#1392).
 - `hmc_create_virtual_network` and `hmc_add_network_adapter` refuse a VLAN id outside 1-4094
   with a `ValueError` before any HMC call; they previously sent any integer to the HMC (#629).
 - `hmc_create_virtual_network` sends `NetworkName` with `kb="CUR"`, as the HMC serves it. A V10R3
