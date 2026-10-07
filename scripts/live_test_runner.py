@@ -299,7 +299,6 @@ class LiveTestConfig:
     system_name: str = "example-lt-609-system"
     lp3_name: str = "example-lt-609-lpar"
     scratch_name: str = "example-lt-609-scratch"
-    nettest_name: str = "example-lt-609-network"
     vdisk_name: str = "lt609-disk"
     scratch_create_desired_memory_mib: int = 1536
     scratch_create_max_memory_mib: int = 3072
@@ -370,7 +369,6 @@ class LiveTestConfig:
         "LIVE_TEST_SYSTEM_NAME": "system_name",
         "LIVE_TEST_LPAR_NAME": "lp3_name",
         "LIVE_TEST_SCRATCH_LPAR_NAME": "scratch_name",
-        "LIVE_TEST_NETWORK_TEST_LPAR_NAME": "nettest_name",
         "LIVE_TEST_VDISK_NAME": "vdisk_name",
         "LIVE_TEST_SCRATCH_CREATE_DESIRED_MEMORY_MIB": "scratch_create_desired_memory_mib",
         "LIVE_TEST_SCRATCH_CREATE_MAX_MEMORY_MIB": "scratch_create_max_memory_mib",
@@ -427,8 +425,9 @@ class LiveTestConfig:
     #: Settings a release stopped reading. A `.env` still carrying one loads, with
     #: a notice, so retiring a setting does not stop every arm on every host.
     #: `LIVE_TEST_TEST_USER_NAME`: the users arm mints its scratch user's name (#632).
+    #: `LIVE_TEST_NETWORK_TEST_LPAR_NAME`: #1361 removed ST9's network-test partition.
     _RETIRED_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"LIVE_TEST_TEST_USER_NAME"}
+        {"LIVE_TEST_TEST_USER_NAME", "LIVE_TEST_NETWORK_TEST_LPAR_NAME"}
     )
 
     @classmethod
@@ -619,7 +618,6 @@ class LiveTestArtifacts:
     test_vswitch_id: int | None = None
     test_network_uuid: str | None = None
     test_adapter_uuid: str | None = None
-    nettest_uuid: str | None = None
     job_uuid_sample: str | None = None
     vg_uuid: str | None = None
     vdisk_vg_name: str | None = None
@@ -1357,7 +1355,6 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "test_user_name",
         "test_network_uuid",
         "test_adapter_uuid",
-        "nettest_uuid",
         "job_uuid_sample",
         "vg_uuid",
         "vdisk_vg_name",
@@ -1383,8 +1380,10 @@ def _decode_saved_config(value: Any) -> LiveTestConfig:
     # valid restore source; every other field difference remains a mismatch.
     parsed.pop("dry_run_vios_slot", None)
     parsed.pop("dry_run_vios_partition_id", None)
-    # And before #632 retired the configured test-user name.
+    # And before #632 retired the configured test-user name, or #1377 the
+    # network-test partition.
     parsed.pop("test_user", None)
+    parsed.pop("nettest_name", None)
     if set(parsed) != set(expected):
         raise ValueError("results config fields do not match LiveTestConfig")
     protected = parsed["protected_lpar_names"]
@@ -1415,6 +1414,8 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
     # Every other field difference remains a mismatch.
     parsed.pop("test_user_uuid", None)
     parsed.setdefault("test_user_name", None)
+    # And one written before #1377 dropped the unused network-test partition.
+    parsed.pop("nettest_uuid", None)
     # Likewise a document written before the vios-backup arm (#1349) existed, or
     # before the vmedia arm tracked its repository and medium (#1347).
     for name in (*_VIOS_BACKUP_ARTIFACTS, *_VMEDIA_REPOSITORY_ARTIFACTS):
