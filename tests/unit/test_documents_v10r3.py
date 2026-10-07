@@ -219,10 +219,6 @@ BUILT = {
         "a.iso", LINK, "vt2"
     ),
     "virtual-network": documents.build_virtual_network_document("n1", 10, 0, LINK),
-    "media-repository-delete": documents.build_media_repository_delete_document("vg1"),
-    "optical-media-delete": documents.build_virtual_optical_media_delete_document(
-        "a.iso", "vg1"
-    ),
     "web-file": documents.build_web_file_document(
         "a.iso", 1, "00000000-0000-0000-0000-000000000001"
     ),

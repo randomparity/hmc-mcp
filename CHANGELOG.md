@@ -94,6 +94,10 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   with `vios_name_or_uuid` and `vios_ip` in place of `lpar_name_or_uuid` and `lpar_ip`. The
   `lpar.install_os` capability and maturity rows are gone; `cli:commands/installios` stays bound
   by `vios.install`. The server exposes 162 tools by default.
+- `hmcpctl.documents.build_media_repository_delete_document` and
+  `build_virtual_optical_media_delete_document` are removed. No request path called them:
+  `hmc_delete_media_repository` and `hmc_delete_optical_media` remove the node by VolumeGroup
+  read-modify-write (#1415).
 
 ### Fixed
 
