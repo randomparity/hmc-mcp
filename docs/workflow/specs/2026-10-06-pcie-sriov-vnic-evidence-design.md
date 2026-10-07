@@ -72,13 +72,10 @@ rows never promote. The ADRs that admitted these operations (0053–0058, 0113, 
    -F lpar_name` returns through `hmc_run_command`. When that read returns the empty-result
    line, `vnic.list` records the empty row and a gap.
 
-   `sriov.set_mode` stays out of the phase unless the orchestrator grants it (see
-   Ambiguities). If granted, the live phase makes one call, with adapter A's current mode. It
-   asserts `current-mode-confirmed` (the call returns the "already in" answer) and
-   `adapter-mode-unchanged` (a re-read of adapter A's mode equals the first read). The
-   observation's variant is `current-mode-confirmation`. It is never recorded as a
-   transition. A request for the other mode is never sent live, since it is a transition
-   request to a mutating tool. Its refusal is pinned by unit tests only.
+   `sriov.set_mode` stays out of the phase (Rulings). The handler only reads, but the tool
+   is registered as mutating, and this window does not call it live. Its existing record
+   keeps `current-mode-confirmation` as implemented and `adapter-mode-transition` as
+   missing (#667), with no evidence.
 
 3. **One live observation per operation.** The catalog keeps one
    (`docs/capabilities/README.md`). When a run yields several for one operation, the record
@@ -162,6 +159,25 @@ assignment of slots that no partition owns and no profile lists. The snapshot co
 catalog takes only the closed-shape observation records. The results document itself is
 never published.
 
+### Live result (2026-10-06, V10R3 / POWER9 boundary system, run at `0d6c0b5d`)
+
+Preflight, the dedicated arm and the recovery check ran in that order. The run recorded
+37 rows, all PASS, with no FAIL and no SKIP. Recovery exited 0 (CLEAN). The before and
+after snapshots were identical: slot ownership, partitions with their states, SR-IOV
+adapters, and configured and unconfigured logical ports. The run issued no SR-IOV or vNIC
+write and no `sriov.set_mode` call. No partition on the system has a vNIC, so `vnic.list`
+recorded its `(empty)` row and stays a gap.
+
+| Operation | Observation | Result |
+|---|---|---|
+| `pcie.list_dedicated_slots`, `io_slot.list`, `pcie.list_sriov_adapters`, `pcie.list_sriov_physical_ports`, `pcie.list_sriov_logical_ports` | ST29 `st29-pcie-inventory` | passed |
+| `pcie.assign_dedicated_slot` | ST31 `st29-dedicated-pcie` (ST36 also passed) | passed |
+| `pcie.unassign_dedicated_slot` | ST36 `st36-io-slots` | passed |
+| the other six | — | unevidenced (gaps below) |
+
+ST36's `required-slot-removed-by-zero-suffix` held, so the ADR 0166 note records that
+precondition as met.
+
 ## Live gaps
 
 | Case | Prerequisite |
@@ -173,9 +189,8 @@ never published.
 | `vnic.add` failover backing | excluded (#669) |
 | a non-empty `vnic.list` | a partition with a vNIC at run time |
 | SR-IOV port reads | an adapter in SR-IOV mode at run time |
-| `sriov.set_mode` current-mode confirmation | orchestrator grant (Ambiguities), else none |
+| `sriov.set_mode` current-mode confirmation | a window that authorizes the call live (not run in this one, by orchestrator ruling) |
 | `io_slot.list` class filter selecting a non-empty set | a slot of PCI class `0200` on the system |
-| an `is_required=1` element removed by `//0` (ADR 0166) | ST36's two further free slots, if this run's ST36 SKIPs |
 
 ## Failure model
 
@@ -216,8 +231,8 @@ never published.
 - The catalog is checked through `just capability-inventory`.
 - The live run is the proof against hardware.
 
-## Ambiguities
+## Rulings
 
-Both rulings are referred to the orchestrator: where the read phase lives, and whether
-`sriov.set_mode`'s read-only confirmation may run live. The defaults are the narrower
-choices: no new subtask, and `set_mode` stays a gap.
+The orchestrator ruled on both questions (2026-10-06). First, the read phase lives in the
+dedicated arm, under no new subtask. Second, `sriov.set_mode` is not called live in this
+window, so it stays a named gap. A transition has never been verified.

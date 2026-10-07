@@ -8,4 +8,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_list_io_slots` | `read` | `io_slot.list` | `managed_system` | `implemented` | `unevidenced` | `existing-runtime-guards` | List physical I/O slots, optionally filtered by PCI class. |
+| `hmc_list_io_slots` | `read` | `io_slot.list` | `managed_system` | `implemented` | `current` | `existing-runtime-guards` | List physical I/O slots, optionally filtered by PCI class. |
