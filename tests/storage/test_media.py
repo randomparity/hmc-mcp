@@ -209,7 +209,7 @@ async def test_create_optical_media(mock_hmc):
     assert "VirtualOpticalMedia" in body
     assert "aix.iso" in body
     # The medium's Size is GiB on the HMC: 3072 MiB is sent as 3.
-    assert re.search(r"Size>3</", body)
+    assert re.search(r"<Size\b[^>]*>3</", body)
 
 
 @pytest.mark.asyncio
