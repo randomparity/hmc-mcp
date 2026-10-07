@@ -4590,7 +4590,7 @@ def test_static_argument_resolution_reads_conversions_and_f_strings(
 
 
 def test_every_sriov_identifier_argument_is_actually_type_checked():
-    """The 23 arguments #763 fixed must stay resolvable, not just the global budget.
+    """The 23 arguments #763 fixed, and #630's 3, must stay resolvable, not just the budget.
 
     The coverage floor in the schema test is a whole-tree total, so a later change
     could stop resolving every SR-IOV identifier and stay under it by resolving
@@ -4616,7 +4616,7 @@ def test_every_sriov_identifier_argument_is_actually_type_checked():
             if "sriov" in (site.tool or "")
             for name, _ in site.arguments
         )
-        == 23
+        == 26
     )
 
 
@@ -6403,6 +6403,22 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "remaining-slot-stable",
             "remove-command-succeeded",
             "empty-profile-reads-none",
+        },
+        "st29-pcie-inventory": {
+            "slot-rows-identified",
+            "owners-normalized",
+            "matches-dedicated-inventory",
+            "class-filter-exact",
+            "capability-available",
+            "adapter-rows-parsed",
+            "adapter-filter-selects-one",
+            "ports-listed",
+            "granularity-positive",
+            "adapter-required-refused",
+            "ports-belong-to-adapter",
+            "parents-are-listed-ports",
+            "configured-capacity-bounded",
+            "vnic-rows-parsed",
         },
         "st23-sriov-logical-port": {
             "assign-call-succeeded",
