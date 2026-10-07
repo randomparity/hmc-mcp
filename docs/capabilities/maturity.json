@@ -3567,7 +3567,26 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st3-hmc-list-volume-groups",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st3-storage-inventory",
+          "observed_at": "2026-10-07T00:35:37Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "configured-group-listed",
+            "groups-match-vios",
+            "no-free-space-diagnostic"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "storage.create_volume_group",
@@ -3595,7 +3614,27 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st40-hmc-create-virtual-disk",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st40-disk-lifecycle",
+          "observed_at": "2026-10-07T00:37:57Z",
+          "cleanup": "passed",
+          "assertions": [
+            "create-accepted",
+            "volume-listed",
+            "free-space-reduced",
+            "baseline-volumes-kept"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "storage.delete_disk",
@@ -3609,7 +3648,28 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st40-hmc-delete-virtual-disk",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st40-disk-lifecycle",
+          "observed_at": "2026-10-07T00:37:57Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "refused-while-mapped",
+            "delete-accepted",
+            "volume-absent",
+            "volumes-equal-baseline",
+            "free-space-restored"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "storage.map",
@@ -3627,7 +3687,26 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st40-hmc-map-storage-to-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st40-disk-lifecycle",
+          "observed_at": "2026-10-07T00:37:38Z",
+          "cleanup": "passed",
+          "assertions": [
+            "map-accepted",
+            "mapping-listed",
+            "baseline-mappings-kept"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "storage.detach_mapping",
@@ -3641,7 +3720,28 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st40-hmc-detach-storage-mapping",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st40-disk-lifecycle",
+          "observed_at": "2026-10-07T00:37:38Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "detach-accepted",
+            "mapping-absent",
+            "mappings-equal-baseline",
+            "adapters-equal-baseline",
+            "volume-survives"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "storage.attach_disk",
@@ -3655,7 +3755,26 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st40-hmc-attach-disk-to-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st40-attach-disk",
+          "observed_at": "2026-10-07T00:39:57Z",
+          "cleanup": "passed",
+          "assertions": [
+            "workflow-completed",
+            "volume-listed",
+            "mapping-listed"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "cluster.list",
@@ -3697,7 +3816,24 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st3-hmc-get-shared-storage-pool",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st3-pool-read",
+          "observed_at": "2026-10-07T00:35:48Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "absent-pool-not-returned"
+          ],
+          "tested_commit": "3d3f76d447e639937e9ffaf92016147410dd76b6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "49bcaeaf3cc028fdea43684a5351e1567e22ff3e71f285f5769458d152526476"
+        }
+      ]
     },
     {
       "operation": "cluster.create_logical_unit",

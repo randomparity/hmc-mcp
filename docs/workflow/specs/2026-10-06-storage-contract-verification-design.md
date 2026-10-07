@@ -210,3 +210,26 @@ line; the raw output stays private.
   the volume name is generated hex; the recovery guard admits one exact `lsvg -lv`
   shape built from a closed character set.
 - Out of scope: a hostile HMC.
+
+## Live result (2026-10-07, V10R3 / POWER9 boundary system)
+
+Run at `3d3f76d4`. Preflight passed, the run completed with 61 rows (59 PASS, 2 FAIL,
+0 SKIP), and it emitted seven observations, all `passed`. The two FAIL rows are the
+refusals the scenarios expect, and the observations assert both:
+
+- the absent-pool read was answered HTTP 404 `REST029B`;
+- the delete while mapped was refused by hmcpctl's guard before any write.
+
+The before snapshot showed the configured group with well over 2 GiB free and the test
+partition `Not Activated`. The VolumeGroup read-modify-write create succeeded, so ST14's
+406 expectation was stale, and removing it is confirmed. Each mapping added a new adapter
+pair, and the detach removed it again.
+
+Recovery exited 0 (CLEAN). The before and after read-only snapshots were byte-identical.
+
+| Operation | Result |
+|---|---|
+| `storage.list_volume_groups`, `storage.create_disk`, `storage.map`, `storage.detach_mapping`, `storage.delete_disk`, `storage.attach_disk` | passed |
+| `cluster.get_pool` | passed (absent-pool branch only; a positive read is the gap above) |
+| `cluster.list`, `cluster.list_pools` | unevidenced: the HMC manages no cluster or pool |
+| `storage.create_volume_group`, `cluster.create_logical_unit`, `cluster.delete_logical_unit` | unevidenced (gaps above) |

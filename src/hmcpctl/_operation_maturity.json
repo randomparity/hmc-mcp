@@ -82,9 +82,9 @@
     {
       "operation": "cluster.get_pool",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:35:48Z"
     },
     {
       "operation": "cluster.list",
@@ -628,16 +628,16 @@
     {
       "operation": "storage.attach_disk",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:39:57Z"
     },
     {
       "operation": "storage.create_disk",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:37:57Z"
     },
     {
       "operation": "storage.create_volume_group",
@@ -649,16 +649,16 @@
     {
       "operation": "storage.delete_disk",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:37:57Z"
     },
     {
       "operation": "storage.detach_mapping",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:37:38Z"
     },
     {
       "operation": "storage.list_mappings",
@@ -670,16 +670,16 @@
     {
       "operation": "storage.list_volume_groups",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:35:37Z"
     },
     {
       "operation": "storage.map",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T00:37:38Z"
     },
     {
       "operation": "system.get",
