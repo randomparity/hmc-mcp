@@ -288,7 +288,12 @@ async def _discover_vios(client: Client, state: RunState) -> None:
             resource = get_resource(e)
             uuid = e.get("UUID") or e.get("uuid")
             pid = resource.get("PartitionID") or resource.get("partition_id")
-            if uuid:
+            if isinstance(uuid, str) and uuid:
+                if pid is not None and not isinstance(pid, str | int):
+                    raise TypeError(
+                        f"hmc_list_vios entry {uuid} has a PartitionID of type "
+                        f"{type(pid).__name__}; expected a string or integer"
+                    )
                 vios_uuid = uuid
                 vios_partition_id = int(pid) if pid is not None else None
                 break
