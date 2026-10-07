@@ -151,6 +151,29 @@ def test_user_profile_builder_marks_each_element_as_the_hmc_lists_it() -> None:
     assert len(built) == 15
 
 
+def test_user_profile_builder_sends_the_empty_password_element_as_the_hmc_serves_it():
+    """V10R3 refuses a modify without UserProfilePassword (REST0344, #1409) and never
+    returns the value, so an unchanged password is sent as the empty element the GET
+    serves: same facets, no text."""
+    from xml.etree import ElementTree as ET
+
+    def password_element(xml: str) -> ET.Element:
+        (element,) = (
+            e
+            for e in ET.fromstring(xml).iter()
+            if e.tag.endswith("}UserProfilePassword")
+        )
+        return element
+
+    xml = build_hmc_user_document(user_id="u")
+    served = password_element(live_fixture("rest-user-profile")["body"])
+    sent = password_element(xml)
+
+    assert sent.attrib == served.attrib
+    assert sent.text is None and served.text is None
+    assert '<UserProfilePassword ksv="V1_17_0" kb="CUD" kxe="false"/>' in xml
+
+
 @pytest.mark.parametrize(
     ("requested", "wire"),
     [("Local", "local"), ("LDAP", "ldap"), ("Kerberos", "kerberos")],
