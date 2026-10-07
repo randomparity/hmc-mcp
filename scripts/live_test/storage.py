@@ -108,17 +108,12 @@ def volume_group_names(listing: object) -> frozenset[str] | None:
     return frozenset(names)
 
 
-def _vios_id(state: RunState) -> int | None:
-    vios_id = state.artifacts.vios_partition_id
-    return vios_id if type(vios_id) is int else None
-
-
 async def _verify_volume_groups(
     client: Client, state: RunState, data: list[Any], configured_listed: bool
 ) -> None:
     """Check the REST listing against the VIOS's own ``lsvg`` (independent CLI)."""
-    vios_id = _vios_id(state)
-    if vios_id is None:
+    vios_id = state.artifacts.vios_partition_id
+    if type(vios_id) is not int:
         state.record(3, "hmc_list_volume_groups", "PASS", data)
         return
     st, listing = await state.call(
@@ -194,10 +189,10 @@ def _identified(entry: object, name_field: str) -> bool:
 def _collection_read(
     state: RunState, tool: str, status: str, data: object
 ) -> list[Any] | None:
-    """The listing to check, or None after recording why there is none.
+    """The listing to check, or None for a failed read.
 
     A failed read is recorded by its caller as a failed observation. An empty feed
-    proves no entry shape, so it stays a plain row here.
+    proves no entry shape, so it is recorded here as a plain row.
     """
     if status != "PASS" or not isinstance(data, list):
         return None
