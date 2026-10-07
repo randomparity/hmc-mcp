@@ -152,30 +152,30 @@
     {
       "operation": "lpar.capture_console",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:01:01Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.create",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:04:44Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.decommission",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.delete",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:04:44Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.dlpar_mem",
@@ -313,23 +313,23 @@
     {
       "operation": "lpar.power",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.power_off",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:01:26Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.power_on",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T12:59:53Z"
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "lpar.rename",
@@ -621,9 +621,9 @@
     {
       "operation": "provision.lpar",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T02:44:34Z"
     },
     {
       "operation": "remote_access.configure",
