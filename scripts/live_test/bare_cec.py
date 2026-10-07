@@ -132,6 +132,26 @@ class _Run:
     slot_assigned: bool = False
 
 
+def _record_held(
+    state: RunState,
+    tool: str,
+    *,
+    assertions: list[Assertion],
+    cleanup: str,
+    data: Any,
+) -> None:
+    """Record a step judged as `record_verified` would judge it, without promoting it.
+
+    The lpar-power arm (subtask 41) owns these operations' observations, and the
+    catalog keeps one per operation, so this arm's would overwrite it (#1346).
+    """
+    unmet = [item.id for item in assertions if not item.holds]
+    if cleanup == "failed":
+        unmet.append("cleanup failed")
+    note = "unmet: " + ", ".join(unmet) if unmet else ""
+    state.record(_ROW, tool, "FAIL" if unmet else "PASS", data, note)
+
+
 def _power_operations_authorized() -> bool:
     """Whether the server this run builds enforces the ADR 0092 power guard."""
     try:
@@ -457,11 +477,9 @@ async def _activate_to_sms(
             cleanup="not-required",
             data={"partition_state": reached},
         )
-    state.record_verified(
-        _ROW,
+    _record_held(
+        state,
         "hmc_power_on_lpar",
-        operation="lpar.power_on",
-        scenario=_SCENARIO,
         assertions=[
             Assertion(
                 "activation-job-successful",
@@ -560,11 +578,9 @@ async def _observe(
         idle_timeout_seconds=30.0,
     )
     capture = data if st == "PASS" and isinstance(data, dict) else {}
-    state.record_verified(
-        _ROW,
+    _record_held(
+        state,
         "hmc_capture_lpar_console",
-        operation="lpar.capture_console",
-        scenario=_SCENARIO,
         assertions=[
             Assertion(
                 "console-captured",
@@ -595,11 +611,9 @@ async def _power_off_to_not_activated(
         if st == "PASS" and failure is None
         else None
     )
-    state.record_verified(
-        _ROW,
+    _record_held(
+        state,
         "hmc_power_off_lpar",
-        operation="lpar.power_off",
-        scenario=_SCENARIO,
         assertions=[
             Assertion(
                 "power-off-job-successful",
@@ -832,11 +846,9 @@ async def _delete(client: Client, state: RunState, run: _Run) -> bool:
     # Gone, whatever the call reported: a lost response has still deleted.
     fixture.created = False
     released = await _slot_released(client, state, fixture)
-    state.record_verified(
-        _ROW,
+    _record_held(
+        state,
         "hmc_delete_lpar",
-        operation="lpar.delete",
-        scenario=_SCENARIO,
         assertions=[
             Assertion("delete-call-succeeded", st == "PASS"),
             Assertion("lpar-name-absent", absent),
@@ -922,11 +934,9 @@ def _record_create_and_assign(state: RunState, run: _Run, clean: bool) -> None:
     fixture = run.fixture
     cleanup = "passed" if clean else "failed"
     if run.create_attempted:
-        state.record_verified(
-            _ROW,
+        _record_held(
+            state,
             "hmc_create_lpar",
-            operation="lpar.create",
-            scenario=_SCENARIO,
             assertions=[
                 Assertion("lpar-uuid-resolved", fixture.lpar_uuid is not None),
                 Assertion("ownership-and-baseline-confirmed", run.create_ok),

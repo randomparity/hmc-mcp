@@ -35,20 +35,23 @@ _PROFILE_UUID = "0A1B2C3D-0000-4000-8000-000000000002"
 _JOB_ID = "4711"
 _PROFILE_READ = profile_io_slot_rows_command(_SYSTEM)
 
-#: The twelve operations whose evidence this arm exists to produce (issue #876).
+#: The operations whose evidence this arm produces (issue #876).
 _PROMOTED = {
-    "lpar.create",
     "pcie.assign_dedicated_slot",
     "pcie.unassign_dedicated_slot",
-    "lpar.power_on",
-    "lpar.power_off",
-    "lpar.capture_console",
     "job.get",
     "job.wait",
-    "lpar.delete",
     "lpar.list_refcodes",
     "lpar.get_state",
     "pcie.list_dedicated_slots",
+}
+#: Judged but not promoted: the lpar-power arm owns their observations (#1346).
+_HELD = {
+    "lpar.create": "hmc_create_lpar",
+    "lpar.power_on": "hmc_power_on_lpar",
+    "lpar.power_off": "hmc_power_off_lpar",
+    "lpar.capture_console": "hmc_capture_lpar_console",
+    "lpar.delete": "hmc_delete_lpar",
 }
 
 _DEFAULT = object()
@@ -291,6 +294,20 @@ def _observations(state: runner.RunState) -> dict[str, dict[str, Any]]:
     return {item["operation"]: item["observation"] for item in state.observations}
 
 
+def _held(state: runner.RunState) -> dict[str, dict[str, Any]]:
+    """Each judged-but-held step's row, keyed by its operation, when it ran."""
+    held = {}
+    for operation, tool in _HELD.items():
+        rows = [row for row in state.results if row["tool"] == tool]
+        assert len(rows) <= 1, f"{tool} recorded more than once"
+        if rows:
+            held[operation] = {
+                "result": "passed" if rows[0]["status"] == "PASS" else "failed",
+                "unmet": rows[0]["note"],
+            }
+    return held
+
+
 def _assert_torn_down(world: World) -> None:
     assert not world.created
     assert world.io_slots == "none"
@@ -311,17 +328,14 @@ def test_happy_path_promotes_every_operation_and_leaves_nothing(schemas):
     assert set(observations) == _PROMOTED
     assert {o["result"] for o in observations.values()} == {"passed"}
     assert {o["scenario"] for o in observations.values()} == {"st35-bare-cec"}
+    held = _held(state)
+    assert set(held) == set(_HELD)
+    assert {item["unmet"] for item in held.values()} == {""}
     ids = [item["observation"]["id"] for item in state.observations]
     assert len(ids) == len(set(ids)), (
         "a duplicate id discards the observations document"
     )
-    assert observations["lpar.create"]["cleanup"] == "passed"
     assert observations["pcie.assign_dedicated_slot"]["cleanup"] == "passed"
-    assert set(observations["lpar.delete"]["assertions"]) == {
-        "delete-call-succeeded",
-        "lpar-name-absent",
-        "slot-released",
-    }
     assert set(observations["lpar.get_state"]["assertions"]) == {
         "state-read-returned-a-state"
     }
@@ -459,7 +473,7 @@ def test_a_no_profile_activation_that_boots_is_powered_off_before_sms(schemas):
         t for t in world.tools() if t in {"hmc_power_on_lpar", "hmc_power_off_lpar"}
     ]
     assert tools[:3] == ["hmc_power_on_lpar", "hmc_power_off_lpar", "hmc_power_on_lpar"]
-    assert _observations(state)["lpar.power_on"]["result"] == "passed"
+    assert _held(state)["lpar.power_on"]["result"] == "passed"
 
 
 def test_platform_dump_runs_only_on_opt_in(schemas):
@@ -490,13 +504,12 @@ def test_a_timed_out_activation_fails_ends_the_steps_and_still_tears_down(schema
 
     _run(world, state)
 
-    observations = _observations(state)
-    assert observations["lpar.power_on"]["result"] == "failed"
-    assert "lpar.get_state" not in observations
+    assert _held(state)["lpar.power_on"]["result"] == "failed"
+    assert "lpar.get_state" not in _observations(state)
     assert "JobTimedOut" in _row(state, "hmc_power_on_lpar")["data"]
     assert "hmc_read_lpar_refcodes" not in world.tools()
     assert "hmc_power_off_lpar (teardown)" in [row["tool"] for row in state.results]
-    assert observations["lpar.delete"]["result"] == "passed"
+    assert _held(state)["lpar.delete"]["result"] == "passed"
     _assert_torn_down(world)
 
 
@@ -613,11 +626,11 @@ def test_a_partition_that_will_not_power_off_is_left_with_recovery_commands(
         assert command in recovery["data"]
     assert "hmc_unassign_dedicated_pcie_slot" not in world.tools()
     assert "hmc_delete_lpar" not in world.tools()
-    observations = _observations(state)
-    assert observations["lpar.create"]["result"] == "failed"
-    assert observations["lpar.create"]["cleanup"] == "failed"
-    assert "pcie.unassign_dedicated_slot" not in observations
-    assert "lpar.delete" not in observations
+    held = _held(state)
+    assert held["lpar.create"]["result"] == "failed"
+    assert "cleanup failed" in held["lpar.create"]["unmet"]
+    assert "pcie.unassign_dedicated_slot" not in _observations(state)
+    assert "lpar.delete" not in held
     assert world.created
 
 
@@ -668,7 +681,7 @@ def test_a_transient_identity_read_is_re_read_before_teardown_acts(
 
     _run(world, state)
 
-    assert _observations(state)["lpar.delete"]["result"] == "passed"
+    assert _held(state)["lpar.delete"]["result"] == "passed"
     _assert_torn_down(world)
 
 
@@ -698,7 +711,7 @@ def test_a_never_confirmed_fixture_goes_to_the_shared_guards(schemas):
     _run(world, state)
 
     assert "hmc_power_on_lpar" not in world.tools()
-    assert _observations(state)["lpar.create"]["result"] == "failed"
+    assert _held(state)["lpar.create"]["result"] == "failed"
     assert any(row["subtask"] == 34 for row in state.results)
 
 
@@ -725,9 +738,9 @@ def test_a_delete_whose_response_was_lost_is_judged_by_readback(schemas):
 
     _run(world, state)
 
-    delete = _observations(state)["lpar.delete"]
+    delete = _held(state)["lpar.delete"]
     assert delete["result"] == "failed"
-    assert set(delete["assertions"]) == {"lpar-name-absent", "slot-released"}
+    assert delete["unmet"] == "unmet: delete-call-succeeded"
     assert len(world.calls_to("hmc_delete_lpar")) == 1, (
         "no second delete of a gone partition"
     )
@@ -743,7 +756,7 @@ def test_a_transient_name_read_after_a_delete_is_re_read_not_alarmed(schemas):
 
     _run(world, state)
 
-    assert _observations(state)["lpar.delete"]["result"] == "passed"
+    assert _held(state)["lpar.delete"]["result"] == "passed"
     assert not any(row["subtask"] == 34 for row in state.results)
     _assert_torn_down(world)
 
@@ -759,10 +772,10 @@ def test_a_missing_profile_link_stops_before_assigning_and_deletes(schemas):
 
     assert _row(state, "activation profile")["status"] == "FAIL"
     assert "hmc_assign_dedicated_pcie_slot" not in world.tools()
-    observations = _observations(state)
-    assert observations["lpar.create"]["result"] == "passed"
-    assert observations["lpar.delete"]["result"] == "passed"
-    assert "pcie.assign_dedicated_slot" not in observations
+    held = _held(state)
+    assert held["lpar.create"]["result"] == "passed"
+    assert held["lpar.delete"]["result"] == "passed"
+    assert "pcie.assign_dedicated_slot" not in _observations(state)
     _assert_torn_down(world)
 
 
