@@ -66,6 +66,41 @@
       "observed_at": "2026-10-06T20:34:59Z"
     },
     {
+      "operation": "cluster.create_logical_unit",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "cluster.delete_logical_unit",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "cluster.get_pool",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:35:48Z"
+    },
+    {
+      "operation": "cluster.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "cluster.list_pools",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "console.info",
       "implementation": "implemented",
       "verification": "stale",
@@ -633,11 +668,60 @@
       "observed_at": null
     },
     {
+      "operation": "storage.attach_disk",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:39:57Z"
+    },
+    {
+      "operation": "storage.create_disk",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:37:57Z"
+    },
+    {
+      "operation": "storage.create_volume_group",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "storage.delete_disk",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:37:57Z"
+    },
+    {
+      "operation": "storage.detach_mapping",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:37:38Z"
+    },
+    {
       "operation": "storage.list_mappings",
       "implementation": "implemented",
       "verification": "current",
       "reason": null,
       "observed_at": "2026-10-06T22:20:42Z"
+    },
+    {
+      "operation": "storage.list_volume_groups",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:35:37Z"
+    },
+    {
+      "operation": "storage.map",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:37:38Z"
     },
     {
       "operation": "system.get",

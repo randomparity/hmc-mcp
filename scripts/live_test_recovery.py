@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import shlex
 import sys
 from collections.abc import Set as AbstractSet
@@ -56,7 +57,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import lpar_config, network, vios_backup
+from live_test import lpar_config, network, storage_lifecycle, vios_backup
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
@@ -109,6 +110,13 @@ _NOT_ACTIVATED = "Not Activated"
 #: `lshwres` list; `chsyscfg` would mutate, and shares the tool.
 _READ_ONLY_COMMAND_PREFIXES = ("lssyscfg ", "lshwres ")
 
+#: The one VIOS command admitted: the storage arm's `lsvg -lv` volume listing.
+#: A `viosvrcmd` prefix would admit any VIOS command (`rmlv` included), so the
+#: whole shape must match, built from a closed character set.
+_VOLUME_LISTING = re.compile(
+    r"viosvrcmd -m [A-Za-z0-9_.-]+ --id [0-9]+ -c 'lsvg -lv [A-Za-z0-9_.-]+'"
+)
+
 #: A command built from a results document must not be able to chain a second
 #: one behind an admitted prefix.
 _SHELL_METACHARACTERS = frozenset(";|&$`<>()\n")
@@ -120,15 +128,22 @@ _VMEDIA_SUBTASKS = frozenset(range(16, 23))
 #: not by the document's name, so a run killed before it wrote its document, or
 #: overwritten by a later run's, still has its user reported.
 _USERS_SUBTASK = 11
-_WITNESSED_SUBTASKS = _VMEDIA_SUBTASKS | {
-    _USERS_SUBTASK,
-    24,
-    25,
-    vios_backup.SUBTASK,
-    network.INVENTORY_SUBTASK,
-    network.SUBTASK,
-    lpar_config.SUBTASK,
-}
+#: The storage arm (#1348): ST40's volume and mapping are read back by name prefix;
+#: ST0 and ST3 only read.
+_STORAGE_SUBTASKS = frozenset({0, 3, storage_lifecycle.SUBTASK})
+_WITNESSED_SUBTASKS = (
+    _VMEDIA_SUBTASKS
+    | _STORAGE_SUBTASKS
+    | {
+        _USERS_SUBTASK,
+        24,
+        25,
+        vios_backup.SUBTASK,
+        network.INVENTORY_SUBTASK,
+        network.SUBTASK,
+        lpar_config.SUBTASK,
+    }
+)
 
 #: The vMedia calls that make the repository the run's own. Media calls are not
 #: among them: the arm creates and removes its own media inside a repository it
@@ -648,6 +663,8 @@ def guard_read_only(tool: str, arguments: dict[str, Any]) -> None:
     if tool != "hmc_run_command":
         return
     command = str(arguments.get("cmd", "")).strip()
+    if _VOLUME_LISTING.fullmatch(command):
+        return
     if not command.startswith(_READ_ONLY_COMMAND_PREFIXES):
         raise MutatingCallRefused(
             "hmc_run_command is read-only only for lssyscfg and lshwres; "
@@ -845,11 +862,14 @@ class LparResidueInputs:
     powered_on: bool
     boot_written: bool
     boot_baseline: str | None
+    storage_ran: bool = False
+    volume_group: str = ""
 
     @property
     def applies(self) -> bool:
         return (
             self.vmedia_ran
+            or self.storage_ran
             or self.provisioned
             or self.repository_owned
             or self.powered_on
@@ -939,6 +959,8 @@ def lpar_inputs_from_document(
         boot_written=bool(saved_boot)
         or bool(_calls(document, {20, 22}, {"hmc_set_lpar_boot_order"})),
         boot_baseline=_boot_baseline(document, saved_boot),
+        storage_ran=storage_lifecycle.SUBTASK in subtasks,
+        volume_group=str(config.get("vdisk_volume_group_name") or ""),
     )
     return inputs if inputs.applies else None
 
@@ -1010,7 +1032,7 @@ async def _unmapped_server_adapters(call, inputs: LparResidueInputs) -> Finding 
     A mapping names its adapter (`vhost0`), the listing its slot, so the two are
     compared by count; joining them needs the REST shape #1250 captures.
     """
-    if not (inputs.vmedia_ran or inputs.provisioned):
+    if not (inputs.vmedia_ran or inputs.provisioned or inputs.storage_ran):
         return None
     vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "server adapters")
     vios_id = inputs.vios_partition_id
@@ -1129,6 +1151,75 @@ async def _run_media_left(call, inputs: LparResidueInputs) -> Finding | None:
     )
 
 
+async def _run_disk_mapping_left(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether a mapping backed by a run-named volume is still on the VIOS."""
+    if not inputs.storage_ran:
+        return None
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "storage mappings")
+    status, data = await call(
+        "hmc_list_storage_mappings",
+        vios_name_or_uuid=vios,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(data, list):
+        raise StateUnreadable(f"could not list storage mappings on {vios} ({status})")
+    left = sorted(
+        (str(entry.get("id")), str(entry.get("backing_name")))
+        for entry in storage_lifecycle.disk_mapping_rows(data)
+    )
+    if not left:
+        return None
+    system = f"--system {_q(inputs.system_name)}"
+    return Finding(
+        "run disk mapping left",
+        "; ".join(f"{name} is still mapped as {id_}" for id_, name in left)
+        + f" on VIOS {vios}",
+        "; ".join(
+            f"hmcpctl storage detach-mapping {_q(vios)} {_q(id_)} {system}"
+            for id_, _ in left
+        ),
+    )
+
+
+async def _run_disk_left(call, inputs: LparResidueInputs) -> Finding | None:
+    """Whether a run-named volume is still in the configured volume group."""
+    if not inputs.storage_ran:
+        return None
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "logical volumes")
+    vios_id = inputs.vios_partition_id
+    group = inputs.volume_group
+    if type(vios_id) is not int or not all(
+        storage_lifecycle.LISTING_NAME.fullmatch(name)
+        for name in (inputs.system_name, group)
+    ):
+        raise StateUnreadable(
+            "the document records no integer artifacts.vios_partition_id, or a "
+            "system or volume-group name the read-only listing cannot carry"
+        )
+    status, listing = await call(
+        "hmc_run_command",
+        cmd=storage_lifecycle.volume_listing(inputs.system_name, vios_id, group),
+    )
+    names = storage_lifecycle.volume_names(listing) if status == "PASS" else None
+    if names is None:
+        raise StateUnreadable(f"could not list the volumes in {group} ({status})")
+    left = sorted(name for name in names if storage_lifecycle.is_run_disk_name(name))
+    if not left:
+        return None
+    system = f"--system {_q(inputs.system_name)}"
+    return Finding(
+        "run disk left",
+        f"{', '.join(left)} created by the run is still in volume group {group} on "
+        f"VIOS {vios}",
+        f"hmcpctl storage list-vgs {_q(vios)} {system} (for the group's UUID); "
+        + "; ".join(
+            f"hmcpctl storage delete-disk {_q(vios)} --vg <{group} UUID> --name "
+            f"{name} {system}"
+            for name in left
+        ),
+    )
+
+
 async def _partition_running(call, inputs: LparResidueInputs) -> Finding | None:
     """Whether ST20 left the test partition running after its boot probe."""
     if not inputs.powered_on:
@@ -1194,6 +1285,8 @@ _PARTITION_CHECKS = (
     _partition_running,
     _optical_mapping_left,
     _run_media_left,
+    _run_disk_mapping_left,
+    _run_disk_left,
     _unmapped_server_adapters,
     _repository_left,
     _boot_string_drift,
