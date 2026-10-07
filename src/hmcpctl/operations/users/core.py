@@ -98,13 +98,15 @@ async def create_user(
 _AUTHENTICATION_SPELLING = {kind.lower(): kind for kind in AUTHENTICATION_TYPES}
 
 
-def _profile_text(resource: dict[str, Any], name: str, user_profile_uuid: str) -> str:
+def _profile_text(
+    resource: dict[str, Any], name: str, user_profile_uuid: str, remedy: str
+) -> str:
     """Return a profile element a modify must resend, or refuse before any POST."""
     value = leaf_text(resource.get(name))
     if not isinstance(value, str) or not value:
         raise HMCError(
             f"User profile {user_profile_uuid!r} returned no {name}, which the HMC "
-            "requires to modify it; confirm the UUID with hmc_list_users"
+            f"requires to modify it; {remedy}"
         )
     return value
 
@@ -124,16 +126,24 @@ async def modify_user(
     """
     profile = await hmc.get_hmc_user(console_uuid, user_profile_uuid)
     resource = (profile or {}).get("Resource") or {}
-    user_id = _profile_text(resource, "UserID", user_profile_uuid)
+    user_id = _profile_text(
+        resource, "UserID", user_profile_uuid, "confirm the UUID with hmc_list_users"
+    )
     fields = asdict(patch)
     if fields["authentication_type"] is None:
-        current = _profile_text(resource, "AuthenticationType", user_profile_uuid)
+        current = _profile_text(
+            resource,
+            "AuthenticationType",
+            user_profile_uuid,
+            "passing authentication_type sets how the user authenticates",
+        )
         fields["authentication_type"] = _AUTHENTICATION_SPELLING.get(current.lower())
         if fields["authentication_type"] is None:
             raise HMCError(
                 f"User profile {user_profile_uuid!r} returned AuthenticationType "
-                f"{current!r}, which is not one of "
-                f"{', '.join(sorted(AUTHENTICATION_TYPES))}; pass authentication_type"
+                f"{current!r}, which this tool cannot resend (it knows "
+                f"{', '.join(sorted(AUTHENTICATION_TYPES))}); passing "
+                "authentication_type would change how the user authenticates"
             )
     document = build_hmc_user_document(user_id=user_id, **fields)
     return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, document)

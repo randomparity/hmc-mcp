@@ -108,16 +108,46 @@ async def test_modify_user_sends_a_supplied_authentication_type_over_the_profile
 
 
 @pytest.mark.asyncio
+async def test_modify_user_needs_no_profile_authentication_type_when_supplied():
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {"Resource": {"UserID": "alice"}}
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(authentication_type="Local")
+    )
+
+    assert ">local</AuthenticationType>" in hmc.modify_hmc_user.await_args.args[2]
+
+
+@pytest.mark.asyncio
+async def test_modify_user_resends_an_upper_case_profile_authentication_type():
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {
+        "Resource": {"UserID": "alice", "AuthenticationType": "LDAP"}
+    }
+
+    await modify_user(hmc, "console-1", "profile-1", ModifyUserPatch())
+
+    assert ">ldap</AuthenticationType>" in hmc.modify_hmc_user.await_args.args[2]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("profile", "field"),
+    ("profile", "message"),
     [
-        (None, "UserID"),
-        ({"UUID": "profile-1", "Resource": {"AuthenticationType": "local"}}, "UserID"),
-        ({"Resource": {"UserID": "", "AuthenticationType": "local"}}, "UserID"),
-        ({"Resource": {"UserID": "alice"}}, "AuthenticationType"),
+        (None, "returned no UserID"),
+        (
+            {"UUID": "profile-1", "Resource": {"AuthenticationType": "local"}},
+            "returned no UserID",
+        ),
+        (
+            {"Resource": {"UserID": "", "AuthenticationType": "local"}},
+            "returned no UserID",
+        ),
+        ({"Resource": {"UserID": "alice"}}, "returned no AuthenticationType"),
         (
             {"Resource": {"UserID": "alice", "AuthenticationType": "radius"}},
-            "AuthenticationType",
+            "AuthenticationType 'radius'.*cannot resend",
         ),
     ],
     ids=[
@@ -129,12 +159,12 @@ async def test_modify_user_sends_a_supplied_authentication_type_over_the_profile
     ],
 )
 async def test_modify_user_refuses_before_posting_without_required_fields(
-    profile: object, field: str
+    profile: object, message: str
 ) -> None:
     hmc = AsyncMock()
     hmc.get_hmc_user.return_value = profile
 
-    with pytest.raises(HMCError, match=f"profile-1.*{field}"):
+    with pytest.raises(HMCError, match=f"profile-1.*{message}"):
         await modify_user(hmc, "console-1", "profile-1", ModifyUserPatch())
 
     hmc.modify_hmc_user.assert_not_awaited()
