@@ -210,14 +210,12 @@ def _failed_with(status: str, data: object, text: str) -> bool:
     return status == "FAIL" and isinstance(data, CallFailure) and text in data.message
 
 
-async def _cli(client: Client, state: RunState, cmd: str) -> str | None:
-    return await lpar_config._cli(client, state, cmd)
-
-
 async def _partition_lines(client: Client, state: RunState, system: str) -> Any:
     quoted = shlex.quote(system)
     return _lines(
-        await _cli(client, state, f"lssyscfg -r lpar -m {quoted} -F name,state")
+        await lpar_config._cli(
+            client, state, f"lssyscfg -r lpar -m {quoted} -F name,state"
+        )
     )
 
 
@@ -253,7 +251,7 @@ async def _volumes(client: Client, state: RunState, run: Run) -> frozenset[str] 
         f"viosvrcmd -m {shlex.quote(run.system)} --id {run.vios.partition_id} "
         f"-c 'lsvg -lv {run.vios.group}'"
     )
-    return _volume_names(await _cli(client, state, command))
+    return _volume_names(await lpar_config._cli(client, state, command))
 
 
 async def _read_baseline(client: Client, state: RunState, run: Run) -> Baseline | None:
@@ -262,7 +260,7 @@ async def _read_baseline(client: Client, state: RunState, run: Run) -> Baseline 
     partitions = await _partition_lines(client, state, run.system)
     pools = await lpar_config._read_pools(client, state, run.system)
     slots = _lines(
-        await _cli(
+        await lpar_config._cli(
             client,
             state,
             f"lshwres -r io --rsubtype slot -m {quoted} -F drc_index,lpar_name",
@@ -275,7 +273,7 @@ async def _read_baseline(client: Client, state: RunState, run: Run) -> Baseline 
         return baseline
     mappings = await _mappings(client, state, run)
     adapters = _lines(
-        await _cli(
+        await lpar_config._cli(
             client,
             state,
             scsi_adapter_listing(run.system, "lpar_ids", run.vios.partition_id),
@@ -984,7 +982,7 @@ async def _provision_checks(
     if slot:
         quoted = shlex.quote(run.system)
         owners = _lines(
-            await _cli(
+            await lpar_config._cli(
                 client,
                 state,
                 f"lshwres -r io --rsubtype slot -m {quoted} -F drc_index,lpar_name",
