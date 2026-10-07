@@ -47,7 +47,12 @@ def lpars_power_on(
     partition_profile: str | None = typer.Option(
         None,
         "--partition-profile",
-        help="UUID of the partition profile to activate against; not the connection profile",
+        help=(
+            "UUID of the partition profile to activate against; not the connection "
+            "profile. Activating it discards current-configuration changes it lacks "
+            "(memory, processor and adapter changes), unless it is the partition's "
+            "current profile and CurrentProfileSync was On"
+        ),
     ),
     operation_type: PowerOnOperationType | None = typer.Option(
         None, "--operation-type", help="PowerOn operation type"
