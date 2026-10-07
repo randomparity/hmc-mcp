@@ -22,7 +22,7 @@ sys.path.insert(0, str(SCRIPTS_ROOT))
 import live_bare_cec as wrapper  # noqa: E402
 import live_test_runner as runner  # noqa: E402
 from live_test import bare_cec, pcie  # noqa: E402
-from live_test.observation import Assertion  # noqa: E402
+from live_test.observation import CLEANUP, Assertion  # noqa: E402
 
 from hmcpctl.errors import HMCError  # noqa: E402
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command  # noqa: E402
@@ -861,3 +861,20 @@ def test_record_held_refuses_an_unknown_cleanup_value():
         )
 
     assert recorded == []
+
+
+@pytest.mark.parametrize("cleanup", sorted(CLEANUP))
+def test_record_held_judges_cleanup_as_record_verified_does(cleanup):
+    recorded: list[Any] = []
+    state: Any = SimpleNamespace(record=lambda *args: recorded.append(args))
+
+    bare_cec._record_held(
+        state,
+        "hmc_delete_lpar (judged)",
+        assertions=[Assertion("delete-call-succeeded", True)],
+        cleanup=cleanup,
+        data="",
+    )
+
+    expected = "PASS" if cleanup in {"passed", "not-required"} else "FAIL"
+    assert [args[-3] for args in recorded] == [expected]

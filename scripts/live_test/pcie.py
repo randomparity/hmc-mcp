@@ -1928,8 +1928,8 @@ def _record_held(
     if cleanup not in CLEANUP:
         raise ValueError(f"cleanup disposition is not a known value: {cleanup!r}")
     unmet = [item.id for item in assertions if not item.holds]
-    if cleanup == "failed":
-        unmet.append("cleanup failed")
+    if cleanup not in {"passed", "not-required"}:
+        unmet.append(f"cleanup {cleanup}")
     note = "unmet: " + ", ".join(unmet) if unmet else ""
     state.record(subtask, tool, "FAIL" if unmet else "PASS", data, note)
 
