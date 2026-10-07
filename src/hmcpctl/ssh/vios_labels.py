@@ -15,6 +15,10 @@ from .transport import HMCCLIError, run_hmc_command
 ViosGroupUpdateAction = Literal["rename", "add-members", "remove-members"]
 _MAX_GROUP_MEMBERS = 1024
 _MAX_GROUP_MEMBER_BYTES = 16 * 1024
+# HSCLC3A4 on V10R3 is the only evidence for this cap; the command reference
+# states no limit. Whether the HMC counts characters or bytes for non-ASCII
+# names is unevidenced, so this counts characters.
+_MAX_GROUP_LABEL_CHARACTERS = 16
 
 
 def _nonblank(value: str, field: str) -> str:
@@ -25,6 +29,17 @@ def _nonblank(value: str, field: str) -> str:
             f"VIOS label operation {field} {value!r} contains a control character"
         )
     return value
+
+
+def _group_label_name(value: str, field: str) -> str:
+    name = _nonblank(value, field)
+    if len(name) > _MAX_GROUP_LABEL_CHARACTERS:
+        raise ValueError(
+            f"VIOS vFC group {field} {name!r} has {len(name)} characters; "
+            f"the HMC accepts at most {_MAX_GROUP_LABEL_CHARACTERS}, so choose a "
+            "shorter name"
+        )
+    return name
 
 
 def _single_vios_selector(
@@ -273,7 +288,7 @@ async def create_vios_vfc_group_label(
     vios_ids: Sequence[int] | None = None,
 ) -> dict[str, object]:
     system = _nonblank(system_name, "system_name")
-    label_value = _nonblank(label, "label")
+    label_value = _group_label_name(label, "label")
     attribute, members = _member_selector(vios_names, vios_ids)
     record = build_attribute_record(
         [("resource", "vfc"), (attribute, ",".join(map(str, members)))],
@@ -308,7 +323,7 @@ async def update_vios_vfc_group_label(
     if action == "rename":
         if vios_names is not None or vios_ids is not None or new_name is None:
             raise ValueError("rename requires only new_name")
-        renamed = _nonblank(new_name, "new_name")
+        renamed = _group_label_name(new_name, "new_name")
         record = build_attribute_record([("new_name", renamed)])
         values: dict[str, object] = {"label": label_value, "new_name": renamed}
     elif action in {"add-members", "remove-members"}:
