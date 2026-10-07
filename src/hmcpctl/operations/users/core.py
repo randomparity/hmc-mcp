@@ -13,6 +13,19 @@ from ...documents import (
 )
 
 
+def _require_timeout_minutes(value: int | None) -> None:
+    """Refuse a VerifySessionTimeout that is not a whole number of minutes.
+
+    The reference sends ``15`` and documents minutes with no upper bound; the V10R3
+    capture reads ``0``. ``bool`` subclasses ``int``, so it is refused by name.
+    """
+    if value is not None and (isinstance(value, bool) or value < 0):
+        raise ValueError(
+            f"verify_session_timeout {value!r} must be a non-negative whole "
+            "number of minutes"
+        )
+
+
 @dataclass(frozen=True)
 class CreateUserRequest:
     """Fields required to create an HMC user profile."""
@@ -25,13 +38,16 @@ class CreateUserRequest:
     associated_resource_roles: list[str] | None = None
     password_expiry: int | None = None
     session_timeout: int | None = None
-    verify_session_timeout: bool | None = None
+    verify_session_timeout: int | None = None
     idle_session_timeout: int | None = None
     user_inactivity: int | None = None
     minimum_password_age: int | None = None
     allow_web_remote_access: bool | None = None
     allow_ssh_remote_access: bool | None = None
     remote_user_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_timeout_minutes(self.verify_session_timeout)
 
 
 @dataclass(frozen=True)
@@ -45,13 +61,16 @@ class ModifyUserPatch:
     associated_resource_roles: list[str] | None = None
     password_expiry: int | None = None
     session_timeout: int | None = None
-    verify_session_timeout: bool | None = None
+    verify_session_timeout: int | None = None
     idle_session_timeout: int | None = None
     user_inactivity: int | None = None
     minimum_password_age: int | None = None
     allow_web_remote_access: bool | None = None
     allow_ssh_remote_access: bool | None = None
     remote_user_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_timeout_minutes(self.verify_session_timeout)
 
 
 async def create_user(
