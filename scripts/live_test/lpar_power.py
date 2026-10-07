@@ -669,8 +669,9 @@ async def _activate(
 async def _current_configuration(client: Client, state: RunState, run: Run) -> bool:
     """The current-configuration activation; on a refusal, find which input it was.
 
-    A refused activation leaves the partition Not Activated, so the boot-mode-only
-    form is tried as a plain row (never an observation), and the profile activation
+    A refused activation leaves the partition Not Activated, so the same request
+    without `operation_type` is tried as a plain row (never an observation), and the
+    profile activation
     that is already proven brings the partition up for the steps that follow.
     """
     job_ok, reached = await _activate(
@@ -689,8 +690,15 @@ async def _current_configuration(client: Client, state: RunState, run: Run) -> b
     )
     if reached in _FIRMWARE_STATES or reached != _NOT_ACTIVATED:
         return reached in _FIRMWARE_STATES
+    # V10R3 refused this job with "Parameter 'OperationType' is not allowed"
+    # (INVALID_PARAMETER, 2026-10-06); the retry drops only that parameter.
     _, reached = await _activate(
-        client, state, run, "current configuration, boot mode only", boot_mode="of"
+        client,
+        state,
+        run,
+        "current configuration, no operation type",
+        boot_mode="of",
+        keylock="norm",
     )
     if reached in _FIRMWARE_STATES or reached != _NOT_ACTIVATED:
         return reached in _FIRMWARE_STATES
@@ -1062,10 +1070,28 @@ async def _detach(client: Client, state: RunState, run: Run) -> bool:
             system_name_or_uuid=run.system,
         )
         state.record(SUBTASK, f"hmc_detach_storage_mapping ({mapping_id})", st, data)
+        if st != "PASS":
+            await _record_vios_rmc(client, state, run)
     left = await _mappings(client, state, run)
     # Decided on the backing, not the id: a mapping the HMC reports without one
     # cannot be detached through the tool and still holds the volume.
     return left is not None and not any(backing == run.volume for *_, backing in left)
+
+
+async def _record_vios_rmc(client: Client, state: RunState, run: Run) -> None:
+    """The VIOS RMC state beside a refused detach: HSCL2957 blames RMC (#1346)."""
+    listing = await lpar_config._cli(
+        client,
+        state,
+        f"lssyscfg -r lpar -m {shlex.quote(run.system)} -F name,lpar_env,rmc_state",
+    )
+    rows = [row for row in (listing or "").splitlines() if ",vioserver," in row]
+    state.record(
+        SUBTASK,
+        "VIOS rmc_state (after a refused detach)",
+        "PASS" if listing is not None else "FAIL",
+        "\n".join(rows) if listing is not None else "the partition listing failed",
+    )
 
 
 def _dry_run_inventoried(data: object, run: Run) -> bool:

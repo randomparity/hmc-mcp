@@ -1224,8 +1224,37 @@ def test_a_refused_current_configuration_activation_does_not_stop_the_sequence(s
     world.overrides["hmc_power_on_lpar"] = refuses
     state = _run(schemas, world)
 
-    assert _rows(state, "hmc_power_on_lpar (current configuration, boot mode only)")
+    (retry,) = [
+        k
+        for k in world.calls_to("hmc_power_on_lpar")
+        if k.get("keylock") and not k.get("operation_type")
+    ]
+    assert retry["boot_mode"] == "of"
+    assert _rows(state, "hmc_power_on_lpar (current configuration, no operation type)")
     assert "current-configuration-reached-firmware" not in _held(state, "lpar.power_on")
     assert "immediate-shutdown-not-activated" in _held(state, "lpar.power_off")
     assert _results(state)["lpar.power"] == "passed"
     assert _results(state)["lpar.delete"] == "passed"
+
+
+def test_a_refused_detach_records_the_vios_rmc_state(schemas):
+    """HSCL2957 names RMC; the arm reads the VIOS's rmc_state beside the refusal."""
+    world = World()
+    real = world._hmc_run_command
+    reads: list[str] = []
+
+    def answer(kwargs: dict[str, Any]) -> Any:
+        if kwargs["cmd"].endswith("name,lpar_env,rmc_state"):
+            reads.append(kwargs["cmd"])
+            return f"{OTHER},aixlinux,inactive\nvios-A,vioserver,active\n"
+        return real(kwargs)
+
+    world.overrides["hmc_run_command"] = answer
+    world.overrides["hmc_detach_storage_mapping"] = lambda _k: HMCError(
+        "REST0126 HSCL2957 no RMC connection"
+    )
+    state = _run(schemas, world)
+
+    assert reads
+    rows = _rows(state, "VIOS rmc_state (after a refused detach)")
+    assert rows and {row["data"] for row in rows} == {"vios-A,vioserver,active"}
