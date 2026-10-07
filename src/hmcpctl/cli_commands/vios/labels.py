@@ -124,7 +124,7 @@ def vios_list_vfc_group_labels(
 
 def vios_create_vfc_group_label(
     system_name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
-    label: str = typer.Argument(..., help="New vFC group label"),
+    label: str = typer.Argument(..., help="New vFC group label, at most 16 characters"),
     vios_names: list[str] | None = typer.Option(None, "--vios-name"),
     vios_ids: list[int] | None = typer.Option(None, "--vios-id"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -152,7 +152,9 @@ def vios_update_vfc_group_label(
     system_name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     label: str = typer.Argument(..., help="Existing vFC group label"),
     action: ViosGroupUpdateAction = typer.Option(..., "--action"),
-    new_name: str | None = typer.Option(None, "--new-name"),
+    new_name: str | None = typer.Option(
+        None, "--new-name", help="Replacement label for rename, at most 16 characters"
+    ),
     vios_names: list[str] | None = typer.Option(None, "--vios-name"),
     vios_ids: list[int] | None = typer.Option(None, "--vios-id"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
