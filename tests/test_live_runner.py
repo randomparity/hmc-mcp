@@ -5013,7 +5013,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
 
 
 @pytest.mark.asyncio
-async def test_discover_vios_refuses_a_non_numeric_partition_id_type(monkeypatch):
+async def test_discover_vios_refuses_a_partition_id_neither_str_nor_int(monkeypatch):
     async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
         return "PASS", {
             "entries": [{"UUID": "vios-uuid", "Resource": {"PartitionID": 7.0}}]
