@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import BeforeValidator, Field
 
 from hmcpctl.client.core import HMCClient
 
@@ -15,17 +17,23 @@ from ...errors import HMCError
 from ...xmlutil import leaf_text
 
 
-def _require_timeout_minutes(value: int | None) -> None:
+def _require_timeout_minutes(value: object) -> object:
     """Refuse a VerifySessionTimeout that is not a whole number of minutes.
 
     The reference sends ``15`` and documents minutes with no upper bound; the V10R3
     capture reads ``0``. ``bool`` subclasses ``int``, so it is refused by name.
     """
-    if value is not None and (isinstance(value, bool) or value < 0):
+    if isinstance(value, bool) or (isinstance(value, int) and value < 0):
         raise ValueError(
             f"verify_session_timeout {value!r} must be a non-negative whole "
             "number of minutes"
         )
+    return value
+
+
+#: The tool parameter type. FastMCP validates arguments in lax mode, overriding even a
+#: field-level ``strict``, so JSON ``true`` would become 1 without the validator.
+TimeoutMinutes = Annotated[int, Field(ge=0), BeforeValidator(_require_timeout_minutes)]
 
 
 @dataclass(frozen=True)

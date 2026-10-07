@@ -10,6 +10,7 @@ from ...documents import AuthenticationType
 from ...operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,
+    TimeoutMinutes,
     create_user,
     modify_user,
 )
@@ -83,7 +84,7 @@ def hmc_create_user(
     associated_resource_roles: list[str] | None = None,
     password_expiry: int | None = None,
     session_timeout: int | None = None,
-    verify_session_timeout: int | None = None,
+    verify_session_timeout: TimeoutMinutes | None = None,
     idle_session_timeout: int | None = None,
     user_inactivity: int | None = None,
     minimum_password_age: int | None = None,
@@ -163,7 +164,7 @@ def hmc_modify_user(
     associated_resource_roles: list[str] | None = None,
     password_expiry: int | None = None,
     session_timeout: int | None = None,
-    verify_session_timeout: int | None = None,
+    verify_session_timeout: TimeoutMinutes | None = None,
     idle_session_timeout: int | None = None,
     user_inactivity: int | None = None,
     minimum_password_age: int | None = None,
