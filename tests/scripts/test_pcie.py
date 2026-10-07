@@ -91,6 +91,7 @@ class ScenarioState:
         self.tool_counts: dict[str, int] = {}
         self.cleanup_start: int | None = None
         self.observations: list[dict[str, Any]] = []
+        self.notes: dict[str, str] = {}
 
     async def call(self, _client: object, tool: str, **kwargs: Any) -> tuple[str, Any]:
         index = self.tool_counts.get(tool, 0)
@@ -119,6 +120,7 @@ class ScenarioState:
         # `RunState.record` carries the note in `note` and the payload in
         # `data`; keeping whichever is populated lets one assertion read both.
         self.results.append((subtask, tool, status, data if data is not None else note))
+        self.notes[tool] = note
 
     def skip(self, subtask: int, tool: str, reason: str) -> None:
         self.results.append((subtask, tool, "SKIP", reason))
@@ -875,6 +877,7 @@ async def test_probe_whose_assignment_did_not_land_is_deleted_without_a_removal(
 
     row = state.row("create-time assignment profile readback")
     assert row is not None and row[2] == "FAIL"
+    assert state.notes[_CREATE_TIME_JUDGED] == "unmet: profile-lists-slot"
     assert not [c for c in state.commands() if "io_slots-" in c and "-createtime" in c]
     assert any(
         t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "probe-uuid"
@@ -915,6 +918,9 @@ async def test_unfinished_probe_cleanup_blocks_the_fixture_and_is_retried_once(
 
     row = state.row("probe profile unreadable")
     assert row is not None and row[2] == "FAIL"
+    judged = state.row(_CREATE_TIME_JUDGED)
+    assert judged is not None and judged[2] == "FAIL"
+    assert "cleanup failed" in state.notes[_CREATE_TIME_JUDGED]
     assert not any(t == "hmc_create_lpar" and not _is_probe(k) for t, k in state.calls)
     deletes = [k for t, k in state.cleanup_calls() if t == "hmc_delete_lpar"]
     assert [k["lpar_name_or_uuid"] for k in deletes] == ["probe-uuid"]
@@ -962,6 +968,12 @@ def _fixture_absent_after_delete(responses: dict[str, Any]) -> None:
     responses["hmc_get_lpar_description"] = get_description
 
 
+#: The judged-but-unobserved rows the dedicated arm records for the
+#: create-time probe and the fixture delete.
+_CREATE_TIME_JUDGED = "hmc_create_lpar (create-time judged)"
+_DELETE_JUDGED = "hmc_delete_lpar (judged)"
+
+
 def _emitted(state: ScenarioState) -> dict[str, tuple[str, str, str, str, list[str]]]:
     """Each observation by id: operation, scenario, result, cleanup, assertion ids."""
     emitted = {
@@ -1001,13 +1013,6 @@ async def test_dedicated_arm_emits_verified_observations(
 
     scenario = "st29-dedicated-pcie"
     assert _emitted(state) == {
-        "st30-hmc-create-lpar": (
-            "lpar.create",
-            scenario,
-            "passed",
-            "passed",
-            ["create-call-succeeded", "profile-lists-slot"],
-        ),
         "st31-hmc-assign-dedicated-pcie-slot": (
             "pcie.assign_dedicated_slot",
             scenario,
@@ -1029,14 +1034,21 @@ async def test_dedicated_arm_emits_verified_observations(
             "passed",
             ["add-command-succeeded", "profile-lists-slot"],
         ),
-        "st34-hmc-delete-lpar": (
-            "lpar.delete",
-            scenario,
-            "passed",
-            "not-required",
-            ["delete-call-succeeded", "lpar-name-absent"],
-        ),
     }
+
+
+@pytest.mark.asyncio
+async def test_dedicated_arm_judges_create_and_delete_without_observing_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lpar-power arm owns both operations' observations (#1389)."""
+    state = await _run_dedicated_with_probe(monkeypatch)
+
+    operations = {item["operation"] for item in state.observations}
+    assert not operations & {"lpar.create", "lpar.delete"}
+    for label in (_CREATE_TIME_JUDGED, _DELETE_JUDGED):
+        row = state.row(label)
+        assert row is not None and row[2] == "PASS", label
 
 
 @pytest.mark.asyncio
@@ -1047,8 +1059,9 @@ async def test_a_fixture_that_survives_its_delete_fails_the_additions(
     state = await _run_dedicated_with_probe(monkeypatch, fixture_absent=False)
 
     emitted = _emitted(state)
-    assert emitted["st34-hmc-delete-lpar"][2:4] == ("failed", "not-required")
-    assert emitted["st34-hmc-delete-lpar"][4] == ["delete-call-succeeded"]
+    delete = state.row(_DELETE_JUDGED)
+    assert delete is not None and delete[2] == "FAIL"
+    assert state.notes[_DELETE_JUDGED] == "unmet: lpar-name-absent"
     for key in ("st31-hmc-assign-dedicated-pcie-slot", "st33-chsyscfg-io-slots-add"):
         assert emitted[key][2:4] == ("failed", "failed")
 
