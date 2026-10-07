@@ -2105,20 +2105,6 @@
       "evidence": []
     },
     {
-      "operation": "lpar.install_os",
-      "implementation": {
-        "state": "absent",
-        "implemented_scope": [],
-        "missing_scope": [
-          {
-            "variant": "vios-install-via-lpar-selector",
-            "parameters": []
-          }
-        ]
-      },
-      "evidence": []
-    },
-    {
       "operation": "pcm.get_preferences",
       "implementation": {
         "state": "implemented",

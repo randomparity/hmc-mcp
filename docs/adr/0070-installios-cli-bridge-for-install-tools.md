@@ -149,7 +149,9 @@ live-HMC window:
    `install_vios_by_lpar_selector` and `install_vios` from the ADR 0011 ownership guard
    *because* a non-VIOS `-p` is refused. Confirming the widening reopens that
    classification, not only the scope note — revisit ADR 0092 §3's disposition
-   of #366 in the same window.
+   of #366 in the same window. [ADR 0203](0203-retire-install-vios-by-lpar-selector.md)
+   later retired `install_vios_by_lpar_selector`; `install_vios` resolves only
+   `VirtualIOServer`-feed targets, so this item no longer bears on that classification.
 6. Exact exit-status semantics recorded in the log file (the tool does not
    parse them).
 

@@ -1,14 +1,13 @@
-"""Tests for hmc_install_vios_by_lpar_selector: the HMC CLI installios bridge (ADR 0070).
+"""Tests for the HMC CLI ``installios`` bridge (ADR 0070).
 
-The InstallLPAR REST job does not exist (ADR 0069); the tool now composes a
-detached ``installios`` command and submits it over SSH.
+The InstallLPAR and InstallVIOS REST jobs do not exist (ADR 0069); the bridge
+composes a detached ``installios`` command and submits it over SSH.
 """
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-import httpx
 import pytest
 from conftest import make_config
 
@@ -24,28 +23,6 @@ from hmcpctl.ssh.install import (
     validate_mac_address,
     validate_vlan_id,
 )
-
-BASE = "https://hmc.test"
-LPAR_UUID = "11111111-1111-4111-8111-111111111111"
-SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
-
-
-def _lpar_feed(name: str, uuid: str = LPAR_UUID) -> str:
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:{uuid}</id>
-    <title>LogicalPartition</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <PartitionName>{name}</PartitionName>
-        <PartitionType>Virtual IO Server</PartitionType>
-        <PartitionState>not activated</PartitionState>
-      </LogicalPartition>
-    </content>
-  </entry>
-</feed>"""
-
 
 # ---------------------------------------------------------------------- #
 # Unit: validators
@@ -239,179 +216,3 @@ async def test_run_installios_ssh_failure_surfaces_as_cli_error():
         pytest.raises(HMCCLIError, match="exit status 127"),
     ):
         await run_installios(config, "nohup installios ... & echo pid=$!")
-
-
-# ---------------------------------------------------------------------- #
-# Tool-layer tests for hmc_install_vios_by_lpar_selector
-# ---------------------------------------------------------------------- #
-
-
-def _hmc_env(monkeypatch) -> None:
-    monkeypatch.setenv("HMC_HOST", "hmc.test")
-    monkeypatch.setenv("HMC_USER", "hscroot")
-    monkeypatch.setenv("HMC_PASSWORD", "abc123")
-
-
-_INSTALL_KWARGS = {
-    "install_source": "/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
-    "lpar_ip": "192.168.1.30",
-    "nim_subnetmask": "255.255.255.0",
-    "nim_gateway": "192.168.1.1",
-    "vlan_id": "100",
-}
-
-
-def test_install_vios_by_lpar_selector_tool_submits_detached_installios(
-    monkeypatch, mock_hmc
-):
-    """The tool resolves the target then runs the composed installios command."""
-    from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
-
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_lpar_feed("aixprod"))
-    )
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=_lpar_feed("aixprod"))
-    )
-
-    submitted: dict[str, object] = {}
-
-    async def fake_run_hmc_command(config, cmd):
-        submitted["config"] = config
-        submitted["cmd"] = cmd
-        return f"{INSTALLIOS_PID_PREFIX}4242\n"
-
-    with patch("hmcpctl.ssh.install.run_hmc_command", new=fake_run_hmc_command):
-        result = hmc_install_vios_by_lpar_selector("aixprod", "sys1", **_INSTALL_KWARGS)
-
-    assert result["pid"] == 4242
-    assert result["partition"] == "aixprod"
-    assert result["system"] == "sys1"
-    assert result["log_path"] == "/tmp/hmcpctl-installios-aixprod.log"
-    assert "no HMC job exists on this path" in result["message"]
-    # The exact command that would have gone over SSH:
-    expected, _log_path = build_installios_command(
-        install_source="/extra/viosimages/VIOS_4.1/dvdimage.v1.iso",
-        client_ip="192.168.1.30",
-        subnet_mask="255.255.255.0",
-        gateway="192.168.1.1",
-        system_name="sys1",
-        partition_name="aixprod",
-        profile_name="default",
-        vlan_id="100",
-    )
-    assert submitted["cmd"] == expected
-
-
-def test_install_vios_by_lpar_selector_tool_rejects_invalid_arguments_before_ssh(
-    monkeypatch, mock_hmc
-):
-    """Operations-layer validation rejects input before SSH submission."""
-    from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
-
-    _hmc_env(monkeypatch)
-    with pytest.raises(ValueError, match="IPv4"):
-        hmc_install_vios_by_lpar_selector(
-            "aixprod",
-            "sys1",
-            install_source="/extra/vios.iso",
-            lpar_ip="999.9.9.9",
-            nim_subnetmask="255.255.255.0",
-            nim_gateway="192.168.1.1",
-        )
-    assert {call.request.url.path for call in mock_hmc.calls} == {"/rest/api/web/Logon"}
-
-
-def test_install_vios_by_lpar_selector_unknown_name_fails_before_submission(
-    monkeypatch, mock_hmc
-):
-    from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
-
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
-        return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
-    )
-
-    async def fail(config, cmd):  # pragma: no cover — must never be reached
-        raise AssertionError("run_installios must not be called")
-
-    with (
-        patch("hmcpctl.operations.vios.install.run_installios", new=fail),
-        pytest.raises(ValueError, match="No LPAR named"),
-    ):
-        hmc_install_vios_by_lpar_selector("nosuchlpar", "sys1", **_INSTALL_KWARGS)
-
-
-def test_install_vios_by_lpar_selector_refuses_a_vios_name(monkeypatch, mock_hmc):
-    """A VIOS answers only in the VirtualIOServer feed; the selector points elsewhere (#1247)."""
-    from hmcpctl.server_tools.vios.core import hmc_install_vios_by_lpar_selector
-
-    _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
-    )
-    vios_feed = _lpar_feed("vios1").replace("LogicalPartition", "VirtualIOServer")
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
-        return_value=httpx.Response(200, text=vios_feed)
-    )
-
-    async def fail(config, cmd):  # pragma: no cover — must never be reached
-        raise AssertionError("run_installios must not be called")
-
-    with (
-        patch("hmcpctl.operations.vios.install.run_installios", new=fail),
-        pytest.raises(ValueError, match="Use hmc_install_vios"),
-    ):
-        hmc_install_vios_by_lpar_selector("vios1", "sys1", **_INSTALL_KWARGS)
-
-
-def _system_feed(name: str) -> str:
-    """Atom feed wrapping one ManagedSystem entry named *name*."""
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <id>urn:uuid:{SYSTEM_UUID}</id>
-    <title>ManagedSystem:{name}</title>
-    <content type="application/vnd.ibm.powervm.uom+xml">
-      <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <SystemName>{name}</SystemName>
-        <State>operating</State>
-      </ManagedSystem>
-    </content>
-  </entry>
-</feed>"""
-
-
-def _system_entry(name: str) -> str:
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{SYSTEM_UUID}</id>
-  <title>ManagedSystem:{name}</title>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <SystemName>{name}</SystemName>
-    </ManagedSystem>
-  </content>
-</entry>"""

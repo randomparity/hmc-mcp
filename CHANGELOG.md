@@ -84,6 +84,17 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   prints one `Skipped managed system` line per skipped system on stderr. A VIOS state filter is
   now always applied locally (ADR 0197, #1293).
 
+### Removed
+
+- `hmc_install_vios_by_lpar_selector` (operation `lpar.install_os`) and the
+  `install_vios_by_lpar_selector` operation are retired (#1371, ADR 0203). The selector
+  resolved its target only through the `LogicalPartition` feed and then required a Virtual I/O
+  Server, which is listed only in the `VirtualIOServer` feed, so it could never submit an
+  install. Install a VIOS with `hmc_install_vios` (`install_vios`): it takes the same arguments,
+  with `vios_name_or_uuid` and `vios_ip` in place of `lpar_name_or_uuid` and `lpar_ip`. The
+  `lpar.install_os` capability and maturity rows are gone; `cli:commands/installios` stays bound
+  by `vios.install`. The server exposes 162 tools by default.
+
 ### Fixed
 
 - `hmc_power_on_lpar`, `hmcpctl lpars power-on --operation-type` and the operations below them

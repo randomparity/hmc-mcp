@@ -1670,10 +1670,6 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
                 found[name] = (security.exhaustive_targets, hits)
 
     assert found == {
-        "hmc_install_vios_by_lpar_selector": (
-            True,
-            ["install_source", "lpar_ip", "nim_gateway", "nim_subnetmask"],
-        ),
         "hmc_install_vios": (
             True,
             ["install_source", "nim_gateway", "nim_subnetmask", "vios_ip"],
