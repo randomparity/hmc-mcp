@@ -17,8 +17,9 @@ validate parse a local document.
 - `snapshot.inspect` and `snapshot.validate` bind no rows and carry the
   `snapshot.assess_affinity` style composite reason (local parsing, no HMC command).
 - `maturity.json` gains `implemented` records for all three (variants `hmc-capture`,
-  `local-snapshot`), `evidence: []` for inspect/validate; regenerate
-  `src/hmcpctl/_operation_maturity.json` and `docs/tools/`.
+  `local-snapshot`), `evidence: []` for inspect/validate; regenerate the projection and
+  `docs/tools/`. Owners: ST1 `st1-lpar-snapshot` for capture, the offline tests listed in
+  `operations.json` for inspect/validate.
 - ST1 gains `_capture_snapshot`: read the test partition's default profile name with
   `hmc_get_lpar_proc_compat` (recorded, non-promoting), then `record_verified` an
   `hmc_snapshot_capture(..., profile_name=<name>)`, scenario `st1-lpar-snapshot`:
@@ -32,8 +33,7 @@ validate parse a local document.
 
 ### Failure model
 
-1. Actors and deployments: a local operator running the live runner against the
-   boundary system; CI running the offline gates.
+1. Actors: a local operator running the live runner on the boundary system; CI.
 2. Invariants: the new step calls only `effect="read"` tools (ST1's one destructive
    tool is the existing refusal check against an absent system); the eight rows the
    placeholders free stay `coverage-child` under #638; catalog observations stay
@@ -44,7 +44,7 @@ validate parse a local document.
 
 ## Success
 
-- `just capability-inventory`, `tool-docs-check` and `doc-freshness` pass.
+- `just capability-inventory`, `tool-docs-check`, `doc-freshness` pass.
 - ST1's guard lists `st1-lpar-snapshot` with its four assertion ids.
 - A live ST1 run's `snapshot.capture` observation is in `maturity.json`.
 
