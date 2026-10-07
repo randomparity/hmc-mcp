@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
+
 LIVE_TEST_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(LIVE_TEST_ROOT))
 from live_test import pcie  # noqa: E402
@@ -750,6 +752,38 @@ async def test_probe_create_with_failed_apply_step_is_recorded_fail(
         for t, k in state.calls
     )
     assert any(t == "hmc_create_lpar" and not _is_probe(k) for t, k in state.calls)
+
+
+@pytest.mark.asyncio
+async def test_probe_uuid_is_read_from_a_dataclass_create_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A typed create result is a dataclass, not a dict; its UUID still names the probe (#1410)."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_exists=True)
+    _probe_create_succeeds(responses)
+    base_create = responses["hmc_create_lpar"]
+
+    def create_lpar(kwargs: dict[str, Any], index: int) -> Any:
+        result = base_create(kwargs, index)
+        return LparPcieWorkflowResult(
+            resource_created=True,
+            workflow_completed=True,
+            lpar=result["lpar"],
+            ownership_stamped=True,
+            steps=(),
+            warnings=(),
+        )
+
+    responses["hmc_create_lpar"] = create_lpar
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "PASS"}
+    )
+
+    assert any(
+        t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "probe-uuid"
+        for t, k in state.calls
+    )
 
 
 @pytest.mark.asyncio

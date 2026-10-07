@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from fastmcp import Client
 
 from .network import listed_vlans
-from .observation import ExpectedOutcome
+from .observation import ExpectedOutcome, judge_create_result, plain_data
 from .results import resource as get_resource
 from .storage import configured_vg_uuid
 
@@ -174,7 +174,9 @@ async def _provision_from_baseline(
         power_on=True,
         dry_run=False,
     )
-    state.record(14, "hmc_provision_lpar (live)", status, data)
+    record_status, reason = judge_create_result(status, data)
+    state.record(14, "hmc_provision_lpar (live)", record_status, data, reason)
+    data = plain_data(data)
     if status == "PASS" and isinstance(data, dict):
         for step in data.get("steps") or []:
             step_status = step.get("status", "unknown")
