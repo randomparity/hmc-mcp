@@ -286,6 +286,36 @@ async def test_group_member_payload_is_bounded(monkeypatch, members, message: st
     run.assert_not_awaited()
 
 
+_GROUP_LABEL_CALLS = [
+    lambda name: create_vios_vfc_group_label(
+        CONFIG, "system-a", name, vios_names=["vios-a"]
+    ),
+    lambda name: update_vios_vfc_group_label(
+        CONFIG, "system-a", "group-a", "rename", new_name=name
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call", _GROUP_LABEL_CALLS, ids=["create", "rename"])
+async def test_group_label_accepts_sixteen_characters(monkeypatch, call):
+    run = AsyncMock(return_value="accepted")
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
+    result = await call("g" * 16)
+    assert result["output"] == "accepted"
+    run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call", _GROUP_LABEL_CALLS, ids=["create", "rename"])
+async def test_group_label_over_sixteen_characters_does_not_dispatch(monkeypatch, call):
+    run = AsyncMock()
+    monkeypatch.setattr("hmcpctl.ssh.vios_labels.run_hmc_command", run)
+    with pytest.raises(ValueError, match="17 characters; the HMC accepts at most 16"):
+        await call("g" * 17)
+    run.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_group_member_payload_accepts_exact_byte_limit(monkeypatch):
     run = AsyncMock(return_value="accepted")
