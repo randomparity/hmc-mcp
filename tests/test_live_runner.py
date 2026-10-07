@@ -1185,6 +1185,93 @@ async def test_scratch_create_with_failed_apply_step_is_not_recorded_pass() -> N
     assert state.artifacts.scratch_uuid == "scratch-uuid"
 
 
+@pytest.mark.asyncio
+async def test_provision_dry_run_prints_the_steps_of_a_served_result(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A typed dry-run result is a generated dataclass, not a dict (#1410)."""
+    planned = await _served_result(
+        "hmc_provision_lpar",
+        {
+            "resource_created": False,
+            "workflow_completed": False,
+            "lpar_uuid": None,
+            "dry_run": True,
+            "ownership_stamped": None,
+            "steps": [{"step": "create", "status": "dry_run"}],
+            "warnings": [],
+            "change_location": None,
+        },
+    )
+    assert dataclasses.is_dataclass(planned)
+    state = _ScriptedSriovState([("hmc_provision_lpar", "PASS", planned)])
+    state.artifacts.vios_uuid = "vios-A-uuid"
+
+    await provisioning.validate_provisioning_dry_run(object(), state)
+
+    assert "all status=dry_run: True" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_scratch_create_reads_the_uuid_from_a_served_dataclass_result() -> None:
+    """A typed create result is a generated dataclass, not a dict (#1410)."""
+    created = await _served_result(
+        "hmc_create_lpar",
+        {
+            "resource_created": True,
+            "workflow_completed": True,
+            "lpar": {"UUID": "scratch-uuid"},
+            "ownership_stamped": True,
+            "steps": [{"step": "create", "status": "ok"}],
+            "warnings": [],
+        },
+    )
+    assert dataclasses.is_dataclass(created)
+    state = _ScriptedSriovState(
+        [("hmc_create_lpar", "PASS", created), ("hmc_get_lpar", "PASS", {})]
+    )
+
+    await lpar._create_and_confirm_scratch_lpar(object(), state)
+
+    assert state.artifacts.scratch_uuid == "scratch-uuid"
+
+
+@pytest.mark.asyncio
+async def test_live_provision_is_judged_by_the_steps_of_a_served_result(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A typed provision result's failed step is a FAIL row and a printed line (#1410)."""
+    provisioned = await _served_result(
+        "hmc_provision_lpar",
+        {
+            "resource_created": True,
+            "workflow_completed": False,
+            "lpar_uuid": "lpar-A-uuid",
+            "dry_run": False,
+            "ownership_stamped": True,
+            "steps": [
+                {"step": "create", "status": "ok"},
+                {"step": "storage", "status": "error", "result": "mapping refused"},
+            ],
+            "warnings": [],
+            "change_location": None,
+        },
+    )
+    assert dataclasses.is_dataclass(provisioned)
+    state = _ScriptedSriovState([("hmc_provision_lpar", "PASS", provisioned)])
+
+    await provisioning._provision_from_baseline(
+        object(), state, vios_uuid="vios-A-uuid", vg_uuid="vg-A-uuid", pvid=3100
+    )
+
+    (row,) = state.results
+    assert row["status"] == "FAIL"
+    assert "storage failed: mapping refused" in row["note"]
+    printed = capsys.readouterr().out
+    assert "provision step [create]: ok" in printed
+    assert "provision step [storage]: error" in printed
+
+
 def _answer(answers: dict[str, object]):
     """A scripted RunState.call: a tool's answer, or a callable of its kwargs."""
     calls: list[tuple[str, dict[str, object]]] = []

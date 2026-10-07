@@ -110,8 +110,18 @@ def classify_failure(exc: BaseException) -> CallFailure:
     )
 
 
+def plain_data(data: Any) -> Any:
+    """*data* as plain data: a served typed result arrives as a generated dataclass.
+
+    Nested dataclasses, such as workflow steps, become dicts too (#1369).
+    """
+    if is_dataclass(data) and not isinstance(data, type):
+        return asdict(data)
+    return data
+
+
 def judge_create_result(status: str, data: Any) -> tuple[str, str]:
-    """Judge an ``hmc_create_lpar`` result by its steps, not the call status alone.
+    """Judge a create or provision workflow result by its steps, not the call status.
 
     On the mksyscfg path, ``hmc_create_lpar`` returns normally (``status`` "PASS")
     even when its ``apply_profile`` step, or a later PCIe-assignment step, reports
@@ -128,11 +138,9 @@ def judge_create_result(status: str, data: Any) -> tuple[str, str]:
     whether the partition was actually created — a caller that tracks that
     separately keeps using the original ``status`` for its own control flow.
 
-    A served typed result arrives as a generated dataclass, nested steps
-    included, so it is read as the plain data it carries (#1369).
+    A served typed result is read as the plain data it carries (#1369).
     """
-    if is_dataclass(data) and not isinstance(data, type):
-        data = asdict(data)
+    data = plain_data(data)
     if status != "PASS" or not isinstance(data, dict):
         return status, ""
     steps = data.get("steps")
