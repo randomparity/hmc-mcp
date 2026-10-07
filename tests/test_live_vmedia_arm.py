@@ -897,11 +897,21 @@ async def test_the_round_trip_scopes_every_media_call_to_the_system(arm):
 
 
 @pytest.mark.asyncio
-async def test_the_boot_test_scopes_its_mount_and_cleanup_unmount(with_iso):
+async def test_the_boot_test_scopes_its_mount_and_cleanup_unmount(
+    with_iso, monkeypatch
+):
     state, hmc = with_iso
     hmc.power_on_fails = True
+    original = hmc._mount
 
-    await _run(state, 16, 20, 22)
+    def with_mapping_id(name):
+        # The boot-test cleanup unmounts only a mount that named its mapping.
+        status, data = original(name)
+        return status, {**data, "UUID": "0000BBBB-0000-4000-8000-000000000001"}
+
+    monkeypatch.setattr(hmc, "_mount", with_mapping_id)
+
+    await _run(state, 16, 20)
 
     _assert_media_calls_scoped(
         hmc, "hmc_mount_optical_media", "hmc_unmount_optical_media"
