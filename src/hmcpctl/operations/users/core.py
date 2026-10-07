@@ -10,6 +10,7 @@ from pydantic import BeforeValidator, Field
 from hmcpctl.client.core import HMCClient
 
 from ...documents import (
+    AUTHENTICATION_TYPES,
     AuthenticationType,
     build_hmc_user_document,
 )
@@ -93,6 +94,21 @@ async def create_user(
     return await hmc.create_hmc_user(console_uuid, document)
 
 
+# The HMC lists the authentication type in lower case; the builder takes the tool's.
+_AUTHENTICATION_SPELLING = {kind.lower(): kind for kind in AUTHENTICATION_TYPES}
+
+
+def _profile_text(resource: dict[str, Any], name: str, user_profile_uuid: str) -> str:
+    """Return a profile element a modify must resend, or refuse before any POST."""
+    value = leaf_text(resource.get(name))
+    if not isinstance(value, str) or not value:
+        raise HMCError(
+            f"User profile {user_profile_uuid!r} returned no {name}, which the HMC "
+            "requires to modify it; confirm the UUID with hmc_list_users"
+        )
+    return value
+
+
 async def modify_user(
     hmc: HMCClient,
     console_uuid: str,
@@ -101,15 +117,23 @@ async def modify_user(
 ) -> dict[str, Any] | None:
     """Apply the supplied fields to an HMC user profile.
 
-    The HMC refuses a modify without the profile's read-only ``UserID`` (REST0344
-    on V10R3, #1381), so it is read from the profile and sent unchanged.
+    V10R3 refuses a modify that omits the read-only ``UserID`` or the
+    ``AuthenticationType`` with REST0344 (#1381), so both are read from the profile
+    and sent unchanged unless the patch replaces the authentication type. The
+    reference marks no other element required, and none is otherwise evidenced.
     """
     profile = await hmc.get_hmc_user(console_uuid, user_profile_uuid)
-    user_id = leaf_text(((profile or {}).get("Resource") or {}).get("UserID"))
-    if not isinstance(user_id, str) or not user_id:
-        raise HMCError(
-            f"User profile {user_profile_uuid!r} returned no UserID, which the HMC "
-            "requires to modify it; confirm the UUID with hmc_list_users"
-        )
-    document = build_hmc_user_document(user_id=user_id, **asdict(patch))
+    resource = (profile or {}).get("Resource") or {}
+    user_id = _profile_text(resource, "UserID", user_profile_uuid)
+    fields = asdict(patch)
+    if fields["authentication_type"] is None:
+        current = _profile_text(resource, "AuthenticationType", user_profile_uuid)
+        fields["authentication_type"] = _AUTHENTICATION_SPELLING.get(current.lower())
+        if fields["authentication_type"] is None:
+            raise HMCError(
+                f"User profile {user_profile_uuid!r} returned AuthenticationType "
+                f"{current!r}, which is not one of "
+                f"{', '.join(sorted(AUTHENTICATION_TYPES))}; pass authentication_type"
+            )
+    document = build_hmc_user_document(user_id=user_id, **fields)
     return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, document)
