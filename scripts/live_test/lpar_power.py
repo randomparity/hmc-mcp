@@ -667,12 +667,12 @@ async def _activate(
 
 
 async def _current_configuration(client: Client, state: RunState, run: Run) -> bool:
-    """The current-configuration activation; on a refusal, find which input it was.
+    """The current-configuration activation; on a refusal, go on by profile.
 
-    A refused activation leaves the partition Not Activated, so the same request
-    without `operation_type` is tried as a plain row (never an observation), and the
-    profile activation
-    that is already proven brings the partition up for the steps that follow.
+    `operation_type="activate"` is stated so the row proves the tool accepts it and
+    sends no `OperationType`, which V10R3 refused (#1392). A refused activation
+    leaves the partition Not Activated, so the profile activation that is already
+    proven brings the partition up for the steps that follow.
     """
     job_ok, reached = await _activate(
         client,
@@ -687,18 +687,6 @@ async def _current_configuration(client: Client, state: RunState, run: Run) -> b
         "lpar.power_on",
         "current-configuration-reached-firmware",
         job_ok and reached in _FIRMWARE_STATES,
-    )
-    if reached in _FIRMWARE_STATES or reached != _NOT_ACTIVATED:
-        return reached in _FIRMWARE_STATES
-    # V10R3 refused this job with "Parameter 'OperationType' is not allowed"
-    # (INVALID_PARAMETER, 2026-10-06); the retry drops only that parameter.
-    _, reached = await _activate(
-        client,
-        state,
-        run,
-        "current configuration, no operation type",
-        boot_mode="of",
-        keylock="norm",
     )
     if reached in _FIRMWARE_STATES or reached != _NOT_ACTIVATED:
         return reached in _FIRMWARE_STATES

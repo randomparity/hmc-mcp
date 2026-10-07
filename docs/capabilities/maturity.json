@@ -472,19 +472,20 @@
         {
           "id": "st41-hmc-power-on-lpar",
           "channel": "live",
-          "result": "failed",
+          "result": "passed",
           "scenario": "st41-lpar-power",
-          "observed_at": "2026-10-07T02:44:34Z",
+          "observed_at": "2026-10-07T20:32:48Z",
           "cleanup": "passed",
           "assertions": [
             "profile-activation-reached-firmware",
-            "running-reported-without-job"
+            "running-reported-without-job",
+            "current-configuration-reached-firmware"
           ],
-          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
+          "tested_commit": "640f4145e25902de33daaa1fa92715ab3bd37092",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+          "closure_fingerprint": "3b079a3128a154ad268fac0ba931017a0e21e04a462a40ea476dd0c2e40c6e12"
         }
       ]
     },

@@ -198,56 +198,6 @@ def build_virtual_network_document(
 """
 
 
-# Virtual Media Repository / Virtual Optical Media
-#
-# Both are operations via POST on a VolumeGroup (the repository lives on the
-# "VMLibrary" volume group of a VIOS). The repository name is always
-# "VMLibrary"; only BLANK optical media can be created via this API.
-
-
-@escapes_string_arguments
-def build_media_repository_delete_document(vg_name: str = "") -> str:
-    """VolumeGroup document marking the VirtualMediaRepository for deletion (POST).
-
-    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
-    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
-    """
-    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
-    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
-  <MediaRepositories schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualMediaRepository schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <RepositoryName>VMLibrary</RepositoryName>
-    </VirtualMediaRepository>
-  </MediaRepositories>"""
-    return document_envelope("VolumeGroup", body)
-
-
-@escapes_string_arguments
-def build_virtual_optical_media_delete_document(
-    media_name: str, vg_name: str = ""
-) -> str:
-    """VolumeGroup document marking a VirtualOpticalMedia for deletion (POST).
-
-    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
-    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
-    """
-    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
-    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
-  <MediaRepositories schemaVersion="V1_0">
-    <Metadata><Atom/></Metadata>
-    <VirtualMediaRepository schemaVersion="V1_0">
-      <Metadata><Atom/></Metadata>
-      <VirtualOpticalMedia schemaVersion="V1_0">
-        <Metadata><Atom/></Metadata>
-        <MediaName>{media_name}</MediaName>
-      </VirtualOpticalMedia>
-    </VirtualMediaRepository>
-  </MediaRepositories>"""
-    return document_envelope("VolumeGroup", body)
-
-
 # Web File ISO upload (ADR 0177)
 #
 # Create:   PUT /rest/api/web/File with this document; the response's File

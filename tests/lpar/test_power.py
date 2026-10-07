@@ -147,15 +147,13 @@ def _parameter_values(document: str, name: str) -> list[str]:
 
 
 def test_power_on_lpar_job_emits_optional_parameters_when_supplied():
-    """LogicalPartitionProfile, OperationType and keylock appear only when asked for."""
+    """LogicalPartitionProfile and keylock appear only when asked for."""
     supplied = power_on_lpar_job(
         profile_uuid=PROFILE_UUID,
         bootmode="sms",
-        operation_type="activate",
         keylock="manual",
     )
     assert _parameter_values(supplied, "LogicalPartitionProfile") == [PROFILE_UUID]
-    assert _parameter_values(supplied, "OperationType") == ["activate"]
     assert _parameter_values(supplied, "bootmode") == ["sms"]
     assert _parameter_values(supplied, "keylock") == ["manual"]
 
@@ -164,6 +162,19 @@ def test_power_on_lpar_job_emits_optional_parameters_when_supplied():
         assert _parameter_values(omitted, "OperationType") == []
         assert _parameter_values(omitted, "keylock") == []
         assert _parameter_values(omitted, "bootmode") == ["norm"]
+
+
+def test_power_on_lpar_job_never_sends_operation_type_for_activate():
+    """``activate`` is the HMC's default, and V10R3 refuses the parameter itself.
+
+    The live lpar-power arm saw PowerOn end FAILED_TO_START with "Parameter
+    'OperationType' is not allowed for this Job." (#1392), so stating the default
+    explicitly must emit the same document as omitting it.
+    """
+    for kwargs in ({}, {"profile_uuid": PROFILE_UUID}, {"keylock": "norm"}):
+        explicit = power_on_lpar_job(operation_type="activate", **kwargs)
+        assert _parameter_values(explicit, "OperationType") == []
+        assert explicit == power_on_lpar_job(**kwargs)
 
 
 @pytest.mark.parametrize("keylock", sorted(POWER_ON_KEYLOCKS))
@@ -343,7 +354,7 @@ def _power_client() -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_power_lpar_forwards_activation_parameters():
-    """PowerOn carries the caller's profile, boot mode and operation type."""
+    """PowerOn carries the caller's profile, boot mode and keylock, never activate."""
     hmc = _power_client()
 
     with patch(
@@ -364,7 +375,7 @@ async def test_power_lpar_forwards_activation_parameters():
     _, document = hmc.submit_job.await_args.args
     assert _parameter_values(document, "bootmode") == ["sms"]
     assert _parameter_values(document, "LogicalPartitionProfile") == [PROFILE_UUID]
-    assert _parameter_values(document, "OperationType") == ["activate"]
+    assert _parameter_values(document, "OperationType") == []
     assert _parameter_values(document, "keylock") == ["norm"]
 
 
@@ -818,9 +829,9 @@ async def test_power_lpar_force_submits_from_open_firmware_and_surfaces_hscl3681
             ),
         ),
         (
-            {"partition_profile_uuid": PROFILE_UUID, "operation_type": "activate"},
+            {"partition_profile_uuid": PROFILE_UUID, "keylock": "manual"},
             (
-                " The requested partition profile and operation type were not"
+                " The requested partition profile and keylock position were not"
                 " applied; power the partition off first."
             ),
         ),
@@ -828,10 +839,10 @@ async def test_power_lpar_force_submits_from_open_firmware_and_surfaces_hscl3681
             {
                 "boot_mode": "of",
                 "partition_profile_uuid": PROFILE_UUID,
-                "operation_type": "activate",
+                "keylock": "norm",
             },
             (
-                " The requested boot mode, partition profile and operation type"
+                " The requested boot mode, partition profile and keylock position"
                 " were not applied; power the partition off first."
             ),
         ),
@@ -850,7 +861,6 @@ def test_unapplied_activation_clause_names_only_what_was_supplied(kwargs, expect
         _unapplied_activation_clause(
             kwargs.get("boot_mode", "norm"),
             kwargs.get("partition_profile_uuid"),
-            kwargs.get("operation_type"),
             kwargs.get("keylock"),
         )
         == expected
