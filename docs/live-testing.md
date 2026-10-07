@@ -524,17 +524,19 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   still records each operation it entered, failed, with the assertions it never
   reached absent: re-run rather than copy those observations.
 
-Live on V10R3 (2026-10-07, POWER9) six of its eight observations passed:
-`lpar.create`, `lpar.capture_console`, `lpar.power_off`, `lpar.power`,
-`lpar.delete` and `lpar.decommission`. Two failed and stay failed:
+Live on V10R3 (2026-10-07, POWER9) seven of its eight observations passed:
+`lpar.create`, `lpar.power_on`, `lpar.capture_console`, `lpar.power_off`,
+`lpar.power`, `lpar.delete` and `lpar.decommission`. `provision.lpar` with the
+dedicated-slot argument failed and stays failed: the slot is written into the new
+partition's profile, but the provision's PowerOn activates the current configuration,
+so the running partition does not own the slot.
 
-- `lpar.power_on` current-configuration activation: the PowerOn job ended
-  `FAILED_TO_START` with "Parameter 'OperationType' is not allowed for this Job."
-  (`INVALID_PARAMETER`). The same request without `operation_type` reached Open
-  Firmware, so `OperationType` alone is the refused input. That retry is a plain row.
-- `provision.lpar` with the dedicated-slot argument: the slot is written into the new
-  partition's profile, but the provision's PowerOn activates the current
-  configuration, so the running partition does not own the slot.
+`lpar.power_on` passed on a re-run after #1392. The first run's current-configuration
+activation ended `FAILED_TO_START` with "Parameter 'OperationType' is not allowed for
+this Job." (`INVALID_PARAMETER`), and the same request without `operation_type`
+reached Open Firmware. The tool now accepts `operation_type="activate"` and sends no
+`OperationType`, and the arm's one activation, still stating `activate`, reached Open
+Firmware.
 
 `hmc_detach_storage_mapping` also answered `REST0126` carrying `HSCL2957` (no RMC
 connection to the VIOS) while the VIOS read `rmc_state` active, and the readback

@@ -316,10 +316,12 @@ async def power_on_lpar(
 
     ``boot_mode``, ``partition_profile_uuid``, ``operation_type`` and ``keylock``
     are passed through to the PowerOn job document; their defaults leave it
-    unchanged. Activating against ``partition_profile_uuid`` discards
-    current-configuration changes the profile lacks (memory, processor and
-    adapter changes), unless it is the partition's current profile and
-    CurrentProfileSync was On when they were made.
+    unchanged. ``operation_type="activate"`` is validated and never sent: it is
+    the job's default, and a V10R3 HMC refuses the ``OperationType`` parameter.
+    Activating against ``partition_profile_uuid`` discards current-configuration
+    changes the profile lacks (memory, processor and adapter changes), unless it
+    is the partition's current profile and CurrentProfileSync was On when they
+    were made.
     """
     system_name_or_uuid = optional_system_selector(system_name_or_uuid)
     if affinity_assessment is not None:
@@ -702,7 +704,6 @@ async def _require_contained_partition_profile(
 def _unapplied_activation_clause(
     boot_mode: BootMode,
     partition_profile_uuid: str | None,
-    operation_type: PowerOnOperationType | None,
     keylock: PowerOnKeylock | None,
 ) -> str:
     """Name the activation parameters an already-running partition discarded.
@@ -712,13 +713,14 @@ def _unapplied_activation_clause(
     request was never attempted. Only the parameters actually supplied are
     named, and the remedy is leaving the running state: resubmitting PowerOn
     with ``force`` does not apply a boot mode to a partition already running.
+    An operation type is never named: ``activate``, its only value, is the
+    default and is never sent (#1392), as the default ``norm`` boot mode is not.
     """
     requested = [
         name
         for name, supplied in (
             ("boot mode", boot_mode != "norm"),
             ("partition profile", bool(partition_profile_uuid)),
-            ("operation type", bool(operation_type)),
             ("keylock position", bool(keylock)),
         )
         if supplied
@@ -821,7 +823,7 @@ async def power_lpar(
         observed = (state or "").strip().lower()
         if observed in ACTIVATED_STATES:
             unapplied = _unapplied_activation_clause(
-                boot_mode, partition_profile_uuid, operation_type, keylock
+                boot_mode, partition_profile_uuid, keylock
             )
             described = "running" if observed == "running" else f"active ({state})"
             return LparPowerResult(

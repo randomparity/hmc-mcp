@@ -55,7 +55,9 @@ def lpars_power_on(
         ),
     ),
     operation_type: PowerOnOperationType | None = typer.Option(
-        None, "--operation-type", help="PowerOn operation type"
+        None,
+        "--operation-type",
+        help="PowerOn operation type; activate is the default and is never sent",
     ),
     keylock: PowerOnKeylock | None = typer.Option(
         None,

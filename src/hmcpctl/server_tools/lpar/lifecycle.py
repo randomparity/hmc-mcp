@@ -408,7 +408,8 @@ def hmc_power_on_lpar(
             profile only, so it survives activating that profile and no other.
             When omitted the partition activates against its current configuration.
         operation_type: PowerOn operation type; activate states the default
-            explicitly. Omit it to send no OperationType parameter.
+            explicitly and is never sent, because the HMC refuses an
+            OperationType parameter for it.
         keylock: Keylock position to activate with — manual or norm (normal), the
             PowerOn job's own spelling, not the creation-time normal/manual/auto.
             Omit it to send no keylock parameter and leave the position to the HMC.

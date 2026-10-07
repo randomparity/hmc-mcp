@@ -1099,7 +1099,7 @@ def test_adapter_commands_print_where_the_change_lives(fake_hmc, command):
 
 
 def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
-    """--boot-mode, --partition-profile, --operation-type and --keylock reach the job."""
+    """--boot-mode, --partition-profile and --keylock reach the job; activate does not."""
     result = RUNNER.invoke(
         cli.app,
         [
@@ -1131,7 +1131,8 @@ def test_lpars_power_on_activation_flags_reach_the_job(fake_hmc):
     assert '<ParameterValue kb="CUR" kxe="false">sms</ParameterValue>' in job_xml
     assert ">LogicalPartitionProfile</ParameterName>" in job_xml
     assert PARTITION_PROFILE_UUID in job_xml
-    assert ">OperationType</ParameterName>" in job_xml
+    # #1392: --operation-type activate is accepted and never sent.
+    assert ">OperationType</ParameterName>" not in job_xml
     assert ">keylock</ParameterName>" in job_xml
     assert '<ParameterValue kb="CUR" kxe="false">manual</ParameterValue>' in job_xml
     # #981: the fake's adapters carry no slot, so the profile check warns about each.
