@@ -576,6 +576,9 @@ with both `LIVE_TEST_ENV_*` keys set, writes them to
 `test-results-<arm>-observations.json`. Promote them by hand
 (`docs/capabilities/README.md`, "Recording an observation").
 
+The dedicated arm's create and delete steps (rows 30 and 34) are judged rows,
+not observations: the lpar-power arm owns those operations' evidence (#1389).
+
 An SR-IOV call that changed nothing records no observation. From a profile
 that reads `none`, only the assign is observed. To observe the unassign as
 well, start with the profile already listing the test port; the baseline check
