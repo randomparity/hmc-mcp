@@ -175,20 +175,20 @@ names are internal everywhere and are never inventoried.
   `translate_pcm_error`, `translate_template_error`, `translate_virtual_network_create_error`.
 - `operations.health` — operations: `fetch_fleet_health`; types: `FleetHealthResult`; excluded
   synchronous: none.
-- `operations.vios.install` — operations: `install_vios`, `install_vios_by_lpar_selector`; types: `InstallHandle`, `InstallRequest`;
+- `operations.vios.install` — operations: `install_vios`; types: `InstallHandle`, `InstallRequest`;
   excluded synchronous: `validate_install_request`.
-  - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
-    client is opened, which the operations cannot do. Both operations submit the detached
+  - Note: the MCP tool calls `validate_install_request` to reject a malformed argument before a
+    client is opened, which the operation cannot do. The operation submits the detached
     `installios` CLI bridge ADR 0070 selected after ADR 0069 found no `InstallLPAR` or
-    `InstallVIOS` REST job on any surveyed HMC, so each returns the bridge's detach handle,
+    `InstallVIOS` REST job on any surveyed HMC, so it returns the bridge's detach handle,
     `InstallHandle`, rather than an HMC job identifier. That `TypedDict` is **not** one of the
     opaque HMC resource payloads the Consequences section below describes: this package composes
     all five keys itself and no firmware level can vary them, so `system`, `partition`, `pid`,
     `log_path` and `message` are a package-owned contract, and changing one needs the same minor
     release an `__all__` change does (#468). Nothing on this path is pollable, so no wait
-    parameters are offered and none may be added without a superseding decision. Both operations
-    are classified for ownership authorization in ADR 0092 §3.4a, which is the authoritative
-    record; §6's recording obligation for them is discharged there, not here. It does not reach
+    parameters are offered and none may be added without a superseding decision. The operation
+    is classified for ownership authorization in ADR 0092 §3.4a, which is the authoritative
+    record; §6's recording obligation for it is discharged there, not here. That does not reach
     `InstallHandle`: §6 places a new facade export in one of §5's three sets, and §5 enumerates
     Domain A over exported *functions*, which a type is not.
 - `operations.virtualization` — operations: none; types: none; excluded synchronous: none.

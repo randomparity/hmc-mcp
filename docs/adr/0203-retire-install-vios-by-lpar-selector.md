@@ -50,7 +50,7 @@ operation are pre-release surfaces.
 ## Considered & rejected
 
 - **Redirect the selector to the `VirtualIOServer` feed.** verified: the operation would then
-  resolve, read and submit exactly as `install_vios` does — `_submit_install` is shared and
+  resolve, read and submit exactly as `install_vios` does — `_submit_install` was shared and
   `install_vios`'s docstring already called the two "identical mechanism, contract, and return
   value" (`src/hmcpctl/operations/vios/install.py` at 9aa828b8, lines 356-364). It would be a
   pure alias under a name that promises LPAR targets.

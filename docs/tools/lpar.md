@@ -2,7 +2,7 @@
 
 # `lpar` tools
 
-38 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
+37 tools in the `lpar` operation domain. This reference covers every tool the server registers, including the ones a default deployment does not expose. See the [tool reference index](index.md) for every domain.
 
 The Summary column on each domain page is the first line of the tool's MCP description. The complete text, including the conditions under which a tool refuses, is the tool handler's docstring under `src/hmcpctl/server_tools/`. An MCP client's `tools/list` carries that docstring's prose as the description and its argument detail in the input schema; `Returns:` and `Raises:` sections are not sent.
 
@@ -23,7 +23,6 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | `hmc_get_lpar_state` | `read` | `lpar.get_state` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return the current state of one LPAR by partition name or UUID. |
 | `hmc_get_minimum_affinity_policy` | `read` | `lpar.get_minimum_affinity_policy` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Return an LPAR's minimum-affinity policy when supported. |
 | `hmc_inspect_lpar` | `read` | `lpar.inspect` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Inspect one LPAR: state, RMC, resources, reference codes and next actions. |
-| `hmc_install_vios_by_lpar_selector` | `destructive` | `lpar.install_os` | `lpar` | `absent` | `unevidenced` | `existing-runtime-guards` | Install an OS image onto a partition via the HMC ``installios`` CLI. |
 | `hmc_list_lpar_memopt_scores` | `read` | `lpar.list_memopt_scores` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List current memory-optimization affinity scores for a system's LPARs. |
 | `hmc_list_lpar_ownership` | `read` | `lpar.list_ownership` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Read parsed ownership for every LPAR on a system in one REST call. |
 | `hmc_list_lpars` | `read` | `lpar.list` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List LPARs, optionally filtered by system and state. |

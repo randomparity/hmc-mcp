@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
 
 # Not `typing.TypedDict`: pydantic refuses one on Python < 3.12, which is inside
 # this package's supported range, and `InstallHandle` may be used in a
@@ -17,9 +15,7 @@ from hmcpctl.errors import HMCError
 
 from ...audit import records as audit
 from ...resource_identity import (
-    ResourceNotFoundError,
     is_uuid,
-    resolve_lpar_uuid,
     resolve_system_name,
     resolve_system_uuid,
     resolve_vios_uuid,
@@ -37,16 +33,6 @@ from ...ssh.install import (
 from ...ssh.lpar import resolve_lpar_cli_name
 
 _logger = logging.getLogger(__name__)
-
-
-class _TargetResolver(Protocol):
-    def __call__(
-        self,
-        hmc: HMCClient,
-        value: str,
-        *,
-        system_name_or_uuid: str,
-    ) -> Awaitable[str]: ...
 
 
 class InstallHandle(TypedDict):
@@ -71,7 +57,7 @@ class InstallHandle(TypedDict):
 
     log_path: str
     """HMC-side path the install writes to. Keyed on the partition name alone,
-    so it is not unique per managed system — see :func:`install_vios_by_lpar_selector`."""
+    so it is not unique per managed system — see :func:`install_vios`."""
 
     message: str
     """Operator-facing restatement of ``pid`` and ``log_path`` with the cleanup
@@ -108,8 +94,8 @@ class InstallRequest:
 def validate_install_request(request: InstallRequest) -> None:
     """Reject an install request that cannot become an ``installios`` command.
 
-    One list, two call sites. :func:`_submit_install` calls it so a facade
-    caller — who reaches no tool body — is covered; the MCP tools call it
+    One list, two call sites. :func:`install_vios` calls it so a facade
+    caller — who reaches no tool body — is covered; the MCP tool calls it
     *before* opening a client, which the operation cannot do because its client
     is already an argument. ``build_installios_command`` keeps its own
     independent copy as the injection boundary, trusting neither.
@@ -126,16 +112,13 @@ def validate_install_request(request: InstallRequest) -> None:
         validate_mac_address(request.mac_address)
 
 
-async def _validate_install_target(
-    read_target: Callable[[str], Awaitable[dict[str, Any] | None]], target_uuid: str
-) -> None:
+async def _validate_install_target(hmc: HMCClient, target_uuid: str) -> None:
     """Reject an install target whose type or state is unsafe for ``installios``.
 
-    *read_target* is the entry read matching the resolver's feed: a VIOS answers
-    only under ``VirtualIOServer``, and ``LogicalPartition/{vios_uuid}`` is a
-    404 on V10R3 (#1202).
+    The entry is read under ``VirtualIOServer``, the feed the target resolved
+    through: ``LogicalPartition/{vios_uuid}`` is a 404 on V10R3 (#1202).
     """
-    target = await read_target(target_uuid)
+    target = await hmc.get_vios(target_uuid)
     resource = (target or {}).get("Resource") or {}
     partition_type = resource.get("PartitionType")
     if partition_type != "Virtual IO Server":
@@ -154,54 +137,96 @@ async def _validate_install_target(
         )
 
 
-async def _resolve_lpar_selector_target(
-    hmc: HMCClient, value: str, *, system_name_or_uuid: str
-) -> str:
-    """Resolve through the ``LogicalPartition`` feed, refusing a VIOS name (#1247).
-
-    A VIOS is listed only in the ``VirtualIOServer`` feed (#1202), so a name the
-    ``LogicalPartition`` lookup misses is probed there before the miss stands.
-    """
-    try:
-        return await resolve_lpar_uuid(
-            hmc, value, system_name_or_uuid=system_name_or_uuid
-        )
-    except ResourceNotFoundError as miss:
-        if not await hmc.find_vios_by_name(value, system_uuid=system_name_or_uuid):
-            raise
-        raise ResourceNotFoundError(
-            "LPAR",
-            value,
-            f"{value!r} is a Virtual I/O Server; this selector resolves only "
-            "partitions in the LogicalPartition feed. Use hmc_install_vios to "
-            "install it.",
-        ) from miss
-
-
-async def _submit_install(
+async def install_vios(
     hmc: HMCClient,
-    target_name_or_uuid: str,
     system_name_or_uuid: str,
-    resolve_target_uuid: _TargetResolver,
-    read_target: Callable[[str], Awaitable[dict[str, Any] | None]],
+    vios_name_or_uuid: str,
     request: InstallRequest,
 ) -> InstallHandle:
-    """Resolve one install target's CLI names and detach ``installios`` on it."""
+    """Detach an ``installios`` VIOS install onto an existing VIOS partition.
+
+    Drives the HMC command line over SSH, not the REST API: the ``InstallVIOS``
+    REST job does not exist on any surveyed HMC (ADR 0069), and ``installios``
+    has no REST equivalent (ADR 0070). The IBM man page scopes ``installios``
+    to Virtual I/O Server images, so a general AIX or Linux NIM install stays
+    on the NIM master and is out of scope here. The target resolves through the
+    ``VirtualIOServer`` feed only (ADR 0203).
+
+    Semantics are submit-and-detach. The install is a full network
+    installation that outlives one SSH session, so the operation launches
+    ``installios`` under ``nohup`` with stdin closed and returns as soon as the
+    HMC reports the backgrounded PID. There is no HMC job on this path and
+    nothing to poll: the returned mapping is an :class:`InstallHandle`, carrying
+    the resolved ``system`` and ``partition`` names, the remote ``pid``, the
+    ``log_path`` the install writes to, and a ``message`` restating both. Track
+    progress through that log or the partition console, then confirm the
+    outcome with the partition state operations. Clean up a failed install with
+    ``installios -u`` on the HMC before retrying.
+
+    Requires hmcsuperadmin-level HMC authority (e.g. hscroot) and a powered-off
+    target VIOS that already exists with a profile.
+
+    Ownership authorization is classified in ADR 0092 §3.4a, which is the
+    authoritative record; that row, not this docstring, carries the reasoning.
+
+    Before composing the command, the operation reads the resolved
+    ``VirtualIOServer`` resource and rejects anything that is not a Virtual I/O
+    Server or is not in the ``not activated`` state. This applies to name and
+    UUID selectors, so a returned handle always means the locally checked
+    target passed both stated preconditions; the detached process's later
+    outcome still reaches only the HMC-side log.
+
+    Submission is not idempotent, and the log path collides more widely than
+    the partition. Nothing detects an install already running against the
+    target, so a second call submits a second detached process and both write
+    the same disk. Separately, the log path is keyed on the **partition name
+    alone** — the managed system is not part of it — and the redirect
+    truncates, so two same-named partitions on two different managed systems
+    behind one HMC share one log file and each destroys the other's only
+    diagnostic record. The returned ``log_path`` is therefore not unique per
+    system. Serializing per partition name *across every managed system on the
+    HMC* is the caller's responsibility.
+
+    Args:
+        hmc: Connected client; its configuration also carries the SSH
+            credentials the CLI bridge submits with.
+        system_name_or_uuid: Managed-system name or UUID hosting the VIOS;
+            ``installios -s`` needs it explicitly.
+        vios_name_or_uuid: Powered-off VIOS partition name or UUID.
+        request: Grouped :class:`InstallRequest` containing the install-image
+            source, install-time IPv4 network settings, partition profile,
+            optional VLAN identifier, and optional client MAC address.
+
+    Raises:
+        ValueError: If an argument cannot be part of an ``installios``
+            invocation, or if a name resolves to no VIOS or system. Both are
+            raised before anything is submitted.
+        HMCError: If the target is not a Virtual I/O Server or is not powered
+            off. The check runs before SSH submission.
+        HMCCLIError: Either from mapping a UUID target to its CLI name over
+            SSH — no matching ``lssyscfg`` row, or a transport failure on that
+            read — or from the submission itself failing or reporting no PID.
+            The exception type alone does not say which, so it does not tell a
+            caller whether an ``installios`` was started: a resolution failure
+            submits nothing and needs no ``installios -u`` cleanup, while a
+            failed submission may. When that distinction matters, resolve the
+            target to a name first and pass the name.
+    """
     validate_install_request(request)
 
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-    target_uuid = await resolve_target_uuid(
-        hmc, target_name_or_uuid, system_name_or_uuid=system_uuid
+    target_uuid = await resolve_vios_uuid(
+        hmc, vios_name_or_uuid, system_name_or_uuid=system_uuid
     )
-    await _validate_install_target(read_target, target_uuid)
+    await _validate_install_target(hmc, target_uuid)
     system_name = (
         system_name_or_uuid
         if not is_uuid(system_name_or_uuid)
         else await resolve_system_name(hmc, system_uuid)
     )
     partition_name = (
-        target_name_or_uuid
-        if not is_uuid(target_name_or_uuid)
+        vios_name_or_uuid
+        if not is_uuid(vios_name_or_uuid)
         else await resolve_lpar_cli_name(hmc.config, target_uuid, system_name)
     )
 
@@ -255,141 +280,3 @@ async def _submit_install(
             "install."
         ),
     }
-
-
-async def install_vios_by_lpar_selector(
-    hmc: HMCClient,
-    system_name_or_uuid: str,
-    lpar_name_or_uuid: str,
-    request: InstallRequest,
-) -> InstallHandle:
-    """Detach an ``installios`` OS install onto an existing partition.
-
-    Drives the HMC command line over SSH, not the REST API: the ``InstallLPAR``
-    REST job does not exist on any surveyed HMC (ADR 0069), and ``installios``
-    has no REST equivalent (ADR 0070). The IBM man page scopes ``installios``
-    to Virtual I/O Server images, so a general AIX or Linux NIM install stays
-    on the NIM master and is out of scope here.
-
-    Semantics are submit-and-detach. The install is a full network
-    installation that outlives one SSH session, so the operation launches
-    ``installios`` under ``nohup`` with stdin closed and returns as soon as the
-    HMC reports the backgrounded PID. There is no HMC job on this path and
-    nothing to poll: the returned mapping is an :class:`InstallHandle`, carrying
-    the resolved ``system`` and ``partition`` names, the remote ``pid``, the
-    ``log_path`` the install writes to, and a ``message`` restating both. Track
-    progress through that log or the partition console, then confirm the
-    outcome with the partition state operations. Clean up a failed install with
-    ``installios -u`` on the HMC before retrying.
-
-    Requires hmcsuperadmin-level HMC authority (e.g. hscroot) and a powered-off
-    target partition that already exists with a profile.
-
-    Ownership authorization is classified in ADR 0092 §3.4a, which is the
-    authoritative record; that row, not this docstring, carries the reasoning.
-
-    The selector targets only partitions in the ``LogicalPartition`` feed. A VIOS
-    is listed only under ``VirtualIOServer``, so a name the ``LogicalPartition``
-    lookup misses but the managed system's VIOS feed lists is refused with an
-    error pointing at ``hmc_install_vios``; :func:`install_vios` installs it.
-
-    Before composing the command, the operation reads the resolved partition
-    resource and rejects anything that is not a Virtual I/O Server or is not in
-    the ``not activated`` state. This applies to name and UUID selectors, so a
-    returned handle always means the locally checked target passed both stated
-    preconditions; the detached process's later outcome still reaches only the
-    HMC-side log.
-
-    Submission is not idempotent, and the log path collides more widely than
-    the partition. Nothing detects an install already running against the
-    target, so a second call submits a second detached process and both write
-    the same disk. Separately, the log path is keyed on the **partition name
-    alone** — the managed system is not part of it — and the redirect
-    truncates, so two same-named partitions on two different managed systems
-    behind one HMC share one log file and each destroys the other's only
-    diagnostic record. The returned ``log_path`` is therefore not unique per
-    system. Serializing per partition name *across every managed system on the
-    HMC* is the caller's responsibility.
-
-    Args:
-        hmc: Connected client; its configuration also carries the SSH
-            credentials the CLI bridge submits with.
-        system_name_or_uuid: Managed-system name or UUID hosting the
-            partition; ``installios -s`` needs it explicitly.
-        lpar_name_or_uuid: Powered-off partition name or UUID.
-        request: Grouped :class:`InstallRequest` containing the install-image
-            source, install-time IPv4 network settings, partition profile,
-            optional VLAN identifier, and optional client MAC address.
-
-    Raises:
-        ValueError: If an argument cannot be part of an ``installios``
-            invocation, if a name resolves to no partition or system, or if a
-            partition name resolves only to a VIOS. All are raised before
-            anything is submitted.
-        HMCError: If the target is not a Virtual I/O Server or is not powered
-            off. The check runs before SSH submission.
-        HMCCLIError: Either from mapping a UUID target to its CLI name over
-            SSH — no matching ``lssyscfg`` row, or a transport failure on that
-            read — or from the submission itself failing or reporting no PID.
-            The exception type alone does not say which, so it does not tell a
-            caller whether an ``installios`` was started: a resolution failure
-            submits nothing and needs no ``installios -u`` cleanup, while a
-            failed submission may. When that distinction matters, resolve the
-            target to a name first and pass the name.
-    """
-    return await _submit_install(
-        hmc,
-        lpar_name_or_uuid,
-        system_name_or_uuid,
-        _resolve_lpar_selector_target,
-        hmc.get_logical_partition,
-        request,
-    )
-
-
-async def install_vios(
-    hmc: HMCClient,
-    system_name_or_uuid: str,
-    vios_name_or_uuid: str,
-    request: InstallRequest,
-) -> InstallHandle:
-    """Detach an ``installios`` VIOS install onto an existing VIOS partition.
-
-    Identical mechanism, contract, and return value to
-    :func:`install_vios_by_lpar_selector` — see it for the submit-and-detach semantics, the
-    detach handle's fields, the ADR 0092 §3.4a ownership classification, and the
-    ``installios`` argument grammar. This operation differs only in resolving
-    its target through the ``VirtualIOServer`` feed rather than the
-    ``LogicalPartition`` one, and reading that target's entry under
-    ``VirtualIOServer`` for the same local type and power-state preflight.
-    Submission is not idempotent here either, and the same partition-name-only
-    log-path collision applies across every managed system on the HMC.
-
-    Args:
-        hmc: Connected client; its configuration also carries the SSH
-            credentials the CLI bridge submits with.
-        system_name_or_uuid: Managed-system name or UUID hosting the VIOS;
-            ``installios -s`` needs it explicitly.
-        vios_name_or_uuid: Powered-off VIOS partition name or UUID.
-        request: Grouped :class:`InstallRequest` containing the install-image
-            source, install-time IPv4 network settings, partition profile,
-            optional VLAN identifier, and optional client MAC address.
-
-    Raises:
-        ValueError: If an argument cannot be part of an ``installios``
-            invocation, or if a name resolves to no VIOS or system. Both are
-            raised before anything is submitted.
-        HMCError: If the target is not a Virtual I/O Server or is not powered
-            off. The check runs before SSH submission.
-        HMCCLIError: Same two sources as :func:`install_vios_by_lpar_selector` — UUID-to-CLI
-            name resolution over SSH, or the submission — and the same
-            inability to tell them apart from the exception type.
-    """
-    return await _submit_install(
-        hmc,
-        vios_name_or_uuid,
-        system_name_or_uuid,
-        resolve_vios_uuid,
-        hmc.get_vios,
-        request,
-    )

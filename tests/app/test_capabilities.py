@@ -370,7 +370,6 @@ def test_parameter_normalization_contract_is_schema_pinned():
     by_name = _tools_by_name()
     replacements = {
         "hmc_install_vios": {"install_source", "system_name_or_uuid"},
-        "hmc_install_vios_by_lpar_selector": {"install_source", "system_name_or_uuid"},
         "hmc_attach_disk_to_lpar": {"capacity_mib"},
         "hmc_create_virtual_disk": {"capacity_mib"},
         "hmc_create_media_repository": {"size_mib"},
@@ -408,20 +407,19 @@ def test_parameter_normalization_contract_is_schema_pinned():
         by_name["hmc_remove_vnic"].parameters["properties"],
     ):
         assert properties["ownership_override"]["default"] is False
-    for install_tool in ("hmc_install_vios", "hmc_install_vios_by_lpar_selector"):
-        properties = by_name[install_tool].parameters["properties"]
-        # ADR 0070: the REST job-polling surface is gone with the dead
-        # InstallLPAR/InstallVIOS endpoints; the CLI bridge exposes no wait.
-        assert not set(properties) & {
-            "nim_ip",
-            "wait",
-            "wait_timeout_seconds",
-            "poll_interval",
-            "hmc_timeout_minutes",
-        }
-        assert properties["profile_name"]["default"] == "default"
-        assert properties["vlan_id"]["default"] == "0"
-        assert properties["mac_address"]["default"] is None
+    properties = by_name["hmc_install_vios"].parameters["properties"]
+    # ADR 0070: the REST job-polling surface is gone with the dead
+    # InstallLPAR/InstallVIOS endpoints; the CLI bridge exposes no wait.
+    assert not set(properties) & {
+        "nim_ip",
+        "wait",
+        "wait_timeout_seconds",
+        "poll_interval",
+        "hmc_timeout_minutes",
+    }
+    assert properties["profile_name"]["default"] == "default"
+    assert properties["vlan_id"]["default"] == "0"
+    assert properties["mac_address"]["default"] is None
 
     enum_contracts = {
         ("hmc_list_lpars", "state"): PARTITION_STATES,

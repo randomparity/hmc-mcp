@@ -23,7 +23,6 @@ from ...operations.vios.core import (
 from ...operations.vios.install import (
     InstallRequest,
     install_vios,
-    install_vios_by_lpar_selector,
     validate_install_request,
 )
 from ...tool_registry import tool_module
@@ -180,105 +179,7 @@ def hmc_install_vios(
             request,
         )
 
-    # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
-    # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
-    # annotation, which would move the derived MCP output schema.
-    return dict(with_client(_go, profile=profile))
-
-
-@tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
-def hmc_install_vios_by_lpar_selector(
-    lpar_name_or_uuid: str,
-    system_name_or_uuid: str,
-    install_source: str,
-    lpar_ip: str,
-    nim_subnetmask: str,
-    nim_gateway: str,
-    profile_name: str = "default",
-    vlan_id: str = "0",
-    mac_address: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any]:
-    """Install an OS image onto a partition via the HMC ``installios`` CLI.
-
-    This tool drives the HMC command line over SSH, not the REST API: the
-    ``InstallLPAR`` REST job this operation once targeted does not exist on any
-    surveyed HMC (ADR 0069), and ``installios`` has no REST equivalent (the
-    grammar is recorded in ADR 0070).
-
-    Note the engine's scope: the IBM man page defines ``installios`` as the
-    Virtual I/O Server installer and requires the ``-p`` partition to be of
-    type Virtual I/O Server. This bridge therefore installs VIOS images; a
-    general AIX/Linux NIM install stays on the NIM master and is out of scope
-    here (ADR 0069 records why the HMC alone cannot drive it).
-
-    Semantics are submit-and-detach. The install is a full NIM network
-    installation that typically runs far longer than one SSH session; the tool
-    launches ``installios`` in the background on the HMC (``nohup``, stdin
-    closed) and returns as soon as the process is submitted, reporting the
-    remote PID and the log path (``/tmp/hmcpctl-installios-<partition>.log``).
-    It cannot report the install's progress or outcome. There is no HMC job on
-    this path — hmc_get_job / hmc_wait_for_job do not apply. Monitor the
-    install through the partition's console (mkvterm) or the log file, then
-    confirm with the partition state tools. If an install fails mid-flight,
-    clean up the NIM resources with ``installios -u`` in an SSH session before
-    retrying.
-
-    Requires hmcsuperadmin-level HMC authority (e.g. hscroot). The target must
-    be a powered-off partition that already exists with a profile.
-
-    The selector targets only partitions in the LogicalPartition feed. A VIOS
-    partition is listed only under VirtualIOServer, so naming one is refused
-    with an error pointing at hmc_install_vios, which installs it.
-
-    Args:
-        lpar_name_or_uuid: Powered-off partition name or UUID.
-        system_name_or_uuid: Managed-system name or UUID hosting the
-            partition; ``installios -s`` needs it explicitly.
-        install_source: Where the install image comes from (``installios
-            -d``): a device path such as ``/dev/cdrom`` or an ``lsmediadev``
-            USB device, an absolute path on the HMC to a ``backupios``
-            nim_resources tarball or VIOS ISO, or ``server:/path`` for an
-            NFS-served backup. Replaces the retired ``nim_ip`` parameter:
-            under CLI semantics the HMC itself serves the image, so there is
-            no external NIM-server address.
-        lpar_ip: IPv4 address assigned to the partition during installation
-            (``-i``); unchanged from the REST-era parameter.
-        nim_subnetmask: IPv4 subnet mask for the partition's install-time
-            network interface (``-S``); now configures the client side, not a
-            remote NIM server.
-        nim_gateway: IPv4 gateway used during installation (``-g``); same
-            client-side semantics as ``nim_subnetmask``.
-        profile_name: Partition profile holding the install resources
-            (``-r``); defaults to ``default``.
-        vlan_id: Install-network VLAN tag identifier (``-V``); ``"0"`` for
-            untagged traffic.
-        mac_address: Optional client MAC address (``-m``). When omitted,
-            ``installios`` discovers it, which can time out on some networks.
-        profile: Optional TOML profile name; uses environment defaults when
-            omitted.
-    """
-    # install_vios_by_lpar_selector validates too, but only once its client exists. Calling
-    # the same list here rejects a malformed argument before a session opens.
-    request = InstallRequest(
-        install_source=install_source,
-        client_ip=lpar_ip,
-        subnet_mask=nim_subnetmask,
-        gateway=nim_gateway,
-        profile_name=profile_name,
-        vlan_id=vlan_id,
-        mac_address=mac_address,
-    )
-
-    async def _go(hmc):
-        return await install_vios_by_lpar_selector(
-            hmc,
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-            request,
-        )
-
-    # `install_*` returns an `InstallHandle`, and a `TypedDict` is not assignable
+    # `install_vios` returns an `InstallHandle`, and a `TypedDict` is not assignable
     # to `dict[str, Any]`. Widen here rather than narrowing this tool's return
     # annotation, which would move the derived MCP output schema.
     return dict(with_client(_go, profile=profile))
