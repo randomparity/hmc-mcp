@@ -365,6 +365,21 @@ def test_the_lpar_config_verdict_names_its_one_partition(
     assert "activated to SMS" in output
 
 
+def test_the_lpar_power_verdict_names_its_partitions_and_volume(
+    workspace, monkeypatch, capsys
+):
+    """#1346. Its targets are the run's own partitions and one VIOS volume."""
+    (workspace / ".env").write_text(_env_text(**_DEDICATED), encoding="utf-8")
+    _credentials(monkeypatch)
+
+    assert preflight.main(["--group", "lpar-power", "--skip-hardware"]) == 0
+
+    output = capsys.readouterr().out
+    assert "RUNNABLE" in output
+    assert "partitions hmcpctl-live-pwr-<8 hex>" in output
+    assert "volume lppwr<8 hex>" in output
+
+
 def test_the_vios_backup_verdict_names_the_restore_and_its_cleanup(
     workspace, monkeypatch, capsys
 ):

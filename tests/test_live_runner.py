@@ -48,6 +48,7 @@ from live_test import (  # noqa: E402
     inventory,
     lpar,
     lpar_config,
+    lpar_power,
     metrics,
     network,
     observation,
@@ -69,6 +70,7 @@ LIVE_WORKFLOW_MODULES = (
     inventory,
     lpar,
     lpar_config,
+    lpar_power,
     metrics,
     network,
     pcie,
@@ -1053,6 +1055,12 @@ def test_lpar_config_group_is_opt_in() -> None:
     assert runner.SUBTASK_GROUPS["lpar-config"] == [39]
     assert 39 not in runner.SUBTASK_GROUPS["all"]
     assert runner.SUBTASKS[39] is lpar_config.exercise_lpar_config
+
+
+def test_lpar_power_group_is_opt_in() -> None:
+    assert runner.SUBTASK_GROUPS["lpar-power"] == [41]
+    assert 41 not in runner.SUBTASK_GROUPS["all"]
+    assert runner.SUBTASKS[41] is lpar_power.exercise_lpar_power
 
 
 @pytest.mark.asyncio
@@ -6459,30 +6467,50 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "profile-ports-cleared",
         },
         "st35-bare-cec": {
-            "lpar-uuid-resolved",
-            "ownership-and-baseline-confirmed",
             "assign-call-succeeded",
             "profile-lists-slot",
-            "activation-job-successful",
-            "lpar-reached-firmware",
             "job-found",
             "job-identity-matches",
             "job-status-successful",
             "refcodes-returned",
             "refcodes-name-the-fixture",
-            "console-captured",
-            "console-released",
-            "power-off-job-successful",
-            "lpar-not-activated",
             "unassign-call-succeeded",
             "profile-restored-to-baseline",
-            "delete-call-succeeded",
-            "lpar-name-absent",
-            "slot-released",
             "state-read-returned-a-state",
             "list-call-succeeded",
             "fixture-slot-listed",
             "fixture-slot-unowned",
+        },
+        "st41-lpar-power": {
+            "units-over-vcpus-refused",
+            "memory-over-configurable-refused",
+            "resources-read-back",
+            "ownership-stamped",
+            "duplicate-name-refused",
+            "profile-activation-reached-firmware",
+            "running-reported-without-job",
+            "current-configuration-reached-firmware",
+            "console-captured",
+            "console-released",
+            "delayed-shutdown-not-activated",
+            "immediate-shutdown-not-activated",
+            "start-completed-activated",
+            "restart-immediate-completed-activated",
+            "stop-immediate-completed-not-activated",
+            "repeat-stop-already-in-state",
+            "same-request-replays",
+            "activated-delete-refused",
+            "partition-kept",
+            "delete-call-succeeded",
+            "lpar-name-absent",
+            "workflow-completed",
+            "network-adapter-on-vlan",
+            "storage-mapping-listed",
+            "partition-activated",
+            "pcie-slot-owned",
+            "dry-run-inventoried",
+            "dry-run-changed-nothing",
+            "resource-deleted",
         },
         "st37-vios-io-backup-restore": {
             "listing-parsed",

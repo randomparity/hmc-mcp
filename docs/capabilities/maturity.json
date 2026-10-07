@@ -470,21 +470,21 @@
       },
       "evidence": [
         {
-          "id": "st35-hmc-power-on-lpar",
+          "id": "st41-hmc-power-on-lpar",
           "channel": "live",
-          "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T12:59:53Z",
-          "cleanup": "not-required",
+          "result": "failed",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
           "assertions": [
-            "activation-job-successful",
-            "lpar-reached-firmware"
+            "profile-activation-reached-firmware",
+            "running-reported-without-job"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "4470ac796dcdbdc7485b063afaf0d2719c2cf54772260713750a445dd0704d74"
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
         }
       ]
     },
@@ -938,21 +938,21 @@
       },
       "evidence": [
         {
-          "id": "st35-hmc-capture-lpar-console",
+          "id": "st41-hmc-capture-lpar-console",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:01:01Z",
-          "cleanup": "not-required",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
           "assertions": [
             "console-captured",
             "console-released"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "1bc462eed153a58215546032a9b62217be947e2a054184b76fcc264c2eac651f"
+          "closure_fingerprint": "354ea938270f6ab281f23ef21a97914fd14d4382fa704a3d4fd19d452d5d3801"
         }
       ]
     },
@@ -992,21 +992,21 @@
       },
       "evidence": [
         {
-          "id": "st35-hmc-power-off-lpar",
+          "id": "st41-hmc-power-off-lpar",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:01:26Z",
-          "cleanup": "not-required",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
           "assertions": [
-            "power-off-job-successful",
-            "lpar-not-activated"
+            "delayed-shutdown-not-activated",
+            "immediate-shutdown-not-activated"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "4470ac796dcdbdc7485b063afaf0d2719c2cf54772260713750a445dd0704d74"
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
         }
       ]
     },
@@ -1147,22 +1147,23 @@
       },
       "evidence": [
         {
-          "id": "st35-hmc-delete-lpar",
+          "id": "st41-hmc-delete-lpar",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:04:44Z",
-          "cleanup": "not-required",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
           "assertions": [
+            "activated-delete-refused",
+            "partition-kept",
             "delete-call-succeeded",
-            "lpar-name-absent",
-            "slot-released"
+            "lpar-name-absent"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "4470ac796dcdbdc7485b063afaf0d2719c2cf54772260713750a445dd0704d74"
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
         }
       ]
     },
@@ -1189,21 +1190,24 @@
       },
       "evidence": [
         {
-          "id": "st35-hmc-create-lpar",
+          "id": "st41-hmc-create-lpar",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:04:44Z",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
           "cleanup": "passed",
           "assertions": [
-            "lpar-uuid-resolved",
-            "ownership-and-baseline-confirmed"
+            "units-over-vcpus-refused",
+            "memory-over-configurable-refused",
+            "resources-read-back",
+            "ownership-stamped",
+            "duplicate-name-refused"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "0929476e4d725ce2aa8a88526700e46595ffb204e179b86c8248dfff4c74ea91"
+          "closure_fingerprint": "fbafb8e9feb6247062fdc99d1277c8ef834e008e9a1d8f20a208d42990e38159"
         }
       ]
     },
@@ -4179,6 +4183,248 @@
           {
             "variant": "job",
             "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "lpar.power",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "start",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "stop",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "mode",
+                "constraint": "graceful or immediate"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "restart",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "mode",
+                "constraint": "graceful or immediate"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st41-hmc-power-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
+          "assertions": [
+            "start-completed-activated",
+            "restart-immediate-completed-activated",
+            "stop-immediate-completed-not-activated",
+            "repeat-stop-already-in-state",
+            "same-request-replays"
+          ],
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "cb39ebde524c8c062558982ccbb7d0a5813197c6709d1d0b9e61deeb5b8e1e73"
+        }
+      ]
+    },
+    {
+      "operation": "lpar.decommission",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "dry-run-inventory",
+            "parameters": [
+              {
+                "name": "dry_run",
+                "constraint": "true"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "owner-stamped-delete",
+            "parameters": [
+              {
+                "name": "immediate",
+                "constraint": "boolean"
+              },
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st41-hmc-decommission-lpar",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
+          "assertions": [
+            "dry-run-inventoried",
+            "dry-run-changed-nothing",
+            "resource-deleted",
+            "workflow-completed",
+            "lpar-name-absent"
+          ],
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+        }
+      ]
+    },
+    {
+      "operation": "provision.lpar",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "virtual-disk-on-vlan",
+            "parameters": [
+              {
+                "name": "name",
+                "constraint": "PartitionName"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "declarative-assignments",
+            "parameters": [
+              {
+                "name": "assignments",
+                "constraint": "dedicated, sriov or vnics"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st41-hmc-provision-lpar",
+          "channel": "live",
+          "result": "failed",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-07T02:44:34Z",
+          "cleanup": "passed",
+          "assertions": [
+            "workflow-completed",
+            "ownership-stamped",
+            "network-adapter-on-vlan",
+            "storage-mapping-listed",
+            "partition-activated"
+          ],
+          "tested_commit": "734a066e7f3df8ba56ca7a56445ded6da1345ab6",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "f70d04e37b7b761d69aecea9482195a20fd69329bb78419eadd3c80dfe4797fe"
+        }
+      ]
+    },
+    {
+      "operation": "system.power_on",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "whole-system",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "system.power_off",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "whole-system",
+            "parameters": [
+              {
+                "name": "immediate",
+                "constraint": "boolean"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
           }
         ],
         "missing_scope": []

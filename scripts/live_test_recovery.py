@@ -19,7 +19,10 @@ the network arm (subtask 9) by the baselines that run recorded: a network left o
 its test VLAN, a client adapter on the test partition off its baseline, an FC-port
 label off its original, and a vFC group label it named. Subtask 2 only reads, so
 there is nothing for it to leave. It witnesses the lpar-config arm (subtask 39) by
-any partition still carrying its reserved `hmcpctl-live-lpar-` prefix. Every other
+any partition still carrying its reserved `hmcpctl-live-lpar-` prefix, and the
+lpar-power arm (subtask 41) by a `hmcpctl-live-pwr-` partition, a VIOS mapping backed
+by an `lppwr` volume, an `lppwr` volume left in the configured volume group, or a VIOS
+vSCSI adapter serving a `hmcpctl-live-pwr-` partition. Every other
 subtask the run dispatched is listed as NOT WITNESSED, to be checked by hand
 (docs/live-testing.md, step 4).
 
@@ -57,7 +60,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import lpar_config, network, storage_lifecycle, vios_backup
+from live_test import lpar_config, lpar_power, network, storage_lifecycle, vios_backup
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
@@ -90,6 +93,7 @@ _READ_ONLY_TOOLS = frozenset(
         "hmc_read_lpar_boot_order",
         "hmc_list_optical_mappings",
         "hmc_list_storage_mappings",
+        "hmc_list_volume_groups",
         "hmc_get_media_repository",
         "hmc_get_console_info",
         "hmc_list_users",
@@ -110,9 +114,10 @@ _NOT_ACTIVATED = "Not Activated"
 #: `lshwres` list; `chsyscfg` would mutate, and shares the tool.
 _READ_ONLY_COMMAND_PREFIXES = ("lssyscfg ", "lshwres ")
 
-#: The one VIOS command admitted: the storage arm's `lsvg -lv` volume listing.
-#: A `viosvrcmd` prefix would admit any VIOS command (`rmlv` included), so the
-#: whole shape must match, built from a closed character set.
+#: The one VIOS command admitted: a volume group's `lsvg -lv` listing, read by the
+#: storage and lpar-power arms' checks. A `viosvrcmd` prefix would admit any VIOS
+#: command (`rmlv` included), so the whole shape must match, built from a closed
+#: character set.
 _VOLUME_LISTING = re.compile(
     r"viosvrcmd -m [A-Za-z0-9_.-]+ --id [0-9]+ -c 'lsvg -lv [A-Za-z0-9_.-]+'"
 )
@@ -142,6 +147,7 @@ _WITNESSED_SUBTASKS = (
         network.INVENTORY_SUBTASK,
         network.SUBTASK,
         lpar_config.SUBTASK,
+        lpar_power.SUBTASK,
     }
 )
 
@@ -335,6 +341,149 @@ async def check_lpar_config(call, inputs: LparConfigInputs) -> list[Finding]:
                 remedy=f"{shutdown}rmsyscfg -r lpar -m {system} -n {quoted}",
             )
         )
+    return findings
+
+
+@dataclass(frozen=True)
+class LparPowerInputs:
+    """The system the lpar-power arm (ST41) created its partitions and volume on."""
+
+    system_name: str
+    volume_group: str = ""
+
+
+def lpar_power_inputs_from_document(
+    document: dict[str, Any], subtasks: list[int]
+) -> LparPowerInputs | None:
+    """The run's system when it dispatched ST41, else `None`; found by prefix."""
+    config = document.get("config")
+    system = config.get("system_name") if isinstance(config, dict) else None
+    if lpar_power.SUBTASK not in subtasks or not system:
+        return None
+    group = config.get("vdisk_volume_group_name") if isinstance(config, dict) else ""
+    return LparPowerInputs(str(system), str(group or ""))
+
+
+async def _cli_rows(call, command: str, what: str) -> list[list[str]]:
+    status, listing = await call("hmc_run_command", cmd=command)
+    if status != "PASS" or not isinstance(listing, str):
+        raise StateUnreadable(what)
+    if listing.strip() == HMC_NO_RESULTS:
+        return []
+    return [line.split(",") for line in listing.splitlines() if "," in line]
+
+
+async def check_lpar_power(call, inputs: LparPowerInputs) -> list[Finding]:
+    """Run partitions, and on each VIOS run volumes, mappings backed by one, and
+    adapters serving a run partition."""
+    system = shlex.quote(inputs.system_name)
+    rows = await _cli_rows(
+        call,
+        f"lssyscfg -r lpar -m {system} -F name,state,lpar_env,lpar_id",
+        f"the partitions of {inputs.system_name}",
+    )
+    findings = []
+    for name, state, _, _ in (row for row in rows if len(row) == 4):
+        if not lpar_power.scratch_partitions([name]):
+            continue
+        quoted = shlex.quote(name)
+        shutdown = (
+            ""
+            if state == _NOT_ACTIVATED
+            else f"chsysstate -m {system} -r lpar -n {quoted} -o shutdown --immed; "
+        )
+        findings.append(
+            Finding(
+                what=f"partition {name}",
+                detail=f"an lpar-power partition is still defined ({state})",
+                remedy=f"{shutdown}rmsyscfg -r lpar -m {system} -n {quoted}",
+            )
+        )
+    for vios, _, env, vios_id in (row for row in rows if len(row) == 4):
+        if env == "vioserver":
+            findings += await _lpar_power_vios_residue(call, inputs, vios)
+            findings += await _lpar_power_volumes_left(call, inputs, vios, vios_id)
+    return findings
+
+
+async def _lpar_power_volumes_left(
+    call, inputs: LparPowerInputs, vios: str, vios_id: str
+) -> list[Finding]:
+    """Run volumes still in the configured group, on the VIOS that lists the group."""
+    status, groups = await call(
+        "hmc_list_volume_groups",
+        vios_name_or_uuid=vios,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(groups, list):
+        raise StateUnreadable(f"the volume groups of VIOS {vios}")
+    group = inputs.volume_group
+    if not any(isinstance(g, dict) and g.get("name") == group for g in groups):
+        return []
+    command = f"viosvrcmd -m {inputs.system_name} --id {vios_id} -c 'lsvg -lv {group}'"
+    if not _VOLUME_LISTING.fullmatch(command):
+        raise StateUnreadable(
+            f"the volumes of {group!r} (a name outside the read shape)"
+        )
+    status, listing = await call("hmc_run_command", cmd=command)
+    names = lpar_power._volume_names(listing) if status == "PASS" else None
+    if names is None:
+        raise StateUnreadable(f"the volumes of {group!r} on VIOS {vios}")
+    system = shlex.quote(inputs.system_name)
+    return [
+        Finding(
+            what=f"volume {name} on VIOS {vios}",
+            detail=f"an lpar-power volume is still in volume group {group}",
+            remedy=f'viosvrcmd -m {system} --id {vios_id} -c "rmlv -f {name}"',
+        )
+        for name in lpar_power.scratch_volumes(names)
+    ]
+
+
+async def _lpar_power_vios_residue(
+    call, inputs: LparPowerInputs, vios: str
+) -> list[Finding]:
+    system = shlex.quote(inputs.system_name)
+    status, mappings = await call(
+        "hmc_list_storage_mappings",
+        vios_name_or_uuid=vios,
+        system_name_or_uuid=inputs.system_name,
+    )
+    if status != "PASS" or not isinstance(mappings, list):
+        raise StateUnreadable(f"the storage mappings of VIOS {vios}")
+    findings = [
+        Finding(
+            what=f"mapping {entry.get('id')} on VIOS {vios}",
+            detail=f"maps lpar-power volume {entry.get('backing_name')}",
+            remedy=(
+                f"viosvrcmd -m {system} -p {shlex.quote(vios)} -c "
+                f'"rmvdev -vtd {str(entry.get("id")).rpartition("/")[2]}"'
+                if entry.get("id")
+                else f"viosvrcmd -m {system} -p {shlex.quote(vios)} -c 'lsmap -all' "
+                "to find its virtual target device, then rmvdev -vtd <device>"
+            ),
+        )
+        for entry in mappings
+        if isinstance(entry, dict)
+        and lpar_power.scratch_volumes([str(entry.get("backing_name") or "")])
+    ]
+    adapters = await _cli_rows(
+        call,
+        scsi_adapter_listing(inputs.system_name, "lpar_names", vios),
+        f"the vSCSI adapters of VIOS {vios}",
+    )
+    findings += [
+        Finding(
+            what=f"vSCSI server adapter {slot} on VIOS {vios}",
+            detail=f"serves lpar-power partition {remote}",
+            remedy=(
+                f"chhwres -r virtualio --rsubtype scsi -m {system} -o r "
+                f"-p {shlex.quote(vios)} -s {slot}"
+            ),
+        )
+        for slot, remote, _ in (row for row in adapters if len(row) == 3)
+        if lpar_power.scratch_partitions([remote])
+    ]
     return findings
 
 
@@ -1322,6 +1471,7 @@ async def check_run(
     network_inputs: NetworkInputs | None = None,
     users: bool = False,
     lpar_config_inputs: LparConfigInputs | None = None,
+    lpar_power_inputs: LparPowerInputs | None = None,
 ) -> list[Finding]:
     """Each arm's checks in turn, each read whatever the others found."""
     findings: list[Finding] = []
@@ -1337,6 +1487,7 @@ async def check_run(
         (check_vios_backup, vios),
         (check_network, network_inputs),
         (check_lpar_config, lpar_config_inputs),
+        (check_lpar_power, lpar_power_inputs),
     ):
         if inputs is None:
             continue
@@ -1367,6 +1518,7 @@ async def _run_checks(
     network_inputs: NetworkInputs | None = None,
     users: bool = False,
     lpar_config_inputs: LparConfigInputs | None = None,
+    lpar_power_inputs: LparPowerInputs | None = None,
 ) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
     # The checks need the live run's composition, not bare ``create_mcp``:
@@ -1384,6 +1536,7 @@ async def _run_checks(
             network_inputs,
             users,
             lpar_config_inputs,
+            lpar_power_inputs,
         )
 
 
@@ -1470,6 +1623,7 @@ def main(argv: list[str] | None = None) -> int:
     vios = vios_backup_inputs_from_document(document, subtasks)
     network_inputs = network_inputs_from_document(document, subtasks)
     lpar_config_inputs = lpar_config_inputs_from_document(document, subtasks)
+    lpar_power_inputs = lpar_power_inputs_from_document(document, subtasks)
 
     findings: list[Finding] = []
     unread: list[str] = []
@@ -1480,7 +1634,14 @@ def main(argv: list[str] | None = None) -> int:
         unread.append(str(error))
     if users or any(
         inputs is not None
-        for inputs in (pcie, partition, vios, network_inputs, lpar_config_inputs)
+        for inputs in (
+            pcie,
+            partition,
+            vios,
+            network_inputs,
+            lpar_config_inputs,
+            lpar_power_inputs,
+        )
     ):
         if not runner._bootstrap_config():
             print("ERROR: no HMC credentials; cannot check the system", file=sys.stderr)
@@ -1488,7 +1649,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             findings = asyncio.run(
                 _run_checks(
-                    pcie, partition, vios, network_inputs, users, lpar_config_inputs
+                    pcie,
+                    partition,
+                    vios,
+                    network_inputs,
+                    users,
+                    lpar_config_inputs,
+                    lpar_power_inputs,
                 )
             )
         except MutatingCallRefused as refused:
