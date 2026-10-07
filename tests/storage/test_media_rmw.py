@@ -5,6 +5,7 @@ virtual-disk writes, the POST carries If-Match set to the GET's ETag, a GET with
 refuses before any POST, and a 412 is the concurrent-change error with nothing written.
 """
 
+import re
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -182,3 +183,84 @@ async def test_create_optical_media_adds_to_the_captured_container(mock_hmc, med
         for item in containers[0].findall(f"{{{UOM_NS}}}VirtualOpticalMedia")
     ]
     assert names == (["media-1", "media-2"] if media else []) + ["new.iso"]
+
+
+def _shape(element: ET.Element) -> list[tuple[str, dict[str, str]]]:
+    return [(child.tag.split("}")[-1], dict(child.attrib)) for child in element]
+
+
+def _captured_medium() -> ET.Element:
+    group = ET.fromstring(volume_group_with_repository(media=True))
+    medium = group.find(f".//{{{UOM_NS}}}VirtualOpticalMedia")
+    assert medium is not None
+    return medium
+
+
+@pytest.mark.asyncio
+async def test_create_optical_media_matches_the_captured_medium(mock_hmc):
+    """The new medium has the captured children, order and attributes, minus the
+    server-set MediaUDID (kb="ROR"); V10R3 refused the earlier order with REST0001 (#1385).
+    """
+    body = volume_group_with_repository(media=False)
+    mock_hmc.get(VG_PATH).mock(
+        return_value=httpx.Response(200, text=body, headers={"ETag": ETAG})
+    )
+    route = mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=body))
+
+    await _run("create_optical_media", ("new.iso", 3072))
+
+    posted = ET.fromstring(route.calls.last.request.content)
+    created = posted.find(f".//{{{UOM_NS}}}VirtualOpticalMedia")
+    assert created is not None
+    captured = _captured_medium()
+    expected = [
+        (tag, attrib) for tag, attrib in _shape(captured) if attrib.get("kb") != "ROR"
+    ]
+    assert [tag for tag, _ in expected] == [
+        "Metadata",
+        "MediaName",
+        "MountType",
+        "Size",
+    ]
+    assert created.attrib == captured.attrib
+    assert _shape(created) == expected
+    assert [
+        created.findtext(f"{{{UOM_NS}}}{tag}")
+        for tag in ("MediaName", "MountType", "Size")
+    ] == [
+        "new.iso",
+        "rw",
+        "3",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_optical_media_builds_the_captured_container(mock_hmc):
+    """A repository with no OpticalMedia gains one shaped like the captured container,
+    ahead of RepositoryName (#1385)."""
+    captured_group = ET.fromstring(volume_group_with_repository(media=False))
+    captured = captured_group.find(f".//{{{UOM_NS}}}OpticalMedia")
+    assert captured is not None
+    body = re.sub(
+        r"\s*<OpticalMedia\b.*?</OpticalMedia>",
+        "",
+        volume_group_with_repository(media=False),
+        count=1,
+        flags=re.DOTALL,
+    )
+    mock_hmc.get(VG_PATH).mock(
+        return_value=httpx.Response(200, text=body, headers={"ETag": ETAG})
+    )
+    route = mock_hmc.post(VG_PATH).mock(return_value=httpx.Response(200, text=body))
+
+    await _run("create_optical_media", ("new.iso", 3072))
+
+    posted = ET.fromstring(route.calls.last.request.content)
+    repository = posted.find(f".//{{{UOM_NS}}}VirtualMediaRepository")
+    assert repository is not None
+    tags = [tag for tag, _ in _shape(repository)]
+    assert tags.index("OpticalMedia") == tags.index("RepositoryName") - 1
+    container = repository.find(f"{{{UOM_NS}}}OpticalMedia")
+    assert container is not None
+    assert container.attrib == captured.attrib
+    assert [tag for tag, _ in _shape(container)] == ["Metadata", "VirtualOpticalMedia"]
