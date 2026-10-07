@@ -205,3 +205,16 @@ def test_lpar_create_tools_do_not_offer_a_vios_or_an_os_type():
         partition_type = properties["partition_type"]
         assert partition_type["enum"] == ["AIX/Linux", "OS400"], name
         assert "hmc_create_vios" in partition_type["description"], name
+
+
+def test_power_on_partition_profile_states_that_activation_discards_changes():
+    """#1384: a profile activation discards current-configuration changes the profile
+    lacks, memory and processor included, and no warning reports those."""
+    tool = _tools_by_name()["hmc_power_on_lpar"]
+    description = " ".join(
+        tool.parameters["properties"]["partition_profile_uuid"]["description"].split()
+    )
+    assert "discards" in description
+    for writer in ("hmc_modify_lpar", "hmc_dlpar_mem", "hmc_dlpar_proc"):
+        assert writer in description
+    assert "CurrentProfileSync" in description
