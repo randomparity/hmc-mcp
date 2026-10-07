@@ -360,7 +360,9 @@ def hmc_power_on_lpar(
 
     With ``partition_profile_uuid``, ``warnings`` lists each current virtual
     SCSI, Fibre Channel or Ethernet client adapter whose slot that profile lacks:
-    activating the profile removes it. The job is still submitted.
+    activating the profile removes it. The job is still submitted. No warning
+    covers memory or processor changes, which the profile activation discards
+    too (see ``partition_profile_uuid``).
 
     The HMC accepts PowerOn only from the 'not activated' state. If the
     partition is already activated — 'running', 'starting' or 'open firmware' —
@@ -399,8 +401,11 @@ def hmc_power_on_lpar(
             System Management Services or of for the Open Firmware prompt.
         partition_profile_uuid: UUID of the partition profile to activate against.
             This is not the profile argument above, which selects a configured HMC
-            connection. When omitted the partition activates against its current
-            configuration.
+            connection. Activating a profile discards current-configuration
+            changes the profile lacks: memory and processor changes from
+            hmc_modify_lpar, hmc_dlpar_mem or hmc_dlpar_proc, and adapter changes,
+            unless CurrentProfileSync was On when they were made. When omitted the
+            partition activates against its current configuration.
         operation_type: PowerOn operation type; activate states the default
             explicitly. Omit it to send no OperationType parameter.
         keylock: Keylock position to activate with — manual or norm (normal), the
