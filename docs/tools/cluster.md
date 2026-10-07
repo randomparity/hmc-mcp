@@ -10,6 +10,6 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_create_logical_unit` | `mutate` | `cluster.create_logical_unit` | `cluster` | `implemented` | `unevidenced` | `existing-runtime-guards` | Create a Logical Unit (file-backed disk) in a Cluster/SSP. |
 | `hmc_delete_logical_unit` | `destructive` | `cluster.delete_logical_unit` | `cluster` | `implemented` | `unevidenced` | `existing-runtime-guards` | Delete a Logical Unit from a Cluster/SSP by its UDID. |
-| `hmc_get_shared_storage_pool` | `read` | `cluster.get_pool` | `shared_storage_pool` | `implemented` | `current` | `existing-runtime-guards` | Get one Shared Storage Pool by UUID, or None for an empty response. |
+| `hmc_get_shared_storage_pool` | `read` | `cluster.get_pool` | `shared_storage_pool` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Get one Shared Storage Pool by UUID, or None for an empty response. |
 | `hmc_list_clusters` | `read` | `cluster.list` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | List Clusters (sets of VIOS nodes sharing a storage pool). |
 | `hmc_list_shared_storage_pools` | `read` | `cluster.list_pools` | `console` | `implemented` | `unevidenced` | `existing-runtime-guards` | List all Shared Storage Pools with capacity and logical-unit details. |
