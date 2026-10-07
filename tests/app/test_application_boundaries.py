@@ -104,14 +104,16 @@ def test_create_mcp_returns_independent_complete_applications():
     # removes hmc_list_recent_jobs, whose Job feed no HMC serves.
     # Issue #1218 adds the read-only hmc_operation_status, for 157. Issue #1219
     # adds hmc_search_tools and hmc_invoke_tool, for 159.
+    # Issue #1371 retires hmc_install_vios_by_lpar_selector, which could never
+    # submit an install (ADR 0203).
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 163
-    assert len(asyncio.run(second.list_tools())) == 163
+    assert len(asyncio.run(first.list_tools())) == 162
+    assert len(asyncio.run(second.list_tools())) == 162
 
 
 def test_operations_do_not_import_application_modules():
