@@ -122,6 +122,13 @@
       "observed_at": "2026-10-06T13:04:44Z"
     },
     {
+      "operation": "lpar.decommission",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "lpar.delete",
       "implementation": "implemented",
       "verification": "stale",
@@ -260,6 +267,13 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T09:43:08Z"
+    },
+    {
+      "operation": "lpar.power",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "lpar.power_off",
@@ -542,6 +556,13 @@
       "observed_at": "2026-10-06T20:35:43Z"
     },
     {
+      "operation": "provision.lpar",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "remote_access.configure",
       "implementation": "implemented",
       "verification": "unevidenced",
@@ -638,6 +659,20 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T09:43:28Z"
+    },
+    {
+      "operation": "system.power_off",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "system.power_on",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     },
     {
       "operation": "system.summary",
