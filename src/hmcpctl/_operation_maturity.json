@@ -392,7 +392,7 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:20:22Z"
+      "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.create_repository",
@@ -420,35 +420,35 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:19:55Z"
+      "observed_at": "2026-10-07T16:34:16Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:20:08Z"
+      "observed_at": "2026-10-07T16:34:30Z"
     },
     {
       "operation": "media.list_mappings",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T16:37:00Z"
     },
     {
       "operation": "media.mount",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.unmount",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.upload_iso",
@@ -628,8 +628,8 @@
     {
       "operation": "remote_access.get",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:35:19Z"
     },
     {
@@ -649,8 +649,8 @@
     {
       "operation": "resource_role.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:35:02Z"
     },
     {
@@ -721,7 +721,7 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:20:42Z"
+      "observed_at": "2026-10-07T16:37:00Z"
     },
     {
       "operation": "storage.list_volume_groups",
@@ -803,8 +803,8 @@
     {
       "operation": "task_role.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:34:57Z"
     },
     {
@@ -866,36 +866,36 @@
     {
       "operation": "user.create",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:37:01Z"
     },
     {
       "operation": "user.delete",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:37:01Z"
     },
     {
       "operation": "user.get",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:37:01Z"
     },
     {
       "operation": "user.list",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:34:48Z"
     },
     {
       "operation": "user.modify",
       "implementation": "partial",
-      "verification": "failed",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-07T18:37:01Z"
     },
     {

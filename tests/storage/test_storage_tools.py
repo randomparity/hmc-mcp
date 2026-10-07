@@ -10,6 +10,7 @@ tool bodies is exercised — the layer the client tests skip.  This mirrors
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 from unittest.mock import ANY, AsyncMock, patch
 
@@ -573,10 +574,7 @@ def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
 
 
 def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
-    """hmc_create_optical_media GETs the VG then POSTs a blank-media doc.
-
-    No kb= attributes are emitted; assertions are element/text only.
-    """
+    """hmc_create_optical_media GETs the VG then POSTs a blank-media doc."""
     _hmc_env(monkeypatch)
     vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     mock_hmc.get(vg_path).mock(
@@ -591,7 +589,7 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "VirtualOpticalMedia" in body
     assert "aix.iso" in body
-    assert "Size>4</" in body  # 4096 MiB is 4 GiB
+    assert re.search(r"<Size\b[^>]*>4</", body)  # 4096 MiB is 4 GiB
     assert "MountType" in body
 
 
