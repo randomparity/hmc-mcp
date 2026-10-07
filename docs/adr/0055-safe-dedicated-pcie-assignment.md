@@ -13,6 +13,11 @@ Accepted on 2026-08-20.
 > the operations still fail closed, now because no code path selects the admitted readback.
 > Issue #882 owns that selection and the envelope check.
 
+> **Evidence note (2026-10-06, #630).** #882 has landed as
+> [ADR 0166](0166-dedicated-pcie-assignment-wiring-and-create-time-probe.md). Inside the
+> ADR 0165 envelope the operations now select the admitted readback and mutate. Outside it
+> they still fail closed before issuing any command.
+
 ## Context
 
 The existing public profile helper appends `io_slots` with unconditional `--force`. ADR 0053

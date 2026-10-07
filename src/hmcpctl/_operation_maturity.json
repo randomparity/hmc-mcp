@@ -94,6 +94,13 @@
       "observed_at": "2026-10-06T20:36:49Z"
     },
     {
+      "operation": "io_slot.list",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:27:22Z"
+    },
+    {
       "operation": "job.get",
       "implementation": "implemented",
       "verification": "stale",
@@ -515,24 +522,45 @@
     },
     {
       "operation": "pcie.assign_dedicated_slot",
-      "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:04:44Z"
+      "implementation": "partial",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:32:46Z"
     },
     {
       "operation": "pcie.list_dedicated_slots",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:04:43Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:27:19Z"
+    },
+    {
+      "operation": "pcie.list_sriov_adapters",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:27:39Z"
+    },
+    {
+      "operation": "pcie.list_sriov_logical_ports",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:28:10Z"
+    },
+    {
+      "operation": "pcie.list_sriov_physical_ports",
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:27:56Z"
     },
     {
       "operation": "pcie.unassign_dedicated_slot",
-      "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T13:04:04Z"
+      "implementation": "partial",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T00:31:52Z"
     },
     {
       "operation": "pcm.get_preferences",
@@ -605,7 +633,21 @@
       "observed_at": null
     },
     {
+      "operation": "sriov.assign_logical_port",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "sriov.set_mode",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "sriov.unassign_logical_port",
       "implementation": "partial",
       "verification": "unevidenced",
       "reason": null,
@@ -862,6 +904,27 @@
       "verification": "stale",
       "reason": "closure-changed",
       "observed_at": "2026-10-06T19:21:20Z"
+    },
+    {
+      "operation": "vnic.add",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vnic.list",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "vnic.remove",
+      "implementation": "partial",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
     }
   ]
 }
