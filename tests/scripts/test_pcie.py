@@ -962,6 +962,12 @@ def _fixture_absent_after_delete(responses: dict[str, Any]) -> None:
     responses["hmc_get_lpar_description"] = get_description
 
 
+#: The judged-but-unobserved rows the dedicated arm records for the
+#: create-time probe and the fixture delete.
+_CREATE_TIME_JUDGED = "hmc_create_lpar (create-time judged)"
+_DELETE_JUDGED = "hmc_delete_lpar (judged)"
+
+
 def _emitted(state: ScenarioState) -> dict[str, tuple[str, str, str, str, list[str]]]:
     """Each observation by id: operation, scenario, result, cleanup, assertion ids."""
     emitted = {
@@ -1001,13 +1007,6 @@ async def test_dedicated_arm_emits_verified_observations(
 
     scenario = "st29-dedicated-pcie"
     assert _emitted(state) == {
-        "st30-hmc-create-lpar": (
-            "lpar.create",
-            scenario,
-            "passed",
-            "passed",
-            ["create-call-succeeded", "profile-lists-slot"],
-        ),
         "st31-hmc-assign-dedicated-pcie-slot": (
             "pcie.assign_dedicated_slot",
             scenario,
@@ -1029,14 +1028,21 @@ async def test_dedicated_arm_emits_verified_observations(
             "passed",
             ["add-command-succeeded", "profile-lists-slot"],
         ),
-        "st34-hmc-delete-lpar": (
-            "lpar.delete",
-            scenario,
-            "passed",
-            "not-required",
-            ["delete-call-succeeded", "lpar-name-absent"],
-        ),
     }
+
+
+@pytest.mark.asyncio
+async def test_dedicated_arm_judges_create_and_delete_without_observing_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lpar-power arm owns both operations' observations (#1389)."""
+    state = await _run_dedicated_with_probe(monkeypatch)
+
+    operations = {item["operation"] for item in state.observations}
+    assert not operations & {"lpar.create", "lpar.delete"}
+    for label in (_CREATE_TIME_JUDGED, _DELETE_JUDGED):
+        row = state.row(label)
+        assert row is not None and row[2] == "PASS", label
 
 
 @pytest.mark.asyncio
@@ -1047,8 +1053,8 @@ async def test_a_fixture_that_survives_its_delete_fails_the_additions(
     state = await _run_dedicated_with_probe(monkeypatch, fixture_absent=False)
 
     emitted = _emitted(state)
-    assert emitted["st34-hmc-delete-lpar"][2:4] == ("failed", "not-required")
-    assert emitted["st34-hmc-delete-lpar"][4] == ["delete-call-succeeded"]
+    delete = state.row(_DELETE_JUDGED)
+    assert delete is not None and delete[2] == "FAIL"
     for key in ("st31-hmc-assign-dedicated-pcie-slot", "st33-chsyscfg-io-slots-add"):
         assert emitted[key][2:4] == ("failed", "failed")
 

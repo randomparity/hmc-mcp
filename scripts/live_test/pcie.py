@@ -1910,6 +1910,28 @@ async def name_absent(
     return partition_not_found(st, data)
 
 
+def _record_held(
+    state: RunState,
+    subtask: int,
+    tool: str,
+    *,
+    assertions: list[Assertion],
+    cleanup: str,
+    data: Any,
+) -> None:
+    """Record a step judged as `record_verified` would judge it, without promoting it.
+
+    The lpar-power arm (subtask 41) owns the `lpar.create` and `lpar.delete`
+    observations, and the catalog keeps one per operation, so this arm's would
+    overwrite it (#1389).
+    """
+    unmet = [item.id for item in assertions if not item.holds]
+    if cleanup == "failed":
+        unmet.append("cleanup failed")
+    note = "unmet: " + ", ".join(unmet) if unmet else ""
+    state.record(subtask, tool, "FAIL" if unmet else "PASS", data, note)
+
+
 async def _probe_create_time_assignment(
     client: Client, state: RunState, fixture: _DedicatedFixture
 ) -> bool:
@@ -2002,11 +2024,10 @@ async def _probe_create_time_assignment(
         f"{fixture.drc_index!r} (create status {st})",
     )
     cleaned = await _cleanup_probe_partition(client, state, fixture)
-    state.record_verified(
+    _record_held(
+        state,
         30,
-        "hmc_create_lpar (create-time verified)",
-        operation="lpar.create",
-        scenario=_DEDICATED_SCENARIO,
+        "hmc_create_lpar (create-time judged)",
         assertions=[
             Assertion("create-call-succeeded", st == "PASS"),
             Assertion("profile-lists-slot", landed),
@@ -2696,11 +2717,10 @@ async def exercise_dedicated_pcie_assignment(client: Client, state: RunState) ->
         if deleted is not None:
             absent = await name_absent(client, state, fixture)
             clean = absent and not fixture.probe_created
-            state.record_verified(
+            _record_held(
+                state,
                 34,
-                "hmc_delete_lpar (verified)",
-                operation="lpar.delete",
-                scenario=_DEDICATED_SCENARIO,
+                "hmc_delete_lpar (judged)",
                 assertions=[
                     Assertion("delete-call-succeeded", deleted == "PASS"),
                     Assertion("lpar-name-absent", absent),
