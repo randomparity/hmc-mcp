@@ -17,7 +17,7 @@ import pytest
 SCRIPTS_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 import live_test_recovery as recovery  # noqa: E402
-from live_test import vmedia  # noqa: E402
+from live_test import storage_lifecycle, vmedia  # noqa: E402
 from live_test.observation import CallFailure  # noqa: E402
 
 _MARKER = "pcie-deadbeef"
@@ -1148,7 +1148,8 @@ def test_a_finding_beside_unwitnessed_subtasks_exits_two_and_prints_both(
     assert _main(tmp_path, monkeypatch, document, [_FINDING]) == (2, True)
     output = capsys.readouterr().out
     assert "STRANDED" in output
-    assert "NOT WITNESSED  subtasks 0, 1," in output
+    # 0, 2 and 3 only read, so they are witnessed (#629, #1348).
+    assert "NOT WITNESSED  subtasks 1, 4," in output
 
 
 def test_a_document_with_no_subtasks_exits_two(tmp_path, monkeypatch, capsys):
@@ -1932,3 +1933,140 @@ def test_a_network_run_is_witnessed_and_can_exit_clean(tmp_path, monkeypatch, ca
     output = capsys.readouterr().out
     assert "CLEAN" in output
     assert "NOT WITNESSED" not in output
+
+
+# ---------------------------------------------------------------------------
+# The storage arm (#1348)
+# ---------------------------------------------------------------------------
+
+_RUN_DISK = "hpctl0a1b2c3d"
+_GROUP = "datavg"
+_VOLUMES = f"{_GROUP}:\nLV NAME  TYPE  LPs  PPs  PVs  LV STATE  MOUNT POINT\nop-disk  jfs2  4  4  1  open/syncd  N/A\n"
+
+
+def _storage_document(**artifacts) -> dict:
+    document = _lpar_document([0, 3, 40], **artifacts)
+    document["run"]["group"] = "storage"
+    document["config"]["vdisk_volume_group_name"] = _GROUP
+    return document
+
+
+def _storage_caller(
+    volumes: str,
+    mappings: list,
+    seen: list | None = None,
+    adapters: str = f"5,{_TEST_LPAR},3\n",
+):
+    """Answer the volume listing and the adapter listing by their commands."""
+
+    async def call(tool: str, **arguments):
+        recovery.guard_read_only(tool, arguments)
+        if seen is not None:
+            seen.append((tool, arguments))
+        if tool == "hmc_run_command":
+            if "lsvg -lv" in arguments["cmd"]:
+                return "PASS", volumes
+            return "PASS", adapters
+        if tool == "hmc_list_storage_mappings":
+            return "PASS", mappings
+        return "FAIL", None
+
+    return call
+
+
+_STORAGE_MAPPINGS = [{"id": "vhost0/vtscsi0", "backing_name": "op-disk"}]
+
+
+def test_a_storage_document_applies_only_its_classes():
+    inputs = _inputs(_storage_document())
+
+    assert inputs.storage_ran and inputs.volume_group == _GROUP
+    assert not (inputs.vmedia_ran or inputs.provisioned or inputs.powered_on)
+
+
+@pytest.mark.asyncio
+async def test_a_clean_storage_run_reads_volumes_mappings_and_adapters():
+    seen: list = []
+    call = _storage_caller(_VOLUMES, _STORAGE_MAPPINGS, seen)
+
+    assert await recovery.check_test_partition(call, _inputs(_storage_document())) == []
+    assert (
+        "hmc_run_command",
+        {"cmd": storage_lifecycle.volume_listing(_TEST_SYSTEM, _VIOS_ID, _GROUP)},
+    ) in seen
+
+
+@pytest.mark.asyncio
+async def test_a_run_disk_and_its_mapping_left_are_reported_by_prefix():
+    """Found by name shape, so a run killed before its document was written is too."""
+    call = _storage_caller(
+        _VOLUMES + f"{_RUN_DISK}  jfs2  2  2  1  open/syncd  N/A\n",
+        [*_STORAGE_MAPPINGS, {"id": "vhost1/vtscsi1", "backing_name": _RUN_DISK}],
+        adapters=f"5,{_TEST_LPAR},3\n6,{_TEST_LPAR},4\n",
+    )
+
+    findings = await recovery.check_test_partition(call, _inputs(_storage_document()))
+
+    assert [finding.what for finding in findings] == [
+        "run disk mapping left",
+        "run disk left",
+    ]
+    assert f"detach-mapping {_VIOS} vhost1/vtscsi1" in findings[0].remedy
+    assert f"--name {_RUN_DISK}" in findings[1].remedy
+
+
+@pytest.mark.asyncio
+async def test_an_operator_volume_is_never_the_runs():
+    call = _storage_caller(
+        _VOLUMES + "hpctl-operator  jfs2  2  2  1  open/syncd  N/A\n", _STORAGE_MAPPINGS
+    )
+
+    assert await recovery.check_test_partition(call, _inputs(_storage_document())) == []
+
+
+@pytest.mark.asyncio
+async def test_an_unparsable_volume_listing_is_unreadable():
+    call = _storage_caller("Cluster does not exist.", _STORAGE_MAPPINGS)
+
+    with pytest.raises(recovery.StateUnreadable, match="volumes in datavg"):
+        await recovery.check_test_partition(call, _inputs(_storage_document()))
+
+
+@pytest.mark.asyncio
+async def test_a_group_name_the_guard_cannot_carry_is_unreadable_not_refused():
+    document = _storage_document()
+    document["config"]["vdisk_volume_group_name"] = "data vg"
+
+    with pytest.raises(recovery.StateUnreadable, match="cannot carry"):
+        await recovery.check_test_partition(
+            _storage_caller(_VOLUMES, _STORAGE_MAPPINGS), _inputs(document)
+        )
+
+
+@pytest.mark.parametrize("group", ["datavg", "example-lt-609-vg", "vg.2"])
+def test_the_guard_admits_exactly_the_volume_listing(group):
+    """Every name `_run_disk_left` accepts, the runner's hyphenated default included."""
+    recovery.guard_read_only(
+        "hmc_run_command",
+        {"cmd": storage_lifecycle.volume_listing("sys-A", 3, group)},
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "viosvrcmd -m sys-A --id 3 -c 'rmlv -f hpctl0a1b2c3d'",
+        "viosvrcmd -m sys-A --id 3 -c 'lsvg -lv datavg; rmlv x'",
+        "viosvrcmd -m sys-A -p vios-A -c 'lsvg -lv datavg'",
+        "viosvrcmd -m sys-A --id 3 -c 'lsvg -lv datavg' ; rmsyscfg",
+        "viosvrcmd -m 'sys A' --id 3 -c 'lsvg -lv datavg'",
+    ],
+)
+def test_the_guard_refuses_any_other_vios_command(command):
+    with pytest.raises(recovery.MutatingCallRefused):
+        recovery.guard_read_only("hmc_run_command", {"cmd": command})
+
+
+def test_a_clean_storage_run_exits_zero(tmp_path, monkeypatch, capsys):
+    assert _main(tmp_path, monkeypatch, _storage_document()) == (0, True)
+    assert "CLEAN" in capsys.readouterr().out

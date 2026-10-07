@@ -1,13 +1,21 @@
-"""Storage inventory scenarios for the live HMC test harness."""
+"""Storage inventory scenarios for the live HMC test harness.
+
+ST3 reads the VIOS's volume groups and the HMC's clusters and shared storage
+pools, and records each read it can check against independent evidence through
+`record_verified` (#1348).
+"""
 
 from __future__ import annotations
 
+import shlex
+import uuid as uuid_module
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
+from .observation import Assertion, CallFailure
 from .results import entries
 from .results import resource as get_resource
 
@@ -77,6 +85,69 @@ def configured_vg_uuid(state: RunState) -> str | None:
     return artifacts.vg_uuid
 
 
+INVENTORY_SCENARIO = "st3-storage-inventory"
+POOL_SCENARIO = "st3-pool-read"
+_READ_FAILED = Assertion("read-failed", False)
+
+
+def vios_command(system_name: str, vios_id: int, command: str) -> str:
+    """Run *command* on the VIOS with partition id *vios_id* through the HMC."""
+    return (
+        f"viosvrcmd -m {shlex.quote(system_name)} --id {int(vios_id)} "
+        f"-c {shlex.quote(command)}"
+    )
+
+
+def volume_group_names(listing: object) -> frozenset[str] | None:
+    """The VIOS's ``lsvg`` output as group names; None when a line is not one name."""
+    if not isinstance(listing, str):
+        return None
+    names = [line.strip() for line in listing.splitlines() if line.strip()]
+    if any(len(name.split()) != 1 for name in names):
+        return None
+    return frozenset(names)
+
+
+async def _verify_volume_groups(
+    client: Client, state: RunState, data: list[Any], configured_listed: bool
+) -> None:
+    """Check the REST listing against the VIOS's own ``lsvg`` (independent CLI)."""
+    vios_id = state.artifacts.vios_partition_id
+    if type(vios_id) is not int:
+        state.record(3, "hmc_list_volume_groups", "PASS", data)
+        return
+    st, listing = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=vios_command(state.config.system_name, vios_id, "lsvg"),
+    )
+    state.record(3, "hmc_run_command lsvg (VIOS volume groups)", st, listing)
+    vios_names = volume_group_names(listing) if st == "PASS" else None
+    listed = {entry.get("name") for entry in data if isinstance(entry, Mapping)}
+    state.record_verified(
+        3,
+        "hmc_list_volume_groups",
+        operation="storage.list_volume_groups",
+        scenario=INVENTORY_SCENARIO,
+        assertions=[
+            Assertion("configured-group-listed", configured_listed),
+            Assertion(
+                "groups-match-vios", vios_names is not None and listed == vios_names
+            ),
+            Assertion(
+                "no-free-space-diagnostic",
+                all(
+                    isinstance(entry, Mapping)
+                    and entry.get("free_space_diagnostic") is None
+                    for entry in data
+                ),
+            ),
+        ],
+        cleanup="not-required",
+        data=data,
+    )
+
+
 async def _discover_volume_group(client: Client, state: RunState) -> None:
     artifacts = state.artifacts
     if not artifacts.vios_uuid:
@@ -89,21 +160,158 @@ async def _discover_volume_group(client: Client, state: RunState) -> None:
     st, data = await state.call(
         client, "hmc_list_volume_groups", vios_name_or_uuid=artifacts.vios_uuid
     )
-    state.record(3, "hmc_list_volume_groups", st, data)
-    if st == "PASS":
-        resolve_configured_volume_group(
-            state, 3, data, ("select configured volume group",)
+    if st != "PASS" or not isinstance(data, list):
+        state.record_verified(
+            3,
+            "hmc_list_volume_groups",
+            operation="storage.list_volume_groups",
+            scenario=INVENTORY_SCENARIO,
+            assertions=[_READ_FAILED],
+            cleanup="not-required",
+            data=data,
         )
+        return
+    group = resolve_configured_volume_group(
+        state, 3, data, ("select configured volume group",)
+    )
+    await _verify_volume_groups(client, state, data, group is not None)
     print(f"  VG UUID: {artifacts.vg_uuid}")
+
+
+def _identified(entry: object, name_field: str) -> bool:
+    """Whether a raw UOM entry carries its UUID and its name field."""
+    if not isinstance(entry, Mapping):
+        return False
+    name = get_resource(entry).get(name_field)
+    return bool(entry.get("UUID")) and isinstance(name, str) and bool(name)
+
+
+def _collection_read(
+    state: RunState, tool: str, status: str, data: object
+) -> list[Any] | None:
+    """The listing to check, or None for a failed read.
+
+    A failed read is recorded by its caller as a failed observation. An empty feed
+    proves no entry shape, so it is recorded here as a plain row.
+    """
+    if status != "PASS" or not isinstance(data, list):
+        return None
+    if not data:
+        state.record(3, f"{tool} (empty)", status, data)
+    return data
+
+
+async def _verify_clusters(client: Client, state: RunState) -> None:
+    """Every listed cluster names itself (`docs/refs/hmc-rest-api-p10/002-cluster.md:22`)."""
+    st, data = await state.call(client, "hmc_list_clusters")
+    clusters = _collection_read(state, "hmc_list_clusters", st, data)
+    if clusters == []:
+        return
+    state.record_verified(
+        3,
+        "hmc_list_clusters",
+        operation="cluster.list",
+        scenario=INVENTORY_SCENARIO,
+        assertions=[
+            Assertion(
+                "clusters-identified",
+                all(_identified(entry, "ClusterName") for entry in clusters),
+            )
+        ]
+        if clusters is not None
+        else [_READ_FAILED],
+        cleanup="not-required",
+        data=data,
+    )
+
+
+async def _verify_pools(client: Client, state: RunState) -> list[Any] | None:
+    """Every listed pool names itself.
+
+    The field is ``StoragePoolName``
+    (`docs/refs/hmc-rest-api-p10/cluster/005-shared-storage-pool.md:20`).
+    """
+    st, data = await state.call(client, "hmc_list_shared_storage_pools")
+    pools = _collection_read(state, "hmc_list_shared_storage_pools", st, data)
+    if pools == []:
+        return pools
+    state.record_verified(
+        3,
+        "hmc_list_shared_storage_pools",
+        operation="cluster.list_pools",
+        scenario=INVENTORY_SCENARIO,
+        assertions=[
+            Assertion(
+                "pools-identified",
+                all(_identified(entry, "StoragePoolName") for entry in pools),
+            )
+        ]
+        if pools is not None
+        else [_READ_FAILED],
+        cleanup="not-required",
+        data=data,
+    )
+    return pools
+
+
+def _absent_pool_refused(status: str, data: object) -> bool:
+    """Null, or a failure the HMC answered with 404 or a not-found message.
+
+    A tool returning None reaches the runner with no content, which it decodes as
+    the empty string.
+    """
+    if status == "PASS":
+        return data is None or data == ""
+    return isinstance(data, CallFailure) and (
+        data.http_status == 404 or "not found" in data.message.lower()
+    )
+
+
+async def _verify_pool_read(
+    client: Client, state: RunState, pools: list[Any] | None
+) -> None:
+    """Read an absent pool, and the first listed pool when there is one."""
+    absent = str(uuid_module.uuid4())
+    st, data = await state.call(client, "hmc_get_shared_storage_pool", ssp_uuid=absent)
+    state.record(3, "hmc_get_shared_storage_pool (absent pool)", st, data)
+    absent_refused = _absent_pool_refused(st, data)
+    listed_returned: bool | None = None
+    listed = next(
+        (entry.get("UUID") for entry in pools or [] if isinstance(entry, Mapping)),
+        None,
+    )
+    if isinstance(listed, str) and listed:
+        st, data = await state.call(
+            client, "hmc_get_shared_storage_pool", ssp_uuid=listed
+        )
+        state.record(3, "hmc_get_shared_storage_pool (listed pool)", st, data)
+        listed_returned = (
+            st == "PASS"
+            and isinstance(data, Mapping)
+            and str(data.get("UUID", "")).casefold() == listed.casefold()
+        )
+    state.record_verified(
+        3,
+        "hmc_get_shared_storage_pool",
+        operation="cluster.get_pool",
+        scenario=POOL_SCENARIO,
+        assertions=[
+            Assertion("absent-pool-not-returned", absent_refused),
+            *(
+                [Assertion("listed-pool-returned", listed_returned)]
+                if listed_returned is not None
+                else []
+            ),
+        ],
+        cleanup="not-required",
+        data={"absent_uuid": absent, "listed_uuid": listed},
+    )
 
 
 async def _record_storage_collections(client: Client, state: RunState) -> None:
     config = state.config
-    st, data = await state.call(client, "hmc_list_clusters")
-    state.record(3, "hmc_list_clusters", st, data)
-
-    st, data = await state.call(client, "hmc_list_shared_storage_pools")
-    state.record(3, "hmc_list_shared_storage_pools", st, data)
+    await _verify_clusters(client, state)
+    await _verify_pool_read(client, state, await _verify_pools(client, state))
 
     st, data = await state.call(
         client, "hmc_list_io_slots", system_name_or_uuid=config.system_name

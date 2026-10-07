@@ -53,6 +53,9 @@ class ScenarioState:
     def skip(self, stage: int, tool: str, reason: str) -> None:
         self.results.append((stage, tool, "SKIP", reason))
 
+    def record_verified(self, stage: int, tool: str, **kwargs: Any) -> None:
+        self.results.append((stage, tool, "VERIFIED", kwargs["operation"]))
+
 
 @pytest.mark.asyncio
 async def test_baseline_capture_preserves_identity_and_adapter_topology() -> None:
@@ -147,6 +150,7 @@ async def test_storage_inventory_resolves_the_owning_group() -> None:
         "hmc_list_volume_groups",
         "hmc_list_clusters",
         "hmc_list_shared_storage_pools",
+        "hmc_get_shared_storage_pool",
         "hmc_list_io_slots",
         "hmc_list_memory_pools",
     ]

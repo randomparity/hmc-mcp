@@ -95,6 +95,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
 | lpar-config | `uv run --no-sync python scripts/live_lpar_config.py` | subtask 39 |
+| storage | `uv run --no-sync python scripts/live_storage.py` | subtasks 0, 3 and 40 |
 | lpar-power | `uv run --no-sync python scripts/live_lpar_power.py` | subtask 41 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
@@ -107,7 +108,7 @@ ambiguous about which run stranded what.
 ### Reading the output
 
 Rows print as they complete. **Row subtask ids go up to 41, while the ids you
-can dispatch are 0 to 25, 37 to 39 and 41.** That is not a bug: subtask 24 dispatches the whole
+can dispatch are 0 to 25 and 37 to 41.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
@@ -305,6 +306,36 @@ unmount, or an unmount the arm cannot confirm, is a FAIL row marked
 `MANUAL RECOVERY REQUIRED` with the command that clears it. The arm never
 removes an adapter. Subtask 22 unmounts and deletes any medium of this run's
 that is left, and nothing else.
+
+### The storage arm
+
+The storage arm verifies the volume-group, virtual-disk, mapping and cluster
+reads and the disk lifecycle (#1348). Subtask 0 resolves the VIOS and the test
+partition; subtask 3 reads the inventory; subtask 40 runs only in this arm.
+
+- **Inventory (subtask 3).** The volume-group listing is compared with the VIOS's
+  own `lsvg`. Clusters and shared storage pools are promoted only when the HMC
+  lists some; an empty feed stays a plain row. An absent pool UUID must come back
+  empty or not found, and a listed pool is read back.
+- **Preconditions (subtask 40).** The test partition must not be in
+  `LIVE_TEST_PROTECTED_LPAR_NAMES` and must read `Not Activated`, and
+  `LIVE_TEST_VDISK_VOLUME_GROUP_NAME` must have 1 GiB free. Each failed
+  precondition is a SKIP naming why.
+- **Lifecycle.** The arm reads its baselines: the group's free space, its logical
+  volumes through `viosvrcmd … -c 'lsvg -lv <group>'`, every storage mapping on
+  the VIOS, and the vSCSI adapter rows of the VIOS and the test partition. It
+  creates a 1 GiB volume `hpctl<8 hex>` and maps it to the test partition (the
+  HMC adds a vSCSI adapter pair). A delete while it is mapped is expected to be
+  refused. It then detaches the mapping, checks the volume survived, deletes it,
+  and compares each read with its baseline.
+- **Attach.** Only when the lifecycle left everything at its baseline: the same
+  through `hmc_attach_disk_to_lpar`, then detach and delete.
+
+A mapping the arm cannot confirm gone, or mappings or adapters that differ from
+the baseline, is a FAIL row marked `MANUAL RECOVERY REQUIRED` with the command
+that clears it. The arm never removes an adapter. It deletes the volume only
+after a listing shows no mapping backed by it, except for the one guarded delete
+it expects to be refused.
 
 ### The vios-backup arm
 
@@ -570,7 +601,7 @@ uv run --no-sync python scripts/live_test_recovery.py --results test-results-ded
 
 After the other arms pass `test-results-<arm>.json` the same way: `vmedia`,
 `bare-cec`, `round2`, `sriov`, `profiles`, `users`, `vios-backup`, `pcm`,
-`network`, `lpar-config` or `lpar-power`.
+`network`, `lpar-config`, `storage` or `lpar-power`.
 
 The check reads the subtasks the run dispatched from the document, and witnesses
 these sets of them:
@@ -582,6 +613,7 @@ these sets of them:
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 39 (lpar-config) | any partition named `hmcpctl-live-lpar-*` on the run's system, whichever run left it |
+| 0, 3, 40 (storage) | a mapping (its virtual target device) backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read |
 | 41 (lpar-power) | any partition named `hmcpctl-live-pwr-*`, running or not; on each VIOS, any mapping backed by an `lppwr*` volume, any vSCSI adapter serving a `hmcpctl-live-pwr-*` partition, and any `lppwr*` volume left in the configured volume group (read with the one admitted `viosvrcmd … -c 'lsvg -lv <group>'` command) |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
