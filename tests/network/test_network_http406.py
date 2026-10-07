@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.errors import HMCError
 from hmcpctl.server_tools.virtualization.network import (
@@ -16,6 +17,7 @@ from hmcpctl.server_tools.virtualization.network import (
 )
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+VSWITCH_FEED = live_fixture("rest-virtual-switch-feed")["body"]
 
 SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
@@ -48,6 +50,9 @@ def test_create_virtual_network_http_406_actionable(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualSwitch").mock(
+        return_value=httpx.Response(200, text=VSWITCH_FEED)
+    )
     # create returns 406
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
@@ -58,7 +63,7 @@ def test_create_virtual_network_http_406_actionable(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
             name="VLAN100-ETHERNET0",
             vlan_id=100,
-            virtual_switch_id=3,
+            virtual_switch_id=0,
         )
 
     assert exc_info.value.status_code == 406

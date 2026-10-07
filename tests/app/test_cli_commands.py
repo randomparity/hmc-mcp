@@ -404,15 +404,28 @@ class FakeHMC:
 
     async def list_virtual_switches(self, system_uuid):
         self._record("list_virtual_switches", system_uuid)
-        return [{"UUID": "switch-1", "Resource": {"SwitchName": "ETHERNET0"}}]
+        return [
+            {
+                "UUID": "switch-1",
+                "Resource": {"SwitchID": "2", "SwitchName": "ETHERNET0"},
+            }
+        ]
 
     async def list_network_bridges(self, system_uuid):
         self._record("list_network_bridges", system_uuid)
         return [{"UUID": "bridge-1", "Resource": {"PortVLANID": "1"}}]
 
-    async def create_virtual_network(self, system_uuid, name, vlan, vswitch, *, tagged):
+    async def create_virtual_network(
+        self, system_uuid, name, vlan, vswitch, *, switch_uuid, tagged
+    ):
         self._record(
-            "create_virtual_network", system_uuid, name, vlan, vswitch, tagged=tagged
+            "create_virtual_network",
+            system_uuid,
+            name,
+            vlan,
+            vswitch,
+            switch_uuid=switch_uuid,
+            tagged=tagged,
         )
         return {"UUID": "network-1"}
 
@@ -737,7 +750,11 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 "--tagged",
                 "--yes",
             ],
-            ("create_virtual_network", (SYSTEM_UUID, "prod", 100, 2), {"tagged": True}),
+            (
+                "create_virtual_network",
+                (SYSTEM_UUID, "prod", 100, 2),
+                {"switch_uuid": "switch-1", "tagged": True},
+            ),
             "Created virtual network",
         ),
         (
@@ -823,6 +840,27 @@ def test_network_cli_translates_create_rejection(fake_hmc):
     )
     assert result.exit_code == 1
     assert "virtual network create request" in result.stderr
+
+
+def test_network_cli_refuses_an_unknown_switch_id_before_the_create(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "network",
+            "create",
+            SYSTEM_UUID,
+            "--name",
+            "prod",
+            "--vlan",
+            "100",
+            "--virtual-switch-id",
+            "7",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "no VirtualSwitch has SwitchID 7" in result.stderr
+    assert not any(call[0] == "create_virtual_network" for call in fake_hmc.calls)
 
 
 @pytest.mark.parametrize(

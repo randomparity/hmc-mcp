@@ -8,4 +8,4 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hmc_list_task_roles` | `read` | `task_role.list` | `console` | `implemented` | `current` | `existing-runtime-guards` | List TaskRole children of a management console. |
+| `hmc_list_task_roles` | `read` | `task_role.list` | `console` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | List TaskRole children of a management console. |
