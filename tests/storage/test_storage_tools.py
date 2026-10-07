@@ -282,7 +282,9 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     assert '<PortVLANID kb="CUR" kxe="false">42</PortVLANID>' in body
     assert '<VirtualSlotNumber kb="COD" kxe="false">3</VirtualSlotNumber>' in body
     assert '<VirtualSwitchID kb="ROR" kxe="false">1</VirtualSwitchID>' in body
-    assert '<IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>' in body
+    assert (
+        '<TaggedVLANSupported kb="CUA" kxe="false">true</TaggedVLANSupported>' in body
+    )
     assert '<MACAddress kb="CUR" kxe="false">001122334455</MACAddress>' in body
     assert result["UUID"] == ADAPTER_UUID
     # #981: the resource keeps its top-level keys; the location rides beside them.
