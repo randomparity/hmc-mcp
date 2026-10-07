@@ -414,8 +414,7 @@ async def _lpar_power_vios_residue(
     ]
     adapters = await _cli_rows(
         call,
-        f"lshwres -r virtualio --rsubtype scsi -m {system} --level lpar "
-        f"--filter {shlex.quote(f'lpar_names={vios}')} -F slot_num,remote_lpar_name",
+        scsi_adapter_listing(inputs.system_name, "lpar_names", vios),
         f"the vSCSI adapters of VIOS {vios}",
     )
     findings += [
@@ -427,7 +426,7 @@ async def _lpar_power_vios_residue(
                 f"-p {shlex.quote(vios)} -s {slot}"
             ),
         )
-        for slot, remote in (row for row in adapters if len(row) == 2)
+        for slot, remote, _ in (row for row in adapters if len(row) == 3)
         if lpar_power.scratch_partitions([remote])
     ]
     return findings

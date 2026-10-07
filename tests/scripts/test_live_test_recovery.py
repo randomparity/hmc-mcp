@@ -1485,7 +1485,7 @@ async def test_lpar_power_residue_is_reported_with_its_commands():
         {"id": "vhost0/vtscsi0", "backing_name": "lv_op"},
         {"id": "vhost3/vtscsi3", "backing_name": "lppwr0a1b2c3d"},
     ]
-    adapters = "2,lpar-A\n5,hmcpctl-live-pwr-0a1b2c3d-p\n"
+    adapters = "2,lpar-A,3\n5,hmcpctl-live-pwr-0a1b2c3d-p,2\n"
 
     findings = await recovery.check_run(
         _lpar_power_caller(listing, mappings, adapters),
@@ -1513,7 +1513,7 @@ async def test_lpar_power_clean_system_has_no_finding():
     call = _lpar_power_caller(
         "lpar-A,Running,aixlinux\nvios-A,Running,vioserver\n",
         [{"id": "vhost0/vtscsi0", "backing_name": "lv_op"}],
-        "2,lpar-A\n",
+        "2,lpar-A,3\n",
     )
 
     assert (

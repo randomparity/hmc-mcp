@@ -583,7 +583,13 @@ def test_every_kept_backup_reads_as_off_baseline_in_recovery(
         return vios.answer(tool, arguments)
 
     async def checks(
-        pcie, partition, inputs, network_inputs=None, users=False, lpar_config=None
+        pcie,
+        partition,
+        inputs,
+        network_inputs=None,
+        users=False,
+        lpar_config=None,
+        lpar_power=None,
     ):
         return await recovery.check_vios_backup(read_only, inputs)
 
