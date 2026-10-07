@@ -397,9 +397,9 @@
     {
       "operation": "media.create",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:20:22Z"
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.create_repository",
@@ -425,37 +425,37 @@
     {
       "operation": "media.get_repository",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:19:55Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T16:34:16Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:20:08Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T16:34:30Z"
     },
     {
       "operation": "media.list_mappings",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T16:37:00Z"
     },
     {
       "operation": "media.mount",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.unmount",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T16:36:39Z"
     },
     {
       "operation": "media.upload_iso",
@@ -726,9 +726,9 @@
     {
       "operation": "storage.list_mappings",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:20:42Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T16:37:00Z"
     },
     {
       "operation": "storage.list_volume_groups",
