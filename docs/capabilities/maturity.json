@@ -1036,7 +1036,7 @@
     {
       "operation": "pcie.unassign_dedicated_slot",
       "implementation": {
-        "state": "implemented",
+        "state": "partial",
         "implemented_scope": [
           {
             "variant": "profile-io-slot",
@@ -1050,31 +1050,40 @@
                 "constraint": "PartitionName or UUID"
               },
               {
+                "name": "lpar_state",
+                "constraint": "Not Activated"
+              },
+              {
                 "name": "system_name_or_uuid",
                 "constraint": "SystemName or UUID"
               }
             ]
           }
         ],
-        "missing_scope": []
+        "missing_scope": [
+          {
+            "variant": "required-or-pooled-slot",
+            "parameters": []
+          }
+        ]
       },
       "evidence": [
         {
-          "id": "st35-hmc-unassign-dedicated-pcie-slot",
+          "id": "st36-hmc-unassign-dedicated-pcie-slot",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:04:04Z",
+          "scenario": "st36-io-slots",
+          "observed_at": "2026-10-07T00:31:52Z",
           "cleanup": "not-required",
           "assertions": [
-            "unassign-call-succeeded",
-            "profile-restored-to-baseline"
+            "zero-suffix-remove-accepted",
+            "other-slots-stable-on-remove"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
+          "closure_fingerprint": "a295dad3dd25e0654be68ddcf3936e91ab20ff30180283089a3a6c6aae4d686c"
         }
       ]
     },
@@ -1097,22 +1106,21 @@
       },
       "evidence": [
         {
-          "id": "st35-hmc-list-dedicated-pcie-slots",
+          "id": "st29-hmc-list-dedicated-pcie-slots",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:04:43Z",
+          "scenario": "st29-pcie-inventory",
+          "observed_at": "2026-10-07T00:27:19Z",
           "cleanup": "not-required",
           "assertions": [
-            "list-call-succeeded",
-            "fixture-slot-listed",
-            "fixture-slot-unowned"
+            "slot-rows-identified",
+            "owners-normalized"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "72b242241e9ec2a0fbf943a1ec2015cabb3ed61b802a28309d4ad1676f9abe11"
+          "closure_fingerprint": "7024af6c7335f5fd704a7e042b3e3252cf37ee20399a46d18e8e7f4562bb7433"
         }
       ]
     },
@@ -1202,7 +1210,7 @@
     {
       "operation": "pcie.assign_dedicated_slot",
       "implementation": {
-        "state": "implemented",
+        "state": "partial",
         "implemented_scope": [
           {
             "variant": "profile-io-slot",
@@ -1216,31 +1224,40 @@
                 "constraint": "PartitionName or UUID"
               },
               {
+                "name": "lpar_state",
+                "constraint": "Not Activated"
+              },
+              {
                 "name": "system_name_or_uuid",
                 "constraint": "SystemName or UUID"
               }
             ]
           }
         ],
-        "missing_scope": []
+        "missing_scope": [
+          {
+            "variant": "required-or-pooled-slot",
+            "parameters": []
+          }
+        ]
       },
       "evidence": [
         {
-          "id": "st35-hmc-assign-dedicated-pcie-slot",
+          "id": "st31-hmc-assign-dedicated-pcie-slot",
           "channel": "live",
           "result": "passed",
-          "scenario": "st35-bare-cec",
-          "observed_at": "2026-10-06T13:04:44Z",
+          "scenario": "st29-dedicated-pcie",
+          "observed_at": "2026-10-07T00:32:46Z",
           "cleanup": "passed",
           "assertions": [
             "assign-call-succeeded",
             "profile-lists-slot"
           ],
-          "tested_commit": "8fffa805f3a973425e669657b0d485c7f2dbfa90",
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "2b180e054735d7aea3378808ca50a0478d73b97b2d7a0de58ebea9e93350bf5d"
+          "closure_fingerprint": "a295dad3dd25e0654be68ddcf3936e91ab20ff30180283089a3a6c6aae4d686c"
         }
       ]
     },
@@ -3552,6 +3569,311 @@
           }
         ],
         "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "io_slot.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "all-classes",
+            "parameters": [
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          },
+          {
+            "variant": "pci-class-filter",
+            "parameters": [
+              {
+                "name": "pci_class",
+                "constraint": "one of eth, sas, san, nvme"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st29-hmc-list-io-slots",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-pcie-inventory",
+          "observed_at": "2026-10-07T00:27:22Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "slot-rows-identified",
+            "matches-dedicated-inventory",
+            "class-filter-exact"
+          ],
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "7024af6c7335f5fd704a7e042b3e3252cf37ee20399a46d18e8e7f4562bb7433"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.list_sriov_adapters",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "admitted-read-envelope",
+            "parameters": [
+              {
+                "name": "adapter_id",
+                "constraint": "optional positive decimal filter"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st29-hmc-list-sriov-adapters",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-pcie-inventory",
+          "observed_at": "2026-10-07T00:27:39Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "capability-available",
+            "adapter-rows-parsed",
+            "adapter-filter-selects-one"
+          ],
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "7024af6c7335f5fd704a7e042b3e3252cf37ee20399a46d18e8e7f4562bb7433"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.list_sriov_logical_ports",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "adapter-scoped",
+            "parameters": [
+              {
+                "name": "adapter_id",
+                "constraint": "positive decimal; required"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st29-hmc-list-sriov-logical-ports",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-pcie-inventory",
+          "observed_at": "2026-10-07T00:28:10Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "capability-available",
+            "ports-belong-to-adapter",
+            "parents-are-listed-ports",
+            "configured-capacity-bounded"
+          ],
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "7024af6c7335f5fd704a7e042b3e3252cf37ee20399a46d18e8e7f4562bb7433"
+        }
+      ]
+    },
+    {
+      "operation": "pcie.list_sriov_physical_ports",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "adapter-scoped",
+            "parameters": [
+              {
+                "name": "adapter_id",
+                "constraint": "positive decimal; required"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st29-hmc-list-sriov-physical-ports",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st29-pcie-inventory",
+          "observed_at": "2026-10-07T00:27:56Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "capability-available",
+            "ports-listed",
+            "granularity-positive",
+            "adapter-required-refused"
+          ],
+          "tested_commit": "0d6c0b5dcfaffd80fedb60cd4b18821181dacb54",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "7024af6c7335f5fd704a7e042b3e3252cf37ee20399a46d18e8e7f4562bb7433"
+        }
+      ]
+    },
+    {
+      "operation": "sriov.assign_logical_port",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "dynamic-assign",
+            "parameters": [
+              {
+                "name": "lpar_state",
+                "constraint": "Not Activated, or Running with active RMC"
+              },
+              {
+                "name": "selector",
+                "constraint": "adapter, physical port and unconfigured logical port"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "sriov.unassign_logical_port",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "not-activated-profile-unassign",
+            "parameters": [
+              {
+                "name": "lpar_state",
+                "constraint": "Not Activated"
+              },
+              {
+                "name": "profile",
+                "constraint": "lists exactly the selected logical port"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "running-dynamic-unassign",
+            "parameters": []
+          },
+          {
+            "variant": "multi-record-profile-unassign",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": []
+    },
+    {
+      "operation": "vnic.add",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "single-sriov-backing",
+            "parameters": [
+              {
+                "name": "backing",
+                "constraint": "one SR-IOV backing device: VIOS, adapter, physical port, capacity"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "failover-backing",
+            "parameters": []
+          }
+        ]
+      },
+      "evidence": []
+    },
+    {
+      "operation": "vnic.list",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "lpar-scoped",
+            "parameters": [
+              {
+                "name": "lpar_name_or_uuid",
+                "constraint": "PartitionName or UUID"
+              },
+              {
+                "name": "system_name_or_uuid",
+                "constraint": "SystemName or UUID"
+              }
+            ]
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "vnic.remove",
+      "implementation": {
+        "state": "partial",
+        "implemented_scope": [
+          {
+            "variant": "by-slot",
+            "parameters": [
+              {
+                "name": "slot_num",
+                "constraint": "vNIC slot with exactly one active, Operational backing"
+              }
+            ]
+          }
+        ],
+        "missing_scope": [
+          {
+            "variant": "multi-backing-or-degraded-remove",
+            "parameters": []
+          }
+        ]
       },
       "evidence": []
     },

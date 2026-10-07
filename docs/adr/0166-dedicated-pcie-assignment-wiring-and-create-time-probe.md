@@ -5,6 +5,19 @@
 Accepted on 2026-09-22 for issue #882. No live run has exercised this change; live verification
 belongs to the release live window (#879) and needs operator authorization.
 
+> **Evidence note (2026-10-06, #630).** The first sentence above is no longer true. The
+> dedicated arm ran at `0d6c0b5d` on the admitted V10R3 M1060 / 8375-42A pair, and every
+> row passed. In that run:
+> - ST31 assigned through the operation and read the slot back as `drc/none/0`.
+> - ST36 added and removed a slot through both operations, the other slots stayed stable,
+>   and `io_slots-=<drc>//0` removed an element stored with `is_required=1`.
+> - The emptied profile read back as `none`.
+>
+> That covers the observation the Consequences make a precondition of promotion. The
+> arm's own `io_slots` read is now the ADR 0165-admitted form, not the `--filter`
+> single-field read the Consequences describe. The observations are in
+> `docs/capabilities/maturity.json`. Decision text is unchanged.
+
 ## Context
 
 ADR 0165 admitted exact `io_slots` readback — `lssyscfg -r prof -m SYS -F
