@@ -35,7 +35,7 @@ def _group_label_name(value: str, field: str) -> str:
     name = _nonblank(value, field)
     if len(name) > _MAX_GROUP_LABEL_CHARACTERS:
         raise ValueError(
-            f"VIOS vFC group label {field} {name!r} has {len(name)} characters; "
+            f"VIOS vFC group {field} {name!r} has {len(name)} characters; "
             f"the HMC accepts at most {_MAX_GROUP_LABEL_CHARACTERS}, so choose a "
             "shorter name"
         )
