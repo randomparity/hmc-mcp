@@ -16,7 +16,8 @@ Harness only: `scripts/live_test/pcie.py`, one helper moved out of
 
 **Conversion rule.** Every existing row stays as it is, SKIP, FAIL and
 manual-recovery rows included. A step that verifies a mutation by readback
-adds one `record_verified` row. A step whose call failed before any readback
+adds one `record_verified` row, except rows 30 and 34 (below), whose
+operations another arm observes. A step whose call failed before any readback
 adds none. A step that adds something the teardown must undo (rows 25, 27, 31,
 33-add, 36-add) stores its assertion values and is recorded after the arm's
 cleanup, with cleanup `passed` only when that cleanup restored the baseline,
