@@ -320,9 +320,9 @@
     {
       "operation": "lpar.power_on",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-07T02:44:34Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T20:32:48Z"
     },
     {
       "operation": "lpar.rename",
