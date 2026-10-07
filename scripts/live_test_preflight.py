@@ -368,9 +368,11 @@ def _storage_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
             (
                 f"in volume group {config.vdisk_volume_group_name}, one 1 GiB logical "
                 f"volume {volume} at a time, created twice: once mapped to "
-                f"{config.lp3_name} only while Not Activated (the HMC adds a vSCSI "
-                "adapter pair), a delete while mapped expected refused, detached and "
-                "deleted; then created and mapped by attach-disk, detached and deleted"
+                f"{config.lp3_name} only while Not Activated through a new virtual "
+                "target device the HMC names (vtscsi<n>, with a new vSCSI adapter "
+                "pair), a delete while mapped expected refused, detached and deleted; "
+                "then created and mapped the same way by attach-disk, detached and "
+                "deleted"
             ),
             "no other logical volume, mapping, adapter or volume group is changed",
         ),

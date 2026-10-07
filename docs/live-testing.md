@@ -535,7 +535,7 @@ these sets of them:
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 39 (lpar-config) | any partition named `hmcpctl-live-lpar-*` on the run's system, whichever run left it |
-| 0, 3, 40 (storage) | a mapping backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read |
+| 0, 3, 40 (storage) | a mapping (its virtual target device) backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 
 It also counts the server adapters after round2's subtask 14 provisions the test

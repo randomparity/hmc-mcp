@@ -331,6 +331,7 @@ def test_the_storage_verdict_names_each_change_it_makes(workspace, monkeypatch, 
     assert "only while Not Activated" in output
     assert "a delete while mapped expected refused" in output
     assert "attach-disk" in output
+    assert "new virtual target device the HMC names (vtscsi<n>" in output
     assert "no other logical volume, mapping, adapter or volume group" in output
 
 
