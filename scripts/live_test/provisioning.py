@@ -55,6 +55,7 @@ async def validate_provisioning_dry_run(client: Client, state: RunState) -> None
         resources={"desired_memory": config.dry_run_memory_mib},
     )
     state.record(13, "hmc_provision_lpar (dry_run)", st, data)
+    data = plain_data(data)
     if st == "PASS" and isinstance(data, dict):
         steps = data.get("steps") or []
         all_dry = all(s.get("status") == "dry_run" for s in steps)

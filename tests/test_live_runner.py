@@ -1186,6 +1186,33 @@ async def test_scratch_create_with_failed_apply_step_is_not_recorded_pass() -> N
 
 
 @pytest.mark.asyncio
+async def test_provision_dry_run_prints_the_steps_of_a_served_result(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A typed dry-run result is a generated dataclass, not a dict (#1410)."""
+    planned = await _served_result(
+        "hmc_provision_lpar",
+        {
+            "resource_created": False,
+            "workflow_completed": False,
+            "lpar_uuid": None,
+            "dry_run": True,
+            "ownership_stamped": None,
+            "steps": [{"step": "create", "status": "dry_run"}],
+            "warnings": [],
+            "change_location": None,
+        },
+    )
+    assert dataclasses.is_dataclass(planned)
+    state = _ScriptedSriovState([("hmc_provision_lpar", "PASS", planned)])
+    state.artifacts.vios_uuid = "vios-A-uuid"
+
+    await provisioning.validate_provisioning_dry_run(object(), state)
+
+    assert "all status=dry_run: True" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
 async def test_scratch_create_reads_the_uuid_from_a_served_dataclass_result() -> None:
     """A typed create result is a generated dataclass, not a dict (#1410)."""
     created = await _served_result(
