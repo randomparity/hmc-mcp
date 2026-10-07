@@ -663,9 +663,9 @@
     {
       "operation": "snapshot.capture",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T22:04:38Z"
     },
     {
       "operation": "snapshot.inspect",

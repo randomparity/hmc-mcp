@@ -9,6 +9,6 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | Tool | Effect | Operation | Target | Implementation | Verification | Runtime eligibility | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_snapshot_assess_affinity` | `read` | `snapshot.assess_affinity` | `none` | `implemented` | `unevidenced` | `existing-runtime-guards` | Assess snapshot affinity evidence locally without HMC I/O or mutation. |
-| `hmc_snapshot_capture` | `read` | `snapshot.capture` | `lpar` | `implemented` | `unevidenced` | `existing-runtime-guards` | Capture replayable profile configuration and separate placement observations. |
+| `hmc_snapshot_capture` | `read` | `snapshot.capture` | `lpar` | `implemented` | `current` | `existing-runtime-guards` | Capture replayable profile configuration and separate placement observations. |
 | `hmc_snapshot_inspect` | `read` | `snapshot.inspect` | `none` | `implemented` | `unevidenced` | `existing-runtime-guards` | Inspect a snapshot format and version locally without accepting it. |
 | `hmc_snapshot_validate` | `read` | `snapshot.validate` | `none` | `implemented` | `unevidenced` | `existing-runtime-guards` | Validate bounded snapshot JSON locally without HMC I/O. |
