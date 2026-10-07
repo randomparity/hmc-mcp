@@ -682,9 +682,14 @@ async def _preconditions(client: Client, state: RunState) -> int | None:
     if config.lp3_name in config.protected_lpar_names:
         skip(_protected_reason(config))
         return None
-    if not LISTING_NAME.fullmatch(config.vdisk_volume_group_name):
+    if not all(
+        LISTING_NAME.fullmatch(name)
+        for name in (config.system_name, config.vdisk_volume_group_name)
+    ):
+        # The recovery check reads the volumes only for such names, so the arm
+        # never mutates what it could not confirm clean.
         skip(
-            "LIVE_TEST_VDISK_VOLUME_GROUP_NAME is not a plain VIOS name "
+            "the system or LIVE_TEST_VDISK_VOLUME_GROUP_NAME is not a plain name "
             "(letters, digits, '_', '.', '-')"
         )
         return None

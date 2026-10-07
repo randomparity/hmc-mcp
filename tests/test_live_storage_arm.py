@@ -333,10 +333,17 @@ async def test_a_protected_test_partition_is_a_gap(arm):
     assert any("protected by operator config" in r["note"] for r in state.results)
 
 
+@pytest.mark.parametrize(
+    "names",
+    [
+        {"vdisk_volume_group_name": "datavg; rmlv x"},
+        {"system_name": "sys A"},
+    ],
+)
 @pytest.mark.asyncio
-async def test_a_group_name_the_vios_shell_could_split_is_refused(arm):
+async def test_a_name_the_recovery_listing_cannot_carry_is_refused(arm, names):
     state, hmc = arm
-    state.config = replace(state.config, vdisk_volume_group_name="datavg; rmlv x")
+    state.config = replace(state.config, **names)
 
     await _run(state, 0, 40)
 
