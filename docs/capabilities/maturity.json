@@ -2995,7 +2995,7 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st11-user-lifecycle",
-          "observed_at": "2026-10-07T11:47:23Z",
+          "observed_at": "2026-10-07T15:56:30Z",
           "cleanup": "passed",
           "assertions": [
             "user-id-matches",
@@ -3004,11 +3004,11 @@
             "not-predefined",
             "remote-access-disabled"
           ],
-          "tested_commit": "19775bccf893479cb8bf8ed6e792f425a15e46a4",
+          "tested_commit": "6b6ae595c0c07ef25ebc812502e01bedd033cca7",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "e0ec8c63886cbe3b760b53eb0e820dd99768e5ab2a2aaa89864268255c25e0e6"
+          "closure_fingerprint": "467af51bbbbe75d33e2d76903b5711187be3523b1482f25530354d90f5021951"
         }
       ]
     },
@@ -3028,7 +3028,7 @@
             "parameters": [
               {
                 "name": "verify_session_timeout",
-                "constraint": "an integer number of minutes, as documented; the tool types it bool and sends true or false"
+                "constraint": "an integer number of minutes; unevidenced, because V10R3 refuses the modify body with REST0344 AuthenticationType before applying it"
               }
             ]
           }
@@ -3040,7 +3040,7 @@
           "channel": "live",
           "result": "failed",
           "scenario": "st11-user-lifecycle",
-          "observed_at": "2026-10-07T11:47:23Z",
+          "observed_at": "2026-10-07T15:56:30Z",
           "cleanup": "passed",
           "assertions": [
             "user-id-unchanged",
@@ -3048,11 +3048,11 @@
             "task-role-unchanged",
             "remote-access-unchanged"
           ],
-          "tested_commit": "19775bccf893479cb8bf8ed6e792f425a15e46a4",
+          "tested_commit": "6b6ae595c0c07ef25ebc812502e01bedd033cca7",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "e0ec8c63886cbe3b760b53eb0e820dd99768e5ab2a2aaa89864268255c25e0e6"
+          "closure_fingerprint": "467af51bbbbe75d33e2d76903b5711187be3523b1482f25530354d90f5021951"
         }
       ]
     },
@@ -3074,41 +3074,40 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st11-user-lifecycle",
-          "observed_at": "2026-10-07T11:47:23Z",
+          "observed_at": "2026-10-07T15:56:30Z",
           "cleanup": "passed",
           "assertions": [
             "scratch-profile-absent",
             "pre-existing-profiles-unchanged"
           ],
-          "tested_commit": "19775bccf893479cb8bf8ed6e792f425a15e46a4",
+          "tested_commit": "6b6ae595c0c07ef25ebc812502e01bedd033cca7",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "e0ec8c63886cbe3b760b53eb0e820dd99768e5ab2a2aaa89864268255c25e0e6"
+          "closure_fingerprint": "467af51bbbbe75d33e2d76903b5711187be3523b1482f25530354d90f5021951"
         }
       ]
     },
     {
       "operation": "user.create",
       "implementation": {
-        "state": "partial",
+        "state": "implemented",
         "implemented_scope": [
           {
             "variant": "local-user",
             "parameters": []
-          }
-        ],
-        "missing_scope": [
+          },
           {
             "variant": "verify-session-timeout-minutes",
             "parameters": [
               {
                 "name": "verify_session_timeout",
-                "constraint": "an integer number of minutes, as documented; the tool types it bool and sends true or false"
+                "constraint": "a non-negative integer number of minutes; booleans refused"
               }
             ]
           }
-        ]
+        ],
+        "missing_scope": []
       },
       "evidence": [
         {
@@ -3116,18 +3115,19 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st11-user-lifecycle",
-          "observed_at": "2026-10-07T11:47:23Z",
+          "observed_at": "2026-10-07T15:56:30Z",
           "cleanup": "passed",
           "assertions": [
             "create-accepted",
             "scratch-profile-listed",
-            "password-not-echoed"
+            "password-not-echoed",
+            "verify-session-timeout-read-back"
           ],
-          "tested_commit": "19775bccf893479cb8bf8ed6e792f425a15e46a4",
+          "tested_commit": "6b6ae595c0c07ef25ebc812502e01bedd033cca7",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "e0ec8c63886cbe3b760b53eb0e820dd99768e5ab2a2aaa89864268255c25e0e6"
+          "closure_fingerprint": "467af51bbbbe75d33e2d76903b5711187be3523b1482f25530354d90f5021951"
         }
       ]
     },

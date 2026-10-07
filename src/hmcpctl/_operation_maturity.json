@@ -872,24 +872,24 @@
     },
     {
       "operation": "user.create",
-      "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-07T11:47:23Z"
+      "implementation": "implemented",
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T15:56:30Z"
     },
     {
       "operation": "user.delete",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-07T11:47:23Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T15:56:30Z"
     },
     {
       "operation": "user.get",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-07T11:47:23Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T15:56:30Z"
     },
     {
       "operation": "user.list",
@@ -901,9 +901,9 @@
     {
       "operation": "user.modify",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-07T11:47:23Z"
+      "verification": "failed",
+      "reason": null,
+      "observed_at": "2026-10-07T15:56:30Z"
     },
     {
       "operation": "vios.backup",
