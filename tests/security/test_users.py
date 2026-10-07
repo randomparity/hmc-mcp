@@ -34,7 +34,7 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
         associated_task_role="role&1",
         associated_resource_roles=["role<2"],
         password_expiry=30,
-        verify_session_timeout=True,
+        verify_session_timeout=15,
         idle_session_timeout=15,
         user_inactivity=60,
         minimum_password_age=1,
@@ -46,7 +46,7 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
     assert ">role&amp;1<" in xml and ">role&lt;2<" in xml
     assert "AssociatedTaskRole" in xml and "AssociatedResourceRoles" in xml
     assert ">30</PasswordExpiry>" in xml
-    assert ">true</VerifySessionTimeout>" in xml
+    assert ">15</VerifySessionTimeout>" in xml
     assert ">15</IdleSessionTimeout>" in xml
     assert ">60</UserInactivity>" in xml
     assert ">1</MinimumPasswordAge>" in xml
@@ -66,7 +66,7 @@ def test_user_profile_builder_follows_the_documented_shape() -> None:
         associated_resource_roles=["AllSystemResources"],
         password_expiry=30,
         session_timeout=1,
-        verify_session_timeout=True,
+        verify_session_timeout=15,
         idle_session_timeout=2,
         user_inactivity=3,
         minimum_password_age=4,
@@ -134,7 +134,7 @@ def test_user_profile_builder_marks_each_element_as_the_hmc_lists_it() -> None:
             associated_resource_roles=["AllSystemResources"],
             password_expiry=30,
             session_timeout=1,
-            verify_session_timeout=True,
+            verify_session_timeout=15,
             idle_session_timeout=2,
             user_inactivity=3,
             minimum_password_age=4,

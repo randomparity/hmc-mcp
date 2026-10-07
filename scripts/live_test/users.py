@@ -27,6 +27,10 @@ VIEWER_TASK_ROLE = "hmcviewer"
 USERS_GROUP = "users"
 
 _DESCRIPTION = "hmcpctl live test user"
+#: VerifySessionTimeout minutes the scratch user is created with, then modified to:
+#: the reference's sample value, then a different one so the read-back tells them apart.
+_CREATED_TIMEOUT = 15
+_MODIFIED_TIMEOUT = 5
 
 
 def is_empty(value: object) -> bool:
@@ -278,6 +282,7 @@ async def _lifecycle(
                 password=password,
                 associated_task_role=VIEWER_TASK_ROLE,
                 description=_DESCRIPTION,
+                verify_session_timeout=_CREATED_TIMEOUT,
                 allow_web_remote_access=False,
                 allow_ssh_remote_access=False,
             ),
@@ -288,7 +293,11 @@ async def _lifecycle(
             await state.call(client, "hmc_list_users", console_uuid=console_uuid),
         )
         run.uuid = run.uuid_in(listed[1])
-        for description in (f"{_DESCRIPTION} (modified)", "", None):
+        for description, timeout in (
+            (f"{_DESCRIPTION} (modified)", _MODIFIED_TIMEOUT),
+            ("", None),
+            (None, None),
+        ):
             if run.uuid is None:
                 break
             run.reads.append(
@@ -312,6 +321,7 @@ async def _lifecycle(
                             console_uuid=console_uuid,
                             user_profile_uuid=run.uuid,
                             description=description,
+                            verify_session_timeout=timeout,
                         ),
                     )
                 )
@@ -369,6 +379,10 @@ def _record_lifecycle(
             Assertion("create-accepted", run.create[0] == "PASS"),
             Assertion("scratch-profile-listed", run.uuid is not None),
             Assertion("password-not-echoed", not run.echoed),
+            Assertion(
+                "verify-session-timeout-read-back",
+                run.read(0, "VerifySessionTimeout") == str(_CREATED_TIMEOUT),
+            ),
         ],
         cleanup=cleanup,
         data=run.create[1],
@@ -433,6 +447,11 @@ def _record_reads_and_modifies(state: RunState, run: _Lifecycle, cleanup: str) -
                 "description-updated",
                 run.modified(0)
                 and run.read(1, "UserDescription") == f"{_DESCRIPTION} (modified)",
+            ),
+            Assertion(
+                "verify-session-timeout-updated",
+                run.modified(0)
+                and run.read(1, "VerifySessionTimeout") == str(_MODIFIED_TIMEOUT),
             ),
             Assertion(
                 "description-cleared",

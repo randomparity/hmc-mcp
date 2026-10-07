@@ -10,6 +10,7 @@ from ...documents import AuthenticationType
 from ...operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,
+    TimeoutMinutes,
     create_user,
     modify_user,
 )
@@ -83,7 +84,7 @@ def hmc_create_user(
     associated_resource_roles: list[str] | None = None,
     password_expiry: int | None = None,
     session_timeout: int | None = None,
-    verify_session_timeout: bool | None = None,
+    verify_session_timeout: TimeoutMinutes | None = None,
     idle_session_timeout: int | None = None,
     user_inactivity: int | None = None,
     minimum_password_age: int | None = None,
@@ -109,7 +110,8 @@ def hmc_create_user(
             ``hmc_list_resource_roles``.
         password_expiry: Password-expiry interval accepted by the HMC.
         session_timeout: Session timeout value accepted by the HMC.
-        verify_session_timeout: Whether the HMC verifies the session timeout.
+        verify_session_timeout: Session-timeout verification interval, in whole
+            minutes (0 or more).
         idle_session_timeout: Idle-session timeout accepted by the HMC.
         user_inactivity: User-inactivity interval accepted by the HMC.
         minimum_password_age: Minimum password age accepted by the HMC.
@@ -162,7 +164,7 @@ def hmc_modify_user(
     associated_resource_roles: list[str] | None = None,
     password_expiry: int | None = None,
     session_timeout: int | None = None,
-    verify_session_timeout: bool | None = None,
+    verify_session_timeout: TimeoutMinutes | None = None,
     idle_session_timeout: int | None = None,
     user_inactivity: int | None = None,
     minimum_password_age: int | None = None,
@@ -186,7 +188,8 @@ def hmc_modify_user(
             list removes all resource roles.
         password_expiry: Replacement password-expiry interval.
         session_timeout: Replacement session timeout.
-        verify_session_timeout: Replacement timeout-verification setting.
+        verify_session_timeout: Replacement session-timeout verification
+            interval, in whole minutes (0 or more).
         idle_session_timeout: Replacement idle-session timeout.
         user_inactivity: Replacement user-inactivity interval.
         minimum_password_age: Replacement minimum password age.
