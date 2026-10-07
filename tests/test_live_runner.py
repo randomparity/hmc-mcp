@@ -3929,13 +3929,13 @@ def test_restore_drops_the_network_test_partition_from_before_1377(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("key", "field"),
+    "key",
     [
-        ("LIVE_TEST_TEST_USER_NAME", "test_user"),  # #632
-        ("LIVE_TEST_NETWORK_TEST_LPAR_NAME", "nettest_name"),  # #1377
+        "LIVE_TEST_TEST_USER_NAME",  # #632
+        "LIVE_TEST_NETWORK_TEST_LPAR_NAME",  # #1377
     ],
 )
-def test_a_retired_setting_still_loads_with_a_notice(tmp_path, capsys, key, field):
+def test_a_retired_setting_still_loads_with_a_notice(tmp_path, capsys, key):
     """A retired setting in an existing .env must not stop every arm."""
     example = Path(__file__).parents[1] / ".env.example"
     env = tmp_path / ".env"
@@ -3943,8 +3943,8 @@ def test_a_retired_setting_still_loads_with_a_notice(tmp_path, capsys, key, fiel
 
     config = runner.LiveTestConfig.from_env_file(env)
 
-    assert not hasattr(config, field)
-    assert key in capsys.readouterr().out
+    assert config == runner.LiveTestConfig()
+    assert f"{key} (line" in capsys.readouterr().out
 
 
 def test_users_group_is_opt_in():
