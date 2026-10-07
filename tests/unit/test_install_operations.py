@@ -1,7 +1,7 @@
-"""Contract tests for the presentation-neutral ``installios`` operations.
+"""Contract tests for the presentation-neutral ``installios`` operation.
 
 ADR 0013 assigns the orchestration to ``operations.vios.install``; ADR 0070 fixes the
-mechanism as a detached HMC CLI submission, so the operations return the bridge's
+mechanism as a detached HMC CLI submission, so the operation returns the bridge's
 detach handle rather than an HMC job identifier (there is no job on this path).
 """
 
@@ -24,7 +24,6 @@ from hmcpctl.operations.vios.install import (
     InstallHandle,
     InstallRequest,
     install_vios,
-    install_vios_by_lpar_selector,
 )
 from hmcpctl.ssh.install import INSTALLIOS_PID_PREFIX, build_installios_command
 from hmcpctl.ssh.transport import HMCCLIError
@@ -41,37 +40,23 @@ _REQUEST = InstallRequest(
 )
 
 
-def _operation_args(operation, target: str, system: str) -> tuple[str, str]:
-    """Return each operation's public selector order."""
-    return system, target
-
-
 def _hmc(**resolutions) -> AsyncMock:
     """A duck-typed client whose name lookups resolve to the test fixtures."""
     hmc = AsyncMock()
     hmc.config = make_config()
     hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
-    hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
     hmc.find_vios_by_name.return_value = {"UUID": LPAR_UUID}
-    target = {
+    hmc.get_vios.return_value = {
         "Resource": {
             "PartitionType": "Virtual IO Server",
             "PartitionState": "not activated",
         }
     }
-    hmc.get_logical_partition.return_value = target
-    hmc.get_vios.return_value = target
     for name, value in resolutions.items():
         getattr(hmc, name).return_value = value
     return hmc
 
 
-def _target_read(hmc: AsyncMock, operation) -> AsyncMock:
-    """The entry read each selector form preflights through (#1202)."""
-    return hmc.get_vios if operation is install_vios else hmc.get_logical_partition
-
-
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -81,33 +66,30 @@ def _target_read(hmc: AsyncMock, operation) -> AsyncMock:
 )
 @pytest.mark.asyncio
 async def test_operation_rejects_install_target_before_submission(
-    operation, field, value, message
+    field, value, message
 ):
     hmc = _hmc()
-    hmc.get_logical_partition.return_value["Resource"][field] = value
+    hmc.get_vios.return_value["Resource"][field] = value
     ssh = _Ssh()
 
     with _patch_ssh(ssh), pytest.raises(HMCError, match=message):
-        await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
+        await install_vios(hmc, "sys1", "target1", _REQUEST)
 
     assert ssh.commands == []
-    _target_read(hmc, operation).assert_awaited_once_with(LPAR_UUID)
+    hmc.get_vios.assert_awaited_once_with(LPAR_UUID)
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_uuid_target_rejects_before_ssh_submission(operation):
+async def test_uuid_target_rejects_before_ssh_submission():
     hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
-    hmc.get_logical_partition.return_value["Resource"]["PartitionState"] = "running"
+    hmc.get_vios.return_value["Resource"]["PartitionState"] = "running"
     ssh = _Ssh()
 
     with _patch_ssh(ssh), pytest.raises(HMCError, match="not activated"):
-        await operation(
-            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
-        )
+        await install_vios(hmc, SYSTEM_UUID, LPAR_UUID, _REQUEST)
 
     assert ssh.commands == []
-    _target_read(hmc, operation).assert_awaited_once_with(LPAR_UUID)
+    hmc.get_vios.assert_awaited_once_with(LPAR_UUID)
 
 
 class _Ssh:
@@ -134,23 +116,14 @@ def _patch_ssh(ssh: _Ssh):
         yield
 
 
-@pytest.mark.parametrize(
-    ("operation", "finder"),
-    [
-        (install_vios_by_lpar_selector, "find_partition_by_name"),
-        (install_vios, "find_vios_by_name"),
-    ],
-)
 @pytest.mark.asyncio
-async def test_operation_submits_the_composed_installios_command(operation, finder):
+async def test_operation_submits_the_composed_installios_command():
     """Names resolve, the command is composed, and the detach handle comes back."""
     hmc = _hmc()
     ssh = _Ssh()
 
     with _patch_ssh(ssh):
-        result = await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-        )
+        result = await install_vios(hmc, "sys1", "target1", _REQUEST)
 
     expected, log_path = build_installios_command(
         system_name="sys1",
@@ -167,19 +140,18 @@ async def test_operation_submits_the_composed_installios_command(operation, find
     assert result["log_path"] == log_path
     assert "no HMC job exists on this path" in result["message"]
     assert log_path in result["message"]
-    getattr(hmc, finder).assert_awaited_once_with("target1", system_uuid=SYSTEM_UUID)
+    hmc.find_vios_by_name.assert_awaited_once_with("target1", system_uuid=SYSTEM_UUID)
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_operation_returns_without_polling_for_completion(operation):
+async def test_operation_returns_without_polling_for_completion():
     """Submit-and-detach: exactly one SSH round trip, and no job polling."""
     hmc = _hmc()
     ssh = _Ssh()
 
     with _patch_ssh(ssh):
         await asyncio.wait_for(
-            operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST),
+            install_vios(hmc, "sys1", "target1", _REQUEST),
             5,
         )
 
@@ -188,17 +160,14 @@ async def test_operation_returns_without_polling_for_completion(operation):
     hmc.submit_job.assert_not_awaited()
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_operation_resolves_uuid_targets_to_cli_names(operation):
+async def test_operation_resolves_uuid_targets_to_cli_names():
     """A UUID target is named over REST for the system and SSH for the partition."""
     hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
     ssh = _Ssh(name_rows=f"{LPAR_UUID},target1\n")
 
     with _patch_ssh(ssh):
-        result = await operation(
-            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
-        )
+        result = await install_vios(hmc, SYSTEM_UUID, LPAR_UUID, _REQUEST)
 
     assert result["system"] == "sys1"
     assert result["partition"] == "target1"
@@ -206,7 +175,6 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
     hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -221,17 +189,16 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
     ],
 )
 @pytest.mark.asyncio
-async def test_operation_rejects_invalid_input_before_any_io(
-    operation, field, value, message
-):
+async def test_operation_rejects_invalid_input_before_any_io(field, value, message):
     """Validation runs ahead of the first REST call, so nothing is contacted."""
     hmc = _hmc()
     ssh = _Ssh()
 
     with _patch_ssh(ssh), pytest.raises(ValueError, match=message):
-        await operation(
+        await install_vios(
             hmc,
-            *_operation_args(operation, "target1", "sys1"),
+            "sys1",
+            "target1",
             replace(_REQUEST, **{field: value}),
         )
 
@@ -239,49 +206,19 @@ async def test_operation_rejects_invalid_input_before_any_io(
     hmc.find_system_by_name.assert_not_awaited()
 
 
-@pytest.mark.parametrize(
-    ("operation", "misses", "message"),
-    [
-        (
-            install_vios_by_lpar_selector,
-            ("find_partition_by_name", "find_vios_by_name"),
-            "No LPAR named",
-        ),
-        (install_vios, ("find_vios_by_name",), "No VIOS named"),
-    ],
-)
 @pytest.mark.asyncio
-async def test_operation_fails_before_submission_for_an_unknown_target(
-    operation, misses, message
-):
-    hmc = _hmc(**dict.fromkeys(misses))
+async def test_operation_fails_before_submission_for_an_unknown_target():
+    hmc = _hmc(find_vios_by_name=None)
     ssh = _Ssh()
 
-    with _patch_ssh(ssh), pytest.raises(ValueError, match=message):
-        await operation(
-            hmc, *_operation_args(operation, "nosuchtarget", "sys1"), _REQUEST
-        )
+    with _patch_ssh(ssh), pytest.raises(ValueError, match="No VIOS named"):
+        await install_vios(hmc, "sys1", "nosuchtarget", _REQUEST)
 
     assert ssh.commands == []
 
 
 @pytest.mark.asyncio
-async def test_lpar_selector_refuses_a_vios_name_with_a_pointer():
-    """A VIOS is listed only under ``VirtualIOServer``, so the selector refuses it (#1247)."""
-    hmc = _hmc(find_partition_by_name=None)
-    ssh = _Ssh()
-
-    with _patch_ssh(ssh), pytest.raises(ValueError, match="hmc_install_vios"):
-        await install_vios_by_lpar_selector(hmc, "sys1", "vios1", _REQUEST)
-
-    hmc.find_vios_by_name.assert_awaited_once_with("vios1", system_uuid=SYSTEM_UUID)
-    hmc.get_logical_partition.assert_not_awaited()
-    assert ssh.commands == []
-
-
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
-@pytest.mark.asyncio
-async def test_operation_surfaces_a_failed_submission(operation):
+async def test_operation_surfaces_a_failed_submission():
     hmc = _hmc()
 
     async def fail(config, command):
@@ -291,20 +228,17 @@ async def test_operation_surfaces_a_failed_submission(operation):
         patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCCLIError, match="exit status 127"),
     ):
-        await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
+        await install_vios(hmc, "sys1", "target1", _REQUEST)
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_unresolvable_uuid_target_raises_before_submitting(operation):
+async def test_unresolvable_uuid_target_raises_before_submitting():
     """An HMCCLIError from name resolution must leave nothing submitted."""
     hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
     ssh = _Ssh(name_rows="99999999-9999-4999-8999-999999999999,other\n")
 
     with _patch_ssh(ssh), pytest.raises(HMCCLIError, match="Could not resolve"):
-        await operation(
-            hmc, *_operation_args(operation, LPAR_UUID, SYSTEM_UUID), _REQUEST
-        )
+        await install_vios(hmc, SYSTEM_UUID, LPAR_UUID, _REQUEST)
 
     assert ssh.commands == ["lssyscfg -r lpar -m sys1 -F uuid,name"]
 
@@ -331,9 +265,8 @@ def _one_install_record(text: str, event: str = "install-attempted") -> dict:
     return records[0]
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
+async def test_a_submission_is_recorded_on_the_served_path(capsys):
     """#469, ADR 0102. Only ``install_audit_sink`` is configured — no ``basicConfig``.
 
     That is what ``server._serve_application`` does and all it does for this
@@ -349,9 +282,7 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     hmc.config = make_config(host="hmc.test", agent_id="agent-7")
 
     with _patch_ssh(_Ssh()):
-        result = await operation(
-            hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-        )
+        result = await install_vios(hmc, "sys1", "target1", _REQUEST)
 
     assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle"
@@ -379,9 +310,8 @@ async def test_a_submission_is_recorded_on_the_served_path(operation, capsys):
     }
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsys):
+async def test_a_submission_is_recorded_for_a_bare_api_consumer(capsys):
     """The other half of #469: a process that configures no logging at all.
 
     A ``hmcpctl.api`` consumer calls no ``install_audit_sink``, so the reserved
@@ -397,9 +327,7 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     hmc = _hmc()
     try:
         with _patch_ssh(_Ssh()):
-            await operation(
-                hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST
-            )
+            await install_vios(hmc, "sys1", "target1", _REQUEST)
         captured = capsys.readouterr()
     finally:
         logging.root.handlers[:] = saved_root
@@ -409,13 +337,12 @@ async def test_a_submission_is_recorded_for_a_bare_api_consumer(operation, capsy
     assert (record["system"], record["partition"]) == ("sys1", "target1")
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_a_failed_submission_is_still_recorded(operation, capsys):
+async def test_a_failed_submission_is_still_recorded(capsys):
     """The record is written *before* the submit, which is the case it exists for.
 
-    ``HMCCLIError`` does not say whether an ``installios`` was started (both
-    operations' ``Raises:`` blocks say so), so this is where an operator most
+    ``HMCCLIError`` does not say whether an ``installios`` was started (the
+    operation's ``Raises:`` block says so), so this is where an operator most
     needs the partition and the log path — and where a record written after a
     successful submit would not exist.
     """
@@ -429,7 +356,7 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
         patch("hmcpctl.ssh.install.run_hmc_command", new=fail),
         pytest.raises(HMCCLIError),
     ):
-        await operation(hmc, *_operation_args(operation, "target1", "sys1"), _REQUEST)
+        await install_vios(hmc, "sys1", "target1", _REQUEST)
 
     assert audit_sink._sink().drain(audit_sink._DRAIN_TIMEOUT), (
         "the sink did not settle"
@@ -442,23 +369,20 @@ async def test_a_failed_submission_is_still_recorded(operation, capsys):
     )
 
 
-@pytest.mark.parametrize("operation", [install_vios_by_lpar_selector, install_vios])
 @pytest.mark.asyncio
-async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
-    operation, capsys
-):
+async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(capsys):
     """A request refused by validation or name resolution submits nothing, so it
     is not an attempt against any partition's disks and leaves no record."""
     audit_sink.install_audit_sink()
 
     with _patch_ssh(_Ssh()):
         with pytest.raises(ValueError, match="IPv4"):
-            await operation(
+            await install_vios(
                 _hmc(), "sys1", "target1", replace(_REQUEST, gateway="not-an-ip")
             )
         with pytest.raises(ValueError, match="No "):
-            await operation(
-                _hmc(find_partition_by_name=None, find_vios_by_name=None),
+            await install_vios(
+                _hmc(find_vios_by_name=None),
                 "sys1",
                 "nosuchtarget",
                 _REQUEST,
@@ -470,9 +394,8 @@ async def test_nothing_is_recorded_when_the_request_never_reaches_a_submit(
     assert _install_records(capsys.readouterr().err) == []
 
 
-@pytest.mark.parametrize("name", ["install_vios_by_lpar_selector", "install_vios"])
-def test_operations_are_owned_by_the_install_module(name):
-    assert globals()[name].__module__ == "hmcpctl.operations.vios.install"
+def test_operation_is_owned_by_the_install_module():
+    assert install_vios.__module__ == "hmcpctl.operations.vios.install"
 
 
 def test_detach_handle_is_the_declared_return_type():
@@ -492,5 +415,4 @@ def test_detach_handle_is_the_declared_return_type():
         "message": str,
     }
     assert InstallHandle.__optional_keys__ == frozenset()
-    for operation in (install_vios_by_lpar_selector, install_vios):
-        assert get_type_hints(operation)["return"] is InstallHandle
+    assert get_type_hints(install_vios)["return"] is InstallHandle
