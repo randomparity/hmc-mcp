@@ -356,8 +356,10 @@ class World:
             }
         )
         self.adapters.add("3,run,2")
+        # Live V10R3: a REST create reports the profile apply as skipped (#1164).
         steps = [
             {"step": "create", "status": "ok"},
+            {"step": "apply_profile", "status": "skipped", "result": "not needed"},
             {"step": "storage", "status": "ok"},
         ]
         if self.provision_fails_after_storage:
@@ -1206,3 +1208,24 @@ def test_a_run_mapping_without_an_id_is_never_read_as_detached(schemas):
     assert real == []
     assert [name for name in world.partitions if name.endswith("-p")]
     assert _rows(state, "run volume mapping teardown")
+
+
+def test_a_refused_current_configuration_activation_does_not_stop_the_sequence(schemas):
+    """V10R3 answered FAILED_TO_START and left the partition Not Activated (#1346)."""
+    world = World()
+    real = world._hmc_power_on_lpar
+    failed = {"UUID": "4713", "Resource": {"Status": "FAILED_TO_START"}}
+
+    def refuses(kwargs: dict[str, Any]) -> Any:
+        if kwargs.get("operation_type"):
+            return _power_on(False, failed, None)
+        return real(kwargs)
+
+    world.overrides["hmc_power_on_lpar"] = refuses
+    state = _run(schemas, world)
+
+    assert _rows(state, "hmc_power_on_lpar (current configuration, boot mode only)")
+    assert "current-configuration-reached-firmware" not in _held(state, "lpar.power_on")
+    assert "immediate-shutdown-not-activated" in _held(state, "lpar.power_off")
+    assert _results(state)["lpar.power"] == "passed"
+    assert _results(state)["lpar.delete"] == "passed"

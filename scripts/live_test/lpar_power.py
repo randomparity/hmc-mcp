@@ -653,19 +653,58 @@ async def _power_off_to(
     return stopped
 
 
-async def _current_configuration(client: Client, state: RunState, run: Run) -> bool:
+async def _activate(
+    client: Client, state: RunState, run: Run, label: str, **activation: Any
+) -> tuple[bool, str | None]:
+    """One PowerOn; whether its job succeeded, and the state it then settles in."""
+    st, data = await _power_on(client, state, run, **activation)
+    state.record(SUBTASK, f"hmc_power_on_lpar ({label})", st, data)
+    job_ok = st == "PASS" and _job_ok(result_field(data, "job"))
     lpar = run.a_uuid or ""
-    st, data = await _power_on(
-        client, state, run, boot_mode="of", operation_type="activate", keylock="norm"
+    if job_ok:
+        return True, await _wait_for_state(client, state, run, lpar, _FIRMWARE_STATES)
+    return False, await _lpar_state(client, state, run, lpar)
+
+
+async def _current_configuration(client: Client, state: RunState, run: Run) -> bool:
+    """The current-configuration activation; on a refusal, find which input it was.
+
+    A refused activation leaves the partition Not Activated, so the boot-mode-only
+    form is tried as a plain row (never an observation), and the profile activation
+    that is already proven brings the partition up for the steps that follow.
+    """
+    job_ok, reached = await _activate(
+        client,
+        state,
+        run,
+        "current configuration",
+        boot_mode="of",
+        operation_type="activate",
+        keylock="norm",
     )
-    state.record(SUBTASK, "hmc_power_on_lpar (current configuration)", st, data)
-    reached = await _wait_for_state(client, state, run, lpar, _FIRMWARE_STATES)
     run.hold(
         "lpar.power_on",
         "current-configuration-reached-firmware",
-        st == "PASS"
-        and _job_ok(result_field(data, "job"))
-        and reached in _FIRMWARE_STATES,
+        job_ok and reached in _FIRMWARE_STATES,
+    )
+    if reached in _FIRMWARE_STATES or reached != _NOT_ACTIVATED:
+        return reached in _FIRMWARE_STATES
+    _, reached = await _activate(
+        client, state, run, "current configuration, boot mode only", boot_mode="of"
+    )
+    if reached in _FIRMWARE_STATES or reached != _NOT_ACTIVATED:
+        return reached in _FIRMWARE_STATES
+    data = await _get_lpar(client, state, run, run.a_uuid or "")
+    profile_uuid = lpar_config._profile_uuid(data) if data else None
+    if profile_uuid is None:
+        return False
+    _, reached = await _activate(
+        client,
+        state,
+        run,
+        "profile, to continue",
+        boot_mode="sms",
+        profile_uuid=profile_uuid,
     )
     return reached in _FIRMWARE_STATES
 
@@ -958,7 +997,8 @@ async def _provision_checks(
         "workflow-completed",
         st == "PASS"
         and result_field(data, "workflow_completed") is True
-        and _all_steps(data, "ok"),
+        # A REST create reports its profile apply as skipped, not ok (#1164).
+        and not any(step.get("status") == "error" for step in _items(data, "steps")),
     )
     token = await _token_of(client, state, run, run.p_uuid or "")
     run.hold(op, "ownership-stamped", token == run.token)
