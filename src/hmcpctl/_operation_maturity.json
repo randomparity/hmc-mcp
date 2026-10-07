@@ -5,9 +5,9 @@
     {
       "operation": "adapter.add_network",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "failed",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T11:38:26Z"
     },
     {
       "operation": "adapter.add_vfc",
@@ -19,9 +19,9 @@
     {
       "operation": "adapter.add_vscsi",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:20:39Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:40:29Z"
     },
     {
       "operation": "adapter.delete",
@@ -33,9 +33,9 @@
     {
       "operation": "adapter.list",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:18:02Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:36:47Z"
     },
     {
       "operation": "boot_order.clear",
@@ -509,23 +509,23 @@
     {
       "operation": "network.create_network",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:18:48Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:38:45Z"
     },
     {
       "operation": "network.delete_network",
       "implementation": "implemented",
-      "verification": "unevidenced",
+      "verification": "current",
       "reason": null,
-      "observed_at": null
+      "observed_at": "2026-10-07T11:38:45Z"
     },
     {
       "operation": "network.list_bridges",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:17:24Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:36:06Z"
     },
     {
       "operation": "network.list_fc_ports",
@@ -537,23 +537,23 @@
     {
       "operation": "network.list_networks",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:17:16Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:35:59Z"
     },
     {
       "operation": "network.list_sea",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:17:28Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:36:11Z"
     },
     {
       "operation": "network.list_switches",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:17:10Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:35:53Z"
     },
     {
       "operation": "pcie.assign_dedicated_slot",
@@ -943,9 +943,9 @@
     {
       "operation": "vios_label.create_vfc_group",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:21:20Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:41:11Z"
     },
     {
       "operation": "vios_label.list_fc_ports",
@@ -971,9 +971,9 @@
     {
       "operation": "vios_label.remove_vfc_group",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:21:20Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:41:11Z"
     },
     {
       "operation": "vios_label.set_fc_port",
@@ -985,9 +985,9 @@
     {
       "operation": "vios_label.update_vfc_group",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T19:21:20Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-07T11:41:11Z"
     },
     {
       "operation": "vnic.add",
