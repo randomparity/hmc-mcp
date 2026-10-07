@@ -779,6 +779,10 @@ def test_a_server_adapter_left_by_the_detach_fails_the_compare(schemas):
     world.detach_keeps_adapter = True
     state = _run(schemas, world)
 
+    (row,) = _rows(state, "VIOS server adapter teardown")
+    assert (
+        "chhwres -r virtualio --rsubtype scsi" in row["data"] and "-s 3" in row["data"]
+    )
     assert _rows(state, "system baseline compare")[0]["status"] == "FAIL"
     assert {e["observation"]["cleanup"] for e in state.observations} == {"failed"}
 
@@ -832,3 +836,273 @@ def test_volume_names_drop_the_lsvg_group_and_header_lines():
     )
     assert lpar_power._volume_names(text) == {"lv_op"}
     assert lpar_power._volume_names(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Each assertion can fail: one scripted deviation per assertion id
+# ---------------------------------------------------------------------------
+
+_FAILED_JOB = {"UUID": "4712", "Resource": {"Status": "COMPLETED_WITH_ERROR"}}
+
+
+def _wrap(world: World, tool: str, change) -> None:
+    """Answer *tool* from the model, then let *change* rewrite the answer."""
+    real = getattr(world, "_" + tool)
+    world.overrides[tool] = lambda kwargs: change(kwargs, real)
+
+
+def _units_accepted(w: World) -> None:
+    _wrap(
+        w,
+        "hmc_create_lpar",
+        lambda k, real: (
+            {"lpar": {}, "steps": []}
+            if k["resources"]["desired_procs"] > 1
+            else real(k)
+        ),
+    )
+
+
+def _skewed_read(w: World) -> None:
+    def change(k, real):
+        answer = real(k)
+        if isinstance(answer, dict):
+            answer["Resource"]["PartitionMemoryConfiguration"]["MinimumMemory"] = "1"
+        return answer
+
+    _wrap(w, "hmc_get_lpar", change)
+
+
+def _foreign_token(w: World) -> None:
+    _wrap(
+        w,
+        "hmc_get_lpar_description",
+        lambda k, real: (
+            "[caller lparpwr-ffffffff]"
+            if w.by_selector(k["lpar_name_or_uuid"])
+            else real(k)
+        ),
+    )
+
+
+def _job_fails_when(predicate):
+    def apply(w: World) -> None:
+        def change(k, real):
+            answer = real(k)
+            if not predicate(k):
+                return answer
+            if "job" in answer:
+                return {**answer, "job": _FAILED_JOB}
+            return _FAILED_JOB
+
+        _wrap(w, "hmc_power_on_lpar", change)
+        _wrap(w, "hmc_power_off_lpar", change)
+
+    return apply
+
+
+def _console(**answer: Any):
+    return lambda w: w.overrides.__setitem__(
+        "hmc_capture_lpar_console", lambda _k: answer
+    )
+
+
+def _composite_fails(action: str):
+    def apply(w: World) -> None:
+        def change(k, real):
+            record = real(k)
+            if k.get("action") == action and "continuation" not in k:
+                record["outcome"] = "failed"
+            return record
+
+        _wrap(w, "hmc_power_lpar", change)
+
+    return apply
+
+
+def _replay_is_new(w: World) -> None:
+    seen: set[str] = set()
+
+    def change(k, real):
+        record = real(k)
+        if k["request_id"] in seen:
+            return {**record, "operation_id": "f" * 32}
+        seen.add(k["request_id"])
+        return record
+
+    _wrap(w, "hmc_power_lpar", change)
+
+
+def _lost_after_refusal(w: World) -> None:
+    deletes: list[Any] = []
+    _wrap(w, "hmc_delete_lpar", lambda k, real: deletes.append(1) or real(k))
+    _wrap(
+        w,
+        "hmc_get_lpar",
+        lambda k, real: HMCError("LPAR not found") if len(deletes) == 1 else real(k),
+    )
+
+
+def _a_delete_lost(w: World) -> None:
+    """A's real delete takes effect but its answer is lost."""
+
+    def change(k, real):
+        answer = real(k)
+        return (
+            HMCError("Read timed out")
+            if len(w.calls_to("hmc_delete_lpar")) == 2
+            else answer
+        )
+
+    _wrap(w, "hmc_delete_lpar", change)
+
+
+def _a_delete_ignored(w: World) -> None:
+    """The second delete (A's real one) answers success and deletes nothing."""
+
+    def change(k, real):
+        if len(w.calls_to("hmc_delete_lpar")) == 2:
+            return "Deleted LPAR"
+        return real(k)
+
+    _wrap(w, "hmc_delete_lpar", change)
+
+
+def _other_vlan(w: World) -> None:
+    w.overrides["hmc_list_adapters"] = lambda _k: [
+        {"UUID": "net-1", "Resource": {"PortVLANID": "99"}}
+    ]
+
+
+def _mapping_elsewhere(w: World) -> None:
+    def change(k, real):
+        answer = real(k)
+        for mapping in w.mappings:
+            if mapping["id"] == "vhost1/vtscsi1":
+                mapping["lpar_uuid"] = OTHER_UUID
+        return answer
+
+    _wrap(w, "hmc_provision_lpar", change)
+
+
+def _p_not_activated(w: World) -> None:
+    def change(k, real):
+        answer = real(k)
+        w.partitions[k["name"]]["state"] = "Not Activated"
+        return answer
+
+    _wrap(w, "hmc_provision_lpar", change)
+
+
+def _decommission_answer(dry_run: bool, **fields: Any):
+    def apply(w: World) -> None:
+        def change(k, real):
+            answer = real(k)
+            return {**answer, **fields} if bool(k["dry_run"]) == dry_run else answer
+
+        _wrap(w, "hmc_decommission_lpar", change)
+
+    return apply
+
+
+def _dry_run_powers_off(w: World) -> None:
+    def change(k, real):
+        if k["dry_run"]:
+            w.by_selector(k["lpar_name_or_uuid"])["state"] = "Not Activated"
+        return real(k)
+
+    _wrap(w, "hmc_decommission_lpar", change)
+
+
+def _decommission_keeps_partition(w: World) -> None:
+    def change(k, real):
+        if k["dry_run"]:
+            return real(k)
+        return {"resource_deleted": True, "workflow_completed": True, "steps": []}
+
+    _wrap(w, "hmc_decommission_lpar", change)
+
+
+_DEVIATIONS = [
+    ("lpar.create", "units-over-vcpus-refused", _units_accepted),
+    ("lpar.create", "resources-read-back", _skewed_read),
+    ("lpar.create", "ownership-stamped", _foreign_token),
+    (
+        "lpar.power_on",
+        "profile-activation-reached-firmware",
+        _job_fails_when(lambda k: k.get("partition_profile_uuid")),
+    ),
+    (
+        "lpar.power_on",
+        "current-configuration-reached-firmware",
+        _job_fails_when(lambda k: k.get("operation_type")),
+    ),
+    ("lpar.capture_console", "console-captured", _console(stop_reason="error")),
+    ("lpar.capture_console", "console-released", _console(released=False)),
+    (
+        "lpar.power_off",
+        "delayed-shutdown-not-activated",
+        _job_fails_when(lambda k: k.get("immediate") is False),
+    ),
+    (
+        "lpar.power_off",
+        "immediate-shutdown-not-activated",
+        _job_fails_when(lambda k: k.get("immediate") is True),
+    ),
+    ("lpar.power", "start-completed-activated", _composite_fails("start")),
+    (
+        "lpar.power",
+        "restart-immediate-completed-activated",
+        _composite_fails("restart"),
+    ),
+    ("lpar.power", "stop-immediate-completed-not-activated", _composite_fails("stop")),
+    ("lpar.power", "same-request-replays", _replay_is_new),
+    ("lpar.delete", "partition-kept", _lost_after_refusal),
+    ("lpar.delete", "delete-call-succeeded", _a_delete_lost),
+    ("lpar.delete", "lpar-name-absent", _a_delete_ignored),
+    ("provision.lpar", "ownership-stamped", _foreign_token),
+    ("provision.lpar", "network-adapter-on-vlan", _other_vlan),
+    ("provision.lpar", "storage-mapping-listed", _mapping_elsewhere),
+    ("provision.lpar", "partition-activated", _p_not_activated),
+    (
+        "lpar.decommission",
+        "dry-run-inventoried",
+        _decommission_answer(True, resource_deleted=True),
+    ),
+    ("lpar.decommission", "dry-run-changed-nothing", _dry_run_powers_off),
+    (
+        "lpar.decommission",
+        "resource-deleted",
+        _decommission_answer(False, resource_deleted=False),
+    ),
+    (
+        "lpar.decommission",
+        "workflow-completed",
+        _decommission_answer(False, workflow_completed=False),
+    ),
+    ("lpar.decommission", "lpar-name-absent", _decommission_keeps_partition),
+]
+
+
+@pytest.mark.parametrize(
+    ("operation", "assertion", "deviate"),
+    _DEVIATIONS,
+    ids=[f"{op}:{assertion}" for op, assertion, _ in _DEVIATIONS],
+)
+def test_each_assertion_fails_on_its_deviation(schemas, operation, assertion, deviate):
+    world = World()
+    deviate(world)
+    state = _run(schemas, world)
+
+    assert assertion not in _held(state, operation)
+    assert _results(state)[operation] == "failed"
+
+
+def test_an_otherwise_empty_volume_group_still_cleans_up(schemas):
+    world = World()
+    world.volumes = set()
+    state = _run(schemas, world)
+
+    assert world.volumes == set()
+    assert not _rows(state, "run volume teardown")
+    assert {e["observation"]["cleanup"] for e in state.observations} == {"passed"}

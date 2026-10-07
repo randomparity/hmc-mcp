@@ -419,7 +419,7 @@ async def _refused_create(
         f"hmc_create_lpar ({label})",
         "PASS" if refused else "FAIL",
         data,
-        "refused before any HMC request" if refused else f"expected {text!r}",
+        "refused before any HMC write" if refused else f"expected {text!r}",
     )
     return refused
 
@@ -1149,6 +1149,12 @@ def _manual(state: RunState, label: str, text: str) -> None:
     state.record(SUBTASK, label, "FAIL", f"MANUAL RECOVERY REQUIRED: {text}")
 
 
+async def _volume_present(client: Client, state: RunState, run: Run) -> bool:
+    """Whether the run volume is listed; an unreadable listing counts as present."""
+    volumes = await _volumes(client, state, run)
+    return volumes is None or run.volume in volumes
+
+
 async def _teardown_storage(client: Client, state: RunState, run: Run) -> bool:
     vios = run.vios
     if vios is None or not run.volume_attempted:
@@ -1163,7 +1169,7 @@ async def _teardown_storage(client: Client, state: RunState, run: Run) -> bool:
             f"`rmvdev -vtd <device>` for it, before removing the volume.",
         )
         return False
-    if run.volume in (await _volumes(client, state, run) or {run.volume}):
+    if await _volume_present(client, state, run):
         st, data = await state.call(
             client,
             "hmc_delete_virtual_disk",
@@ -1173,7 +1179,7 @@ async def _teardown_storage(client: Client, state: RunState, run: Run) -> bool:
             system_name_or_uuid=run.system,
         )
         state.record(SUBTASK, "hmc_delete_virtual_disk (run volume)", st, data)
-    if run.volume in (await _volumes(client, state, run) or {run.volume}):
+    if await _volume_present(client, state, run):
         _manual(
             state,
             "run volume teardown",
@@ -1226,6 +1232,7 @@ async def _compare(
         if reads[-1] == baseline:
             break
     same = reads[-1] == baseline
+    _report_left_adapters(state, run, baseline, reads[-1])
     state.record(
         SUBTASK,
         "system baseline compare",
@@ -1236,6 +1243,24 @@ async def _compare(
         },
     )
     return same
+
+
+def _report_left_adapters(
+    state: RunState, run: Run, baseline: Baseline, final: Baseline | None
+) -> None:
+    """A manual-recovery row per VIOS server adapter the run added and left."""
+    if run.vios is None or final is None or final.adapters is None:
+        return
+    system = shlex.quote(run.system)
+    for row in sorted(final.adapters - (baseline.adapters or frozenset())):
+        slot = row.split(",", 1)[0]
+        _manual(
+            state,
+            "VIOS server adapter teardown",
+            f"VIOS id {run.vios.partition_id} has server adapter slot {slot} ({row}) "
+            f"it did not have before the run: `chhwres -r virtualio --rsubtype scsi "
+            f"-m {system} -o r --id {run.vios.partition_id} -s {slot}`.",
+        )
 
 
 def _provision_assertions(run: Run) -> list[Assertion]:

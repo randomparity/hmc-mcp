@@ -64,7 +64,7 @@ own records (#630).
    baseline read SKIPs the arm. The operator's private before/after snapshot (dispatch)
    covers the same set.
 4. **Create (A)** — observation `lpar.create`. Three cases are hmcpctl's own pre-request
-   guards, observed live (no HMC request is issued): `units-over-vcpus-refused`
+   guards, observed live (reads only; no HMC write is issued): `units-over-vcpus-refused`
    (desired 1.5 units, 1 virtual processor: "virtual processor uses at most 1.0"),
    `memory-over-configurable-refused` (desired 64 TiB: "configurable memory", read from
    the live `ConfigurableSystemMemory`), `duplicate-name-refused` (a second create of A's
@@ -141,13 +141,20 @@ own records (#630).
     `lpar.power_on`, `lpar.power_off`, `lpar.delete` and `lpar.capture_console`;
     bare-cec's `record_verified` sites for those five become plain `state.record` rows
     with the same PASS/FAIL judgement (its PCIe-fixture facts stay with the `pcie.*`
-    observations). A separate arm, not new steps in `bare_cec.py` / `provisioning.py`:
+    observations). The dedicated arm (`pcie.py`, #630) still emits `lpar.create` and
+    `lpar.delete` observations for its fixture; demoting them needs an edit to #630's file
+    and is reported to the orchestrator, so until then the copier keeps whichever
+    observation it copies last. A separate arm, not new steps in `bare_cec.py` / `provisioning.py`:
     bare-cec skips without the dedicated-PCIe fixture, and ST13/ST14 act on the shared
     test partition.
 15. **Recovery and preflight.** `live_test_recovery.py` witnesses subtask 41: a
-    `hmcpctl-live-pwr-*` partition, an `lppwr*` volume, a mapping backed by one, or a
-    VIOS server adapter whose remote partition is a run partition is stranded and prints
-    its commands. Preflight lists the arm's mutations.
+    `hmcpctl-live-pwr-*` partition, a mapping backed by an `lppwr*` volume, or a VIOS
+    server adapter whose remote partition is a run partition is stranded and prints its
+    commands. An unmapped `lppwr*` volume is not read there (recovery admits no VIOS
+    command); the arm's teardown row and the next run's stranded-volume SKIP report it,
+    and the manual check is `viosvrcmd -m <system> --id <vios id> -c 'lsvg -lv <group>'`.
+    A server adapter the run added and left gets its own manual-recovery row from the
+    arm's compare. Preflight lists the arm's mutations.
 16. **Catalog.** Rebind the rows above; add maturity records for `lpar.power`,
     `lpar.decommission`, `provision.lpar`, `system.power_on`, `system.power_off`; copy
     each emitted observation unchanged (ADR 0126), replacing the bare-cec observation
@@ -204,7 +211,9 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
      submission.
 3. **Accepted failure classes:**
    - an interrupted run leaves A, P, the volume or its mapping; cost bounded to one small
-     partition and 1 GiB; recovery names them by prefix with the commands;
+     partition and 1 GiB; recovery names the partitions, mappings and adapters by prefix
+     with the commands, and an unmapped volume is found by the next run's stranded-volume
+     SKIP or the manual `lsvg -lv` check;
    - a concurrent change by another operator, or pool accounting that lags by more than
      one re-read, fails the compare; the run is re-run, never patched;
    - the volume-group read-modify-write (#936) and an unpaired server adapter after a
