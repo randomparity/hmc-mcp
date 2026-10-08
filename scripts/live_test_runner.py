@@ -546,7 +546,7 @@ class LiveTestConfig:
             invalid.append(
                 f"LIVE_TEST_VDISK_NAME must be at most {VIRTUAL_DISK_NAME_MAX} characters"
             )
-        # Both names are interpolated into the ST14 `viosvrcmd ... rmvlog` string.
+        # Both names identify VIOS storage objects; the group enters the CLI listing.
         invalid += [
             f"{key} may contain only letters, digits, '.', '_' and '-', "
             "and must not start with '-'"

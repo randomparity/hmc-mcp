@@ -2986,7 +2986,7 @@ def test_live_config_rejects_an_over_length_vdisk_name(tmp_path) -> None:
     ["a b", "a'b", 'a"b', "a;b", "a$b", "a`b", "-a", "a|b", "a&b", "a\\b"],
 )
 def test_live_config_rejects_shell_unsafe_vios_names(tmp_path, key, value) -> None:
-    """#1033: a name that could alter the rmvlog command fails at load."""
+    """#1033: a name that could alter a VIOS storage command fails at load."""
     config_path = _example_env_with(tmp_path, key, value)
 
     with pytest.raises(ValueError, match=f"{key} may contain only"):
@@ -3770,11 +3770,6 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
             "metrics._PREFERENCES_AUTHORITY",
             "HMCError: The connecting user does not have PCM authority (HTTP 403)",
         ),
-        (
-            "provisioning._TEST_DISK_ABSENT",
-            "HMCError: 0516-306 lvmo: Unable to find device",
-        ),
-        ("provisioning._TEST_DISK_ABSENT", "HMCError: No Such device or address"),
         ("vmedia._ALREADY_POWERED_OFF", "HMCError: partition is Not Running"),
     ],
 )
@@ -6078,6 +6073,8 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
 
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
+        if tool == "hmc_run_command":
+            return "PASS", _st14_volumes(state)
         if tool == "hmc_get_lpar":
             return "PASS", {"uuid": "recreated-lp3"}
         if tool == "hmc_provision_lpar":
@@ -6089,6 +6086,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vios_partition_id = 7
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     state.artifacts.lp3_baseline = {
@@ -6121,9 +6119,8 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     ]
     assert calls[0][1] == {"system_name_or_uuid": state.config.system_name}
     assert calls[6][1]["cmd"] == (
-        f"viosvrcmd -m {state.config.system_name} -p vios-uuid"
-        f' -c "rmvlog -vg {state.config.vdisk_volume_group_name}'
-        f' -lv {state.config.vdisk_name}"'
+        f"viosvrcmd -m {state.config.system_name} --id 7"
+        f" -c 'lsvg -lv {state.config.vdisk_volume_group_name}'"
     )
     assert calls[7][1]["capacity_mib"] == state.config.provision_disk_mib
     provision = calls[9][1]
@@ -6149,7 +6146,6 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "dry_run": False,
     }
     assert calls[10][1] == {"lpar_name_or_uuid": state.config.lp3_name}
-    assert f"-vg {state.config.vdisk_volume_group_name} " in calls[6][1]["cmd"]
     assert calls[11][1] == {"lpar_name_or_uuid": state.config.lp3_name}
     assert state.artifacts.lp3_uuid == "recreated-lp3"
 
@@ -6181,6 +6177,7 @@ async def test_storage_provisioning_refuses_an_unlisted_vlan_before_deleting(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vios_partition_id = 7
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     assert state.config.provision_vlan_id == 1
@@ -6270,44 +6267,215 @@ def test_restorable_description_is_not_blocked(baseline):
     assert lpar._unrestorable_description(baseline) is None
 
 
+def _st14_volumes(state, *names):
+    return (
+        f"{state.config.vdisk_volume_group_name}:\n"
+        "LV NAME TYPE LPs PPs PVs LV STATE MOUNT POINT\n"
+        + "".join(f"{name} jfs2 1 1 1 open/syncd N/A\n" for name in names)
+    )
+
+
 @pytest.mark.asyncio
-async def test_rmvlog_command_shell_quotes_the_system_name(monkeypatch):
-    """#1033: system_name reaches viosvrcmd quoted, as in inventory and lpar."""
-    commands = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        if tool == "hmc_run_command":
-            commands.append(kwargs["cmd"])
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+@pytest.mark.parametrize("present", [False, True])
+async def test_st14_cleanup_uses_scoped_delete_and_independent_exact_inventory(
+    monkeypatch, present
+):
     state = runner.RunState(
         config=dataclasses.replace(runner.LiveTestConfig(), system_name="sys; reboot")
     )
-    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vios_uuid = "unused-stale-uuid"
+    state.artifacts.vios_partition_id = 7
+    calls = []
+    listed = (
+        [state.config.vdisk_name] if present else [state.config.vdisk_name + "-other"]
+    )
 
-    await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
+    async def call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_run_command":
+            return "PASS", _st14_volumes(state, *listed)
+        if tool == "hmc_delete_virtual_disk":
+            listed.clear()
+        return "PASS", {}
 
-    assert commands[0].startswith("viosvrcmd -m 'sys; reboot' -p vios-uuid ")
+    monkeypatch.setattr(runner.RunState, "call", call)
+    assert await provisioning._recreate_test_disk(
+        None, state, "selected-vios-uuid", "configured-vg-uuid", 1024
+    )
+    deletes = [kw for tool, kw in calls if tool == "hmc_delete_virtual_disk"]
+    assert deletes == (
+        [
+            {
+                "vios_name_or_uuid": "selected-vios-uuid",
+                "system_name_or_uuid": "sys; reboot",
+                "vg_uuid": "configured-vg-uuid",
+                "disk_name": state.config.vdisk_name,
+            }
+        ]
+        if present
+        else []
+    )
+    reads = [kw for tool, kw in calls if tool == "hmc_run_command"]
+    assert reads == [
+        {
+            "cmd": f"viosvrcmd -m 'sys; reboot' --id 7 -c 'lsvg -lv {state.config.vdisk_volume_group_name}'"
+        }
+    ] * (2 if present else 1)
+    assert [
+        kw["disk_name"] for tool, kw in calls if tool == "hmc_create_virtual_disk"
+    ] == [state.config.vdisk_name]
+    removal = next(
+        row
+        for row in state.results
+        if row["tool"] == "hmc_delete_virtual_disk (old test disk)"
+    )
+    assert removal["status"] == ("PASS" if present else "SKIP")
+    assert not state.gaps
 
 
 @pytest.mark.asyncio
-async def test_rmvlog_command_shell_quotes_the_vios_uuid(monkeypatch):
-    """#1113: the HMC-derived vios_uuid reaches viosvrcmd quoted."""
-    commands = []
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "does not exist",
+        "not found",
+        "No such",
+        "0516-306",
+        "0516-404",
+        "permission denied",
+        "transport timeout",
+    ],
+)
+async def test_st14_cleanup_delete_failures_are_fail_and_stop(monkeypatch, failure):
+    state = runner.RunState()
+    state.artifacts.vios_partition_id = 7
+    calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def call(_state, _client, tool, **kwargs):
+        calls.append(tool)
         if tool == "hmc_run_command":
-            commands.append(kwargs["cmd"])
+            return "PASS", _st14_volumes(state, state.config.vdisk_name)
+        if tool == "hmc_delete_virtual_disk":
+            return "FAIL", observation.classify_failure(RuntimeError(failure))
         return "PASS", {}
 
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", call)
+    assert not await provisioning._recreate_test_disk(
+        None, state, "vios-uuid", "vg-uuid", 1024
+    )
+    assert "hmc_create_virtual_disk" not in calls
+    removal = next(
+        row
+        for row in state.results
+        if row["tool"] == "hmc_delete_virtual_disk (old test disk)"
+    )
+    assert removal["status"] == "FAIL"
+    assert not state.gaps
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "read-error",
+        "empty",
+        "wrong-group",
+        "bad-header",
+        "bad-row",
+        "bad-number",
+        "post-read-error",
+        "survives",
+    ],
+)
+async def test_st14_cleanup_refuses_unproven_absence(monkeypatch, fault):
     state = runner.RunState()
-    state.artifacts.vios_uuid = "uuid; reboot"
+    state.artifacts.vios_partition_id = 7
+    calls = []
+    reads = 0
 
-    await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
+    async def call(_state, _client, tool, **kwargs):
+        nonlocal reads
+        calls.append(tool)
+        if tool != "hmc_run_command":
+            return "PASS", {}
+        reads += 1
+        data = _st14_volumes(state, state.config.vdisk_name)
+        if fault == "read-error" or (fault == "post-read-error" and reads == 2):
+            return "FAIL", observation.classify_failure(
+                RuntimeError("managed system not found")
+            )
+        if fault == "empty":
+            data = ""
+        elif fault == "wrong-group":
+            data = data.replace(state.config.vdisk_volume_group_name, "other-group")
+        elif fault == "bad-header":
+            data = data.replace("LV NAME TYPE", "LV NAME")
+        elif fault == "bad-row":
+            data += "unrecognized diagnostic\n"
+        elif fault == "bad-number":
+            data = data.replace("1 1 1", "x 1 1")
+        return "PASS", data
 
-    assert " -p 'uuid; reboot' -c " in commands[0]
+    monkeypatch.setattr(runner.RunState, "call", call)
+    assert not await provisioning._recreate_test_disk(
+        None, state, "vios-uuid", "vg-uuid", 1024
+    )
+    assert "hmc_create_virtual_disk" not in calls
+    assert any(row["status"] == "FAIL" for row in state.results)
+    assert not any(row["status"] == "SKIP" for row in state.results)
+    assert ("hmc_delete_virtual_disk" in calls) == (
+        fault in {"post-read-error", "survives"}
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vios_id", [None, "7", True, 0, -1])
+async def test_st14_cleanup_requires_partition_id_before_destructive_work(
+    monkeypatch, vios_id
+):
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+    state.artifacts.vios_partition_id = vios_id
+    calls = []
+
+    async def call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_virtual_networks":
+            return "PASS", _listed_networks(state.config.provision_vlan_id)
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", call)
+    await runner.exercise_storage_provisioning(None, state)
+    assert calls == []
+    assert any(row["status"] == "FAIL" for row in state.results)
+
+
+@pytest.mark.asyncio
+async def test_st14_cleanup_failure_stops_dependent_provision(monkeypatch):
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+    state.artifacts.vios_partition_id = 7
+    calls = []
+
+    async def call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_virtual_networks":
+            return "PASS", _listed_networks(state.config.provision_vlan_id)
+        if tool == "hmc_run_command":
+            return "FAIL", observation.classify_failure(
+                RuntimeError("volume group not found")
+            )
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", call)
+    await runner.exercise_storage_provisioning(None, state)
+    assert "hmc_create_virtual_disk" not in calls
+    assert "hmc_provision_lpar" not in calls
+    assert any(row["status"] == "FAIL" for row in state.results)
 
 
 @pytest.mark.asyncio
