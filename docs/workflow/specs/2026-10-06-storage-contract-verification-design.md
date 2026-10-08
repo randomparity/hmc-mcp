@@ -259,8 +259,9 @@ the new optional fields when reading pre-ST42 documents.
    Parsers require complete unique rows. REST and VIOS groups must agree; the
    named PV must occur in both PV listings with the same real PVID, positive
    free size and VG `None`; the scratch name must be absent. Missing settings,
-   missing VIOS identity, previous outstanding artifact, unreadable or refused
-   guards SKIP before mutation. No disk selection, fallback, or create retry.
+   missing VIOS identity, previous outstanding artifact or valid refused preconditions
+   SKIP before mutation. Failed reads remain FAIL; malformed authoritative snapshots
+   record explicit validation FAIL without mutation. No disk selection, fallback or create retry.
 2. Save `artifacts.storage_volume_group_name` before one
    `hmc_create_volume_group` using exactly `[scratch_pv_name]`. Re-read the
    snapshot regardless of the call status. Unknown poststate records manual
@@ -284,6 +285,11 @@ the new optional fields when reading pre-ST42 documents.
    was dispatched or its artifact is pending, including after subset reruns. It
    reports every `hpvg<8 hex>` REST group on its VIOS and any pending unconfirmed
    restoration even when the REST group is absent, without deletion or repair.
+   Subsets restore their existing results destination before legacy fallback reports.
+   Strict configuration/HMC rejection returns 1 before dispatch or writes, preserving
+   that destination byte-for-byte; incompatible runs require a separately named file.
+   Actual runner-to-recovery regressions cover compatible pending state, disabled
+   paired settings and HMC-identity mismatch so rejection cannot erase uncertainty.
 
 The existing failure model extends to physical-volume identities and all groups.
 Deployment remains the single-operator admitted V10R3/POWER9 lab window. Failed or
