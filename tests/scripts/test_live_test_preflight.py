@@ -350,7 +350,7 @@ def test_the_storage_verdict_names_each_change_it_makes(workspace, monkeypatch, 
     assert "a delete while mapped expected refused" in output
     assert "attach-disk" in output
     assert "new virtual target device the HMC names (vtscsi<n>" in output
-    assert "no other logical volume, mapping, adapter or volume group" in output
+    assert "ST42 SKIPs" in output
 
 
 def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
@@ -751,3 +751,22 @@ def test_the_provision_vlan_is_not_probed_without_round2_hardware(
 
     assert preflight.main(argv) == 0
     assert probed == []
+
+
+@pytest.mark.parametrize(
+    "pv,group", [("hdisk9", "hpvg1234abcd"), ("", "hpvg1234abcd"), ("hdisk9", "rootvg")]
+)
+def test_st42_preflight_discloses_exact_optin_or_skip(pv, group):
+    from dataclasses import replace
+
+    config = replace(
+        preflight.runner.LiveTestConfig(), scratch_pv_name=pv, scratch_vg_name=group
+    )
+    verdict = preflight._storage_verdict(config)
+    text = str(verdict)
+    if pv and group == "hpvg1234abcd":
+        assert "ST42 creates scratch group hpvg1234abcd" in text
+        assert "explicit physical volume hdisk9" in text
+        assert "reducevg" in text
+    else:
+        assert "ST42 SKIPs" in text

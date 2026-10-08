@@ -95,7 +95,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
 | lpar-config | `uv run --no-sync python scripts/live_lpar_config.py` | subtask 39 |
-| storage | `uv run --no-sync python scripts/live_storage.py` | subtasks 0, 3 and 40 |
+| storage | `uv run --no-sync python scripts/live_storage.py` | subtasks 0, 3, 40 and 42 |
 | lpar-power | `uv run --no-sync python scripts/live_lpar_power.py` | subtask 41 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
@@ -315,7 +315,7 @@ that is left, and nothing else.
 
 The storage arm verifies the volume-group, virtual-disk, mapping and cluster
 reads and the disk lifecycle (#1348). Subtask 0 resolves the VIOS and the test
-partition; subtask 3 reads the inventory; subtask 40 runs only in this arm.
+partition; subtask 3 reads the inventory; subtasks 40 and 42 run only in this arm.
 
 - **Inventory (subtask 3).** The volume-group listing is compared with the VIOS's
   own `lsvg`. Clusters and shared storage pools are promoted only when the HMC
@@ -340,6 +340,37 @@ the baseline, is a FAIL row marked `MANUAL RECOVERY REQUIRED` with the command
 that clears it. The arm never removes an adapter. It deletes the volume only
 after a listing shows no mapping backed by it, except for the one guarded delete
 it expects to be refused.
+
+**Scratch volume group (subtask 42, #1370).** This step is disabled unless both
+optional `.env` settings are supplied: `LIVE_TEST_SCRATCH_PV_NAME=hdisk<n>` and
+`LIVE_TEST_SCRATCH_VG_NAME=hpvg<8 lowercase hex>`. Use the one physical volume
+explicitly released by the operator and an absent group name for this authorized
+run. Preflight discloses these exact names; it saves no state. Never choose a disk
+from inventory automatically or reuse an existing group.
+
+Before create, the arm compares REST group names with VIOS `lsvg` and captures
+`lspv -field pvname pvid vgname -fmt :`,
+`lspv -free -field pvname pvid size -fmt :`, and `lsvg`. The explicit disk must
+appear free, in no group, with the same identified PVID in both listings. The arm
+records its pending group before one `hmc_create_volume_group` call and reads
+back through REST and VIOS even after a refused or lost create response. It never
+retries create (ADR 0136).
+
+Cleanup uses `viosvrcmd -m <system> --id <VIOS id> -c 'reducevg <run-group> <explicit-PV>'`
+only after `lsvg -pv -field pvname -fmt : <run-group>` proves exact single-PV
+membership, `lsvg -lv <run-group>` proves no logical volumes, and the complete
+PV inventory differs only by that disk's new group with its original PVID.
+There is no force flag, root command, metadata repair or product delete-group API.
+Plain `reducevg` removes the group when its last PV is removed. A passing command
+is insufficient: REST/VIOS absence and exact before/after snapshots must match.
+
+Unreadable state, unsafe membership, refused cleanup or snapshot drift fails with
+`MANUAL RECOVERY REQUIRED` and retains the pending artifact. Recovery reports a
+run-owned scratch group or unresolved restoration even when REST lists no group;
+it also honors pending artifacts restored into subset runs. Compare durable run
+results and private before/after snapshots with independent reads before any
+manual removal. Do not retry create or repair metadata automatically. Run recovery
+after every attempt. A second create requires a separate operator allowance.
 
 ### The vios-backup arm
 
@@ -638,7 +669,7 @@ these sets of them:
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 39 (lpar-config) | any partition named `hmcpctl-live-lpar-*` on the run's system, whichever run left it |
-| 0, 3, 40 (storage) | a mapping (its virtual target device) backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read |
+| 0, 3, 40, 42 (storage) | a mapping (its virtual target device) backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read; ST42 also reports `hpvg<8 hex>` groups or unresolved pending restoration |
 | 41 (lpar-power) | any partition named `hmcpctl-live-pwr-*`, running or not; on each VIOS, any mapping backed by an `lppwr*` volume, any vSCSI adapter serving a `hmcpctl-live-pwr-*` partition, and any `lppwr*` volume left in the configured volume group (read with the one admitted `viosvrcmd … -c 'lsvg -lv <group>'` command) |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 

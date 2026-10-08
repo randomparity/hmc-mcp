@@ -50,6 +50,7 @@ from live_test import (
     lpar_power,
     pcie,
     storage_lifecycle,
+    storage_volume_group,
     users,
     vios_backup,
     vmedia,
@@ -409,7 +410,15 @@ def _storage_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
                 "then created and mapped the same way by attach-disk, detached and "
                 "deleted"
             ),
-            "no other logical volume, mapping, adapter or volume group is changed",
+            (
+                f"ST42 creates scratch group {config.scratch_vg_name} on explicit physical "
+                f"volume {config.scratch_pv_name}, only after free/no-VG identity guards; "
+                "cleanup uses empty-single-PV reducevg and exact snapshot restoration"
+                if storage_volume_group.configured_scratch(
+                    config.scratch_pv_name, config.scratch_vg_name
+                )
+                else "ST42 SKIPs: both valid LIVE_TEST_SCRATCH_PV_NAME and LIVE_TEST_SCRATCH_VG_NAME required"
+            ),
         ),
         config.system_name,
     )

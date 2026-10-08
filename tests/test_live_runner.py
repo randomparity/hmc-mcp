@@ -7367,3 +7367,24 @@ async def test_partial_results_write_failure_does_not_mask_the_run_failure(
 
     assert raised.value is error
     assert "Could not write partial results: disk full" in capsys.readouterr().out
+
+
+def test_scratch_settings_are_optional_and_dotenv_only(tmp_path, monkeypatch):
+    example = Path(__file__).parents[1] / ".env.example"
+    text = example.read_text()
+    path = tmp_path / ".env"
+    path.write_text(text)
+    monkeypatch.setenv("LIVE_TEST_SCRATCH_PV_NAME", "hdisk8")
+    monkeypatch.setenv("LIVE_TEST_SCRATCH_VG_NAME", "hpvg88888888")
+    config = runner.LiveTestConfig.from_env_file(path)
+    assert (config.scratch_pv_name, config.scratch_vg_name) == ("", "")
+    path.write_text(
+        text
+        + "\nLIVE_TEST_SCRATCH_PV_NAME=hdisk9\n"
+        + "LIVE_TEST_SCRATCH_VG_NAME=hpvg00000009\n"
+    )
+    config = runner.LiveTestConfig.from_env_file(path)
+    assert (config.scratch_pv_name, config.scratch_vg_name) == (
+        "hdisk9",
+        "hpvg00000009",
+    )
