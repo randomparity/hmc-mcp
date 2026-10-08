@@ -39,8 +39,10 @@ at this point records FAIL and makes no assignment write.
 
 Call hmc_modify_lpar with the scratch UUID, system and assignments.dedicated
 containing only the configured profile name and selected DRC; omit resources.
-Judge typed or mapping workflow_completed, dedicated[0] step status and response
-readback, not transport PASS. Read the profile back through the admitted table;
+Judge typed or mapping workflow_completed, dedicated[0] step status and independent
+profile readback, not transport PASS. A warning that the final LPAR document read
+failed stays in the recorded response; it does not negate the dedicated proof
+when the delegated step and independent profile postconditions succeed. Read the profile back through the admitted table;
 the exact parsed target triple must be DRC/none/0, no other triples added, and
 other profiles' io_slots must be unchanged.
 
