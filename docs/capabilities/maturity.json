@@ -1907,6 +1907,68 @@
       "evidence": []
     },
     {
+      "operation": "snapshot.capture",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "hmc-capture",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-snapshot-capture",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-snapshot",
+          "observed_at": "2026-10-07T22:04:38Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "snapshot-names-partition",
+            "snapshot-names-system",
+            "profile-captured",
+            "scores-name-partition"
+          ],
+          "tested_commit": "d1fa32003ac38871e4be368f903e688b3d2c6831",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "33c916a53688a339c5d8c2874890a929e1d3f20ac3c275dc4a8d45ecb8a3877d"
+        }
+      ]
+    },
+    {
+      "operation": "snapshot.inspect",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "local-snapshot",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "snapshot.validate",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "local-snapshot",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
       "operation": "update.console",
       "implementation": {
         "state": "implemented",
@@ -3241,17 +3303,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st16-repository-read",
-          "observed_at": "2026-10-07T16:34:16Z",
+          "observed_at": "2026-10-07T22:07:08Z",
           "cleanup": "not-required",
           "assertions": [
             "repository-named",
             "repository-size-positive"
           ],
-          "tested_commit": "8c947f7fcdf7fd98393078b05d6b5c70cd7520ce",
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "fcbc090dd7be2cde0bde49befae2bdb921cbfd63e1a0714cdb1625798e1030f3"
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
         }
       ]
     },
@@ -3301,16 +3363,16 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st19-optical-round-trip",
-          "observed_at": "2026-10-07T16:34:30Z",
+          "observed_at": "2026-10-07T22:07:19Z",
           "cleanup": "not-required",
           "assertions": [
             "media-entries-named"
           ],
-          "tested_commit": "8c947f7fcdf7fd98393078b05d6b5c70cd7520ce",
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "fcbc090dd7be2cde0bde49befae2bdb921cbfd63e1a0714cdb1625798e1030f3"
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
         }
       ]
     },
@@ -3330,21 +3392,21 @@
         {
           "id": "st19-hmc-create-optical-media",
           "channel": "live",
-          "result": "failed",
+          "result": "passed",
           "scenario": "st19-optical-round-trip",
-          "observed_at": "2026-10-07T16:36:39Z",
-          "cleanup": "failed",
+          "observed_at": "2026-10-07T22:09:27Z",
+          "cleanup": "passed",
           "assertions": [
             "create-accepted",
             "media-listed",
             "size-matches",
             "baseline-media-kept"
           ],
-          "tested_commit": "8c947f7fcdf7fd98393078b05d6b5c70cd7520ce",
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "fcbc090dd7be2cde0bde49befae2bdb921cbfd63e1a0714cdb1625798e1030f3"
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
         }
       ]
     },
@@ -3360,7 +3422,27 @@
         ],
         "missing_scope": []
       },
-      "evidence": []
+      "evidence": [
+        {
+          "id": "st19-hmc-delete-optical-media",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st19-optical-round-trip",
+          "observed_at": "2026-10-07T22:09:27Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "refused-while-mounted",
+            "delete-accepted",
+            "media-absent",
+            "media-equal-baseline"
+          ],
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
+        }
+      ]
     },
     {
       "operation": "media.upload_iso",
@@ -3392,20 +3474,20 @@
         {
           "id": "st19-hmc-mount-optical-media",
           "channel": "live",
-          "result": "failed",
+          "result": "passed",
           "scenario": "st19-optical-round-trip",
-          "observed_at": "2026-10-07T16:36:39Z",
-          "cleanup": "failed",
+          "observed_at": "2026-10-07T22:09:08Z",
+          "cleanup": "passed",
           "assertions": [
             "mount-accepted",
             "mapping-listed",
             "baseline-mappings-kept"
           ],
-          "tested_commit": "8c947f7fcdf7fd98393078b05d6b5c70cd7520ce",
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "fcbc090dd7be2cde0bde49befae2bdb921cbfd63e1a0714cdb1625798e1030f3"
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
         }
       ]
     },
@@ -3425,16 +3507,21 @@
         {
           "id": "st19-hmc-unmount-optical-media",
           "channel": "live",
-          "result": "failed",
+          "result": "passed",
           "scenario": "st19-optical-round-trip",
-          "observed_at": "2026-10-07T16:36:39Z",
+          "observed_at": "2026-10-07T22:09:08Z",
           "cleanup": "not-required",
-          "assertions": [],
-          "tested_commit": "8c947f7fcdf7fd98393078b05d6b5c70cd7520ce",
+          "assertions": [
+            "unmount-accepted",
+            "mapping-absent",
+            "mappings-equal-baseline",
+            "adapters-equal-baseline"
+          ],
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "fcbc090dd7be2cde0bde49befae2bdb921cbfd63e1a0714cdb1625798e1030f3"
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
         }
       ]
     },
@@ -3488,18 +3575,18 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st21-mapping-inventory",
-          "observed_at": "2026-10-07T16:37:00Z",
+          "observed_at": "2026-10-07T22:09:50Z",
           "cleanup": "not-required",
           "assertions": [
             "mapping-ids-identified",
             "lpar-scope-subset",
             "optical-backing-agrees"
           ],
-          "tested_commit": "8c947f7fcdf7fd98393078b05d6b5c70cd7520ce",
+          "tested_commit": "119d01173c49694eccab96c70721d7afe21912c5",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "fcbc090dd7be2cde0bde49befae2bdb921cbfd63e1a0714cdb1625798e1030f3"
+          "closure_fingerprint": "9729737e5322753341c77fcb8f868a853befb3c4dbab387fb65f0d5502a85fa0"
         }
       ]
     },

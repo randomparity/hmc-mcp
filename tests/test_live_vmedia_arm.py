@@ -865,6 +865,74 @@ async def test_a_mapping_lost_by_the_unmount_is_a_manual_row(arm, monkeypatch):
     assert OPERATOR_MEDIA in str(_manual(state))
 
 
+# ---------------------------------------------------------------------------
+# Every media call names the managed system, so none waits on LPAR parent
+# discovery (#1408)
+# ---------------------------------------------------------------------------
+
+MEDIA_TOOLS = {
+    "hmc_create_optical_media",
+    "hmc_delete_optical_media",
+    "hmc_mount_optical_media",
+    "hmc_unmount_optical_media",
+}
+
+
+def _assert_media_calls_scoped(hmc, *required: str) -> None:
+    media = [(tool, kwargs) for tool, kwargs in hmc.calls if tool in MEDIA_TOOLS]
+    assert set(required) <= {tool for tool, _ in media}
+    unscoped = [
+        tool for tool, kwargs in media if kwargs.get("system_name_or_uuid") != SYSTEM
+    ]
+    assert unscoped == []
+
+
+@pytest.mark.asyncio
+async def test_the_round_trip_scopes_every_media_call_to_the_system(arm):
+    state, hmc = arm
+
+    await _run(state, *runner.SUBTASK_GROUPS["vmedia"])
+
+    _assert_media_calls_scoped(hmc, *MEDIA_TOOLS)
+
+
+@pytest.mark.asyncio
+async def test_the_boot_test_scopes_its_mount_and_cleanup_unmount(
+    with_iso, monkeypatch
+):
+    state, hmc = with_iso
+    hmc.power_on_fails = True
+    original = hmc._mount
+
+    def with_mapping_id(name):
+        # The boot-test cleanup unmounts only a mount that named its mapping.
+        status, data = original(name)
+        return status, {**data, "UUID": "0000BBBB-0000-4000-8000-000000000001"}
+
+    monkeypatch.setattr(hmc, "_mount", with_mapping_id)
+
+    await _run(state, 16, 20)
+
+    _assert_media_calls_scoped(
+        hmc, "hmc_mount_optical_media", "hmc_unmount_optical_media"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_teardown_scopes_its_run_media_unmount_and_delete(arm):
+    state, hmc = arm
+    hmc.unmount_fails = True
+    await _run(state, 16, 19)
+    hmc.unmount_fails = False
+    hmc.calls.clear()
+
+    await _run(state, 22)
+
+    _assert_media_calls_scoped(
+        hmc, "hmc_unmount_optical_media", "hmc_delete_optical_media"
+    )
+
+
 def test_every_registered_vmedia_stage_is_covered_here():
     covered = {
         runner.vmedia_bootstrap_and_create_repo,
