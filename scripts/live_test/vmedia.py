@@ -661,6 +661,7 @@ async def _delete_run_media(
         vios_name_or_uuid=state.artifacts.vios_uuid,
         vg_uuid=state.artifacts.vmedia_vg_uuid,
         media_name=name,
+        system_name_or_uuid=state.config.system_name,
     )
     state.record(subtask, f"hmc_delete_optical_media ({name})", st, data)
     listed = await _list_media(client, state, subtask, f"after deleting {name}")
@@ -1074,6 +1075,7 @@ class _RoundTrip:
                 vg_uuid=self.vg,
                 media_name=self.name,
                 size_mib=BLANK_SIZE_MIB,
+                system_name_or_uuid=self.config.system_name,
             ),
         )
         _, _, after = await self.media("post-create")
@@ -1111,6 +1113,7 @@ class _RoundTrip:
                 vios_name_or_uuid=self.vios,
                 media_name=self.name,
                 lpar_name_or_uuid=config.lp3_name,
+                system_name_or_uuid=config.system_name,
             ),
         )
         mapped = await self.mapped()
@@ -1142,6 +1145,7 @@ class _RoundTrip:
                 vios_name_or_uuid=self.vios,
                 vg_uuid=self.vg,
                 media_name=self.name,
+                system_name_or_uuid=self.config.system_name,
             ),
         )
         _, _, still = await self.media("after the guarded delete")
@@ -1156,6 +1160,7 @@ class _RoundTrip:
                 vios_name_or_uuid=self.vios,
                 lpar_name_or_uuid=config.lp3_name,
                 media_name=self.name,
+                system_name_or_uuid=config.system_name,
             ),
         )
         still_mapped = await self.mapped()
@@ -1236,6 +1241,7 @@ class _RoundTrip:
                 vios_name_or_uuid=self.vios,
                 vg_uuid=self.vg,
                 media_name=self.name,
+                system_name_or_uuid=self.config.system_name,
             ),
         )
         _, _, after = await self.media("post-delete")
@@ -1332,6 +1338,7 @@ async def _prepare_boot_media(
         vios_name_or_uuid=vios_uuid,
         media_name=name,
         lpar_name_or_uuid=config.lp3_name,
+        system_name_or_uuid=config.system_name,
     )
     state.record(20, "hmc_mount_optical_media (boot test)", status, data)
     if status != "PASS":
@@ -1462,6 +1469,7 @@ async def _restore_boot_configuration(
             vios_name_or_uuid=vios_uuid,
             lpar_name_or_uuid=config.lp3_name,
             media_name=artifacts.vmedia_iso_name,
+            system_name_or_uuid=config.system_name,
         )
         state.record(20, "hmc_unmount_optical_media (boot test cleanup)", status, data)
         if status == "PASS":
@@ -1764,6 +1772,7 @@ async def _remove_run_mappings(
             vios_name_or_uuid=vios,
             lpar_name_or_uuid=lpar,
             media_name=media_name,
+            system_name_or_uuid=state.config.system_name,
         )
         state.record(
             22, f"hmc_unmount_optical_media (run media {media_name})", st_u, data_u

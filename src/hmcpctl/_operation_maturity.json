@@ -7,7 +7,7 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T11:38:26Z"
+      "observed_at": "2026-10-07T21:33:28Z"
     },
     {
       "operation": "adapter.add_vfc",
@@ -26,9 +26,9 @@
     {
       "operation": "adapter.delete",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T21:33:28Z"
     },
     {
       "operation": "adapter.list",
@@ -392,7 +392,7 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T16:36:39Z"
+      "observed_at": "2026-10-07T22:09:27Z"
     },
     {
       "operation": "media.create_repository",
@@ -404,9 +404,9 @@
     {
       "operation": "media.delete",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T22:09:27Z"
     },
     {
       "operation": "media.delete_repository",
@@ -420,14 +420,14 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T16:34:16Z"
+      "observed_at": "2026-10-07T22:07:08Z"
     },
     {
       "operation": "media.list",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T16:34:30Z"
+      "observed_at": "2026-10-07T22:07:19Z"
     },
     {
       "operation": "media.list_mappings",
@@ -441,14 +441,14 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T16:36:39Z"
+      "observed_at": "2026-10-07T22:09:08Z"
     },
     {
       "operation": "media.unmount",
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T16:36:39Z"
+      "observed_at": "2026-10-07T22:09:08Z"
     },
     {
       "operation": "media.upload_iso",
@@ -661,6 +661,27 @@
       "observed_at": null
     },
     {
+      "operation": "snapshot.capture",
+      "implementation": "implemented",
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T22:04:38Z"
+    },
+    {
+      "operation": "snapshot.inspect",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
+      "operation": "snapshot.validate",
+      "implementation": "implemented",
+      "verification": "unevidenced",
+      "reason": null,
+      "observed_at": null
+    },
+    {
       "operation": "sriov.assign_logical_port",
       "implementation": "implemented",
       "verification": "unevidenced",
@@ -721,7 +742,7 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T16:37:00Z"
+      "observed_at": "2026-10-07T22:09:50Z"
     },
     {
       "operation": "storage.list_volume_groups",
