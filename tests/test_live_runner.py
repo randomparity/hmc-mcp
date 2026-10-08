@@ -4099,6 +4099,54 @@ def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path
     assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_subset_preserves_destination_pending_scratch_recovery(
+    monkeypatch, tmp_path, fallback
+):
+    """A read-only subset cannot erase the only evidence of unconfirmed restoration."""
+    import live_test_recovery as recovery
+
+    _isolate_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    artifacts = runner.LiveTestArtifacts(
+        vios_uuid="vios-1", storage_volume_group_name="hpvg1234abcd"
+    )
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(json.dumps(_result_document(config, hmc_config, artifacts)))
+    if fallback:
+        (tmp_path / "test-results-vmedia.json").write_text(
+            json.dumps(_result_document(config, hmc_config))
+        )
+
+    async def read_only(_client, state):
+        state.record(3, "hmc_list_volume_groups", "PASS", [])
+
+    monkeypatch.setitem(runner.SUBTASKS, 3, read_only)
+    assert (
+        await runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        == 0
+    )
+    saved = json.loads(destination.read_text())
+    assert saved["run"]["subtasks"] == [3]
+    assert saved["artifacts"]["storage_volume_group_name"] == "hpvg1234abcd"
+    inputs = recovery.lpar_inputs_from_document(saved, [3])
+    assert inputs is not None and inputs.scratch_vg_ran
+    calls = []
+
+    async def no_group(tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "PASS", []
+
+    finding = await recovery._run_volume_group_left(no_group, inputs)
+    assert (
+        finding is not None and finding.what == "scratch group restoration unconfirmed"
+    )
+    assert [tool for tool, _ in calls] == ["hmc_list_volume_groups"]
+
+
 def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
     """The runner writes `run`; the guard that reads its own output must admit it."""
     config = runner.LiveTestConfig()

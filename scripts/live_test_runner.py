@@ -1848,8 +1848,12 @@ async def main(
 
     # Restore prior context when running a subset
     if subtask_filter is not None or group is not None:
-        # Try vmedia results first, then round2
-        for prior in ["test-results-vmedia.json", "test-results-round2.json"]:
+        # Preserve destination recovery state before considering another arm's context.
+        for prior in [
+            results_path,
+            "test-results-vmedia.json",
+            "test-results-round2.json",
+        ]:
             if Path(prior).exists():
                 _restore_artifacts_from_results(state, hmc_config, prior)
                 break
