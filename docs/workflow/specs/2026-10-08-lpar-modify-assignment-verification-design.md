@@ -6,15 +6,16 @@ M250, full-spec, iterating; one PR selected by the operator on 2026-10-08.
 ## Problem
 
 `lpar.modify` binds its resource write and assignment prevalidation reads, but
-omits its delegates' chsyscfg/chhwres writes and supporting lssyscfg reads.
+omits its delegates' chsyscfg/chhwres writes and supporting lssyscfg/lshmc reads.
 ST39 exercises the resource path only. Existing dedicated-slot settings and
 profile parsers can support the requested proof without another setting or arm.
 
 ## Scope and approach
 
 Extend the coherent ST39 owner; no product ownership transition or API change.
-Bind exactly chhwres, chsyscfg, lshwres, lssyscfg and LogicalPartition, verified
-from assignment prevalidation and the three current delegate implementations.
+Bind exactly chhwres, chsyscfg, lshmc, lshwres, lssyscfg and LogicalPartition,
+verified from assignment prevalidation, its environment admission and the three
+current delegate implementations.
 Do not copy unrelated bindings from lpar.create or provision.lpar.
 
 Run one dedicated assignment on the existing ST39 scratch partition, before
@@ -26,10 +27,12 @@ no profile, following the existing dedicated configuration contract. The
 profile name comes from that configuration (default default_profile).
 
 Read the admitted all-profile table and dedicated inventory before scratch
-creation. A failed read, malformed table, mismatched system, owned configured
-slot, or existing profile holder causes the assignment case to SKIP with its
-named prerequisite. The existing resource proof may continue; there is no
-assignment observation when the prerequisite was unavailable.
+creation. Missing configuration, a mismatched configured system, or no eligible
+unowned slot listed by no profile causes the assignment case to SKIP with its
+named prerequisite. An observed failed read or malformed response records FAIL
+and retains the failed run exit, including before scratch creation. The existing
+resource proof may continue; there is no assignment observation unless its call
+was attempted. Continuing other cases never rewrites an observed failure.
 
 After scratch creation, re-read the profile table, require a unique configured
 profile on the scratch name, and require its parsed io_slots baseline empty.
@@ -88,7 +91,7 @@ Redact PII from public writes; never publish test-results JSON.
 
 ## Success
 
-- lpar.modify binds the five verified reference rows without changing sibling joins.
+- lpar.modify binds the six verified reference rows without changing sibling joins.
 - A live exact-pushed-head ST39 run attempts the dedicated delegate once and
   records actual workflow/profile/baseline/cleanup outcomes, with failure retained.
 - Eligible successful runs restore the scratch profile before activation, delete
@@ -111,9 +114,10 @@ Redact PII from public writes; never publish test-results JSON.
    fail proof/stop mutation. Arbitrarily late read propagation fails safely and
    receives manual diagnosis rather than repeated writes.
 4. Covered elsewhere: ownership/auth semantics ADR0092; dedicated environment
-   and profile grammar ADR0165/0166; create/delete and profile activation contracts
-   #1413/#1390; SR-IOV/vNIC mutation authorization operator; stale catalogs refreshed
-   by campaign consolidated round; unrelated device writes outside this PR.
+   and profile grammar ADR0165/0166; existing ST39 and lpar-power lifecycle
+   behavior remains unchanged, #1413 owns judged create/delete row documentation,
+   and #1390 owns provision activation; SR-IOV/vNIC mutation authorization operator;
+   stale catalogs refreshed by campaign consolidated round; unrelated device writes outside this PR.
 
 ## Threat model
 
