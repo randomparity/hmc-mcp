@@ -336,7 +336,9 @@ async def check_lpar_config(call, inputs: LparConfigInputs) -> list[Finding]:
                 detail=(
                     f"an lpar-config scratch partition is still defined "
                     f"({states[name]}); its description should carry caller token "
-                    f"{lpar_config.TOKEN_PREFIX}<the name's 8 hex>"
+                    f"{lpar_config.TOKEN_PREFIX}<the name's 8 hex>. Before removal, inspect "
+                    "all scratch profile io_slots and dedicated-slot ownership; restore "
+                    "any run-added slot only after confirming the saved baseline"
                 ),
                 remedy=f"{shutdown}rmsyscfg -r lpar -m {system} -n {quoted}",
             )

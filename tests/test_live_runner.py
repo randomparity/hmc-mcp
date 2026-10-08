@@ -7158,6 +7158,12 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "baseline-restored",
         },
         "st39-lpar-config": {
+            "assignment-workflow-completed",
+            "dedicated-profile-read-back",
+            "other-profile-slots-unchanged",
+            "dedicated-profile-restored",
+            "dedicated-slot-unowned",
+            "dedicated-baseline-restored",
             "memory-read-back",
             "processing-units-read-back",
             "other-values-unchanged",
