@@ -54,6 +54,7 @@ Verification is offline; no HMC contact occurs.
 - Runtime preservation: Mode: focused-test. Existing forwarding/restoration,
   conversion/fallback, owned-media and boot-order cases run through
   `uv run --no-sync pytest tests/scripts/test_capture.py tests/test_live_runner.py tests/test_live_vmedia_arm.py --no-cov -q`;
-  add a focused missing edge case only where needed, proving it bites.
+  red: altered forwarded results, numeric fallbacks, media ownership or boot
+  tokens fail their cases; add a missing edge case only where needed and prove it bites.
   Finish with `just verify`, `uv run --no-sync prek run --all-files`, and the
   required CI matrix and wheel checks before merge handoff.
