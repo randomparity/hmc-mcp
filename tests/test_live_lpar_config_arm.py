@@ -531,6 +531,10 @@ class DedicatedHMC(FakeHMC):
             return "PASS", {
                 "items": [{"drc_index": "21010020", "owner_lpar": None}, None]
             }
+        if self.mode == "inventory-missing-owner" or (
+            self.mode == "fresh-inventory-missing-owner" and self.inventory_reads > 1
+        ):
+            return "PASS", {"items": [{"drc_index": "21010020"}]}
         if self.mode == "inventory-failure":
             return "FAIL", _failure("inventory read refused")
         if self.mode == "inventory-malformed":
@@ -717,6 +721,7 @@ async def test_dedicated_auto_select_and_mismatched_system(monkeypatch):
         "model-malformed",
         "profile-failure",
         "inventory-failure",
+        "inventory-missing-owner",
         "ok",
         "other-drift",
     ],
@@ -813,3 +818,19 @@ async def test_fresh_inventory_malformed_row_fails_before_assignment(monkeypatch
     assert any(row["status"] == "FAIL" for row in state.results)
     assert not any("assignments" in kw for _, kw in hmc.calls)
     assert not any(tool == "hmc_power_on_lpar" for tool, _ in hmc.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode", ["inventory-missing-owner", "fresh-inventory-missing-owner"]
+)
+async def test_missing_inventory_owner_fails_closed(monkeypatch, mode):
+    hmc = DedicatedHMC(mode=mode)
+    state = await _run_dedicated(monkeypatch, hmc)
+    assert any(
+        row["tool"] == "dedicated inventory shape" and row["status"] == "FAIL"
+        for row in state.results
+    )
+    assert not any("assignments" in kwargs for _, kwargs in hmc.calls)
+    if mode.startswith("fresh-"):
+        assert not any(tool == "hmc_power_on_lpar" for tool, _ in hmc.calls)

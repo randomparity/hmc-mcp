@@ -297,10 +297,12 @@ async def _select_dedicated(
             if not isinstance(row.get("drc_index"), str):
                 raise HMCCLIError("dedicated inventory DRC must be text")
             require_drc_index(row["drc_index"])
-            if row.get("owner_lpar") is not None and not isinstance(
-                row["owner_lpar"], str
+            if "owner_lpar" not in row or (
+                row["owner_lpar"] is not None and not isinstance(row["owner_lpar"], str)
             ):
-                raise HMCCLIError("dedicated inventory owner must be text or null")
+                raise HMCCLIError(
+                    "dedicated inventory owner_lpar is required and must be text or null"
+                )
         except (HMCCLIError, ValueError) as error:
             state.record(
                 SUBTASK,
@@ -358,10 +360,12 @@ async def _dedicated_inventory(client: Client, state: RunState, run: _Run) -> bo
             if not isinstance(row.get("drc_index"), str):
                 raise HMCCLIError("dedicated inventory DRC must be text")
             require_drc_index(row["drc_index"])
-            if row.get("owner_lpar") is not None and not isinstance(
-                row["owner_lpar"], str
+            if "owner_lpar" not in row or (
+                row["owner_lpar"] is not None and not isinstance(row["owner_lpar"], str)
             ):
-                raise HMCCLIError("dedicated inventory owner must be text or null")
+                raise HMCCLIError(
+                    "dedicated inventory owner_lpar is required and must be text or null"
+                )
         except (HMCCLIError, ValueError) as error:
             state.record(
                 SUBTASK,
