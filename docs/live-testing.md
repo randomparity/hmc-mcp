@@ -404,8 +404,13 @@ system shares. It reads the five flags (`LongTermMonitorEnabled`,
 it sets the opposite value, reads it back, and writes all five snapshot values
 again: the HMC couples the flags, and enabling aggregation also enables
 long-term monitoring and, where the system supports it, energy monitoring. It
-reads the flags back after each restore and stops toggling if they differ from
-the snapshot. It passes only when a final read equals the snapshot. While
+reads the flags back after each restore. If the snapshot has aggregation off and
+long-term or energy monitoring still reads on instead of its saved off value,
+it makes one ordered restore attempt: turn aggregation off, read it back off,
+then write all five saved flags and require an exact snapshot readback. A failed
+read, refused restore write, or remaining mismatch stops further toggles and
+requires manual recovery. It passes only when every restore succeeds and a final
+read equals the snapshot. While
 aggregation is on, the HMC holds long-term monitoring on, and energy monitoring on
 when the system is capable, so the arm expects the HMC to accept those two
 toggles and read them back unchanged. Any other flag that does not read back flipped fails its assertion.

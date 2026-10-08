@@ -431,6 +431,55 @@ def test_source_unit_summaries_do_not_publish_example_payload_values() -> None:
     assert "192.0.2.1" not in json.dumps(units)
 
 
+def test_management_console_row_accounts_for_both_reference_snapshots() -> None:
+    catalog = ROOT / "docs" / "capabilities"
+    rows = json.loads((catalog / "rows.json").read_text())["rows"]
+    row = next(row for row in rows if row["id"] == "rest:management-console")
+    units = json.loads((catalog / "corpora.json").read_text())["source_units"]
+    console_units = [
+        unit
+        for unit in units
+        if unit["topic"]
+        in {"rest-p10:management-console", "rest-p11:management-console"}
+    ]
+
+    assert len(console_units) == 6
+    assert row["kind"] == "rest-operation"
+    assert row["releases"] == ["power10", "power11"]
+    assert row["parameters"] == []
+    assert row["disposition"] == {"kind": "supported"}
+    assert set(row["source_units"]) == {unit["id"] for unit in console_units}
+    assert set(row["modes"]) == {
+        unit["id"] for unit in console_units if unit["kind"] == "rest-resource"
+    }
+    assert all(
+        unit["accounting"] == {"kind": "row", "id": row["id"]} for unit in console_units
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "row_ids"),
+    [
+        ("console.info", ["rest:management-console"]),
+        ("console.list_resources", []),
+        ("command.run", []),
+    ],
+)
+def test_console_operations_bind_fixed_resources_or_explain_generic_dispatch(
+    operation: str, row_ids: list[str]
+) -> None:
+    catalog = ROOT / "docs" / "capabilities" / "operations.json"
+    operations = json.loads(catalog.read_text())["operations"]
+    record = next(record for record in operations if record["operation"] == operation)
+
+    assert record["row_ids"] == row_ids
+    if row_ids:
+        assert record["composite_reason"] is None
+    else:
+        assert isinstance(record["composite_reason"], str)
+        assert record["composite_reason"].strip()
+
+
 def test_sparse_maturity_allows_unknown_operations(tmp_path: Path) -> None:
     _minimal_inventory(tmp_path)
 
