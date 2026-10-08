@@ -16,7 +16,7 @@ TOOL_PINS = {
     "ty==0.0.75",
     "zizmor==1.29.0",
 }
-TY_INCLUDE = ["src/hmcpctl"]
+TY_INCLUDE = ["src/hmcpctl", "scripts/live_test"]
 RUFF_EXTEND_SELECT = {
     "E401",
     "E402",

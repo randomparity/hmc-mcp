@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastmcp import Client
 
@@ -113,11 +113,14 @@ def _capture_cna_identifiers(data: object, baseline: dict[str, object]) -> None:
         resource = get_resource(entry)
         pvid = resource.get("PortVLANID") or resource.get("port_vlan_id")
         if pvid:
-            baseline["pvid"] = int(pvid)
+            baseline["pvid"] = int(cast(str | int, pvid))
             baseline["vswitch_id"] = int(
-                resource.get("VirtualSwitchID")
-                or resource.get("virtual_switch_id")
-                or 0
+                cast(
+                    str | int,
+                    resource.get("VirtualSwitchID")
+                    or resource.get("virtual_switch_id")
+                    or 0,
+                )
             )
             return
 
@@ -136,8 +139,10 @@ async def _capture_vios_identity(client: Client, state: RunState) -> None:
             uuid = e.get("UUID") or e.get("uuid")
             pid = resource.get("PartitionID") or resource.get("partition_id")
             if uuid:
-                artifacts.vios_uuid = uuid
-                artifacts.vios_partition_id = int(pid) if pid is not None else None
+                artifacts.vios_uuid = cast(str, uuid)
+                artifacts.vios_partition_id = (
+                    int(cast(str | int, pid)) if pid is not None else None
+                )
                 break
 
 
