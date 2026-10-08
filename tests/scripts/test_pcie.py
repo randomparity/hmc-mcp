@@ -10,10 +10,12 @@ from typing import Any
 
 import pytest
 
+from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
+
 LIVE_TEST_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(LIVE_TEST_ROOT))
 from live_test import pcie  # noqa: E402
-from live_test.observation import CallFailure  # noqa: E402
+from live_test.observation import CLEANUP, Assertion, CallFailure  # noqa: E402
 from live_test_runner import LiveTestArtifacts, LiveTestConfig, RunState  # noqa: E402
 
 #: The arm's own settings. Everything else on `LiveTestConfig` keeps its
@@ -750,6 +752,38 @@ async def test_probe_create_with_failed_apply_step_is_recorded_fail(
         for t, k in state.calls
     )
     assert any(t == "hmc_create_lpar" and not _is_probe(k) for t, k in state.calls)
+
+
+@pytest.mark.asyncio
+async def test_probe_uuid_is_read_from_a_dataclass_create_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A typed create result is a dataclass, not a dict; its UUID still names the probe (#1410)."""
+    holder: dict[str, str] = {}
+    responses = _happy_responses(holder, probe_exists=True)
+    _probe_create_succeeds(responses)
+    base_create = responses["hmc_create_lpar"]
+
+    def create_lpar(kwargs: dict[str, Any], index: int) -> Any:
+        result = base_create(kwargs, index)
+        return LparPcieWorkflowResult(
+            resource_created=True,
+            workflow_completed=True,
+            lpar=result["lpar"],
+            ownership_stamped=True,
+            steps=(),
+            warnings=(),
+        )
+
+    responses["hmc_create_lpar"] = create_lpar
+    state = await _run_arm(
+        monkeypatch, responses, holder, statuses={"hmc_create_lpar": "PASS"}
+    )
+
+    assert any(
+        t == "hmc_delete_lpar" and k["lpar_name_or_uuid"] == "probe-uuid"
+        for t, k in state.calls
+    )
 
 
 @pytest.mark.asyncio
@@ -2628,3 +2662,38 @@ async def test_inventory_phase_runs_before_selection_and_changes_nothing(
     assert [marker.sub("M", c) for c in with_reads.cleanup_commands()] == [
         marker.sub("M", c) for c in without.cleanup_commands()
     ]
+
+
+def test_record_held_refuses_an_unknown_cleanup_value() -> None:
+    recorded: list[Any] = []
+    state: Any = SimpleNamespace(record=lambda *args: recorded.append(args))
+
+    with pytest.raises(ValueError, match="cleanup disposition is not a known value"):
+        pcie._record_held(
+            state,
+            34,
+            "hmc_delete_lpar (judged)",
+            assertions=[Assertion("delete-call-succeeded", True)],
+            cleanup="fialed",
+            data="",
+        )
+
+    assert recorded == []
+
+
+@pytest.mark.parametrize("cleanup", sorted(CLEANUP))
+def test_record_held_judges_cleanup_as_record_verified_does(cleanup: str) -> None:
+    recorded: list[Any] = []
+    state: Any = SimpleNamespace(record=lambda *args: recorded.append(args))
+
+    pcie._record_held(
+        state,
+        34,
+        "hmc_delete_lpar (judged)",
+        assertions=[Assertion("delete-call-succeeded", True)],
+        cleanup=cleanup,
+        data="",
+    )
+
+    expected = "PASS" if cleanup in {"passed", "not-required"} else "FAIL"
+    assert [args[-3] for args in recorded] == [expected]
