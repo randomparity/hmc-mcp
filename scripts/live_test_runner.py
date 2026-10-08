@@ -1473,12 +1473,12 @@ def _restore_artifacts_from_results(
     state: RunState,
     hmc_config: HMCConfig,
     results_path: str = "test-results-round2.json",
-) -> None:
+) -> bool:
     """Pre-seed artifacts from a compatible previous live-test report."""
     path = Path(results_path)
     try:
         if not path.exists():
-            return
+            return False
         saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
@@ -1510,7 +1510,7 @@ def _restore_artifacts_from_results(
         KeyError,
     ) as exc:
         print(f"  ⚠️  Could not restore artifacts from {results_path}: {exc}")
-        return
+        return False
 
     state.artifacts = candidate
     print(
@@ -1519,6 +1519,7 @@ def _restore_artifacts_from_results(
         f"system_uuid={candidate.system_uuid}, "
         f"vg_uuid={candidate.vg_uuid})"
     )
+    return True
 
 
 def _write_results(path: Path, document: str) -> None:
@@ -1855,7 +1856,12 @@ async def main(
             "test-results-round2.json",
         ]:
             if Path(prior).exists():
-                _restore_artifacts_from_results(state, hmc_config, prior)
+                restored = _restore_artifacts_from_results(state, hmc_config, prior)
+                if prior == results_path and not restored:
+                    print(
+                        "❌ Existing results cannot be restored; use another --results-file."
+                    )
+                    return 1
                 break
 
     def write_results(partial: bool) -> None:

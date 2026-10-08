@@ -4147,6 +4147,55 @@ async def test_subset_preserves_destination_pending_scratch_recovery(
     assert [tool for tool, _ in calls] == ["hmc_list_volume_groups"]
 
 
+@pytest.mark.parametrize("mismatch", ["settings", "hmc"])
+def test_subset_rejection_preserves_destination_for_recovery(
+    monkeypatch, tmp_path, capsys, mismatch
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    _isolate_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        scratch_pv_name="hdisk9", scratch_vg_name="hpvg1234abcd"
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-1", storage_volume_group_name="hpvg1234abcd"
+        ),
+    )
+    document["run"] = {"subtasks": [42]}
+    if mismatch == "settings":
+        config = dataclasses.replace(config, scratch_pv_name="", scratch_vg_name="")
+    else:
+        document["hmc"]["user"] = "other"
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(json.dumps(document))
+    original = destination.read_bytes()
+    dispatched = []
+
+    async def read_only(_client, _state):
+        dispatched.append(3)
+
+    monkeypatch.setitem(runner.SUBTASKS, 3, read_only)
+    assert (
+        asyncio.run(
+            runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        )
+        == 1
+    )
+    assert dispatched == []
+    assert destination.read_bytes() == original
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: False)
+    assert recovery.main(["--results", str(destination)]) == 2
+    assert "CLEAN" not in capsys.readouterr().out
+
+
 def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
     """The runner writes `run`; the guard that reads its own output must admit it."""
     config = runner.LiveTestConfig()
