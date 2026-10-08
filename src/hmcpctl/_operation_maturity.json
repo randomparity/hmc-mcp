@@ -7,7 +7,7 @@
       "implementation": "implemented",
       "verification": "stale",
       "reason": "closure-changed",
-      "observed_at": "2026-10-07T11:38:26Z"
+      "observed_at": "2026-10-07T21:33:28Z"
     },
     {
       "operation": "adapter.add_vfc",
@@ -26,9 +26,9 @@
     {
       "operation": "adapter.delete",
       "implementation": "implemented",
-      "verification": "unevidenced",
-      "reason": null,
-      "observed_at": null
+      "verification": "stale",
+      "reason": "closure-changed",
+      "observed_at": "2026-10-07T21:33:28Z"
     },
     {
       "operation": "adapter.list",
