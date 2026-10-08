@@ -20,7 +20,9 @@ Do not copy unrelated bindings from lpar.create or provision.lpar.
 
 Run one dedicated assignment on the existing ST39 scratch partition, before
 rename and before SMS activation. Reuse the dedicated configuration predicate,
-environment admission, unowned predicate, and strict profile table/triple parser.
+exact runtime admission predicate, unowned predicate, and strict profile table/triple
+parser. ST39 locally records returned read failures; it does not use the dedicated
+arm admission helper that converts failed or malformed reads into SKIP.
 The configured dedicated system must equal ST39's system. With an explicit DRC,
 only that slot is eligible; without one select the first unowned slot listed by
 no profile, following the existing dedicated configuration contract. The
@@ -32,7 +34,13 @@ unowned slot listed by no profile causes the assignment case to SKIP with its
 named prerequisite. An observed failed read or malformed response records FAIL
 and retains the failed run exit, including before scratch creation. The existing
 resource proof may continue; there is no assignment observation unless its call
-was attempted. Continuing other cases never rewrites an observed failure.
+was attempted. Continuing other cases never rewrites an observed failure. Release
+and model responses must be text with three unique numeric Version/Release/Service
+Pack fields and one type-model token in NNNN-XXX form. A well-formed pair outside
+the existing exact admission envelope is SKIP; missing/repeated/non-numeric fields,
+non-text responses or malformed model tokens are FAIL. Record original failed
+call data through state.record (including CallFailure redaction); state.call does
+not record. These checks stay local to ST39, without changing other live arms.
 
 After scratch creation, re-read the profile table, require a unique configured
 profile on the scratch name, and require its parsed io_slots baseline empty.
