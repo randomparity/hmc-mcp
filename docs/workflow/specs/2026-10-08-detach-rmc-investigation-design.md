@@ -46,6 +46,10 @@ one run-owned 1 GiB logical volume; existing test partition unchanged.
 - Create owned fixture/LV; cycle1 in Not Activated, activate only this fixture
   to OF, then cycles2–3 in OF. Before fresh attachment verify prior absence,
   mapping/adapter baseline, current UUID/token, client state and active VIOS RMC.
+- After attach and before detach require preserved VIOS/client adapter baselines
+  plus exactly one reciprocal scratch/selected-VIOS slot pair; any drift retains
+  fixtures without detach. Validate bounded raw three-field adapter rows and unique
+  local slots before sets; only the established no-results sentinel denotes empty.
 - Around detach record exact mappings/adapters and both endpoint RMC/state,
   original response, actual HTTP status and REST/HSCL message. FAIL remains FAIL.
 - Next cycle requires exact absence and preserved protected inventory. Failed
