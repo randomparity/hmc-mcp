@@ -288,7 +288,17 @@ Use verbose recipes only when live progress or expanded diagnostics are needed:
 ```sh
 just test-verbose   # live pytest output + missing-lines coverage
 just smoke-verbose  # list every exposed MCP tool
+just test-timings   # retain pytest output, including the 30 slowest test phases
+just verify-timings # canonical verify with per-recipe wall time and pytest timings
 ```
+
+Timing diagnostics preserve the configured coverage gate and subprocess lifecycle.
+`HMCPCTL_TEST_TIMINGS=1` enables the runner's timing presentation through the
+verification graph; the runner removes this switch before launching pytest so
+nested invocations keep their own defaults. Only the exact value `1` enables it.
+`just --time` measures each recipe body, excluding dependency time; its `verify`
+line is not the total verification elapsed time. Measure overall elapsed time
+separately when comparing runs, and record commit, environment, resources and caches.
 
 Before pushing, run `just verify` inside the branch worktree. If pytest fails
 during collection, run `just smoke`; it imports `hmcpctl.server` directly and
