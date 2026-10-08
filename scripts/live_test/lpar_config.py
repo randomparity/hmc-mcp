@@ -14,7 +14,7 @@ import re
 import shlex
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
@@ -112,6 +112,19 @@ class _Pools:
 
 
 _ProfileMap = dict[tuple[str, str], tuple[ProfileIoSlot, ...]]
+
+
+def _profile_evidence(profiles: _ProfileMap | None) -> list[dict[str, Any]] | None:
+    if profiles is None:
+        return None
+    return [
+        {
+            "lpar_name": lpar,
+            "profile_name": profile,
+            "io_slots": [asdict(slot) for slot in slots],
+        }
+        for (lpar, profile), slots in sorted(profiles.items())
+    ]
 
 
 @dataclass
@@ -314,6 +327,16 @@ async def _select_dedicated(
             "requires an unowned dedicated slot listed by no profile",
         )
         return None
+    state.record(
+        SUBTASK,
+        "dedicated recovery baseline",
+        "PASS",
+        {
+            "drc_index": eligible[0]["drc_index"],
+            "profile_name": arm.profile_name,
+            "profiles": _profile_evidence(profiles),
+        },
+    )
     return _DedicatedProbe(arm.profile_name, eligible[0]["drc_index"], profiles)
 
 
@@ -382,6 +405,12 @@ async def _dedicated_restore(client: Client, state: RunState, run: _Run) -> None
     target = (run.name, probe.profile_name)
     expected = (ProfileIoSlot(probe.drc_index, None, False),)
     if profiles is None or _other_profiles(profiles, run) != probe.baseline:
+        state.record(
+            SUBTASK,
+            "dedicated restoration preconditions",
+            "FAIL",
+            {"profiles": _profile_evidence(profiles)},
+        )
         return
     actual = profiles.get(target)
     if actual != probe.scratch_baseline:
@@ -415,7 +444,11 @@ async def _dedicated_restore(client: Client, state: RunState, run: _Run) -> None
         SUBTASK,
         "dedicated profile restoration",
         "PASS" if probe.restored else "FAIL",
-        {"restored": probe.restored, "slot_unowned": probe.slot_unowned},
+        {
+            "restored": probe.restored,
+            "slot_unowned": probe.slot_unowned,
+            "profiles": _profile_evidence(profiles) if not probe.restored else None,
+        },
     )
 
 
@@ -437,7 +470,7 @@ async def _dedicated_case(client: Client, state: RunState, run: _Run) -> bool:
         SUBTASK,
         "dedicated scratch preconditions",
         "PASS" if safe else "FAIL",
-        {"safe": safe},
+        {"safe": safe, "profiles": _profile_evidence(profiles) if not safe else None},
     )
     if not safe:
         return False
@@ -482,7 +515,13 @@ async def _dedicated_case(client: Client, state: RunState, run: _Run) -> bool:
             SUBTASK,
             "dedicated profile read-back",
             "PASS" if probe.assigned and probe.others_unchanged else "FAIL",
-            {"assigned": probe.assigned, "others_unchanged": probe.others_unchanged},
+            {
+                "assigned": probe.assigned,
+                "others_unchanged": probe.others_unchanged,
+                "profiles": _profile_evidence(profiles)
+                if not (probe.assigned and probe.others_unchanged)
+                else None,
+            },
         )
     finally:
         await _dedicated_restore(client, state, run)
@@ -500,7 +539,13 @@ async def _dedicated_compare(client: Client, state: RunState, run: _Run) -> bool
         SUBTASK,
         "dedicated final baseline",
         "PASS" if probe.baseline_restored else "FAIL",
-        {"profiles_restored": profiles == probe.baseline, "slot_unowned": slot_unowned},
+        {
+            "profiles_restored": profiles == probe.baseline,
+            "slot_unowned": slot_unowned,
+            "profiles": _profile_evidence(profiles)
+            if not probe.baseline_restored
+            else None,
+        },
     )
     return probe.baseline_restored
 

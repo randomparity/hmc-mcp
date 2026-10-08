@@ -717,9 +717,11 @@ async def test_dedicated_auto_select_and_mismatched_system(monkeypatch):
         "model-malformed",
         "profile-failure",
         "inventory-failure",
+        "ok",
+        "other-drift",
     ],
 )
-async def test_actual_runner_returns_failed_for_precreate_read(
+async def test_actual_runner_preserves_exit_and_recovery_baseline(
     monkeypatch, tmp_path, mode
 ):
     hmc = DedicatedHMC(mode=mode)
@@ -755,12 +757,53 @@ async def test_actual_runner_returns_failed_for_precreate_read(
         hmc_config=HMCConfig.from_mapping({}),
         results_path=str(result_path),
     )
-    assert code == 1
+    assert code == (0 if mode == "ok" else 1)
     rows = json.loads(result_path.read_text())["results"]
-    assert any(row["status"] == "FAIL" and "dedicated" in row["tool"] for row in rows)
-    assert any(
-        row["tool"] == "hmc_modify_lpar" and row["status"] == "PASS" for row in rows
-    )
+    if mode != "ok":
+        assert any(
+            row["status"] == "FAIL" and "dedicated" in row["tool"] for row in rows
+        )
+    if mode in {"ok", "other-drift"}:
+        baseline_index = next(
+            index
+            for index, row in enumerate(rows)
+            if row["tool"] == "dedicated recovery baseline"
+        )
+        baseline = rows[baseline_index]["data"]
+        assert baseline == {
+            "drc_index": "21010020",
+            "profile_name": "default_profile",
+            "profiles": [
+                {
+                    "lpar_name": OTHER,
+                    "profile_name": "default_profile",
+                    "io_slots": [
+                        {"drc_index": "21010030", "pool_id": None, "is_required": False}
+                    ],
+                }
+            ],
+        }
+        assert baseline_index < next(
+            index
+            for index, row in enumerate(rows)
+            if row["tool"] == "hmc_create_lpar (scratch)"
+        )
+        if mode == "other-drift":
+            failed_read = next(
+                row for row in rows if row["tool"] == "dedicated profile read-back"
+            )
+            assert failed_read["status"] == "FAIL"
+            observed = failed_read["data"]["profiles"]
+            assert isinstance(observed, list)
+            assert any(
+                slot["drc_index"] == "21010040"
+                for profile in observed
+                for slot in profile["io_slots"]
+            )
+    if mode != "other-drift":
+        assert any(
+            row["tool"] == "hmc_modify_lpar" and row["status"] == "PASS" for row in rows
+        )
 
 
 @pytest.mark.asyncio
