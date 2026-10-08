@@ -1,5 +1,6 @@
 """Run pytest with compact success output and complete failure diagnostics."""
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -11,7 +12,12 @@ CHUNK_SIZE = 64 * 1024
 INTERRUPT_GRACE_SECONDS = 300
 TERMINATE_GRACE_SECONDS = 3
 TEST_TIMEOUT_SECONDS = 17 * 60
-_PYTEST_ENVIRONMENT_OVERRIDES = {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
+_PYTEST_ENVIRONMENT_OVERRIDES = {
+    "PYTEST_ADDOPTS",
+    "COVERAGE_RCFILE",
+    "COVERAGE_FILE",
+    "HMCPCTL_TEST_TIMINGS",
+}
 
 
 def _replay(output: BinaryIO) -> None:
@@ -56,6 +62,10 @@ def _exit_status(returncode: int) -> int:
 
 def main() -> int:
     """Run the configured pytest suite and report its result compactly."""
+    timings = os.environ.get("HMCPCTL_TEST_TIMINGS") == "1"
+    command = [sys.executable, "-m", "pytest"]
+    if timings:
+        command.extend(["--durations=30", "--durations-min=0"])
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -63,7 +73,7 @@ def main() -> int:
     }
     with tempfile.TemporaryFile() as output:
         process = subprocess.Popen(
-            [sys.executable, "-m", "pytest"],
+            command,
             env=environment,
             stdout=output,
             stderr=subprocess.STDOUT,
@@ -80,6 +90,11 @@ def main() -> int:
             _settle_interrupted(process)
 
         if process.returncode == 0 and not interrupted and not timed_out:
+            if timings:
+                try:
+                    _replay(output)
+                except KeyboardInterrupt:
+                    return 130
             print("test: passed; configured coverage gate passed")
             return 0
         try:
@@ -95,4 +110,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument(
+        "--timings", action="store_true", help="retain pytest phase durations"
+    )
+    if parser.parse_args().timings:
+        os.environ["HMCPCTL_TEST_TIMINGS"] = "1"
     raise SystemExit(main())
