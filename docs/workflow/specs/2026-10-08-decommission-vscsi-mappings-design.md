@@ -50,7 +50,9 @@ storage cleanup, ledger provenance and explicit intent with owner #1229.
 - Validate target mapping identity with the existing helper. Foreign mappings with
   valid non-target client UUIDs are retained; their backing/device fields are not
   required except where an ID duplicates a target ID. Compare UUIDs case-insensitively.
-- A sparse vFC observation alone remains a warning and does not block vSCSI completion.
+- Known HMC/transport failure from VIOS listing/detail becomes an incomplete-source
+  warning retaining the diagnostic; dry-run still returns without writes. Programming
+  exceptions propagate. A sparse vFC observation alone does not block vSCSI completion.
 - Dry-run returns current warnings and four dry-run steps, including the exact
   `{vios_uuid, mapping_id}` detach plan; no write or ownership bypass occurs.
 - Execution with incomplete vSCSI inventory returns four ordered statuses:
@@ -72,16 +74,21 @@ storage cleanup, ledger provenance and explicit intent with owner #1229.
 Use existing preflight `--group lpar-power`, named `scripts/live_lpar_power.py`,
 and recovery, serially on the exact granted pushed head. No new selector.
 Retain the existing dedicated-activation prerequisite gap (#1390); do not fix it.
-For P, snapshot state, exact client-adapter inventory, VIOS mappings and volumes
-around dry-run; require complete matching target mapping IDs in its new dry-run
+For P, set the manual-retention latch before the first preview/proof await; keep it
+set on exceptions and cancellation. Snapshot state, exact client-adapter inventory,
+complete VIOS mappings and volumes around dry-run; require matching target IDs in its new dry-run
 phase as well as existing adapter/backing-volume inventory. A failed/unverified
 preview stops before real decommission and retains P/volume for manual recovery.
 Remove the successful-path `_detach` workaround. Real decommission must report
 completed/deleted; readbacks must show P and its mapping gone, the run LV retained,
 and foreign mappings/volumes unchanged. Existing final baseline comparisons remain.
-After a failed/ambiguous decommission, mark the run for manual recovery and bypass
-automatic mapping/partition/volume teardown; do not retry the detach. Successful
-proof allows the existing explicit arm LV cleanup only after confirmed no mapping.
+Use the existing VIOS-detail read and shared strict inventory rules for mapping
+proof: missing/malformed requested collection is unavailable, never an empty proof.
+Clear the latch only after PASS plus typed completed/deleted flags, successful
+partition-absence readback, complete mapping absence, retained LV and unchanged
+foreign mapping/volume baseline. Failed/unavailable reads, exceptions or cancellation
+keep the latch set and bypass automatic mapping/partition/volume teardown; no retry.
+Successful proof allows existing explicit arm LV cleanup after confirmed no mapping.
 New judged assertions: `storage-mapping-absent`, `backing-volume-retained`.
 A failed live observation remains failed; no password/RMC or readback-success claim.
 
@@ -127,7 +134,8 @@ full local guards/hooks, bounded independent review and exact-head CI.
 
 The ignored implementation plan inventories focused behavior tests for exact plan,
 incomplete structure/identity, foreign/vFC retention, UUID case, order, ownership,
-partial mapping failure, fresh RMW retarget/ETag refusal, and ST41 manual retention.
+partial mapping failure, fresh RMW retarget/ETag refusal, VIOS listing/detail failure,
+missing mapping collection, failed/unavailable partition readback and ST41 cancellation.
 Existing inspection tests protect its unchanged caller contract. Controlled faults
 remove target-client validation, preflight stop and mapping-error stop in turn and
 must fail meaningful safety tests before restoration. Prose is inspected against
