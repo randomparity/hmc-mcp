@@ -96,9 +96,7 @@ class FakeHmc:
         verify_session_timeout: int | None = None,
     ) -> None:
         resource = self.users[user_profile_uuid]["Resource"]
-        resource["UserDescription"] = (
-            {"text": description} if description else {"ksv": "V1_17_0"}
-        )
+        resource["UserDescription"] = {"text": description or "HMC User"}
         if verify_session_timeout is not None:
             resource["VerifySessionTimeout"] = {"text": str(verify_session_timeout)}
 
@@ -184,11 +182,46 @@ async def test_the_lifecycle_records_verified_postconditions(hmc):
         ]
     )
     assert {o["result"] for o in observed.values()} == {"passed"}, observed
+    assert "description-cleared" in observed["user.modify"]["assertions"]
     assert len({o["id"] for o in observed.values()}) == 8
     assert "resource-roles-empty-branch" in observed["resource_role.list"]["assertions"]
     assert set(hmc.users) == {"uuid-1", "uuid-2"}
     password = create["password"]
     assert password not in json.dumps([state.results, state.observations], default=str)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "readback",
+    [
+        None,
+        {"ksv": "V1_17_0"},
+        {"text": ""},
+        {"text": "unexpected"},
+        {"text": "hmcpctl live test user (modified)"},
+    ],
+    ids=["missing", "attribute-only", "empty", "unrelated", "unchanged"],
+)
+async def test_description_reset_requires_the_observed_default(
+    hmc, monkeypatch, readback
+):
+    original = hmc.hmc_modify_user
+
+    def incorrect_reset(console_uuid: str, user_profile_uuid: str, **changes: Any):
+        original(console_uuid, user_profile_uuid, **changes)
+        if changes["description"] == "":
+            hmc.users[user_profile_uuid]["Resource"]["UserDescription"] = readback
+
+    monkeypatch.setattr(hmc, "hmc_modify_user", incorrect_reset)
+    state = _state()
+
+    await users.exercise_users(None, state)
+
+    observed = _observations(state)
+    assert observed["user.modify"]["result"] == "failed"
+    assert "description-cleared" not in observed["user.modify"]["assertions"]
+    assert observed["user.delete"]["result"] == "passed"
+    assert set(hmc.users) == {"uuid-1", "uuid-2"}
 
 
 @pytest.mark.asyncio
