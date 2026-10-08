@@ -5,7 +5,7 @@ Contributions should be focused, tested, and easy to review.
 1. Fork the repository or create a feature branch.
 2. Install the locked development environment and hooks with `just setup`.
 3. Make one focused change and add or update tests for its behavior and error paths.
-4. Run `just verify` and `UV_NO_SYNC=1 uv run prek run --all-files`.
+4. Run `just verify` and `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`.
 5. Open a pull request that explains the current behavior of the change.
 
 CI runs static gates through the real hooks once, then `just verify-runtime`.

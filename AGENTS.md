@@ -347,7 +347,7 @@ legs to disagree with your machine and read the CI matrix rather than re-running
 locally.
 
 **CI runs static gates through real hooks, then `just verify-runtime`.** Each
-native `ci` leg invokes `UV_NO_SYNC=1 uv run prek run --all-files` once before
+native `ci` leg invokes `UV_NO_SYNC=1 uv run --no-sync prek run --all-files` once before
 runtime verification and wheel retention (ADR 0207). The two documentation guards
 remain separately named hooks with their own failure diagnostics. `just verify`
 still composes static and runtime checks for complete standalone local use; it

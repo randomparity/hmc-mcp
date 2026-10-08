@@ -66,7 +66,7 @@ jobs:
         run: just setup
       # Each static gate has its own named hook and failure diagnostics (ADR 0207).
       - name: Run static gates through hooks
-        run: UV_NO_SYNC=1 uv run prek run --all-files
+        run: UV_NO_SYNC=1 uv run --no-sync prek run --all-files
       - name: Run runtime verification suite
         run: just verify-runtime
       - name: Retain validated wheel

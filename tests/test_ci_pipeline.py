@@ -445,11 +445,11 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     for command in (
         "just setup",
         "just verify-runtime",
-        "UV_NO_SYNC=1 uv run prek run --all-files",
+        "UV_NO_SYNC=1 uv run --no-sync prek run --all-files",
     ):
         assert f"run: {command}" in workflow
     verification = workflow.index("run: just verify-runtime")
-    hooks = workflow.index("run: UV_NO_SYNC=1 uv run prek run --all-files")
+    hooks = workflow.index("run: UV_NO_SYNC=1 uv run --no-sync prek run --all-files")
     upload = workflow.index("uses: actions/upload-artifact@")
     assert hooks < verification < upload
     assert (
@@ -1404,9 +1404,9 @@ def verification_route(tmp_path: Path):
             import sys
 
             args = sys.argv[1:]
-            if args[:2] == ["run", "prek"]:
+            if args[:3] == ["run", "--no-sync", "prek"]:
                 executable = {str(Path(sys.executable).parent / "prek")!r}
-                os.execv(executable, [executable, *args[2:]])
+                os.execv(executable, [executable, *args[3:]])
             cli = {{
                 ("run", "--no-sync", "hmcpctl", "--help"): "cli-root",
                 ("run", "--no-sync", "python", "scripts/smoke_cli_groups.py"): "cli-groups",
