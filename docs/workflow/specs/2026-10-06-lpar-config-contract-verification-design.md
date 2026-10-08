@@ -20,7 +20,7 @@ shared plumbing and are not bound, as in PR #1320 and PR #1361.
 
 | Operation | Issues | Rows bound | Implemented variant(s) |
 |---|---|---|---|
-| `lpar.modify` | `LogicalPartition` GET + POST (`If-Match`); assignments delegate to `pcie.assign_dedicated_slot`, `sriov.assign_logical_port`, `vnic.add` | `rest:managed-system/logical-partition`, `cli:commands/lshwres` (its own assignment prevalidation reads `lshwres -r sriov` and `-r virtualio --rsubtype vnicbkdev`) | `resource-read-modify-write`, `delegated-pcie-assignments` |
+| `lpar.modify` | `LogicalPartition` GET + POST (`If-Match`); assignments delegate to `pcie.assign_dedicated_slot`, `sriov.assign_logical_port`, `vnic.add` | `rest:managed-system/logical-partition`, `cli:commands/chhwres`, `cli:commands/chsyscfg`, `cli:commands/lshmc`, `cli:commands/lshwres`, `cli:commands/lssyscfg` (delegated writes and their supporting reads) | `resource-read-modify-write`, `delegated-pcie-assignments` |
 | `lpar.rename` | same GET + POST | same | `name-read-modify-write` |
 | `lpar.dlpar_proc` | same | same | `processor-read-modify-write` |
 | `lpar.dlpar_mem` | same | same | `memory-read-modify-write` |
@@ -29,11 +29,11 @@ shared plumbing and are not bound, as in PR #1320 and PR #1361.
 | `lpar.set_minimum_affinity_policy` | `lssyscfg` (capability), `chsyscfg` | `cli:commands/lssyscfg`, `cli:commands/chsyscfg` | `power11-capability-gated` |
 | `system.modify` | `ManagedSystem` POST | `rest:managed-system` | `managed-system-attributes` |
 
-Criterion 1 is met for `lpar.modify`'s resource path. Its assignment step reuses the
-`pcie.assign_dedicated_slot`, `sriov.assign_logical_port` and `vnic.add` operations,
-whose own rows are still the bulk assignment. The delegates' writes are not bound
-here; this is reported as a follow-up for #630, which does not yet claim it. Copying the delegates' current rows
-would bind commands nobody issues.
+The original ST39 resource run did not exercise assignment delegates. Issue #1386
+extends this same arm with an optional dedicated assignment through hmc_modify_lpar
+and binds the actual delegate writes/supporting reads. It restores the scratch
+profile before SMS and emits a separate observation only after an attempted case
+and cleanup. SR-IOV/vNIC live writes remain named prerequisite gaps.
 
 ## Design
 
@@ -129,7 +129,7 @@ in `client/` or `documents/` is reported to the orchestrator before any edit.
 | DLPAR on an activated partition | a partition running an operating system with an active RMC connection | refused live at SMS (2026-10-06, V10R3): `REST0126` carrying `HSCL7016` (the partition must be running), plus `HSCL295A` for processors; not promoted |
 | `lpar.set_minimum_affinity_policy` | a writable POWER11 system (the POWER11 HMC is read-only) | not run |
 | `system.modify` | an operator window for a system-wide setting change | not run |
-| `lpar.modify` assignments and their rows | the delegate operations' slice (#630) | not run here |
+| `lpar.modify` assignments and their rows | ST39 dedicated case (#1386); SR-IOV/vNIC require separate authority/hardware | original resource run did not exercise assignments |
 | clearing a pending boot order | an HMC release that accepts a clear value (#1048) | not available |
 
 ## Success

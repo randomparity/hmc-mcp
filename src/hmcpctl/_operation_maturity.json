@@ -40,9 +40,9 @@
     {
       "operation": "boot_order.clear",
       "implementation": "partial",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:17:41Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "boot_order.read",
@@ -54,9 +54,9 @@
     {
       "operation": "boot_order.set",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:17:41Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "capacity.report",
@@ -180,16 +180,16 @@
     {
       "operation": "lpar.dlpar_mem",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:17:41Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "lpar.dlpar_proc",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:17:41Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "lpar.dump_restart",
@@ -285,9 +285,9 @@
     {
       "operation": "lpar.modify",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:17:41Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "lpar.plan",
@@ -327,9 +327,9 @@
     {
       "operation": "lpar.rename",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-06T22:17:41Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "lpar.set_description",
