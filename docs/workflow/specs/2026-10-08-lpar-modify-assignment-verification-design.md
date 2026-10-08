@@ -3,6 +3,14 @@
 Issue #1386; scope token q1386-59127db3, WORK:SCOPE6064405578.
 M250, full-spec, iterating; one PR selected by the operator on 2026-10-08.
 
+Expected implementation/support size: 950–1150 changed lines (M), revised for
+required post-live catalog consequences and their static guard support. Measured
+implementation was 914 before evidence; emitted catalog 57, generated projection
+36 and tool pages 12 add 105. Exact public evidence digest entries and necessary
+normalization in `.secrets.baseline` add 21, totaling 1040. Detector/filter settings
+remain unchanged. The prior 450–700 and 750–950 phases and their review history
+remain retained; scope and M250 are unchanged. Tracked design is separate.
+
 ## Problem
 
 `lpar.modify` binds its resource write and assignment prevalidation reads, but
