@@ -455,7 +455,8 @@ def _record_reads_and_modifies(state: RunState, run: _Lifecycle, cleanup: str) -
             ),
             Assertion(
                 "description-cleared",
-                run.modified(1) and run.read_empty(2, "UserDescription"),
+                # V10R3 resets an empty description to this default (#1409).
+                run.modified(1) and run.read(2, "UserDescription") == "HMC User",
             ),
             Assertion("user-id-unchanged", run.read(2, "UserID") == run.name),
             Assertion(
