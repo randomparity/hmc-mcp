@@ -105,7 +105,7 @@ def run_probe(world, schemas, output_schemas):
 
 
 @pytest.mark.parametrize("failure", [None, "effect"])
-def test_three_fresh_cycles_preserve_baseline_and_original_status(
+def test_remaining_cycle_preserves_baseline_and_original_status(
     failure,
     schemas,
     output_schemas,
@@ -113,10 +113,44 @@ def test_three_fresh_cycles_preserve_baseline_and_original_status(
     world = ProbeWorld()
     world.failure = failure
     before = (list(world.mappings), set(world.adapters), set(world.volumes))
+    events = []
+    real_map = world._hmc_map_storage_to_lpar
+    real_power = world._hmc_power_on_lpar
+    real_detach = world._hmc_detach_storage_mapping
+
+    def map_na(kwargs):
+        assert (
+            world.by_selector(kwargs["lpar_name_or_uuid"])["state"] == "Not Activated"
+        )
+        events.append("attach NA")
+        return real_map(kwargs)
+
+    def activate_mapped(kwargs):
+        assert any(row["backing_name"].startswith("lppwr") for row in world.mappings)
+        assert kwargs["boot_mode"] == "of"
+        events.append("activate OF")
+        return real_power(kwargs)
+
+    def detach_of(kwargs):
+        events.append("detach OF")
+        return real_detach(kwargs)
+
+    world.overrides.update(
+        {
+            "hmc_map_storage_to_lpar": map_na,
+            "hmc_power_on_lpar": activate_mapped,
+            "hmc_detach_storage_mapping": detach_of,
+        }
+    )
     state = run_probe(world, schemas, output_schemas)
-    assert world.detach_states == ["Not Activated", "Open Firmware", "Open Firmware"]
-    assert len(world.calls_to("hmc_map_storage_to_lpar")) == 3
-    assert len(world.calls_to("hmc_detach_storage_mapping")) == 3
+    assert events == ["attach NA", "activate OF", "detach OF"]
+    assert world.detach_states == ["Open Firmware"]
+    assert len(world.calls_to("hmc_map_storage_to_lpar")) == 1
+    assert len(world.calls_to("hmc_power_on_lpar")) == 1
+    assert len(world.calls_to("hmc_detach_storage_mapping")) == 1
+    assert len(world.calls_to("hmc_power_off_lpar")) == 1
+    assert len(world.calls_to("hmc_delete_virtual_disk")) == 1
+    assert len(world.calls_to("hmc_delete_lpar")) == 1
     assert not (
         {"hmc_provision_lpar", "hmc_decommission_lpar", "hmc_power_lpar"}
         & set(world.tools())
@@ -124,20 +158,143 @@ def test_three_fresh_cycles_preserve_baseline_and_original_status(
     assert not world.partitions and not state.observations
     assert (world.mappings, world.adapters, world.volumes) == before
     compared = [
-        row
-        for row in state.results
-        if row["tool"].startswith("detach probe comparison")
+        row for row in state.results if row["tool"] == "detach probe comparison 3"
     ]
-    assert len(compared) == 3
-    assert {row["status"] for row in compared} == ({"FAIL"} if failure else {"PASS"})
-    assert {row["data"]["mapping_absent"] for row in compared} == (
-        {"True"} if failure else {True}
+    assert len(compared) == 1
+    result = compared[0]
+    assert result["status"] == ("FAIL" if failure else "PASS")
+    assert result["data"]["before_attach_context"]["client"]["state"] == "Not Activated"
+    assert (
+        result["data"]["before_activation_context"]["client"]["state"]
+        == "Not Activated"
     )
+    assert result["data"]["before_context"]["client"]["state"] == "Open Firmware"
+    assert result["data"]["after_context"]["client"]["state"] == "Open Firmware"
+    assert result["data"]["mapping_absent"] == ("True" if failure else True)
     if failure:
-        assert {row["data"]["http_status"] for row in compared} == {"500"}
-        assert all(row["data"]["codes"] == ["REST0126", "HSCL2957"] for row in compared)
+        assert result["data"]["http_status"] == "500"
+        assert result["data"]["codes"] == ["REST0126", "HSCL2957"]
     else:
         assert not [row for row in state.results if row["status"] == "FAIL"]
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "refused",
+        "effect",
+        "mapping",
+        "adapter",
+        "duplicate",
+        "uuid",
+        "token",
+        "state",
+        "rmc",
+        "read",
+        "interrupt",
+    ],
+)
+def test_activation_uncertainty_retains_without_detach(fault, schemas, output_schemas):
+    world = ProbeWorld()
+    real = world._hmc_power_on_lpar
+
+    def injected(kwargs):
+        if fault == "refused":
+            return HMCError("activation refused", 500)
+        if fault == "interrupt":
+            raise KeyboardInterrupt
+        result = real(kwargs)
+        if fault == "effect":
+            return HMCError("activation failed despite state change", 500)
+        if fault == "mapping":
+            world.mappings[0]["backing_name"] = "changed-protected-disk"
+        if fault == "adapter":
+            world.adapters.add("8,foreign,9")
+        if fault in {"uuid", "token", "state"}:
+            next(iter(world.partitions.values()))[fault] = (
+                "Running" if fault == "state" else "foreign-value"
+            )
+        if fault == "read":
+            world.overrides["hmc_list_storage_mappings"] = lambda _: HMCError(
+                "unreadable"
+            )
+        if fault in {"duplicate", "rmc"}:
+            original = world._hmc_run_command
+
+            def listing(kw):
+                text = original(kw)
+                if (
+                    fault == "duplicate"
+                    and "lpar_names" in kw["cmd"]
+                    and "--rsubtype scsi" in kw["cmd"]
+                ):
+                    return "7,vios-A,3\n7,vios-A,3"
+                return (
+                    text.replace(
+                        "vioserver,Running,active", "vioserver,Running,inactive"
+                    )
+                    if fault == "rmc"
+                    else text
+                )
+
+            world.overrides["hmc_run_command"] = listing
+        return result
+
+    world.overrides["hmc_power_on_lpar"] = injected
+    if fault == "interrupt":
+        with pytest.raises(KeyboardInterrupt):
+            run_probe(world, schemas, output_schemas)
+    else:
+        state = run_probe(world, schemas, output_schemas)
+        assert any(row["tool"] == "detach probe stop" for row in state.results)
+    assert len(world.calls_to("hmc_map_storage_to_lpar")) == 1
+    assert len(world.calls_to("hmc_power_on_lpar")) == 1
+    assert not world.calls_to("hmc_detach_storage_mapping")
+    assert not world.calls_to("hmc_power_off_lpar")
+    assert not world.calls_to("hmc_delete_virtual_disk")
+    assert not world.calls_to("hmc_delete_lpar")
+    assert world.partitions and any(name.startswith("lppwr") for name in world.volumes)
+
+
+@pytest.mark.parametrize(
+    "tool,later",
+    [
+        ("hmc_delete_virtual_disk", ["hmc_power_off_lpar", "hmc_delete_lpar"]),
+        ("hmc_power_off_lpar", ["hmc_delete_lpar"]),
+        ("hmc_delete_lpar", []),
+    ],
+)
+@pytest.mark.parametrize("fault", ["refused", "effect", "interrupt"])
+def test_cleanup_failure_never_dispatches_next_write(
+    tool, later, fault, schemas, output_schemas
+):
+    world = ProbeWorld()
+    real = getattr(world, "_" + tool)
+
+    def injected(kwargs):
+        if fault == "interrupt":
+            raise KeyboardInterrupt
+        if fault == "effect":
+            real(kwargs)
+        return HMCError("cleanup response failed", 500)
+
+    world.overrides[tool] = injected
+    if fault == "interrupt":
+        with pytest.raises(KeyboardInterrupt):
+            run_probe(world, schemas, output_schemas)
+    else:
+        state = run_probe(world, schemas, output_schemas)
+        assert any(row["tool"] == "detach probe stop" for row in state.results)
+        assert any(
+            row["tool"].startswith(tool + " (") and row["status"] == "FAIL"
+            for row in state.results
+        )
+    assert len(world.calls_to(tool)) == 1
+    assert all(not world.calls_to(next_tool) for next_tool in later)
+    assert len(world.calls_to("hmc_map_storage_to_lpar")) == 1
+    assert len(world.calls_to("hmc_detach_storage_mapping")) == 1
+    if tool != "hmc_delete_lpar" or fault != "effect":
+        assert world.partitions
 
 
 @pytest.mark.parametrize(
@@ -218,6 +375,9 @@ def test_uncertainty_retains_assets_without_further_writes(
         assert any(row["tool"] == "detach probe stop" for row in state.results)
     assert len(world.calls_to("hmc_map_storage_to_lpar")) == 1
     assert len(world.calls_to("hmc_detach_storage_mapping")) == detaches
+    if phase == "attach":
+        assert not world.calls_to("hmc_power_on_lpar")
+        assert not world.calls_to("hmc_power_off_lpar")
     assert not world.calls_to("hmc_delete_lpar")
     assert not world.calls_to("hmc_delete_virtual_disk")
     assert world.partitions and any(name.startswith("lppwr") for name in world.volumes)
@@ -313,7 +473,7 @@ def test_surviving_mapping_snapshot_stops_even_if_later_reads_would_converge(
     world.overrides["hmc_list_storage_mappings"] = converging
     state = run_probe(world, schemas, output_schemas)
     assert len(world.calls_to("hmc_detach_storage_mapping")) == 1
-    assert not world.calls_to("hmc_power_on_lpar")
+    assert len(world.calls_to("hmc_power_on_lpar")) == 1
     assert not world.calls_to("hmc_delete_virtual_disk")
     assert not world.calls_to("hmc_delete_lpar")
     assert world.partitions

@@ -765,7 +765,9 @@ def test_detach_probe_preflight_discloses_only_bounded_scope(
     output = capsys.readouterr().out
     assert "one ST41-prefix scratch partition" in output
     assert "one 1024 MiB" in output
-    assert "at most three fresh attach/detach cycles total" in output
+    assert "one remaining fresh attach/detach cycle" in output
+    assert "two previous attach attempts consumed, three total ceiling" in output
+    assert "attach while Not Activated" in output and "then detach" in output
     assert "manual recovery" in output
     assert "provision" not in output and "PCIe" not in output
 

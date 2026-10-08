@@ -20,7 +20,6 @@ from .vmedia import scsi_adapter_listing
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
-_CYCLES = ("not activated", "open firmware", "open firmware")
 _KEYS = ("id", "lpar_uuid", "backing_kind", "backing_name")
 
 
@@ -194,13 +193,16 @@ class _Probe:
                 "mapping or adapter inventory differs from the protected baseline"
             )
 
-    async def cycle(self, number: int, expected: str) -> None:
+    async def cycle(self) -> None:
+        number = 3
+        expected = "open firmware"
         run = self.run
         assert run.vios is not None and run.p_uuid is not None
         await self.settled(f"cycle {number} before attach")
         before = await self.context(f"cycle {number} before attach RMC/state")
+        attach_context = before
         if (
-            before["client"]["state"].lower() != expected
+            before["client"]["state"].lower() != "not activated"
             or before["vios"]["rmc"].lower() != "active"
         ):
             raise _Stop("expected client state or active VIOS RMC not established")
@@ -232,13 +234,14 @@ class _Probe:
             raise _Stop("mapping does not name the owned scratch client and disk")
         if mapped[0] - {row} != self.original[0]:
             raise _Stop("attach changed unrelated mappings")
-        before = await self.context(f"cycle {number} before detach RMC/state")
-        attached_adapters(self.original, mapped, run.p_name, before["vios"]["name"])
+        attached = await self.context("cycle 3 before activation RMC/state")
+        attached_adapters(self.original, mapped, run.p_name, attached["vios"]["name"])
         if (
-            before["client"]["state"].lower() != expected
-            or before["vios"]["rmc"].lower() != "active"
+            attached["client"]["state"].lower() != "not activated"
+            or attached["vios"]["rmc"].lower() != "active"
         ):
-            raise _Stop("endpoint context changed before detach")
+            raise _Stop("endpoint context changed before activation")
+        before = await self.activate(mapped)
         (st, response) = await self.state.call(
             self.client,
             "hmc_detach_storage_mapping",
@@ -260,6 +263,8 @@ class _Probe:
             f"detach probe comparison {number}",
             st,
             {
+                "before_attach_context": attach_context,
+                "before_activation_context": attached,
                 "before_context": before,
                 "after_context": context,
                 "before_mappings": sorted(mapped[0], key=repr),
@@ -278,6 +283,30 @@ class _Probe:
             raise _Stop("detach did not restore exact mapping/adapter inventory")
         if context["client"]["state"].lower() != expected:
             raise _Stop("client state changed during detach")
+
+    async def activate(self, mapped: tuple[Any, Any, Any]) -> dict[str, Any]:
+        run = self.run
+        assert run.p_uuid is not None
+        st, data = await power._power_on(self.client, self.state, run, boot_mode="of")
+        self.state.record(power.SUBTASK, "hmc_power_on_lpar (detach probe)", st, data)
+        reached = await power._wait_for_state(
+            self.client, self.state, run, run.p_uuid, frozenset({"open firmware"})
+        )
+        after = await self.inventory("cycle 3 after activation")
+        context = await self.context("cycle 3 after activation RMC/state")
+        if st != "PASS" or reached != "open firmware":
+            raise _Stop("scratch Open Firmware activation not established")
+        if after != mapped:
+            raise _Stop(
+                "activation changed the exact attached mapping/adapter snapshot"
+            )
+        attached_adapters(self.original, after, run.p_name, context["vios"]["name"])
+        if (
+            context["client"]["state"].lower() != "open firmware"
+            or context["vios"]["rmc"].lower() != "active"
+        ):
+            raise _Stop("endpoint context changed before detach")
+        return context
 
     async def execute(self) -> None:
         run = self.run
@@ -313,36 +342,20 @@ class _Probe:
             raise _Stop(
                 "run volume creation or preserved volume baseline not confirmed"
             )
-        for number, expected in enumerate(_CYCLES, 1):
-            if number == 2:
-                await self.settled("before scratch activation")
-                await self.context("before scratch activation ownership")
-                (st, data) = await power._power_on(
-                    self.client, self.state, run, boot_mode="of"
-                )
-                self.state.record(
-                    power.SUBTASK, "hmc_power_on_lpar (detach probe)", st, data
-                )
-                reached = await power._wait_for_state(
-                    self.client,
-                    self.state,
-                    run,
-                    run.p_uuid,
-                    frozenset({"open firmware"}),
-                )
-                if st != "PASS" or reached != "open firmware":
-                    raise _Stop("scratch Open Firmware activation not established")
-            await self.cycle(number, expected)
+        await self.cycle()
 
     async def cleanup(self) -> None:
         run = self.run
-        assert run.vios is not None
+        assert run.vios is not None and run.p_uuid is not None
         await self.settled("before probe cleanup")
-        await self.context("before probe cleanup ownership")
-        volumes = await power._volumes(self.client, self.state, run)
-        if volumes != self.baseline.volumes | {run.volume}:
+        before = await self.context("before probe cleanup ownership")
+        if before["client"]["state"].lower() != "open firmware":
+            raise _Stop("scratch state changed before cleanup")
+        if await power._volumes(
+            self.client, self.state, run
+        ) != self.baseline.volumes | {run.volume}:
             raise _Stop("volume inventory changed before cleanup")
-        (st, data) = await self.state.call(
+        st, data = await self.state.call(
             self.client,
             "hmc_delete_virtual_disk",
             vios_name_or_uuid=run.vios.uuid,
@@ -351,16 +364,44 @@ class _Probe:
             system_name_or_uuid=run.system,
         )
         self.state.record(
-            power.SUBTASK,
-            f"hmc_delete_virtual_disk ({'detach probe cleanup'})",
-            st,
-            data,
+            power.SUBTASK, "hmc_delete_virtual_disk (detach probe cleanup)", st, data
         )
-        if await power._volumes(self.client, self.state, run) != self.baseline.volumes:
-            raise _Stop("volume deletion not confirmed; keeping scratch partition")
-        why = await power._remove(self.client, self.state, run, run.p_name)
-        if why:
-            raise _Stop(why)
+        remaining = await power._volumes(self.client, self.state, run)
+        if st != "PASS" or remaining != self.baseline.volumes:
+            raise _Stop(
+                "volume deletion not accepted and confirmed; keeping scratch partition"
+            )
+        await self.settled("before cleanup power off")
+        before = await self.context("before cleanup power off ownership")
+        if before["client"]["state"].lower() != "open firmware":
+            raise _Stop("scratch state changed before cleanup power off")
+        st, data = await power._power_off(
+            self.client, self.state, run, run.p_uuid, immediate=True
+        )
+        self.state.record(
+            power.SUBTASK, "hmc_power_off_lpar (detach probe cleanup)", st, data
+        )
+        reached = await power._wait_for_state(
+            self.client, self.state, run, run.p_uuid, frozenset({"not activated"})
+        )
+        if st != "PASS" or reached != "not activated":
+            raise _Stop("scratch shutdown not accepted and confirmed")
+        await self.settled("before cleanup partition delete")
+        before = await self.context("before cleanup partition delete ownership")
+        if before["client"]["state"].lower() != "not activated":
+            raise _Stop("scratch state changed before cleanup partition delete")
+        st, data = await self.state.call(
+            self.client,
+            "hmc_delete_lpar",
+            system_name_or_uuid=run.system,
+            lpar_name_or_uuid=run.p_uuid,
+        )
+        self.state.record(
+            power.SUBTASK, "hmc_delete_lpar (detach probe cleanup)", st, data
+        )
+        gone = await power._gone(self.client, self.state, run, run.p_name)
+        if st != "PASS" or not gone:
+            raise _Stop("scratch delete not accepted and confirmed")
 
     def retained(self, reason: str) -> None:
         self.state.record(

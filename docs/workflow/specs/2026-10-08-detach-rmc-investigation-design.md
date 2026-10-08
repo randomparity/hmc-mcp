@@ -3,21 +3,26 @@
 ## Authority and goal
 
 Frozen scope q1391-63ce397b, issue #1391 annotation 6065626819; campaign
-`d0a19b80-5de52adb-d394-4a54-80f9-4c635acf7b40`.
-Operator 2026-10-08 chose one PR, investigation first, and approved the bounded
-`--detach-probe` interface. This phase prepares diagnostic capture. A concrete
-ADR 0136/product policy proposal returns to the operator after live capture,
-before a separately reviewed design/build phase changes that policy.
+`d0a19b80-5de52adb-d394-4a54-80f9-4c635acf7b40`, same attempt and author.
+One PR, investigation first; optional `--detach-probe` already approved.
+Operator approved the remaining cycle (2026-10-08, call33c item1): TWO fresh
+attach attempts already consumed; at most ONE remaining fresh cycle, cumulative
+ceiling THREE. Revised sequencing needs complete design review/scope audit,
+implementation checks and a NEW exact pushed-head root grant before hardware.
+ADR 0136/product success policy stays unchanged; a concrete supported proposal
+returns to the operator after capture before any product implementation.
 
-## Problem and hypotheses
+## Problem and verified limits
 
-Historical V10R3 HTTP500/REST0126/HSCL2957 responses and subsequent active VIOS
-RMC reads do not establish the cause or exact mapping snapshots. HSCL2957's
-“the partition” wording may describe the scratch client rather than VIOS.
-Compare Not Activated/Open Firmware on one scratch client: client DLPAR/RMC
-capability predicts context-dependent failure with absent mapping; VIOS RMC
-transition predicts endpoint state change; a grouped-write platform issue may
-be context-independent. Three cycles cannot guarantee reproduction or causality.
+Historical V10R3 HTTP500/REST0126/HSCL2957 detach responses do not establish
+which endpoint lacked RMC or their exact before/after mapping identities.
+At the first granted diagnostic head, cycle1 NA attach/detach passed; cycle2
+OF ATTACH failed HTTP500/REST0126/HSCL7006 requiring Running, leaving a server-only
+residue. No OF detach or HSCL2957 reproduction occurred. These FAILED observations
+remain immutable. Identity-checked cleanup restored the actual original baseline;
+that does not change the failed run's status. The remaining experiment attaches
+while NA, then activates only its new owned client OF before one detach.
+One observation cannot guarantee reproduction or distinguish intermittent causes.
 
 ## Global Constraints
 
@@ -32,64 +37,83 @@ one run-owned 1 GiB logical volume; existing test partition unchanged.
 
 ## Components and data flow
 
-- Optional flag on existing lpar-power wrapper/runner/preflight; reject mode/group
-  mismatch before access. Default arms remain unchanged. ST41 probe selection
-  records `detach_probe: true` provenance and plain diagnostic rows, without
-  maturity observations promoting a failed product response.
-- Preflight names only one ST41-prefix scratch fixture and one 1 GiB volume,
-  three-cycle cap and inactive/OF comparison. No broad power/provision/PCIe path.
-- Focused helper reuses ST41 admission, scratch UUID/token, create/read/power/
-  delete and system baseline helpers. No ownership transition or facade needed.
-- Strict full mapping/adapter snapshots precede writes: reject malformed or
-  duplicate identities, decode typed rows, preserve exact ID/client/kind/backing
-  and protected other rows. Confirm scratch/LV names absent before creation.
-- Create owned fixture/LV; cycle1 in Not Activated, activate only this fixture
-  to OF, then cycles2–3 in OF. Before fresh attachment verify prior absence,
-  mapping/adapter baseline, current UUID/token, client state and active VIOS RMC.
-- After attach and before detach require preserved VIOS/client adapter baselines
-  plus exactly one reciprocal scratch/selected-VIOS slot pair; any drift retains
-  fixtures without detach. Validate bounded raw three-field adapter rows and unique
-  local slots before sets; only the established no-results sentinel denotes empty.
-- Around detach record exact mappings/adapters and both endpoint RMC/state,
-  original response, actual HTTP status and REST/HSCL message. FAIL remains FAIL.
-- Next cycle requires exact absence and preserved protected inventory. Failed
-  attach, surviving/unknown mapping, identity drift or unreadable diagnosis stops;
-  no ambiguous write retry, including from existing generic teardown helpers.
-- Normal completion rechecks safe inventory, deletes only run LV and owned
-  fixture, verifies disappearance and compares system baseline. Uncertainty or
-  interruption retains assets for manual recovery using existing ST41 prefixes.
+- Replace the old three-cycle loop with ONE fixed remaining cycle3. Existing
+  selector/runner dispatch/provenance and ST41 fixture prefixes remain installable;
+  no budget setting, new CLI flag, arm, subtask or product interface is introduced.
+  The orchestrator's durable two-attempt history and exact-head grant bound execution;
+  the helper performs one attach and one detach maximum per admitted invocation.
+- Existing ST41 admission and strict mapping/adapter readers keep their owner;
+  shared ST41/product helpers, recovery machinery and client_storage.py are unchanged.
+  Existing default arms, ownership authorization and If-Match remain protected.
+- Capture the system baseline and prove scratch/LV names absent before creation.
+  Create one ownership-stamped scratch and one 1024MiB LV. Before attach require
+  current UUID/token/NA state, active VIOS RMC and exact original mapping/adapters.
+- Attach ONCE while NA. Require accepted response, exactly one mapping naming the
+  owned client UUID and LV, unchanged protected mappings, and exactly one reciprocal
+  owned client/selected-VIOS adapter pair. Malformed/duplicate raw identities fail
+  before set conversion; only the established empty sentinel means no adapters.
+- Capture context after attach and before activation; require NA/active VIOS and
+  current owner. Activate only this mapped owned scratch OF ONCE. Bounded READ polling
+  may establish OF; failed activation remains failed and causes retention, even if
+  later state converges. No repeated activation or new Running workload is allowed.
+- Re-read the full exact mapped snapshot after activation; it must equal the accepted
+  post-attach snapshot. Recheck owned UUID/token/OF, selected VIOS active RMC and
+  reciprocal pair BEFORE detach. Identity/adapter/backing/context drift stops with
+  zero detach and no cleanup writes; original test partition is never activated.
+- Detach the SAME exact mapping ID ONCE. Capture pre-attach, pre-activation,
+  post-activation/pre-detach and post-detach contexts, mapping/adapter snapshots,
+  original response, available actual HTTP status and REST/HSCL codes. FAIL stays
+  FAIL; no maturity observation or diagnostic readback promotes product success.
+  Safe cleanup after a failed detach is allowed only if exact absence and preserved
+  original mapping/adapter inventory are independently established; no retry occurs.
+- Probe-local cleanup requires settled mapping/adapter baseline and current owner.
+  Delete only the run LV ONCE; require accepted response and exact volume baseline.
+  Power off only the owned OF client ONCE; require accepted response, NA readback and
+  current ownership. Recheck settled mappings before deleting the owned partition
+  ONCE; require accepted response and confirmed disappearance. Shared permissive
+  teardown helpers are not called. Cleanup failure/unknown effect stops, preserving
+  its failed row and whatever assets remain, without subsequent cleanup writes.
+- Uncertainty/interruption records retained identities and uses read-only recovery;
+  no generic teardown retries, automatic compensation or broad residue cleanup.
+  Final system baseline must equal its original snapshot; intermediate pool resource
+  reservations are not normalized into restoration. Recovery runs after the attempt.
 
 ## Success and validation
 
-Focused tests prove mode forwarding/rejection/dispatch/provenance and matching
-preflight scope; strict typed snapshots; three-cycle cap/context order; actual
-HTTP/code capture without promotion; ownership/other-inventory guards; stop,
-no retry and retention on uncertain outcomes; safe cleanup and prefix recovery.
-A controlled guard removal must fail the destructive-dispatch regression.
-Run full `just verify` and pinned prek before pushing. Exact-head live proof
-reports reproductions, non-reproductions, before/after comparisons and cleanup/
-recovery limits; no cause or policy is preselected. Product contract remains
-ADR 0136 diagnostic-only until a later explicit operator decision.
+Focused production-RunState/fake-boundary tests prove exactly NA attach→OF
+activation→OF detach, one attach/power-on/detach, protected baseline guards before
+both activation and detach, exact mapping identity across activation, and retained
+assets/zero detach on rejected activation or changed identity/context/inventory.
+Existing parser/mode/default/provenance/recovery tests remain; failed-response
+HTTP/code/scalar capture is unchanged. Probe-local cleanup tests prove each write
+once and no subsequent destructive dispatch after refusal/unknown/interruption,
+including effect-taking failures. Controlled guard removal must fail the matching
+zero-detach/retention case. No prose snapshot tests are introduced.
+Full `just verify` and pinned all-files prek are required before push, followed by
+root-allocated branch/security review and a new exact-head live grant. Native proof
+reports the one remaining observation, original failures, cleanup/recovery limits
+and supported/non-supported hypotheses; never asserts a cause from HSCL7006 alone.
 
 ## Failure model
 
-- Actors/deployments: trusted operator/orchestrator, serial admitted lab runner;
+- Actors/deployments: trusted operator/orchestrator; serial admitted lab runner;
   offline CI replaces external tool boundaries.
-- Assets/invariants: original storage/mappings/adapters/partitions preserved;
-  one owned fixture/LV and three fresh cycles; original failures retained;
-  no ambiguous-write retry.
+- Assets/invariants: original partitions/storage/mappings/adapters preserved;
+  one new owned fixture/LV; one remaining attempt under three cumulative total;
+  immutable failed responses; no ambiguous-write retry or failure promotion.
 - Accepted: intermittent cause may remain unresolved; concurrent lab drift stops
   rather than repairs; interrupted/uncertain fixtures may need manual recovery.
+  Process persistence outside the grant protocol is not promised by this helper.
 - Covered elsewhere: orphan authorization #1387; backing deletion #1229;
   ownership/power ADR0092; generic reconciliation ADR0136; provision/PCIe #1390.
 
 ## Threat model
 
-- Boundaries: optional local selector, HMC/CLI inventories, scoped power/storage
-  calls and private evidence; no new network service.
-- Actors: trusted operator, malformed/changing HMC responses and other lab writers.
-- Controls: early parser rejection; existing UUID/token authorization, If-Match,
-  power admission and quoting; strict identities/baselines, cycle cap, fail-closed
-  retention; private JSON and filtered/redacted public evidence.
-- Out of scope: compromised HMC/malicious local operator; credential/TLS policy
-  unchanged. Concurrent changes stop without automatic repair.
+- Boundaries: existing local selector, HMC/CLI inventories, scoped power/storage
+  dispatch and private evidence; no added network service or widened auth scope.
+- Actors: trusted operator; malformed/changing HMC responses and other lab writers.
+- Controls: existing early selection rejection/UUID-token authorization/If-Match/
+  quoting/power admission; strict identities, exact baselines and one-shot sequencing;
+  failure retention; private raw JSON and filtered/redacted public evidence.
+- Out of scope: compromised HMC or malicious local operator; credential/TLS policy
+  unchanged. Concurrent changes stop without automatic repair or isolation guarantees.

@@ -575,8 +575,8 @@ def main(argv: list[str] | None = None) -> int:
                 "bounded detach probe selected",
                 (
                     f"managed system {config.system_name}",
-                    "one ST41-prefix scratch partition, ownership-stamped; Not Activated then Open Firmware; deleted only after safe reads",
-                    f"one 1024 MiB ST41-prefix run volume in {config.vdisk_volume_group_name}; at most three fresh attach/detach cycles total",
+                    "one ST41-prefix scratch partition, ownership-stamped; attach while Not Activated, activate only owned scratch Open Firmware, then detach; deleted only after safe reads",
+                    f"one 1024 MiB ST41-prefix run volume in {config.vdisk_volume_group_name}; one remaining fresh attach/detach cycle, two previous attach attempts consumed, three total ceiling",
                     "other mappings/adapters compared exactly; ambiguity retains the partition/volume for manual recovery; existing test partition unchanged",
                 ),
                 config.system_name,
