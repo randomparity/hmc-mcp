@@ -1350,6 +1350,7 @@ def test_failed_partition_absence_never_releases_decommission_cleanup(schemas):
     "failure",
     [
         "omitted-collection",
+        "invalid-metadata",
         "failed-detail",
         "failed-partition-read",
         "missing-volume",
@@ -1385,6 +1386,10 @@ def test_uncertain_post_decommission_proof_retains_manual_cleanup(schemas, failu
         result = world._hmc_get_vios_storage_detail(kwargs)
         if completed and failure == "omitted-collection":
             result["Resource"].pop("VirtualSCSIMappings")
+        if completed and failure == "invalid-metadata":
+            result["Resource"]["VirtualSCSIMappings"]["Metadata"] = {
+                "Atom": "unexpected"
+            }
         return result
 
     def read_partitions(kwargs):

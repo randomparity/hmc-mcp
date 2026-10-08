@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, get_type_hints
 from unittest.mock import AsyncMock, patch
+from xml.etree.ElementTree import fromstring
 
 import pytest
 from conftest import assert_only_these_client_methods_used
@@ -20,11 +22,13 @@ from hmcpctl.operations.lpar.decommission import (
     DecommissionAdapterRecord,
     DecommissionBlastRadius,
     DecommissionResult,
+    _vscsi_detach_inventory,
     decommission_lpar,
 )
 from hmcpctl.server_tools.lpar.lifecycle import (
     hmc_decommission_lpar,
 )
+from hmcpctl.xmlutil import element_to_dict
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
@@ -1371,3 +1375,139 @@ async def test_changed_ownership_after_power_off_denies_mapping_mutation(monkeyp
     hmc.delete_storage_mapping.assert_not_awaited()
     hmc.delete_adapter.assert_not_awaited()
     hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.fixture
+def native_vscsi_block():
+    mapping = f"""<VirtualSCSIMapping><AssociatedLogicalPartition
+        href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+        <ServerAdapter><AdapterName>vhost3</AdapterName></ServerAdapter>
+        <TargetDevice><VirtualSCSITargetDevice><TargetName>vtscsi2</TargetName>
+        </VirtualSCSITargetDevice></TargetDevice></VirtualSCSIMapping>"""
+    xml = '<VirtualSCSIMappings group="ViosSCSIMapping"><Metadata><Atom/></Metadata>'
+    return element_to_dict(fromstring(xml + mapping + "</VirtualSCSIMappings>"))
+
+
+def test_native_metadata_preserves_exact_target_and_foreign_inventory(
+    native_vscsi_block,
+):
+    block = copy.deepcopy(native_vscsi_block)
+    foreign = copy.deepcopy(block["VirtualSCSIMapping"])
+    foreign["AssociatedLogicalPartition"]["href"] = (
+        "/rest/api/uom/LogicalPartition/44444444-4444-4444-4444-444444444444"
+    )
+    foreign["ServerAdapter"]["AdapterName"] = "vhost4"
+    block["VirtualSCSIMapping"] = [block["VirtualSCSIMapping"], foreign]
+    original = copy.deepcopy(block)
+    assert _vscsi_detach_inventory(
+        {"VirtualSCSIMappings": block}, VIOS_UUID, LPAR_UUID
+    ) == (({"vios_uuid": VIOS_UUID, "mapping_id": "vhost3/vtscsi2"},), ())
+    assert block == original
+
+
+def test_native_metadata_only_is_complete_empty():
+    block = element_to_dict(
+        fromstring(
+            '<VirtualSCSIMappings group="ViosSCSIMapping"><Metadata><Atom/></Metadata>'
+            "</VirtualSCSIMappings>"
+        )
+    )
+    assert _vscsi_detach_inventory(
+        {"VirtualSCSIMappings": block}, VIOS_UUID, LPAR_UUID
+    ) == ((), ())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "adapter",
+        "target",
+        "client",
+        "client-uuid",
+        "duplicate",
+        "foreign-duplicate",
+        "collection",
+        "unknown-child",
+        "null",
+        "scalar",
+        "nonempty",
+        "invalid-atom",
+        "extra",
+        "duplicate-xml",
+        "missing-atom",
+        "metadata-attribute",
+        "atom-attribute",
+    ],
+)
+async def test_native_metadata_invalid_inventory_has_no_first_mutation(
+    monkeypatch, native_vscsi_block, bad
+):
+    block = copy.deepcopy(native_vscsi_block)
+    own = block["VirtualSCSIMapping"]
+    if bad in {"adapter", "target", "client"}:
+        own.pop(
+            {
+                "adapter": "ServerAdapter",
+                "target": "TargetDevice",
+                "client": "AssociatedLogicalPartition",
+            }[bad]
+        )
+    elif bad == "client-uuid":
+        own["AssociatedLogicalPartition"]["href"] = (
+            "/rest/api/uom/LogicalPartition/invalid"
+        )
+    elif bad in {"duplicate", "foreign-duplicate"}:
+        duplicate = copy.deepcopy(own)
+        if bad == "foreign-duplicate":
+            duplicate["AssociatedLogicalPartition"]["href"] = (
+                "/rest/api/uom/LogicalPartition/44444444-4444-4444-4444-444444444444"
+            )
+        block["VirtualSCSIMapping"] = [own, duplicate]
+    elif bad == "unknown-child":
+        block["Unknown"] = ""
+    elif bad == "duplicate-xml":
+        block["Metadata"] = element_to_dict(
+            fromstring(
+                "<Container><Metadata><Atom/></Metadata><Metadata><Atom/></Metadata></Container>"
+            )
+        )["Metadata"]
+    elif bad in {"null", "invalid-atom"}:
+        block["Metadata"] = None if bad == "null" else {"Atom": None}
+    elif bad != "collection":
+        xml = {
+            "scalar": "<Metadata/>",
+            "nonempty": "<Metadata><Atom>value</Atom></Metadata>",
+            "extra": "<Metadata><Atom/><Other/></Metadata>",
+            "missing-atom": "<Metadata><Other/></Metadata>",
+            "metadata-attribute": '<Metadata a="b"><Atom/></Metadata>',
+            "atom-attribute": '<Metadata><Atom a="b"/></Metadata>',
+        }[bad]
+        block["Metadata"] = element_to_dict(fromstring(xml))
+    resource = {} if bad == "collection" else {"VirtualSCSIMappings": block}
+    hmc = _client()
+    hmc.get_vios_storage_detail.return_value = {"Resource": resource}
+    _patch_common(monkeypatch, [])
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert not result.workflow_completed and not result.resource_deleted
+    hmc.submit_job.assert_not_awaited()
+    hmc.delete_storage_mapping.assert_not_awaited()
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_metadata_canonical_detaches_only_exact_own_mapping(
+    monkeypatch, native_vscsi_block
+):
+    hmc = _client()
+    hmc.get_vios_storage_detail.return_value = {
+        "Resource": {"VirtualSCSIMappings": native_vscsi_block}
+    }
+    _patch_common(monkeypatch, [])
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert result.workflow_completed and result.resource_deleted
+    hmc.delete_storage_mapping.assert_awaited_once_with(
+        VIOS_UUID, "vhost3/vtscsi2", LPAR_UUID
+    )
+    hmc.delete_virtual_disk.assert_not_awaited()

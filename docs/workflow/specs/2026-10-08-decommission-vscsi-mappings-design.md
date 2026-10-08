@@ -47,6 +47,8 @@ storage cleanup, ledger provenance and explicit intent with owner #1229.
   or member, missing target mapping ID, or duplicate ID involving a target mapping
   makes vSCSI inventory incomplete. A missing requested collection is incomplete (ADR 0169); an explicitly empty
   collection or attribute-only empty container is valid empty.
+  Optional outer Metadata is valid only as exactly {"Atom": ""}; metadata-only is empty.
+  Unknown children and all other metadata forms remain incomplete.
 - Validate target mapping identity with the existing helper. Foreign mappings with
   valid non-target client UUIDs are retained; their backing/device fields are not
   required except where an ID duplicates a target ID. Compare UUIDs case-insensitively.

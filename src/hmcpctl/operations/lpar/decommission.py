@@ -57,7 +57,11 @@ def _vscsi_detach_inventory(
         return (), ()
     if not isinstance(block, dict):
         return (), (f"VIOS {vios_uuid!r} has malformed vSCSI mappings.",)
-    members = {k: v for k, v in block.items() if not k.startswith("@")}
+    if "Metadata" in block and block["Metadata"] != {"Atom": ""}:
+        return (), (f"VIOS {vios_uuid!r} has malformed vSCSI mappings.",)
+    members = {
+        k: v for k, v in block.items() if not k.startswith("@") and k != "Metadata"
+    }
     if not members:
         return (), ()
     if set(members) != {"VirtualSCSIMapping"}:
