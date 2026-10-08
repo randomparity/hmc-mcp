@@ -564,6 +564,8 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
             ("hmc_list_lpar_ownership", "PASS", {}),
             ("hmc_read_lpar_boot_order", "PASS", {}),
             ("hmc_inspect_lpar", "PASS", {}),
+            ("hmc_get_lpar_proc_compat", "PASS", {"profile": "default_profile"}),
+            ("hmc_snapshot_capture", "PASS", {}),
             ("hmc_inventory", "PASS", {}),
             ("hmc_fleet_health", "PASS", {}),
             ("hmc_plan_lpar", "PASS", {}),
@@ -5172,6 +5174,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "hmc_list_lpar_ownership",
         "hmc_read_lpar_boot_order",
         "hmc_inspect_lpar",
+        "hmc_get_lpar_proc_compat",
         "hmc_inventory",
         "hmc_fleet_health",
         "hmc_plan_lpar",
@@ -5186,8 +5189,12 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "system_name_or_uuid": "example-lt-609-system",
         "include": ["resources", "rmc", "refcodes"],
     }
-    assert calls[15][1] == {"systems": ["example-lt-609-system"]}
-    assert calls[17][1] == {
+    assert calls[15][1] == {
+        "system_name_or_uuid": "example-lt-609-system",
+        "lpar_name_or_uuid": "example-lt-609-lpar",
+    }
+    assert calls[16][1] == {"systems": ["example-lt-609-system"]}
+    assert calls[18][1] == {
         "name": "example-lt-609-dry-run",
         "adapters": {"port_vlan_id": 1},
         "storage": {"storage_name": "hmcpctl-st1", "capacity_mib": 10240},
@@ -5221,6 +5228,7 @@ _ST1_SYSTEM = "example-lt-609-system"
 _ST1_LPAR = "example-lt-609-lpar"
 _ST1_SYSTEM_UUID = "11111111-2222-3333-4444-555555555555"
 _ST1_LPAR_UUID = "66666666-7777-8888-9999-000000000000"
+_ST1_PROFILE = "default_profile"
 _ST1_NULL_PROPERTY_500 = (
     "HMCError: Managed-system inventory is unavailable (HTTP 500): Nested path "
     "contains null property currentProperty=Uuid "
@@ -5294,6 +5302,35 @@ def _st1_plan(candidate_uuid: str) -> SimpleNamespace:
     )
 
 
+def _st1_snapshot(**overrides: object) -> dict[str, object]:
+    """A captured snapshot, reduced to the fields ST1 asserts on."""
+    parts: dict[str, object] = {
+        "lpar_uuid": _ST1_LPAR_UUID,
+        "lpar_name": _ST1_LPAR,
+        "system_uuid": _ST1_SYSTEM_UUID,
+        "profile_name": _ST1_PROFILE,
+        "native": {"name": _ST1_PROFILE, "lpar_name": _ST1_LPAR},
+        "score_lpar": _ST1_LPAR,
+    } | overrides
+    return {
+        "format": "hmcpctl.lpar-snapshot",
+        "version": 1,
+        "source": {
+            "lpar": {"uuid": parts["lpar_uuid"], "name": parts["lpar_name"]},
+            "system": {"uuid": parts["system_uuid"]},
+        },
+        "configuration": {
+            "profile_name": parts["profile_name"],
+            "native": {"data": parts["native"]},
+        },
+        "observations": {
+            "scores": {
+                "data": {"current": {"lpar": {"lpar_name": parts["score_lpar"]}}}
+            }
+        },
+    }
+
+
 def _st1_responses() -> dict[str, object]:
     """Conforming ST1 results, shaped as the served tools return them."""
     system = {"UUID": _ST1_SYSTEM_UUID, "Resource": {"SystemName": _ST1_SYSTEM}}
@@ -5343,6 +5380,8 @@ def _st1_responses() -> dict[str, object]:
             ],
         ),
         "hmc_fleet_health": {"systems": [], "vios": [], "lpars": [], "warnings": []},
+        "hmc_get_lpar_proc_compat": {"profile": _ST1_PROFILE},
+        "hmc_snapshot_capture": _st1_snapshot(),
         "hmc_plan_lpar": SimpleNamespace(
             plan_digest="digest",
             selected=SimpleNamespace(system=SimpleNamespace(uuid=_ST1_SYSTEM_UUID)),
@@ -5368,6 +5407,7 @@ _ST1_OPERATIONS = {
     "inventory.logical",
     "health.fleet",
     "lpar.plan",
+    "snapshot.capture",
 }
 
 
@@ -5586,6 +5626,42 @@ async def test_st1_records_each_scoped_read_as_a_passed_observation(monkeypatch)
             "lpar.plan",
             {"plan-targets-boundary-system", "plan-outcome-consistent"},
         ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(lpar_uuid="another-uuid"),
+            "snapshot.capture",
+            {"snapshot-names-partition"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(lpar_name="other"),
+            "snapshot.capture",
+            {"snapshot-names-partition"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(system_uuid="another-uuid"),
+            "snapshot.capture",
+            {"snapshot-names-system"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(profile_name="other_profile"),
+            "snapshot.capture",
+            {"profile-captured"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(native={}),
+            "snapshot.capture",
+            {"profile-captured"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(score_lpar="other"),
+            "snapshot.capture",
+            {"scores-name-partition"},
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -5600,6 +5676,49 @@ async def test_st1_assertions_fail_on_violating_results(
     assert unmet.isdisjoint(held)
     others = {op for op, obs in observed.items() if obs["result"] != "passed"}
     assert others == {operation}
+
+
+@pytest.mark.asyncio
+async def test_st1_captures_the_partition_default_profile(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+    responses = {tool: ("PASS", data) for tool, data in _st1_responses().items()}
+
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
+        calls.append((tool, kwargs))
+        if (
+            tool == "hmc_list_resources"
+            and kwargs["resource_type"] == "LogicalPartition"
+        ):
+            return "PASS", [{"UUID": _ST1_LPAR_UUID}]
+        return responses.get(tool, ("PASS", {}))
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    await connectivity.inventory_connectivity(None, runner.RunState())
+
+    captures = [kwargs for tool, kwargs in calls if tool == "hmc_snapshot_capture"]
+    assert captures == [
+        {
+            "system_name_or_uuid": _ST1_SYSTEM,
+            "lpar_name_or_uuid": _ST1_LPAR,
+            "profile_name": _ST1_PROFILE,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "proc_compat", [("PASS", {"profile": ""}), ("FAIL", _failure("HMCError: refused"))]
+)
+@pytest.mark.asyncio
+async def test_st1_capture_without_a_profile_name_fails_without_promoting(
+    monkeypatch, proc_compat
+):
+    state, observed = await _run_st1(
+        monkeypatch, {"hmc_get_lpar_proc_compat": proc_compat}
+    )
+
+    assert "snapshot.capture" not in observed
+    rows = {row["tool"]: row["status"] for row in state.results}
+    assert rows["hmc_snapshot_capture"] == "FAIL"
 
 
 @pytest.mark.asyncio
@@ -6628,6 +6747,12 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st1-lpar-snapshot": {
+            "snapshot-names-partition",
+            "snapshot-names-system",
+            "profile-captured",
+            "scores-name-partition",
+        },
         "st29-dedicated-pcie": {
             "profile-lists-slot",
             "assign-call-succeeded",
