@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded in part by [0207](0207-ci-gates-once.md)** (2026-10-08): hosted orchestration only; remaining guarantees stand.
+
 Accepted
 
 ## Context

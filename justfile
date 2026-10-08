@@ -123,10 +123,13 @@ build:
 verify-artifacts:
     uv run --no-sync python tests/validate_release_artifacts.py dist .
 
-# full verification: tests + handshake + CLI groups load
+# full standalone local verification
+verify: static verify-runtime
+
+# runtime checks; CI covers static gates through the real hooks first
 # The root help goes through the installed console script, so the entry point is
 # covered; the group helps are derived from the Typer app rather than listed here.
-verify: static test smoke build verify-artifacts
+verify-runtime: test smoke build verify-artifacts
     uv run --no-sync hmcpctl --help >/dev/null
     uv run --no-sync python scripts/smoke_cli_groups.py
     @echo "verify: all groups load OK"
