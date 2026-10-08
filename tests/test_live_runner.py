@@ -7677,3 +7677,31 @@ async def test_partial_results_write_failure_does_not_mask_the_run_failure(
 
     assert raised.value is error
     assert "Could not write partial results: disk full" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["7", b"7", 7.9])
+def test_baseline_numeric_fields_keep_direct_int_conversion(value):
+    baseline = {}
+    inventory._capture_cna_identifiers([{"PortVLANID": value}], baseline)
+    assert baseline == {"pvid": 7, "vswitch_id": 0}
+    state = runner.RunState()
+    state.artifacts.lp3_baseline = {"lpars": {"MinimumMemory": value}}
+    assert provisioning._baseline_provision_resources(state)["min_memory"] == 7
+
+
+def test_baseline_numeric_fields_keep_truthy_fallbacks_and_conversion_errors():
+    baseline = {}
+    inventory._capture_cna_identifiers(
+        [{"PortVLANID": 0, "port_vlan_id": "7", "VirtualSwitchID": "2"}], baseline
+    )
+    assert baseline == {"pvid": 7, "vswitch_id": 2}
+    state = runner.RunState()
+    state.artifacts.lp3_baseline = {
+        "lpars": {"MinimumMemory": 0, "minimum_memory": "7"}
+    }
+    assert provisioning._baseline_provision_resources(state)["min_memory"] == 7
+    state.artifacts.lp3_baseline = {"lpars": {"MinimumMemory": "invalid"}}
+    with pytest.raises(ValueError):
+        provisioning._baseline_provision_resources(state)
+    with pytest.raises(ValueError):
+        inventory._capture_cna_identifiers([{"PortVLANID": "invalid"}], {})

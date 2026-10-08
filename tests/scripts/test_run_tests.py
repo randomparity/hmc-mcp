@@ -266,9 +266,11 @@ def test_failure_replays_multiple_bounded_binary_chunks_in_order(
     assert temporary_file.closed
 
 
+@pytest.mark.parametrize("timings", [False, True])
 def test_interruption_replays_captured_output_without_traceback(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, timings: bool
 ) -> None:
+    monkeypatch.setenv("HMCPCTL_TEST_TIMINGS", "1" if timings else "0")
     output = b"partial pytest diagnostic before SIGINT \xff\n"
     stderr = BinaryStderr()
     temporary_file = TrackingTemporaryFile()
@@ -418,10 +420,13 @@ def test_a_wedged_child_is_terminated_then_killed(
     ]
 
 
+@pytest.mark.parametrize("timings", [False, True])
 def test_timeout_terminates_pytest_and_returns_timeout_status(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    timings: bool,
 ) -> None:
+    monkeypatch.setenv("HMCPCTL_TEST_TIMINGS", "1" if timings else "0")
     temporary_file = TrackingTemporaryFile()
 
     class TimedOutProcess:
@@ -546,6 +551,96 @@ def test_a_child_that_exits_early_has_its_group_killed_too(
 
 def test_main_accepts_no_arguments() -> None:
     assert list(inspect.signature(run_tests.main).parameters) == []
+
+
+@pytest.mark.parametrize("status", [1, 2, -signal.SIGTERM])
+def test_timing_failure_preserves_status_and_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], status: int
+) -> None:
+    monkeypatch.setenv("HMCPCTL_TEST_TIMINGS", "1")
+    _stub_pytest(monkeypatch, b"pytest failure\n", status)
+
+    assert run_tests.main() == (128 + abs(status) if status < 0 else status)
+
+    captured = capsys.readouterr()
+    assert captured.err == "pytest failure\n"
+    assert captured.out == ""
+
+
+def test_timing_success_replay_interruption_returns_130(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HMCPCTL_TEST_TIMINGS", "1")
+    _stub_pytest(monkeypatch, b"slowest durations\n", 0)
+
+    def interrupt(_output: BinaryIO) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_tests, "_replay", interrupt)
+
+    assert run_tests.main() == 130
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("value", ["1", "0", "", "--no-cov"])
+def test_timing_switch_only_changes_presentation(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str
+) -> None:
+    monkeypatch.setenv("HMCPCTL_TEST_TIMINGS", value)
+    monkeypatch.setenv("PYTEST_ADDOPTS", "--no-cov")
+    calls, output = _stub_pytest(monkeypatch, b"slowest durations\n", 0)
+
+    assert run_tests.main() == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ("slowest durations\n" if value == "1" else "")
+    assert captured.out == "test: passed; configured coverage gate passed\n"
+    assert calls[0][0] == [sys.executable, "-m", "pytest"] + (
+        ["--durations=30", "--durations-min=0"] if value == "1" else []
+    )
+    environment_keys = set(calls[0][1]["env"])
+    assert "HMCPCTL_TEST_TIMINGS" not in environment_keys
+    assert "PYTEST_ADDOPTS" not in environment_keys
+    assert output.closed
+
+
+@pytest.mark.parametrize(
+    "argument", ["--no-cov", "--cov-fail-under=0", "tests/", "--tim"]
+)
+def test_timing_cli_rejects_other_arguments(tmp_path: Path, argument: str) -> None:
+    tmp_path.joinpath("pytest.py").write_text(
+        "raise AssertionError('pytest launched')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(MODULE_PATH), "--timings", argument],
+        check=False,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 2
+    assert "unrecognized arguments" in result.stderr
+    assert "pytest launched" not in result.stderr
+
+
+def test_timing_cli_retains_successful_output(tmp_path: Path) -> None:
+    tmp_path.joinpath("pytest.py").write_text(
+        "import sys\nprint('pytest arguments:', sys.argv[1:])\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(MODULE_PATH), "--timings"],
+        check=False,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    assert "['--durations=30', '--durations-min=0']" in result.stderr
+    assert "configured coverage gate passed" in result.stdout
 
 
 def test_signal_return_code_maps_to_shell_status() -> None:

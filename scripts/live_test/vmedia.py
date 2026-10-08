@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
 from fastmcp import Client
@@ -152,7 +152,7 @@ def run_media_names(state: RunState) -> set[str]:
     return {
         name
         for name in (artifacts.vmedia_blank_name, artifacts.vmedia_iso_name)
-        if is_run_media_name(name, state.config.iso_media_name)
+        if name is not None and is_run_media_name(name, state.config.iso_media_name)
     }
 
 
@@ -261,8 +261,10 @@ async def _discover_vmedia_prerequisites(client: Client, state: RunState) -> boo
                 uuid = e.get("UUID") or e.get("uuid")
                 pid = resource.get("PartitionID") or resource.get("partition_id")
                 if uuid:
-                    artifacts.vios_uuid = uuid
-                    artifacts.vios_partition_id = int(pid) if pid is not None else None
+                    artifacts.vios_uuid = cast(str, uuid)
+                    artifacts.vios_partition_id = (
+                        int(cast(str | int, pid)) if pid is not None else None
+                    )
                     break
     else:
         print(f"  ℹ  vios_uuid already set: {artifacts.vios_uuid}")
@@ -1387,8 +1389,8 @@ async def _configure_boot_order(
     pending: list[str] = []
     boot_devices: list[str] = []
     if status == "PASS" and isinstance(data, dict):
-        pending = (data.get("pending_boot_string") or "").split()
-        boot_devices = (data.get("boot_device_list") or "").split()
+        pending = cast(str, data.get("pending_boot_string") or "").split()
+        boot_devices = cast(str, data.get("boot_device_list") or "").split()
 
     if not pending:
         state.skip(
