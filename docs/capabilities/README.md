@@ -11,9 +11,9 @@ The artifacts use format version 1:
   for 14,311 structured source units. Source units cover command synopsis lines,
   option and attribute table rows, REST resources, methods and fields, and explicit
   version or capability statements.
-- `rows.json` groups source units into 381 normalized command or REST capabilities.
-  Each row preserves its POWER10/POWER11 presence and maps to a concrete child of
-  epic #620. A missing page in either snapshot records only that document delta;
+- `rows.json` groups source units into 382 normalized command or REST capabilities.
+  Each row preserves its POWER10/POWER11 presence. Coverage-child rows map to
+  concrete children of epic #620. A missing page in either snapshot records only that delta;
   it does not claim that an HMC release lacks the capability.
 - `operations.json` reconciles all 164 registered MCP operations to reference
   families or explains a repository-specific composite. It records the current

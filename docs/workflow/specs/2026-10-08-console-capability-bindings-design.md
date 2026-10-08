@@ -46,7 +46,7 @@ pass. PR2 says Part of #1411; only PR3 may close the issue.
 - Mode: focused-test. `tests/scripts/test_check_capability_inventory.py` checks
   the ManagementConsole row, six accounting joins, modes, releases and supported
   disposition. Red: row missing. Green command: `uv run --no-sync pytest
-  tests/scripts/test_check_capability_inventory.py -q`.
+  tests/scripts/test_check_capability_inventory.py -q --no-cov`.
 - Mode: focused-test. The same module checks the three exact operation joins
   and nonempty generic explanations. Red: placeholder joins remain. Same command.
 - Mode: task-test-not-applicable. README count and this specification are prose
