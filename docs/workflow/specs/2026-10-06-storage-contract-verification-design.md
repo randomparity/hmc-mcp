@@ -236,6 +236,10 @@ Recovery exited 0 (CLEAN). The before and after read-only snapshots were byte-id
 
 ## ST42 scratch volume-group extension (#1370, 2026-10-08)
 
+Expected implementation size is 950–1150 changed lines (M250 unchanged). Actual
+implementation is 1007 lines: required truthful-failure and destination-preservation
+regressions corrected the earlier 800–950 estimate without expanding the contract.
+
 The operator approved one create/delete on one released physical volume on
 2026-10-07 and explicitly approved paired optional settings on 2026-10-08:
 `LIVE_TEST_SCRATCH_PV_NAME` and `LIVE_TEST_SCRATCH_VG_NAME`. Both default empty;
