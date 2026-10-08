@@ -14,14 +14,27 @@ import re
 import shlex
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
+from hmcpctl.operations.virtualization.pcie import (
+    _is_exact_admitted_environment,
+    _release_fields,
+    require_drc_index,
+)
+from hmcpctl.ssh.profiles import (
+    ProfileIoSlot,
+    parse_profile_io_slot_rows,
+    parse_profile_io_slots,
+    profile_io_slot_rows_command,
+)
+from hmcpctl.ssh.transport import HMCCLIError
 from hmcpctl.xmlutil import leaf_text
 
+from . import pcie
 from .observation import Assertion, CallFailure, judge_create_result
 from .pcie import _ABSENCE_REREAD_DELAY_S, partition_not_found
 from .results import field as result_field
@@ -98,6 +111,68 @@ class _Pools:
     memory: str
 
 
+_ProfileMap = dict[tuple[str, str], tuple[ProfileIoSlot, ...]]
+
+
+def _profile_evidence(profiles: _ProfileMap | None) -> list[dict[str, Any]] | None:
+    if profiles is None:
+        return None
+    return [
+        {
+            "lpar_name": lpar,
+            "profile_name": profile,
+            "io_slots": [asdict(slot) for slot in slots],
+        }
+        for (lpar, profile), slots in sorted(profiles.items())
+    ]
+
+
+@dataclass
+class _DedicatedProbe:
+    profile_name: str
+    drc_index: str
+    baseline: _ProfileMap
+    scratch_baseline: tuple[ProfileIoSlot, ...] = ()
+    attempted: bool = False
+    workflow_completed: bool = False
+    assigned: bool = False
+    others_unchanged: bool = False
+    restored: bool = False
+    restore_call_succeeded: bool = True
+    slot_unowned: bool = False
+    baseline_restored: bool = False
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+async def _profile_slots(
+    client: Client, state: RunState, system: str
+) -> _ProfileMap | None:
+    text = await _dedicated_cli(client, state, profile_io_slot_rows_command(system))
+    if text is None:
+        return None
+    try:
+        result = {}
+        for row in parse_profile_io_slot_rows(text):
+            key = row["lpar_name"], row["name"]
+            if key in result:
+                raise HMCCLIError("duplicate profile identity")
+            result[key] = tuple(
+                sorted(
+                    parse_profile_io_slots(row["io_slots"]),
+                    key=lambda slot: slot.drc_index,
+                )
+            )
+        return result
+    except HMCCLIError as error:
+        state.record(
+            SUBTASK,
+            "dedicated profile read",
+            "FAIL",
+            CallFailure("HMCCLIError", str(error), "", None, False),
+        )
+        return None
+
+
 @dataclass
 class _Run:
     """What the arm has established, read by teardown and the deferred observations."""
@@ -106,6 +181,7 @@ class _Run:
     name: str
     token: str
     region: int
+    dedicated: _DedicatedProbe | None = None
     uuid: str | None = None
     created: bool = False
     create_attempted: bool = False
@@ -130,6 +206,377 @@ def scratch_partitions(names: Iterable[str]) -> list[str]:
 async def _cli(client: Client, state: RunState, cmd: str) -> str | None:
     st, data = await state.call(client, "hmc_run_command", cmd=cmd)
     return data.strip() if st == "PASS" and isinstance(data, str) else None
+
+
+async def _dedicated_cli(client: Client, state: RunState, cmd: str) -> str | None:
+    status, data = await state.call(client, "hmc_run_command", cmd=cmd)
+    if status != "PASS":
+        state.record(SUBTASK, "dedicated command read", "FAIL", data)
+        return None
+    if not isinstance(data, str):
+        state.record(SUBTASK, "dedicated command response", "FAIL", data)
+        return None
+    return data.strip()
+
+
+async def _dedicated_admitted(client: Client, state: RunState, system: str) -> bool:
+    version = await _dedicated_cli(client, state, "lshmc -V")
+    model = await _dedicated_cli(
+        client, state, f"lssyscfg -r sys -m {shlex.quote(system)} -F type_model"
+    )
+    if version is None or model is None:
+        return False
+    fields = _release_fields(version)
+    if (
+        fields is None
+        or any(re.fullmatch(r"[0-9]+", value) is None for value in fields.values())
+        or re.fullmatch(r"[0-9]{4}-[A-Z0-9]{3}", model) is None
+    ):
+        state.record(
+            SUBTASK,
+            "dedicated admission response",
+            "FAIL",
+            CallFailure(
+                "AdmissionResponseError",
+                "malformed release fields or type-model token",
+                "",
+                None,
+                False,
+            ),
+        )
+        return False
+    if not _is_exact_admitted_environment(version, model):
+        state.skip(
+            SUBTASK,
+            "dedicated admitted environment",
+            "well-formed release/model outside the exact admission envelope",
+        )
+        return False
+    state.record(
+        SUBTASK,
+        "dedicated admitted environment",
+        "PASS",
+        {"release_fields": fields, "type_model": model},
+    )
+    return True
+
+
+async def _select_dedicated(
+    client: Client, state: RunState, run: _Run
+) -> _DedicatedProbe | None:
+    arm = pcie._dedicated_config(state.config)
+    if arm is None or arm.system_name != run.system:
+        state.skip(
+            SUBTASK,
+            "hmc_modify_lpar dedicated assignments",
+            "requires the dedicated configuration for this same managed system",
+        )
+        return None
+    if not await _dedicated_admitted(client, state, run.system):
+        return None
+    status, data = await state.call(
+        client, "hmc_list_dedicated_pcie_slots", system_name_or_uuid=run.system
+    )
+    if status != "PASS":
+        state.record(SUBTASK, "dedicated inventory read", "FAIL", data)
+        return None
+    if not isinstance(data, Mapping):
+        state.record(SUBTASK, "dedicated inventory shape", "FAIL", data)
+        return None
+    profiles = await _profile_slots(client, state, run.system)
+    if profiles is None:
+        return None  # dedicated reader/parser explicitly recorded the failure
+    items = data.get("items")
+    if not isinstance(items, list) or any(
+        not isinstance(row, Mapping) for row in items
+    ):
+        state.record(SUBTASK, "dedicated inventory shape", "FAIL", data)
+        return None
+    for row in items:
+        try:
+            if not isinstance(row.get("drc_index"), str):
+                raise HMCCLIError("dedicated inventory DRC must be text")
+            require_drc_index(row["drc_index"])
+            if "owner_lpar" not in row or (
+                row["owner_lpar"] is not None and not isinstance(row["owner_lpar"], str)
+            ):
+                raise HMCCLIError(
+                    "dedicated inventory owner_lpar is required and must be text or null"
+                )
+        except (HMCCLIError, ValueError) as error:
+            state.record(
+                SUBTASK,
+                "dedicated inventory shape",
+                "FAIL",
+                CallFailure("InventoryResponseError", str(error), "", None, False),
+            )
+            return None
+    eligible = [
+        row
+        for row in items
+        if pcie._slot_unowned(row)
+        and (arm.drc_index is None or row.get("drc_index") == arm.drc_index)
+        and not any(
+            slot.drc_index == row.get("drc_index")
+            for slots in profiles.values()
+            for slot in slots
+        )
+    ]
+    if not eligible:
+        state.skip(
+            SUBTASK,
+            "hmc_modify_lpar dedicated assignments",
+            "requires an unowned dedicated slot listed by no profile",
+        )
+        return None
+    state.record(
+        SUBTASK,
+        "dedicated recovery baseline",
+        "PASS",
+        {
+            "drc_index": eligible[0]["drc_index"],
+            "profile_name": arm.profile_name,
+            "profiles": _profile_evidence(profiles),
+        },
+    )
+    return _DedicatedProbe(arm.profile_name, eligible[0]["drc_index"], profiles)
+
+
+async def _dedicated_inventory(client: Client, state: RunState, run: _Run) -> bool:
+    status, data = await state.call(
+        client, "hmc_list_dedicated_pcie_slots", system_name_or_uuid=run.system
+    )
+    if status != "PASS":
+        state.record(SUBTASK, "dedicated inventory read", "FAIL", data)
+        return False
+    items = data.get("items") if isinstance(data, Mapping) else None
+    if not isinstance(items, list) or any(
+        not isinstance(row, Mapping) for row in items
+    ):
+        state.record(SUBTASK, "dedicated inventory shape", "FAIL", data)
+        return False
+    for row in items:
+        try:
+            if not isinstance(row.get("drc_index"), str):
+                raise HMCCLIError("dedicated inventory DRC must be text")
+            require_drc_index(row["drc_index"])
+            if "owner_lpar" not in row or (
+                row["owner_lpar"] is not None and not isinstance(row["owner_lpar"], str)
+            ):
+                raise HMCCLIError(
+                    "dedicated inventory owner_lpar is required and must be text or null"
+                )
+        except (HMCCLIError, ValueError) as error:
+            state.record(
+                SUBTASK,
+                "dedicated inventory shape",
+                "FAIL",
+                CallFailure("InventoryResponseError", str(error), "", None, False),
+            )
+            return False
+    probe = run.dedicated
+    matches = (
+        [
+            row
+            for row in items
+            if isinstance(row, Mapping) and row.get("drc_index") == probe.drc_index
+        ]
+        if isinstance(items, list) and probe
+        else []
+    )
+    if len(matches) != 1 or (
+        matches[0].get("owner_lpar") is not None
+        and not isinstance(matches[0]["owner_lpar"], str)
+    ):
+        state.record(SUBTASK, "dedicated inventory shape", "FAIL", data)
+        return False
+    return pcie._slot_unowned(matches[0])
+
+
+def _other_profiles(profiles: _ProfileMap, run: _Run) -> _ProfileMap:
+    assert run.dedicated is not None
+    return {
+        key: value
+        for key, value in profiles.items()
+        if key != (run.name, run.dedicated.profile_name)
+    }
+
+
+async def _dedicated_restore(client: Client, state: RunState, run: _Run) -> None:
+    probe = run.dedicated
+    assert probe is not None
+    profiles = await _profile_slots(client, state, run.system)
+    target = (run.name, probe.profile_name)
+    expected = (ProfileIoSlot(probe.drc_index, None, False),)
+    if profiles is None or _other_profiles(profiles, run) != probe.baseline:
+        state.record(
+            SUBTASK,
+            "dedicated restoration preconditions",
+            "FAIL",
+            {"profiles": _profile_evidence(profiles)},
+        )
+        return
+    actual = profiles.get(target)
+    if actual != probe.scratch_baseline:
+        if (
+            actual != expected
+            or await _token_of(client, state, run, run.uuid or "") != run.token
+            or await _lpar_state(client, state, run) != _NOT_ACTIVATED
+        ):
+            return
+        status, data = await state.call(
+            client,
+            "hmc_unassign_dedicated_pcie_slot",
+            system_name_or_uuid=run.system,
+            lpar_name_or_uuid=run.uuid,
+            profile_name=probe.profile_name,
+            drc_index=probe.drc_index,
+        )
+        state.record(
+            SUBTASK, "hmc_unassign_dedicated_pcie_slot (ST39 restore)", status, data
+        )
+        probe.restore_call_succeeded = status == "PASS"
+        profiles = await _profile_slots(client, state, run.system)
+    probe.slot_unowned = await _dedicated_inventory(client, state, run)
+    probe.restored = (
+        profiles is not None
+        and profiles.get(target) == probe.scratch_baseline
+        and _other_profiles(profiles, run) == probe.baseline
+        and probe.slot_unowned
+    )
+    state.record(
+        SUBTASK,
+        "dedicated profile restoration",
+        "PASS" if probe.restored else "FAIL",
+        {
+            "restored": probe.restored,
+            "slot_unowned": probe.slot_unowned,
+            "profiles": _profile_evidence(profiles) if not probe.restored else None,
+        },
+    )
+
+
+async def _dedicated_case(client: Client, state: RunState, run: _Run) -> bool:
+    probe = run.dedicated
+    if probe is None:
+        return True
+    profiles = await _profile_slots(client, state, run.system)
+    target = (run.name, probe.profile_name)
+    safe = (
+        profiles is not None
+        and profiles.get(target) == ()
+        and _other_profiles(profiles, run) == probe.baseline
+        and await _dedicated_inventory(client, state, run)
+        and await _token_of(client, state, run, run.uuid or "") == run.token
+        and await _lpar_state(client, state, run) == _NOT_ACTIVATED
+    )
+    state.record(
+        SUBTASK,
+        "dedicated scratch preconditions",
+        "PASS" if safe else "FAIL",
+        {"safe": safe, "profiles": _profile_evidence(profiles) if not safe else None},
+    )
+    if not safe:
+        return False
+    try:
+        probe.attempted = True
+        status, data = await state.call(
+            client,
+            "hmc_modify_lpar",
+            lpar_name_or_uuid=run.uuid,
+            system_name_or_uuid=run.system,
+            assignments={
+                "dedicated": [
+                    {"profile_name": probe.profile_name, "drc_index": probe.drc_index}
+                ]
+            },
+        )
+        probe.data["assignment"] = data
+        steps = result_field(data, "steps")
+        if not isinstance(steps, (tuple, list)):
+            steps = ()
+        probe.workflow_completed = (
+            status == "PASS"
+            and result_field(data, "workflow_completed") is True
+            and len(steps) == 1
+            and result_field(steps[0], "step") == "dedicated[0]"
+            and result_field(steps[0], "status") == "ok"
+        )
+        state.record(
+            SUBTASK,
+            "hmc_modify_lpar (dedicated assignments)",
+            "PASS" if probe.workflow_completed else "FAIL",
+            data,
+        )
+        profiles = await _profile_slots(client, state, run.system)
+        probe.assigned = profiles is not None and profiles.get(target) == (
+            ProfileIoSlot(probe.drc_index, None, False),
+        )
+        probe.others_unchanged = (
+            profiles is not None and _other_profiles(profiles, run) == probe.baseline
+        )
+        state.record(
+            SUBTASK,
+            "dedicated profile read-back",
+            "PASS" if probe.assigned and probe.others_unchanged else "FAIL",
+            {
+                "assigned": probe.assigned,
+                "others_unchanged": probe.others_unchanged,
+                "profiles": _profile_evidence(profiles)
+                if not (probe.assigned and probe.others_unchanged)
+                else None,
+            },
+        )
+    finally:
+        await _dedicated_restore(client, state, run)
+    return probe.restored
+
+
+async def _dedicated_compare(client: Client, state: RunState, run: _Run) -> bool:
+    probe = run.dedicated
+    if probe is None:
+        return True
+    profiles = await _profile_slots(client, state, run.system)
+    slot_unowned = await _dedicated_inventory(client, state, run)
+    probe.baseline_restored = profiles == probe.baseline and slot_unowned
+    state.record(
+        SUBTASK,
+        "dedicated final baseline",
+        "PASS" if probe.baseline_restored else "FAIL",
+        {
+            "profiles_restored": profiles == probe.baseline,
+            "slot_unowned": slot_unowned,
+            "profiles": _profile_evidence(profiles)
+            if not probe.baseline_restored
+            else None,
+        },
+    )
+    return probe.baseline_restored
+
+
+def _observe_dedicated(state: RunState, run: _Run, cleanup: str) -> None:
+    probe = run.dedicated
+    if probe is None or not probe.attempted:
+        return
+    state.record_verified(
+        SUBTASK,
+        "hmc_modify_lpar-dedicated",
+        operation="lpar.modify",
+        scenario=SCENARIO,
+        assertions=[
+            Assertion("assignment-workflow-completed", probe.workflow_completed),
+            Assertion("dedicated-profile-read-back", probe.assigned),
+            Assertion("other-profile-slots-unchanged", probe.others_unchanged),
+            Assertion(
+                "dedicated-profile-restored",
+                probe.restored and probe.restore_call_succeeded,
+            ),
+            Assertion("dedicated-slot-unowned", probe.slot_unowned),
+            Assertion("dedicated-baseline-restored", probe.baseline_restored),
+        ],
+        cleanup=cleanup,
+        data=probe.data,
+    )
 
 
 async def _read_pools(
@@ -751,7 +1198,11 @@ async def _delete(client: Client, state: RunState, run: _Run) -> str | None:
 async def _teardown(client: Client, state: RunState, run: _Run) -> None:
     if not run.create_attempted:
         return
-    why = await _delete(client, state, run)
+    why = (
+        "dedicated restoration is uncertain; inspect profile io_slots and slot ownership first"
+        if run.dedicated is not None and not run.dedicated.restored
+        else await _delete(client, state, run)
+    )
     if why is None:
         return
     system, name = shlex.quote(run.system), shlex.quote(run.name)
@@ -964,8 +1415,17 @@ async def exercise_lpar_config(client: Client, state: RunState) -> None:
         return
     suffix = uuid.uuid4().hex[:8]
     run = _Run(system, f"{NAME_PREFIX}{suffix}", f"{TOKEN_PREFIX}{suffix}", region)
+    run.dedicated = await _select_dedicated(client, state, run)
+    for path in ("SR-IOV", "vNIC"):
+        state.skip(
+            SUBTASK,
+            f"hmc_modify_lpar {path} assignments",
+            "requires separate operator authorization and eligible backing hardware/RMC",
+        )
     try:
-        if await _create(client, state, run):
+        if await _create(client, state, run) and await _dedicated_case(
+            client, state, run
+        ):
             await _modify_case(client, state, run)
             await _memory_cases(client, state, run)
             await _processor_cases(client, state, run)
@@ -975,7 +1435,10 @@ async def exercise_lpar_config(client: Client, state: RunState) -> None:
     finally:
         await _teardown(client, state, run)
     same = await _compare(client, state, run, baseline)
+    dedicated_same = await _dedicated_compare(client, state, run)
+    same = same and dedicated_same
     if run.created:
         cleanup = "passed" if run.deleted and same else "failed"
         _observe(state, run, cleanup)
         _observe_identity(state, run, cleanup)
+        _observe_dedicated(state, run, cleanup)

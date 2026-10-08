@@ -15,6 +15,8 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
   observation remains failed: an empty description resets to `HMC User`, which the arm
   had expected to read as empty. The arm now checks that exact observed default;
   consolidated live verification of the corrected harness remains pending (ADR 0202).
+- Bind `lpar.modify` delegated assignment rows and extend ST39 with an optional
+  scratch-only dedicated-slot proof, guarded restoration and explicit read failures.
 - The live harness gained an opt-in `lpar-power` arm (`scripts/live_lpar_power.py`, subtask
   41). It creates `hmcpctl-live-pwr-<8 hex>` partitions and verifies `hmc_create_lpar`'s
   refusals, `hmc_power_on_lpar` (profile and current-configuration activation, and a
