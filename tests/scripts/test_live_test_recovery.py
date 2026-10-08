@@ -1555,13 +1555,16 @@ def test_the_guard_admits_only_the_exact_volume_listing():
             recovery.guard_read_only("hmc_run_command", {"cmd": refused})
 
 
-def test_lpar_power_run_is_witnessed(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("detach_probe", [False, True])
+def test_lpar_power_run_is_witnessed(tmp_path, monkeypatch, capsys, detach_probe):
     document = {
         "run": {"subtasks": [41], "group": "lpar-power"},
         "config": {"system_name": _SYSTEM},
         "artifacts": {},
         "results": [],
     }
+    if detach_probe:
+        document["run"]["detach_probe"] = True
     seen = []
 
     async def run_checks(

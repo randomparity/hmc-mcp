@@ -529,6 +529,32 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   still records each operation it entered, failed, with the assertions it never
   reached absent: re-run rather than copy those observations.
 
+The optional `--detach-probe` mode (#1391) selects only a diagnostic comparison:
+one ownership-stamped ST41 scratch partition and one run-owned 1024 MiB volume in
+`LIVE_TEST_VDISK_VOLUME_GROUP_NAME`. It attempts at most three fresh attach/detach
+cycles total: Not Activated, then Open Firmware twice. It changes no existing
+test partition and runs no provision, decommission or dedicated-PCIe path.
+
+After the orchestrator grants the exact pushed head, run:
+
+```sh
+uv run --no-sync python scripts/live_test_preflight.py --group lpar-power --detach-probe
+uv run --no-sync python scripts/live_lpar_power.py --detach-probe
+uv run --no-sync python scripts/live_test_recovery.py --results test-results-lpar-power.json
+uv run --no-sync python scripts/live_test_evidence.py test-results-lpar-power.json
+```
+
+Private result provenance records `detach_probe: true`. Each cycle captures exact
+mapping and reciprocal adapter identities, both endpoint state/RMC, and the original
+response/HTTP/REST/HSCL evidence. A failed response remains failed even when the
+mapping disappeared. A fresh cycle requires exact absence, preserved inventory and
+current ownership. Malformed/duplicate inventory, unrelated adapter drift, failed
+attachment or uncertain cleanup stops without retries and retains assets for manual
+recovery; the existing ST41 recovery prefixes apply. Run recovery after interruption
+too. Raw result JSON stays private; publish only filtered, commit-stamped evidence.
+Three cycles may not reproduce an intermittent cause. Product detach success policy
+and any ADR 0136 amendment require a separate evidence-based operator decision.
+
 Live on V10R3 (2026-10-07, POWER9) seven of its eight observations passed:
 `lpar.create`, `lpar.power_on`, `lpar.capture_console`, `lpar.power_off`,
 `lpar.power`, `lpar.delete` and `lpar.decommission`. `provision.lpar` with the

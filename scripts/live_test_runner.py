@@ -70,6 +70,7 @@ import check_capability_inventory
 from fastmcp import Client
 from live_test.bare_cec import exercise_bare_cec
 from live_test.connectivity import inventory_connectivity
+from live_test.detach_probe import exercise_detach_probe
 from live_test.escape_hatch import exercise_cli_escape_hatch
 from live_test.inventory import capture_lpar_baseline
 from live_test.lpar import (
@@ -1249,6 +1250,7 @@ class RunnerArguments:
     subtask: int | None
     group: str | None
     results_path: str
+    detach_probe: bool = False
 
 
 def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
@@ -1276,7 +1278,14 @@ def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
         "--results-file",
         help="write results to this path instead of the selection-specific default",
     )
+    parser.add_argument(
+        "--detach-probe",
+        action="store_true",
+        help="run only the bounded ST41 mapping/RMC investigation",
+    )
     parsed = parser.parse_args(argv)
+    if parsed.detach_probe and parsed.group != "lpar-power":
+        parser.error("--detach-probe requires --group lpar-power")
     results_path = parsed.results_file
     if results_path is None:
         results_path = (
@@ -1284,7 +1293,9 @@ def _parse_arguments(argv: list[str] | None = None) -> RunnerArguments:
             if parsed.group is not None
             else "test-results-round2.json"
         )
-    return RunnerArguments(parsed.subtask, parsed.group, results_path)
+    return RunnerArguments(
+        parsed.subtask, parsed.group, results_path, parsed.detach_probe
+    )
 
 
 def _run_from_arguments(argv: list[str] | None = None) -> int:
@@ -1331,6 +1342,7 @@ def _run_from_arguments(argv: list[str] | None = None) -> int:
             subtask_filter=arguments.subtask,
             results_path=arguments.results_path,
             group=arguments.group,
+            detach_probe=arguments.detach_probe,
             config=config,
             environment=environment,
         )
@@ -1602,6 +1614,8 @@ def _run_provenance(
     repo_root: Path | None,
     schema_version: str,
     partial: bool,
+    *,
+    detach_probe: bool = False,
 ) -> dict[str, Any]:
     """What this run was, so a matrix taken from it can be dated.
 
@@ -1629,7 +1643,7 @@ def _run_provenance(
         if head.returncode == 0:
             commit = head.stdout.strip()
         tree_clean = _tree_is_clean(repo_root)
-    return {
+    provenance = {
         "tested_commit": commit,
         "tree_clean": tree_clean,
         "group": group,
@@ -1638,6 +1652,10 @@ def _run_provenance(
         "finished": datetime.now(UTC).isoformat(),
         "partial": partial,
     }
+
+    if detach_probe:
+        provenance["detach_probe"] = True
+    return provenance
 
 
 def _destination_is_ignored(path: Path, repo_root: Path | None = None) -> bool:
@@ -1792,7 +1810,11 @@ async def main(
     config: LiveTestConfig | None = None,
     hmc_config: HMCConfig | None = None,
     environment: tuple[str, str] | None = None,
+    detach_probe: bool = False,
 ) -> int:
+    if detach_probe and (group != "lpar-power" or subtask_filter is not None):
+        print("--detach-probe requires --group lpar-power without a subtask")
+        return 1
     if config is None:
         try:
             config = LiveTestConfig.from_env_file()
@@ -1848,7 +1870,12 @@ async def main(
             json.dumps(
                 {
                     "run": _run_provenance(
-                        tasks, group, repo_root, schema_version, partial
+                        tasks,
+                        group,
+                        repo_root,
+                        schema_version,
+                        partial,
+                        detach_probe=detach_probe,
                     ),
                     "config": asdict(state.config),
                     "hmc": _hmc_identity(hmc_config),
@@ -1866,7 +1893,10 @@ async def main(
             for n in tasks:
                 fn = SUBTASKS.get(n)
                 if fn:
-                    await fn(client, state)
+                    if detach_probe and n == 41:
+                        await exercise_detach_probe(client, state)
+                    else:
+                        await fn(client, state)
                 else:
                     state.record(n, "runner", "FAIL", f"Unknown sub-task {n}")
     except BaseException:
