@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from fastmcp import Client
+
+from hmcpctl.config import HMCConfig
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import live_test_runner as runner
@@ -131,10 +136,10 @@ class FakeVIOS:
             return "PASS", "".join(
                 f"{name}:{pvid}:{size}\n"
                 for name, (pvid, size) in sorted(self.free.items())
-            )
+            ) or ":"
         if cmd == "lsvg":
             return "PASS", "".join(f"{name}\n" for name in sorted(self.groups))
-        if cmd == f"lsvg -pv -field pvname -fmt : {GROUP}":
+        if cmd == f"lsvg -pv {GROUP} -field pvname -fmt :":
             return "PASS", PV + ("\nhdisk8" if self.extra_member else "") + "\n"
         if cmd == f"lsvg -lv {GROUP}":
             return (
@@ -383,3 +388,134 @@ async def test_unreadable_before_snapshot_fails_without_mutation(
     assert not state.observations
     assert state.artifacts.storage_volume_group_name is None
     assert any(row["status"] == "FAIL" for row in state.results)
+
+
+@pytest.mark.parametrize(
+    "text", [":", "::", ":\n", " :", ": ", ":\n:", ":\nrow", "row\n:"]
+)
+def test_empty_free_sentinel_is_exact_and_free_only(text):
+    assert vg.physical_volumes(text, free=True) == ({} if text == ":" else None)
+    assert vg.physical_volumes(text) is None
+    assert vg.physical_volumes(text, free=1) is None
+    assert vg.physical_volumes("", free=True) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "preempty",
+        "malformed-before",
+        "failed-before",
+        "malformed-after",
+        "membership-refused",
+        "schema-command",
+        "schema-create",
+    ],
+)
+async def test_registered_runner_native_wire_contract(monkeypatch, tmp_path, fault):
+    """Exercise real dispatch/schema/results/restore logic at the MCP boundary."""
+    fake = FakeVIOS()
+    config = replace(
+        runner.LiveTestConfig(),
+        system_name="sys-A",
+        scratch_pv_name=PV,
+        scratch_vg_name=GROUP,
+    )
+    hmc = HMCConfig.from_mapping({"host": "hmc.test", "user": "test"})
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(
+        json.dumps(
+            {
+                "config": asdict(config),
+                "hmc": runner._hmc_identity(hmc),
+                "artifacts": asdict(
+                    runner.LiveTestArtifacts(vios_uuid="vios-A", vios_partition_id=1)
+                ),
+                "results": [],
+            }
+        )
+    )
+    monkeypatch.chdir(tmp_path)
+
+    class NativeClient(Client):
+        async def list_tools(self):
+            tools = await super().list_tools()
+            for tool in tools:
+                if fault == "schema-command" and tool.name == "hmc_run_command":
+                    tool.input_schema["properties"].pop("cmd")
+                if fault == "schema-create" and tool.name == "hmc_create_volume_group":
+                    tool.input_schema["properties"].pop("name")
+            return tools
+
+        async def call_tool(self, name, arguments=None, **kwargs):
+            arguments = arguments or {}
+            command = shlex.split(arguments.get("cmd", ""))
+            inner = command[-1] if command else ""
+            created = any(tool == "hmc_create_volume_group" for tool, _ in fake.calls)
+            if inner.startswith("lsvg -pv"):
+                if inner != f"lsvg -pv {GROUP} -field pvname -fmt :":
+                    raise RuntimeError('Option "-pv" requires a parameter.')
+                if fault == "membership-refused":
+                    raise RuntimeError("membership read refused")
+            status, data = await fake.call(self, name, **arguments)
+            if inner.startswith("lspv -free"):
+                if fault == "preempty" and not created:
+                    data = ":"
+                if fault == "malformed-before" and not created:
+                    data = "::"
+                if fault == "failed-before" and not created:
+                    raise RuntimeError("physical inventory read refused")
+                if fault == "malformed-after" and created:
+                    data = ":\n"
+            if status != "PASS":
+                raise RuntimeError(str(data))
+            return SimpleNamespace(data=data)
+
+    states = []
+    state_type = runner.RunState
+
+    def new_state(**arguments):
+        state = state_type(**arguments)
+        states.append(state)
+        return state
+
+    monkeypatch.setattr(runner, "RunState", new_state)
+    monkeypatch.setattr(runner, "Client", NativeClient)
+    exit_code = await runner.main(
+        42, str(destination), group="storage", config=config, hmc_config=hmc
+    )
+    saved = json.loads(destination.read_text())
+    rows = saved["results"]
+    writes = mutations(fake)
+    pending = saved["artifacts"]["storage_volume_group_name"]
+    if fault is None:
+        assert exit_code == 0
+        assert len(writes) == 2 and writes[0][0] == "hmc_create_volume_group"
+        assert shlex.split(writes[1][1]["cmd"])[-1] == f"reducevg {GROUP} {PV}"
+        assert observation(states[0])["cleanup"] == "passed"
+        assert observation(states[0])["assertions"] == [
+            "create-accepted",
+            "rest-group-listed",
+            "vios-group-listed",
+            "selected-pv-only",
+        ]
+        assert pending is None and fake.inventory == BEFORE and fake.free == FREE
+    elif fault == "preempty":
+        assert exit_code == 0 and not writes and pending is None
+        assert any(row["status"] == "SKIP" for row in rows)
+        assert not any(
+            row["status"] == "FAIL" or row["result"] == "passed" for row in rows
+        )
+    else:
+        assert exit_code == 1 and any(row["status"] == "FAIL" for row in rows)
+        assert not any(row["result"] == "passed" for row in rows)
+        if fault in {"malformed-after", "membership-refused"}:
+            assert len(writes) == 1 and pending == GROUP
+        else:
+            assert not writes and pending is None
+        if fault == "schema-command":
+            assert not any(tool == "hmc_run_command" for tool, _ in fake.calls)
+        if fault == "schema-create":
+            assert not any(tool == "hmc_create_volume_group" for tool, _ in fake.calls)

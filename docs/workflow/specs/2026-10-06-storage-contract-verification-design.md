@@ -256,9 +256,9 @@ the new optional fields when reading pre-ST42 documents.
 
 1. Snapshot VIOS `lspv -field pvname pvid vgname -fmt :`,
    `lspv -free -field pvname pvid size -fmt :`, and `lsvg`, plus REST group names.
-   Parsers require complete unique rows. REST and VIOS groups must agree; the
-   named PV must occur in both PV listings with the same real PVID, positive
-   free size and VG `None`; the scratch name must be absent. Missing settings,
+   Parsers require unique complete rows; free-mode exact `":"` also means empty.
+   REST/VIOS groups must agree; the PV must occur in both PV listings with the same
+   real PVID, positive free size and VG `None`; scratch group absent. Missing settings,
    missing VIOS identity, previous outstanding artifact or valid refused preconditions
    SKIP before mutation. Failed reads remain FAIL; malformed authoritative snapshots
    record explicit validation FAIL without mutation. No disk selection, fallback or create retry.
@@ -269,7 +269,7 @@ the new optional fields when reading pre-ST42 documents.
    compares the snapshot; a failed create never becomes a passed observation.
 3. For a listed scratch group, cleanup requires the complete PV inventory to
    differ only by the selected PV joining this group with its original PVID,
-   `lsvg -pv -field pvname -fmt : <group>` to name exactly that PV, and
+   `lsvg -pv <group> -field pvname -fmt :` to name exactly that PV, and
    `lsvg -lv <group>` to name no logical volumes. Only then execute plain
    `reducevg <group> <pv>` through `viosvrcmd -m <system> --id <VIOS id> -c ...`.
    No `-rmlv`, force flag, shell chain or root mode. Unknown membership, extra
@@ -305,7 +305,7 @@ nonpromoting SKIPs, configuration isolation, registry, preflight and recovery.
 A controlled free-guard fault must fail its test before restoration. The live run
 requires a separate campaign slot naming the pushed exact head and fresh proof
 that the historically authorized PV still has the same PVID/size and is free.
-Preflight → named storage arm → recovery always; the one create/delete allowance
+Preflight → named storage arm → recovery always; the one create allowance
 does not imply a second attempt. Capture raw snapshots privately; use the stamped
 evidence generator and canonical maturity/projection/tool-document generators.
 

@@ -350,14 +350,15 @@ from inventory automatically or reuse an existing group.
 
 Before create, the arm compares REST group names with VIOS `lsvg` and captures
 `lspv -field pvname pvid vgname -fmt :`,
-`lspv -free -field pvname pvid size -fmt :`, and `lsvg`. The explicit disk must
-appear free, in no group, with the same identified PVID in both listings. The arm
+`lspv -free -field pvname pvid size -fmt :`, and `lsvg`. A successful free-listing
+literal `":"` also means an empty free inventory. The explicit disk must appear free, in no
+group, with the same identified PVID in both listings. The arm
 records its pending group before one `hmc_create_volume_group` call and reads
 back through REST and VIOS even after a refused or lost create response. It never
 retries create (ADR 0136).
 
 Cleanup uses `viosvrcmd -m <system> --id <VIOS id> -c 'reducevg <run-group> <explicit-PV>'`
-only after `lsvg -pv -field pvname -fmt : <run-group>` proves exact single-PV
+only after `lsvg -pv <run-group> -field pvname -fmt :` proves exact single-PV
 membership, `lsvg -lv <run-group>` proves no logical volumes, and the complete
 PV inventory differs only by that disk's new group with its original PVID.
 There is no force flag, root command, metadata repair or product delete-group API.

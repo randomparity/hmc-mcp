@@ -43,6 +43,8 @@ def physical_volumes(
     """Parse explicit pvname:pvid:vgname or pvname:pvid:size fields; fail closed."""
     if not isinstance(listing, str):
         return None
+    if free is True and listing == ":":
+        return {}
     rows = {}
     for line in listing.splitlines():
         parts = line.strip().split(":")
@@ -170,7 +172,7 @@ class _Scenario:
     ) -> tuple[bool, bool]:
         members = volume_group_names(
             await self.read(
-                f"lsvg -pv -field pvname -fmt : {self.group}", "cleanup membership"
+                f"lsvg -pv {self.group} -field pvname -fmt :", "cleanup membership"
             )
         )
         volumes = volume_names(
