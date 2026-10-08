@@ -30,12 +30,14 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import asyncssh
 import httpx
 
 from hmcpctl.client.core import HMCClient
+
+_Callable = TypeVar("_Callable", bound=Callable[..., Any])
 
 STREAM_NOT_RECORDED = "<stream: not recorded>"
 LOGON_REDACTED = "<redacted: logon>"
@@ -221,7 +223,7 @@ class Capture:
             record["stderr"] = self._answer(outcome.stderr)
         return record
 
-    def wrap_request(self, original: Callable[..., Any]) -> Callable[..., Any]:
+    def wrap_request(self, original: _Callable) -> _Callable:
         @functools.wraps(original)
         async def spy(client: Any, method: str, path: str, **kwargs: Any) -> Any:
             try:
@@ -232,9 +234,9 @@ class Capture:
             self._emit(self._rest_record, method, path, kwargs, response)
             return response
 
-        return spy
+        return cast(_Callable, spy)
 
-    def wrap_run(self, original: Callable[..., Any]) -> Callable[..., Any]:
+    def wrap_run(self, original: _Callable) -> _Callable:
         @functools.wraps(original)
         async def spy(conn: Any, *args: Any, **kwargs: Any) -> Any:
             command = args[0] if args else kwargs.get("command")
@@ -246,7 +248,7 @@ class Capture:
             self._emit(self._ssh_record, command, result)
             return result
 
-        return spy
+        return cast(_Callable, spy)
 
 
 @contextlib.contextmanager

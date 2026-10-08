@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastmcp import Client
 
@@ -268,7 +268,9 @@ def _baseline_provision_resources(state: RunState) -> dict[str, int]:
         ),
     )
     return {
-        name: int(resource.get(upper) or resource.get(lower) or default)
+        name: int(
+            cast(str | int, resource.get(upper) or resource.get(lower) or default)
+        )
         for name, upper, lower, default in values
     }
 
