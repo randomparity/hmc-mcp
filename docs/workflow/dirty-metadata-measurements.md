@@ -16,9 +16,13 @@ Command, run twice serially for each variant:
 ```
 
 The before test is from `836c533203b0300a1e49d8e1e4513ee8547b8769`.
-The after test is the implementation following design commit
-`ff38c18f7cadb7ae5edae173d43f7e34eb237f82` in this change. Only an explanatory
-comment was subsequently added to that executable test. Each invocation creates
+The measured after test has Git blob
+`04390bc6389bd8f89483e7642277b20718ef748c`. The test at implementation commit
+`92b5c0e18fdc0f785f5c51624d507538fc77d820` has blob
+`89fbf746cfac819650102662adda0c27f04b827b`; removing only the two explanatory
+comment lines immediately before `hooks = subprocess.run` reproduces the
+measured blob. This relation was verified with `git hash-object --stdin`; no
+executable statement changed between measurement and commit. Each invocation creates
 a fresh temporary project and environment; the shared uv dependency cache was
 warm for both variants. Samples ran without another campaign verification job.
 Host: Fedora 44, Linux 7.2.7, x86_64, 48 available CPUs, 251 GiB total RAM;
