@@ -751,3 +751,14 @@ def test_the_provision_vlan_is_not_probed_without_round2_hardware(
 
     assert preflight.main(argv) == 0
     assert probed == []
+
+
+def test_lpar_config_discloses_configured_dedicated_slot():
+    config = preflight.runner.LiveTestConfig(
+        system_name="sys-A",
+        dedicated_pcie_system_name="sys-A",
+        dedicated_pcie_lpar_prefix="scratch-",
+        dedicated_pcie_drc_index="21010020",
+    )
+    verdict = preflight._lpar_config_verdict(config)
+    assert any("21010020" in target for target in verdict.mutates)

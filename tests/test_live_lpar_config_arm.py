@@ -5,11 +5,17 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
+from hmcpctl.config import HMCConfig
+from hmcpctl.operations.lpar.assignments import LparPcieWorkflowResult
+from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
@@ -470,3 +476,297 @@ def test_scratch_partitions_selects_only_the_reserved_prefix():
         "hmcpctl-live-lpar-0a1b2c3d",
         "hmcpctl-live-lpar-1-rn",
     ]
+
+
+@dataclass
+class DedicatedHMC(FakeHMC):
+    mode: str = "ok"
+    slots: str = "none"
+    other_slots: str = "21010030/none/0"
+    profile_reads: int = 0
+    inventory_reads: int = 0
+
+    def _hmc_run_command(self, kwargs):
+        cmd = kwargs["cmd"]
+        if cmd == "lshmc -V":
+            if self.mode == "release-failure":
+                return "FAIL", _failure("release read refused")
+            if self.mode == "release-nontext":
+                return "PASS", {"unexpected": "shape"}
+            if self.mode == "release-malformed":
+                return "PASS", "Version: 10 Release: 3"
+            if self.mode == "release-duplicate":
+                return "PASS", "Version: 10 Version: 10 Release: 3 Service Pack: 1060"
+            return "PASS", "Version: 10 Release: 3 Service Pack: 1060"
+        if "-F type_model" in cmd:
+            if self.mode == "model-failure":
+                return "FAIL", _failure("model read refused")
+            return "PASS", {
+                "model-nontext": None,
+                "model-malformed": "garbage",
+                "unsupported": "9009-22A",
+            }.get(self.mode, "8375-42A")
+        if "-r prof" in cmd:
+            self.profile_reads += 1
+            if self.mode == "profile-failure":
+                return "FAIL", _failure("profile read refused")
+            if self.mode == "profile-nontext":
+                return "PASS", []
+            if self.mode == "profile-malformed":
+                return "PASS", "not a profile table"
+            if self.mode == "profile-held":
+                self.other_slots = "21010020/none/0"
+            rows = [
+                "lpar_name,name,io_slots",
+                f'{OTHER},default_profile,"{self.other_slots}"',
+            ]
+            if self.exists():
+                rows += [f'{self.name},default_profile,"{self.slots}"']
+            return "PASS", "\n".join(rows)
+        return super()._hmc_run_command(kwargs)
+
+    def _hmc_list_dedicated_pcie_slots(self, kwargs):
+        self.inventory_reads += 1
+        if self.mode == "fresh-inventory-malformed" and self.inventory_reads > 1:
+            return "PASS", {
+                "items": [{"drc_index": "21010020", "owner_lpar": None}, None]
+            }
+        if self.mode == "inventory-failure":
+            return "FAIL", _failure("inventory read refused")
+        if self.mode == "inventory-malformed":
+            return "PASS", {"items": None}
+        owner = OTHER if self.mode == "owned" else None
+        return "PASS", {"items": [{"drc_index": "21010020", "owner_lpar": owner}]}
+
+    def _hmc_modify_lpar(self, kwargs):
+        if "assignments" not in kwargs:
+            return super()._hmc_modify_lpar(kwargs)
+        self.slots = "21010020/none/0"
+        if self.mode == "wrong-triple":
+            self.slots = "21010020/none/1"
+        if self.mode == "other-drift":
+            self.other_slots = "21010040/none/0"
+        if self.mode == "lost-response":
+            return "FAIL", _failure("assignment response lost")
+        if self.mode == "foreign-after-write":
+            self.foreign_token = True
+        if self.mode == "typed":
+            return "PASS", LparPcieWorkflowResult(
+                False, True, None, None, (WorkflowStep("dedicated[0]", "ok"),), ()
+            )
+        data = {
+            "workflow_completed": self.mode != "partial",
+            "steps": [{"step": "dedicated[0]", "status": "ok"}],
+            "lpar": None,
+        }
+        if self.mode == "wrong-step":
+            data["steps"][0]["status"] = "error"
+        if self.mode == "warning":
+            data["warnings"] = ["final LPAR read failed"]
+        return "PASS", data
+
+    def _hmc_unassign_dedicated_pcie_slot(self, kwargs):
+        if self.mode == "unassign-refused":
+            return "FAIL", _failure("unassign refused")
+        self.slots = "none"
+        return "PASS", {"changed": True}
+
+
+async def _run_dedicated(monkeypatch, hmc, *, system=SYSTEM, drc="21010020"):
+    async def scripted(_state, _client, tool, **kwargs):
+        return hmc.answer(tool, kwargs)
+
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState(
+        config=runner.LiveTestConfig(
+            system_name=SYSTEM,
+            dedicated_pcie_system_name=system,
+            dedicated_pcie_lpar_prefix="hmcpctl-dedicated-",
+            dedicated_pcie_drc_index=drc,
+        ),
+        group="lpar-config",
+    )
+    await lpar_config.exercise_lpar_config(object(), state)
+    return state
+
+
+def _dedicated_observation(state):
+    return next(
+        entry["observation"]
+        for entry in state.observations
+        if entry["observation"]["id"] == "st39-hmc-modify-lpar-dedicated"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["ok", "warning", "typed"])
+async def test_dedicated_assignment_uses_modify_and_scratch_uuid(monkeypatch, mode):
+    hmc = DedicatedHMC(mode=mode)
+    state = await _run_dedicated(monkeypatch, hmc)
+    observation = _dedicated_observation(state)
+    assert observation["result"] == "passed"
+    assignments = [
+        kw
+        for tool, kw in hmc.calls
+        if tool == "hmc_modify_lpar" and "assignments" in kw
+    ]
+    assert assignments == [
+        {
+            "lpar_name_or_uuid": SCRATCH_UUID,
+            "system_name_or_uuid": SYSTEM,
+            "assignments": {
+                "dedicated": [
+                    {"profile_name": "default_profile", "drc_index": "21010020"}
+                ]
+            },
+        }
+    ]
+    tools = [tool for tool, _ in hmc.calls]
+    assert tools.count("hmc_unassign_dedicated_pcie_slot") == 1
+    assert tools.index("hmc_unassign_dedicated_pcie_slot") < tools.index(
+        "hmc_power_on_lpar"
+    )
+    assert hmc.slots == "none" and hmc.deleted
+    assert hmc.other_slots == "21010030/none/0"
+    assert not any("sriov" in tool or "vnic" in tool for tool in tools)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "release-failure",
+        "model-failure",
+        "release-nontext",
+        "model-nontext",
+        "release-malformed",
+        "release-duplicate",
+        "model-malformed",
+        "profile-failure",
+        "profile-nontext",
+        "profile-malformed",
+        "inventory-failure",
+        "inventory-malformed",
+    ],
+)
+async def test_dedicated_precreate_read_failures_stay_failed(monkeypatch, mode):
+    hmc = DedicatedHMC(mode=mode)
+    state = await _run_dedicated(monkeypatch, hmc)
+    assert any(row["status"] == "FAIL" for row in state.results)
+    if mode.endswith("failure"):
+        assert any("read refused" in str(row["data"]) for row in state.results)
+    assert not any("assignments" in kw for _, kw in hmc.calls)
+    assert not any(
+        e["observation"]["id"].endswith("-dedicated") for e in state.observations
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["owned", "unsupported", "profile-held"])
+async def test_dedicated_unavailable_is_skip_without_fail(monkeypatch, mode):
+    state = await _run_dedicated(monkeypatch, DedicatedHMC(mode=mode))
+    assert not any(row["status"] == "FAIL" for row in state.results)
+    assert any(
+        "dedicated" in row["tool"] and row["status"] == "SKIP" for row in state.results
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["partial", "lost-response", "wrong-step"])
+async def test_partial_assignment_is_failed_and_restores_once(monkeypatch, mode):
+    hmc = DedicatedHMC(mode=mode)
+    state = await _run_dedicated(monkeypatch, hmc)
+    assert _dedicated_observation(state)["result"] == "failed"
+    assert hmc.slots == "none" and hmc.deleted
+    assert sum(tool == "hmc_unassign_dedicated_pcie_slot" for tool, _ in hmc.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode", ["wrong-triple", "other-drift", "foreign-after-write", "unassign-refused"]
+)
+async def test_remaining_slot_never_activates_or_deletes(monkeypatch, mode):
+    hmc = DedicatedHMC(mode=mode)
+    state = await _run_dedicated(monkeypatch, hmc)
+    assert _dedicated_observation(state)["result"] == "failed"
+    assert hmc.exists()
+    assert not any(
+        tool in {"hmc_power_on_lpar", "hmc_delete_lpar"} for tool, _ in hmc.calls
+    )
+    assert sum(tool == "hmc_unassign_dedicated_pcie_slot" for tool, _ in hmc.calls) <= 1
+    assert any("MANUAL RECOVERY REQUIRED" in str(row) for row in state.results)
+
+
+@pytest.mark.asyncio
+async def test_dedicated_auto_select_and_mismatched_system(monkeypatch):
+    hmc = DedicatedHMC()
+    state = await _run_dedicated(monkeypatch, hmc, drc="")
+    assert _dedicated_observation(state)["result"] == "passed"
+    hmc = DedicatedHMC()
+    state = await _run_dedicated(monkeypatch, hmc, system="sys-B")
+    assert not any("assignments" in kw for _, kw in hmc.calls)
+    assert not any(row["status"] == "FAIL" for row in state.results)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "release-failure",
+        "model-nontext",
+        "model-malformed",
+        "profile-failure",
+        "inventory-failure",
+    ],
+)
+async def test_actual_runner_returns_failed_for_precreate_read(
+    monkeypatch, tmp_path, mode
+):
+    hmc = DedicatedHMC(mode=mode)
+
+    class Client:
+        async def call_tool(self, tool, kwargs):
+            status, data = hmc.answer(tool, kwargs)
+            if status == "FAIL":
+                raise RuntimeError(data.message)
+            return SimpleNamespace(data=data)
+
+    @asynccontextmanager
+    async def served():
+        yield Client()
+
+    async def schemas(_client):
+        return {}
+
+    monkeypatch.setattr(runner, "served_client", served)
+    monkeypatch.setattr(runner, "served_schemas", schemas)
+    monkeypatch.setattr(runner, "_repository_root", lambda: None)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        system_name=SYSTEM,
+        dedicated_pcie_system_name=SYSTEM,
+        dedicated_pcie_lpar_prefix="scratch-",
+        dedicated_pcie_drc_index="21010020",
+    )
+    result_path = tmp_path / "test-results-lpar-config.json"
+    code = await runner.main(
+        group="lpar-config",
+        config=config,
+        hmc_config=HMCConfig.from_mapping({}),
+        results_path=str(result_path),
+    )
+    assert code == 1
+    rows = json.loads(result_path.read_text())["results"]
+    assert any(row["status"] == "FAIL" and "dedicated" in row["tool"] for row in rows)
+    assert any(
+        row["tool"] == "hmc_modify_lpar" and row["status"] == "PASS" for row in rows
+    )
+
+
+@pytest.mark.asyncio
+async def test_fresh_inventory_malformed_row_fails_before_assignment(monkeypatch):
+    hmc = DedicatedHMC(mode="fresh-inventory-malformed")
+    state = await _run_dedicated(monkeypatch, hmc)
+    assert any(row["status"] == "FAIL" for row in state.results)
+    assert not any("assignments" in kw for _, kw in hmc.calls)
+    assert not any(tool == "hmc_power_on_lpar" for tool, _ in hmc.calls)

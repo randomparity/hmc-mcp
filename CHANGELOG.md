@@ -10,6 +10,9 @@ categories. Domain-module APIs remain pre-release and are not facade movement.
 
 ### Changed
 
+- Bind `lpar.modify` delegated assignment rows and extend ST39 with an optional
+  scratch-only dedicated-slot proof, guarded restoration and explicit read failures.
+
 - The live harness gained an opt-in `lpar-power` arm (`scripts/live_lpar_power.py`, subtask
   41). It creates `hmcpctl-live-pwr-<8 hex>` partitions and verifies `hmc_create_lpar`'s
   refusals, `hmc_power_on_lpar` (profile and current-configuration activation, and a

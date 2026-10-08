@@ -1274,3 +1274,18 @@ def test_write_runtime_projection_option_generates_requested_path(
     ) == inventory.render_runtime_projection(
         [], (), inventory.ROOT, inventory.datetime.now(UTC)
     )
+
+
+def test_lpar_modify_binds_assignment_delegate_rows():
+    catalog = json.loads((ROOT / "docs/capabilities/operations.json").read_text())
+    operation = next(
+        row for row in catalog["operations"] if row["operation"] == "lpar.modify"
+    )
+    assert set(operation["row_ids"]) == {
+        "cli:commands/chhwres",
+        "cli:commands/chsyscfg",
+        "cli:commands/lshmc",
+        "cli:commands/lshwres",
+        "cli:commands/lssyscfg",
+        "rest:managed-system/logical-partition",
+    }
