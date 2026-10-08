@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import importlib.util
+import inspect
 import json
 import shlex
 import sys
@@ -602,3 +603,75 @@ def test_every_kept_backup_reads_as_off_baseline_in_recovery(
     output = capsys.readouterr().out
     assert "VIOS off baseline, backup kept" in output
     assert "clear with:  rmviosbk" not in output
+
+
+def test_exercise_stays_within_function_size_guidance():
+    source, _ = inspect.getsourcelines(vios_backup.exercise_vios_backup)
+
+    assert len(source) <= 100
+
+
+@pytest.mark.asyncio
+async def test_backup_removal_follows_all_final_baseline_checks(monkeypatch):
+    vios = FakeVios()
+    events = []
+    snapshot = vios_backup._Arm.snapshot
+    compare = vios_backup._Arm.compare
+    vadapter = vios_backup._Arm.vadapter_shows
+    run = vios_backup._Arm.run
+
+    async def read_snapshot(arm, target, label):
+        result = await snapshot(arm, target, label)
+        if label == "final":
+            events.append("final snapshot")
+        return result
+
+    def compare_snapshot(arm, baseline, after, label="baseline compare"):
+        result = compare(arm, baseline, after, label)
+        if label == "final compare":
+            events.append("final compare")
+        return result
+
+    async def read_vadapter(arm, target):
+        result = await vadapter(arm, target)
+        if events:
+            events.append("final vadapter")
+        return result
+
+    async def run_command(arm, label, cmd):
+        if label == "rmviosbk":
+            events.append("backup removal")
+        return await run(arm, label, cmd)
+
+    monkeypatch.setattr(vios_backup._Arm, "snapshot", read_snapshot)
+    monkeypatch.setattr(vios_backup._Arm, "compare", compare_snapshot)
+    monkeypatch.setattr(vios_backup._Arm, "vadapter_shows", read_vadapter)
+    monkeypatch.setattr(vios_backup._Arm, "run", run_command)
+
+    await _run(monkeypatch, vios)
+
+    assert events == [
+        "final snapshot",
+        "final compare",
+        "final vadapter",
+        "backup removal",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_exception_in_the_final_read_propagates_without_removal(monkeypatch):
+    vios = FakeVios()
+    snapshot = vios_backup._Arm.snapshot
+
+    async def failing_final_read(arm, target, label):
+        if label == "final":
+            raise RuntimeError("final read interrupted")
+        return await snapshot(arm, target, label)
+
+    monkeypatch.setattr(vios_backup._Arm, "snapshot", failing_final_read)
+
+    with pytest.raises(RuntimeError, match="final read interrupted"):
+        await _run(monkeypatch, vios)
+
+    assert vios.backups
+    assert "rmviosbk" not in _mutations(vios)
