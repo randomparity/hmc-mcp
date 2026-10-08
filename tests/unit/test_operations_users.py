@@ -94,6 +94,38 @@ async def test_modify_user_sends_the_profiles_read_only_user_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_modify_user_without_a_password_sends_the_empty_password_element():
+    """V10R3 refuses a modify body without UserProfilePassword (REST0344, #1409)."""
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
+
+    await modify_user(hmc, "console-1", "profile-1", ModifyUserPatch(description="d"))
+
+    document = hmc.modify_hmc_user.await_args.args[2]
+    assert '<UserProfilePassword ksv="V1_17_0" kb="CUD" kxe="false"/>' in document
+
+
+@pytest.mark.asyncio
+async def test_modify_user_sends_a_supplied_password() -> None:
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
+
+    await modify_user(
+        hmc,
+        "console-1",
+        "profile-1",
+        ModifyUserPatch(password="n3w"),  # pragma: allowlist secret -- synthetic
+    )
+
+    document = hmc.modify_hmc_user.await_args.args[2]
+    assert (
+        '<UserProfilePassword ksv="V1_17_0" kb="CUD" kxe="false">n3w'
+        "</UserProfilePassword>" in document
+    )
+    assert document.count("UserProfilePassword") == 2
+
+
+@pytest.mark.asyncio
 async def test_modify_user_sends_a_supplied_authentication_type_over_the_profiles():
     hmc = AsyncMock()
     hmc.get_hmc_user.return_value = _PROFILE

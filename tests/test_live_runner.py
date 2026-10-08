@@ -945,6 +945,142 @@ async def test_st38_toggles_every_flag_when_aggregation_is_off() -> None:
     ]
 
 
+class _CoupledPcmState(runner.RunState):
+    """Apply writes to PCM state, holding monitoring while aggregation was on."""
+
+    def __init__(self, failure: tuple[str, int] | None = None):
+        super().__init__()
+        self.group = "pcm"
+        self.preferences = _flags(
+            AggregationEnabled=False,
+            LongTermMonitorEnabled=False,
+            EnergyMonitorEnabled=False,
+        )
+        self.baseline = dict(self.preferences)
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.counts = {"hmc_get_pcm_preferences": 0, "hmc_set_pcm_preferences": 0}
+        self.failure = failure
+
+    async def call(self, _client, tool, *, expected=(), reuse_gaps=True, **kwargs):
+        self.calls.append((tool, kwargs))
+        self.counts[tool] += 1
+        if self.failure == (tool, self.counts[tool]):
+            return "FAIL", _failure("HMCError: simulated refusal")
+        if tool == "hmc_get_pcm_preferences":
+            return "PASS", dict(self.preferences)
+        aggregation_was_on = self.preferences["AggregationEnabled"]
+        for name, keyword in metrics.PCM_FLAGS:
+            if kwargs.get(keyword) is not None:
+                self.preferences[name] = kwargs[keyword]
+        if aggregation_was_on or self.preferences["AggregationEnabled"]:
+            self.preferences["LongTermMonitorEnabled"] = True
+            self.preferences["EnergyMonitorEnabled"] = True
+        return "PASS", {}
+
+
+@pytest.mark.asyncio
+async def test_st38_restores_held_flags_after_disabling_aggregation() -> None:
+    state = _CoupledPcmState()
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert state.preferences == state.baseline
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("passed", "passed")
+    sets = [kwargs for tool, kwargs in state.calls if tool == "hmc_set_pcm_preferences"]
+    assert len(sets) == 12  # five toggles/restores, plus one ordered fallback
+    assert sets[4]["aggregation"] is False
+    assert all(
+        sets[4][kw] is None for _, kw in metrics.PCM_FLAGS if kw != "aggregation"
+    )
+    assert {kw: sets[5][kw] for _, kw in metrics.PCM_FLAGS} == {
+        kw: state.baseline[name] for name, kw in metrics.PCM_FLAGS
+    }
+    held_read = next(
+        row for row in state.results if row["tool"].endswith("(aggregation restored)")
+    )
+    assert held_read["data"]["LongTermMonitorEnabled"] is True
+    assert held_read["data"]["EnergyMonitorEnabled"] is True
+    assert state.results[0]["data"] == state.baseline
+    assert len(state.observations) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "ordinal", "write_count"),
+    [
+        ("hmc_set_pcm_preferences", 4, 4),
+        ("hmc_get_pcm_preferences", 5, 4),
+        ("hmc_set_pcm_preferences", 5, 5),
+        ("hmc_get_pcm_preferences", 6, 5),
+        ("hmc_set_pcm_preferences", 6, 6),
+        ("hmc_get_pcm_preferences", 7, 6),
+    ],
+)
+async def test_st38_restore_failures_stop_the_ordered_fallback(
+    tool, ordinal, write_count
+) -> None:
+    state = _CoupledPcmState((tool, ordinal))
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert state.counts["hmc_set_pcm_preferences"] == write_count
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("failed", "failed")
+    assert state.results[-1]["tool"].endswith("(MANUAL RECOVERY REQUIRED)")
+    assert any(row["status"] == "FAIL" for row in state.results[:-1])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["AggregationEnabled", "ShortTermMonitorEnabled"])
+async def test_st38_does_not_retry_a_restore_with_unrelated_mismatch(field) -> None:
+    baseline = _flags(AggregationEnabled=False)
+    changed = {**baseline, field: not baseline[field]}
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", baseline),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", baseline),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", changed),
+            ("hmc_get_pcm_preferences", "PASS", changed),
+        ]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert sum(tool == "hmc_set_pcm_preferences" for tool, _ in state.calls) == 2
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_st38_ordered_restore_is_bounded_when_monitoring_stays_held() -> None:
+    baseline = _flags(AggregationEnabled=False, LongTermMonitorEnabled=False)
+    held = {**baseline, "LongTermMonitorEnabled": True}
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", baseline),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_get_pcm_preferences", "PASS", held),
+        ]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert sum(tool == "hmc_set_pcm_preferences" for tool, _ in state.calls) == 4
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+    assert state.results[-1]["tool"].endswith("(MANUAL RECOVERY REQUIRED)")
+
+
 @pytest.mark.asyncio
 async def test_st38_a_refused_held_toggle_fails_its_assertion() -> None:
     """Held means accepted and unchanged; a refused request is not evidence."""
