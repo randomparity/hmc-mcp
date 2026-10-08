@@ -487,6 +487,17 @@ partition: every mutating call names that partition's UUID.
 - **The partition.** `hmcpctl-live-lpar-<8 hex>`, ownership-stamped with caller
   token `lparcfg-<8 hex>` (the same hex): 1024/2048/4096 MiB, shared uncapped,
   0.1/0.5/1.0 processing units, 1/1/2 virtual processors.
+- **Dedicated assignment (optional).** Existing `LIVE_TEST_DEDICATED_PCIE_*`
+  settings must select this same system. Before creation, the arm reads the exact
+  admitted release/model, all profile `io_slots` and dedicated inventory. It
+  requires an unowned slot listed by no profile. An explicit DRC selects only
+  that slot; otherwise it selects the first eligible slot. On the run's empty
+  scratch profile it calls `hmc_modify_lpar` with `assignments.dedicated`, judges
+  the completed delegate step and exact profile readback, then restores the
+  profile before any SMS activation. It compares every other profile and the
+  final all-profile/slot baseline. Failed or malformed reads remain FAIL;
+  missing settings, no eligible slot or a valid unsupported environment are SKIP.
+  SR-IOV/vNIC writes remain named authorization/hardware/RMC prerequisite gaps.
 - **While Not Activated.** One `hmc_modify_lpar` (desired and maximum memory and
   desired units), then small, large, no-op and empty `hmc_dlpar_mem` and
   `hmc_dlpar_proc` requests, and one memory request above the maximum whose
@@ -500,14 +511,17 @@ partition: every mutating call names that partition's UUID.
   each as a SKIP naming that gap; any other failure there stays a FAIL. The
   activation used the partition profile, which discarded the configuration changes
   made while it was Not Activated (#1170). DLPAR on a running operating system is
-  therefore unverified, and `hmc_modify_lpar`'s PCIe-assignment path is not exercised:
-  its observation covers the resource path only.
+  therefore unverified. The resource observation covers only the resource path;
+  the optional dedicated case emits its own observation after cleanup.
 - **After.** It powers the partition off, deletes it by UUID only while its
   description still carries the run's caller token, and compares the system
   reads with the ones taken before (one re-read after 30 s on a difference).
   Observations are recorded with `cleanup` `passed` only when the delete is
   confirmed and the compare holds.
 
+An uncertain dedicated restoration prevents subsequent cases, activation and
+normal deletion. Recovery remains read-only: inspect the saved baseline, scratch
+profile `io_slots` and dedicated ownership before removing the retained partition.
 A teardown that cannot confirm the delete records a FAIL row marked
 `MANUAL RECOVERY REQUIRED`. Check the partition's description for the caller
 token, then run

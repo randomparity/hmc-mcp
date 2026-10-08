@@ -770,3 +770,14 @@ def test_st42_preflight_discloses_exact_optin_or_skip(pv, group):
         assert "reducevg" in text
     else:
         assert "ST42 SKIPs" in text
+
+
+def test_lpar_config_discloses_configured_dedicated_slot():
+    config = preflight.runner.LiveTestConfig(
+        system_name="sys-A",
+        dedicated_pcie_system_name="sys-A",
+        dedicated_pcie_lpar_prefix="scratch-",
+        dedicated_pcie_drc_index="21010020",
+    )
+    verdict = preflight._lpar_config_verdict(config)
+    assert any("21010020" in target for target in verdict.mutates)

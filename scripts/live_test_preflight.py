@@ -260,12 +260,21 @@ def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
 
 def _lpar_config_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name the one partition the lpar-config arm (#1345) creates and deletes again."""
+    arm = pcie._dedicated_config(config)
+    dedicated = (
+        f"scratch profile {arm.profile_name}: dedicated slot {arm.drc_index or pcie.AUTO_SELECTED_SLOT}; "
+        "requires unowned/no-profile baseline; assign through hmc_modify_lpar and restore "
+        "before SMS, then compare all profiles and slot ownership"
+        if arm is not None and arm.system_name == config.system_name
+        else "dedicated assignment unavailable: requires dedicated settings for this same system"
+    )
     return ArmVerdict(
         "lpar-config",
         True,
         "configuration validated",
         (
             f"managed system {config.system_name}",
+            dedicated,
             (
                 f"one partition {lpar_config.NAME_PREFIX}<8 hex> (created; memory, "
                 "processors, name and pending boot order changed; activated to SMS "
