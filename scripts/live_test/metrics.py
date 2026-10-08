@@ -524,6 +524,48 @@ async def _set_preferences(
     return st == "PASS"
 
 
+def _boolean_preferences(values: dict[str, Any]) -> bool:
+    return all(isinstance(values[name], bool) for name, _ in PCM_FLAGS)
+
+
+def _needs_ordered_restore(snapshot: dict[str, Any], current: dict[str, Any]) -> bool:
+    if not _boolean_preferences(current):
+        return False
+    return snapshot["AggregationEnabled"] is False and any(
+        snapshot[name] is False and current[name] is True
+        for name in ("LongTermMonitorEnabled", "EnergyMonitorEnabled")
+    )
+
+
+async def _restore_preferences(
+    client: Client, state: RunState, keyword: str, snapshot: dict[str, Any]
+) -> bool:
+    """Try the five-flag restore once, then release aggregation's held flags once."""
+    restore = {kw: bool(snapshot[name]) for name, kw in PCM_FLAGS}
+    accepted = await _set_preferences(client, state, f"{keyword} restore", restore)
+    current = await _read_preferences(client, state, f"{keyword} restored")
+    if not accepted:
+        return False
+    if current == snapshot:
+        return True
+    if not _needs_ordered_restore(snapshot, current):
+        return False
+    if not await _set_preferences(
+        client, state, f"{keyword} restore aggregation off", {"aggregation": False}
+    ):
+        return False
+    released = await _read_preferences(client, state, f"{keyword} aggregation off")
+    if not _boolean_preferences(released):
+        return False
+    if released["AggregationEnabled"] is not False:
+        return False
+    accepted = await _set_preferences(
+        client, state, f"{keyword} restore retry", restore
+    )
+    current = await _read_preferences(client, state, f"{keyword} restored retry")
+    return accepted and current == snapshot
+
+
 async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
     """Toggle each managed-system PCM flag and restore all five to the first read.
 
@@ -540,16 +582,16 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
         state.skip(38, "hmc_set_pcm_preferences", "runs only in the pcm arm")
         return
     snapshot = await _read_preferences(client, state, "snapshot")
-    if not all(isinstance(snapshot[name], bool) for name, _ in PCM_FLAGS):
+    if not _boolean_preferences(snapshot):
         state.skip(
             38,
             "hmc_set_pcm_preferences",
             "the snapshot read did not return five boolean flags; nothing changed",
         )
         return
-    restore = {keyword: bool(snapshot[name]) for name, keyword in PCM_FLAGS}
     held = _held_by_aggregation(snapshot, snapshot["EnergyMonitoringCapable"] is True)
     as_expected = {name: False for name, _ in PCM_FLAGS}
+    restores_passed = True
     for name, keyword in PCM_FLAGS:
         flipped = not snapshot[name]
         accepted = await _set_preferences(
@@ -559,11 +601,11 @@ async def exercise_pcm_preferences(client: Client, state: RunState) -> None:
         # Held means accepted and read back unchanged: a refused write proves nothing.
         expected = snapshot[name] if name in held else flipped
         as_expected[name] = accepted and after[name] is expected
-        await _set_preferences(client, state, f"{keyword} restore", restore)
-        if await _read_preferences(client, state, f"{keyword} restored") != snapshot:
-            break  # widen nothing further: the final read reports the deviation
+        restores_passed = await _restore_preferences(client, state, keyword, snapshot)
+        if not restores_passed:
+            break
     final = await _read_preferences(client, state, "final")
-    restored = final == snapshot
+    restored = restores_passed and final == snapshot
     state.record_verified(
         38,
         "hmc_set_pcm_preferences",
