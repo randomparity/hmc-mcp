@@ -3612,18 +3612,39 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st39-lpar-config",
-          "observed_at": "2026-10-06T22:17:41Z",
+          "observed_at": "2026-10-08T18:52:55Z",
           "cleanup": "passed",
           "assertions": [
             "memory-read-back",
             "processing-units-read-back",
             "other-values-unchanged"
           ],
-          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+          "closure_fingerprint": "58d6d6e91cec786bab4682eaec32eb1d545db9a0099274f091a8d2c6a0f9097c"
+        },
+        {
+          "id": "st39-hmc-modify-lpar-dedicated",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st39-lpar-config",
+          "observed_at": "2026-10-08T18:52:55Z",
+          "cleanup": "passed",
+          "assertions": [
+            "assignment-workflow-completed",
+            "dedicated-profile-read-back",
+            "other-profile-slots-unchanged",
+            "dedicated-profile-restored",
+            "dedicated-slot-unowned",
+            "dedicated-baseline-restored"
+          ],
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "58d6d6e91cec786bab4682eaec32eb1d545db9a0099274f091a8d2c6a0f9097c"
         }
       ]
     },
@@ -3645,7 +3666,7 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st39-lpar-config",
-          "observed_at": "2026-10-06T22:17:41Z",
+          "observed_at": "2026-10-08T18:52:55Z",
           "cleanup": "passed",
           "assertions": [
             "renamed-same-uuid",
@@ -3653,11 +3674,11 @@
             "ownership-stamp-kept",
             "original-name-restored"
           ],
-          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+          "closure_fingerprint": "58d6d6e91cec786bab4682eaec32eb1d545db9a0099274f091a8d2c6a0f9097c"
         }
       ]
     },
@@ -3679,7 +3700,7 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st39-lpar-config",
-          "observed_at": "2026-10-06T22:17:41Z",
+          "observed_at": "2026-10-08T18:52:55Z",
           "cleanup": "passed",
           "assertions": [
             "small-change-read-back",
@@ -3687,11 +3708,11 @@
             "no-op-accepted-unchanged",
             "empty-request-refused"
           ],
-          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+          "closure_fingerprint": "58d6d6e91cec786bab4682eaec32eb1d545db9a0099274f091a8d2c6a0f9097c"
         }
       ]
     },
@@ -3713,7 +3734,7 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st39-lpar-config",
-          "observed_at": "2026-10-06T22:17:41Z",
+          "observed_at": "2026-10-08T18:52:55Z",
           "cleanup": "passed",
           "assertions": [
             "small-change-read-back",
@@ -3721,11 +3742,11 @@
             "no-op-accepted-unchanged",
             "empty-request-refused"
           ],
-          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+          "closure_fingerprint": "58d6d6e91cec786bab4682eaec32eb1d545db9a0099274f091a8d2c6a0f9097c"
         }
       ]
     },
@@ -3747,16 +3768,16 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st39-lpar-config",
-          "observed_at": "2026-10-06T22:17:41Z",
+          "observed_at": "2026-10-08T18:52:55Z",
           "cleanup": "passed",
           "assertions": [
             "pending-boot-string-read-back"
           ],
-          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "ef4d1ba462314add58fa990f66629f84fd921456cca0d591b63b512c919d70cc"
+          "closure_fingerprint": "be0bb476867035eb97fdf80eddadab7641364498d6adbf4df16a88ffe9b03dfc"
         }
       ]
     },
@@ -3783,17 +3804,17 @@
           "channel": "live",
           "result": "passed",
           "scenario": "st39-lpar-config",
-          "observed_at": "2026-10-06T22:17:41Z",
+          "observed_at": "2026-10-08T18:52:55Z",
           "cleanup": "passed",
           "assertions": [
             "clear-refused-after-authorization",
             "pending-boot-string-unchanged"
           ],
-          "tested_commit": "09b75b9888648cc86bfc83a01fbe35e3b7585c6d",
+          "tested_commit": "431f79fa458eff7130cb30fd6167440f1b75a978",
           "hmc_release": "V10R3M1060",
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
-          "closure_fingerprint": "ef4d1ba462314add58fa990f66629f84fd921456cca0d591b63b512c919d70cc"
+          "closure_fingerprint": "be0bb476867035eb97fdf80eddadab7641364498d6adbf4df16a88ffe9b03dfc"
         }
       ]
     },
