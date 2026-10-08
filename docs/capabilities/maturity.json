@@ -1907,6 +1907,68 @@
       "evidence": []
     },
     {
+      "operation": "snapshot.capture",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "hmc-capture",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": [
+        {
+          "id": "st1-hmc-snapshot-capture",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st1-lpar-snapshot",
+          "observed_at": "2026-10-07T22:04:38Z",
+          "cleanup": "not-required",
+          "assertions": [
+            "snapshot-names-partition",
+            "snapshot-names-system",
+            "profile-captured",
+            "scores-name-partition"
+          ],
+          "tested_commit": "d1fa32003ac38871e4be368f903e688b3d2c6831",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "33c916a53688a339c5d8c2874890a929e1d3f20ac3c275dc4a8d45ecb8a3877d"
+        }
+      ]
+    },
+    {
+      "operation": "snapshot.inspect",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "local-snapshot",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
+      "operation": "snapshot.validate",
+      "implementation": {
+        "state": "implemented",
+        "implemented_scope": [
+          {
+            "variant": "local-snapshot",
+            "parameters": []
+          }
+        ],
+        "missing_scope": []
+      },
+      "evidence": []
+    },
+    {
       "operation": "update.console",
       "implementation": {
         "state": "implemented",

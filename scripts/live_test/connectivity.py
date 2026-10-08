@@ -561,6 +561,78 @@ async def _read_partition_views(client: Client, state: RunState) -> None:
     )
 
 
+async def _capture_snapshot(client: Client, state: RunState) -> None:
+    """A portable snapshot of the test partition's default profile; it writes nothing."""
+    config = state.config
+    st, data = await state.call(
+        client,
+        "hmc_get_lpar_proc_compat",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+    )
+    state.record(1, "hmc_get_lpar_proc_compat (snapshot profile)", st, data)
+    profile_name = field(data, "profile") if st == "PASS" else None
+    if not isinstance(profile_name, str) or not profile_name:
+        state.record(
+            1,
+            "hmc_snapshot_capture",
+            "FAIL",
+            None,
+            "no default profile name to capture",
+        )
+        return
+
+    st, data = await state.call(
+        client,
+        "hmc_snapshot_capture",
+        system_name_or_uuid=config.system_name,
+        lpar_name_or_uuid=config.lp3_name,
+        profile_name=profile_name,
+    )
+    answered = st == "PASS"
+    lpar = field(field(data, "source"), "lpar")
+    configuration = field(data, "configuration")
+    scores = field(field(field(data, "observations"), "scores"), "data")
+    state.record_verified(
+        1,
+        "hmc_snapshot_capture",
+        operation="snapshot.capture",
+        scenario="st1-lpar-snapshot",
+        assertions=[
+            Assertion(
+                "snapshot-names-partition",
+                answered
+                and _same(field(lpar, "uuid"), state.artifacts.lp3_uuid)
+                and _same(field(lpar, "name"), config.lp3_name),
+            ),
+            Assertion(
+                "snapshot-names-system",
+                answered
+                and _same(
+                    field(field(field(data, "source"), "system"), "uuid"),
+                    state.artifacts.system_uuid,
+                ),
+            ),
+            Assertion(
+                "profile-captured",
+                answered
+                and field(configuration, "profile_name") == profile_name
+                and bool(field(field(configuration, "native"), "data")),
+            ),
+            Assertion(
+                "scores-name-partition",
+                answered
+                and _same(
+                    field(field(field(scores, "current"), "lpar"), "lpar_name"),
+                    config.lp3_name,
+                ),
+            ),
+        ],
+        cleanup="not-required",
+        data=data,
+    )
+
+
 async def _read_logical_inventory(client: Client, state: RunState) -> None:
     """The logical inventory, selected to the boundary system."""
     config = state.config
@@ -747,6 +819,7 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     await _probe_capacity_and_resources(client, state, feed)
     await _record_inventory_summaries(client, state)
     await _read_partition_views(client, state)
+    await _capture_snapshot(client, state)
     await _read_logical_inventory(client, state)
     await _read_fleet_health(client, state, feed, system_state)
     await _plan_lpar(client, state)
