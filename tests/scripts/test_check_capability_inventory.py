@@ -480,6 +480,58 @@ def test_console_operations_bind_fixed_resources_or_explain_generic_dispatch(
         assert record["composite_reason"].strip()
 
 
+@pytest.mark.parametrize(
+    ("operation", "job_names", "ownership"),
+    [
+        ("lpar.migrate", ["migrate", "migratevalidate"], True),
+        ("lpar.migrate_affinity", ["migrate", "migratevalidate"], True),
+        ("lpar.migrate_validate", ["migratevalidate"], False),
+        ("lpar.migrate_abort", ["migrateabort"], True),
+        ("lpar.migrate_recover", ["migraterecover"], True),
+        ("lpar.remote_restart", ["remote_restart"], True),
+    ],
+)
+def test_migration_operations_bind_reachable_jobs_and_support_reads(
+    operation: str, job_names: list[str], ownership: bool
+) -> None:
+    catalog = ROOT / "docs" / "capabilities"
+    operations = json.loads((catalog / "operations.json").read_text())["operations"]
+    record = next(record for record in operations if record["operation"] == operation)
+    expected = {
+        "rest:managed-system",
+        "rest:managed-system/logical-partition",
+        "rest:jobs",
+        "rest:job-status",
+    }
+    expected.update(
+        "rest:jobs/managedsystem-jobs/logicalpartition_remoterestart-job"
+        if job == "remote_restart"
+        else f"rest:jobs/logicalpartition-jobs/{job}_logicalpartition-job"
+        for job in job_names
+    )
+    if ownership:
+        expected.add("cli:commands/lssyscfg")
+
+    assert set(record["row_ids"]) == expected
+    assert len(record["row_ids"]) == len(expected)
+    assert record["composite_reason"] is None
+    rows = {
+        row["id"]: row
+        for row in json.loads((catalog / "rows.json").read_text())["rows"]
+    }
+    units = {
+        unit["id"]: unit
+        for unit in json.loads((catalog / "corpora.json").read_text())["source_units"]
+    }
+    for row_id in expected:
+        row = rows[row_id]
+        assert row["source_units"]
+        assert all(
+            units[unit_id]["accounting"] == {"kind": "row", "id": row_id}
+            for unit_id in row["source_units"]
+        )
+
+
 def test_sparse_maturity_allows_unknown_operations(tmp_path: Path) -> None:
     _minimal_inventory(tmp_path)
 
