@@ -1149,6 +1149,36 @@ def test_coverage_gate_denominator_is_not_shrunk_in_source() -> None:
     )
 
 
+def test_timing_recipes_reuse_the_configured_verification_graph() -> None:
+    recipes = (ROOT / "justfile").read_text()
+    assert (
+        "\ntest-timings:\n    uv run --no-sync python scripts/run_tests.py --timings\n"
+        in recipes
+    )
+    assert (
+        "\nverify-timings:\n    HMCPCTL_TEST_TIMINGS=1 just --time verify\n" in recipes
+    )
+
+
+def test_timing_runner_keeps_the_exact_coverage_gate(tmp_path: Path) -> None:
+    floor, report = _coverage_gate()
+    _write_gate_project(tmp_path, report, covered=round(10 * floor) - 1)
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/run_tests.py"), "--timings"],
+        check=False,
+        cwd=tmp_path,
+        env={**os.environ, "PYTEST_ADDOPTS": "--no-cov"},
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert result.returncode == 1
+    assert "Required test coverage of 90.5% not reached" in result.stderr
+    assert "slowest 30 durations" in result.stderr
+    assert "configured coverage gate passed" not in result.stdout
+
+
 def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
     """The floor can be overridden from any pytest invocation, not just addopts.
 

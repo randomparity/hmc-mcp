@@ -95,6 +95,14 @@ static: lint format-check typecheck secrets workflow-security env-vars nicknames
 test:
     uv run --no-sync python scripts/run_tests.py
 
+# retain successful pytest diagnostics and the 30 slowest test phases
+test-timings:
+    uv run --no-sync python scripts/run_tests.py --timings
+
+# time each recipe body in the canonical graph and retain pytest durations
+verify-timings:
+    HMCPCTL_TEST_TIMINGS=1 just --time verify
+
 # run the full pytest suite with native diagnostics
 test-verbose:
     uv run --no-sync pytest -q --cov-report=term-missing
