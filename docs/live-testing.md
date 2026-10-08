@@ -107,8 +107,8 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 41, while the ids you
-can dispatch are 0 to 25 and 37 to 41.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids go up to 42, while the ids you
+can dispatch are 0 to 25 and 37 to 42.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
