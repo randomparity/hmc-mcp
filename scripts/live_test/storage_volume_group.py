@@ -143,6 +143,13 @@ class _Scenario:
         free = physical_volumes(raw[1], free=True)
         groups = volume_group_names(raw[2])
         if inventory is None or free is None or groups is None or rest is None:
+            self.state.record(
+                SUBTASK,
+                f"scratch snapshot ({label})",
+                "FAIL",
+                None,
+                "authoritative physical-volume or group snapshot could not be validated",
+            )
             return None
         return _Snapshot(
             (str(raw[0]), str(raw[1]), str(raw[2])), inventory, free, groups, rest

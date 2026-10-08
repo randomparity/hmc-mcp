@@ -209,6 +209,7 @@ async def test_bad_configuration_never_mutates(scratch, fields):
     state.config = replace(state.config, **fields)
     await vg.exercise_volume_group(None, state)
     assert not mutations(fake) and not state.observations
+    assert all(row["status"] != "FAIL" for row in state.results)
 
 
 @pytest.mark.parametrize(
@@ -242,6 +243,7 @@ async def test_preconditions_never_mutate(scratch, case):
         state.group = "all"
     await vg.exercise_volume_group(None, state)
     assert not mutations(fake) and not state.observations
+    assert all(row["status"] != "FAIL" for row in state.results)
 
 
 @pytest.mark.parametrize("partial", [False, True])
@@ -347,3 +349,37 @@ def test_new_saved_fields_remain_strict(kind):
     data["unknown_field"] = "unexpected"
     with pytest.raises(ValueError):
         decode(data)
+
+
+@pytest.mark.parametrize(
+    "response", ["inventory", "free", "groups", "rest", "failed-read"]
+)
+@pytest.mark.asyncio
+async def test_unreadable_before_snapshot_fails_without_mutation(
+    scratch, monkeypatch, response
+):
+    state, fake = scratch
+    original = fake.call
+
+    async def malformed(_state, _client, tool, **arguments):
+        status, data = await original(_client, tool, **arguments)
+        if tool == "hmc_list_volume_groups" and response == "rest":
+            return "PASS", [{}]
+        command = arguments.get("cmd", "")
+        if response == "inventory" and "lspv -field" in command:
+            return "PASS", "hdisk9:invalid-pvid:None"
+        if response == "free" and "lspv -free" in command:
+            return "PASS", f"{PV}:{PVID}:not-a-size"
+        if tool == "hmc_run_command" and shlex.split(command)[-1] == "lsvg":
+            if response == "groups":
+                return "PASS", "HSCL2970 The IOServer command failed"
+            if response == "failed-read":
+                return "FAIL", "read refused"
+        return status, data
+
+    monkeypatch.setattr(runner.RunState, "call", malformed)
+    await vg.exercise_volume_group(None, state)
+    assert not mutations(fake)
+    assert not state.observations
+    assert state.artifacts.storage_volume_group_name is None
+    assert any(row["status"] == "FAIL" for row in state.results)
