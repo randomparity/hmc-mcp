@@ -467,15 +467,15 @@ def _static_text(node: ast.AST) -> str:
     return ""
 
 
-def _docstring_nodes(tree: ast.AST) -> set[int]:
-    """Return the ``id()`` of every docstring constant in *tree*.
+def _docstring_nodes(nodes: list[ast.AST]) -> set[int]:
+    """Return the ``id()`` of every docstring constant in *nodes*.
 
     A docstring quotes the command it documents, so it names ``chsyscfg``
     and ``--filter`` without building anything.  Module, class, and function
     docstrings are all excluded.
     """
     ids: set[int] = set()
-    for node in ast.walk(tree):
+    for node in nodes:
         body = getattr(node, "body", None)
         if not isinstance(body, list) or not body:
             continue
@@ -647,7 +647,7 @@ def _flag_payload_problems(
     return unguarded
 
 
-def _joined_str_fragments(node: ast.AST) -> set[int]:
+def _joined_str_fragments(nodes: list[ast.AST]) -> set[int]:
     """Return the ``id()`` of every Constant piece inside a JoinedStr.
 
     ``ast.walk`` descends into f-string internals, so a static segment such
@@ -656,7 +656,7 @@ def _joined_str_fragments(node: ast.AST) -> set[int]:
     """
     return {
         id(part)
-        for node in ast.walk(node)
+        for node in nodes
         if isinstance(node, ast.JoinedStr)
         for part in node.values
         if isinstance(part, ast.Constant)
@@ -669,7 +669,7 @@ def _joined_str_fragments(node: ast.AST) -> set[int]:
 _SURFACE_LABELS = frozenset({"--filter", "-i", "-a"})
 
 
-def _keyword_value_constants(node: ast.AST) -> set[int]:
+def _keyword_value_constants(nodes: list[ast.AST]) -> set[int]:
     """Return the ``id()`` of Constants passed as keywords naming a surface.
 
     A label such as ``surface="--filter"`` is data, not a command string;
@@ -679,7 +679,7 @@ def _keyword_value_constants(node: ast.AST) -> set[int]:
     """
     return {
         id(keyword.value)
-        for walked in ast.walk(node)
+        for walked in nodes
         if isinstance(walked, ast.Call)
         for keyword in walked.keywords
         if isinstance(keyword.value, ast.Constant)
@@ -689,14 +689,13 @@ def _keyword_value_constants(node: ast.AST) -> set[int]:
 
 def _selected_literals(node: ast.AST, predicate) -> list[ast.AST]:
     """Return the selected whole literals inside *node*, docstrings aside."""
+    nodes = list(ast.walk(node))
     skip = (
-        _docstring_nodes(node)
-        | _joined_str_fragments(node)
-        | _keyword_value_constants(node)
+        _docstring_nodes(nodes)
+        | _joined_str_fragments(nodes)
+        | _keyword_value_constants(nodes)
     )
-    return [
-        child for child in ast.walk(node) if id(child) not in skip and predicate(child)
-    ]
+    return [child for child in nodes if id(child) not in skip and predicate(child)]
 
 
 def _unguarded_payloads_for(
@@ -777,10 +776,16 @@ def _scanned_modules() -> list[tuple[Path, ast.Module]]:
     ]
 
 
-def _selected_functions(predicate) -> list[tuple[str, ast.AST]]:
+@pytest.fixture
+def scanned_modules() -> list[tuple[Path, ast.Module]]:
+    """Share source reads only within the requesting test invocation."""
+    return _scanned_modules()
+
+
+def _selected_functions(modules, predicate) -> list[tuple[str, ast.AST]]:
     """Return every ``(qualified name, node)`` whose literals *predicate* selects."""
     found: list[tuple[str, ast.AST]] = []
-    for path, tree in _scanned_modules():
+    for path, tree in modules:
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
@@ -794,14 +799,16 @@ def _selected_functions(predicate) -> list[tuple[str, ast.AST]]:
     SELECTIONS,
     ids=[label for label, _, _ in SELECTIONS],
 )
-def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
+def test_every_site_is_built_by_its_shared_builder(
+    label, predicate, checker, scanned_modules
+):
     """Every value interpolated after a grammar-carrying flag is builder-built.
 
     This is the recurrence guard.  ``shlex.quote`` around an f-string looks
     safe and is not; the only durable defence is that the grammar has exactly
     one implementation and every site reaches it.
     """
-    sites = _selected_functions(predicate)
+    sites = _selected_functions(scanned_modules, predicate)
     assert sites, f"no {label} sites found — the AST scan stopped working"
 
     skipping = {name: unguarded for name, node in sites if (unguarded := checker(node))}
@@ -817,7 +824,7 @@ def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
     [(label, predicate) for label, predicate, _ in SELECTIONS],
     ids=[label for label, _, _ in SELECTIONS],
 )
-def test_no_command_literal_lives_outside_a_function(label, predicate):
+def test_no_command_literal_lives_outside_a_function(label, predicate, scanned_modules):
     """A module-level command template would sit outside the payload check.
 
     The guard follows the payload interpolated into a literal inside the
@@ -826,7 +833,7 @@ def test_no_command_literal_lives_outside_a_function(label, predicate):
     check it.
     """
     hoisted: dict[str, list[str]] = {}
-    for path, tree in _scanned_modules():
+    for path, tree in scanned_modules:
         in_functions = {
             id(literal)
             for node in ast.walk(tree)
@@ -846,7 +853,7 @@ def test_no_command_literal_lives_outside_a_function(label, predicate):
     )
 
 
-def test_the_scan_finds_every_known_site():
+def test_the_scan_finds_every_known_site(scanned_modules):
     """Pin every known site per category so a narrowed scan is visible.
 
     Set equality, not subset: an extra unknown site surfaces exactly like a
@@ -855,7 +862,8 @@ def test_the_scan_finds_every_known_site():
     by_label: dict[str, set[str]] = {}
     for label, predicate, _ in SELECTIONS:
         by_label[label] = {
-            name.split("::", 1)[1] for name, _ in _selected_functions(predicate)
+            name.split("::", 1)[1]
+            for name, _ in _selected_functions(scanned_modules, predicate)
         }
 
     assert by_label["-i"] == {
@@ -912,11 +920,11 @@ def test_the_scan_finds_every_known_site():
     }
 
 
-def test_prose_docstrings_are_excluded_from_selection():
+def test_prose_docstrings_are_excluded_from_selection(scanned_modules):
     """The four ``--filter`` prose docstrings are never selected as sites."""
     saw_a_docstring = False
-    for path, tree in _scanned_modules():
-        skip = _docstring_nodes(tree)
+    for path, tree in scanned_modules:
+        skip = _docstring_nodes(list(ast.walk(tree)))
         for label, predicate, _ in SELECTIONS:
             selected = {id(node) for node in _selected_literals(tree, predicate)}
             for node in ast.walk(tree):
@@ -970,3 +978,110 @@ def test_the_value_form_a_site_is_exempt_by_enclosing_function():
         "\n".join(template).replace("{name}", "remove_pool_copy")
     )
     assert _unguarded_a_values(other_func)
+
+
+@pytest.mark.parametrize("label,predicate,checker", SELECTIONS)
+@pytest.mark.parametrize("fault", ["builder-bypass", "uninspected", "hoisted"])
+def test_scan_rejects_controlled_faults(
+    tmp_path, monkeypatch, label, predicate, checker, fault
+):
+    literal = f'f"command {label} {{value}}"'
+    if fault == "uninspected":
+        literal = f'"command {label} " + value'
+    source = (
+        f"command = {literal}\n"
+        if fault == "hoisted"
+        else f"def example(value):\n    return {literal}\n"
+    )
+    (tmp_path / "example.py").write_text(source, encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}.SCANNED_ROOTS", (tmp_path,))
+    modules = _scanned_modules()
+    if fault == "hoisted":
+        with pytest.raises(AssertionError, match="outside any function"):
+            test_no_command_literal_lives_outside_a_function(label, predicate, modules)
+    else:
+        with pytest.raises(AssertionError, match="not built by their shared builder"):
+            test_every_site_is_built_by_its_shared_builder(
+                label, predicate, checker, modules
+            )
+
+
+def test_scan_rejects_missing_known_sites(tmp_path, monkeypatch):
+    (tmp_path / "example.py").write_text("value = 1\n", encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}.SCANNED_ROOTS", (tmp_path,))
+    with pytest.raises(AssertionError):
+        test_the_scan_finds_every_known_site(_scanned_modules())
+
+
+@pytest.mark.parametrize("revision", [1, 2])
+def test_scan_fixture_is_local_to_each_invocation(
+    tmp_path, monkeypatch, request, revision
+):
+    roots = (tmp_path / "src", tmp_path / "scripts")
+    for root in roots:
+        root.mkdir()
+        (root / "example.py").write_text(f"value = {revision}\n", encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}.SCANNED_ROOTS", roots)
+    with patch.object(
+        Path, "read_text", autospec=True, side_effect=Path.read_text
+    ) as reads:
+        modules = request.getfixturevalue("scanned_modules")
+        for _, predicate, _ in SELECTIONS:
+            assert _selected_functions(modules, predicate) == []
+        assert request.getfixturevalue("scanned_modules") is modules
+    assert reads.call_count == 2
+    assert {path.parent for path, _ in modules} == set(roots)
+    assert [tree.body[0].value.value for _, tree in modules] == [revision, revision]
+
+
+def test_scan_observes_changed_sources_and_roots(tmp_path, monkeypatch):
+    monkeypatch.setattr(f"{__name__}.SCANNED_ROOTS", (tmp_path,))
+    path = tmp_path / "example.py"
+    path.write_text("value = 1\n", encoding="utf-8")
+    first = _scanned_modules()
+    path.write_text("value = 2\n", encoding="utf-8")
+    second = _scanned_modules()
+    assert first[0][1].body[0].value.value == 1
+    assert second[0][1].body[0].value.value == 2
+    monkeypatch.setattr(f"{__name__}.SCANNED_ROOTS", ())
+    assert _scanned_modules() == []
+
+
+@pytest.mark.parametrize("fault", ["unreadable", "malformed"])
+def test_scan_propagates_source_errors_without_retaining_them(
+    tmp_path, monkeypatch, fault
+):
+    monkeypatch.setattr(f"{__name__}.SCANNED_ROOTS", (tmp_path,))
+    path = tmp_path / "example.py"
+    path.write_text(
+        "def broken(\n" if fault == "malformed" else "value = 1\n", encoding="utf-8"
+    )
+    if fault == "unreadable":
+        with (
+            patch.object(Path, "read_text", side_effect=PermissionError("denied")),
+            pytest.raises(PermissionError, match="denied"),
+        ):
+            _scanned_modules()
+    else:
+        with pytest.raises(SyntaxError):
+            _scanned_modules()
+    path.write_text("value = 2\n", encoding="utf-8")
+    assert _scanned_modules()[0][1].body[0].value.value == 2
+
+
+@pytest.mark.parametrize("label,predicate,checker", SELECTIONS)
+def test_literal_selection_reuses_one_walk_without_selecting_exclusions(
+    label, predicate, checker
+):
+    tree = ast.parse(
+        f'"""command {label} """\n'
+        f'class Example:\n    """command {label} """\n'
+        f'    def example(self, value):\n        """command {label} """\n'
+        f'        label(surface="{label}")\n'
+        f'        return f"command {label} {{value}}"\n'
+    )
+    with patch.object(ast, "walk", wraps=ast.walk) as walk:
+        selected = _selected_literals(tree, predicate)
+    assert len(selected) == 1
+    assert isinstance(selected[0], ast.JoinedStr)
+    assert walk.call_count == 1
