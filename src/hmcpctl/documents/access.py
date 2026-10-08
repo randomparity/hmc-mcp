@@ -86,6 +86,11 @@ def build_hmc_user_document(
     ):
         if value is not None:
             parts.append(f"  <{name} {_MODIFIABLE_ATTRS}>{value}</{name}>")
+        elif name == "UserProfilePassword":
+            # V10R3 refuses a modify without this element (REST0344, #1409) and
+            # never returns the value, so an unchanged password is sent empty,
+            # as the GET serves it.
+            parts.append(f"  <{name} {_MODIFIABLE_ATTRS}/>")
     if associated_task_role is not None:
         if associated_task_role:
             parts.append(

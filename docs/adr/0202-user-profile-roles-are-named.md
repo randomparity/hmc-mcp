@@ -46,6 +46,21 @@ observation is `failed` and this record is superseded by one that cites the capt
 
 ## Consequences
 
+Issue #1409's 2026-10-08 probe at
+`d2b676b37f553af6ff162e44d9f211ff86c2a1d8` on V10R3M1060 accepted both
+modifies without a supplied password when the builder sent the empty
+`UserProfilePassword` exactly as GET serves it (`ksv="V1_17_0" kb="CUD" kxe="false"`).
+Keep the optional password interface; a supplied replacement is sent as before and create
+still requires one. This demonstrates accepted writes, not password-preservation testing.
+
+The same run read back description replacement and VerifySessionTimeout replacement, then
+returned `HMC User` after `description=""`. The users arm had required an empty readback,
+so its `user.modify` observation remains **failed**. The operator approved correcting that
+expectation to the exact observed default, retaining the other checks. The REST reference
+does not document empty-update normalization; this records observed V10R3 behavior only.
+Recovery was clean and initial/final user lists matched. Consolidated live verification of
+the corrected harness is pending; the failed observation is not promoted by offline tests.
+
 - A caller that passed an href now sends its URL as a role name, which the HMC rejects or
   stores as the literal text. The tool descriptions and generated tool docs say which value
   to pass.
@@ -53,6 +68,11 @@ observation is `failed` and this record is superseded by one that cites the capt
   another user without a second lookup.
 
 ## Considered & rejected
+
+- **Require a password or change to SSH for #1409.** verified: the users ST11 probe on
+  V10R3M1060 at `d2b676b37f553af6ff162e44d9f211ff86c2a1d8` accepted the empty element.
+- **Accept any description after clearing.** judgment: that would hide an ignored update;
+  the corrected check requires the observed `HMC User` default.
 
 - **Keep the href form.** verified: no reference snapshot or capture shows a role link on
   `UserProfile` (`rg -n 'AssociatedTaskRole' docs/refs tests/fixtures/live` on 81902847 finds
