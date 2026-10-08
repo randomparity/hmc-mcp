@@ -1847,22 +1847,19 @@ async def main(
     else:
         tasks = sorted(SUBTASKS.keys())
 
-    # Restore prior context when running a subset
+    # Every invocation preserves its destination; only subsets borrow another arm's context.
+    prior_paths = [results_path]
     if subtask_filter is not None or group is not None:
-        # Preserve destination recovery state before considering another arm's context.
-        for prior in [
-            results_path,
-            "test-results-vmedia.json",
-            "test-results-round2.json",
-        ]:
-            if Path(prior).exists():
-                restored = _restore_artifacts_from_results(state, hmc_config, prior)
-                if prior == results_path and not restored:
-                    print(
-                        "❌ Existing results cannot be restored; use another --results-file."
-                    )
-                    return 1
-                break
+        prior_paths.extend(["test-results-vmedia.json", "test-results-round2.json"])
+    for prior in prior_paths:
+        if Path(prior).exists():
+            restored = _restore_artifacts_from_results(state, hmc_config, prior)
+            if prior == results_path and not restored:
+                print(
+                    "❌ Existing results cannot be restored; use another --results-file."
+                )
+                return 1
+            break
 
     def write_results(partial: bool) -> None:
         _write_results(

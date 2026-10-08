@@ -368,8 +368,9 @@ is insufficient: REST/VIOS absence and exact before/after snapshots must match.
 Unreadable state, unsafe membership, refused cleanup or snapshot drift fails with
 `MANUAL RECOVERY REQUIRED` and retains the pending artifact. Recovery reports a
 run-owned scratch group or unresolved restoration even when REST lists no group;
-it also honors pending artifacts restored into subset runs. Compare durable run
-results and private before/after snapshots with independent reads before any
+every invocation validates and restores its existing results before client setup.
+Only selected runs borrow other-arm fallback context; rejected reports stay unchanged.
+Compare durable run results and private before/after snapshots with independent reads before any
 manual removal. Do not retry create or repair metadata automatically. Run recovery
 after every attempt. A second create requires a separate operator allowance.
 

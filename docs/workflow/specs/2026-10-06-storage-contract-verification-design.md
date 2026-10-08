@@ -285,11 +285,12 @@ the new optional fields when reading pre-ST42 documents.
    was dispatched or its artifact is pending, including after subset reruns. It
    reports every `hpvg<8 hex>` REST group on its VIOS and any pending unconfirmed
    restoration even when the REST group is absent, without deletion or repair.
-   Subsets restore their existing results destination before legacy fallback reports.
-   Strict configuration/HMC rejection returns 1 before dispatch or writes, preserving
-   that destination byte-for-byte; incompatible runs require a separately named file.
-   Actual runner-to-recovery regressions cover compatible pending state, disabled
-   paired settings and HMC-identity mismatch so rejection cannot erase uncertainty.
+   Every invocation restores its destination before client setup; only selected runs
+   borrow legacy fallbacks. No-existing default runs stay fresh. Strict configuration,
+   HMC or document rejection returns 1 before client/dispatch/writes, preserving bytes;
+   incompatible runs require a separately named file. Actual default interruption-to-ST3
+   recovery, compatible subsets, disabled paired settings, HMC mismatch and malformed
+   document regressions ensure uncertainty cannot be erased or falsely reported CLEAN.
 
 The existing failure model extends to physical-volume identities and all groups.
 Deployment remains the single-operator admitted V10R3/POWER9 lab window. Failed or
