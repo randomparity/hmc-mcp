@@ -27,7 +27,7 @@ Public evidence is PII-redacted; raw test-results JSON stays private.
 ## Architecture and ownership
 
 Extend `operations/lpar/decommission.py`, the current canonical workflow owner.
-MCP `server_tools/lpar/lifecycle.py` and CLI `cli_lifecycle.py` continue delegating
+MCP `server_tools/lpar/lifecycle.py` and CLI `cli_commands/lpar/decommission.py` continue delegating
 without signature changes. Reuse `client_storage.storage_mapping_id`,
 `mapping_lpar_uuid` and `HMCClient.delete_storage_mapping(vios_uuid, mapping_id,
 lpar_uuid)`: the existing client verifies fresh target identity and If-Match.
@@ -142,3 +142,11 @@ must fail meaningful safety tests before restoration. Prose is inspected against
 frozen C1–C6; no prose-string tests. Generated tool/capability consequences use their
 existing structural gates and regenerators. First native proof is required before
 MERGE-READY, alongside recovery and generated commit-stamped filtered evidence.
+
+## Amended estimate and direct caller consequences
+
+The original estimate undercounted explicit ST41 proof-failure/cancellation tests and
+affected CLI fixtures. Preserve these safety cases under the same frozen C1–C6 scope.
+Existing CLI confirmation and MCP description disclose the ordered mapping detach and
+backing-storage retention; regenerate their tool reference. No caller signature or
+execution behavior changes. The amended plan records the corrected size breakdown.

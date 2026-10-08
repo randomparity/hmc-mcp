@@ -7,6 +7,7 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
+from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import (
     authorize_decommission_lpar_ownership_snapshot,
@@ -39,6 +40,56 @@ _STORAGE_MAPPING_TYPES: tuple[tuple[str, str], ...] = (
     ("VirtualSCSIMappings", "VirtualSCSIMapping"),
     ("VirtualFibreChannelMappings", "VirtualFibreChannelMapping"),
 )
+
+
+class _VScsiDetach(TypedDict):
+    vios_uuid: str
+    mapping_id: str
+
+
+def _vscsi_detach_inventory(
+    resource: dict[str, Any], vios_uuid: str, lpar_uuid: str
+) -> tuple[tuple[_VScsiDetach, ...], tuple[str, ...]]:
+    if "VirtualSCSIMappings" not in resource:
+        return (), (f"VIOS {vios_uuid!r} omitted its vSCSI mapping collection.",)
+    block = resource["VirtualSCSIMappings"]
+    if block == "" or block == {}:
+        return (), ()
+    if not isinstance(block, dict):
+        return (), (f"VIOS {vios_uuid!r} has malformed vSCSI mappings.",)
+    members = {k: v for k, v in block.items() if not k.startswith("@")}
+    if not members:
+        return (), ()
+    if set(members) != {"VirtualSCSIMapping"}:
+        return (), (f"VIOS {vios_uuid!r} has malformed vSCSI mappings.",)
+    raw = members["VirtualSCSIMapping"]
+    items = raw if isinstance(raw, list) else [raw]
+    targets: list[_VScsiDetach] = []
+    errors: list[str] = []
+    identities: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            errors.append(f"VIOS {vios_uuid!r} has a malformed vSCSI mapping.")
+            continue
+        client = mapping_lpar_uuid(item)
+        identity = storage_mapping_id(item)
+        if identity is not None:
+            identities.append(identity)
+        if client is None or not is_uuid(client):
+            errors.append(f"VIOS {vios_uuid!r} has an unverified vSCSI client UUID.")
+            continue
+        if client.casefold() != lpar_uuid.casefold():
+            continue
+        if identity is None:
+            errors.append(
+                f"VIOS {vios_uuid!r} has a target mapping without an exact ID."
+            )
+            continue
+        targets.append({"vios_uuid": vios_uuid, "mapping_id": identity})
+    for target in targets:
+        if identities.count(target["mapping_id"]) != 1:
+            errors.append(f"VIOS {vios_uuid!r} has a duplicate target mapping ID.")
+    return tuple(sorted(targets, key=lambda item: item["mapping_id"])), tuple(errors)
 
 
 class DecommissionAdapterRecord(TypedDict):
@@ -105,6 +156,8 @@ class _Inventory:
     unresolved_storage_mapping_count: int
     unavailable_storage_source_count: int
     warnings: tuple[str, ...]
+    vscsi_detaches: tuple[_VScsiDetach, ...]
+    vscsi_inventory_errors: tuple[str, ...]
 
     def blast_radius(self) -> DecommissionBlastRadius:
         return {
@@ -374,14 +427,27 @@ def collect_storage_records(
 
 async def _inventory_storage_mappings(
     hmc: HMCClient, system_uuid: str, lpar_uuid: str, partition_id: int | None
-) -> tuple[tuple[dict[str, str], ...], int, tuple[str, ...]]:
+) -> tuple[
+    tuple[dict[str, str], ...],
+    int,
+    tuple[str, ...],
+    tuple[_VScsiDetach, ...],
+    tuple[str, ...],
+]:
     storage_mappings: list[dict[str, str]] = []
     unresolved = 0
     source_warnings: list[str] = []
+    targets: list[_VScsiDetach] = []
+    errors: list[str] = []
     partition_id_text = str(partition_id) if partition_id is not None else None
-    for vios in await hmc.list_vios(system_uuid):
+    try:
+        sources = await hmc.list_vios(system_uuid)
+    except HMCError as exc:
+        source_warnings.append(f"VIOS inventory could not be read: {exc}")
+        sources = []
+    for vios in sources:
         vios_uuid = _text(vios.get("UUID"))
-        if vios_uuid is None:
+        if vios_uuid is None or not is_uuid(vios_uuid):
             vios_name = _text(_resource(vios).get("PartitionName")) or "unknown"
             source_warnings.append(
                 "Storage blast radius may be incomplete: listed VIOS "
@@ -389,20 +455,42 @@ async def _inventory_storage_mappings(
                 "inventoried."
             )
             continue
-        detail = await hmc.get_vios_storage_detail(vios_uuid)
+        try:
+            detail = await hmc.get_vios_storage_detail(vios_uuid)
+        except HMCError as exc:
+            source_warnings.append(
+                f"VIOS {vios_uuid!r} storage detail unavailable: {exc}"
+            )
+            continue
         if detail is None:
             source_warnings.append(
                 f"Storage blast radius may be incomplete: VIOS {vios_uuid!r} returned "
                 "no storage detail, so its storage mappings could not be inventoried."
             )
             continue
-        detail_resource = _resource(detail)
+        detail_resource = detail.get("Resource")
+        if not isinstance(detail_resource, dict):
+            source_warnings.append(
+                f"VIOS {vios_uuid!r} returned malformed storage detail."
+            )
+            continue
         records, unresolved_count = collect_storage_records(
             detail_resource, vios_uuid, lpar_uuid, partition_id_text
         )
         storage_mappings.extend(records)
         unresolved += unresolved_count
-    return tuple(storage_mappings), unresolved, tuple(source_warnings)
+        found, failures = _vscsi_detach_inventory(detail_resource, vios_uuid, lpar_uuid)
+        targets.extend(found)
+        errors.extend(failures)
+    return (
+        tuple(storage_mappings),
+        unresolved,
+        tuple(source_warnings),
+        tuple(
+            sorted(targets, key=lambda item: (item["vios_uuid"], item["mapping_id"]))
+        ),
+        tuple(source_warnings + errors),
+    )
 
 
 def _inventory_warnings(
@@ -442,9 +530,13 @@ async def _inventory(
         hmc, lpar_uuid, lpar_name
     )
     adapters = await _inventory_adapters(hmc, lpar_uuid)
-    storage_mappings, unresolved, source_warnings = await _inventory_storage_mappings(
-        hmc, system_uuid, lpar_uuid, partition_id
-    )
+    (
+        storage_mappings,
+        unresolved,
+        source_warnings,
+        detaches,
+        errors,
+    ) = await _inventory_storage_mappings(hmc, system_uuid, lpar_uuid, partition_id)
 
     return _Inventory(
         system_name=system_name,
@@ -458,7 +550,10 @@ async def _inventory(
         storage_mappings=storage_mappings,
         unresolved_storage_mapping_count=unresolved,
         unavailable_storage_source_count=len(source_warnings),
-        warnings=_inventory_warnings(partition_name, unresolved, source_warnings),
+        warnings=_inventory_warnings(partition_name, unresolved, source_warnings)
+        + tuple(error for error in errors if error not in source_warnings),
+        vscsi_detaches=detaches,
+        vscsi_inventory_errors=errors,
     )
 
 
@@ -519,6 +614,25 @@ async def _power_off(
             "status": outcome.status,
         },
     )
+
+
+async def _detach_storage_mappings(
+    hmc: HMCClient, inventory: _Inventory
+) -> WorkflowStep:
+    detached: list[_VScsiDetach] = []
+    for mapping in inventory.vscsi_detaches:
+        try:
+            await hmc.delete_storage_mapping(
+                mapping["vios_uuid"], mapping["mapping_id"], inventory.lpar_uuid
+            )
+        except HMCError as exc:
+            return WorkflowStep(
+                "detach_storage_mappings",
+                "error",
+                {"mappings": tuple(detached), "error": str(exc)},
+            )
+        detached.append(mapping)
+    return WorkflowStep("detach_storage_mappings", "ok", {"mappings": tuple(detached)})
 
 
 async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> WorkflowStep:
@@ -593,6 +707,9 @@ def _build_decommission_result(
 def _dry_run_steps(inventory: _Inventory) -> tuple[WorkflowStep, ...]:
     return (
         WorkflowStep("power_off", "dry_run", {"state": inventory.state}),
+        WorkflowStep(
+            "detach_storage_mappings", "dry_run", {"mappings": inventory.vscsi_detaches}
+        ),
         WorkflowStep("detach_adapters", "dry_run", {"adapters": inventory.adapters}),
         WorkflowStep("delete_lpar", "dry_run", {"lpar_uuid": inventory.lpar_uuid}),
     )
@@ -667,6 +784,24 @@ async def decommission_lpar(
             steps=_dry_run_steps(inventory),
         )
 
+    if inventory.vscsi_inventory_errors:
+        return _incomplete_result(
+            inventory,
+            [
+                WorkflowStep("power_off", "skipped"),
+                WorkflowStep(
+                    "detach_storage_mappings",
+                    "error",
+                    {
+                        "mappings": (),
+                        "errors": inventory.vscsi_inventory_errors,
+                    },
+                ),
+                WorkflowStep("detach_adapters", "skipped"),
+                WorkflowStep("delete_lpar", "skipped"),
+            ],
+        )
+
     steps: list[WorkflowStep] = []
     if inventory.state != "not activated":
         await authorize_decommission_lpar_ownership_snapshot(
@@ -684,20 +819,31 @@ async def decommission_lpar(
     )
     steps.append(power_step)
     if power_step.status != "ok":
-        _skip_steps(steps, "detach_adapters", "delete_lpar")
+        _skip_steps(steps, "detach_storage_mappings", "detach_adapters", "delete_lpar")
         return _incomplete_result(inventory, steps)
 
-    if inventory.state == "not activated":
-        await authorize_decommission_lpar_ownership_snapshot(
-            hmc,
-            inventory.system_name,
-            inventory.ownership_lpar_name,
-            ownership_override=ownership_override,
+    await authorize_decommission_lpar_ownership_snapshot(
+        hmc,
+        inventory.system_name,
+        inventory.ownership_lpar_name,
+        ownership_override=ownership_override,
+    )
+    detach_state_error = await _detach_state_error(hmc, inventory)
+    if detach_state_error is not None:
+        steps.append(
+            WorkflowStep("detach_storage_mappings", "error", detach_state_error.result)
         )
+        _skip_steps(steps, "detach_adapters", "delete_lpar")
+        return _incomplete_result(inventory, steps)
+    mapping_step = await _detach_storage_mappings(hmc, inventory)
+    steps.append(mapping_step)
+    if mapping_step.status != "ok":
+        _skip_steps(steps, "detach_adapters", "delete_lpar")
+        return _incomplete_result(inventory, steps)
     detach_state_error = await _detach_state_error(hmc, inventory)
     if detach_state_error is not None:
         steps.append(detach_state_error)
-        steps.append(WorkflowStep("delete_lpar", "skipped"))
+        _skip_steps(steps, "delete_lpar")
         return _incomplete_result(inventory, steps)
 
     detach_step = await _detach_adapters(hmc, inventory)

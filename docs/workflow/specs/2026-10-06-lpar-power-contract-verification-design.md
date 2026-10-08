@@ -126,13 +126,17 @@ own records (#630).
 11. **Decommission (P)** — observation `lpar.decommission`: `dry-run-inventoried`
     (`dry_run=True`: `resource_deleted` false, every step `dry_run`, blast radius lists
     the network and vSCSI client adapters and the volume's mapping),
-    `dry-run-changed-nothing` (state and adapter list unchanged). Then the arm detaches
-    the VIOS mapping (`hmc_detach_storage_mapping`, a plain row) because a mapping whose
-    client is deleted can no longer be detached through the tool. Only when the mapping
-    then reads absent does the real call run (`immediate=True`): `resource-deleted`,
-    `workflow-completed`, `lpar-name-absent`; otherwise teardown. The volume is deleted
-    (`hmc_delete_virtual_disk`, plain row) once no mapping is backed by it.
-12. **Teardown, in this order:** abandon open composite operations; detach any mapping
+    `dry-run-changed-nothing` (state, all client adapters, complete vSCSI inventory,
+    and volumes unchanged). The real call runs with the mapping still present
+    (`immediate=True`): `resource-deleted`, `workflow-completed`, `lpar-name-absent`,
+    `storage-mapping-absent` (complete VIOS detail and unchanged foreign mappings),
+    and `backing-volume-retained`. No separate pre-detach is allowed. A retention
+    latch is set before the first proof/preview await and clears only after every
+    typed success flag and complete postcondition passes; cancellation, exceptions,
+    failed or incomplete reads retain it. No automatic retry follows ambiguity.
+12. **Teardown, in this order:** abandon open composite operations. A retained
+    decommission latch records manual recovery and stops all resource cleanup.
+    Otherwise, detach any mapping
     backed by the run volume while its client partition still exists; power off and
     delete each run partition not confirmed deleted, by UUID only while its description
     carries the run token (#1345 `_delete` shape, adopting by name when the UUID is
@@ -183,7 +187,7 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 |---|---|---|
 | `lpar.dump_restart` | orchestrator approval to run bare-cec with `LIVE_TEST_ACCEPT_PLATFORM_DUMP=true`, whose dumprestart row would need to become a `record_verified` site; this arm builds no dump path | not run |
 | `provision.lpar` SR-IOV and vNIC arguments | orchestrator-relayed operator approval to consume shared SR-IOV adapter capacity | not run |
-| `lpar.decommission` with a mapped vSCSI volume | none in this arm: it detaches first, because decommission removes only client adapters and the detach tool authorizes the mapped partition, which no longer exists afterwards; reported as a follow-up candidate | not run |
+| `lpar.decommission` with a mapped vSCSI volume | native exact mapping detach before client adapters and partition deletion, complete postcondition reads, retained backing volume and unchanged foreign baseline | first native proof required; historical pre-detach evidence does not satisfy this |
 | `lpar.power` graceful stop / restart | an OS with an active RMC connection | not run |
 | `lpar.power_on` network boot | #638 | not implemented |
 | `system.power_on`, `system.power_off` | an operator window to power the whole system | not run |

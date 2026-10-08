@@ -513,13 +513,18 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   creates the 1 GiB volume `lppwr<8 hex>`, provisions P on it (virtual Ethernet on
   the VLAN, vSCSI mapping, PowerOn), and adds a dedicated slot only when the
   dedicated arm is configured for this system and a slot is unowned and listed by
-  no profile. It then runs a decommission dry run, detaches the mapping (a mapping
-  whose partition is gone can no longer be detached through the tool), runs the
-  real decommission, and deletes the volume.
+  no profile. It then proves the decommission dry run inventories the exact vSCSI
+  mapping and client adapters without changing them. The real decommission removes
+  its own mapping before deleting P; the arm proves P and its mapping absent, the
+  backing volume retained, and foreign mappings and other volumes unchanged. Only
+  after these complete reads does teardown delete the run volume.
 - **Not run, recorded as SKIP rows naming what they need:** `hmc_dump_restart_lpar`,
   provision's SR-IOV and vNIC arguments, a graceful `hmc_power_lpar` stop or
   restart, and whole-system power.
-- **After.** Teardown abandons any `hmc_power_lpar` operation left open, detaches a
+- **After.** Teardown abandons any `hmc_power_lpar` operation left open. Any failed,
+  cancelled, or unproven decommission attempt retains its remaining resources for
+  manual recovery; teardown does not retry mapping or partition deletion. When no
+  decommission attempt started, teardown detaches a
   run mapping while its partition exists, powers off and deletes each run
   partition only while it carries the run's caller token (the provisioned one is
   kept while its mapping could not be detached), then deletes the volume.
@@ -545,7 +550,10 @@ Firmware.
 
 `hmc_detach_storage_mapping` also answered `REST0126` carrying `HSCL2957` (no RMC
 connection to the VIOS) while the VIOS read `rmc_state` active, and the readback
-showed the mapping removed. The arm judges the detach by that readback.
+showed the mapping removed. That historical run used a separate pre-detach; it
+does not prove native mapped decommission. Native decommission preserves a
+refused detach as an error and stops, even if diagnostic readback suggests an
+effect. ST41 now requires the native product path and complete readback proof.
 
 A teardown that cannot finish records a FAIL row marked `MANUAL RECOVERY
 REQUIRED` naming the commands: for a partition, `chsysstate … -o shutdown --immed`

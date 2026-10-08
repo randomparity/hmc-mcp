@@ -238,7 +238,7 @@ class FakeHMC:
             "UUID": TEMPLATE_UUID,
             "Resource": {"partitionTemplateName": "tpl1"},
         }
-        self.vios_storage_detail = {"Resource": {}}
+        self.vios_storage_detail = {"Resource": {"VirtualSCSIMappings": ""}}
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [
             {
@@ -1746,6 +1746,8 @@ def test_lpars_decommission_confirmed_prompt_names_target_and_executes(fake_hmc)
         f"Decommission LPAR '{LPAR_NAME}' on system '{SYSTEM_UUID}'?" in result.output
     )
     assert "decommissioned successfully" in result.stdout
+    assert "vSCSI mappings before client adapters" in result.output
+    assert "retains backing storage" in result.output
     names = [name for name, _, _ in fake_hmc.calls]
     assert "delete_logical_partition" in names
     assert "Aborted" not in result.stderr
@@ -1793,7 +1795,10 @@ def test_lpars_decommission_incomplete_human_result_exits_1_after_rendering(fake
     assert "was not fully decommissioned" in result.stdout
     assert "delete_lpar" in result.stdout
     assert "error" in result.stdout
-    assert "simulated delete_logical_partition failure" in result.stdout
+    assert all(
+        word in result.stdout
+        for word in ["simulated", "delete_logical_partition", "failure"]
+    )
 
 
 def test_lpars_decommission_incomplete_json_result_exits_1_after_rendering(fake_hmc):
@@ -1871,6 +1876,11 @@ def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
         "dry_run": True,
         "steps": [
             {"step": "power_off", "status": "dry_run", "result": {"state": "running"}},
+            {
+                "step": "detach_storage_mappings",
+                "status": "dry_run",
+                "result": {"mappings": []},
+            },
             {
                 "step": "detach_adapters",
                 "status": "dry_run",
