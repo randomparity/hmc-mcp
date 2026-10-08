@@ -497,6 +497,8 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     )
     subprocess.run(["git", "add", "."], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
+    # CI exports this for hooks; it must not mask a missing recipe --no-sync.
+    environment.pop("UV_NO_SYNC", None)
     subprocess.run(
         ["uv", "sync", "--locked", "--extra", "app"],
         cwd=project,
@@ -518,8 +520,10 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
         text=True,
         timeout=180,
     )
+    # The structural guards cover every hook/recipe; required full hook runs
+    # exercise their gates separately. One real hook covers this launch path.
     hooks = subprocess.run(
-        ["uv", "run", "prek", "run", "--all-files"],
+        ["uv", "run", "prek", "run", "lint", "--all-files", "--verbose"],
         cwd=project,
         check=False,
         capture_output=True,
@@ -528,12 +532,16 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
         timeout=180,
     )
 
-    assert lint.returncode == 0, lint.stderr
+    lint_output = lint.stdout + lint.stderr
+    hooks_output = hooks.stdout + hooks.stderr
+    assert lint.returncode == 0, lint_output
     assert "All checks passed" in lint.stdout
-    assert "Building hmcpctl" not in lint.stderr
-    assert hooks.returncode == 0, hooks.stdout + hooks.stderr
+    assert "Building hmcpctl" not in lint_output
+    assert hooks.returncode == 0, hooks_output
     assert "Ruff lint" in hooks.stdout
-    assert "Building hmcpctl" not in hooks.stderr
+    # Successful hook output goes to stdout and is hidden without --verbose.
+    assert "All checks passed" in hooks.stdout
+    assert "Building hmcpctl" not in hooks_output
 
 
 def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
