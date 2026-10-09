@@ -345,15 +345,15 @@ what is already there without rebuilding.
 
 **A green local run does not predict a green CI run.** Locally `just verify`
 uses the worktree's one `.venv`, built on the `3.11` that `.python-version`
-pins. CI's `ci` job is **eight legs** — {amd64 `ubuntu-24.04`, arm64
-`ubuntu-24.04-arm`} × {3.11, 3.12, 3.13, 3.14} — and `library-wheel-smoke`,
-`library-range-floors`, and a `wheel-smoke` matrix of the same eight legs all
+pins. CI's `ci` job is **four legs** — amd64 `ubuntu-24.04` ×
+{3.11, 3.12, 3.13, 3.14} — and `library-wheel-smoke`,
+`library-range-floors`, and a `wheel-smoke` matrix of the same four legs all
 depend on it. This has bitten a change that was locally green
 and red on 3.12+, because `inspect` renders `Annotated` differently across
 versions. When a change touches signature introspection, generated
 documentation, or anything whose output is a rendered type, expect the version
 legs to disagree with your machine and read the CI matrix rather than re-running
-locally.
+locally. Hosted CI no longer supplies native arm64 evidence (ADR 0210).
 
 **CI runs static gates through real hooks, then `just verify-runtime`.** Each
 native `ci` leg invokes `UV_NO_SYNC=1 uv run --no-sync prek run --all-files` once before

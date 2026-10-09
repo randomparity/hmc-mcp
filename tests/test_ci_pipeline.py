@@ -108,9 +108,7 @@ STATIC_GATES = {
     "scenario-gap",
 }
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
-NATIVE_MATRIX = [
-    ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
-] + [("arm64", "ubuntu-24.04-arm", version) for version in SUPPORTED_PYTHONS]
+NATIVE_MATRIX = [("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS]
 QEMU_IMAGE = (
     "docker.io/tonistiigi/binfmt@"
     "sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
@@ -579,7 +577,13 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     active_workflow, _ = _inactive_ppc64le_job(workflow)
     body = _job_body(active_workflow, "wheel-smoke")
 
-    expected_matrix = "      matrix:\n        include:\n" + "".join(
+    matrix = re.search(
+        r"^      matrix:\n(?P<body>.*?)(?=^    steps:)",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert matrix
+    expected_matrix = "        include:\n" + "".join(
         f"          - architecture: {architecture}\n"
         f"            runner: {runner}\n"
         f'            python-version: "{version}"\n'
@@ -591,7 +595,7 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
         "${{ matrix.python-version }} / wheel smoke\n" in body
     )
     assert "      fail-fast: false\n" in body
-    assert expected_matrix in body
+    assert matrix["body"] == expected_matrix
     assert "    runs-on: ${{ matrix.runner }}\n" in body
     assert "    timeout-minutes: 10\n" in body
     assert (
