@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded by [0210](0210-amd64-hosted-ci.md)** (2026-10-09), architecture coverage only.
+
 Accepted
 
 ## Context
