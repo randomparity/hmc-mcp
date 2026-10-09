@@ -7,7 +7,7 @@ explicitly approved by the operator on 2026-10-09.
 
 The operator invoked the #1430–#1435 campaign and approved this evaluation's
 scope. [Issue #1434](https://github.com/randomparity/hmc-mcp/issues/1434) permits
-adoption or a measured NO-GO; [the frozen charter](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6080484059)
+adoption or a measured NO-GO; [the frozen charter](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6081426497)
 retains its exclusions. The integrated base is
 `64a2619c45801efd98b6c9618207a7652ae614c8`; the admitted timing/RSS comparisons below use
 `7f0dfe0dcad9df1b11f06a2d42c82bd1547a0363`.
@@ -18,8 +18,8 @@ environment, including the xdist plugin. Pytest is 9.1.1, pytest-cov 7.1.0 and
 coverage 7.15.4. The dependency was checked against its primary release source
 before installation. Serial execution remains the comparison reference.
 
-Every admitted run reports the same 8,708 passed test identities and identical
-per-file coverage summaries: 17,079 statements, 4,540 branches and 4,152 covered
+Every admitted timing/RSS comparison reports the same 8,708 passed test identities
+and identical per-file coverage summaries: 17,079 statements, 4,540 branches and 4,152 covered
 branches (91.45374449%). Combined statement-plus-branch coverage is 95.30968130%,
 above the unchanged configured 90.5% combined floor. Those 8,708
 include eight temporary observer tests. The six sharing-mode serialization cases
@@ -135,7 +135,19 @@ an ownership/reaping design before production adoption.
 ## Supplemental memory accounting
 
 Normal-local and native timing samples above report sampled summed RSS; they do
-not establish a kernel high-water value. Actual charged-memory observations for
-those three profiles remain pending under the separate bounded memory-only grant.
+not establish a kernel high-water value. The normal-local actual charged-memory
+observation is complete; both native parallel observations remain pending under
+the bounded memory-only grant.
 The constrained kernel peak remains valid. Supplemental results use the production
 runner at their own immutable source and do not enter the earlier timing dataset.
+
+At source ffc1f774, the normal-local production observation passed 8,762 cases with
+two workers and exact complete identity/per-file coverage equality. Its kernel
+memory.peak was 1,998,241,792 bytes; all memory events were zero, no descendants
+remained, and the unit was removed. Execution cost 236.641 s is not a timing comparison.
+The first native amd64/arm64 observations at the same source returned runner exit 0 but
+selected serial because fresh user scopes lacked cpu.max. Their rejected serial
+peaks were 1,650,221,056/1,610,764,288 bytes and costs 511.662/529.780 s. Neither supplies
+parallel evidence or admitted complete identity/coverage proof. Both units were
+removed with no descendants or memory events. The next step is cheap system-scope
+eligibility preflight only; additional full native attempts are not yet allocated.

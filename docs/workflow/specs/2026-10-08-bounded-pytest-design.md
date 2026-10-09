@@ -5,7 +5,7 @@
 Accepted by the operator on 2026-10-09 after the bounded evaluation and review.
 This specification replaces the experiment-only execution contract.
 The frozen charter is issue #1434 / q1434-24622bc8, latest complete WORK:SCOPE
-6080484059. Its exclusions and owners remain unchanged. Complexity M maps to
+6081426497. Its exclusions and owners remain unchanged. Complexity M maps to
 the unchanged 250-line denominator; this remains one PR in the full-spec lane.
 The requested guarantees are resource-bounded workers, complete tests/coverage,
 serial fallback, meaningful diagnostics and owned-descendant cleanup.
@@ -162,3 +162,23 @@ to exec as the original UID/GID/groups without a persistent sudo/PAM launcher.
 Use the user manager or verified noninteractive sudo/system manager
 while executing tests as the original user. Restore only the temporary inline native
 workflow, then remove it separately. No production workflow or interface changes.
+
+## Native verification fitness correction
+
+The existing capability table/JSON test must replace only its module console binding
+with an isolated Rich Console(width=400, emoji=False) using pytest monkeypatch,
+then use ordinary CliRunner. Restore the original binding and shared object state.
+Rich caches an ambient COLUMNS value when the shared console is constructed,
+before invocation-time
+environment overrides. Preserve all existing header, sorted operation, JSON equality
+and no-HMC assertions; change no production renderer or other app tests.
+
+The first native memory observations selected serial because fresh user scopes
+lacked readable non-root cpu.max. Reject them as parallel evidence. Before another
+full attempt, the temporary workflow runs only cheap system-manager preflight,
+using the already-supported exec-only setpriv path and unchanged restrictions.
+Record actual resource and owned-mode selectors, require two workers and restored
+subreaper state, and retain counter/status/cleanup controls and failure evidence.
+No full candidate is present in this preflight workflow; further full observations
+require an explicit allocation. Do not set CPU weight/quota/delegation or weaken
+unknown-resource fallback. CPUAccounting does not enable the modern v2 controller.
