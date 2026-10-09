@@ -292,6 +292,15 @@ just test-timings   # retain pytest output, including the 30 slowest test phases
 just verify-timings # canonical verify with per-recipe wall time and pytest timings
 ```
 
+`just test` and its verification callers use at most two pytest workers on Linux
+when at least two effective CPUs and 3 GiB remaining memory are visible. Affinity,
+visible cgroup ancestor quotas, host available memory and ancestor memory charges
+bound eligibility; unavailable resource or child-ownership facilities select serial.
+The success summary includes `workers=2` when parallel execution ran. Force serial
+with `uv run --no-sync python scripts/run_tests.py --serial`; `--timings` also works.
+Direct pytest and `just test-verbose` remain serial. Both modes keep the exact
+coverage gate. See [the evaluation](docs/workflow/bounded-pytest-evaluation.md).
+
 Timing diagnostics preserve the configured coverage gate and subprocess lifecycle.
 `HMCPCTL_TEST_TIMINGS=1` enables the runner's timing presentation through the
 verification graph; the runner removes this switch before launching pytest so

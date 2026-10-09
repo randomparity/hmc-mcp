@@ -12,6 +12,14 @@ CI runs static gates through the real hooks once, then `just verify-runtime`.
 Standalone `just verify` remains the complete local check; `verify-runtime` alone
 omits static checks. Validate hooks separately with the command above.
 
+`just test` uses at most two workers on eligible Linux hosts with at least two
+effective CPUs and 3 GiB remaining memory; otherwise it runs serially. The runner
+checks affinity, visible ancestor cgroup quotas and available memory, including
+current cgroup charges. Parallel success reports `workers=2`. Use
+`uv run --no-sync python scripts/run_tests.py --serial` to force serial execution;
+add `--timings` for diagnostics. Direct pytest and `just test-verbose` remain serial.
+The coverage gate is identical in both modes.
+
 Suspected vulnerabilities do not belong in a public issue or pull request. Follow the
 [security policy](SECURITY.md) to report them privately.
 
