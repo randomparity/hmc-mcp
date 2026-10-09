@@ -7,7 +7,7 @@ explicitly approved by the operator on 2026-10-09.
 
 The operator invoked the #1430–#1435 campaign and approved this evaluation's
 scope. [Issue #1434](https://github.com/randomparity/hmc-mcp/issues/1434) permits
-adoption or a measured NO-GO; [the frozen charter](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6081426497)
+adoption or a measured NO-GO; [the frozen charter](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6081889875)
 retains its exclusions. The integrated base is
 `64a2619c45801efd98b6c9618207a7652ae614c8`; the admitted timing/RSS comparisons below use
 `7f0dfe0dcad9df1b11f06a2d42c82bd1547a0363`.
@@ -149,5 +149,9 @@ The first native amd64/arm64 observations at the same source returned runner exi
 selected serial because fresh user scopes lacked cpu.max. Their rejected serial
 peaks were 1,650,221,056/1,610,764,288 bytes and costs 511.662/529.780 s. Neither supplies
 parallel evidence or admitted complete identity/coverage proof. Both units were
-removed with no descendants or memory events. The next step is cheap system-scope
-eligibility preflight only; additional full native attempts are not yet allocated.
+removed with no descendants or memory events. Both native system-manager preflights
+then passed at source 050f4107: actual
+resource/ownership selectors chose two, original constraints/affinity were preserved,
+exit 0/7 and timeout controls passed, and every owned unit was removed. These are
+cheap fixture results, not full-suite memory samples. Exactly one additional full
+native candidate per architecture is now allocated; results remain pending.

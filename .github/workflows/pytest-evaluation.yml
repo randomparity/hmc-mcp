@@ -1,4 +1,4 @@
-name: Pytest kernel memory preflight
+name: Pytest kernel memory evaluation
 on:
   pull_request:
 permissions:
@@ -7,7 +7,7 @@ jobs:
   memory:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/bounded-pytest-1434'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -29,11 +29,13 @@ jobs:
         with:
           just-version: "1.58.0"
       - run: just setup
-      - name: Prove system-scope selector and accounting before any full sample
+      - name: Observe one native production candidate after system-scope fitness
         shell: bash
         run: |
           observer=$(mktemp "$RUNNER_TEMP/q1434-peak-XXXXXX.py")
           cat > "$observer" <<'PYTHON'
+          import hashlib
+          import re
           import json
           import os
           import platform
@@ -120,7 +122,9 @@ jobs:
                               'raise SystemExit(' + ('7' if mode == 'probe-failure' else '0') + ')'],
                               stdout=log, stderr=subprocess.STDOUT, timeout=10)
                   else:
-                      raise AssertionError('preflight-only mode')
+                      with (OUT / 'runner.log').open('w') as log:
+                          command = subprocess.run(['uv', 'run', '--no-sync', 'python', 'scripts/run_tests.py', '--timings'],
+                                                   stdout=log, stderr=subprocess.STDOUT, timeout=1110)
                   result['runner_exit'] = command.returncode
               except BaseException as error:
                   result['failure_type'] = type(error).__name__
@@ -147,7 +151,7 @@ jobs:
               control = ['systemctl'] + manager
               command = ['systemd-run'] + manager + ['--scope', '--quiet', '--unit=' + unit,
                          '-p', 'MemoryAccounting=yes', '-p',
-                         'RuntimeMaxSec=' + ('2s' if mode == 'probe-timeout' else '20s'),
+                         'RuntimeMaxSec=' + ('2s' if mode == 'probe-timeout' else '1140s' if mode == 'candidate' else '20s'),
                          '-p', 'TimeoutStopSec=3s']
               if not manager:
                   groups = ['--groups=' + ','.join(map(str, os.getgroups()))] if os.getgroups() else ['--clear-groups']
@@ -163,10 +167,14 @@ jobs:
                   launch = {'environment': dict(os.environ), 'uid': os.getuid(),
                             'gid': os.getgid(), 'groups': sorted(os.getgroups())}
                   outcome = subprocess.run(command, input=json.dumps(launch), capture_output=True,
-                                           text=True, timeout=50)
+                                           text=True, timeout=1170 if mode == 'candidate' else 50)
                   (OUT / (mode + '-scope.log')).write_text(outcome.stdout + outcome.stderr)
                   return outcome.returncode
               finally:
+                  if mode == 'candidate':
+                      DATA['candidate_scope_exit'] = outcome.returncode if outcome is not None else None
+                      DATA['observation'] = json.loads(record.read_text()) if record.exists() else None
+                      assert DATA['observation'] is None or DATA['observation']['mode'] == mode
                   state = run([*control, 'show', unit, '--property=LoadState', '--value'])
                   if state.stdout.strip() != 'not-found':
                       stop = run([*control, 'stop', unit])
@@ -215,8 +223,37 @@ jobs:
                       assert not stat.exists() or stat.read_text().split()[21] != start
                       proof['survivors'] = 0
                   DATA['preflight'][-1] = {'mode': mode, 'exit': observed_status, **proof}
-              DATA['phase'] = 'preflight-complete'
-              return
+              if os.environ.get('PEAK_PREFLIGHT_ONLY') == '1':
+                  DATA['phase'] = 'preflight-complete'
+                  return
+              DATA['phase'] = 'collection'
+              collection = subprocess.run(['uv', 'run', '--no-sync', 'pytest', '--collect-only', '-q', '--no-cov', 'tests/'],
+                                          text=True, capture_output=True, timeout=120)
+              (OUT / 'collection.log').write_text(collection.stdout + collection.stderr)
+              assert collection.returncode == 0
+              identities = sorted(line for line in collection.stdout.splitlines() if line.startswith('tests/') and '::' in line)
+              assert identities and len(set(identities)) == len(identities)
+              DATA['identities'] = [hashlib.sha256(value.encode()).hexdigest() for value in identities]
+              DATA['collected'] = len(identities)
+              DATA['phase'] = 'candidate'
+              assert execute_scope(manager, 'candidate', original['affinity']) == 0
+              observed = DATA['observation']['resources']
+              assert observed['affinity'] == original['affinity']
+              log = (OUT / 'runner.log').read_text()
+              assert '; workers=2' in log
+              assert re.search(r'\b' + str(len(identities)) + r' passed\b', log)
+              assert not re.search(r'\d+ (?:failed|skipped|xfailed|xpassed|errors?)\b', log)
+              DATA['selected_workers'] = 2
+              DATA['all_collected_passed'] = True
+              DATA['phase'] = 'coverage-export'
+              coverage = run(['uv', 'run', '--no-sync', 'coverage', 'json', '-o', str(OUT / 'coverage.json')])
+              assert coverage.returncode == 0
+              report = json.loads((OUT / 'coverage.json').read_text())
+              DATA['coverage_totals'] = report['totals']
+              DATA['coverage_files'] = {hashlib.sha256(name.encode()).hexdigest(): item['summary']
+                                        for name, item in report['files'].items()}
+              DATA['admitted'] = True
+              DATA['phase'] = 'complete'
           
           
           if len(sys.argv) == 4:

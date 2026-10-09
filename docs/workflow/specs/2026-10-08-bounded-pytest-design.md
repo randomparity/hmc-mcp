@@ -5,7 +5,7 @@
 Accepted by the operator on 2026-10-09 after the bounded evaluation and review.
 This specification replaces the experiment-only execution contract.
 The frozen charter is issue #1434 / q1434-24622bc8, latest complete WORK:SCOPE
-6081426497. Its exclusions and owners remain unchanged. Complexity M maps to
+6081889875. Its exclusions and owners remain unchanged. Complexity M maps to
 the unchanged 250-line denominator; this remains one PR in the full-spec lane.
 The requested guarantees are resource-bounded workers, complete tests/coverage,
 serial fallback, meaningful diagnostics and owned-descendant cleanup.
@@ -179,6 +179,10 @@ full attempt, the temporary workflow runs only cheap system-manager preflight,
 using the already-supported exec-only setpriv path and unchanged restrictions.
 Record actual resource and owned-mode selectors, require two workers and restored
 subreaper state, and retain counter/status/cleanup controls and failure evidence.
-No full candidate is present in this preflight workflow; further full observations
-require an explicit allocation. Do not set CPU weight/quota/delegation or weaken
+After both native system-manager preflights passed, the coordinator allocated one
+additional full candidate per architecture, with collection and full per-file
+coverage export restored. Require actual two-worker eligibility before launching
+the full suite and again in its completion output. Preserve every rejected attempt;
+no local rerun, serial run, pair, speed comparison or automatic retry is authorized.
+Do not set CPU weight/quota/delegation or weaken
 unknown-resource fallback. CPUAccounting does not enable the modern v2 controller.
