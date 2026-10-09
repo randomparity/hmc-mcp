@@ -10,7 +10,7 @@ The Summary column on each domain page is the first line of the tool's MCP descr
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hmc_capture_lpar_console` | `mutate` | `lpar.capture_console` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Capture a bounded snapshot of an LPAR's virtual console (mkvterm). |
 | `hmc_create_lpar` | `mutate` | `lpar.create` | `managed_system` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Create a new LPAR on a managed system. |
-| `hmc_decommission_lpar` | `destructive` | `lpar.decommission` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Inventory, authorize, and optionally decommission one LPAR. |
+| `hmc_decommission_lpar` | `destructive` | `lpar.decommission` | `lpar` | `implemented` | `current` | `existing-runtime-guards` | Inventory, authorize, and optionally decommission one LPAR. |
 | `hmc_delete_lpar` | `destructive` | `lpar.delete` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | Delete (destroy) an LPAR by name or UUID. |
 | `hmc_dlpar_mem` | `mutate` | `lpar.dlpar_mem` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | DLPAR memory hot-plug: change memory resources on a running LPAR. |
 | `hmc_dlpar_proc` | `mutate` | `lpar.dlpar_proc` | `lpar` | `implemented` | `stale (closure-changed)` | `existing-runtime-guards` | DLPAR processor hot-plug: change CPU resources on a running LPAR. |

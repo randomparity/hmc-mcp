@@ -4599,6 +4599,28 @@
           "hardware_family": "POWER9",
           "schema_version": "(not set)",
           "closure_fingerprint": "3141a93d1d6fb5a223bdb827124e5e9cd55d595b5beabf1028c410477cc0b823"
+        },
+        {
+          "id": "st41-hmc-decommission-lpar-909332fa",
+          "channel": "live",
+          "result": "passed",
+          "scenario": "st41-lpar-power",
+          "observed_at": "2026-10-09T16:12:54Z",
+          "cleanup": "passed",
+          "assertions": [
+            "storage-mapping-absent",
+            "backing-volume-retained",
+            "dry-run-inventoried",
+            "dry-run-changed-nothing",
+            "resource-deleted",
+            "workflow-completed",
+            "lpar-name-absent"
+          ],
+          "tested_commit": "909332fa844d3dc69e6a7811d5520d85b5396274",
+          "hmc_release": "V10R3M1060",
+          "hardware_family": "POWER9",
+          "schema_version": "(not set)",
+          "closure_fingerprint": "a391e49fda59e95634d6989ff160fb648b6c53ca31d8965a25e5d56c623ffdd2"
         }
       ]
     },
