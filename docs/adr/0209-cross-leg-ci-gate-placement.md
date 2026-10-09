@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded by [0210](0210-amd64-hosted-ci.md)** (2026-10-09), architecture coverage only.
+
 Accepted — NO-GO for relocation evaluated in #1435 (2026-10-08).
 
 ## Context

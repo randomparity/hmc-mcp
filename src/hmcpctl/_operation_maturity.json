@@ -166,9 +166,9 @@
     {
       "operation": "lpar.decommission",
       "implementation": "implemented",
-      "verification": "stale",
-      "reason": "closure-changed",
-      "observed_at": "2026-10-07T02:44:34Z"
+      "verification": "current",
+      "reason": null,
+      "observed_at": "2026-10-09T16:12:54Z"
     },
     {
       "operation": "lpar.delete",
@@ -180,15 +180,15 @@
     {
       "operation": "lpar.dlpar_mem",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-08T18:52:55Z"
     },
     {
       "operation": "lpar.dlpar_proc",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-08T18:52:55Z"
     },
     {
@@ -285,8 +285,8 @@
     {
       "operation": "lpar.modify",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-08T18:52:55Z"
     },
     {
@@ -327,8 +327,8 @@
     {
       "operation": "lpar.rename",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-08T18:52:55Z"
     },
     {

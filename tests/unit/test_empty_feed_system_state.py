@@ -466,11 +466,14 @@ async def test_decommission_refuses_an_untrusted_vios_feed(
     )
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(HMCError) as caught:
-            await decommission_lpar(hmc, SYSTEM_UUID, "lpar-a", dry_run=dry_run)
+        result = await decommission_lpar(hmc, SYSTEM_UUID, "lpar-a", dry_run=dry_run)
 
-    assert type(caught.value) is HMCError
-    message = str(caught.value)
+    assert result.resource_deleted is False
+    assert result.workflow_completed is dry_run
+    assert [step.status for step in result.steps] == (
+        ["dry_run"] * 4 if dry_run else ["skipped", "error", "skipped", "skipped"]
+    )
+    message = " ".join(result.warnings)
     assert "Cannot list VIOSes" in message
     assert repr(SYSTEM_NAME) in message
     assert "State 'no connection'" in message

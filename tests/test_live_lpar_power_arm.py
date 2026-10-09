@@ -323,6 +323,28 @@ class World:
     def _hmc_list_storage_mappings(self, kwargs: dict[str, Any]) -> Any:
         return [dict(item) for item in self.mappings]
 
+    def _hmc_get_vios_storage_detail(self, kwargs: dict[str, Any]) -> Any:
+        mappings = []
+        for item in self.mappings:
+            identity = item["id"]
+            server, target = identity.split("/") if identity else ("", "")
+            mappings.append(
+                {
+                    "AssociatedLogicalPartition": {
+                        "href": "/rest/api/uom/LogicalPartition/" + item["lpar_uuid"]
+                    },
+                    "ServerAdapter": {"AdapterName": server},
+                    "TargetDevice": {"VirtualSCSITargetDevice": {"TargetName": target}},
+                    "Storage": {
+                        item["backing_kind"]: {"DiskName": item["backing_name"]}
+                    },
+                }
+            )
+        return {
+            "UUID": VIOS_UUID,
+            "Resource": {"VirtualSCSIMappings": {"VirtualSCSIMapping": mappings}},
+        }
+
     def _hmc_create_virtual_disk(self, kwargs: dict[str, Any]) -> Any:
         self.volumes.add(kwargs["disk_name"])
         return {"disk_name": kwargs["disk_name"]}
@@ -383,7 +405,12 @@ class World:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
         if entry is None:
             return []
-        return [{"UUID": "net-1", "Resource": {"PortVLANID": str(VLAN)}}]
+        kind = kwargs["adapter_type"]
+        if kind == "ClientNetworkAdapter":
+            return [{"UUID": "net-1", "Resource": {"PortVLANID": str(VLAN)}}]
+        if kind == "VirtualSCSIClientAdapter":
+            return [{"UUID": "scsi-1", "Resource": {}}]
+        return []
 
     def _hmc_decommission_lpar(self, kwargs: dict[str, Any]) -> Any:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
@@ -412,7 +439,22 @@ class World:
             ],
         }
         if kwargs.get("dry_run"):
-            steps = [{"step": n, "status": "dry_run"} for n in ("power_off", "delete")]
+            steps = [
+                {"step": n, "status": "dry_run"}
+                for n in (
+                    "power_off",
+                    "detach_storage_mappings",
+                    "detach_adapters",
+                    "delete_lpar",
+                )
+            ]
+            steps[1]["result"] = {
+                "mappings": [
+                    {"vios_uuid": VIOS_UUID, "mapping_id": m["id"]}
+                    for m in self.mappings
+                    if m["lpar_uuid"] == entry["uuid"]
+                ]
+            }
             return {
                 "resource_deleted": False,
                 "workflow_completed": False,
@@ -422,6 +464,9 @@ class World:
                 "steps": steps,
                 "blast_radius": radius,
             }
+        for mapping in list(self.mappings):
+            if mapping["lpar_uuid"] == entry["uuid"]:
+                self._hmc_detach_storage_mapping({"mapping_id": mapping["id"]})
         del self.partitions[self.name_of(entry)]
         if self.slot_owner != "null":
             self.slot_owner = "null"
@@ -799,46 +844,49 @@ def test_an_ineligible_slot_is_never_sent(schemas, change, system):
     assert call["assignments"] == {"dedicated": []}
 
 
-def test_the_mapping_is_detached_before_the_real_decommission(schemas):
+def test_product_decommission_runs_without_prior_detach(schemas):
     world = World()
     _run(schemas, world)
-
+    assert not world.calls_to("hmc_detach_storage_mapping")
     tools = world.tools()
-    detach = tools.index("hmc_detach_storage_mapping")
     real = [
         i
         for i, (tool, k) in enumerate(world.calls)
         if tool == "hmc_decommission_lpar" and not k.get("dry_run")
     ]
-    assert real and detach < real[0]
-    assert tools.index("hmc_delete_virtual_disk") > real[0]
+    assert real and tools.index("hmc_delete_virtual_disk") > real[0]
 
 
-def test_a_mapping_that_survives_the_detach_skips_the_real_decommission(schemas):
+def test_failed_decommission_preserves_mapping_and_backing_volume(schemas):
     world = World()
-    world.overrides["hmc_detach_storage_mapping"] = lambda _k: HMCError("busy")
-    state = _run(schemas, world)
-
-    real = [k for k in world.calls_to("hmc_decommission_lpar") if not k.get("dry_run")]
-    assert real == []
-    assert _rows(state, "run volume mapping teardown")
-    assert world.volumes > {"hd5", "lv_op"}
-    # P is kept so the tool can still detach its mapping on a retry.
-    assert [name for name in world.partitions if name.endswith("-p")]
-    assert any(
-        "was kept" in row["data"] for row in _rows(state, "run partition teardown")
+    original = world._hmc_decommission_lpar
+    world.overrides["hmc_decommission_lpar"] = lambda k: (
+        original(k) if k["dry_run"] else HMCError("busy")
     )
+    state = _run(schemas, world)
+    assert _rows(state, "decommission recovery")
+    assert world.volumes > {"hd5", "lv_op"}
+    assert [name for name in world.partitions if name.endswith("-p")]
+    assert not world.calls_to("hmc_detach_storage_mapping")
+    assert not world.calls_to("hmc_delete_virtual_disk")
 
 
 def test_teardown_detaches_a_run_mapping_before_deleting_its_partition(schemas):
-    """A detach refused once leaves P mapped; teardown detaches before the delete."""
+    """Without a decommission attempt, teardown detaches before deleting P."""
     world = World()
     world.provision_fails_after_storage = True
-    real = world._hmc_detach_storage_mapping
-    refusals = iter([HMCError("busy")])
-    world.overrides["hmc_detach_storage_mapping"] = lambda k: (
-        next(refusals, None) or real(k)
-    )
+    world.provision_without_uuid = True
+    get_lpar = world._hmc_get_lpar
+    unavailable = True
+
+    def read_lpar(kwargs):
+        nonlocal unavailable
+        if str(kwargs["lpar_name_or_uuid"]).endswith("-p") and unavailable:
+            unavailable = False
+            return HMCError("post-provision partition read unavailable")
+        return get_lpar(kwargs)
+
+    world.overrides["hmc_get_lpar"] = read_lpar
     state = _run(schemas, world)
 
     tools = world.tools()
@@ -1207,7 +1255,7 @@ def test_a_run_mapping_without_an_id_is_never_read_as_detached(schemas):
     real = [k for k in world.calls_to("hmc_decommission_lpar") if not k["dry_run"]]
     assert real == []
     assert [name for name in world.partitions if name.endswith("-p")]
-    assert _rows(state, "run volume mapping teardown")
+    assert _rows(state, "decommission recovery")
 
 
 def test_a_refused_current_configuration_activation_does_not_stop_the_sequence(schemas):
@@ -1255,6 +1303,19 @@ def test_a_refused_detach_records_the_vios_rmc_state(schemas):
         return real(kwargs)
 
     world.overrides["hmc_run_command"] = answer
+    world.provision_fails_after_storage = True
+    world.provision_without_uuid = True
+    get_lpar = world._hmc_get_lpar
+    unavailable = True
+
+    def read_lpar(kwargs):
+        nonlocal unavailable
+        if str(kwargs["lpar_name_or_uuid"]).endswith("-p") and unavailable:
+            unavailable = False
+            return HMCError("post-provision partition read unavailable")
+        return get_lpar(kwargs)
+
+    world.overrides["hmc_get_lpar"] = read_lpar
     world.overrides["hmc_detach_storage_mapping"] = lambda _k: HMCError(
         "REST0126 HSCL2957 no RMC connection"
     )
@@ -1263,3 +1324,208 @@ def test_a_refused_detach_records_the_vios_rmc_state(schemas):
     assert reads
     rows = _rows(state, "VIOS rmc_state (after a refused detach)")
     assert rows and {row["data"] for row in rows} == {"vios-A,vioserver,active"}
+
+
+def test_decommission_cancellation_retains_mapping_partition_and_volume(schemas):
+    world = World()
+
+    def cancel(kwargs):
+        if not kwargs["dry_run"]:
+            raise asyncio.CancelledError()
+        return world._hmc_decommission_lpar(kwargs)
+
+    world.overrides["hmc_decommission_lpar"] = cancel
+    with pytest.raises(asyncio.CancelledError):
+        _run(schemas, world)
+    assert any(name.endswith("-p") for name in world.partitions)
+    assert world.volumes > {"hd5", "lv_op"}
+    assert not world.calls_to("hmc_delete_virtual_disk")
+
+
+def test_failed_partition_absence_never_releases_decommission_cleanup(schemas):
+    world = World()
+    _decommission_keeps_partition(world)
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "failed"
+    assert any(name.endswith("-p") for name in world.partitions)
+    assert not world.calls_to("hmc_delete_virtual_disk")
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "omitted-collection",
+        "invalid-metadata",
+        "failed-detail",
+        "failed-partition-read",
+        "missing-volume",
+        "changed-foreign",
+    ],
+)
+def test_uncertain_post_decommission_proof_retains_manual_cleanup(schemas, failure):
+    world = World()
+    completed = False
+    original = world._hmc_decommission_lpar
+
+    def decommission(kwargs):
+        nonlocal completed
+        result = original(kwargs)
+        if not kwargs["dry_run"]:
+            completed = True
+            if failure == "missing-volume":
+                world.volumes = {"hd5", "lv_op"}
+            elif failure == "changed-foreign":
+                world.mappings.append(
+                    {
+                        "id": "vhost9/vtscsi9",
+                        "lpar_uuid": OTHER_UUID,
+                        "backing_kind": "VirtualDisk",
+                        "backing_name": "operator-volume",
+                    }
+                )
+        return result
+
+    def detail(kwargs):
+        if completed and failure == "failed-detail":
+            return HMCError("VIOS detail unavailable")
+        result = world._hmc_get_vios_storage_detail(kwargs)
+        if completed and failure == "omitted-collection":
+            result["Resource"].pop("VirtualSCSIMappings")
+        if completed and failure == "invalid-metadata":
+            result["Resource"]["VirtualSCSIMappings"]["Metadata"] = {
+                "Atom": "unexpected"
+            }
+        return result
+
+    def read_partitions(kwargs):
+        if (
+            completed
+            and failure == "failed-partition-read"
+            and kwargs["cmd"].endswith("-F name,state")
+        ):
+            return HMCError("partition listing unavailable")
+        return world._hmc_run_command(kwargs)
+
+    world.overrides.update(
+        hmc_decommission_lpar=decommission,
+        hmc_get_vios_storage_detail=detail,
+        hmc_run_command=read_partitions,
+    )
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "failed"
+    assert _rows(state, "decommission recovery")
+    assert not world.calls_to("hmc_delete_virtual_disk")
+    assert not world.calls_to("hmc_detach_storage_mapping")
+
+
+@pytest.mark.parametrize("boundary", ["preview", "inventory", "post-inventory"])
+def test_cancellation_during_decommission_proof_preserves_remaining_scratch(
+    schemas, boundary
+):
+    world = World()
+
+    def cancel(kwargs):
+        if boundary == "post-inventory" and any(
+            name.endswith("-p") for name in world.partitions
+        ):
+            return world._hmc_get_vios_storage_detail(kwargs)
+        raise asyncio.CancelledError()
+
+    tool = (
+        "hmc_decommission_lpar"
+        if boundary == "preview"
+        else "hmc_get_vios_storage_detail"
+    )
+    world.overrides[tool] = cancel
+    with pytest.raises(asyncio.CancelledError):
+        _run(schemas, world)
+    assert any(name.endswith("-p") for name in world.partitions) == (
+        boundary != "post-inventory"
+    )
+    assert world.volumes > {"hd5", "lv_op"}
+    assert not world.calls_to("hmc_delete_virtual_disk")
+    assert not world.calls_to("hmc_detach_storage_mapping")
+
+
+@pytest.mark.parametrize("flag", ["resource_deleted", "workflow_completed"])
+def test_unsuccessful_typed_decommission_flag_retains_manual_cleanup(schemas, flag):
+    world = World()
+    original = world._hmc_decommission_lpar
+
+    def incomplete(kwargs):
+        result = original(kwargs)
+        if not kwargs["dry_run"]:
+            result[flag] = False
+        return result
+
+    world.overrides["hmc_decommission_lpar"] = incomplete
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "failed"
+    assert _rows(state, "decommission recovery")
+    assert not world.calls_to("hmc_delete_virtual_disk")
+    assert not world.calls_to("hmc_detach_storage_mapping")
+
+
+@pytest.mark.parametrize(
+    "preview",
+    [
+        "substituted",
+        "missing",
+        "duplicate",
+        "case-duplicate",
+        "empty",
+        "missing-uuid",
+        "malformed",
+    ],
+)
+def test_wrong_preview_adapter_identity_retains_decommission_resources(
+    schemas, preview
+):
+    world = World()
+
+    def change(kwargs, real):
+        data = real(kwargs)
+        if kwargs["dry_run"]:
+            adapters = data["blast_radius"]["adapters"]
+            if preview == "substituted":
+                adapters[0]["uuid"] = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+            elif preview == "missing":
+                adapters.pop()
+            elif preview == "duplicate":
+                adapters.append(dict(adapters[0]))
+            elif preview == "case-duplicate":
+                adapters.append({**adapters[0], "uuid": adapters[0]["uuid"].upper()})
+            elif preview == "empty":
+                adapters[0]["uuid"] = ""
+            elif preview == "missing-uuid":
+                adapters[0].pop("uuid")
+            else:
+                data["blast_radius"]["adapters"] = [None]
+        return data
+
+    _wrap(world, "hmc_decommission_lpar", change)
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "failed"
+    assert not [k for k in world.calls_to("hmc_decommission_lpar") if not k["dry_run"]]
+    assert any(name.endswith("-p") for name in world.partitions)
+    assert not world.calls_to("hmc_delete_virtual_disk")
+
+
+def test_preview_adapter_uuid_case_matches_snapshot(schemas):
+    world = World()
+
+    def uppercase(kwargs, real):
+        data = real(kwargs)
+        if kwargs["dry_run"]:
+            for item in data["blast_radius"]["adapters"]:
+                item["uuid"] = item["uuid"].upper()
+        return data
+
+    _wrap(world, "hmc_decommission_lpar", uppercase)
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "passed"
+    assert (
+        len([k for k in world.calls_to("hmc_decommission_lpar") if not k["dry_run"]])
+        == 1
+    )
+    assert len(world.calls_to("hmc_delete_virtual_disk")) == 1

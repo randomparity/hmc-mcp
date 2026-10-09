@@ -282,8 +282,10 @@ def hmc_decommission_lpar(
     This tool orchestrates the high-risk decommission workflow in one call:
     resolve the target LPAR on the selected managed system, enforce the
     ownership token, inventory its adapter and observed storage blast radius,
-    power it off when needed, detach client adapters, and finally delete the
-    partition. Set dry_run=True to render the blast radius and step plan
+    require complete vSCSI inventory before mutation, power it off when needed,
+    detach its exact vSCSI mappings before client adapters, and finally delete
+    the partition while retaining backing storage and foreign mappings.
+    Set dry_run=True to render the blast radius, warnings and step plan
     without mutating anything. With dry_run=False, the final delete is
     irreversible once reached.
 
