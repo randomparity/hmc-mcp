@@ -401,6 +401,65 @@ class _Arm:
             same = same and equal
         return same
 
+    async def final_baseline(
+        self, target: Target, baseline: Snapshot, settled: bool
+    ) -> bool:
+        # Unsettled means the HMC may still be restoring from the backup. Off
+        # baseline means it is the operator's way back. Either way it is kept.
+        if not settled:
+            return False
+        final = await self.snapshot(target, "final")
+        return (
+            final is not None
+            and self.compare(baseline, final, "final compare")
+            and await self.vadapter_shows(target) is True
+        )
+
+    async def cleanup_backup(
+        self,
+        target: Target,
+        name: str,
+        listed: str | None,
+        run_rows: list[str],
+        *,
+        at_baseline: bool,
+        settled: bool,
+    ) -> str:
+        if listed is None:
+            return "not-run"
+        if not at_baseline:
+            self.record(KEPT_ROW, "FAIL", {"backup": listed, "settled": settled})
+            return "not-run"
+        await self.run("rmviosbk", rmviosbk_command(self.system, target.vios, listed))
+        # Absence is read from the source that showed presence: a parsed listing
+        # that never named the backup cannot show it gone.
+        if run_rows:
+            status, listing = await self.listed(target, "after rmviosbk")
+            rows = _backup_rows(listing) if status == "PASS" else None
+            gone = rows is not None and catalog_name(name, rows, None) is None
+        else:
+            raw = await self.raw_listing(target, "after rmviosbk")
+            gone = raw is not None and name not in raw
+        return "passed" if gone else "failed"
+
+    def record_restore(
+        self, restore: _Restore | None, listed: str | None, at_baseline: bool
+    ) -> None:
+        if restore is not None:
+            self.state.record_verified(
+                SUBTASK,
+                "hmc_restore_vios",
+                operation="vios.restore",
+                scenario=SCENARIO,
+                assertions=[
+                    Assertion("restore-accepted", restore.accepted),
+                    Assertion("mapping-restored", restore.mapping_restored),
+                    Assertion("baseline-restored", restore.baseline_restored),
+                ],
+                cleanup="passed" if at_baseline else "failed",
+                data={"backup": listed},
+            )
+
 
 async def exercise_vios_backup(client: Client, state: RunState) -> None:
     print("\n=== ST37: VIOS I/O configuration backup and restore ===")
@@ -465,7 +524,6 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
             "hmc_list_vios_backups (after a refused backup)", status, after_listing
         )
     listed = catalog_name(name, after_rows, raw_after)
-    exists = listed is not None
 
     restore, settled = None, True
     if backup_accepted and listed is not None:
@@ -476,34 +534,10 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
             "hmc_restore_vios (viosioconfig)",
             "not attempted: the backup was not confirmed or the delta did not complete",
         )
-    # The backup goes only when the VIOS is back at its baseline. Unsettled means
-    # the VIOS never answered after the restore or a read after a change failed:
-    # the HMC may still be restoring from this backup. Off baseline means it is the
-    # operator's way back. Either way it is kept, and recovery reports it.
-    at_baseline = False
-    if settled:
-        final = await arm.snapshot(target, "final")
-        at_baseline = (
-            final is not None
-            and arm.compare(baseline, final, "final compare")
-            and await arm.vadapter_shows(target) is True
-        )
-
-    backup_cleanup = "not-run"
-    if listed is not None and at_baseline:
-        await arm.run("rmviosbk", rmviosbk_command(arm.system, target.vios, listed))
-        # Absence is read from the source that showed presence: a parsed listing
-        # that never named the backup cannot show it gone.
-        if run_rows:
-            status, listing = await arm.listed(target, "after rmviosbk")
-            rows = _backup_rows(listing) if status == "PASS" else None
-            gone = rows is not None and catalog_name(name, rows, None) is None
-        else:
-            raw = await arm.raw_listing(target, "after rmviosbk")
-            gone = raw is not None and name not in raw
-        backup_cleanup = "passed" if gone else "failed"
-    elif exists:
-        arm.record(KEPT_ROW, "FAIL", {"backup": listed, "settled": settled})
+    at_baseline = await arm.final_baseline(target, baseline, settled)
+    backup_cleanup = await arm.cleanup_backup(
+        target, name, listed, run_rows, at_baseline=at_baseline, settled=settled
+    )
     state.record_verified(
         SUBTASK,
         "hmc_backup_vios",
@@ -522,20 +556,7 @@ async def exercise_vios_backup(client: Client, state: RunState) -> None:
         cleanup=backup_cleanup,
         data=data,
     )
-    if restore is not None:
-        state.record_verified(
-            SUBTASK,
-            "hmc_restore_vios",
-            operation="vios.restore",
-            scenario=SCENARIO,
-            assertions=[
-                Assertion("restore-accepted", restore.accepted),
-                Assertion("mapping-restored", restore.mapping_restored),
-                Assertion("baseline-restored", restore.baseline_restored),
-            ],
-            cleanup="passed" if at_baseline else "failed",
-            data={"backup": listed},
-        )
+    arm.record_restore(restore, listed, at_baseline)
 
 
 async def _round_trip(
