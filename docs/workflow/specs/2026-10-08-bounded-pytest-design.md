@@ -32,6 +32,8 @@ Record sample period and peak process count. An isolated local cgroup additional
 bounds memory and CPU; do not describe physical RAM as its effective allowance.
 Timeout and interruption terminate/reap the owned forest, with TERM then KILL.
 Harness errors or surviving processes invalidate the sample rather than passing.
+Record candidate survivors before containment cleanup; containment does not prove
+production runner cleanup. Defer additional SIGINT during bounded teardown.
 
 ## Execution and success
 
@@ -59,7 +61,10 @@ Harness errors or surviving processes invalidate the sample rather than passing.
 5. The temporary PR-only workflow is restricted to the owned branch, uses
    contents:read, no secrets and existing pinned setup actions. It changes no
    ordinary native verify/wheel leg. Its logs and summary carry tested SHA,
-   versions, resource context and sample results. Do not upload raw private logs.
+   versions, resource context and sample results. Always retain normalized JSON
+with hashed test identities/statuses and hashed per-file coverage summaries,
+including on failure. Retrieve that artifact for final comparisons; do not upload
+raw private logs, JUnit or coverage reports.
 6. Publish the measured decision and limits. Adoption requires stable complete
    runs, preserved gate/isolation/lifecycle and repeatable wall-time benefit at
    adequate resources. If that holds, propose the minimal production runner
