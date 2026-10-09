@@ -5,7 +5,7 @@
 Accepted by the operator on 2026-10-09 after the bounded evaluation and review.
 This specification replaces the experiment-only execution contract.
 The frozen charter is issue #1434 / q1434-24622bc8, latest complete WORK:SCOPE
-6079392765. Its exclusions and owners remain unchanged. Complexity M maps to
+6080484059. Its exclusions and owners remain unchanged. Complexity M maps to
 the unchanged 250-line denominator; this remains one PR in the full-spec lane.
 The requested guarantees are resource-bounded workers, complete tests/coverage,
 serial fallback, meaningful diagnostics and owned-descendant cleanup.
@@ -139,3 +139,26 @@ selected mode; experiment timings are not relabelled as production-run timings.
 Remove the temporary measurement workflow, script and its test module in a distinct
 commit. Preserve the six-case collection correction. Keep only the approved minimal
 production runner/tests/dependency/guidance and durable evidence/spec/ADR.
+
+## Supplemental actual-peak evidence
+
+The separately authorized memory-only allocation is one normal-local and one per
+native architecture, Python3.11, using the current production runner without forcing
+eligibility. Existing timing/RSS samples remain immutable; these observations are
+not new speed comparisons. Record source, collection, all-passed count, per-file
+coverage and selected two-worker mode. Clear the runner’s ambient pytest/coverage
+overrides for collection, execution and export; retain failure counters/status before
+admission and never substitute a prior probe record. Serial fallback or failure
+is not admitted
+and grants no retry. Measure kernel memory.peak in a fresh owned scope through
+runner exit and empty descendant inventory, before deleting the scope. This includes
+charged tmpfs/kernel memory and the small in-scope Python observer; collect tests
+before entering and export coverage after leaving. It is not unique physical RSS.
+Preserve affinity and reject moving from any finite original ancestor CPU/memory/
+swap restriction. Record both original and in-scope resources. Prove counter growth,
+exit0/7 propagation, timeout descendant removal and unit cleanup with cheap fixtures.
+Verify exact owned scope membership. The system-manager path uses installed setpriv
+to exec as the original UID/GID/groups without a persistent sudo/PAM launcher.
+Use the user manager or verified noninteractive sudo/system manager
+while executing tests as the original user. Restore only the temporary inline native
+workflow, then remove it separately. No production workflow or interface changes.

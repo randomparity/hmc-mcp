@@ -7,9 +7,9 @@ explicitly approved by the operator on 2026-10-09.
 
 The operator invoked the #1430–#1435 campaign and approved this evaluation's
 scope. [Issue #1434](https://github.com/randomparity/hmc-mcp/issues/1434) permits
-adoption or a measured NO-GO; [the frozen charter](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6079392765)
+adoption or a measured NO-GO; [the frozen charter](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6080484059)
 retains its exclusions. The integrated base is
-`64a2619c45801efd98b6c9618207a7652ae614c8`; all admitted measurements below use
+`64a2619c45801efd98b6c9618207a7652ae614c8`; the admitted timing/RSS comparisons below use
 `7f0dfe0dcad9df1b11f06a2d42c82bd1547a0363`.
 
 The candidate is pytest-xdist 3.8.0, exactly two workers,
@@ -131,3 +131,11 @@ only terminates its direct child. Fixture containment subsequently removes the
 survivors and receives no credit for production cleanup. Owned sessions can
 address worker signalling, but nested-session descendants additionally require
 an ownership/reaping design before production adoption.
+
+## Supplemental memory accounting
+
+Normal-local and native timing samples above report sampled summed RSS; they do
+not establish a kernel high-water value. Actual charged-memory observations for
+those three profiles remain pending under the separate bounded memory-only grant.
+The constrained kernel peak remains valid. Supplemental results use the production
+runner at their own immutable source and do not enter the earlier timing dataset.
