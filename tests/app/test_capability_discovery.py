@@ -14,6 +14,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import Tool
+from rich.console import Console
 from typer.testing import CliRunner
 
 from hmcpctl import cli, operation_maturity_middleware
@@ -123,7 +124,8 @@ def test_cli_capabilities_table_and_json_share_sorted_rows_without_hmc_client(
 
     monkeypatch.setattr(runtime, "HMCClient", unexpected_client)
     monkeypatch.setattr(runtime, "build_config", unexpected_client)
-    runner = CliRunner(env={"COLUMNS": "400"})
+    monkeypatch.setattr(capability_commands, "console", Console(width=400, emoji=False))
+    runner = CliRunner()
 
     json_result = runner.invoke(cli.app, ["capabilities", "--json"])
     table_result = runner.invoke(cli.app, ["capabilities"])
