@@ -243,7 +243,7 @@ REST_SHARING_MODES = {
 }
 
 
-@pytest.mark.parametrize("sharing_mode", SHARING_MODES)
+@pytest.mark.parametrize("sharing_mode", sorted(SHARING_MODES))
 def test_all_sharing_modes_serialize_in_rest_spelling(sharing_mode):
     dedicated = sharing_mode not in {"capped", "uncapped"}
     xml = build_lpar_document(
