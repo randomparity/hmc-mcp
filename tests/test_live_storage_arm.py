@@ -662,6 +662,6 @@ def test_the_run_disk_name_fits_the_vios_limit():
 
 
 def test_every_registered_storage_stage_is_covered_here():
-    assert runner.SUBTASK_GROUPS["storage"] == [0, 3, storage_lifecycle.SUBTASK]
+    assert runner.SUBTASK_GROUPS["storage"] == [0, 3, storage_lifecycle.SUBTASK, 42]
     assert runner.SUBTASKS[40] is storage_lifecycle.exercise_disk_lifecycle
     assert 40 not in runner.SUBTASK_GROUPS["all"]

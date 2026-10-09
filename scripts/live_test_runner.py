@@ -7,7 +7,7 @@ a JSON document on exit.
 This mutates a managed system. The procedure is docs/live-testing.md: run
 `scripts/live_test_preflight.py` to see what a selection will touch,
 `scripts/live_{round2,vmedia,sriov,dedicated,bare_cec,profiles,users,vios_backup,pcm,
-lpar_config,lpar_power}.py` to dispatch one arm,
+lpar_config,lpar_power,storage}.py` to dispatch one arm,
 `scripts/live_test_evidence.py` to produce a citable matrix, and
 `scripts/live_test_recovery.py` afterwards to confirm nothing is stranded.
 
@@ -17,8 +17,8 @@ Usage:
 `--no-sync` is required: a bare `uv run` prunes the `app` extra and the runner
 stops importing (AGENTS.md).
 
-With no selection every subtask runs, 0 through 41: there is none from 26 to 36,
-which are other arms' row ids, and 9, 11, 37, 38, 39, 40 and 41 SKIP outside their
+With no selection every subtask runs, 0 through 42: there is none from 26 to 36,
+which are other arms' row ids, and 9, 11, 37, 38, 39, 40, 41 and 42 SKIP outside their
 own `network`, `users`, `vios-backup`, `pcm`, `lpar-config`, `storage` and
 `lpar-power` groups. A bare
 number runs that one subtask; `--group NAME` runs one arm. Results go to `test-results-<group>.json`, or `test-results-round2.json`
@@ -102,6 +102,7 @@ from live_test.provisioning import (
 )
 from live_test.storage import inventory_storage
 from live_test.storage_lifecycle import exercise_disk_lifecycle
+from live_test.storage_volume_group import exercise_volume_group
 from live_test.users import exercise_users, inventory_users
 from live_test.vios_backup import exercise_vios_backup
 from live_test.vmedia import (
@@ -300,6 +301,8 @@ class LiveTestConfig:
     lp3_name: str = "example-lt-609-lpar"
     scratch_name: str = "example-lt-609-scratch"
     vdisk_name: str = "lt609-disk"
+    scratch_pv_name: str = ""
+    scratch_vg_name: str = ""
     scratch_create_desired_memory_mib: int = 1536
     scratch_create_max_memory_mib: int = 3072
     scratch_create_desired_vcpus: int = 3
@@ -415,6 +418,8 @@ class LiveTestConfig:
     #: export cannot redirect an arm that creates and deletes partitions
     #: (ADR 0115).
     _OPTIONAL_CONFIG_FIELDS: ClassVar[dict[str, str]] = {
+        "LIVE_TEST_SCRATCH_PV_NAME": "scratch_pv_name",
+        "LIVE_TEST_SCRATCH_VG_NAME": "scratch_vg_name",
         "LIVE_TEST_DEDICATED_PCIE_SYSTEM_NAME": "dedicated_pcie_system_name",
         "LIVE_TEST_DEDICATED_PCIE_LPAR_PREFIX": "dedicated_pcie_lpar_prefix",
         "LIVE_TEST_DEDICATED_PCIE_PROFILE_NAME": "dedicated_pcie_profile_name",
@@ -633,6 +638,7 @@ class LiveTestArtifacts:
     # The logical volume the storage arm (ST40) is about to create, recorded before
     # the create so a lost response is still tracked (#1348).
     storage_disk_name: str | None = None
+    storage_volume_group_name: str | None = None
     # What the dedicated PCIe arm created, so `live_test_recovery.py` can check
     # teardown from outside the run that attempted it. The marker is per-run
     # random, so nothing outside the document can reconstruct these.
@@ -1038,6 +1044,7 @@ SUBTASKS = {
     39: exercise_lpar_config,
     40: exercise_disk_lifecycle,
     41: exercise_lpar_power,
+    42: exercise_volume_group,
 }
 _SCENARIO_MODULES = frozenset(inspect.getmodule(task) for task in SUBTASKS.values())
 
@@ -1234,7 +1241,7 @@ SUBTASK_GROUPS: dict[str, list[int]] = {
     # partition (#1345).
     "lpar-config": [39],
     # ST40 mutates the VIOS's storage, so only its own arm dispatches it (#1348).
-    "storage": [0, 3, 40],
+    "storage": [0, 3, 40, 42],
     # Not in "all": the arm creates, powers, provisions and deletes its own
     # partitions and a VIOS volume (#1346).
     "lpar-power": [41],
@@ -1361,6 +1368,7 @@ _ARTIFACT_NULLABLE_STRINGS = frozenset(
         "vmedia_iso_name",
         "vmedia_mapping_uuid",
         "storage_disk_name",
+        "storage_volume_group_name",
         *_VIOS_BACKUP_ARTIFACTS,
         *_VMEDIA_REPOSITORY_ARTIFACTS,
     }
@@ -1384,6 +1392,9 @@ def _decode_saved_config(value: Any) -> LiveTestConfig:
     # network-test partition.
     parsed.pop("test_user", None)
     parsed.pop("nettest_name", None)
+    # ST42 settings are optional and disabled in older results documents.
+    parsed.setdefault("scratch_pv_name", "")
+    parsed.setdefault("scratch_vg_name", "")
     if set(parsed) != set(expected):
         raise ValueError("results config fields do not match LiveTestConfig")
     protected = parsed["protected_lpar_names"]
@@ -1416,6 +1427,7 @@ def _decode_artifacts(value: Any) -> LiveTestArtifacts:
     parsed.setdefault("test_user_name", None)
     # And one written before #1377 dropped the unused network-test partition.
     parsed.pop("nettest_uuid", None)
+    parsed.setdefault("storage_volume_group_name", None)
     # Likewise a document written before the vios-backup arm (#1349) existed, or
     # before the vmedia arm tracked its repository and medium (#1347).
     for name in (*_VIOS_BACKUP_ARTIFACTS, *_VMEDIA_REPOSITORY_ARTIFACTS):
@@ -1461,12 +1473,12 @@ def _restore_artifacts_from_results(
     state: RunState,
     hmc_config: HMCConfig,
     results_path: str = "test-results-round2.json",
-) -> None:
+) -> bool:
     """Pre-seed artifacts from a compatible previous live-test report."""
     path = Path(results_path)
     try:
         if not path.exists():
-            return
+            return False
         saved = json.loads(path.read_text())
         if not isinstance(saved, dict):
             raise TypeError("results document must be a JSON object")
@@ -1498,7 +1510,7 @@ def _restore_artifacts_from_results(
         KeyError,
     ) as exc:
         print(f"  ⚠️  Could not restore artifacts from {results_path}: {exc}")
-        return
+        return False
 
     state.artifacts = candidate
     print(
@@ -1507,6 +1519,7 @@ def _restore_artifacts_from_results(
         f"system_uuid={candidate.system_uuid}, "
         f"vg_uuid={candidate.vg_uuid})"
     )
+    return True
 
 
 def _write_results(path: Path, document: str) -> None:
@@ -1834,13 +1847,19 @@ async def main(
     else:
         tasks = sorted(SUBTASKS.keys())
 
-    # Restore prior context when running a subset
+    # Every invocation preserves its destination; only subsets borrow another arm's context.
+    prior_paths = [results_path]
     if subtask_filter is not None or group is not None:
-        # Try vmedia results first, then round2
-        for prior in ["test-results-vmedia.json", "test-results-round2.json"]:
-            if Path(prior).exists():
-                _restore_artifacts_from_results(state, hmc_config, prior)
-                break
+        prior_paths.extend(["test-results-vmedia.json", "test-results-round2.json"])
+    for prior in prior_paths:
+        if Path(prior).exists():
+            restored = _restore_artifacts_from_results(state, hmc_config, prior)
+            if prior == results_path and not restored:
+                print(
+                    "❌ Existing results cannot be restored; use another --results-file."
+                )
+                return 1
+            break
 
     def write_results(partial: bool) -> None:
         _write_results(
