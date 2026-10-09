@@ -95,7 +95,7 @@ RUNNABLE, because it checks preconditions against hardware at dispatch.
 | pcm | `uv run --no-sync python scripts/live_pcm.py` | subtask 38 |
 | network | `uv run --no-sync python scripts/live_network.py` | subtasks 2 and 9 |
 | lpar-config | `uv run --no-sync python scripts/live_lpar_config.py` | subtask 39 |
-| storage | `uv run --no-sync python scripts/live_storage.py` | subtasks 0, 3 and 40 |
+| storage | `uv run --no-sync python scripts/live_storage.py` | subtasks 0, 3, 40 and 42 |
 | lpar-power | `uv run --no-sync python scripts/live_lpar_power.py` | subtask 41 |
 
 Each writes `test-results-<arm>.json`. Run one arm at a time: they share a
@@ -107,8 +107,8 @@ ambiguous about which run stranded what.
 
 ### Reading the output
 
-Rows print as they complete. **Row subtask ids go up to 41, while the ids you
-can dispatch are 0 to 25 and 37 to 41.** That is not a bug: subtask 24 dispatches the whole
+Rows print as they complete. **Row subtask ids go up to 42, while the ids you
+can dispatch are 0 to 25 and 37 to 42.** That is not a bug: subtask 24 dispatches the whole
 dedicated arm, and the arm records its internal phases as rows 26 through 34,
 plus its io_slots scenario as row 36. A row numbered 31 is part of the arm you
 asked for. Subtask 25 dispatches the
@@ -315,7 +315,7 @@ that is left, and nothing else.
 
 The storage arm verifies the volume-group, virtual-disk, mapping and cluster
 reads and the disk lifecycle (#1348). Subtask 0 resolves the VIOS and the test
-partition; subtask 3 reads the inventory; subtask 40 runs only in this arm.
+partition; subtask 3 reads the inventory; subtasks 40 and 42 run only in this arm.
 
 - **Inventory (subtask 3).** The volume-group listing is compared with the VIOS's
   own `lsvg`. Clusters and shared storage pools are promoted only when the HMC
@@ -340,6 +340,39 @@ the baseline, is a FAIL row marked `MANUAL RECOVERY REQUIRED` with the command
 that clears it. The arm never removes an adapter. It deletes the volume only
 after a listing shows no mapping backed by it, except for the one guarded delete
 it expects to be refused.
+
+**Scratch volume group (subtask 42, #1370).** This step is disabled unless both
+optional `.env` settings are supplied: `LIVE_TEST_SCRATCH_PV_NAME=hdisk<n>` and
+`LIVE_TEST_SCRATCH_VG_NAME=hpvg<8 lowercase hex>`. Use the one physical volume
+explicitly released by the operator and an absent group name for this authorized
+run. Preflight discloses these exact names; it saves no state. Never choose a disk
+from inventory automatically or reuse an existing group.
+
+Before create, the arm compares REST group names with VIOS `lsvg` and captures
+`lspv -field pvname pvid vgname -fmt :`,
+`lspv -free -field pvname pvid size -fmt :`, and `lsvg`. A successful free-listing
+literal `":"` also means an empty free inventory. The explicit disk must appear free, in no
+group, with the same identified PVID in both listings. The arm
+records its pending group before one `hmc_create_volume_group` call and reads
+back through REST and VIOS even after a refused or lost create response. It never
+retries create (ADR 0136).
+
+Cleanup uses `viosvrcmd -m <system> --id <VIOS id> -c 'reducevg <run-group> <explicit-PV>'`
+only after `lsvg -pv <run-group> -field pvname -fmt :` proves exact single-PV
+membership, `lsvg -lv <run-group>` proves no logical volumes, and the complete
+PV inventory differs only by that disk's new group with its original PVID.
+There is no force flag, root command, metadata repair or product delete-group API.
+Plain `reducevg` removes the group when its last PV is removed. A passing command
+is insufficient: REST/VIOS absence and exact before/after snapshots must match.
+
+Unreadable state, unsafe membership, refused cleanup or snapshot drift fails with
+`MANUAL RECOVERY REQUIRED` and retains the pending artifact. Recovery reports a
+run-owned scratch group or unresolved restoration even when REST lists no group;
+every invocation validates and restores its existing results before client setup.
+Only selected runs borrow other-arm fallback context; rejected reports stay unchanged.
+Compare durable run results and private before/after snapshots with independent reads before any
+manual removal. Do not retry create or repair metadata automatically. Run recovery
+after every attempt. A second create requires a separate operator allowance.
 
 ### The vios-backup arm
 
@@ -404,8 +437,13 @@ system shares. It reads the five flags (`LongTermMonitorEnabled`,
 it sets the opposite value, reads it back, and writes all five snapshot values
 again: the HMC couples the flags, and enabling aggregation also enables
 long-term monitoring and, where the system supports it, energy monitoring. It
-reads the flags back after each restore and stops toggling if they differ from
-the snapshot. It passes only when a final read equals the snapshot. While
+reads the flags back after each restore. If the snapshot has aggregation off and
+long-term or energy monitoring still reads on instead of its saved off value,
+it makes one ordered restore attempt: turn aggregation off, read it back off,
+then write all five saved flags and require an exact snapshot readback. A failed
+read, refused restore write, or remaining mismatch stops further toggles and
+requires manual recovery. It passes only when every restore succeeds and a final
+read equals the snapshot. While
 aggregation is on, the HMC holds long-term monitoring on, and energy monitoring on
 when the system is capable, so the arm expects the HMC to accept those two
 toggles and read them back unchanged. Any other flag that does not read back flipped fails its assertion.
@@ -449,6 +487,17 @@ partition: every mutating call names that partition's UUID.
 - **The partition.** `hmcpctl-live-lpar-<8 hex>`, ownership-stamped with caller
   token `lparcfg-<8 hex>` (the same hex): 1024/2048/4096 MiB, shared uncapped,
   0.1/0.5/1.0 processing units, 1/1/2 virtual processors.
+- **Dedicated assignment (optional).** Existing `LIVE_TEST_DEDICATED_PCIE_*`
+  settings must select this same system. Before creation, the arm reads the exact
+  admitted release/model, all profile `io_slots` and dedicated inventory. It
+  requires an unowned slot listed by no profile. An explicit DRC selects only
+  that slot; otherwise it selects the first eligible slot. On the run's empty
+  scratch profile it calls `hmc_modify_lpar` with `assignments.dedicated`, judges
+  the completed delegate step and exact profile readback, then restores the
+  profile before any SMS activation. It compares every other profile and the
+  final all-profile/slot baseline. Failed or malformed reads remain FAIL;
+  missing settings, no eligible slot or a valid unsupported environment are SKIP.
+  SR-IOV/vNIC writes remain named authorization/hardware/RMC prerequisite gaps.
 - **While Not Activated.** One `hmc_modify_lpar` (desired and maximum memory and
   desired units), then small, large, no-op and empty `hmc_dlpar_mem` and
   `hmc_dlpar_proc` requests, and one memory request above the maximum whose
@@ -462,14 +511,17 @@ partition: every mutating call names that partition's UUID.
   each as a SKIP naming that gap; any other failure there stays a FAIL. The
   activation used the partition profile, which discarded the configuration changes
   made while it was Not Activated (#1170). DLPAR on a running operating system is
-  therefore unverified, and `hmc_modify_lpar`'s PCIe-assignment path is not exercised:
-  its observation covers the resource path only.
+  therefore unverified. The resource observation covers only the resource path;
+  the optional dedicated case emits its own observation after cleanup.
 - **After.** It powers the partition off, deletes it by UUID only while its
   description still carries the run's caller token, and compares the system
   reads with the ones taken before (one re-read after 30 s on a difference).
   Observations are recorded with `cleanup` `passed` only when the delete is
   confirmed and the compare holds.
 
+An uncertain dedicated restoration prevents subsequent cases, activation and
+normal deletion. Recovery remains read-only: inspect the saved baseline, scratch
+profile `io_slots` and dedicated ownership before removing the retained partition.
 A teardown that cannot confirm the delete records a FAIL row marked
 `MANUAL RECOVERY REQUIRED`. Check the partition's description for the caller
 token, then run
@@ -523,6 +575,42 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   compare holds. A sequence that stops early (a power step that does not settle)
   still records each operation it entered, failed, with the assertions it never
   reached absent: re-run rather than copy those observations.
+
+The optional `--detach-probe` mode (#1391) selects only a diagnostic comparison:
+one ownership-stamped ST41 scratch partition and one run-owned 1024 MiB volume in
+`LIVE_TEST_VDISK_VOLUME_GROUP_NAME`. Two previous attach attempts consumed two of
+the three-cycle total ceiling. This invocation uses only the remaining cycle:
+attach while Not Activated, activate only the owned scratch partition into Open
+Firmware, then detach the same mapping ID. It changes no existing test partition
+and runs no provision, decommission or dedicated-PCIe path.
+
+After the orchestrator grants the exact pushed head, run:
+
+```sh
+uv run --no-sync python scripts/live_test_preflight.py --group lpar-power --detach-probe
+uv run --no-sync python scripts/live_lpar_power.py --detach-probe
+uv run --no-sync python scripts/live_test_recovery.py --results test-results-lpar-power.json
+uv run --no-sync python scripts/live_test_evidence.py test-results-lpar-power.json
+```
+
+Archive the previous private result file before this invocation; its failed
+observations remain failed. The previous Open Firmware attach was refused with
+HSCL7006 and did not exercise detach, so it establishes no detach cause.
+
+Private result provenance records `detach_probe: true`. The remaining cycle captures
+exact mapping and reciprocal adapter identities, both endpoint state/RMC, and the original
+response/HTTP/REST/HSCL evidence. A failed response remains failed even when the
+mapping disappeared. Activation requires a successful attach, exact protected
+inventory and the owned reciprocal adapter pair. Detach requires the same proofs
+after activation and both endpoint state/RMC contexts. Malformed/duplicate inventory,
+unrelated adapter drift, failed attachment or uncertain cleanup stops without retries
+and retains assets for manual
+recovery; the existing ST41 recovery prefixes apply. Run recovery after interruption
+too. Raw result JSON stays private; publish only filtered, commit-stamped evidence.
+Successful cleanup requires successful responses and independent absence proofs;
+a failed cleanup response stops subsequent writes even if its effect is visible.
+One remaining cycle may not reproduce an intermittent cause. Product detach success
+policy and any ADR 0136 amendment require a separate evidence-based operator decision.
 
 Live on V10R3 (2026-10-07, POWER9) seven of its eight observations passed:
 `lpar.create`, `lpar.power_on`, `lpar.capture_console`, `lpar.power_off`,
@@ -638,7 +726,7 @@ these sets of them:
 | 24–25 (dedicated, bare-cec) | a partition carrying this run's marker, its dedicated slot still owned, its profile's `io_slots` off the baseline |
 | 37 (vios-backup) | the run's backup still in the VIOS catalog, the test partition's disk mapping missing, and a final read the run recorded as off its baseline |
 | 39 (lpar-config) | any partition named `hmcpctl-live-lpar-*` on the run's system, whichever run left it |
-| 0, 3, 40 (storage) | a mapping (its virtual target device) backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read |
+| 0, 3, 40, 42 (storage) | a mapping (its virtual target device) backed by an `hpctl<8 hex>` volume, such a volume still in `LIVE_TEST_VDISK_VOLUME_GROUP_NAME`, and a VIOS vSCSI server adapter toward the test partition with no mapping; 0 and 3 only read; ST42 also reports `hpvg<8 hex>` groups or unresolved pending restoration |
 | 41 (lpar-power) | any partition named `hmcpctl-live-pwr-*`, running or not; on each VIOS, any mapping backed by an `lppwr*` volume, any vSCSI adapter serving a `hmcpctl-live-pwr-*` partition, and any `lppwr*` volume left in the configured volume group (read with the one admitted `viosvrcmd … -c 'lsvg -lv <group>'` command) |
 | 2, 9 (network) | a network on the run's test VLAN, the test partition's client adapters off the run's baseline, the serving VIOS's FC-port labels off their originals, and a vFC group label named `hmcl-*` |
 

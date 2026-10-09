@@ -5,8 +5,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -429,6 +431,107 @@ def test_source_unit_summaries_do_not_publish_example_payload_values() -> None:
     assert units[0]["text"] == "payload-root:HostName"
     assert "private.example" not in json.dumps(units)
     assert "192.0.2.1" not in json.dumps(units)
+
+
+def test_management_console_row_accounts_for_both_reference_snapshots() -> None:
+    catalog = ROOT / "docs" / "capabilities"
+    rows = json.loads((catalog / "rows.json").read_text())["rows"]
+    row = next(row for row in rows if row["id"] == "rest:management-console")
+    units = json.loads((catalog / "corpora.json").read_text())["source_units"]
+    console_units = [
+        unit
+        for unit in units
+        if unit["topic"]
+        in {"rest-p10:management-console", "rest-p11:management-console"}
+    ]
+
+    assert len(console_units) == 6
+    assert row["kind"] == "rest-operation"
+    assert row["releases"] == ["power10", "power11"]
+    assert row["parameters"] == []
+    assert row["disposition"] == {"kind": "supported"}
+    assert set(row["source_units"]) == {unit["id"] for unit in console_units}
+    assert set(row["modes"]) == {
+        unit["id"] for unit in console_units if unit["kind"] == "rest-resource"
+    }
+    assert all(
+        unit["accounting"] == {"kind": "row", "id": row["id"]} for unit in console_units
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "row_ids"),
+    [
+        ("console.info", ["rest:management-console"]),
+        ("console.list_resources", []),
+        ("command.run", []),
+    ],
+)
+def test_console_operations_bind_fixed_resources_or_explain_generic_dispatch(
+    operation: str, row_ids: list[str]
+) -> None:
+    catalog = ROOT / "docs" / "capabilities" / "operations.json"
+    operations = json.loads(catalog.read_text())["operations"]
+    record = next(record for record in operations if record["operation"] == operation)
+
+    assert record["row_ids"] == row_ids
+    if row_ids:
+        assert record["composite_reason"] is None
+    else:
+        assert isinstance(record["composite_reason"], str)
+        assert record["composite_reason"].strip()
+
+
+@pytest.mark.parametrize(
+    ("operation", "job_names", "ownership"),
+    [
+        ("lpar.migrate", ["migrate", "migratevalidate"], True),
+        ("lpar.migrate_affinity", ["migrate", "migratevalidate"], True),
+        ("lpar.migrate_validate", ["migratevalidate"], False),
+        ("lpar.migrate_abort", ["migrateabort"], True),
+        ("lpar.migrate_recover", ["migraterecover"], True),
+        ("lpar.remote_restart", ["remote_restart"], True),
+    ],
+)
+def test_migration_operations_bind_reachable_jobs_and_support_reads(
+    operation: str, job_names: list[str], ownership: bool
+) -> None:
+    catalog = ROOT / "docs" / "capabilities"
+    operations = json.loads((catalog / "operations.json").read_text())["operations"]
+    record = next(record for record in operations if record["operation"] == operation)
+    expected = {
+        "rest:managed-system",
+        "rest:managed-system/logical-partition",
+        "rest:jobs",
+        "rest:job-status",
+    }
+    expected.update(
+        "rest:jobs/managedsystem-jobs/logicalpartition_remoterestart-job"
+        if job == "remote_restart"
+        else f"rest:jobs/logicalpartition-jobs/{job}_logicalpartition-job"
+        for job in job_names
+    )
+    if ownership:
+        expected.add("cli:commands/lssyscfg")
+
+    assert set(record["row_ids"]) == expected
+    assert len(record["row_ids"]) == len(expected)
+    assert record["composite_reason"] is None
+    rows = {
+        row["id"]: row
+        for row in json.loads((catalog / "rows.json").read_text())["rows"]
+    }
+    units = {
+        unit["id"]: unit
+        for unit in json.loads((catalog / "corpora.json").read_text())["source_units"]
+    }
+    for row_id in expected:
+        row = rows[row_id]
+        assert row["source_units"]
+        assert all(
+            units[unit_id]["accounting"] == {"kind": "row", "id": row_id}
+            for unit_id in row["source_units"]
+        )
 
 
 def test_sparse_maturity_allows_unknown_operations(tmp_path: Path) -> None:
@@ -1225,3 +1328,173 @@ def test_write_runtime_projection_option_generates_requested_path(
     ) == inventory.render_runtime_projection(
         [], (), inventory.ROOT, inventory.datetime.now(UTC)
     )
+
+
+def test_lpar_modify_binds_assignment_delegate_rows():
+    catalog = json.loads((ROOT / "docs/capabilities/operations.json").read_text())
+    operation = next(
+        row for row in catalog["operations"] if row["operation"] == "lpar.modify"
+    )
+    assert set(operation["row_ids"]) == {
+        "cli:commands/chhwres",
+        "cli:commands/chsyscfg",
+        "cli:commands/lshmc",
+        "cli:commands/lshwres",
+        "cli:commands/lssyscfg",
+        "rest:managed-system/logical-partition",
+    }
+
+
+@pytest.fixture
+def shared_evidence(tmp_path):
+    registry = _closure_registry(tmp_path)
+    registry += (replace(registry[0], tool="hmc_other", operation="system.other"),)
+    fingerprint = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
+    records = [_operation(tool.operation) for tool in registry]
+    for record in records:
+        record["evidence"] = [_observation(fingerprint=fingerprint)]
+    return records, registry
+
+
+def test_shared_handlers_are_fingerprinted_once(tmp_path, monkeypatch, shared_evidence):
+    records, registry = shared_evidence
+    fingerprint = Mock(wraps=inventory.closure_fingerprint)
+    monkeypatch.setattr(inventory, "closure_fingerprint", fingerprint)
+
+    states = inventory.derive_states(records, registry, tmp_path, _NOW)
+
+    assert states == {
+        tool.operation: inventory.OperationState(
+            "current", None, "implemented", "2026-09-06T12:00:00Z"
+        )
+        for tool in registry
+    }
+    fingerprint.assert_called_once_with(tmp_path, "hmcpctl.a")
+
+
+@pytest.mark.parametrize("change", ["source", "import", "dependency", "missing"])
+def test_new_derivation_observes_source_changes(tmp_path, shared_evidence, change):
+    records, registry = shared_evidence
+    module = tmp_path / "src/hmcpctl/a.py"
+    dependency = tmp_path / "src/hmcpctl/b.py"
+    if change == "dependency":
+        module.write_text("from .b import value\n", encoding="utf-8")
+        dependency.write_text("value = 1\n", encoding="utf-8")
+        fingerprint = inventory.closure_fingerprint(tmp_path, "hmcpctl.a")
+        for record in records:
+            record["evidence"][0]["closure_fingerprint"] = fingerprint
+    assert (
+        inventory.derive_states(records, registry, tmp_path, _NOW)["system.list"].state
+        == "current"
+    )
+
+    if change == "source":
+        module.write_text("thing = 2\n", encoding="utf-8")
+    elif change == "import":
+        module.write_text("from .b import value\n", encoding="utf-8")
+        dependency.write_text("value = 1\n", encoding="utf-8")
+    elif change == "dependency":
+        dependency.write_text("value = 2\n", encoding="utf-8")
+    else:
+        module.unlink()
+
+    states = inventory.derive_states(records, registry, tmp_path, _NOW)
+    assert {state.reason for state in states.values()} == {"closure-changed"}
+    if change == "missing":
+        assert inventory.closure_paths(tmp_path, "hmcpctl.a") == [
+            tmp_path / "src/hmcpctl/__init__.py"
+        ]
+
+
+def test_new_derivation_isolated_by_root(tmp_path, shared_evidence):
+    records, registry = shared_evidence
+    other = tmp_path / "other"
+    _package(other, {"a.py": "thing = 2\n"})
+
+    fingerprints = {}
+    first = inventory.derive_states(
+        records, registry, tmp_path, _NOW, _fingerprints=fingerprints
+    )
+    second = inventory.derive_states(
+        records, registry, other, _NOW, _fingerprints=fingerprints
+    )
+    again = inventory.derive_states(
+        records, registry, tmp_path, _NOW, _fingerprints=fingerprints
+    )
+
+    assert {state.state for state in first.values()} == {"current"}
+    assert {state.reason for state in second.values()} == {"closure-changed"}
+    assert again == first
+
+
+def test_derivation_preserves_read_failure(tmp_path, monkeypatch, shared_evidence):
+    records, registry = shared_evidence
+    read_bytes = Path.read_bytes
+    module = tmp_path / "src/hmcpctl/a.py"
+
+    def unreadable(path):
+        if path == module:
+            raise PermissionError("fixture read denied")
+        return read_bytes(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_bytes", unreadable)
+        with pytest.raises(PermissionError, match="fixture read denied"):
+            inventory.derive_states(records, registry, tmp_path, _NOW)
+    assert (
+        inventory.derive_states(records, registry, tmp_path, _NOW)["system.list"].state
+        == "current"
+    )
+
+
+@pytest.mark.parametrize("fail_on_stale", [False, True])
+def test_report_reuses_fingerprints_and_preserves_outputs(
+    tmp_path, monkeypatch, capsys, registered_inventory, fail_on_stale
+):
+    registry = registered_inventory
+    module_name = registry[0].handler.rsplit(".", 1)[0]
+    relative_module = module_name.removeprefix("hmcpctl.").replace(".", "/") + ".py"
+    _package(tmp_path, {relative_module: "value = 1\n"})
+    fingerprint = inventory.closure_fingerprint(tmp_path, module_name)
+    record = _operation()
+    record["evidence"] = [
+        _observation(fingerprint=fingerprint, observed_at="2026-01-01T12:00:00Z")
+    ]
+    _write_maturity(tmp_path, [record])
+    projection = tmp_path / "projection.json"
+    expected = inventory.render_runtime_projection([record], registry, tmp_path, _NOW)
+    projection.write_text(expected, encoding="utf-8")
+    monkeypatch.setattr(inventory, "ROOT", tmp_path)
+    monkeypatch.setattr(inventory, "DEFAULT_RUNTIME_PROJECTION", projection)
+    monkeypatch.setattr(inventory, "discover_registry", lambda: registry)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    counted = Mock(wraps=inventory.closure_fingerprint)
+    monkeypatch.setattr(inventory, "closure_fingerprint", counted)
+    args = ["--inventory", str(tmp_path), "--verification-report"]
+    if fail_on_stale:
+        args.append("--fail-on-stale")
+
+    assert inventory.main(args) == int(fail_on_stale)
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert output.out == (
+        "verification: system.list implemented stale\n"
+        "verification coverage: 0 unrecorded, 0 unevidenced, 1 stale, "
+        "0 failed, 0 current (of 1)\n"
+    )
+    assert projection.read_bytes() == expected.encode()
+    counted.assert_called_once_with(tmp_path, module_name)
+
+    (tmp_path / "src/hmcpctl" / relative_module).write_text(
+        "value = 2\n", encoding="utf-8"
+    )
+    counted.reset_mock()
+    assert inventory.main(args) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == (
+        f"ERROR: runtime projection {projection} is malformed or stale; "
+        "run `just capability-metadata`\n"
+    )
+    counted.assert_called_once_with(tmp_path, module_name)

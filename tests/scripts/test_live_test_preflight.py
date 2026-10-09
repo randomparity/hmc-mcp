@@ -350,7 +350,7 @@ def test_the_storage_verdict_names_each_change_it_makes(workspace, monkeypatch, 
     assert "a delete while mapped expected refused" in output
     assert "attach-disk" in output
     assert "new virtual target device the HMC names (vtscsi<n>" in output
-    assert "no other logical volume, mapping, adapter or volume group" in output
+    assert "ST42 SKIPs" in output
 
 
 def test_the_pcm_verdict_discloses_the_system_wide_round_trip(
@@ -751,3 +751,66 @@ def test_the_provision_vlan_is_not_probed_without_round2_hardware(
 
     assert preflight.main(argv) == 0
     assert probed == []
+
+
+def test_detach_probe_preflight_discloses_only_bounded_scope(
+    workspace, monkeypatch, capsys
+):
+    (workspace / ".env").write_text(_env_text(), encoding="utf-8")
+    _credentials(monkeypatch)
+    assert (
+        preflight.main(["--group", "lpar-power", "--detach-probe", "--skip-hardware"])
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "one ST41-prefix scratch partition" in output
+    assert "one 1024 MiB" in output
+    assert "one remaining fresh attach/detach cycle" in output
+    assert "two previous attach attempts consumed, three total ceiling" in output
+    assert "attach while Not Activated" in output and "then detach" in output
+    assert "manual recovery" in output
+    assert "provision" not in output and "PCIe" not in output
+
+
+@pytest.mark.parametrize(
+    "argv", [["--detach-probe"], ["--group", "storage", "--detach-probe"]]
+)
+def test_detach_probe_preflight_refuses_wrong_group_before_configuration(
+    monkeypatch, argv
+):
+    def forbidden():
+        raise AssertionError("configuration accessed for invalid selection")
+
+    monkeypatch.setattr(preflight, "_check_configuration", forbidden)
+    with pytest.raises(SystemExit):
+        preflight.main(argv)
+
+
+@pytest.mark.parametrize(
+    "pv,group", [("hdisk9", "hpvg1234abcd"), ("", "hpvg1234abcd"), ("hdisk9", "rootvg")]
+)
+def test_st42_preflight_discloses_exact_optin_or_skip(pv, group):
+    from dataclasses import replace
+
+    config = replace(
+        preflight.runner.LiveTestConfig(), scratch_pv_name=pv, scratch_vg_name=group
+    )
+    verdict = preflight._storage_verdict(config)
+    text = str(verdict)
+    if pv and group == "hpvg1234abcd":
+        assert "ST42 creates scratch group hpvg1234abcd" in text
+        assert "explicit physical volume hdisk9" in text
+        assert "reducevg" in text
+    else:
+        assert "ST42 SKIPs" in text
+
+
+def test_lpar_config_discloses_configured_dedicated_slot():
+    config = preflight.runner.LiveTestConfig(
+        system_name="sys-A",
+        dedicated_pcie_system_name="sys-A",
+        dedicated_pcie_lpar_prefix="scratch-",
+        dedicated_pcie_drc_index="21010020",
+    )
+    verdict = preflight._lpar_config_verdict(config)
+    assert any("21010020" in target for target in verdict.mutates)

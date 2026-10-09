@@ -564,6 +564,8 @@ async def test_connectivity_inventory_discovers_context_and_records_probes() -> 
             ("hmc_list_lpar_ownership", "PASS", {}),
             ("hmc_read_lpar_boot_order", "PASS", {}),
             ("hmc_inspect_lpar", "PASS", {}),
+            ("hmc_get_lpar_proc_compat", "PASS", {"profile": "default_profile"}),
+            ("hmc_snapshot_capture", "PASS", {}),
             ("hmc_inventory", "PASS", {}),
             ("hmc_fleet_health", "PASS", {}),
             ("hmc_plan_lpar", "PASS", {}),
@@ -941,6 +943,142 @@ async def test_st38_toggles_every_flag_when_aggregation_is_off() -> None:
         "compute-ltm-toggled",
         "energy-monitor-toggled",
     ]
+
+
+class _CoupledPcmState(runner.RunState):
+    """Apply writes to PCM state, holding monitoring while aggregation was on."""
+
+    def __init__(self, failure: tuple[str, int] | None = None):
+        super().__init__()
+        self.group = "pcm"
+        self.preferences = _flags(
+            AggregationEnabled=False,
+            LongTermMonitorEnabled=False,
+            EnergyMonitorEnabled=False,
+        )
+        self.baseline = dict(self.preferences)
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.counts = {"hmc_get_pcm_preferences": 0, "hmc_set_pcm_preferences": 0}
+        self.failure = failure
+
+    async def call(self, _client, tool, *, expected=(), reuse_gaps=True, **kwargs):
+        self.calls.append((tool, kwargs))
+        self.counts[tool] += 1
+        if self.failure == (tool, self.counts[tool]):
+            return "FAIL", _failure("HMCError: simulated refusal")
+        if tool == "hmc_get_pcm_preferences":
+            return "PASS", dict(self.preferences)
+        aggregation_was_on = self.preferences["AggregationEnabled"]
+        for name, keyword in metrics.PCM_FLAGS:
+            if kwargs.get(keyword) is not None:
+                self.preferences[name] = kwargs[keyword]
+        if aggregation_was_on or self.preferences["AggregationEnabled"]:
+            self.preferences["LongTermMonitorEnabled"] = True
+            self.preferences["EnergyMonitorEnabled"] = True
+        return "PASS", {}
+
+
+@pytest.mark.asyncio
+async def test_st38_restores_held_flags_after_disabling_aggregation() -> None:
+    state = _CoupledPcmState()
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert state.preferences == state.baseline
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("passed", "passed")
+    sets = [kwargs for tool, kwargs in state.calls if tool == "hmc_set_pcm_preferences"]
+    assert len(sets) == 12  # five toggles/restores, plus one ordered fallback
+    assert sets[4]["aggregation"] is False
+    assert all(
+        sets[4][kw] is None for _, kw in metrics.PCM_FLAGS if kw != "aggregation"
+    )
+    assert {kw: sets[5][kw] for _, kw in metrics.PCM_FLAGS} == {
+        kw: state.baseline[name] for name, kw in metrics.PCM_FLAGS
+    }
+    held_read = next(
+        row for row in state.results if row["tool"].endswith("(aggregation restored)")
+    )
+    assert held_read["data"]["LongTermMonitorEnabled"] is True
+    assert held_read["data"]["EnergyMonitorEnabled"] is True
+    assert state.results[0]["data"] == state.baseline
+    assert len(state.observations) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "ordinal", "write_count"),
+    [
+        ("hmc_set_pcm_preferences", 4, 4),
+        ("hmc_get_pcm_preferences", 5, 4),
+        ("hmc_set_pcm_preferences", 5, 5),
+        ("hmc_get_pcm_preferences", 6, 5),
+        ("hmc_set_pcm_preferences", 6, 6),
+        ("hmc_get_pcm_preferences", 7, 6),
+    ],
+)
+async def test_st38_restore_failures_stop_the_ordered_fallback(
+    tool, ordinal, write_count
+) -> None:
+    state = _CoupledPcmState((tool, ordinal))
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert state.counts["hmc_set_pcm_preferences"] == write_count
+    recorded = state.observations[0]["observation"]
+    assert (recorded["result"], recorded["cleanup"]) == ("failed", "failed")
+    assert state.results[-1]["tool"].endswith("(MANUAL RECOVERY REQUIRED)")
+    assert any(row["status"] == "FAIL" for row in state.results[:-1])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["AggregationEnabled", "ShortTermMonitorEnabled"])
+async def test_st38_does_not_retry_a_restore_with_unrelated_mismatch(field) -> None:
+    baseline = _flags(AggregationEnabled=False)
+    changed = {**baseline, field: not baseline[field]}
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", baseline),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", baseline),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", changed),
+            ("hmc_get_pcm_preferences", "PASS", changed),
+        ]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert sum(tool == "hmc_set_pcm_preferences" for tool, _ in state.calls) == 2
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_st38_ordered_restore_is_bounded_when_monitoring_stays_held() -> None:
+    baseline = _flags(AggregationEnabled=False, LongTermMonitorEnabled=False)
+    held = {**baseline, "LongTermMonitorEnabled": True}
+    state = _ScriptedSriovState(
+        [
+            ("hmc_get_pcm_preferences", "PASS", baseline),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_set_pcm_preferences", "PASS", {}),
+            ("hmc_get_pcm_preferences", "PASS", held),
+            ("hmc_get_pcm_preferences", "PASS", held),
+        ]
+    )
+    state.group = "pcm"
+
+    await metrics.exercise_pcm_preferences(object(), state)
+
+    assert sum(tool == "hmc_set_pcm_preferences" for tool, _ in state.calls) == 4
+    assert state.observations[0]["observation"]["cleanup"] == "failed"
+    assert state.results[-1]["tool"].endswith("(MANUAL RECOVERY REQUIRED)")
 
 
 @pytest.mark.asyncio
@@ -2848,7 +2986,7 @@ def test_live_config_rejects_an_over_length_vdisk_name(tmp_path) -> None:
     ["a b", "a'b", 'a"b', "a;b", "a$b", "a`b", "-a", "a|b", "a&b", "a\\b"],
 )
 def test_live_config_rejects_shell_unsafe_vios_names(tmp_path, key, value) -> None:
-    """#1033: a name that could alter the rmvlog command fails at load."""
+    """#1033: a name that could alter a VIOS storage command fails at load."""
     config_path = _example_env_with(tmp_path, key, value)
 
     with pytest.raises(ValueError, match=f"{key} may contain only"):
@@ -3632,11 +3770,6 @@ def test_expected_outcome_matches_whole_tokens_in_the_message():
             "metrics._PREFERENCES_AUTHORITY",
             "HMCError: The connecting user does not have PCM authority (HTTP 403)",
         ),
-        (
-            "provisioning._TEST_DISK_ABSENT",
-            "HMCError: 0516-306 lvmo: Unable to find device",
-        ),
-        ("provisioning._TEST_DISK_ABSENT", "HMCError: No Such device or address"),
         ("vmedia._ALREADY_POWERED_OFF", "HMCError: partition is Not Running"),
     ],
 )
@@ -3959,6 +4092,254 @@ def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path
     assert state.artifacts.vios_uuid == "vios-1"
     assert state.artifacts.lp3_baseline == {"description": "original"}
     assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_subset_preserves_destination_pending_scratch_recovery(
+    monkeypatch, tmp_path, fallback
+):
+    """A read-only subset cannot erase the only evidence of unconfirmed restoration."""
+    import live_test_recovery as recovery
+
+    _isolate_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    artifacts = runner.LiveTestArtifacts(
+        vios_uuid="vios-1", storage_volume_group_name="hpvg1234abcd"
+    )
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(json.dumps(_result_document(config, hmc_config, artifacts)))
+    if fallback:
+        (tmp_path / "test-results-vmedia.json").write_text(
+            json.dumps(_result_document(config, hmc_config))
+        )
+
+    async def read_only(_client, state):
+        state.record(3, "hmc_list_volume_groups", "PASS", [])
+
+    monkeypatch.setitem(runner.SUBTASKS, 3, read_only)
+    assert (
+        await runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        == 0
+    )
+    saved = json.loads(destination.read_text())
+    assert saved["run"]["subtasks"] == [3]
+    assert saved["artifacts"]["storage_volume_group_name"] == "hpvg1234abcd"
+    inputs = recovery.lpar_inputs_from_document(saved, [3])
+    assert inputs is not None and inputs.scratch_vg_ran
+    calls = []
+
+    async def no_group(tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "PASS", []
+
+    finding = await recovery._run_volume_group_left(no_group, inputs)
+    assert (
+        finding is not None and finding.what == "scratch group restoration unconfirmed"
+    )
+    assert [tool for tool, _ in calls] == ["hmc_list_volume_groups"]
+
+
+@pytest.mark.parametrize("mismatch", ["settings", "hmc"])
+def test_subset_rejection_preserves_destination_for_recovery(
+    monkeypatch, tmp_path, capsys, mismatch
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    _isolate_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        scratch_pv_name="hdisk9", scratch_vg_name="hpvg1234abcd"
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-1", storage_volume_group_name="hpvg1234abcd"
+        ),
+    )
+    document["run"] = {"subtasks": [42]}
+    if mismatch == "settings":
+        config = dataclasses.replace(config, scratch_pv_name="", scratch_vg_name="")
+    else:
+        document["hmc"]["user"] = "other"
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(json.dumps(document))
+    original = destination.read_bytes()
+    dispatched = []
+
+    async def read_only(_client, _state):
+        dispatched.append(3)
+
+    monkeypatch.setitem(runner.SUBTASKS, 3, read_only)
+    assert (
+        asyncio.run(
+            runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        )
+        == 1
+    )
+    assert dispatched == []
+    assert destination.read_bytes() == original
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: False)
+    assert recovery.main(["--results", str(destination)]) == 2
+    assert "CLEAN" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("existing", [True, False])
+def test_default_interruption_then_real_subset_preserves_recovery(
+    monkeypatch, tmp_path, capsys, existing
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        system_name="sys-A",
+        vdisk_volume_group_name="data-A",
+        scratch_pv_name="hdisk9",
+        scratch_vg_name="hpvg1234abcd",
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-A",
+            vios_partition_id=1,
+            storage_volume_group_name="hpvg1234abcd",
+        ),
+    )
+    document["run"] = {"subtasks": [42], "group": "storage", "partial": False}
+    destination = tmp_path / "test-results-storage.json"
+    if existing:
+        destination.write_text(json.dumps(document))
+    (tmp_path / "test-results-vmedia.json").write_text(json.dumps(document))
+    parsed = runner._parse_arguments(["--results-file", str(destination)])
+    assert parsed.subtask is None and parsed.group is None
+    interrupted = True
+    recovering = False
+    calls = []
+
+    class BoundaryClient(Client):
+        async def list_tools(self):
+            if interrupted:
+                raise RuntimeError("schema transport interrupted")
+            return await super().list_tools()
+
+        async def call_tool(self, name, arguments=None, **kwargs):
+            calls.append(name)
+            assert name in {
+                "hmc_list_clusters",
+                "hmc_list_shared_storage_pools",
+                "hmc_list_io_slots",
+                "hmc_list_memory_pools",
+                "hmc_get_shared_storage_pool",
+                "hmc_list_volume_groups",
+                "hmc_run_command",
+            }
+            if name == "hmc_list_volume_groups":
+                data = [] if recovering else [{"name": "data-A", "uuid": "vg-A"}]
+            elif name == "hmc_run_command":
+                assert arguments["cmd"].endswith("-c lsvg")
+                data = "data-A\n"
+            else:
+                data = "" if name == "hmc_get_shared_storage_pool" else []
+            return SimpleNamespace(data=data)
+
+    monkeypatch.setattr(runner, "Client", BoundaryClient)
+    monkeypatch.setattr(recovery.runner, "Client", BoundaryClient)
+    with pytest.raises(RuntimeError, match="schema transport interrupted"):
+        asyncio.run(
+            runner.main(
+                results_path=str(destination), config=config, hmc_config=hmc_config
+            )
+        )
+    partial = json.loads(destination.read_text())
+    assert partial["run"]["partial"] is True and calls == []
+    marker = "hpvg1234abcd" if existing else None
+    assert partial["artifacts"]["storage_volume_group_name"] == marker
+    assert partial["artifacts"]["vios_uuid"] == ("vios-A" if existing else None)
+    interrupted = False
+    assert (
+        asyncio.run(
+            runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        )
+        == 0
+    )
+    saved = json.loads(destination.read_text())
+    assert saved["run"]["subtasks"] == [3] and saved["run"]["partial"] is False
+    assert saved["artifacts"]["storage_volume_group_name"] == marker
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    recovering = True
+    assert recovery.main(["--results", str(destination)]) == (1 if existing else 0)
+    output = capsys.readouterr().out
+    if existing:
+        assert (
+            "scratch group restoration unconfirmed" in output and "CLEAN" not in output
+        )
+        assert calls[-1] == "hmc_list_volume_groups"
+    else:
+        assert "CLEAN" in output
+
+
+@pytest.mark.parametrize("mismatch", ["settings", "hmc", "json", "artifact"])
+def test_default_rejection_preserves_destination_before_client(
+    monkeypatch, tmp_path, capsys, mismatch
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        scratch_pv_name="hdisk9", scratch_vg_name="hpvg1234abcd"
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-A", storage_volume_group_name="hpvg1234abcd"
+        ),
+    )
+    document["run"] = {"subtasks": [42]}
+    if mismatch == "settings":
+        config = dataclasses.replace(config, scratch_pv_name="", scratch_vg_name="")
+    elif mismatch == "hmc":
+        document["hmc"]["user"] = "other"
+    elif mismatch == "artifact":
+        document["artifacts"]["storage_volume_group_name"] = 42
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text("{" if mismatch == "json" else json.dumps(document))
+    original = destination.read_bytes()
+    entered = []
+
+    def no_client(_server):
+        entered.append(True)
+        raise AssertionError("incompatible destination reached client setup")
+
+    monkeypatch.setattr(runner, "Client", no_client)
+    assert (
+        asyncio.run(
+            runner.main(
+                results_path=str(destination), config=config, hmc_config=hmc_config
+            )
+        )
+        == 1
+    )
+    assert entered == [] and destination.read_bytes() == original
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: False)
+    assert recovery.main(["--results", str(destination)]) == 2
+    assert "CLEAN" not in capsys.readouterr().out
 
 
 def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
@@ -5172,6 +5553,7 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "hmc_list_lpar_ownership",
         "hmc_read_lpar_boot_order",
         "hmc_inspect_lpar",
+        "hmc_get_lpar_proc_compat",
         "hmc_inventory",
         "hmc_fleet_health",
         "hmc_plan_lpar",
@@ -5186,8 +5568,12 @@ async def test_connectivity_inventory_forwards_selectors_and_captures_context(
         "system_name_or_uuid": "example-lt-609-system",
         "include": ["resources", "rmc", "refcodes"],
     }
-    assert calls[15][1] == {"systems": ["example-lt-609-system"]}
-    assert calls[17][1] == {
+    assert calls[15][1] == {
+        "system_name_or_uuid": "example-lt-609-system",
+        "lpar_name_or_uuid": "example-lt-609-lpar",
+    }
+    assert calls[16][1] == {"systems": ["example-lt-609-system"]}
+    assert calls[18][1] == {
         "name": "example-lt-609-dry-run",
         "adapters": {"port_vlan_id": 1},
         "storage": {"storage_name": "hmcpctl-st1", "capacity_mib": 10240},
@@ -5221,6 +5607,7 @@ _ST1_SYSTEM = "example-lt-609-system"
 _ST1_LPAR = "example-lt-609-lpar"
 _ST1_SYSTEM_UUID = "11111111-2222-3333-4444-555555555555"
 _ST1_LPAR_UUID = "66666666-7777-8888-9999-000000000000"
+_ST1_PROFILE = "default_profile"
 _ST1_NULL_PROPERTY_500 = (
     "HMCError: Managed-system inventory is unavailable (HTTP 500): Nested path "
     "contains null property currentProperty=Uuid "
@@ -5294,6 +5681,35 @@ def _st1_plan(candidate_uuid: str) -> SimpleNamespace:
     )
 
 
+def _st1_snapshot(**overrides: object) -> dict[str, object]:
+    """A captured snapshot, reduced to the fields ST1 asserts on."""
+    parts: dict[str, object] = {
+        "lpar_uuid": _ST1_LPAR_UUID,
+        "lpar_name": _ST1_LPAR,
+        "system_uuid": _ST1_SYSTEM_UUID,
+        "profile_name": _ST1_PROFILE,
+        "native": {"name": _ST1_PROFILE, "lpar_name": _ST1_LPAR},
+        "score_lpar": _ST1_LPAR,
+    } | overrides
+    return {
+        "format": "hmcpctl.lpar-snapshot",
+        "version": 1,
+        "source": {
+            "lpar": {"uuid": parts["lpar_uuid"], "name": parts["lpar_name"]},
+            "system": {"uuid": parts["system_uuid"]},
+        },
+        "configuration": {
+            "profile_name": parts["profile_name"],
+            "native": {"data": parts["native"]},
+        },
+        "observations": {
+            "scores": {
+                "data": {"current": {"lpar": {"lpar_name": parts["score_lpar"]}}}
+            }
+        },
+    }
+
+
 def _st1_responses() -> dict[str, object]:
     """Conforming ST1 results, shaped as the served tools return them."""
     system = {"UUID": _ST1_SYSTEM_UUID, "Resource": {"SystemName": _ST1_SYSTEM}}
@@ -5343,6 +5759,8 @@ def _st1_responses() -> dict[str, object]:
             ],
         ),
         "hmc_fleet_health": {"systems": [], "vios": [], "lpars": [], "warnings": []},
+        "hmc_get_lpar_proc_compat": {"profile": _ST1_PROFILE},
+        "hmc_snapshot_capture": _st1_snapshot(),
         "hmc_plan_lpar": SimpleNamespace(
             plan_digest="digest",
             selected=SimpleNamespace(system=SimpleNamespace(uuid=_ST1_SYSTEM_UUID)),
@@ -5368,6 +5786,7 @@ _ST1_OPERATIONS = {
     "inventory.logical",
     "health.fleet",
     "lpar.plan",
+    "snapshot.capture",
 }
 
 
@@ -5586,6 +6005,42 @@ async def test_st1_records_each_scoped_read_as_a_passed_observation(monkeypatch)
             "lpar.plan",
             {"plan-targets-boundary-system", "plan-outcome-consistent"},
         ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(lpar_uuid="another-uuid"),
+            "snapshot.capture",
+            {"snapshot-names-partition"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(lpar_name="other"),
+            "snapshot.capture",
+            {"snapshot-names-partition"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(system_uuid="another-uuid"),
+            "snapshot.capture",
+            {"snapshot-names-system"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(profile_name="other_profile"),
+            "snapshot.capture",
+            {"profile-captured"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(native={}),
+            "snapshot.capture",
+            {"profile-captured"},
+        ),
+        (
+            "hmc_snapshot_capture",
+            _st1_snapshot(score_lpar="other"),
+            "snapshot.capture",
+            {"scores-name-partition"},
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -5600,6 +6055,49 @@ async def test_st1_assertions_fail_on_violating_results(
     assert unmet.isdisjoint(held)
     others = {op for op, obs in observed.items() if obs["result"] != "passed"}
     assert others == {operation}
+
+
+@pytest.mark.asyncio
+async def test_st1_captures_the_partition_default_profile(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+    responses = {tool: ("PASS", data) for tool, data in _st1_responses().items()}
+
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
+        calls.append((tool, kwargs))
+        if (
+            tool == "hmc_list_resources"
+            and kwargs["resource_type"] == "LogicalPartition"
+        ):
+            return "PASS", [{"UUID": _ST1_LPAR_UUID}]
+        return responses.get(tool, ("PASS", {}))
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    await connectivity.inventory_connectivity(None, runner.RunState())
+
+    captures = [kwargs for tool, kwargs in calls if tool == "hmc_snapshot_capture"]
+    assert captures == [
+        {
+            "system_name_or_uuid": _ST1_SYSTEM,
+            "lpar_name_or_uuid": _ST1_LPAR,
+            "profile_name": _ST1_PROFILE,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "proc_compat", [("PASS", {"profile": ""}), ("FAIL", _failure("HMCError: refused"))]
+)
+@pytest.mark.asyncio
+async def test_st1_capture_without_a_profile_name_fails_without_promoting(
+    monkeypatch, proc_compat
+):
+    state, observed = await _run_st1(
+        monkeypatch, {"hmc_get_lpar_proc_compat": proc_compat}
+    )
+
+    assert "snapshot.capture" not in observed
+    rows = {row["tool"]: row["status"] for row in state.results}
+    assert rows["hmc_snapshot_capture"] == "FAIL"
 
 
 @pytest.mark.asyncio
@@ -5823,6 +6321,8 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
 
     async def scripted_call(_state, _client, tool, **kwargs):
         calls.append((tool, kwargs))
+        if tool == "hmc_run_command":
+            return "PASS", _st14_volumes(state)
         if tool == "hmc_get_lpar":
             return "PASS", {"uuid": "recreated-lp3"}
         if tool == "hmc_provision_lpar":
@@ -5834,6 +6334,7 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vios_partition_id = 7
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     state.artifacts.lp3_baseline = {
@@ -5866,9 +6367,8 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
     ]
     assert calls[0][1] == {"system_name_or_uuid": state.config.system_name}
     assert calls[6][1]["cmd"] == (
-        f"viosvrcmd -m {state.config.system_name} -p vios-uuid"
-        f' -c "rmvlog -vg {state.config.vdisk_volume_group_name}'
-        f' -lv {state.config.vdisk_name}"'
+        f"viosvrcmd -m {state.config.system_name} --id 7"
+        f" -c 'lsvg -lv {state.config.vdisk_volume_group_name}'"
     )
     assert calls[7][1]["capacity_mib"] == state.config.provision_disk_mib
     provision = calls[9][1]
@@ -5894,7 +6394,6 @@ async def test_storage_provisioning_runs_the_complete_successful_orchestration(
         "dry_run": False,
     }
     assert calls[10][1] == {"lpar_name_or_uuid": state.config.lp3_name}
-    assert f"-vg {state.config.vdisk_volume_group_name} " in calls[6][1]["cmd"]
     assert calls[11][1] == {"lpar_name_or_uuid": state.config.lp3_name}
     assert state.artifacts.lp3_uuid == "recreated-lp3"
 
@@ -5926,6 +6425,7 @@ async def test_storage_provisioning_refuses_an_unlisted_vlan_before_deleting(
     monkeypatch.setattr(runner.RunState, "call", scripted_call)
     state = runner.RunState()
     state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vios_partition_id = 7
     state.artifacts.vg_uuid = "vg-uuid"
     state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
     assert state.config.provision_vlan_id == 1
@@ -6015,44 +6515,215 @@ def test_restorable_description_is_not_blocked(baseline):
     assert lpar._unrestorable_description(baseline) is None
 
 
+def _st14_volumes(state, *names):
+    return (
+        f"{state.config.vdisk_volume_group_name}:\n"
+        "LV NAME TYPE LPs PPs PVs LV STATE MOUNT POINT\n"
+        + "".join(f"{name} jfs2 1 1 1 open/syncd N/A\n" for name in names)
+    )
+
+
 @pytest.mark.asyncio
-async def test_rmvlog_command_shell_quotes_the_system_name(monkeypatch):
-    """#1033: system_name reaches viosvrcmd quoted, as in inventory and lpar."""
-    commands = []
-
-    async def scripted_call(_state, _client, tool, **kwargs):
-        if tool == "hmc_run_command":
-            commands.append(kwargs["cmd"])
-        return "PASS", {}
-
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+@pytest.mark.parametrize("present", [False, True])
+async def test_st14_cleanup_uses_scoped_delete_and_independent_exact_inventory(
+    monkeypatch, present
+):
     state = runner.RunState(
         config=dataclasses.replace(runner.LiveTestConfig(), system_name="sys; reboot")
     )
-    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vios_uuid = "unused-stale-uuid"
+    state.artifacts.vios_partition_id = 7
+    calls = []
+    listed = (
+        [state.config.vdisk_name] if present else [state.config.vdisk_name + "-other"]
+    )
 
-    await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
+    async def call(_state, _client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_run_command":
+            return "PASS", _st14_volumes(state, *listed)
+        if tool == "hmc_delete_virtual_disk":
+            listed.clear()
+        return "PASS", {}
 
-    assert commands[0].startswith("viosvrcmd -m 'sys; reboot' -p vios-uuid ")
+    monkeypatch.setattr(runner.RunState, "call", call)
+    assert await provisioning._recreate_test_disk(
+        None, state, "selected-vios-uuid", "configured-vg-uuid", 1024
+    )
+    deletes = [kw for tool, kw in calls if tool == "hmc_delete_virtual_disk"]
+    assert deletes == (
+        [
+            {
+                "vios_name_or_uuid": "selected-vios-uuid",
+                "system_name_or_uuid": "sys; reboot",
+                "vg_uuid": "configured-vg-uuid",
+                "disk_name": state.config.vdisk_name,
+            }
+        ]
+        if present
+        else []
+    )
+    reads = [kw for tool, kw in calls if tool == "hmc_run_command"]
+    assert reads == [
+        {
+            "cmd": f"viosvrcmd -m 'sys; reboot' --id 7 -c 'lsvg -lv {state.config.vdisk_volume_group_name}'"
+        }
+    ] * (2 if present else 1)
+    assert [
+        kw["disk_name"] for tool, kw in calls if tool == "hmc_create_virtual_disk"
+    ] == [state.config.vdisk_name]
+    removal = next(
+        row
+        for row in state.results
+        if row["tool"] == "hmc_delete_virtual_disk (old test disk)"
+    )
+    assert removal["status"] == ("PASS" if present else "SKIP")
+    assert not state.gaps
 
 
 @pytest.mark.asyncio
-async def test_rmvlog_command_shell_quotes_the_vios_uuid(monkeypatch):
-    """#1113: the HMC-derived vios_uuid reaches viosvrcmd quoted."""
-    commands = []
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "does not exist",
+        "not found",
+        "No such",
+        "0516-306",
+        "0516-404",
+        "permission denied",
+        "transport timeout",
+    ],
+)
+async def test_st14_cleanup_delete_failures_are_fail_and_stop(monkeypatch, failure):
+    state = runner.RunState()
+    state.artifacts.vios_partition_id = 7
+    calls = []
 
-    async def scripted_call(_state, _client, tool, **kwargs):
+    async def call(_state, _client, tool, **kwargs):
+        calls.append(tool)
         if tool == "hmc_run_command":
-            commands.append(kwargs["cmd"])
+            return "PASS", _st14_volumes(state, state.config.vdisk_name)
+        if tool == "hmc_delete_virtual_disk":
+            return "FAIL", observation.classify_failure(RuntimeError(failure))
         return "PASS", {}
 
-    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    monkeypatch.setattr(runner.RunState, "call", call)
+    assert not await provisioning._recreate_test_disk(
+        None, state, "vios-uuid", "vg-uuid", 1024
+    )
+    assert "hmc_create_virtual_disk" not in calls
+    removal = next(
+        row
+        for row in state.results
+        if row["tool"] == "hmc_delete_virtual_disk (old test disk)"
+    )
+    assert removal["status"] == "FAIL"
+    assert not state.gaps
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "read-error",
+        "empty",
+        "wrong-group",
+        "bad-header",
+        "bad-row",
+        "bad-number",
+        "post-read-error",
+        "survives",
+    ],
+)
+async def test_st14_cleanup_refuses_unproven_absence(monkeypatch, fault):
     state = runner.RunState()
-    state.artifacts.vios_uuid = "uuid; reboot"
+    state.artifacts.vios_partition_id = 7
+    calls = []
+    reads = 0
 
-    await provisioning._recreate_test_disk(None, state, "vios-uuid", "vg-uuid", 1024)
+    async def call(_state, _client, tool, **kwargs):
+        nonlocal reads
+        calls.append(tool)
+        if tool != "hmc_run_command":
+            return "PASS", {}
+        reads += 1
+        data = _st14_volumes(state, state.config.vdisk_name)
+        if fault == "read-error" or (fault == "post-read-error" and reads == 2):
+            return "FAIL", observation.classify_failure(
+                RuntimeError("managed system not found")
+            )
+        if fault == "empty":
+            data = ""
+        elif fault == "wrong-group":
+            data = data.replace(state.config.vdisk_volume_group_name, "other-group")
+        elif fault == "bad-header":
+            data = data.replace("LV NAME TYPE", "LV NAME")
+        elif fault == "bad-row":
+            data += "unrecognized diagnostic\n"
+        elif fault == "bad-number":
+            data = data.replace("1 1 1", "x 1 1")
+        return "PASS", data
 
-    assert " -p 'uuid; reboot' -c " in commands[0]
+    monkeypatch.setattr(runner.RunState, "call", call)
+    assert not await provisioning._recreate_test_disk(
+        None, state, "vios-uuid", "vg-uuid", 1024
+    )
+    assert "hmc_create_virtual_disk" not in calls
+    assert any(row["status"] == "FAIL" for row in state.results)
+    assert not any(row["status"] == "SKIP" for row in state.results)
+    assert ("hmc_delete_virtual_disk" in calls) == (
+        fault in {"post-read-error", "survives"}
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vios_id", [None, "7", True, 0, -1])
+async def test_st14_cleanup_requires_partition_id_before_destructive_work(
+    monkeypatch, vios_id
+):
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+    state.artifacts.vios_partition_id = vios_id
+    calls = []
+
+    async def call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_virtual_networks":
+            return "PASS", _listed_networks(state.config.provision_vlan_id)
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", call)
+    await runner.exercise_storage_provisioning(None, state)
+    assert calls == []
+    assert any(row["status"] == "FAIL" for row in state.results)
+
+
+@pytest.mark.asyncio
+async def test_st14_cleanup_failure_stops_dependent_provision(monkeypatch):
+    state = runner.RunState()
+    state.artifacts.vios_uuid = "vios-uuid"
+    state.artifacts.vg_uuid = "vg-uuid"
+    state.artifacts.vdisk_vg_name = state.config.vdisk_volume_group_name
+    state.artifacts.vios_partition_id = 7
+    calls = []
+
+    async def call(_state, _client, tool, **kwargs):
+        calls.append(tool)
+        if tool == "hmc_list_virtual_networks":
+            return "PASS", _listed_networks(state.config.provision_vlan_id)
+        if tool == "hmc_run_command":
+            return "FAIL", observation.classify_failure(
+                RuntimeError("volume group not found")
+            )
+        return "PASS", {}
+
+    monkeypatch.setattr(runner.RunState, "call", call)
+    await runner.exercise_storage_provisioning(None, state)
+    assert "hmc_create_virtual_disk" not in calls
+    assert "hmc_provision_lpar" not in calls
+    assert any(row["status"] == "FAIL" for row in state.results)
 
 
 @pytest.mark.asyncio
@@ -6628,6 +7299,12 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "vios-uuid-present",
         },
         "st1-resource-inventory": {"resource-list-non-empty"},
+        "st1-lpar-snapshot": {
+            "snapshot-names-partition",
+            "snapshot-names-system",
+            "profile-captured",
+            "scores-name-partition",
+        },
         "st29-dedicated-pcie": {
             "profile-lists-slot",
             "assign-call-succeeded",
@@ -6727,6 +7404,12 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "baseline-restored",
         },
         "st39-lpar-config": {
+            "assignment-workflow-completed",
+            "dedicated-profile-read-back",
+            "other-profile-slots-unchanged",
+            "dedicated-profile-restored",
+            "dedicated-slot-unowned",
+            "dedicated-baseline-restored",
             "memory-read-back",
             "processing-units-read-back",
             "other-values-unchanged",
@@ -7242,3 +7925,123 @@ async def test_partial_results_write_failure_does_not_mask_the_run_failure(
 
     assert raised.value is error
     assert "Could not write partial results: disk full" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--detach-probe"],
+        ["--group", "storage", "--detach-probe"],
+        ["41", "--detach-probe"],
+    ],
+)
+def test_detach_probe_requires_explicit_lpar_power_group(argv):
+    with pytest.raises(SystemExit):
+        runner._parse_arguments(argv)
+
+
+def test_detach_probe_selection_and_provenance():
+    args = runner._parse_arguments(["--group", "lpar-power", "--detach-probe"])
+    assert args.detach_probe and args.group == "lpar-power"
+    assert (
+        runner._run_provenance(
+            [41], args.group, None, "(not set)", False, detach_probe=True
+        )["detach_probe"]
+        is True
+    )
+    assert "detach_probe" not in runner._run_provenance(
+        [41], args.group, None, "(not set)", False
+    )
+
+
+@pytest.mark.asyncio
+async def test_direct_detach_probe_refuses_bad_selection_before_configuration(
+    monkeypatch,
+):
+    def forbidden():
+        raise AssertionError("configuration accessed for invalid probe selection")
+
+    monkeypatch.setattr(runner.LiveTestConfig, "from_env_file", forbidden)
+    assert await runner.main(group="storage", detach_probe=True) == 1
+    assert (
+        await runner.main(subtask_filter=41, group="lpar-power", detach_probe=True) == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_detach_probe_dispatches_only_the_probe_and_stamps_private_results(
+    monkeypatch, tmp_path
+):
+    _isolate_runner(monkeypatch)
+    seen = []
+
+    async def probe(_client, state):
+        seen.append("probe")
+        state.record(41, "bounded probe", "PASS", {})
+
+    async def broad(_client, _state):
+        raise AssertionError("broad ST41 arm dispatched")
+
+    monkeypatch.setattr(runner, "exercise_detach_probe", probe, raising=False)
+    monkeypatch.setattr(runner, "SUBTASKS", {41: broad})
+    path = tmp_path / "results.json"
+    assert (
+        await runner.main(
+            group="lpar-power",
+            detach_probe=True,
+            results_path=str(path),
+            config=runner.LiveTestConfig(),
+        )
+        == 0
+    )
+    assert seen == ["probe"]
+    assert json.loads(path.read_text())["run"]["detach_probe"] is True
+
+
+def test_scratch_settings_are_optional_and_dotenv_only(tmp_path, monkeypatch):
+    example = Path(__file__).parents[1] / ".env.example"
+    text = example.read_text()
+    path = tmp_path / ".env"
+    path.write_text(text)
+    monkeypatch.setenv("LIVE_TEST_SCRATCH_PV_NAME", "hdisk8")
+    monkeypatch.setenv("LIVE_TEST_SCRATCH_VG_NAME", "hpvg88888888")
+    config = runner.LiveTestConfig.from_env_file(path)
+    assert (config.scratch_pv_name, config.scratch_vg_name) == ("", "")
+    path.write_text(
+        text
+        + "\nLIVE_TEST_SCRATCH_PV_NAME=hdisk9\n"
+        + "LIVE_TEST_SCRATCH_VG_NAME=hpvg00000009\n"
+    )
+    config = runner.LiveTestConfig.from_env_file(path)
+    assert (config.scratch_pv_name, config.scratch_vg_name) == (
+        "hdisk9",
+        "hpvg00000009",
+    )
+
+
+@pytest.mark.parametrize("value", ["7", b"7", 7.9])
+def test_baseline_numeric_fields_keep_direct_int_conversion(value):
+    baseline = {}
+    inventory._capture_cna_identifiers([{"PortVLANID": value}], baseline)
+    assert baseline == {"pvid": 7, "vswitch_id": 0}
+    state = runner.RunState()
+    state.artifacts.lp3_baseline = {"lpars": {"MinimumMemory": value}}
+    assert provisioning._baseline_provision_resources(state)["min_memory"] == 7
+
+
+def test_baseline_numeric_fields_keep_truthy_fallbacks_and_conversion_errors():
+    baseline = {}
+    inventory._capture_cna_identifiers(
+        [{"PortVLANID": 0, "port_vlan_id": "7", "VirtualSwitchID": "2"}], baseline
+    )
+    assert baseline == {"pvid": 7, "vswitch_id": 2}
+    state = runner.RunState()
+    state.artifacts.lp3_baseline = {
+        "lpars": {"MinimumMemory": 0, "minimum_memory": "7"}
+    }
+    assert provisioning._baseline_provision_resources(state)["min_memory"] == 7
+    state.artifacts.lp3_baseline = {"lpars": {"MinimumMemory": "invalid"}}
+    with pytest.raises(ValueError):
+        provisioning._baseline_provision_resources(state)
+    with pytest.raises(ValueError):
+        inventory._capture_cna_identifiers([{"PortVLANID": "invalid"}], {})

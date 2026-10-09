@@ -121,8 +121,9 @@ async def modify_user(
 
     V10R3 refuses a modify that omits the read-only ``UserID`` or the
     ``AuthenticationType`` with REST0344 (#1381), so both are read from the profile
-    and sent unchanged unless the patch replaces the authentication type. The
-    reference marks no other element required, and none is otherwise evidenced.
+    and sent unchanged unless the patch replaces the authentication type. It also
+    refuses one without ``UserProfilePassword`` (#1409); with no replacement
+    password the builder sends that element empty, as the profile GET serves it.
     """
     profile = await hmc.get_hmc_user(console_uuid, user_profile_uuid)
     resource = (profile or {}).get("Resource") or {}

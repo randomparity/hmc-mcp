@@ -1,12 +1,15 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import textwrap
 import tomllib
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
@@ -16,7 +19,7 @@ TOOL_PINS = {
     "ty==0.0.75",
     "zizmor==1.29.0",
 }
-TY_INCLUDE = ["src/hmcpctl"]
+TY_INCLUDE = ["src/hmcpctl", "scripts/live_test"]
 RUFF_EXTEND_SELECT = {
     "E401",
     "E402",
@@ -42,7 +45,7 @@ RUFF_PER_FILE_IGNORE_MODULES = {
     "tests/unit/test_ownership.py",
 }
 BASELINED_FINDINGS = {
-    "docs/capabilities/maturity.json": 49,
+    "docs/capabilities/maturity.json": 54,
     "justfile": 1,
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
@@ -258,7 +261,8 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "    uv run --no-sync python tests/validate_release_artifacts.py dist .\n"
         in justfile
     )
-    assert "\nverify: static test smoke build verify-artifacts\n" in justfile
+    assert "\nverify: static verify-runtime\n" in justfile
+    assert "\nverify-runtime: test smoke build verify-artifacts\n" in justfile
     assert "\ntest:\n    uv run --no-sync python scripts/run_tests.py\n" in justfile
     assert (
         "\ntest-verbose:\n"
@@ -440,17 +444,14 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert 'just-version: "1.58.0"' in workflow
     for command in (
         "just setup",
-        # Named as its own step as well as reached through `static` -> `verify`,
-        # so generated-docs drift is its own failed check (ADR 0097, ADR 0098).
-        "just tool-docs-check",
-        "just doc-freshness",
-        "just verify",
-        "UV_NO_SYNC=1 uv run prek run --all-files",
+        "just verify-runtime",
+        "UV_NO_SYNC=1 uv run --no-sync prek run --all-files",
     ):
         assert f"run: {command}" in workflow
-    verification = workflow.index("run: just verify")
+    verification = workflow.index("run: just verify-runtime")
+    hooks = workflow.index("run: UV_NO_SYNC=1 uv run --no-sync prek run --all-files")
     upload = workflow.index("uses: actions/upload-artifact@")
-    assert verification < upload
+    assert hooks < verification < upload
     assert (
         "name: release-wheel-${{ matrix.architecture }}-py${{ matrix.python-version }}"
         in workflow
@@ -497,6 +498,8 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     )
     subprocess.run(["git", "add", "."], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
+    # CI exports this for hooks; it must not mask a missing recipe --no-sync.
+    environment.pop("UV_NO_SYNC", None)
     subprocess.run(
         ["uv", "sync", "--locked", "--extra", "app"],
         cwd=project,
@@ -518,8 +521,10 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
         text=True,
         timeout=180,
     )
+    # The structural guards cover every hook/recipe; required full hook runs
+    # exercise their gates separately. One real hook covers this launch path.
     hooks = subprocess.run(
-        ["uv", "run", "prek", "run", "--all-files"],
+        ["uv", "run", "prek", "run", "lint", "--all-files", "--verbose"],
         cwd=project,
         check=False,
         capture_output=True,
@@ -528,12 +533,16 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
         timeout=180,
     )
 
-    assert lint.returncode == 0, lint.stderr
+    lint_output = lint.stdout + lint.stderr
+    hooks_output = hooks.stdout + hooks.stderr
+    assert lint.returncode == 0, lint_output
     assert "All checks passed" in lint.stdout
-    assert "Building hmcpctl" not in lint.stderr
-    assert hooks.returncode == 0, hooks.stdout + hooks.stderr
+    assert "Building hmcpctl" not in lint_output
+    assert hooks.returncode == 0, hooks_output
     assert "Ruff lint" in hooks.stdout
-    assert "Building hmcpctl" not in hooks.stderr
+    # Successful hook output goes to stdout and is hidden without --verbose.
+    assert "All checks passed" in hooks.stdout
+    assert "Building hmcpctl" not in hooks_output
 
 
 def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
@@ -559,7 +568,7 @@ def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
     )
     assert "      fail-fast: false\n      matrix:\n" in active_workflow
     assert "python-version: ${{ matrix.python-version }}" in workflow
-    assert active_workflow.count("run: just verify") == 1
+    assert active_workflow.count("run: just verify-runtime\n") == 1
     assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
     assert "docker/setup-qemu-action" not in active_workflow
     assert "architecture: [amd64, arm64]" not in workflow
@@ -1149,6 +1158,36 @@ def test_coverage_gate_denominator_is_not_shrunk_in_source() -> None:
     )
 
 
+def test_timing_recipes_reuse_the_configured_verification_graph() -> None:
+    recipes = (ROOT / "justfile").read_text()
+    assert (
+        "\ntest-timings:\n    uv run --no-sync python scripts/run_tests.py --timings\n"
+        in recipes
+    )
+    assert (
+        "\nverify-timings:\n    HMCPCTL_TEST_TIMINGS=1 just --time verify\n" in recipes
+    )
+
+
+def test_timing_runner_keeps_the_exact_coverage_gate(tmp_path: Path) -> None:
+    floor, report = _coverage_gate()
+    _write_gate_project(tmp_path, report, covered=round(10 * floor) - 1)
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/run_tests.py"), "--timings"],
+        check=False,
+        cwd=tmp_path,
+        env={**os.environ, "PYTEST_ADDOPTS": "--no-cov"},
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert result.returncode == 1
+    assert "Required test coverage of 90.5% not reached" in result.stderr
+    assert "slowest 30 durations" in result.stderr
+    assert "configured coverage gate passed" not in result.stdout
+
+
 def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
     """The floor can be overridden from any pytest invocation, not just addopts.
 
@@ -1348,3 +1387,107 @@ def test_verification_report_job_warns_on_pull_requests_and_fails_on_schedule() 
     )
     assert "permissions:" not in body
     assert not [line for line in body.splitlines() if "run:" in line and "${{" in line]
+
+
+RUNTIME_GATES = {"test", "smoke", "build", "verify-artifacts", "cli-root", "cli-groups"}
+
+
+@pytest.fixture
+def verification_route(tmp_path: Path):
+    """Keep real orchestration; replace expensive command boundaries with probes."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        textwrap.dedent(
+            f"""\
+            import os
+            from pathlib import Path
+            import sys
+
+            args = sys.argv[1:]
+            if args[:3] == ["run", "--no-sync", "prek"]:
+                executable = {str(Path(sys.executable).parent / "prek")!r}
+                os.execv(executable, [executable, *args[3:]])
+            cli = {{
+                ("run", "--no-sync", "hmcpctl", "--help"): "cli-root",
+                ("run", "--no-sync", "python", "scripts/smoke_cli_groups.py"): "cli-groups",
+            }}
+            gate = args[0] if len(args) == 1 else cli[tuple(args)]
+            with Path("trace").open("a") as trace:
+                trace.write(gate + "\\n")
+            if gate == os.environ.get("FAIL_GATE"):
+                print("deliberate gate failure: " + gate, file=sys.stderr)
+                sys.exit(37)
+            """
+        )
+    )
+    leaves = STATIC_GATES | (RUNTIME_GATES - {"cli-root", "cli-groups"})
+    lines = []
+    recipe = ""
+    emitted = False
+    for line in (ROOT / "justfile").read_text().splitlines():
+        header = re.match(r"^([a-z][a-z-]*):", line)
+        if header:
+            recipe, emitted = header[1], False
+        if line.startswith("    ") and recipe in leaves:
+            if not emitted:
+                lines.append(f"    {shlex.quote(sys.executable)} probe.py {recipe}")
+                emitted = True
+        else:
+            lines.append(line)
+    (tmp_path / "justfile").write_text("\n".join(lines) + "\n")
+    shutil.copy2(ROOT / ".pre-commit-config.yaml", tmp_path)
+    uv = tmp_path / "uv"
+    uv.write_text(
+        f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(probe))} "$@"\n'
+    )
+    uv.chmod(0o755)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    commands = re.findall(
+        r"^        run: (.+)$", _job_body(workflow, "ci"), re.MULTILINE
+    )
+    assert commands[0] == "just setup"
+    hosted = commands[1:]
+
+    def run(route: str, failure: str = ""):
+        command = "just verify" if route == "local" else "\n".join(hosted)
+        result = subprocess.run(
+            ["bash", "-e", "-c", command],
+            cwd=tmp_path,
+            env={
+                **os.environ,
+                "PATH": f"{tmp_path}:{os.environ['PATH']}",
+                "FAIL_GATE": failure,
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        return result, (tmp_path / "trace").read_text().splitlines()
+
+    return run
+
+
+@pytest.mark.parametrize("route", ["local", "hosted"])
+def test_verification_routes_execute_gates_once(verification_route, route: str) -> None:
+    result, trace = verification_route(route)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sorted(trace) == sorted(STATIC_GATES | RUNTIME_GATES)
+    assert trace.index("build") < trace.index("verify-artifacts")
+
+
+@pytest.mark.parametrize("route", ["local", "hosted"])
+@pytest.mark.parametrize("failure", sorted(STATIC_GATES | RUNTIME_GATES))
+def test_verification_routes_propagate_gate_failure(
+    verification_route, route: str, failure: str
+) -> None:
+    result, trace = verification_route(route, failure)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert failure in trace
+    assert f"deliberate gate failure: {failure}" in result.stdout + result.stderr
+    if failure in STATIC_GATES:
+        assert not (set(trace) & RUNTIME_GATES)
+    else:
+        assert trace[-1] == failure

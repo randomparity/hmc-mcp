@@ -1,9 +1,10 @@
 """Run the storage arm of the live integration suite against a real HMC.
 
-Covers subtasks 0, 3 and 40: the baseline and VIOS identity, the storage and
+Covers subtasks 0, 3, 40 and 42: the baseline and VIOS identity, the storage and
 cluster inventory reads, and a virtual disk's lifecycle on the test partition
 (create, map, a delete refused while mapped, detach, delete, then the same
-through attach-disk).
+through attach-disk), plus an optional scratch volume group on one explicitly
+released physical volume with guarded cleanup and snapshot restoration.
 
 Usage:
     uv run --no-sync python scripts/live_storage.py

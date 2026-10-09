@@ -288,7 +288,26 @@ Use verbose recipes only when live progress or expanded diagnostics are needed:
 ```sh
 just test-verbose   # live pytest output + missing-lines coverage
 just smoke-verbose  # list every exposed MCP tool
+just test-timings   # retain pytest output, including the 30 slowest test phases
+just verify-timings # canonical verify with per-recipe wall time and pytest timings
 ```
+
+`just test` and its verification callers use at most two pytest workers on Linux
+when at least two effective CPUs and 3 GiB remaining memory are visible. Affinity,
+visible cgroup ancestor quotas, host available memory and ancestor memory charges
+bound eligibility; unavailable resource or child-ownership facilities select serial.
+The success summary includes `workers=2` when parallel execution ran. Force serial
+with `uv run --no-sync python scripts/run_tests.py --serial`; `--timings` also works.
+Direct pytest and `just test-verbose` remain serial. Both modes keep the exact
+coverage gate. See [the evaluation](docs/workflow/bounded-pytest-evaluation.md).
+
+Timing diagnostics preserve the configured coverage gate and subprocess lifecycle.
+`HMCPCTL_TEST_TIMINGS=1` enables the runner's timing presentation through the
+verification graph; the runner removes this switch before launching pytest so
+nested invocations keep their own defaults. Only the exact value `1` enables it.
+`just --time` measures each recipe body, excluding dependency time; its `verify`
+line is not the total verification elapsed time. Measure overall elapsed time
+separately when comparing runs, and record commit, environment, resources and caches.
 
 Before pushing, run `just verify` inside the branch worktree. If pytest fails
 during collection, run `just smoke`; it imports `hmcpctl.server` directly and
@@ -336,16 +355,18 @@ documentation, or anything whose output is a rendered type, expect the version
 legs to disagree with your machine and read the CI matrix rather than re-running
 locally.
 
-**CI runs the hooks after `just verify`, and `just verify` does not.** The last
-step of every `ci` leg is `UV_NO_SYNC=1 uv run prek run --all-files`. CI also
-invokes `just tool-docs-check` and `just doc-freshness` as named steps ahead of
-`just verify`, so a stale generated document is reported as its own failed check
-rather than as a line inside the umbrella. To cover the hook step before
-pushing, run `uv run --no-sync prek run --all-files` yourself. Run it that way
-and not as a bare `prek`: the dev group pins a `prek` version, and a globally
-installed one on `PATH` is a different binary — which is the same
-green-here-red-there hazard this section is about. `just setup` has installed
-the git hook script, not a `prek` on `PATH`.
+**CI runs static gates through real hooks, then `just verify-runtime`.** Each
+native `ci` leg invokes `UV_NO_SYNC=1 uv run --no-sync prek run --all-files` once before
+runtime verification and wheel retention (ADR 0207). The two documentation guards
+remain separately named hooks with their own failure diagnostics. `just verify`
+still composes static and runtime checks for complete standalone local use; it
+does not execute prek. `verify-runtime` alone omits static checks and is intended
+for composition after they have passed.
+
+Before pushing, run both `just verify` and `uv run --no-sync prek run --all-files`.
+Use the latter instead of bare `prek`: the dev group pins its version, while a
+global executable may differ. `just setup` installs the git hook script, not a
+`prek` on `PATH`.
 
 ## Repository conventions
 

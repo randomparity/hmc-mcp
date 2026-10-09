@@ -106,5 +106,5 @@ def build_managed_system_document(
 #                                        RemoteSlotNumber, VirtualSlotNumber
 #   VirtualFibreChannelClientAdapter  -> AdapterType, ConnectingPartitionID,
 #                                        ConnectingVirtualSlotNumber, VirtualSlotNumber
-#   ClientNetworkAdapter              -> PortVLANID, VirtualSlotNumber,
-#                                        VirtualSwitchID, IsTaggedVLAN, MACAddress
+#   ClientNetworkAdapter              -> VirtualSlotNumber, MACAddress, PortVLANID,
+#                                        TaggedVLANSupported, VirtualSwitchID

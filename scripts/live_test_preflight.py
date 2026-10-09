@@ -50,6 +50,7 @@ from live_test import (
     lpar_power,
     pcie,
     storage_lifecycle,
+    storage_volume_group,
     users,
     vios_backup,
     vmedia,
@@ -259,12 +260,21 @@ def _pcm_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
 
 def _lpar_config_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
     """Name the one partition the lpar-config arm (#1345) creates and deletes again."""
+    arm = pcie._dedicated_config(config)
+    dedicated = (
+        f"scratch profile {arm.profile_name}: dedicated slot {arm.drc_index or pcie.AUTO_SELECTED_SLOT}; "
+        "requires unowned/no-profile baseline; assign through hmc_modify_lpar and restore "
+        "before SMS, then compare all profiles and slot ownership"
+        if arm is not None and arm.system_name == config.system_name
+        else "dedicated assignment unavailable: requires dedicated settings for this same system"
+    )
     return ArmVerdict(
         "lpar-config",
         True,
         "configuration validated",
         (
             f"managed system {config.system_name}",
+            dedicated,
             (
                 f"one partition {lpar_config.NAME_PREFIX}<8 hex> (created; memory, "
                 "processors, name and pending boot order changed; activated to SMS "
@@ -409,7 +419,15 @@ def _storage_verdict(config: runner.LiveTestConfig) -> ArmVerdict:
                 "then created and mapped the same way by attach-disk, detached and "
                 "deleted"
             ),
-            "no other logical volume, mapping, adapter or volume group is changed",
+            (
+                f"ST42 creates scratch group {config.scratch_vg_name} on explicit physical "
+                f"volume {config.scratch_pv_name}, only after free/no-VG identity guards; "
+                "cleanup uses empty-single-PV reducevg and exact snapshot restoration"
+                if storage_volume_group.configured_scratch(
+                    config.scratch_pv_name, config.scratch_vg_name
+                )
+                else "ST42 SKIPs: both valid LIVE_TEST_SCRATCH_PV_NAME and LIVE_TEST_SCRATCH_VG_NAME required"
+            ),
         ),
         config.system_name,
     )
@@ -555,11 +573,33 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="predict from configuration alone, contacting no HMC",
     )
+    parser.add_argument(
+        "--detach-probe",
+        action="store_true",
+        help="predict only the bounded ST41 mapping/RMC investigation",
+    )
     args = parser.parse_args(argv)
+    if args.detach_probe and args.group != "lpar-power":
+        parser.error("--detach-probe requires --group lpar-power")
 
     config, config_error = _check_configuration()
     credentials_ok, present = _check_credentials()
     verdicts = arm_verdicts(config, args.group) if config is not None else ()
+    if args.detach_probe and config is not None:
+        verdicts = (
+            ArmVerdict(
+                "lpar-power",
+                True,
+                "bounded detach probe selected",
+                (
+                    f"managed system {config.system_name}",
+                    "one ST41-prefix scratch partition, ownership-stamped; attach while Not Activated, activate only owned scratch Open Firmware, then detach; deleted only after safe reads",
+                    f"one 1024 MiB ST41-prefix run volume in {config.vdisk_volume_group_name}; one remaining fresh attach/detach cycle, two previous attach attempts consumed, three total ceiling",
+                    "other mappings/adapters compared exactly; ambiguity retains the partition/volume for manual recovery; existing test partition unchanged",
+                ),
+                config.system_name,
+            ),
+        )
 
     envelopes: dict[str, str] = {}
     provision_vlan: str | None = None

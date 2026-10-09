@@ -95,25 +95,29 @@ def build_client_network_adapter_document(
     makes this a tagged (VLAN-trunking) adapter; mac_address pins the MAC
     (otherwise the HMC generates one).
     """
+    if mac_address and not _MAC_ADDRESS.fullmatch(mac_address):
+        raise ValueError(
+            f"mac_address {mac_address!r} must be 12 hexadecimal digits with "
+            "no separators, for example 020000000001"
+        )
+    # Element order and kb follow the served VirtualEthernetAdapter schema (#1399);
+    # V10R3 refuses an out-of-order document with REST0001.
     parts = ["  <Metadata><Atom/></Metadata>"]
     if slot_number is not None:
         parts.append(
             f'  <VirtualSlotNumber kb="COD" kxe="false">{slot_number}</VirtualSlotNumber>'
         )
+    if mac_address:
+        parts.append(f'  <MACAddress kb="CUR" kxe="false">{mac_address}</MACAddress>')
+    parts.append(f'  <PortVLANID kb="CUR" kxe="false">{port_vlan_id}</PortVLANID>')
+    if tagged:
+        parts.append(
+            '  <TaggedVLANSupported kb="CUA" kxe="false">true</TaggedVLANSupported>'
+        )
     if virtual_switch_id is not None:
         parts.append(
             f'  <VirtualSwitchID kb="ROR" kxe="false">{virtual_switch_id}</VirtualSwitchID>'
         )
-    parts.append(f'  <PortVLANID kb="CUR" kxe="false">{port_vlan_id}</PortVLANID>')
-    if tagged:
-        parts.append('  <IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>')
-    if mac_address:
-        if not _MAC_ADDRESS.fullmatch(mac_address):
-            raise ValueError(
-                f"mac_address {mac_address!r} must be 12 hexadecimal digits with "
-                "no separators, for example 020000000001"
-            )
-        parts.append(f'  <MACAddress kb="CUR" kxe="false">{mac_address}</MACAddress>')
     body = "\n".join(parts)
     return document_envelope("ClientNetworkAdapter", body)
 

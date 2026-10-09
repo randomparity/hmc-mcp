@@ -2,28 +2,18 @@
 
 from __future__ import annotations
 
-import shlex
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastmcp import Client
 
 from .network import listed_vlans
-from .observation import ExpectedOutcome, judge_create_result, plain_data
+from .observation import judge_create_result, plain_data
 from .results import resource as get_resource
 from .storage import configured_vg_uuid
+from .storage_lifecycle import LISTING_NAME, volume_listing, volume_names
 
 if TYPE_CHECKING:
     from live_test_runner import RunState
-
-_TEST_DISK_ABSENT = ExpectedOutcome(
-    operation="command.run",
-    variant="test-disk-removal",
-    transient=True,
-    reason="test disk is not present on VIOS (already cleaned up or never existed)",
-    error_codes=frozenset(
-        {"does not exist", "not found", "No such", "0516-306", "0516-404"}
-    ),
-)
 
 # ---------------------------------------------------------------------------
 # ST13 — Provision Dry Run
@@ -99,36 +89,89 @@ async def _remove_previous_test_lpar(client: Client, state: RunState) -> None:
     state.record(14, "hmc_list_lpars (confirm lp3 gone)", status, data)
 
 
+async def _test_disk_names(client: Client, state: RunState) -> frozenset[str] | None:
+    config = state.config
+    vios_id = state.artifacts.vios_partition_id
+    if type(vios_id) is not int or vios_id <= 0:
+        state.record(
+            14, "test disk inventory", "FAIL", "positive VIOS partition ID required"
+        )
+        return None
+    status, data = await state.call(
+        client,
+        "hmc_run_command",
+        cmd=volume_listing(config.system_name, vios_id, config.vdisk_volume_group_name),
+    )
+    lines = (
+        [line.split() for line in data.splitlines() if line.strip()]
+        if isinstance(data, str)
+        else []
+    )
+    valid = (
+        len(lines) >= 2
+        and lines[0] == [f"{config.vdisk_volume_group_name}:"]
+        and lines[1]
+        == ["LV", "NAME", "TYPE", "LPs", "PPs", "PVs", "LV", "STATE", "MOUNT", "POINT"]
+        and all(
+            len(row) == 7
+            and LISTING_NAME.fullmatch(row[0])
+            and all(value.isdecimal() for value in row[2:5])
+            for row in lines[2:]
+        )
+    )
+    names = volume_names(data) if status == "PASS" and valid else None
+    state.record(
+        14, "test disk inventory", "PASS" if names is not None else "FAIL", data
+    )
+    return names
+
+
 async def _recreate_test_disk(
     client: Client,
     state: RunState,
     vios_uuid: str,
     vg_uuid: str,
     vdisk_size_mib: int,
-) -> None:
+) -> bool:
     """Remove any stale VIOS logical volume and create a fresh virtual disk."""
     config = state.config
-    artifacts = state.artifacts
     status, data = await state.call(
         client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid
     )
     state.record(14, "hmc_list_volume_groups (pre-create)", status, data)
 
-    vg_name = config.vdisk_volume_group_name
-    command = (
-        f"viosvrcmd -m {shlex.quote(config.system_name)} -p {shlex.quote(artifacts.vios_uuid)}"
-        f' -c "rmvlog -vg {vg_name} -lv {config.vdisk_name}"'
-    )
-    status, data = await state.call(
-        client, "hmc_run_command", expected=[_TEST_DISK_ABSENT], cmd=command
-    )
-    state.record_with_expected(
-        14,
-        "hmc_run_command rmvlog (delete old test disk)",
-        status,
-        data,
-        [_TEST_DISK_ABSENT],
-    )
+    names = await _test_disk_names(client, state)
+    if names is None:
+        return False
+    if config.vdisk_name not in names:
+        state.skip(
+            14,
+            "hmc_delete_virtual_disk (old test disk)",
+            "test disk absent in VIOS inventory",
+        )
+    else:
+        status, data = await state.call(
+            client,
+            "hmc_delete_virtual_disk",
+            vios_name_or_uuid=vios_uuid,
+            system_name_or_uuid=config.system_name,
+            vg_uuid=vg_uuid,
+            disk_name=config.vdisk_name,
+        )
+        state.record(14, "hmc_delete_virtual_disk (old test disk)", status, data)
+        if status != "PASS":
+            return False
+        names = await _test_disk_names(client, state)
+        if names is None:
+            return False
+        if config.vdisk_name in names:
+            state.record(
+                14,
+                "old test disk removal readback",
+                "FAIL",
+                "test disk remains on VIOS",
+            )
+            return False
 
     # No refusal is declared expected: ST40 re-checks the create live, so a
     # refused create is a failure, not a known gap (#1348).
@@ -146,6 +189,7 @@ async def _recreate_test_disk(
         client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid
     )
     state.record(14, "hmc_list_volume_groups (post-create)", status, data)
+    return True
 
 
 async def _provision_from_baseline(
@@ -224,7 +268,9 @@ def _baseline_provision_resources(state: RunState) -> dict[str, int]:
         ),
     )
     return {
-        name: int(resource.get(upper) or resource.get(lower) or default)
+        name: int(
+            cast(str | int, resource.get(upper) or resource.get(lower) or default)
+        )
         for name, upper, lower, default in values
     }
 
@@ -268,6 +314,8 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     missing = [
         k for k, v in {"vios_uuid": vios_uuid, "vg_uuid": vg_uuid}.items() if not v
     ]
+    if type(artifacts.vios_partition_id) is not int or artifacts.vios_partition_id <= 0:
+        missing.append("vios_partition_id")
     refusal = (
         f"Missing required context keys: {missing}. Re-run ST0 and ST3 before ST14."
         if missing
@@ -296,13 +344,14 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     )
 
     await _remove_previous_test_lpar(client, state)
-    await _recreate_test_disk(
+    if not await _recreate_test_disk(
         client,
         state,
         str(vios_uuid),
         str(vg_uuid),
         config.provision_disk_mib,
-    )
+    ):
+        return
     await _provision_from_baseline(
         client,
         state,
