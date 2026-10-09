@@ -1,110 +1,141 @@
-# Bounded pytest evaluation (#1434)
+# Bounded pytest execution (#1434)
 
-## Problem and authority
+## Status and authority
 
-Pytest is serial after the preceding runtime optimizations. Issue #1434 and epic
-#1429 require a measured adoption decision, including a valid measured NO-GO.
-The external charter is [WORK:SCOPE](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6072269590).
-The campaign approved the unchanged exclusions and temporary native measurement
-surface. Complexity is M, fixed denominator 250; this is the full-spec lane.
-ADR [0208](../../adr/0208-bounded-pytest-evaluation.md) records the experiment decision.
+Accepted by the operator on 2026-10-09 after the bounded evaluation and review.
+This specification replaces the experiment-only execution contract.
+The frozen charter is issue #1434 / q1434-24622bc8, latest complete WORK:SCOPE
+6079392765. Its exclusions and owners remain unchanged. Complexity M maps to
+the unchanged 250-line denominator; this remains one PR in the full-spec lane.
+The requested guarantees are resource-bounded workers, complete tests/coverage,
+serial fallback, meaningful diagnostics and owned-descendant cleanup.
+The operator explicitly approved the displayed automatic maximum-two default,
+--serial fallback and owned-session/subreaper lifecycle.
 
-## Approach
+## Evidence and alternatives
 
-Evaluate pytest-xdist 3.8.0, the current stable release checked on
-[PyPI](https://pypi.org/project/pytest-xdist/) on 2026-10-08, with exactly two
-workers and `--dist=loadfile --max-worker-restart=0`. The existing
-[pytest-cov integration](https://pytest-cov.readthedocs.io/en/latest/xdist.html)
-combines worker data; verify that behavior against actual totals and a split
-coverage fixture before trusting it. Keeping files together minimizes changes
-to module fixture semantics. Serial pytest remains the reference and fallback.
-No automatic CPU-count selection or production parallel default is introduced
-by this experiment. No existing ownership transition is needed.
+At immutable 7f0dfe0d, both native architectures passed two alternating pairs
+with complete identity/per-file coverage equality and 44.93–49.48% less wall
+for two workers. Normal local eligible pairs saved 47.83% and 48.06%; the approved
+reversed confirmation is complete with the same identities and coverage.
+Fresh constrained serial and parallel observations both passed. Running two
+modes consecutively in one 2 GiB/no-swap scope caused the second mode to OOM
+in either order because pytest temporary files remained charged to tmpfs.
+Fresh parallel's actual cgroup peak was 1,995,755,520 bytes, substantially more
+than its sampled process RSS. That evidence rules out an RSS-only memory policy.
+The existing runner left two xdist workers alive after timeout, twice.
 
-Use one temporary stdlib measurement harness for local and native hosted runs.
-It launches the supplied command with filtered coverage/pytest overrides,
-retains complete logs, records monotonic wall time and samples aggregate RSS
-across its descendant forest every 100 ms. Linux subreaper ownership retains
-orphaned descendants for cleanup, including nested sessions. RSS is a sampled
-high-water observation, includes shared pages in each process, and can miss
-short peaks; it is neither maximum individual RSS nor unique physical memory.
-Record sample period and peak process count. An isolated local cgroup additionally
-bounds memory and CPU; do not describe physical RAM as its effective allowance.
-Timeout and interruption terminate/reap the owned forest, with TERM then KILL.
-Harness errors or surviving processes invalidate the sample rather than passing.
-Record candidate survivors before containment cleanup; containment does not prove
-production runner cleanup. Defer additional SIGINT during bounded teardown.
-Reap adopted children while the measured command is still active, excluding its
-direct Popen child so that only Popen consumes that command’s exit status. Invoke
-the harness through `uv run --no-sync` to preserve the installed console-script PATH.
+Accepted approach: automatic maximum two workers when the native
+Linux resource checks below admit them, with an explicit --serial override.
+It benefits existing just test/verify callers without editing their recipes.
+Alternative: leave serial default and expose an opt-in --parallel; this avoids a
+default change but adds tests/maintenance while ordinary CI keeps the serial cost.
+Alternative: measured NO-GO; retain the deterministic six-case ordering correction
+and report the measured speed/memory tradeoff without a new production lifecycle.
+The operator selected automatic bounded execution after considering these alternatives.
 
-## Execution and success
+## Resource admission and interfaces
 
-1. Bootstrap with `just setup`. Pin xdist as a dev dependency during evaluation
-   (`uv add --dev --no-sync 'pytest-xdist==3.8.0'`, then `just setup`); record lock
-   identity. Both candidate modes use that identical environment. Inspect nested
-   subprocess tests before enabling the plugin; preserve app extras.
-2. Prove the harness reports a failing command, timeout and interrupt and cleans
-   nested descendants. Prove sum-of-process RSS with two resident allocations.
-   Run existing runner/coverage-gate tests under two workers with `--no-cov`
-   only for this focused check, plus explicit port/file/environment and split
-   coverage probes. These synthetic checks are fitness evidence, not suite proof.
-3. Before full comparisons, sort the existing six sharing-mode parameters in
-   `tests/unit/test_documents.py`; the campaign approved this exact cause fix after
-   an actual worker collection mismatch. Prove identical identities/count across
-   different hash seeds and stable ordering after the correction. This test-only
-   correction may remain even when parallel execution is rejected.
-4. Compare the complete configured suite serial and two-worker modes on the
-   integrated source. Keep JUnit test identities/counts and coverage JSON per run;
-   compare statement and branch denominators, covered totals, statuses and skips.
-   A failed run is a result, never a successful timing. No exclusions, retries of
-   failed tests, floor changes or denominator changes make a candidate eligible.
-5. Profile normal local resources and a real 1 CPU / 2 GiB / no-swap cgroup,
-   then native amd64 and arm64 Ubuntu 24.04/Python 3.11. Start with one pair per
-   profile; where eligible take a second pair in reversed order. Two pairs is
-   the initial limit. A third needs named variance uncertainty and root review.
-   Stage fitness first: a reproducible disqualifying failure ends good-path
-   repetitions, but still obtain measured native evidence and disclose omitted
-   comparisons. Never repeat the old #1430 baseline.
-6. The temporary PR-only workflow is restricted to the owned branch, uses
-   contents:read, no secrets and existing pinned setup actions. Its explicit
-   checkout selects the PR head SHA so local/native samples share one candidate
-   tree; ordinary production CI retains its existing checkout. It changes no
-   ordinary native verify/wheel leg. Its logs and summary carry tested SHA,
-   versions, resource context and sample results. Always retain normalized JSON
-with hashed test identities/statuses and hashed per-file coverage summaries,
-including on failure. Retrieve that artifact for final comparisons; do not upload
-raw private logs, JUnit or coverage reports.
-7. Publish the measured decision and limits. Adoption requires stable complete
-   runs, preserved gate/isolation/lifecycle and repeatable wall-time benefit at
-   adequate resources. If that holds, propose the minimal production runner
-   implementation and review that concrete design before landing parallelism.
-   Otherwise retain serial operation and record a NO-GO, not a universal claim
-   that parallel pytest cannot work. Remove evaluation-only workflow, harness,
-   tests and dependency in a separate commit before final delivery.
+Keep scripts/run_tests.py as the sole execution owner. Retain exact dev pin
+pytest-xdist==3.8.0 and the existing locked app extras. Add no runtime dependency,
+new script, production workflow edit, environment variable or worker-count knob.
+The CLI accepts --serial alongside existing --timings, with abbreviation
+disabled. --serial follows the existing serial path, arguments and output.
+
+Automatic execution uses two workers only when all these checks succeed:
+- Linux, the main Python thread, one active Python thread, default SIGCHLD
+  disposition, readable direct-child inventory, and no pre-existing direct child.
+- Readable host MemAvailable and a unified cgroup-v2 membership whose path resolves
+  within /sys/fs/cgroup. Walk the current group and visible ancestors to that root.
+  Read each existing root limit; root controller limits may legitimately be absent.
+  Missing/malformed non-root CPU or memory controls cause serial fallback.
+- Effective CPU capacity is min(affinity count, floor(quota/period) for each finite
+  visible cpu.max), and is at least two. Never use an unbounded host CPU count.
+- Remaining memory is min(MemAvailable, max(0, memory.max-memory.current) for each
+  finite visible ancestor). Require at least 3 * 1024**3 bytes remaining.
+- PR_GET_CHILD_SUBREAPER and PR_SET_CHILD_SUBREAPER are supported. Save the old
+  process-level state; restore it in finally after ownership cleanup.
+
+Unavailable/unsupported resource or process-ownership facilities select serial
+before starting pytest. No fallback retries occur after tests start. The memory
+threshold is a conservative admission budget, about 1.14 GiB above the measured
+fresh constrained cgroup peak, not a reservation or a guarantee against concurrent
+outside allocations. Resource visibility is the OS view available to the runner;
+hidden container ancestor limits and changing limits are not inferred from host RAM.
+The measured deployments are native Linux hosts, not nested container namespaces.
+Other platforms and cgroup-v1-only environments retain serial execution.
+
+Two-worker invocation adds -n 2 --dist=loadfile --max-worker-restart=0; all existing
+coverage and timing behavior remains. Direct pytest and just test-verbose stay
+serial as today. Document that distinction and the --serial invocation. On parallel
+success append '; workers=2' to the existing success line so actual mode is visible.
+Serial output stays byte-compatible. Failures replay captured bytes unchanged.
+
+## Owned lifecycle
+
+Only the standalone runner's new pytest subtree is owned. A pre-existing child,
+non-default SIGCHLD reaper or additional Python thread prevents parallel entry;
+tests of the parallel path execute in isolated subprocesses. Unit tests invoking
+main in-process force serial selection unless they explicitly mock ownership APIs.
+
+Enable subreaping and launch pytest with start_new_session=True. While waiting,
+poll at 100 ms and reap terminated adopted direct children. Never waitpid the
+live direct Popen child: Popen alone owns its exit status. Read direct children
+from /proc/self/task/<main-pid>/children rather than scanning the whole host.
+For an adopted PID, waitpid(pid, WNOHANG) proves parenthood; a zero result leaves
+that child unreaped, so its PID cannot recycle before signalling. There is no
+background reaper or signal handler consuming child status. Once Popen has reaped
+its child, that historical PID is no longer excluded from the direct-child list.
+
+Start a fresh session so terminal group SIGINT does not already reach pytest.
+On the first KeyboardInterrupt, forward exactly one SIGINT to pytest's owned
+process group if Popen has not reaped its leader, then retain ADR0130's 300-second
+diagnostic window. Re-check returncode because Popen.wait briefly waits during
+KeyboardInterrupt and may already have reaped the child. With no other reaper,
+an unreaped leader prevents group-ID reuse before the signal. Group delivery and
+PID-only delivery to the wrapper must both produce one forwarded interrupt.
+
+At timeout, a second interrupt, or controller exit, clean the owned subtree.
+Send TERM to the owned group only while the leader is unreaped. Also repeatedly
+signal/reap direct adopted children; killing a parent adopts descendants even
+when they created nested sessions. Allow three seconds for TERM, then repeatedly
+KILL/reap for at most three seconds. A further interrupt during TERM escalates to
+KILL; additional SIGINT during bounded KILL cleanup is deferred. No broad PID
+scan or signal reaches unrelated processes. Restore the prior SIGINT handler
+and subreaper state in finally, including launch and cleanup errors.
+
+Cleanup completion requires the direct child reaped and the owned direct-child
+inventory empty. A surviving child or ownership/restoration error returns nonzero
+with an actionable diagnostic; it cannot report success. Kernel/SIGKILL termination
+of the wrapper cannot execute Python cleanup and remains the enclosing job's duty.
+Normal child status, signal-to-shell mapping, timeout124 and interrupt130 remain;
+a cleanup failure instead reports failure and never hides the original diagnostic.
+The legacy serial signal/diagnostic behavior remains unchanged.
 
 ## Failure model
 
-Actors are repository contributors and trusted native CI jobs executing the
-configured offline test suite. Assets are gate integrity, test completeness,
-resources and cleanup of owned test processes. No live HMC is contacted.
-The experiment handles nonzero commands, coverage failures, worker crashes,
-TERM-resistant children, nested sessions, timeout and SIGINT. SIGKILL of the
-measurement supervisor cannot emit a report; an interrupted/missing sample is
-invalid and its enclosing cgroup/job is responsible for final OS cleanup.
-Sampling uncertainty and hosted cache/queue variance are accepted measurement
-limits and are reported, not interpreted as exact memory or guaranteed speedup.
-Other optimizations belong to #1430/#1431/#1432/#1433/#1435; unrelated test
-remediation requires the campaign owner's reassessment. Product API, weaker
-coverage/security, target/version removal and hardware floors remain excluded.
+- Actors and deployments: trusted contributors and native Linux CI executing the
+  offline suite; serial execution remains available on other supported hosts.
+- Invariants and assets: all original test identities, exact coverage denominator
+  and floor, owned process status/cleanup, captured diagnostics, bounded workers.
+- Accepted failure classes: sampled RSS misses brief/shared-page distinctions
+  (actual cgroup evidence is separately reported); host/job SIGKILL cannot run
+  user-space cleanup; outside allocations or resource-limit changes can invalidate
+  a startup budget. None permits a false success or silently retried test.
+- Covered elsewhere: product authorization/live-HMC behavior and sibling runtime
+  optimizations retain their campaign owners. No live HMC operation is introduced.
 
-## Validation and delivery
+## Validation and final state
 
-Every executable experiment contract has focused tests and a controlled fault
-that makes its assertion fail. Full suite samples retain the exact 90.5% combined
-coverage floor, branch denominator and all collected tests. Local code publication
-requires `just verify` and separate pinned all-files hooks; final prose-only publication uses relevant
-document guards. Ordinary actual CI still covers eight native verification legs,
-eight installed-wheel legs and two library jobs. The final evidence report lists
-commands, SHAs, environment, cache conditions, measurement limits and all failures.
-No fresh test asserts report prose. No claimed aggregate saving sums components.
+Prove resource selection with boundary/ancestor/malformed-input cases and controlled
+faults. Prove actual worker count, coverage combination, status propagation and
+subtree cleanup with real subprocesses, including nested sessions, repeated SIGINT,
+controller exit before descendants, nonzero status and state restoration. Observe
+survivors before fixture containment; fixture cleanup cannot satisfy an assertion.
+Retain the existing meaningful serial runner tests. Run full canonical just verify
+and pinned all-files hooks, then unchanged eight native verify/eight wheel/two
+library matrices. Production adoption requires its own end-to-end run showing the
+selected mode; experiment timings are not relabelled as production-run timings.
+Remove the temporary measurement workflow, script and its test module in a distinct
+commit. Preserve the six-case collection correction. Keep only the approved minimal
+production runner/tests/dependency/guidance and durable evidence/spec/ADR.
