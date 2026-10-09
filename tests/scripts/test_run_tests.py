@@ -441,6 +441,7 @@ def test_timeout_terminates_pytest_and_returns_timeout_status(
             self.timeouts.append(timeout)
             if self.wait_count == 1:
                 temporary_file.write(b"pytest stalled\n")
+                assert timeout is not None
                 raise subprocess.TimeoutExpired(["pytest"], timeout)
             return self.returncode
 
@@ -598,7 +599,9 @@ def test_timing_switch_only_changes_presentation(
     assert calls[0][0] == [sys.executable, "-m", "pytest"] + (
         ["--durations=30", "--durations-min=0"] if value == "1" else []
     )
-    environment_keys = set(calls[0][1]["env"])
+    environment = calls[0][1]["env"]
+    assert isinstance(environment, dict)
+    environment_keys = set(environment)
     assert "HMCPCTL_TEST_TIMINGS" not in environment_keys
     assert "PYTEST_ADDOPTS" not in environment_keys
     assert output.closed
@@ -700,3 +703,83 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         f"and a reap of {reap}s; "
         f"stderr tail: {stderr[-2000:]!r}"
     )
+
+
+@pytest.mark.parametrize(
+    ("change", "eligible"),
+    [
+        ({}, True),
+        ({"affinity": 1}, False),
+        ({"affinity": 2}, True),
+        ({"parent/cpu.max": "100000 100000"}, False),
+        ({"parent/cpu.max": "199999 100000"}, False),
+        ({"parent/cpu.max": "200000 100000"}, True),
+        ({"parent/cpu.max": "max 0"}, False),
+        ({"parent/cpu.max": "-1 100000"}, False),
+        ({"parent/cpu.max": "broken"}, False),
+        ({"parent/cpu.max": None}, False),
+        ({"parent/memory.max": str(3 * 1024**3)}, True),
+        ({"parent/memory.max": str(3 * 1024**3 - 1)}, False),
+        (
+            {
+                "parent/memory.max": str(4 * 1024**3),
+                "parent/memory.current": str(2 * 1024**3),
+            },
+            False,
+        ),
+        ({"parent/memory.current": "-1"}, False),
+        ({"parent/memory.max": "broken"}, False),
+        ({"parent/memory.current": None}, False),
+        ({"meminfo": "MemAvailable: 3145727 kB\n"}, False),
+        ({"meminfo": "MemAvailable: 3145728 kB\n"}, True),
+        ({"meminfo": "MemTotal: 999999999 kB\n"}, False),
+        ({"meminfo": "MemAvailable: -1 kB\n"}, False),
+        ({"membership": "0::/../outside\n"}, False),
+        ({"membership": "1:memory:/parent/child\n"}, False),
+        ({"platform": "darwin"}, False),
+        ({"cpu.max": "100000 100000"}, False),
+        ({"memory.max": str(2 * 1024**3), "memory.current": "0"}, False),
+    ],
+)
+def test_parallel_resource_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: dict, eligible: bool
+) -> None:
+    proc, root = tmp_path / "proc", tmp_path / "cgroup"
+    (proc / "self").mkdir(parents=True)
+    (root / "parent/child").mkdir(parents=True)
+    files = {
+        "parent/cpu.max": "max 100000",
+        "parent/memory.max": "max",
+        "parent/memory.current": "0",
+        "parent/child/cpu.max": "max 100000",
+        "parent/child/memory.max": "max",
+        "parent/child/memory.current": "0",
+    }
+    files.update({key: value for key, value in change.items() if "." in key})
+    for name, value in files.items():
+        if value is not None:
+            (root / name).write_text(value)
+    (proc / "meminfo").write_text(change.get("meminfo", "MemAvailable: 99999999 kB\n"))
+    (proc / "self/cgroup").write_text(change.get("membership", "0::/parent/child\n"))
+    monkeypatch.setattr(
+        run_tests.os,
+        "sched_getaffinity",
+        lambda _pid: set(range(change.get("affinity", 48))),
+    )
+    monkeypatch.setattr(run_tests.sys, "platform", change.get("platform", "linux"))
+    assert run_tests._resources_allow_parallel(proc, root) is eligible
+
+
+def test_serial_cli_preserves_original_invocation(tmp_path: Path) -> None:
+    tmp_path.joinpath("pytest.py").write_text("import sys; print(sys.argv[1:])\n")
+    result = subprocess.run(
+        [sys.executable, str(MODULE_PATH), "--serial", "--timings"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert result.stderr == "['--durations=30', '--durations-min=0']\n"
+    assert result.stdout == "test: passed; configured coverage gate passed\n"

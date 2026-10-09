@@ -6,8 +6,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import BinaryIO
 
+SERIAL = False
 CHUNK_SIZE = 64 * 1024
 INTERRUPT_GRACE_SECONDS = 300
 TERMINATE_GRACE_SECONDS = 3
@@ -18,6 +20,57 @@ _PYTEST_ENVIRONMENT_OVERRIDES = {
     "COVERAGE_FILE",
     "HMCPCTL_TEST_TIMINGS",
 }
+
+
+def _resources_allow_parallel(
+    proc: Path = Path("/proc"), root: Path = Path("/sys/fs/cgroup")
+) -> bool:
+    """Require two effective CPUs and 3 GiB available under every visible limit."""
+    if sys.platform != "linux":
+        return False
+    try:
+        cpus = len(os.sched_getaffinity(0))
+        available = [
+            line.split()
+            for line in (proc / "meminfo").read_text().splitlines()
+            if line.startswith("MemAvailable:")
+        ]
+        if len(available) != 1 or len(available[0]) != 3 or available[0][2] != "kB":
+            return False
+        memory = int(available[0][1]) * 1024
+        memberships = [
+            line[3:]
+            for line in (proc / "self/cgroup").read_text().splitlines()
+            if line.startswith("0::")
+        ]
+        if len(memberships) != 1 or not memberships[0].startswith("/"):
+            return False
+        root = root.resolve()
+        group = (root / memberships[0].lstrip("/")).resolve()
+        if not group.is_relative_to(root):
+            return False
+        while True:
+            cpu = group / "cpu.max"
+            if group != root or cpu.exists():
+                quota, period_text = cpu.read_text().split()
+                period = int(period_text)
+                if period <= 0 or (quota != "max" and int(quota) <= 0):
+                    return False
+                if quota != "max":
+                    cpus = min(cpus, int(quota) // period)
+            limit_path = group / "memory.max"
+            if group != root or limit_path.exists():
+                limit = limit_path.read_text().strip()
+                current = int((group / "memory.current").read_text())
+                if current < 0 or (limit != "max" and int(limit) < 0):
+                    return False
+                if limit != "max":
+                    memory = min(memory, max(0, int(limit) - current))
+            if group == root:
+                return cpus >= 2 and memory >= 3 * 1024**3
+            group = group.parent
+    except (OSError, ValueError):
+        return False
 
 
 def _replay(output: BinaryIO) -> None:
@@ -114,6 +167,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--timings", action="store_true", help="retain pytest phase durations"
     )
-    if parser.parse_args().timings:
+    parser.add_argument(
+        "--serial", action="store_true", help="disable parallel execution"
+    )
+    arguments = parser.parse_args()
+    SERIAL = arguments.serial
+    if arguments.timings:
         os.environ["HMCPCTL_TEST_TIMINGS"] = "1"
     raise SystemExit(main())
