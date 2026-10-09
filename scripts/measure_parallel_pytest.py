@@ -83,6 +83,12 @@ def run(command, output, timeout):
         try:
             while process.poll() is None:
                 rss = forest()
+                for pid in rss:
+                    if pid != process.pid:
+                        try:
+                            os.waitpid(pid, os.WNOHANG)
+                        except ChildProcessError:
+                            pass
                 peak = max(peak, sum(rss.values()))
                 count = max(count, len(rss))
                 if time.monotonic() - started >= timeout:

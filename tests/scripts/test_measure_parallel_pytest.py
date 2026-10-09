@@ -108,6 +108,29 @@ def test_memory_is_sum_across_children(tmp_path):
     assert data["peak_processes"] >= 3
 
 
+def test_adopted_children_are_reaped_while_command_runs(tmp_path):
+    marker = tmp_path / "orphan"
+    grandchild = "import time; time.sleep(0.1)"
+    child = (
+        "import subprocess,sys; "
+        f"p=subprocess.Popen([sys.executable,'-c',{grandchild!r}]); "
+        f"open({str(marker)!r},'w').write(str(p.pid))"
+    )
+    command = (
+        "import subprocess,sys,time; from pathlib import Path; "
+        f"subprocess.run([sys.executable,'-c',{child!r}],check=True); "
+        f"pid=int(Path({str(marker)!r}).read_text()); "
+        "deadline=time.monotonic()+5\n"
+        "while Path(f'/proc/{pid}').exists() and time.monotonic()<deadline:\n"
+        "    time.sleep(0.01)\n"
+        "assert not Path(f'/proc/{pid}').exists(), Path(f'/proc/{pid}/stat').read_text()\n"
+        "raise SystemExit(7)\n"
+    )
+    result, data = invoke(tmp_path, command)
+    assert result.returncode == data["returncode"] == 7
+    assert data["survivors"] == 0
+
+
 def test_failure_retains_normalized_evidence(tmp_path):
     out = tmp_path / "sample"
     xml = '<testsuite><testcase classname="private-class" name="private-name"><failure/></testcase></testsuite>'
