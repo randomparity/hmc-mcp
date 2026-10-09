@@ -573,11 +573,33 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="predict from configuration alone, contacting no HMC",
     )
+    parser.add_argument(
+        "--detach-probe",
+        action="store_true",
+        help="predict only the bounded ST41 mapping/RMC investigation",
+    )
     args = parser.parse_args(argv)
+    if args.detach_probe and args.group != "lpar-power":
+        parser.error("--detach-probe requires --group lpar-power")
 
     config, config_error = _check_configuration()
     credentials_ok, present = _check_credentials()
     verdicts = arm_verdicts(config, args.group) if config is not None else ()
+    if args.detach_probe and config is not None:
+        verdicts = (
+            ArmVerdict(
+                "lpar-power",
+                True,
+                "bounded detach probe selected",
+                (
+                    f"managed system {config.system_name}",
+                    "one ST41-prefix scratch partition, ownership-stamped; attach while Not Activated, activate only owned scratch Open Firmware, then detach; deleted only after safe reads",
+                    f"one 1024 MiB ST41-prefix run volume in {config.vdisk_volume_group_name}; one remaining fresh attach/detach cycle, two previous attach attempts consumed, three total ceiling",
+                    "other mappings/adapters compared exactly; ambiguity retains the partition/volume for manual recovery; existing test partition unchanged",
+                ),
+                config.system_name,
+            ),
+        )
 
     envelopes: dict[str, str] = {}
     provision_vlan: str | None = None

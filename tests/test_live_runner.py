@@ -7927,6 +7927,77 @@ async def test_partial_results_write_failure_does_not_mask_the_run_failure(
     assert "Could not write partial results: disk full" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--detach-probe"],
+        ["--group", "storage", "--detach-probe"],
+        ["41", "--detach-probe"],
+    ],
+)
+def test_detach_probe_requires_explicit_lpar_power_group(argv):
+    with pytest.raises(SystemExit):
+        runner._parse_arguments(argv)
+
+
+def test_detach_probe_selection_and_provenance():
+    args = runner._parse_arguments(["--group", "lpar-power", "--detach-probe"])
+    assert args.detach_probe and args.group == "lpar-power"
+    assert (
+        runner._run_provenance(
+            [41], args.group, None, "(not set)", False, detach_probe=True
+        )["detach_probe"]
+        is True
+    )
+    assert "detach_probe" not in runner._run_provenance(
+        [41], args.group, None, "(not set)", False
+    )
+
+
+@pytest.mark.asyncio
+async def test_direct_detach_probe_refuses_bad_selection_before_configuration(
+    monkeypatch,
+):
+    def forbidden():
+        raise AssertionError("configuration accessed for invalid probe selection")
+
+    monkeypatch.setattr(runner.LiveTestConfig, "from_env_file", forbidden)
+    assert await runner.main(group="storage", detach_probe=True) == 1
+    assert (
+        await runner.main(subtask_filter=41, group="lpar-power", detach_probe=True) == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_detach_probe_dispatches_only_the_probe_and_stamps_private_results(
+    monkeypatch, tmp_path
+):
+    _isolate_runner(monkeypatch)
+    seen = []
+
+    async def probe(_client, state):
+        seen.append("probe")
+        state.record(41, "bounded probe", "PASS", {})
+
+    async def broad(_client, _state):
+        raise AssertionError("broad ST41 arm dispatched")
+
+    monkeypatch.setattr(runner, "exercise_detach_probe", probe, raising=False)
+    monkeypatch.setattr(runner, "SUBTASKS", {41: broad})
+    path = tmp_path / "results.json"
+    assert (
+        await runner.main(
+            group="lpar-power",
+            detach_probe=True,
+            results_path=str(path),
+            config=runner.LiveTestConfig(),
+        )
+        == 0
+    )
+    assert seen == ["probe"]
+    assert json.loads(path.read_text())["run"]["detach_probe"] is True
+
+
 def test_scratch_settings_are_optional_and_dotenv_only(tmp_path, monkeypatch):
     example = Path(__file__).parents[1] / ".env.example"
     text = example.read_text()

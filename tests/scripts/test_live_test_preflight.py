@@ -753,6 +753,39 @@ def test_the_provision_vlan_is_not_probed_without_round2_hardware(
     assert probed == []
 
 
+def test_detach_probe_preflight_discloses_only_bounded_scope(
+    workspace, monkeypatch, capsys
+):
+    (workspace / ".env").write_text(_env_text(), encoding="utf-8")
+    _credentials(monkeypatch)
+    assert (
+        preflight.main(["--group", "lpar-power", "--detach-probe", "--skip-hardware"])
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "one ST41-prefix scratch partition" in output
+    assert "one 1024 MiB" in output
+    assert "one remaining fresh attach/detach cycle" in output
+    assert "two previous attach attempts consumed, three total ceiling" in output
+    assert "attach while Not Activated" in output and "then detach" in output
+    assert "manual recovery" in output
+    assert "provision" not in output and "PCIe" not in output
+
+
+@pytest.mark.parametrize(
+    "argv", [["--detach-probe"], ["--group", "storage", "--detach-probe"]]
+)
+def test_detach_probe_preflight_refuses_wrong_group_before_configuration(
+    monkeypatch, argv
+):
+    def forbidden():
+        raise AssertionError("configuration accessed for invalid selection")
+
+    monkeypatch.setattr(preflight, "_check_configuration", forbidden)
+    with pytest.raises(SystemExit):
+        preflight.main(argv)
+
+
 @pytest.mark.parametrize(
     "pv,group", [("hdisk9", "hpvg1234abcd"), ("", "hpvg1234abcd"), ("hdisk9", "rootvg")]
 )
