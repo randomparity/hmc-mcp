@@ -1,5 +1,7 @@
 # Python-by-architecture verification design
 
+> Historical design: hosted architecture coverage is superseded by [the amd64 design](2026-10-09-amd64-hosted-ci-design.md) and [ADR 0210](../../adr/0210-amd64-hosted-ci.md).
+
 ## Goal and scope
 
 Issue #163 completes pull-request verification for every supported CPython version on both native
