@@ -42,7 +42,8 @@ cancelled negative controls, real-hook partition proof and comparable hosted tim
 
 The fourteen hooks, runtime checks and wheel lineage stay where they are. Local
 `just verify` stays complete; native amd64/arm64 × Python 3.11–3.14 coverage,
-90.5% branch coverage, security scan scope, pins, permissions and schedule stay intact.
+90.5% combined coverage floor with branch measurement, security scan scope, pins,
+permissions and schedule stay intact.
 Repeated work remains across legs. No speedup or protection improvement is claimed,
 and historical measurements are not a relocation benchmark. No administrative change
 or speculative follow-up issue is part of this decision.
