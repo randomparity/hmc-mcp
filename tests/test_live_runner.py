@@ -7392,6 +7392,8 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "dry-run-inventoried",
             "dry-run-changed-nothing",
             "resource-deleted",
+            "storage-mapping-absent",
+            "backing-volume-retained",
         },
         "st37-vios-io-backup-restore": {
             "listing-parsed",

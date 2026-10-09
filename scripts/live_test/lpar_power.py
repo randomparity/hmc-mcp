@@ -13,6 +13,7 @@ Design: docs/workflow/specs/2026-10-06-lpar-power-contract-verification-design.m
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import re
 import shlex
@@ -24,7 +25,9 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import Client
 
 from hmcpctl.jobs import SUCCESSFUL_JOB_STATUSES, job_outcome
+from hmcpctl.operations.lpar.decommission import _vscsi_detach_inventory
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
+from hmcpctl.operations.storage.resources import _storage_mapping
 from hmcpctl.ssh.commands import HMC_NO_RESULTS
 from hmcpctl.ssh.lpar import DEFAULT_PROFILE_NAME
 from hmcpctl.ssh.profiles import (
@@ -137,6 +140,7 @@ class Run:
     a_uuid: str | None = None
     p_uuid: str | None = None
     volume_attempted: bool = False
+    decommission_failed: bool = False
     requests: dict[str, bool] = field(default_factory=dict)
     ran: set[str] = field(default_factory=set)
     held: dict[str, bool] = field(default_factory=dict)
@@ -243,6 +247,48 @@ async def _mappings(
         for entry in data
         if isinstance(entry, Mapping)
     )
+
+
+async def _complete_mapping_proof(
+    client: Client, state: RunState, run: Run
+) -> tuple[frozenset[tuple[str, ...]], tuple[str, ...]] | None:
+    assert run.vios is not None
+    st, data = await state.call(
+        client,
+        "hmc_get_vios_storage_detail",
+        vios_name_or_uuid=run.vios.uuid,
+        system_name_or_uuid=run.system,
+    )
+    state.record(SUBTASK, "decommission vSCSI proof", st, data)
+    if st != "PASS" or not isinstance(data, Mapping):
+        return None
+    resource = data.get("Resource")
+    if not isinstance(resource, dict):
+        return None
+    _, errors = _vscsi_detach_inventory(resource, run.vios.uuid, run.p_uuid or "")
+    if errors:
+        return None
+    block = resource["VirtualSCSIMappings"]
+    raw = block.get("VirtualSCSIMapping", []) if isinstance(block, dict) else []
+    records = raw if isinstance(raw, list) else [raw]
+    projected: set[tuple[str, ...]] = set()
+    foreign: list[str] = []
+    for item in records:
+        decoded = _storage_mapping(item)
+        projected.add(
+            tuple(
+                str(value or "")
+                for value in (
+                    decoded.id,
+                    decoded.lpar_uuid,
+                    decoded.backing_kind,
+                    decoded.backing_name,
+                )
+            )
+        )
+        if (decoded.lpar_uuid or "").casefold() != (run.p_uuid or "").casefold():
+            foreign.append(json.dumps(item, sort_keys=True, separators=(",", ":")))
+    return frozenset(projected), tuple(sorted(foreign))
 
 
 async def _volumes(client: Client, state: RunState, run: Run) -> frozenset[str] | None:
@@ -1082,17 +1128,63 @@ async def _record_vios_rmc(client: Client, state: RunState, run: Run) -> None:
     )
 
 
-def _dry_run_inventoried(data: object, run: Run) -> bool:
+def _dry_run_mapping_ids(data: object) -> frozenset[tuple[str, str]] | None:
+    steps = result_field(data, "steps")
+    if not isinstance(steps, (list, tuple)):
+        return None
+    mapping_steps = [
+        step
+        for step in steps
+        if result_field(step, "step") == "detach_storage_mappings"
+    ]
+    if len(mapping_steps) != 1:
+        return None
+    result = _plain(result_field(mapping_steps[0], "result"))
+    if not isinstance(result, Mapping):
+        return None
+    mappings = result.get("mappings")
+    if not isinstance(mappings, (list, tuple)) or not mappings:
+        return None
+    identities = []
+    for item in mappings:
+        if not isinstance(item, Mapping):
+            return None
+        vios, identity = item.get("vios_uuid"), item.get("mapping_id")
+        if not isinstance(vios, str) or not vios:
+            return None
+        if not isinstance(identity, str) or not identity:
+            return None
+        identities.append((vios.casefold(), identity))
+    return frozenset(identities) if len(set(identities)) == len(identities) else None
+
+
+def _dry_run_inventoried(data: object, run: Run, expected_adapters: object) -> bool:
     radius = _plain(result_field(data, "blast_radius"))
     radius = radius if isinstance(radius, Mapping) else {}
-    adapters = {item.get("type") for item in radius.get("adapters") or ()}
+    listed = radius.get("adapters")
+    if not isinstance(listed, (list, tuple)) or expected_adapters is None:
+        return False
+    adapters = []
+    for item in listed:
+        if not isinstance(item, Mapping):
+            return False
+        kind, identity = item.get("type"), item.get("uuid")
+        if not isinstance(kind, str) or not isinstance(identity, str) or not identity:
+            return False
+        adapters.append((kind, identity.casefold()))
+    if (
+        len(set(adapters)) != len(adapters)
+        or tuple(sorted(adapters)) != expected_adapters
+    ):
+        return False
     backed = {
         item.get("backing_device") for item in radius.get("storage_mappings") or ()
     }
     return (
         result_field(data, "resource_deleted") is False
         and _all_steps(data, "dry_run")
-        and {"ClientNetworkAdapter", "VirtualSCSIClientAdapter"} <= adapters
+        and {"ClientNetworkAdapter", "VirtualSCSIClientAdapter"}
+        <= {kind for kind, _ in adapters}
         and run.volume in backed
     )
 
@@ -1114,53 +1206,104 @@ async def _decommission(
 
 
 async def _client_adapters(client: Client, state: RunState, run: Run) -> Any:
-    st, data = await state.call(
-        client,
-        "hmc_list_adapters",
-        lpar_name_or_uuid=run.p_uuid,
-        adapter_type="ClientNetworkAdapter",
-    )
-    return (
-        sorted(str(item.get("UUID") or item.get("uuid")) for item in entries(data))
-        if st == "PASS"
-        else None
-    )
+    adapters = []
+    for kind in (
+        "ClientNetworkAdapter",
+        "VirtualSCSIClientAdapter",
+        "VirtualFibreChannelClientAdapter",
+        "VirtualNICDedicated",
+    ):
+        st, data = await state.call(
+            client, "hmc_list_adapters", lpar_name_or_uuid=run.p_uuid, adapter_type=kind
+        )
+        if st != "PASS":
+            return None
+        for item in entries(data):
+            identity = item.get("UUID") or item.get("uuid")
+            if not isinstance(identity, str) or not identity:
+                return None
+            adapters.append((kind, identity.casefold()))
+    return tuple(sorted(adapters)) if len(set(adapters)) == len(adapters) else None
 
 
 async def _decommission_cases(client: Client, state: RunState, run: Run) -> None:
+    run.decommission_failed = True
     op = "lpar.decommission"
     lpar = run.p_uuid or ""
+    before_proof = await _complete_mapping_proof(client, state, run)
+    before_volumes = await _volumes(client, state, run)
     before = (
         await _lpar_state(client, state, run, lpar),
         await _client_adapters(client, state, run),
+        before_proof,
+        before_volumes,
     )
     st, data = await _decommission(client, state, run, dry_run=True)
     state.record(SUBTASK, "hmc_decommission_lpar (dry run)", st, data)
     run.data[op] = data
-    run.hold(
-        op, "dry-run-inventoried", st == "PASS" and _dry_run_inventoried(data, run)
+    expected = (
+        frozenset(
+            (run.vios.uuid.casefold(), identity)
+            for identity, client_uuid, _, _ in before_proof[0]
+            if client_uuid.casefold() == lpar.casefold()
+        )
+        if before_proof is not None and run.vios is not None
+        else None
     )
+    inventoried = (
+        st == "PASS"
+        and _dry_run_inventoried(data, run, before[1])
+        and expected is not None
+        and bool(expected)
+        and _dry_run_mapping_ids(data) == expected
+    )
+    run.hold(op, "dry-run-inventoried", inventoried)
     after = (
         await _lpar_state(client, state, run, lpar),
         await _client_adapters(client, state, run),
+        await _complete_mapping_proof(client, state, run),
+        await _volumes(client, state, run),
     )
-    run.hold(op, "dry-run-changed-nothing", None not in before and before == after)
-    if not await _detach(client, state, run):
+    unchanged = None not in before and before == after
+    run.hold(op, "dry-run-changed-nothing", unchanged)
+    if not (inventoried and unchanged):
         return
     st, data = await _decommission(client, state, run, dry_run=False)
     state.record(SUBTASK, "hmc_decommission_lpar", st, data)
     run.data[op] = data
-    run.hold(
-        op,
-        "resource-deleted",
-        st == "PASS" and result_field(data, "resource_deleted") is True,
+    deleted = st == "PASS" and result_field(data, "resource_deleted") is True
+    completed = st == "PASS" and result_field(data, "workflow_completed") is True
+    run.hold(op, "resource-deleted", deleted)
+    run.hold(op, "workflow-completed", completed)
+    if not (deleted and completed):
+        return
+    partition_absent = await _gone(client, state, run, run.p_name)
+    run.hold(op, "lpar-name-absent", partition_absent)
+    proof = await _complete_mapping_proof(client, state, run)
+    volumes = await _volumes(client, state, run)
+    left = proof[0] if proof is not None else None
+    mapping_absent = left is not None and not any(
+        client_uuid.casefold() == lpar.casefold() or backing == run.volume
+        for _, client_uuid, _, backing in left
     )
-    run.hold(
-        op,
-        "workflow-completed",
-        st == "PASS" and result_field(data, "workflow_completed") is True,
+    volume_retained = volumes is not None and run.volume in volumes
+    foreign_unchanged = (
+        before_proof is not None
+        and proof is not None
+        and before_proof[1] == proof[1]
+        and before_volumes is not None
+        and volumes == before_volumes
     )
-    run.hold(op, "lpar-name-absent", await _gone(client, state, run, run.p_name))
+    run.hold(op, "storage-mapping-absent", mapping_absent and foreign_unchanged)
+    run.hold(op, "backing-volume-retained", volume_retained)
+    run.decommission_failed = not (
+        deleted
+        and completed
+        and partition_absent
+        and mapping_absent
+        and volume_retained
+        and foreign_unchanged
+    )
 
 
 async def _partition_p(
@@ -1261,6 +1404,18 @@ async def _teardown_storage(client: Client, state: RunState, run: Run) -> bool:
 async def _teardown(client: Client, state: RunState, run: Run) -> None:
     """Spec step 12: abandon, detach, delete partitions, delete the volume."""
     await _abandon(client, state, run)
+    if run.decommission_failed:
+        _manual(
+            state,
+            "decommission recovery",
+            (
+                "decommission did not prove safe completion; retain the run partition, "
+                "mapping and backing volume. Inspect the recorded phase errors and current "
+                "VIOS mapping/client identities before any operator-directed recovery."
+            ),
+        )
+        run.clean = False
+        return
     detached = (
         run.vios is None
         or not run.volume_attempted
@@ -1545,6 +1700,14 @@ def _observe_p(state: RunState, run: Run, cleanup: str) -> None:
             operation="lpar.decommission",
             scenario=SCENARIO,
             assertions=[
+                Assertion(
+                    "storage-mapping-absent",
+                    run.holds("lpar.decommission", "storage-mapping-absent"),
+                ),
+                Assertion(
+                    "backing-volume-retained",
+                    run.holds("lpar.decommission", "backing-volume-retained"),
+                ),
                 Assertion(
                     "dry-run-inventoried",
                     run.holds("lpar.decommission", "dry-run-inventoried"),

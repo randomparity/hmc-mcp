@@ -25,9 +25,12 @@ description field, so ADR 0011's stamp cannot mark them.
    this partition, read in the same pass. Physical volumes, media repositories, shared
    or foreign media and foreign disks are always retained.
 4. **Incomplete inventory blocks deletion.** Any VIOS whose storage detail is unavailable, or
-   any mapping too sparse to classify, retains every owned item. ADR 0027's partition teardown
-   still proceeds with the warning.
-5. **Order and resume.** The partition is torn down first. Owned items are then unmapped,
+   any mapping too sparse to classify, retains every owned item. This future backing-storage
+   cleanup rule does not bypass ADR 0027's baseline vSCSI prerequisite: incomplete vSCSI
+   inventory stops partition teardown before mutation; dry-run retains its warnings.
+   Incomplete vFC observations alone retain their warning behavior.
+5. **Order and resume.** The partition is torn down first, including ADR 0027's baseline
+   target vSCSI detach before its client disappears. Remaining owned items are then unmapped,
    unmounted and deleted one at a time, each as a recorded effect. Items left over after a
    failure remain in the operation record. Resume authorizes against the recorded system, VIOS
    and volume-group targets, because the partition selector no longer resolves.

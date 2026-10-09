@@ -41,7 +41,8 @@ def lpars_decommission(
     if not dry_run and not yes:
         typer.confirm(
             f"Decommission LPAR '{name_or_uuid}' on system '{system}'? "
-            "This powers it off, detaches adapters, and deletes it.",
+            "This powers it off, detaches its vSCSI mappings before client adapters "
+            "and partition deletion, and retains backing storage.",
             abort=True,
         )
 
