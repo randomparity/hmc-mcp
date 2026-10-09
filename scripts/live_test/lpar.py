@@ -247,8 +247,8 @@ _PROBE_DESCRIPTION = "MCP live-test probe R2 safe to clear"
 _ABSENT_POOL = "hmcpctl-live-absent-pool"
 # A relative bkprofdata file lands in /var/hsc/profiles/<serial>/ on the HMC.
 _PROFILE_BACKUP_FILE = "hmcpctl-live-st10"
-# The modes hmc_set_lpar_proc_compat accepts. The CLI reads `POWER9_base`, which
-# the schema spells `POWER9_Base`, so a profile in that mode is not probed (#1319).
+# The modes hmc_set_lpar_proc_compat accepts. Both the CLI's `POWER9_base` and
+# REST's `POWER9_Base` are accepted (#1319).
 _SETTABLE_MODES = frozenset(get_args(ProcessorCompatibilityMode))
 # sync_curr_profile values and the hmc_sync_lpar_profile mode that writes each (ADR 0201).
 _SYNC_MODES = {"0": "disable", "1": "enable", "2": "suspend"}
@@ -474,7 +474,7 @@ async def _exercise_proc_compat(client: Client, state: RunState) -> None:
             10,
             "hmc_set_lpar_proc_compat (round trip)",
             f"profile {profile!r} mode {original!r}: no settable probe mode, or the "
-            "original cannot be written back through the tool (#1319)",
+            "original cannot be written back through the tool",
         )
         return
     probe = candidates[-1]
@@ -817,7 +817,7 @@ async def _restore_baseline_profile_mode(client: Client, state: RunState) -> Non
         state.skip(
             15,
             "hmc_set_lpar_proc_compat (restore)",
-            f"baseline mode {mode!r} cannot be written through the tool (#1319); "
+            f"baseline mode {mode!r} cannot be written through the tool; "
             "ST10 does not change it",
         )
         return

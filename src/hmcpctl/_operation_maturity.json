@@ -166,8 +166,8 @@
     {
       "operation": "lpar.decommission",
       "implementation": "implemented",
-      "verification": "current",
-      "reason": null,
+      "verification": "stale",
+      "reason": "closure-changed",
       "observed_at": "2026-10-09T16:12:54Z"
     },
     {

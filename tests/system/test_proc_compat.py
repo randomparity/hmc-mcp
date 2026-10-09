@@ -164,14 +164,15 @@ def test_get_lpar_proc_compat_reports_unknown_partition(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_set_lpar_proc_compat_writes_the_default_profile(monkeypatch, mock_hmc):
+@pytest.mark.parametrize("mode", ["POWER9", "POWER9_base", "POWER9_Base"])
+def test_set_lpar_proc_compat_writes_the_default_profile(monkeypatch, mock_hmc, mode):
     """With no profile_name the mode is written to the partition's default profile."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_scripted_ssh_mock("", "default_profile\n", "")
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID, "POWER9")
+        result = hmc_set_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID, mode)
 
     assert _commands(conn_mock)[1:] == [
         (
@@ -180,11 +181,11 @@ def test_set_lpar_proc_compat_writes_the_default_profile(monkeypatch, mock_hmc):
         ),
         (
             f"chsyscfg -r prof -m {SYSTEM_NAME} "
-            f"-i name=default_profile,lpar_name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
+            f"-i name=default_profile,lpar_name={LPAR_NAME},lpar_proc_compat_mode={mode}"
         ),
     ]
     assert result == (
-        f"Set lpar_proc_compat_mode=POWER9 on profile default_profile of {LPAR_NAME}"
+        f"Set lpar_proc_compat_mode={mode} on profile default_profile of {LPAR_NAME}"
     )
 
 
