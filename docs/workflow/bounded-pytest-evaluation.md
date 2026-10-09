@@ -125,33 +125,77 @@ not identify an intrinsic fresh parallel-only memory failure. No third constrain
 pair ran. Successful fresh serial/parallel observations come from different
 attempts; they are not presented as a complete successful paired repetition.
 
-Separate production-runner timeout probes reproduced two surviving xdist workers
-three seconds after runner exit, twice; the serial controls had none. The runner
+Separate baseline-runner timeout probes reproduced two surviving xdist workers
+three seconds after runner exit, twice; the serial controls had none. That baseline runner
 only terminates its direct child. Fixture containment subsequently removes the
 survivors and receives no credit for production cleanup. Owned sessions can
 address worker signalling, but nested-session descendants additionally require
-an ownership/reaping design before production adoption.
+the adopted ownership/reaping design.
 
 ## Supplemental memory accounting
 
-Normal-local and native timing samples above report sampled summed RSS; they do
-not establish a kernel high-water value. The normal-local actual charged-memory
-observation is complete; both native parallel observations remain pending under
-the bounded memory-only grant.
-The constrained kernel peak remains valid. Supplemental results use the production
-runner at their own immutable source and do not enter the earlier timing dataset.
+Three memory-only observations establish actual kernel charged peaks for the
+production runner. They do not enter the earlier timing/RSS comparison dataset.
+The fresh constrained kernel peak above remains evidence for that distinct profile.
 
-At source ffc1f774, the normal-local production observation passed 8,762 cases with
-two workers and exact complete identity/per-file coverage equality. Its kernel
-memory.peak was 1,998,241,792 bytes; all memory events were zero, no descendants
-remained, and the unit was removed. Execution cost 236.641 s is not a timing comparison.
-The first native amd64/arm64 observations at the same source returned runner exit 0 but
-selected serial because fresh user scopes lacked cpu.max. Their rejected serial
-peaks were 1,650,221,056/1,610,764,288 bytes and costs 511.662/529.780 s. Neither supplies
-parallel evidence or admitted complete identity/coverage proof. Both units were
-removed with no descendants or memory events. Both native system-manager preflights
-then passed at source 050f4107: actual
-resource/ownership selectors chose two, original constraints/affinity were preserved,
-exit 0/7 and timeout controls passed, and every owned unit was removed. These are
-cheap fixture results, not full-suite memory samples. Exactly one additional full
-native candidate per architecture is now allocated; results remain pending.
+| Profile | Immutable source | Kernel memory.peak (bytes) | Execution cost (s) |
+|---|---|---:|---:|
+| Normal local | `ffc1f7740a9f4a243465fa9271e0546c2f275f9b` | 1,998,241,792 | 236.641 |
+| Native amd64 | `12ce31955b1ef0a2ca470ae5ca34fac4c0ed5568` | 2,104,983,552 | 321.255 |
+| Native arm64 | `12ce31955b1ef0a2ca470ae5ca34fac4c0ed5568` | 2,045,255,680 | 265.671 |
+
+All three selected two workers through the production defaults and passed all
+8,762 cases. Complete hashed collection identities, all 207 per-file coverage
+summaries and every coverage total equal the production reference exactly.
+The count is 8,708 minus eight removed observer tests plus 62 new runner tests;
+all original cases remain. The coverage denominator and configured floor are unchanged.
+The local source tree is `0be47f8b860831c0a9f5465d1218f5d52b0ebed4`; the native tree
+is `f148c6dc43934d382b5c0df521e125709ffa92b2`. Runner and runner-test sources are
+identical between those commits; the native tree includes the isolated capability
+console fixture and temporary observer updates. These are separate source cohorts.
+
+The observer reads memory.peak in a fresh owned cgroup after runner exit and an
+empty descendant inventory, before removing the unit. This is charged cgroup
+memory, including tmpfs, kernel charges and the small in-scope Python observer;
+it is neither sampled RSS nor unique physical memory. Collection occurs outside
+before the scope and coverage export outside afterwards. Existing warm-cache pages
+charged elsewhere are not recharged merely because a test reads them. All memory
+events were zero, no descendants remained and every owned unit was stopped/reset
+and absent after cleanup. Cheap controls first proved counter growth, exit 0/7
+propagation, timeout survivor removal, exact membership and state restoration.
+
+The local profile retains the Fedora/Python/48-CPU facts above and unlimited
+visible ancestor CPU/memory/swap limits. Both native observations use Ubuntu
+24.04.5, Linux 6.17.0-1022-azure, Python 3.11.16 and four affinity CPUs. Physical
+RAM is about 15.6 GiB; original MemAvailable was about 14.1/14.2 GiB respectively.
+Every visible non-root original and observed ancestor has unlimited CPU, memory
+and swap limits; root controls are legitimately absent. The system-manager scope
+preserves affinity, original credentials and the runner-sanitized environment.
+No controller, threshold or worker-selection override is used. This is a startup
+admission test, not a memory reservation; concurrent outside allocations can
+invalidate its headroom. The largest observed peak is about 1.96 GiB, below the
+3 GiB acceleration threshold, without establishing a universal bound.
+
+[The native memory run](https://github.com/randomparity/hmc-mcp/actions/runs/37938882776)
+completed both allocated observations. The initial native attempts at ffc1f774
+returned runner exit 0 but selected serial because fresh user scopes lacked
+cpu.max. Their rejected serial peaks were 1,650,221,056/1,610,764,288 bytes and
+costs 511.662/529.780 s. Neither supplies parallel evidence or admitted complete
+identity/coverage proof. Both units were removed without descendants or memory
+events. Both native system-manager preflights then passed at source 050f4107,
+followed by exactly one additional full candidate per architecture. Thus three
+admitted observations and two rejected native attempts remain recorded; no local
+rerun, serial comparison, new pair, pooled speed result or further attempt occurred.
+
+## Production verification
+
+The production runner's real subprocess tests cover two-worker execution,
+combined coverage, concurrent ports/files/environment, nonzero and signal status,
+timeout, PID/group/repeated interrupts, nested sessions, launch/inventory failures
+and subreaper restoration. Survivor assertions precede fixture containment.
+Controlled faults made resource, coverage, lifecycle and portability tests fail.
+The capability table test now uses an isolated fixed-width console: an import-time
+80-column environment reproduced the native Python 3.12 failure, and the fixture
+preserves every existing assertion and restores the original shared console.
+Final delivery requires the unchanged eight native verification, eight wheel and
+two library legs after removal of the temporary workflow.

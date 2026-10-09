@@ -186,3 +186,8 @@ the full suite and again in its completion output. Preserve every rejected attem
 no local rerun, serial run, pair, speed comparison or automatic retry is authorized.
 Do not set CPU weight/quota/delegation or weaken
 unknown-resource fallback. CPUAccounting does not enable the modern v2 controller.
+
+All three allocated parallel kernel observations are complete, with identical full
+collection/per-file coverage, zero memory events and no remaining descendants or
+units. The evidence report retains exact sources and both rejected native serial
+attempts. The temporary workflow is removed after its final native observations.
