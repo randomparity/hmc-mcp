@@ -137,7 +137,7 @@ full local guards/hooks, bounded independent review and exact-head CI.
 The ignored implementation plan inventories focused behavior tests for exact plan,
 incomplete structure/identity, foreign/vFC retention, UUID case, order, ownership,
 partial mapping failure, fresh RMW retarget/ETag refusal, VIOS listing/detail failure,
-missing mapping collection, adapter-refresh drift/hidden metadata entry/resource/partial404/cancellation and ST41 readback faults.
+missing mapping collection, adapter-refresh drift/hidden metadata entry/resource/partial404/cancellation; ST41 exact preview typed pairs/UUID case and readback faults.
 Existing inspection tests protect its unchanged caller contract. Controlled faults
 remove target-client validation, preflight stop and mapping-error stop in turn and
 must fail meaningful safety tests before restoration. Prose is inspected against
@@ -147,8 +147,8 @@ MERGE-READY, alongside recovery and generated commit-stamped filtered evidence.
 
 ## Amended estimate and direct caller consequences
 
-The prior1200–1400 estimate undercounted strict raw-reader, native/UUID and CLI safety fixtures;
-actual1782 support lines gives1700–1900 amended range. Same C1–C6 scope remains.
+The prior1700–1900 estimate omitted the required exact-preview pair proof and deviation fixtures;
+actual1964 support lines gives1900–2100 amended range. Same C1–C6 scope remains.
 Existing CLI confirmation and MCP description disclose the ordered mapping detach and
 backing-storage retention; regenerate their tool reference. No caller signature or
 execution behavior changes. The amended plan records the corrected size breakdown.

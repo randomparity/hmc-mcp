@@ -405,7 +405,12 @@ class World:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
         if entry is None:
             return []
-        return [{"UUID": "net-1", "Resource": {"PortVLANID": str(VLAN)}}]
+        kind = kwargs["adapter_type"]
+        if kind == "ClientNetworkAdapter":
+            return [{"UUID": "net-1", "Resource": {"PortVLANID": str(VLAN)}}]
+        if kind == "VirtualSCSIClientAdapter":
+            return [{"UUID": "scsi-1", "Resource": {}}]
+        return []
 
     def _hmc_decommission_lpar(self, kwargs: dict[str, Any]) -> Any:
         entry = self.by_selector(kwargs["lpar_name_or_uuid"])
@@ -1459,3 +1464,68 @@ def test_unsuccessful_typed_decommission_flag_retains_manual_cleanup(schemas, fl
     assert _rows(state, "decommission recovery")
     assert not world.calls_to("hmc_delete_virtual_disk")
     assert not world.calls_to("hmc_detach_storage_mapping")
+
+
+@pytest.mark.parametrize(
+    "preview",
+    [
+        "substituted",
+        "missing",
+        "duplicate",
+        "case-duplicate",
+        "empty",
+        "missing-uuid",
+        "malformed",
+    ],
+)
+def test_wrong_preview_adapter_identity_retains_decommission_resources(
+    schemas, preview
+):
+    world = World()
+
+    def change(kwargs, real):
+        data = real(kwargs)
+        if kwargs["dry_run"]:
+            adapters = data["blast_radius"]["adapters"]
+            if preview == "substituted":
+                adapters[0]["uuid"] = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+            elif preview == "missing":
+                adapters.pop()
+            elif preview == "duplicate":
+                adapters.append(dict(adapters[0]))
+            elif preview == "case-duplicate":
+                adapters.append({**adapters[0], "uuid": adapters[0]["uuid"].upper()})
+            elif preview == "empty":
+                adapters[0]["uuid"] = ""
+            elif preview == "missing-uuid":
+                adapters[0].pop("uuid")
+            else:
+                data["blast_radius"]["adapters"] = [None]
+        return data
+
+    _wrap(world, "hmc_decommission_lpar", change)
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "failed"
+    assert not [k for k in world.calls_to("hmc_decommission_lpar") if not k["dry_run"]]
+    assert any(name.endswith("-p") for name in world.partitions)
+    assert not world.calls_to("hmc_delete_virtual_disk")
+
+
+def test_preview_adapter_uuid_case_matches_snapshot(schemas):
+    world = World()
+
+    def uppercase(kwargs, real):
+        data = real(kwargs)
+        if kwargs["dry_run"]:
+            for item in data["blast_radius"]["adapters"]:
+                item["uuid"] = item["uuid"].upper()
+        return data
+
+    _wrap(world, "hmc_decommission_lpar", uppercase)
+    state = _run(schemas, world)
+    assert _results(state)["lpar.decommission"] == "passed"
+    assert (
+        len([k for k in world.calls_to("hmc_decommission_lpar") if not k["dry_run"]])
+        == 1
+    )
+    assert len(world.calls_to("hmc_delete_virtual_disk")) == 1

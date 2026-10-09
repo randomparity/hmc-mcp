@@ -1158,17 +1158,33 @@ def _dry_run_mapping_ids(data: object) -> frozenset[tuple[str, str]] | None:
     return frozenset(identities) if len(set(identities)) == len(identities) else None
 
 
-def _dry_run_inventoried(data: object, run: Run) -> bool:
+def _dry_run_inventoried(data: object, run: Run, expected_adapters: object) -> bool:
     radius = _plain(result_field(data, "blast_radius"))
     radius = radius if isinstance(radius, Mapping) else {}
-    adapters = {item.get("type") for item in radius.get("adapters") or ()}
+    listed = radius.get("adapters")
+    if not isinstance(listed, (list, tuple)) or expected_adapters is None:
+        return False
+    adapters = []
+    for item in listed:
+        if not isinstance(item, Mapping):
+            return False
+        kind, identity = item.get("type"), item.get("uuid")
+        if not isinstance(kind, str) or not isinstance(identity, str) or not identity:
+            return False
+        adapters.append((kind, identity.casefold()))
+    if (
+        len(set(adapters)) != len(adapters)
+        or tuple(sorted(adapters)) != expected_adapters
+    ):
+        return False
     backed = {
         item.get("backing_device") for item in radius.get("storage_mappings") or ()
     }
     return (
         result_field(data, "resource_deleted") is False
         and _all_steps(data, "dry_run")
-        and {"ClientNetworkAdapter", "VirtualSCSIClientAdapter"} <= adapters
+        and {"ClientNetworkAdapter", "VirtualSCSIClientAdapter"}
+        <= {kind for kind, _ in adapters}
         and run.volume in backed
     )
 
@@ -1204,10 +1220,10 @@ async def _client_adapters(client: Client, state: RunState, run: Run) -> Any:
             return None
         for item in entries(data):
             identity = item.get("UUID") or item.get("uuid")
-            if not identity:
+            if not isinstance(identity, str) or not identity:
                 return None
-            adapters.append((kind, str(identity)))
-    return tuple(sorted(adapters))
+            adapters.append((kind, identity.casefold()))
+    return tuple(sorted(adapters)) if len(set(adapters)) == len(adapters) else None
 
 
 async def _decommission_cases(client: Client, state: RunState, run: Run) -> None:
@@ -1236,7 +1252,7 @@ async def _decommission_cases(client: Client, state: RunState, run: Run) -> None
     )
     inventoried = (
         st == "PASS"
-        and _dry_run_inventoried(data, run)
+        and _dry_run_inventoried(data, run, before[1])
         and expected is not None
         and bool(expected)
         and _dry_run_mapping_ids(data) == expected
