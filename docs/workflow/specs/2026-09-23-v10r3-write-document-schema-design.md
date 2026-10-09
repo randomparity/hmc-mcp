@@ -34,6 +34,10 @@ values.
 | `AssociatedLogicalPartition` | UOM namespace (not Atom), `kb="CUR" kxe="false"`, first child of the mapping | F |
 | `PartitionMemoryConfiguration` | add `schemaVersion="V1_0"` | I |
 
+> **Superseded in part by #1179** (2026-10-01). The LPAR builder no longer sends
+> `OperatingSystemType`: #1179 removed `os_type` from the create path, because the schema marks
+> the element read-only and the HMC sets it. The table records the design as approved.
+
 **Invariant (F):** every element in F that has a `Metadata` child carries `schemaVersion`, and
 `Storage`/`TargetDevice`, which have no `Metadata`, do not. The memory 400 is this rule broken.
 The three processor-configuration wrappers break it too, but no evidence records their
