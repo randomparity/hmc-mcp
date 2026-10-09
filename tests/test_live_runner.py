@@ -1574,7 +1574,7 @@ def _st10_answers(
 ) -> dict[str, object]:
     """A not-activated test partition, one VIOS, and a default-mode profile."""
     msp = iter([True, False, True])
-    profile_mode = iter(["default", "POWER9", "default"])
+    profile_mode = iter(["default", "POWER9_base", "default"])
     sync = iter(sync_reads)
 
     def run_command(kwargs):
@@ -1646,9 +1646,8 @@ async def test_st10_round_trips_pass_and_restore_each_value(monkeypatch) -> None
         ("vios-a", True),
     ]
     assert all("ownership_override" not in m for m in msp)
-    # POWER9_base is the CLI's spelling, which the tool schema refuses (#1319).
     assert [m["mode"] for m in _tool_calls(calls, "hmc_set_lpar_proc_compat")] == [
-        "POWER9",
+        "POWER9_base",
         "default",
     ]
     assert [m["mode"] for m in _tool_calls(calls, "hmc_sync_lpar_profile")] == [
@@ -2160,7 +2159,7 @@ async def test_proc_compat_round_trip_skips_an_original_the_tool_cannot_write(
         _st10_answers(
             hmc_get_lpar_proc_compat=(
                 "PASS",
-                {"profile": "default_profile", "profile_mode": "POWER9_base"},
+                {"profile": "default_profile", "profile_mode": "unsupported_mode"},
             )
         )
     )
@@ -2171,6 +2170,30 @@ async def test_proc_compat_round_trip_skips_an_original_the_tool_cannot_write(
 
     assert _tool_calls(calls, "hmc_set_lpar_proc_compat") == []
     assert "lpar.set_proc_compat" not in _verified(state)
+
+
+@pytest.mark.asyncio
+async def test_st10_round_trips_and_restores_power9_base_profile(monkeypatch) -> None:
+    """#1319: a profile in POWER9_base mode can be changed and restored."""
+    profile_mode = iter(["POWER9_base", "POWER9", "POWER9_base"])
+    calls, scripted = _answer(
+        _st10_answers(
+            hmc_get_lpar_proc_compat=lambda _kwargs: (
+                "PASS",
+                {"profile": "default_profile", "profile_mode": next(profile_mode)},
+            )
+        )
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _verified(state)["lpar.set_proc_compat"]["result"] == "passed"
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_set_lpar_proc_compat")] == [
+        "POWER9",
+        "POWER9_base",
+    ]
 
 
 @pytest.mark.asyncio
@@ -2194,13 +2217,12 @@ async def test_other_arms_never_restore_profiles(monkeypatch, group) -> None:
 
 @pytest.mark.asyncio
 async def test_st15_leaves_a_baseline_mode_the_tool_cannot_write(monkeypatch) -> None:
-    """#1319: ST10 never changes a POWER9_base profile, so ST15 has nothing to restore."""
     calls, scripted = _answer({})
     monkeypatch.setattr(runner.RunState, "call", scripted)
     state = runner.RunState()
     state.artifacts.lp3_baseline.update(
         description="baseline",
-        proc_compat={"profile": "default_profile", "profile_mode": "POWER9_base"},
+        proc_compat={"profile": "default_profile", "profile_mode": "unsupported_mode"},
     )
 
     await runner.restore_lpar_baseline(None, state)
@@ -2210,6 +2232,39 @@ async def test_st15_leaves_a_baseline_mode_the_tool_cannot_write(monkeypatch) ->
         r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (restore)"
     )
     assert row["status"] == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_st15_restores_a_power9_base_baseline_mode(monkeypatch) -> None:
+    """#1319: ST15 restores a POWER9_base baseline profile mode."""
+    calls, scripted = _answer(
+        {
+            "hmc_lpar_summary": ("PASS", {}),
+            "hmc_set_lpar_proc_compat": ("PASS", ""),
+            "hmc_get_lpar_description": ("PASS", "baseline\n"),
+            "hmc_get_lpar_msp": ("PASS", True),
+            "hmc_run_command": ("PASS", "0,Not Activated\n"),
+        }
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = runner.RunState()
+    state.config = dataclasses.replace(state.config, lp3_name="lpar-name")
+    state.artifacts.lp3_baseline.update(
+        description="baseline",
+        sync_curr_profile="0",
+        state="Not Activated",
+        proc_compat={"profile": "default_profile", "profile_mode": "POWER9_base"},
+    )
+
+    await runner.restore_lpar_baseline(None, state)
+
+    assert [m["mode"] for m in _tool_calls(calls, "hmc_set_lpar_proc_compat")] == [
+        "POWER9_base"
+    ]
+    row = next(
+        r for r in state.results if r["tool"] == "hmc_set_lpar_proc_compat (restore)"
+    )
+    assert row["status"] == "PASS"
 
 
 @pytest.mark.asyncio
