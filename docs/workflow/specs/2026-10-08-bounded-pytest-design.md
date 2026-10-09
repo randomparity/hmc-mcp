@@ -4,7 +4,7 @@
 
 Pytest is serial after the preceding runtime optimizations. Issue #1434 and epic
 #1429 require a measured adoption decision, including a valid measured NO-GO.
-The external charter is [WORK:SCOPE](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6071703925).
+The external charter is [WORK:SCOPE](https://github.com/randomparity/hmc-mcp/issues/1434#issuecomment-6072269590).
 The campaign approved the unchanged exclusions and temporary native measurement
 surface. Complexity is M, fixed denominator 250; this is the full-spec lane.
 ADR [0208](../../adr/0208-bounded-pytest-evaluation.md) records the experiment decision.
@@ -34,6 +34,9 @@ Timeout and interruption terminate/reap the owned forest, with TERM then KILL.
 Harness errors or surviving processes invalidate the sample rather than passing.
 Record candidate survivors before containment cleanup; containment does not prove
 production runner cleanup. Defer additional SIGINT during bounded teardown.
+Reap adopted children while the measured command is still active, excluding its
+direct Popen child so that only Popen consumes that command’s exit status. Invoke
+the harness through `uv run --no-sync` to preserve the installed console-script PATH.
 
 ## Execution and success
 
@@ -46,26 +49,33 @@ production runner cleanup. Defer additional SIGINT during bounded teardown.
    Run existing runner/coverage-gate tests under two workers with `--no-cov`
    only for this focused check, plus explicit port/file/environment and split
    coverage probes. These synthetic checks are fitness evidence, not suite proof.
-3. Compare the complete configured suite serial and two-worker modes on the
+3. Before full comparisons, sort the existing six sharing-mode parameters in
+   `tests/unit/test_documents.py`; the campaign approved this exact cause fix after
+   an actual worker collection mismatch. Prove identical identities/count across
+   different hash seeds and stable ordering after the correction. This test-only
+   correction may remain even when parallel execution is rejected.
+4. Compare the complete configured suite serial and two-worker modes on the
    integrated source. Keep JUnit test identities/counts and coverage JSON per run;
    compare statement and branch denominators, covered totals, statuses and skips.
    A failed run is a result, never a successful timing. No exclusions, retries of
    failed tests, floor changes or denominator changes make a candidate eligible.
-4. Profile normal local resources and a real 1 CPU / 2 GiB / no-swap cgroup,
+5. Profile normal local resources and a real 1 CPU / 2 GiB / no-swap cgroup,
    then native amd64 and arm64 Ubuntu 24.04/Python 3.11. Start with one pair per
    profile; where eligible take a second pair in reversed order. Two pairs is
    the initial limit. A third needs named variance uncertainty and root review.
    Stage fitness first: a reproducible disqualifying failure ends good-path
    repetitions, but still obtain measured native evidence and disclose omitted
    comparisons. Never repeat the old #1430 baseline.
-5. The temporary PR-only workflow is restricted to the owned branch, uses
-   contents:read, no secrets and existing pinned setup actions. It changes no
+6. The temporary PR-only workflow is restricted to the owned branch, uses
+   contents:read, no secrets and existing pinned setup actions. Its explicit
+   checkout selects the PR head SHA so local/native samples share one candidate
+   tree; ordinary production CI retains its existing checkout. It changes no
    ordinary native verify/wheel leg. Its logs and summary carry tested SHA,
    versions, resource context and sample results. Always retain normalized JSON
 with hashed test identities/statuses and hashed per-file coverage summaries,
 including on failure. Retrieve that artifact for final comparisons; do not upload
 raw private logs, JUnit or coverage reports.
-6. Publish the measured decision and limits. Adoption requires stable complete
+7. Publish the measured decision and limits. Adoption requires stable complete
    runs, preserved gate/isolation/lifecycle and repeatable wall-time benefit at
    adequate resources. If that holds, propose the minimal production runner
    implementation and review that concrete design before landing parallelism.

@@ -25,7 +25,9 @@ shipping the decision; retain the evidence and its limitations.
 The experiment adds temporary tooling and a pinned development dependency.
 Native samples incur hosted work. A rejected candidate leaves no permanent
 parallel execution surface or new hardware requirement. Measured failures and
-sampling/cache limits remain part of the decision evidence.
+sampling/cache limits remain part of the decision evidence. A campaign-approved
+deterministic ordering correction to the existing six sharing-mode test cases
+may remain after a NO-GO; it changes no product behavior or tested case identity.
 
 ## Considered & rejected
 
